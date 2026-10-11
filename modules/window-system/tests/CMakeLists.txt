@@ -1,0 +1,25 @@
+qt_add_executable(window-system-model-test layout_model_test.cpp)
+target_link_libraries(window-system-model-test PRIVATE WindowSystem::Model Qt6::Test)
+set_target_properties(window-system-model-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.model COMMAND window-system-model-test)
+
+qt_add_executable(window-system-widget-test workspace_test.cpp)
+target_link_libraries(window-system-widget-test PRIVATE WindowSystem::Widgets Qt6::Test)
+set_target_properties(window-system-widget-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.widgets COMMAND window-system-widget-test)
+set_tests_properties(window-system.widgets PROPERTIES TIMEOUT 60)
+
+qt_add_executable(window-system-drag-test drag_interaction_test.cpp)
+target_link_libraries(window-system-drag-test PRIVATE WindowSystem::Widgets Qt6::Test)
+set_target_properties(window-system-drag-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.drag-interaction COMMAND window-system-drag-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/drag-results.txt,txt)
+set_tests_properties(window-system.drag-interaction PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+
+qt_add_executable(window-system-overlay-fixture fixtures/clickthrough-overlay/main.cpp)
+target_link_libraries(window-system-overlay-fixture PRIVATE Qt6::Widgets)
+target_compile_features(window-system-overlay-fixture PRIVATE cxx_std_20)
+if(WIN32)
+    target_link_libraries(window-system-overlay-fixture PRIVATE user32)
+endif()
+add_dependencies(window-system-drag-test window-system-overlay-fixture)

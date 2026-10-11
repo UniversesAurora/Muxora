@@ -1,0 +1,8 @@
+qt_add_executable(muxora WIN32 main.cpp ../workspace_host/placeholder_content.cpp)
+target_link_libraries(muxora PRIVATE WindowSystem::Widgets)
+target_compile_features(muxora PRIVATE cxx_std_20)
+target_include_directories(muxora PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set_target_properties(muxora PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(MSVC)
+    target_compile_options(muxora PRIVATE /utf-8)
+endif()

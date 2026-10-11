@@ -1,0 +1,35 @@
+# Muxora
+
+Muxora 是一款面向远程工作的原生桌面应用，计划整合 SSH 终端、会话管理、文件传输和远程图形应用。首发平台为 Windows，采用 C++20 与 Qt 6 Widgets；后续支持 macOS 和 Linux。
+
+当前交付的是 **Muxora 应用的首个窗口系统预览**，后续功能继续在这套应用代码上开发。已接入标签组与窗格分割、四边停靠、轻量和完整窗口、跨窗口拖拽、命令面板与布局保存。标签中的占位内容用于试用布局，SSH、SFTP 和终端协议尚未实现。
+
+## 构建与运行
+
+需要 PowerShell 7、Git、CMake、Ninja，以及包含匹配 C++ 编译器的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MinGW 工具链。Qt 安装在仓库外，不提交 SDK 或构建产物。
+
+```powershell
+pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
+```
+
+脚本支持 `-QtRoot` 指定 Qt kit 目录，或读取 `QT_ROOT`；也会发现仓库旁的 SDK 和忽略提交的 `.local/sdk.json`。完整检查入口为 `pwsh ./tools/verify.ps1`。构建、运行、测试和部署参数见 [窗口系统预览说明](docs/development/window-system-preview.md)。这是供试用与改进的首个版本，功能范围、验证记录和待完成项以该说明为准。
+
+## 仓库结构
+
+| 目录 | 内容 |
+| --- | --- |
+| `modules/window-system/` | 独立窗口系统、公开 API 和模块测试 |
+| `src/app/` | Muxora 应用入口，后续产品继续使用 |
+| `src/workspace_host/` | 宿主内容接入；目前提供布局试用的占位内容 |
+| `tools/` | 开发与构建脚本 |
+| `docs/design/` | 产品行为、模块边界和接口设计 |
+| `docs/development/` | 工程规范、测试要求和预览使用说明 |
+| `out/` | 本地构建与部署产物，忽略提交 |
+
+文档入口见 [docs/README.md](docs/README.md)。设计文档描述目标；预览说明记录已实现范围，二者不能混同。
+
+## 参与开发
+
+请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。自动化代理还需遵守 [AGENTS.md](AGENTS.md)。
+
+项目自有代码采用 [MIT 许可证](LICENSE)。Qt 与未来接入的第三方组件保留各自许可证；详见 [依赖与许可约束](docs/development/engineering-design.md#62-自有代码与第三方许可)。

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.25)
+project(WindowSystemExternalContract LANGUAGES CXX)
+find_package(WindowSystem CONFIG REQUIRED)
+add_executable(external-host-contract main.cpp)
+target_link_libraries(external-host-contract PRIVATE WindowSystem::Widgets)
+target_compile_features(external-host-contract PRIVATE cxx_std_20)
+enable_testing()
+add_test(NAME window-system.installed-contract COMMAND external-host-contract)

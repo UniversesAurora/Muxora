@@ -1,0 +1,13 @@
+/out/
+/.deps/
+/CMakeUserPresets.json
+/.mise.local.toml
+/.local/
+/.vs/
+/.idea/
+*.user
+*.user.*
+*.autosave
+*.log
+Thumbs.db
+.DS_Store

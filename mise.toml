@@ -1,0 +1,19 @@
+[tasks.build]
+description = "Build the Muxora window preview"
+run = "pwsh -NoProfile -File tools/build.ps1"
+
+[tasks.test]
+description = "Build and run automated tests"
+run = "pwsh -NoProfile -File tools/build.ps1 -Test"
+
+[tasks.verify]
+description = "Verify both builds, standalone reuse and deployment"
+run = "pwsh -NoProfile -File tools/verify.ps1"
+
+[tasks.run]
+description = "Build and start Muxora"
+run = "pwsh -NoProfile -File tools/build.ps1 -Run"
+
+[tasks.package]
+description = "Build, test and deploy the release preview"
+run = "pwsh -NoProfile -File tools/build.ps1 -Configuration Release -Test -Package"
