@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -67,7 +68,20 @@ int main(int argc, char* argv[])
         QFile file(stateFile);
         if (file.open(QIODevice::ReadOnly) && file.size() <= 4 * 1024 * 1024) {
             QJsonParseError error; const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
-            if (error.error == QJsonParseError::NoError && doc.isObject()) restored = windows.restoreLayout(doc.object()).ok;
+            if (error.error == QJsonParseError::NoError && doc.isObject()) {
+                auto snapshot = doc.object();
+                auto windowStates = snapshot.value("windows").toArray();
+                // Early preview builds saved the module fallback title after a
+                // restore. Keep their layout while correcting the app caption.
+                for (qsizetype i = 0; i < windowStates.size(); ++i) {
+                    auto record = windowStates.at(i).toObject();
+                    if (record.value("title").toString() == "WindowSystem") {
+                        record.insert("title", app.applicationName()); windowStates[i] = record;
+                    }
+                }
+                snapshot.insert("windows", windowStates);
+                restored = windows.restoreLayout(snapshot).ok;
+            }
         }
     }
     if (!restored || windows.model().windows().isEmpty()) {

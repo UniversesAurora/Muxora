@@ -68,6 +68,7 @@ private slots:
     void invalidRestorePreservesTheCurrentModelAndWidgets();
     void failedRestoreReleasesPreparedContentsAndPreservesCurrentContents();
     void validRestoreCreatesContentsForExistingStableIds();
+    void restoredWindowTitlesSurviveFreshAndExistingHosts();
     void emptyRootWithFloatingContentSurvivesAutomaticClosePolicy();
     void repeatedCrossWindowMovesDoNotRecreateOrDestroyContent();
     void edgePinAndReturnToCenterPreserveTheSameWidget();
@@ -540,6 +541,44 @@ void WorkspaceTest::validRestoreCreatesContentsForExistingStableIds()
     deliverDeferredDeletes();
     QVERIFY(oldA.isNull() && oldB.isNull());
     QVERIFY(manager.model().validate().ok);
+}
+
+void WorkspaceTest::restoredWindowTitlesSurviveFreshAndExistingHosts()
+{
+    QJsonObject snapshot;
+    WindowId root;
+    WindowId floating;
+    {
+        WindowManager source;
+        root = source.createWindow(WindowKind::Workbench, {"Saved host", QSize(980, 640)});
+        source.addTab(root, editor("Root"), editorOptions("Root", "Root"));
+        const auto tab = source.addTab(root, editor("Float"), editorOptions("Float", "Float"));
+        floating = source.detachTab(tab);
+        snapshot = source.saveLayout();
+    }
+    deliverDeferredDeletes();
+    WindowManager restored;
+    restored.setContentFactory([](const TabOptions& options, PaneId) {
+        return editor(options.state.value("text").toString());
+    });
+    QVERIFY(restored.restoreLayout(snapshot).ok);
+    QVERIFY(restored.windowWidget(root)->windowTitle().endsWith(" — Saved host"));
+    QVERIFY(restored.windowWidget(floating)->windowTitle().contains("Saved host"));
+    auto records = snapshot.value("windows").toArray();
+    for (qsizetype i = 0; i < records.size(); ++i) {
+        auto record = records.at(i).toObject();
+        record.insert("title", "Updated host"); records[i] = record;
+    }
+    snapshot.insert("windows", records);
+    QVERIFY(restored.restoreLayout(snapshot).ok);
+    QVERIFY(restored.windowWidget(root)->windowTitle().endsWith(" — Updated host"));
+    QVERIFY(restored.windowWidget(floating)->windowTitle().contains("Updated host"));
+    for (const auto& entry : restored.saveLayout().value("windows").toArray())
+        QCOMPARE(entry.toObject().value("title").toString(), QStringLiteral("Updated host"));
+    QVERIFY(restored.execute("window.new", {}, root));
+    const auto newWindow = restored.model().windowOrder().last();
+    QVERIFY(newWindow != root && newWindow != floating);
+    QCOMPARE(restored.windowWidget(newWindow)->windowTitle(), QStringLiteral("Updated host"));
 }
 
 void WorkspaceTest::emptyRootWithFloatingContentSurvivesAutomaticClosePolicy()

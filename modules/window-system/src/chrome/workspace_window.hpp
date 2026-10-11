@@ -15,6 +15,7 @@ public:
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
     void syncKind();
+    void setOptions(const WindowOptions& options);
     void updateCaption();
     void setStatus(const QString& text);
     bool allowClose = false;

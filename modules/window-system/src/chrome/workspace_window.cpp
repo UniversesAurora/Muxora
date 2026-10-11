@@ -120,6 +120,7 @@ void WorkspaceWindow::updateCaption()
     setWindowTitle(title + (kind_ == WindowKind::Floating ? QStringLiteral(" · 浮动窗口") : QString()));
     if (caption_) caption_->setText(kind_ == WindowKind::Floating ? windowTitle() : options_.title);
 }
+void WorkspaceWindow::setOptions(const WindowOptions& options) { options_ = options; }
 void WorkspaceWindow::setStatus(const QString& text) { if (status_) status_->setText(text); }
 void WorkspaceWindow::closeEvent(QCloseEvent* event)
 {

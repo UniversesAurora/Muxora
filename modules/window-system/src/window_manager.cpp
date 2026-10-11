@@ -305,6 +305,7 @@ void WindowManager::refresh()
     for (const auto id : d->model.windowOrder()) {
         auto& window = d->windows[id];
         if (!window) window = new WorkspaceWindow(this, id, d->options.value(id));
+        window->setOptions(d->options.value(id));
         window->syncKind(); window->surface()->rebuild(d->tabs); window->updateCaption();
     }
     d->refreshing = false;

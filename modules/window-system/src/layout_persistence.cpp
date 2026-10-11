@@ -69,6 +69,16 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); pane->deleteLater(); }
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->deleteLater(); }
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
+    d->options.clear();
+    for (const auto& entry : snapshot.value("windows").toArray()) {
+        const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
+        if (!d->model.window(id)) continue;
+        WindowOptions options;
+        options.title = object.value("title").toString(options.title);
+        options.size = QSize(qBound(480, object.value("width").toInt(1000), 5000),
+                             qBound(320, object.value("height").toInt(700), 4000));
+        d->options.insert(id, options);
+    }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
     refresh();
     for (const auto& entry : snapshot.value("windows").toArray()) {
