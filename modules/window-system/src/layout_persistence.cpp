@@ -55,7 +55,8 @@ QJsonObject WindowManager::saveLayout() const
         QJsonObject record{{"id", id.toString(QUuid::WithoutBraces)}, {"title", d->options.value(id).title},
             {"x", geometry.x()}, {"y", geometry.y()}, {"width", geometry.width()}, {"height", geometry.height()},
             {"maximized", widget->placementMaximized()},
-            {"tabBarsVisible", d->options.value(id).tabBarsVisible}};
+            {"tabBarsVisible", d->options.value(id).tabBarsVisible},
+            {"sideBarsVisible", d->options.value(id).sideBarsVisible}};
         record.insert("strips", widget->saveStripLayout());
         windows.append(record);
     }
@@ -79,6 +80,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         if (!candidate.window(WindowId(object.value("id").toString()))) continue;
         if (object.contains("tabBarsVisible") && !object.value("tabBarsVisible").isBool())
             return {false, QStringLiteral("标签栏显示设置无效")};
+        if (object.contains("sideBarsVisible") && !object.value("sideBarsVisible").isBool())
+            return {false, QStringLiteral("侧边栏显示设置无效")};
     }
     QHash<PaneId, TabOptions> descriptors;
     for (const auto& entry : snapshot.value("panes").toArray()) {
@@ -131,6 +134,7 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         options.title = object.value("title").toString(options.title);
         options.size = normalizeWindowPlacement(savedWindowGeometry(object), available, {480, 320}).size();
         options.tabBarsVisible = object.value("tabBarsVisible").toBool(true);
+        options.sideBarsVisible = object.value("sideBarsVisible").toBool(true);
         d->options.insert(id, options);
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);

@@ -37,6 +37,10 @@
 
 `setTabBarsVisible(window, visible)` / `tabBarsVisible(window)` 按窗口控制中央标签组的标签栏，隐藏时内容与布局模型保持。侧边收纳条、固定面板标签栏及临时展开标题继续显示。窗口创建选项 `WindowOptions.tabBarsVisible` 默认为 `true`；命令 `window.tabBars.toggle` 可从菜单、命令面板或 `Ctrl+Alt+T` 调用，设置随布局保存。
 
+`setSideBarsVisible(window, visible)` / `sideBarsVisible(window)` 独立控制四边收纳条，隐藏时关闭当前临时面板，保留固定分区。`WindowOptions.sideBarsVisible` 默认为 `true`；命令 `window.sideBars.toggle` 默认绑定 `Ctrl+Alt+B`，状态随窗口布局保存。隐藏后仍可通过明确的标签激活操作打开临时面板。没有该字段的旧快照默认显示侧栏；非法字段拒绝恢复，不修改现有布局。
+
+侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
+
 窗格上下栏分别使用 `PaneBarSharing::Shared` / `PerPane`，默认共享。创建标签时设置 `TabOptions.topBarSharing` / `bottomBarSharing`，运行中可调用 `setTabTopBarSharing` / `setTabBottomBarSharing`。各 Pane 栏继续由 `setPaneTopBar` / `setPaneBottomBar` 接入；显式 Tab 栏不会因逐窗格模式而复制。对应统一命令为 `tab.topBar.setSharing` / `tab.bottomBar.setSharing`，接受 `sharing: "shared"` 或 `"perPane"`，无参数时切换当前策略。
 
 共享策略进入布局快照；栏控件本身由宿主重建和接入，窗口模块不序列化任意 `QWidget`。

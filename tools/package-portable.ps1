@@ -5,6 +5,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'deployment.ps1')
+$taskOutputRoot = Join-Path $taskRepository 'out'
 if (-not $SevenZip) {
     $taskCommand = Get-Command 7z, 7zz -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($taskCommand) { $SevenZip = $taskCommand.Source }
@@ -13,25 +15,54 @@ if (-not $SevenZip -or -not (Test-Path -LiteralPath $SevenZip -PathType Leaf)) {
     throw 'Install 7-Zip or pass -SevenZip with its executable path.'
 }
 $taskSevenZip = (Resolve-Path -LiteralPath $SevenZip).Path
-$taskStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$taskRunId = "$taskStamp-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
-$taskStage = Join-Path $taskRepository "out/package/portable-$taskRunId"
+$taskStage = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/package/portable-input'))
 $taskPackage = Join-Path $taskStage 'Muxora'
-$taskBuildArguments = @{ Configuration = 'Release'; Test = $true; Package = $true; PackageDirectory = $taskPackage }
+$taskSourcePackage = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/package/muxora-preview'))
+$taskCheckRoot = Join-Path $taskRepository 'out/portable-checks/current'
+$taskStageOwned = $false
+$taskCheckOwned = $false
+$taskBuildArguments = @{ Configuration = 'Release'; Test = $true; Package = $true }
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
 & (Join-Path $PSScriptRoot 'build.ps1') @taskBuildArguments
 
-# A fresh deployment avoids keeping removed plugins or nested license copies
-# from an earlier package. Empty data/ activates local state in the application.
+# Copy only the generated inventory, never a user's data/ or unknown files in
+# the reusable deployment. Scratch paths and the archive are fixed on each run.
+Assert-DeploymentStopped $taskPackage
+if (Test-Path -LiteralPath $taskStage) {
+    $taskUnknownRoot = @(Get-ChildItem -LiteralPath $taskStage -Force | Where-Object Name -ne 'Muxora')
+    if ($taskUnknownRoot.Count) { throw 'Portable scratch directory contains unknown files.' }
+    if (Test-Path -LiteralPath $taskPackage) {
+        $taskManaged = @((Get-ManagedDeploymentItems $taskPackage).Name) + @('使用说明.txt', 'data')
+        $taskUnknown = @(Get-ChildItem -LiteralPath $taskPackage -Force | Where-Object Name -notin $taskManaged)
+        if ($taskUnknown.Count -or @(Get-ChildItem -LiteralPath (Join-Path $taskPackage 'data') -Force -ErrorAction SilentlyContinue).Count) {
+            throw 'Portable input contains user data or unknown files; it was left intact.'
+        }
+    }
+    Remove-OutputItem $taskStage $taskOutputRoot
+}
+try {
+New-Item -ItemType Directory -Path $taskPackage -Force | Out-Null
+$taskStageOwned = $true
+$taskInventory = Get-Content -LiteralPath (Join-Path $taskSourcePackage 'deployment-files.json') -Raw | ConvertFrom-Json
+foreach ($taskRelative in $taskInventory.files) {
+    $taskSource = Assert-OutputPath ([IO.Path]::GetFullPath($taskRelative, $taskSourcePackage)) $taskOutputRoot
+    $taskTarget = Assert-OutputPath ([IO.Path]::GetFullPath($taskRelative, $taskPackage)) $taskOutputRoot
+    if (!$taskSource.StartsWith($taskSourcePackage + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+        !$taskTarget.StartsWith($taskPackage + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Deployment inventory contains an invalid relative path.'
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $taskTarget) -Force | Out-Null
+    Copy-Item -LiteralPath $taskSource -Destination $taskTarget
+}
 New-Item -ItemType Directory -Path (Join-Path $taskPackage 'data') | Out-Null
 $taskBuildInfo = Get-Content -LiteralPath (Join-Path $taskPackage 'build-info.json') -Raw | ConvertFrom-Json
 if ($taskBuildInfo.configuration -ne 'Release') { throw 'Only Release builds can be packaged here.' }
-$taskVersion = ($taskBuildInfo.application -split '-window-preview')[0]
-$taskArchiveName = "Muxora-$taskVersion-preview-windows-x64-$taskStamp"
+$taskArchiveName = 'Muxora-preview-windows-x64'
 $taskDist = Join-Path $taskRepository 'out/dist'
 New-Item -ItemType Directory -Path $taskDist -Force | Out-Null
 $taskArchive = Join-Path $taskDist "$taskArchiveName.7z"
-if (Test-Path -LiteralPath $taskArchive) { throw "Portable archive already exists: $taskArchive" }
+Remove-OutputItem $taskArchive $taskOutputRoot
+Remove-OutputItem "$taskArchive.sha256" $taskOutputRoot
 $taskReadme = @'
 Muxora 窗口系统预览 — Windows x64 便携版
 
@@ -66,7 +97,9 @@ Invoke-Archive @('t', '-bso0', $taskArchive)
 
 # Verify the archive itself after extraction, including a path with spaces and
 # non-ASCII characters. The child process cannot inherit SDK/plugin overrides.
-$taskCheck = Join-Path $taskRepository "out/portable-checks/$taskRunId/便携包 解压检查"
+Remove-OutputItem $taskCheckRoot $taskOutputRoot
+$taskCheck = Join-Path $taskCheckRoot '便携包 解压检查'
+$taskCheckOwned = $true
 Invoke-Archive @('x', '-y', '-bso0', "-o$taskCheck", $taskArchive)
 $taskExtracted = Join-Path $taskCheck 'Muxora'
 $taskExecutable = Join-Path $taskExtracted 'muxora.exe'
@@ -123,3 +156,7 @@ $taskHash = (Get-FileHash -LiteralPath $taskArchive -Algorithm SHA256).Hash
     Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/portable-package.json') -Encoding utf8NoBOM
 Write-Host "Portable package ready: $taskArchive"
 Write-Host "SHA-256: $taskHash"
+} finally {
+    if ($taskStageOwned) { Remove-OutputItem $taskStage $taskOutputRoot }
+    if ($taskCheckOwned) { Remove-OutputItem $taskCheckRoot $taskOutputRoot }
+}

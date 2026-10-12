@@ -230,7 +230,7 @@ QWidget { color: @text; }
 QWidget:disabled { color: @muted; }
 QDialog { background: @surface; }
 QWidget#WorkspaceWindow { background: @background; border: 1px solid @border; }
-QWidget#WindowHeader, QWidget#CommandStripHost { background: @header; color: @headerText; }
+QWidget#WindowHeader, QWidget#CommandStripHost, QWidget#CommandStrip, QLabel#StripDragPreview { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }
 QWidget#TabGroup { background: @background; }
 QScrollArea#TabScrollViewport { background: @background; }

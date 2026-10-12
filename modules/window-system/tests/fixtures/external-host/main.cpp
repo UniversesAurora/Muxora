@@ -22,6 +22,8 @@ int main(int argc, char** argv)
         || !windows.setTabBottomBarSharing(tab, window_system::PaneBarSharing::Shared)
         || !windows.setTabBarsVisible(root, false) || windows.tabBarsVisible(root)
         || !windows.execute("window.tabBars.toggle", {}, root) || !windows.tabBarsVisible(root)) return 13;
+    if (!windows.setSideBarsVisible(root, false) || windows.sideBarsVisible(root)
+        || !windows.execute("window.sideBars.toggle", {}, root) || !windows.sideBarsVisible(root)) return 14;
     const auto floating = windows.detachTab(tab);
     if (floating.isNull() || !observer || !windows.promoteWindow(floating)) return 2;
     if (!windows.demoteWindow(floating, root)) return 3;

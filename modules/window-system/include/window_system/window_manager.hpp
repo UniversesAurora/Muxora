@@ -15,6 +15,7 @@ struct WindowOptions {
     QString title = QStringLiteral("WindowSystem");
     QSize size = QSize(1280, 800);
     bool tabBarsVisible = true; // Central groups only; sidebar controls stay visible.
+    bool sideBarsVisible = true; // Auto-hide rails only; pinned groups stay visible.
 };
 
 enum class PaneBarSharing { Shared, PerPane };
@@ -68,6 +69,8 @@ public:
     // headers retain their own controls and drop targets.
     bool setTabBarsVisible(WindowId window, bool visible);
     [[nodiscard]] bool tabBarsVisible(WindowId window) const;
+    bool setSideBarsVisible(WindowId window, bool visible);
+    [[nodiscard]] bool sideBarsVisible(WindowId window) const;
     bool setTabIconVisible(TabId tab, bool visible);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);

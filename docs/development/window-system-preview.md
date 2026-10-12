@@ -38,17 +38,19 @@ pwsh ./tools/build.ps1 -Configuration Release -Test -Package
 
 应用构建目标为 `muxora`。部署目录中的 Qt 运行文件保留其许可证；该目录是本机试用产物，正式分发仍需完成依赖清单与许可证检查。
 
+日常 Release 固定覆盖 `out/package/muxora-preview/`。替换前清除旧程序、运行库、Qt 插件和许可证目录，保留相邻 `data/` 与未知用户文件；如果该目录的程序仍在运行，脚本停止替换并说明占用。Debug、Release、独立模块和外部宿主分别复用固定构建缓存，不按每轮创建新部署目录。
+
 交付到另一台 Windows x64 电脑试用时，使用 7-Zip 便携包：
 
 ```powershell
 pwsh ./tools/package-portable.ps1
 ```
 
-构建机器需要 7-Zip，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。每次打包使用新的部署目录，避免旧插件、私人布局和重复许可证目录混入包内；`build.ps1 -PackageDirectory <path>` 可指定部署位置。
+当前按用户要求暂不制作便携包。以后需要时，构建机器安装 7-Zip，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
 
-压缩包和 SHA-256 校验文件位于 `out/dist/`。解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
+压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，SHA-256 校验文件使用相同文件名加 `.sha256`，再次生成时覆盖旧文件。解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
 
-脚本检查 7-Zip 压缩包完整性，再解压到含空格和中文的路径。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。解压检查使用另一个目录，不把检查生成的布局放入交付包。
+脚本检查 7-Zip 压缩包完整性，再解压到 `out/portable-checks/current/便携包 解压检查/`。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。暂存与解压检查目录在脚本退出时清理，不把检查生成的布局放入交付包。本轮只检查了修改后的脚本语法与共享部署逻辑，未执行压缩及解压流程。
 
 完整验证入口：
 
@@ -75,11 +77,15 @@ pwsh ./tools/verify.ps1
 
 菜单“视图 → 显示标签栏”或 `Ctrl+Alt+T` 可切换当前窗口中央标签组的标签栏，其他窗口不受影响。侧边收纳条、固定面板标签栏和临时展开标题继续显示。隐藏的中央栏不保留占位；内容与键盘导航继续可用。新建中央组继承本窗口的显示状态，重启后恢复。
 
+菜单“视图 → 显示侧边栏”、命令面板或 `Ctrl+Alt+B` 单独切换本窗口四边收纳条。隐藏时收起当前临时面板，固定分区继续显示；明确通过命令激活收纳标签仍可临时展开。中央标签栏显隐与此独立，两个状态分别保存。没有固定历史的收纳标签首次固定时位于该侧最靠外的分区，与直接固定投放一致；已有历史的标签仍恢复原位置。
+
 窗格上下附加栏分别支持共享和逐窗格显示，默认为共享。宿主通过 `TabOptions.topBarSharing` / `bottomBarSharing` 或 setter 设置；模式切换保持原栏、内容和焦点，提取窗格时策略随描述保留。显式 Tab 栏仍只在整个标签外围显示一次。标签图标改为紧凑排布；溢出悬停时的四像素细滚动条可拖动，没有前后按钮，滚轮不切换标签。
 
 窗口移动、缩放和最大化状态变化合并通知保存；最小化保留正常几何。恢复使用所有屏幕的逻辑可用区域，越界或原屏幕消失时调整，保留仍有效的负坐标和跨屏位置。关闭最后一个窗口前同步保存当前快照，避免立即退出错过延迟保存。
 
 本轮补充逐标签固定／取消固定、原分区与尺寸恢复、四边收纳／固定双目标、紧凑窗格及随焦点切换的共用上下栏。标签条提供细滚动条、滚轮滚动、拖拽边缘自动滚动和完整列表；右键可关闭该组左侧、右侧、其他或全部标签。
+
+工具条及拖动预览显式使用当前主题背景，系统深色调色板不再从截图透明区域透出。拖动前、首次浮动显示及后续鼠标移动采用同一颜色。
 
 临时侧栏关闭按钮关闭实际标签，宿主拒绝关闭时保留面板和内容。收纳标签右键使用现有标签菜单，菜单 Esc 只关闭菜单；标签完整列表悬停使用主题选择背景和文字颜色，运行中切换主题也更新。
 
@@ -128,19 +134,20 @@ Windows 完整和轻量窗口在首次显示前准备原生帧，保留原生窗
 
 ## 已取得的验证记录
 
-本轮代码通过 `tools/verify.ps1 -PackageDirectory out/package/window-polish` 完整检查及隔离的应用重启检查。Release 位于 `out/package/window-polish/muxora.exe`；按用户要求不制作便携包，未运行 `tools/package-portable.ps1`。
+本轮代码通过 `tools/verify.ps1` 完整检查及隔离的应用重启检查。Release 固定在 `out/package/muxora-preview/muxora.exe`；按用户要求不制作便携包，未运行 `tools/package-portable.ps1`。
 
-窗口模块十六组包含 304 个实际测试行，不含各组初始化和清理；Debug、Release 与独立构建均无失败、跳过或黑名单用例。本轮新增 39 行，覆盖强制弹性条、旧标题布局及菜单重置、拖拽期间的约束与取消恢复、四边侧栏关闭许可和右键命令、主题悬停颜色，以及原生窗口准备、尺寸限制、正常／最大化／最小化状态和几何恢复。既有窗格栏、位置归一化、滚动条和关闭前快照用例继续通过。
+窗口模块十八组包含 338 个实际测试行，不含各组初始化和清理；Debug、Release 与独立构建均无失败、跳过或黑名单用例。本轮新增 34 行，覆盖系统和应用深浅色组合下的工具条预览、四边首次固定与历史恢复、整侧组序、两种窗口的侧栏显隐和快捷键、旧快照兼容及隐藏条带后的临时面板定位。既有工具条、菜单、窗格栏、原生窗口、滚动条和关闭前快照用例继续通过。
 
-应用另有四个状态目录用例：相邻目录启用、普通默认路径、显式路径优先和同名文件排除。Debug / Release 分别通过十七组、308 个实际测试行；窗口模块独立构建为十六组、304 行。
+应用另有四个状态目录用例：相邻目录启用、普通默认路径、显式路径优先和同名文件排除。Debug / Release 分别通过十九组、342 个实际测试行；窗口模块独立构建为十八组、338 行。
 
 | 检查 | 结果与证据 |
 | --- | --- |
-| Debug / Release | 窗口模块十六组及应用状态目录一组 CTest 均通过，失败数为 0；报告为 `out/test-results/dev-debug.xml` 与 `dev-release.xml` |
-| 模块独立构建 | 单独配置 `modules/window-system/`，十六组 CTest 均通过；报告为 `out/test-results/standalone.xml` |
+| Debug / Release | 窗口模块十八组及应用状态目录一组 CTest 均通过，失败数为 0；报告为 `out/test-results/dev-debug.xml` 与 `dev-release.xml` |
+| 模块独立构建 | 单独配置 `modules/window-system/`，十八组 CTest 均通过；报告为 `out/test-results/standalone.xml` |
 | 安装后的 API 复用 | 外部宿主夹具仅通过安装导出的 CMake 包引用模块，构建及运行契约测试通过；报告为 `out/test-results/external-host.xml` |
 | 部署启动 | 从 PATH 移除 SDK 与编译器后，部署应用启动检查退出码为 0，并成功写入带空格的状态目录；记录为 `out/test-results/package-smoke.json` |
-| 应用重启 | 使用用户布局副本验证旧标题迁移、中央栏隐藏重启及最大化正常尺寸，原始文件哈希保持不变；记录为 `out/test-results/window-polish-restart.json`，与部署启动记录的 exe 哈希一致。此前 `window-placement-restart.json` 属于上一构建 |
+| 应用重启 | 用户布局副本通过侧栏隐藏命令与重启检查，两块固定面板及整个布局模型保持，原始文件哈希不变；记录为 `out/test-results/sidebar-restart.json`，与部署启动记录的 exe 哈希一致。此前重启记录属于旧构建 |
+| 部署覆盖与清理 | PowerShell 部署夹具通过 12 项断言，检查反复覆盖、状态保留、运行文件清单与路径限制；记录为 `out/test-results/deployment-test.json`。历史部署、压缩包、解压副本及临时构建共清理 34 项，释放约 1.47 GiB；记录为 `out/test-results/deployment-cleanup.json` |
 | 7-Zip 便携包 | 本轮未执行；已有 `portable-package.json` 属于此前构建，不作为当前版本交付证据 |
 
 拖拽测试在 Windows 桌面上向 Qt 控件注入输入事件，同时检查 Windows 原生命中和独立进程的透明、非透明遮挡窗口。它验证事件排队、跨窗口投放和遮挡回归，不等同于全部系统输入、混合 DPI 或 Snap 行为的实机验收。
@@ -162,6 +169,8 @@ Qt Test 的逐用例日志保存在相应构建目录的 `modules/window-system/
 前轮截图检查发现分类箭头后方仍有 Qt 选中行底色；补充基线像素检查复现后，先清除分支底色再绘制箭头，父类别和叶子类别均保留纯色背景。矢量控件按最近主题根读取颜色，避免 Qt 样式表初始化后改写调色板导致对勾颜色失效；数字按钮外框按逻辑像素对齐。绘制回归保留原白色勾、悬停外框、箭头及无内部竖线断言，修复实现后全部通过。
 
 本轮截图为 `tabs-compact-visible.png`、`tabs-hidden.png` 和 `tabs-hidden-restored.png`，检查图标紧凑排布、栏隐藏无占位，以及实际重启后的界面。细滚动条的回归直接比较滑块像素，并验证拖动与滚动同步。
+
+本次部署截图为 `sidebar-visible.png`、`sidebar-hidden.png` 和 `sidebar-hidden-restored.png`。隐藏及重启后的截图保留两块左侧固定面板和中央标签栏，四边收纳条没有占位。检查使用隔离状态目录和移除 SDK 的 PATH，没有覆盖用户布局。
 
 启动参数 `--command <id>` 可执行已注册命令，例如 `muxora.exe --command window.settings` 直接打开设置标签；同一命令目录仍用于菜单、命令面板和键盘。
 

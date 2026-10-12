@@ -9,6 +9,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'deployment.ps1')
 $taskLocalFile = Join-Path $taskRepository '.local/sdk.json'
 if (-not $QtRoot) { $QtRoot = $env:QT_ROOT }
 if (-not $QtRoot -and (Test-Path -LiteralPath $taskLocalFile)) {
@@ -102,7 +103,7 @@ try {
             } else {
                 Join-Path $taskRepository 'out/package/muxora-preview'
             }
-            New-Item -ItemType Directory -Path $taskPackageDirectory -Force | Out-Null
+            Reset-ManagedDeployment $taskPackageDirectory (Join-Path $taskRepository 'out')
             Copy-Item -LiteralPath $taskExecutable -Destination $taskPackageDirectory -Force
             $taskPackagedExe = Join-Path $taskPackageDirectory 'muxora.exe'
             Invoke-Checked (Join-Path $QtRoot 'bin/windeployqt.exe') @(
@@ -135,6 +136,7 @@ try {
                executableSha256 = (Get-FileHash -LiteralPath $taskPackagedExe -Algorithm SHA256).Hash } |
                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskPackageDirectory 'build-info.json') -Encoding utf8NoBOM
             $taskExecutable = $taskPackagedExe
+            Write-DeploymentInventory $taskPackageDirectory
         }
         if ($Run) { Start-Process -FilePath $taskExecutable -WorkingDirectory (Split-Path -Parent $taskExecutable) }
         Write-Host "Ready: $taskExecutable"

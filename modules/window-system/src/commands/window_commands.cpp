@@ -42,6 +42,10 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) {
             return setTabBarsVisible(c.window, !tabBarsVisible(c.window));
         }, hasWindow);
+    add("window.sideBars.toggle", QStringLiteral("显示侧边栏"), "视图", QKeySequence("Ctrl+Alt+B"),
+        [this](const CommandContext& c) {
+            return setSideBarsVisible(c.window, !sideBarsVisible(c.window));
+        }, hasWindow);
     for (const bool top : {true, false}) {
         add(top ? "tab.topBar.setSharing" : "tab.bottomBar.setSharing",
             top ? QStringLiteral("切换上方窗格栏共享") : QStringLiteral("切换下方窗格栏共享"), "布局", {},

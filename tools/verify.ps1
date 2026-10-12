@@ -5,6 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'tests/deployment-test.ps1')
 $taskBuildArguments = @{}
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
 $taskPackage = if ($PackageDirectory) {

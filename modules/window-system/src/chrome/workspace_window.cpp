@@ -146,7 +146,7 @@ void WorkspaceWindow::createChrome()
                 auto* action = entry->addAction(command.title);
                 action->setData(command.id);
                 action->setObjectName(command.id);
-                if (command.id == "window.tabBars.toggle") action->setCheckable(true);
+                if (command.id == "window.tabBars.toggle" || command.id == "window.sideBars.toggle") action->setCheckable(true);
                 commandActions_.append(action);
                 if (!command.shortcut.isEmpty()) action->setText(command.title + "\t" + command.shortcut.toString(QKeySequence::NativeText));
                 const auto id = command.id;
@@ -271,6 +271,7 @@ void WorkspaceWindow::updateCommandStates()
         if (!action) continue;
         const auto id = action->data().toString();
         if (id == "window.tabBars.toggle") action->setChecked(manager_->tabBarsVisible(id_));
+        if (id == "window.sideBars.toggle") action->setChecked(manager_->sideBarsVisible(id_));
         const auto* command = manager_->commands().find(id);
         const bool enabled = command && (!command->enabled || command->enabled(context));
         if (command) {

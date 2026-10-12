@@ -231,6 +231,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     auto* bar = new QFrame(this); bar->setObjectName("EdgeBar");
+    if (!manager_->sideBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     auto* layout = new QBoxLayout(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, bar);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(2);
@@ -455,6 +456,14 @@ void DockSurface::setTabBarsVisible(bool visible)
     if (root_) root_->layout()->activate();
     placePeek();
 }
+void DockSurface::setSideBarsVisible(bool visible)
+{
+    if (!visible) closePeek();
+    for (auto bar : edgeBars_) if (bar) bar->setVisible(visible);
+    if (root_) root_->layout()->activate();
+    restorePinnedExtents();
+    placePeek();
+}
 void DockSurface::closePeek()
 {
     if (!peek_) return;
@@ -468,10 +477,10 @@ void DockSurface::placePeek()
     const auto* group = manager_->model().group(peekGroup_);
     if (!group) return;
     QRect available = rect();
-    if (auto bar = edgeBars_.value(Edge::Left)) available.setLeft(bar->mapTo(this, QPoint(bar->width(), 0)).x());
-    if (auto bar = edgeBars_.value(Edge::Right)) available.setRight(bar->mapTo(this, QPoint()).x() - 1);
-    if (auto bar = edgeBars_.value(Edge::Top)) available.setTop(bar->mapTo(this, QPoint(0, bar->height())).y());
-    if (auto bar = edgeBars_.value(Edge::Bottom)) available.setBottom(bar->mapTo(this, QPoint()).y() - 1);
+    if (auto bar = edgeBars_.value(Edge::Left); bar && !bar->isHidden()) available.setLeft(bar->mapTo(this, QPoint(bar->width(), 0)).x());
+    if (auto bar = edgeBars_.value(Edge::Right); bar && !bar->isHidden()) available.setRight(bar->mapTo(this, QPoint()).x() - 1);
+    if (auto bar = edgeBars_.value(Edge::Top); bar && !bar->isHidden()) available.setTop(bar->mapTo(this, QPoint(0, bar->height())).y());
+    if (auto bar = edgeBars_.value(Edge::Bottom); bar && !bar->isHidden()) available.setBottom(bar->mapTo(this, QPoint()).y() - 1);
     const auto h = qMin(available.height(), qMax(140, available.height() / 2));
     const auto w = qMin(available.width(), qMax(240, available.width() / 3));
     switch (group->edge) {

@@ -160,6 +160,8 @@ private:
     OperationResult moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                      Placement placement, int insertionIndex);
     OperationResult setTabPinnedUnchecked(TabId tabId, bool pinned);
+    void placePinnedGroupOutermostUnchecked(GroupId groupId);
+    void rememberPinnedPositionsUnchecked(WindowId windowId, Edge edge);
     OperationResult moveTabToEdgeBarUnchecked(TabId tabId, WindowId targetWindow,
                                               Edge edge, int insertionIndex);
     OperationResult moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup,

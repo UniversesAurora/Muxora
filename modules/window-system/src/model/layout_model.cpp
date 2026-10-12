@@ -582,9 +582,55 @@ OperationResult LayoutModel::setGroupPinned(GroupId groupId, bool pinned)
         const auto* record = model.group(groupId);
         if (!record || record->location == GroupLocation::Central)
             return failure("Only an edge group can change its pinned state.");
+        if ((record->location == GroupLocation::Pinned) == pinned) return success();
+        if (!pinned) model.rememberPinnedPositionsUnchecked(record->windowId, record->edge);
         model.groups_[groupId].location = pinned ? GroupLocation::Pinned : GroupLocation::AutoHide;
+        if (pinned) {
+            const auto& saved = model.tabs_[record->activeTab].pinnedPosition;
+            if (saved && saved->group == groupId && saved->window == record->windowId && saved->edge == record->edge) {
+                auto& order = model.windows_[record->windowId].edgeGroups;
+                order.removeAll(groupId);
+                order.insert(std::clamp(saved->groupIndex, 0, int(order.size())), groupId);
+            } else model.placePinnedGroupOutermostUnchecked(groupId);
+        }
         return success();
     });
+}
+void LayoutModel::placePinnedGroupOutermostUnchecked(GroupId groupId)
+{
+    const auto& group = groups_[groupId];
+    auto& order = windows_[group.windowId].edgeGroups;
+    order.removeAll(groupId);
+    int index = int(order.size());
+    for (int i = 0; i < order.size(); ++i) {
+        const auto& other = groups_[order[i]];
+        if (other.edge == group.edge && other.location == GroupLocation::Pinned) { index = i; break; }
+    }
+    order.insert(index, groupId);
+}
+void LayoutModel::rememberPinnedPositionsUnchecked(WindowId windowId, Edge edge)
+{
+    const auto order = windows_[windowId].edgeGroups;
+    const bool rebase = std::none_of(order.cbegin(), order.cend(), [&](GroupId id) {
+        const auto& group = groups_[id];
+        return group.edge == edge && group.location == GroupLocation::AutoHide
+            && std::any_of(group.tabs.cbegin(), group.tabs.cend(), [&](TabId tab) {
+                const auto& saved = tabs_[tab].pinnedPosition;
+                return saved && saved->window == windowId && saved->edge == edge;
+            });
+    });
+    // Capture the entire side before its first removal, retaining ranks even
+    // when earlier partitions disappear. Shared by group and tab operations.
+    for (int groupIndex = 0; groupIndex < order.size(); ++groupIndex) {
+        const auto& group = groups_[order[groupIndex]];
+        if (group.edge != edge || group.location != GroupLocation::Pinned) continue;
+        for (int i = 0; i < group.tabs.size(); ++i) {
+            auto& saved = tabs_[group.tabs[i]].pinnedPosition;
+            if (rebase || !saved || saved->window != windowId || saved->group != group.id)
+                saved = TabRecord::PinnedPosition{windowId, group.id, edge, groupIndex, i, group.edgeExtent};
+            else saved->extent = group.edgeExtent;
+        }
+    }
 }
 OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
 {
@@ -599,27 +645,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
     GroupId targetId;
     int insertion = -1;
     if (!pinned) {
-        const auto order = windows_[windowId].edgeGroups;
-        const auto rebase = std::none_of(order.cbegin(), order.cend(), [&](GroupId id) {
-            const auto& group = groups_[id];
-            return group.edge == edge && group.location == GroupLocation::AutoHide
-                && std::any_of(group.tabs.cbegin(), group.tabs.cend(), [&](TabId tab) {
-                    const auto& saved = tabs_[tab].pinnedPosition;
-                    return saved && saved->window == windowId && saved->edge == edge;
-                });
-        });
-        // Capture the entire side before its first removal: a neighboring
-        // partition must keep its old rank even when earlier ones disappear.
-        for (int groupIndex = 0; groupIndex < order.size(); ++groupIndex) {
-            const auto& group = groups_[order[groupIndex]];
-            if (group.edge != edge || group.location != GroupLocation::Pinned) continue;
-            for (int i = 0; i < group.tabs.size(); ++i) {
-                auto& saved = tabs_[group.tabs[i]].pinnedPosition;
-                if (rebase || !saved || saved->window != windowId || saved->group != group.id)
-                    saved = TabRecord::PinnedPosition{windowId, group.id, edge, groupIndex, i, group.edgeExtent};
-                else saved->extent = group.edgeExtent;
-            }
-        }
+        rememberPinnedPositionsUnchecked(windowId, edge);
         targetId = createGroupUnchecked(windowId);
         unlinkGroupUnchecked(targetId);
         auto& target = groups_[targetId];
@@ -661,6 +687,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
         if (targetId.isNull()) {
             if (source->tabs.size() == 1) {
                 groups_[sourceId].location = GroupLocation::Pinned;
+                placePinnedGroupOutermostUnchecked(sourceId);
                 return success();
             }
             targetId = createGroupUnchecked(windowId);
@@ -669,6 +696,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
             groups_[targetId].edge = edge;
             groups_[targetId].edgeExtent = extent;
             windows_[windowId].edgeGroups.append(targetId);
+            placePinnedGroupOutermostUnchecked(targetId);
         }
     }
     return moveTabUnchecked(tabId, targetId, Placement::Center, insertion);
@@ -685,7 +713,9 @@ OperationResult LayoutModel::setEdgePinned(WindowId windowId, Edge edge, bool pi
         if (edge != Edge::Left && edge != Edge::Right && edge != Edge::Top && edge != Edge::Bottom)
             return failure("The edge direction is invalid.");
         QVector<TabId> tabs;
-        for (auto id : window->edgeGroups) {
+        auto groupOrder = window->edgeGroups;
+        if (pinned) std::reverse(groupOrder.begin(), groupOrder.end());
+        for (auto id : groupOrder) {
             const auto* group = model.group(id);
             if (!group || group->edge != edge) continue;
             if (pinned && group->location == GroupLocation::AutoHide
@@ -696,6 +726,7 @@ OperationResult LayoutModel::setEdgePinned(WindowId windowId, Edge edge, bool pi
                 // A whole-side action keeps a previously untouched group
                 // together; individual pin actions still move just one tab.
                 model.groups_[id].location = GroupLocation::Pinned;
+                model.placePinnedGroupOutermostUnchecked(id);
             } else tabs += group->tabs;
         }
         for (auto tab : tabs) {

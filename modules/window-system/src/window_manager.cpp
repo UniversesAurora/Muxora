@@ -117,6 +117,21 @@ bool WindowManager::setTabBarsVisible(WindowId window, bool visible)
     emit layoutChanged();
     return true;
 }
+bool WindowManager::sideBarsVisible(WindowId window) const
+{
+    return d->model.window(window) && d->options.value(window).sideBarsVisible;
+}
+bool WindowManager::setSideBarsVisible(WindowId window, bool visible)
+{
+    auto view = d->windows.value(window);
+    if (!view || !d->model.window(window)) return false;
+    if (d->options.value(window).sideBarsVisible == visible) return true;
+    d->options[window].sideBarsVisible = visible;
+    view->setOptions(d->options.value(window));
+    view->surface()->setSideBarsVisible(visible);
+    emit layoutChanged();
+    return true;
+}
 bool WindowManager::setPaneBar(PaneId pane, QWidget* bar, bool top)
 {
     if (!d->panes.contains(pane)) return false;

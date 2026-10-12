@@ -992,6 +992,7 @@ void CommandStripHost::beginDrag(const QString& id, QPoint globalPosition, QPoin
     d->preview->setObjectName("StripDragPreview");
     d->preview->setAttribute(Qt::WA_ShowWithoutActivating);
     d->preview->setAttribute(Qt::WA_TransparentForMouseEvents);
+    d->preview->setAttribute(Qt::WA_WindowPropagation);
     d->preview->setPixmap(pixmap); d->preview->resize(strip->size());
     d->preview->move(globalPosition - offset); d->preview->show();
     d->dragging = id; d->pressOffset = offset;
