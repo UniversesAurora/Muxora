@@ -27,7 +27,7 @@ if(WIN32)
 endif()
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings edge-tab-interaction chrome-interaction presentation)
+foreach(suite pane-settings edge-tab-interaction chrome-interaction caption-strip toolbar-popup presentation)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)

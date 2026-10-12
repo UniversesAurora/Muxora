@@ -9,16 +9,55 @@
 #include <QContextMenuEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QSet>
 #include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
 
 namespace window_system {
+namespace {
+
+QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObject& rendered)
+{
+    if (cached.isEmpty()) return rendered;
+    const auto cachedRows = cached.value("rows").toArray();
+    const auto renderedRows = rendered.value("rows").toArray();
+    if (cachedRows.size() != 2 || renderedRows.size() != 2) return rendered;
+    QSet<QString> present;
+    auto settings = cached.value("strips").toObject();
+    const auto renderedSettings = rendered.value("strips").toObject();
+    for (auto entry = renderedSettings.begin(); entry != renderedSettings.end(); ++entry) {
+        present.insert(entry.key()); settings.insert(entry.key(), entry.value());
+    }
+    QJsonArray rows;
+    for (int row = 0; row < 2; ++row) {
+        const auto current = renderedRows[row].toArray();
+        QJsonArray merged;
+        qsizetype next = 0;
+        // Reuse the shared strips' slots while leaving absent Workbench strips
+        // in place. The floating chrome never retains their live widgets.
+        for (const auto& entry : cachedRows[row].toArray()) {
+            if (!present.contains(entry.toString())) merged.append(entry);
+            else if (next < current.size()) merged.append(current[next++]);
+        }
+        while (next < current.size()) merged.append(current[next++]);
+        rows.append(merged);
+    }
+    auto result = cached;
+    result.insert("locked", rendered.value("locked"));
+    result.insert("rows", rows);
+    result.insert("strips", settings);
+    return result;
+}
+
+} // namespace
+
 WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const WindowOptions& options)
     : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint), manager_(manager), id_(id),
       options_(options), column_(new QVBoxLayout(this)), surface_(new DockSurface(manager, id, this))
@@ -34,7 +73,7 @@ DockSurface* WorkspaceWindow::surface() const { return surface_; }
 CommandStripHost* WorkspaceWindow::strips() const { return strips_; }
 QJsonObject WorkspaceWindow::saveStripLayout() const
 {
-    return strips_ ? strips_->saveLayout() : savedStripLayout_;
+    return strips_ ? mergeRenderedStripLayout(savedStripLayout_, strips_->saveLayout()) : savedStripLayout_;
 }
 void WorkspaceWindow::restoreStripLayout(const QJsonObject& layout)
 {
@@ -46,7 +85,7 @@ void WorkspaceWindow::syncKind()
     const auto* record = manager_->model().window(id_);
     if (!record) return;
     if (chrome_ && kind_ == record->kind) { updateCaption(); return; }
-    if (strips_) savedStripLayout_ = strips_->saveLayout();
+    if (strips_) savedStripLayout_ = saveStripLayout();
     if (chrome_) {
         // QWidget child teardown sends events before QObject clears QPointer.
         // Stop observing the old chrome before its internal state is destroyed.
@@ -55,7 +94,7 @@ void WorkspaceWindow::syncKind()
         chrome_->removeEventFilter(this);
         auto* oldChrome = chrome_.data();
         column_->removeWidget(oldChrome);
-        strips_.clear(); caption_.clear(); chrome_.clear();
+        strips_.clear(); caption_.clear(); maximizeButton_.clear(); chrome_.clear();
         delete oldChrome;
     }
     if (status_) { column_->removeWidget(status_); delete status_; }
@@ -70,14 +109,14 @@ void WorkspaceWindow::createChrome()
     chrome_ = new QFrame(this); chrome_->setObjectName("WindowHeader");
     auto* row = new QHBoxLayout(chrome_); row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
     chrome_->installEventFilter(this);
+    strips_ = new CommandStripHost(chrome_);
+    strips_->setLayoutChangedCallback([this] { emit manager_->layoutChanged(); });
+    strips_->setSizingChangeRequest([this](const QString& strip, CommandStripHost::StripSizing sizing) {
+        manager_->execute("window.toolbar.setSizing", {{"strip", strip},
+            {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
+    });
+    strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
     if (kind_ == WindowKind::Workbench) {
-        strips_ = new CommandStripHost(chrome_);
-        strips_->setLayoutChangedCallback([this] { emit manager_->layoutChanged(); });
-        strips_->setSizingChangeRequest([this](const QString& strip, CommandStripHost::StripSizing sizing) {
-            manager_->execute("window.toolbar.setSizing", {{"strip", strip},
-                {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
-        });
-        strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
         auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
         const QVector<QPair<QString, QString>> categories = {
             {QStringLiteral("文件(&F)"), "文件"}, {QStringLiteral("视图(&V)"), "视图"},
@@ -119,36 +158,56 @@ void WorkspaceWindow::createChrome()
             });
         }
         strips_->addActionStrip("workspace", QStringLiteral("工作区"), toolActions, 1);
-        caption_ = new QLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
-        caption_->setContentsMargins(7, 0, 7, 0); caption_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        caption_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        caption_->setProperty("windowDragArea", true);
-        strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
-        strips_->setStripOptionsEnabled("title", false);
-        for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
-        row->addWidget(strips_, 1);
         status_ = new QLabel(QStringLiteral("就绪  ·  窗口系统预览"), this); status_->setObjectName("StatusBar");
         status_->setContentsMargins(10, 3, 10, 3); column_->addWidget(status_);
-    } else {
-        strips_.clear();
-        caption_ = new QLabel(chrome_); caption_->setObjectName("CaptionTitle");
-        caption_->setContentsMargins(10, 0, 4, 0); caption_->setMinimumHeight(32);
-        row->addWidget(caption_, 1); caption_->installEventFilter(this);
     }
-    auto* controls = new QWidget(chrome_);
+    caption_ = new QLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
+    caption_->setContentsMargins(7, 0, 7, 0); caption_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    caption_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    caption_->setProperty("windowDragArea", true);
+    strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
+    strips_->setStripOptionsEnabled("title", false);
+    auto* controls = new QWidget(strips_);
+    controls->setObjectName("CaptionControls");
+    controls->setProperty("windowDragArea", true);
     auto* controlRow = new QHBoxLayout(controls); controlRow->setContentsMargins(0, 0, 0, 0); controlRow->setSpacing(0);
-    row->addWidget(controls, 0, Qt::AlignTop);
+    controlRow->addStretch();
     auto addCaption = [&](const QString& icon, const QString& title, auto callback) {
         auto* button = new QToolButton(controls); button->setObjectName("CaptionButton");
         button->setProperty("role", icon); button->setIcon(iconFor(icon, manager_->theme()));
         button->setFixedSize(42, 32); button->setToolTip(title); button->setAccessibleName(title);
+        // The strip itself is one 32-pixel row. Let its layout fill that row;
+        // AlignTop would make Qt use the styled size hint (21 pixels) after
+        // stylesheet polishing instead of the caption's full hit rectangle.
         controlRow->addWidget(button); QObject::connect(button, &QToolButton::clicked, this, callback);
+        return button;
     };
     addCaption("minimize", QStringLiteral("最小化"), [this] { showMinimized(); });
-    addCaption("maximize", QStringLiteral("最大化／还原"), [this] { isMaximized() ? showNormal() : showMaximized(); });
+    maximizeButton_ = addCaption("maximize", QStringLiteral("最大化"), [this] { isMaximized() ? showNormal() : showMaximized(); });
     addCaption("close", QStringLiteral("关闭窗口"), [this] { close(); });
+    strips_->addStrip("caption-controls", QStringLiteral("窗口控制"), controls, 0);
+    strips_->setStripOptionsEnabled("caption-controls", false);
+    strips_->setStripConstraints("caption-controls", {false, false});
+    for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
+    row->addWidget(strips_, 1);
     column_->insertWidget(0, chrome_);
+    updateWindowControlState();
     updateCommandStates();
+}
+void WorkspaceWindow::updateWindowControlState()
+{
+    if (!maximizeButton_) return;
+    const auto role = isMaximized() ? QStringLiteral("restore") : QStringLiteral("maximize");
+    const auto title = isMaximized() ? QStringLiteral("还原") : QStringLiteral("最大化");
+    maximizeButton_->setProperty("role", role);
+    maximizeButton_->setIcon(iconFor(role, manager_->theme()));
+    maximizeButton_->setToolTip(title);
+    maximizeButton_->setAccessibleName(title);
+}
+void WorkspaceWindow::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) updateWindowControlState();
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {

@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QFocusEvent>
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
@@ -19,8 +20,10 @@
 #include <QStyleOptionToolButton>
 #include <QStylePainter>
 #include <QToolButton>
+#include <QTimer>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace window_system {
@@ -57,14 +60,39 @@ public:
         setCursor(Qt::ArrowCursor);
         setToolTip(QStringLiteral("工具条选项"));
         setAccessibleName(toolTip());
+        // Mouse popups must not leave a keyboard-focus outline after closing.
+        // Tab navigation still gives the button its normal visible focus.
         setFocusPolicy(Qt::StrongFocus);
         setAutoRaise(true);
         setPopupMode(QToolButton::InstantPopup);
     }
     bool hasOverflow = false;
+    void setPopupMenu(QMenu* popup)
+    {
+        setMenu(popup);
+        connect(popup, &QMenu::aboutToHide, this, [this] {
+            setDown(false);
+            update();
+            QTimer::singleShot(0, this, [this] { refreshHoverAfterPopup(); });
+        });
+    }
 protected:
+    void focusInEvent(QFocusEvent* event) override
+    {
+        if (event->reason() != Qt::PopupFocusReason && event->reason() != Qt::ActiveWindowFocusReason)
+            keyboardFocus_ = event->reason() == Qt::TabFocusReason
+                || event->reason() == Qt::BacktabFocusReason || event->reason() == Qt::ShortcutFocusReason;
+        QToolButton::focusInEvent(event);
+    }
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        keyboardFocus_ = true;
+        update();
+        QToolButton::keyPressEvent(event);
+    }
     void mousePressEvent(QMouseEvent* event) override
     {
+        if (event->button() == Qt::LeftButton) { dismissRelease_ = false; keyboardFocus_ = false; update(); }
         if (event->button() == Qt::LeftButton && menu() && menu()->isVisible()) {
             dismissRelease_ = true;
             menu()->hide(); setDown(false); update(); event->accept(); return;
@@ -83,6 +111,9 @@ protected:
         QStylePainter painter(this);
         QStyleOptionToolButton option;
         initStyleOption(&option);
+        // Keep native popup focus restoration, but only keyboard navigation
+        // draws a focus cue. A mouse-opened menu must not leave a focus border.
+        if (!keyboardFocus_) option.state &= ~QStyle::State_HasFocus;
         // Keep the themed tool-button hover, pressed and keyboard-focus states;
         // the narrow tail paints its own two compact arrows below.
         option.features = QStyleOptionToolButton::None;
@@ -98,7 +129,21 @@ protected:
         painter.drawPolyline(QPolygonF{{x - 3, height() - 11.0}, {x, height() - 8.0}, {x + 3, height() - 11.0}});
     }
 private:
+    void refreshHoverAfterPopup()
+    {
+        if (!menu() || menu()->isVisible()) return;
+        // Popup capture can consume the leave event. Clear the old button's
+        // hover after routing ends; future real enter events restore it. Do
+        // not manufacture an enter for another widget or set a positive flag
+        // without Qt's mouse-receiver bookkeeping.
+        QPointer<QWidget> guard = this;
+        setAttribute(Qt::WA_UnderMouse, false);
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(this, &leave);
+        if (guard) guard->update();
+    }
     bool dismissRelease_ = false;
+    bool keyboardFocus_ = false;
 };
 
 struct ActionItem {
@@ -139,10 +184,15 @@ public:
         if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
-        return std::max(minimumWidthForLayout(), width + (optionsEnabled ? tailWidth : 0));
+        return std::max(chromeMinimumWidth(), width + (optionsEnabled ? tailWidth : 0));
     }
 
     [[nodiscard]] int minimumWidthForLayout() const
+    {
+        return constraints.compressible ? chromeMinimumWidth() : naturalWidth();
+    }
+
+    [[nodiscard]] int chromeMinimumWidth() const
     {
         return (optionsEnabled ? tailWidth : 0) + (handle->isHidden() ? 0 : handleWidth) + 12;
     }
@@ -196,6 +246,7 @@ public:
     QStringList overflow;
     bool visible = true;
     bool optionsEnabled = true;
+    CommandStripHost::StripConstraints constraints;
     CommandStripHost::StripSizing sizing = CommandStripHost::StripSizing::Content;
     int requestedWidth = -1;
 
@@ -220,6 +271,9 @@ struct CommandStripHost::Private {
     QString dragging;
     QStringList originalRows[2];
     QHash<QString, int> originalWidths;
+    QHash<QString, QRect> originalBounds;
+    QHash<QString, StripSizing> originalSizing;
+    bool reserveDragSlot = false;
     QPointer<QLabel> preview;
     QPointer<QFrame> marker;
 };
@@ -277,11 +331,12 @@ void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int
     strip->setLocked(d->locked);
     auto* overflowMenu = new DismissOnlyMenu(strip->tail);
     overflowMenu->setObjectName("StripOverflowMenu");
-    strip->tail->setMenu(overflowMenu);
+    strip->tail->setPopupMenu(overflowMenu);
     connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
     strip->installEventFilter(this);
     d->strips.insert(id, strip);
     d->rows[qBound(0, row, 1)].append(id);
+    normalizeElastic(qBound(0, row, 1), sizing == StripSizing::Elastic ? id : QString{});
     arrange();
     populateOverflowMenu(id, overflowMenu);
 }
@@ -310,11 +365,12 @@ void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAc
     strip->setLocked(d->locked);
     auto* overflowMenu = new DismissOnlyMenu(strip->tail);
     overflowMenu->setObjectName("StripOverflowMenu");
-    strip->tail->setMenu(overflowMenu);
+    strip->tail->setPopupMenu(overflowMenu);
     connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
     strip->installEventFilter(this);
     d->strips.insert(id, strip);
     d->rows[qBound(0, row, 1)].append(id);
+    normalizeElastic(qBound(0, row, 1), sizing == StripSizing::Elastic ? id : QString{});
     arrange();
     populateOverflowMenu(id, overflowMenu);
 }
@@ -375,10 +431,13 @@ bool CommandStripHost::isStripItemVisible(const QString& id, const QString& item
 bool CommandStripHost::setStripSizing(const QString& id, StripSizing sizing)
 {
     auto* strip = d->strips.value(id);
-    if (!strip || (sizing != StripSizing::Content && sizing != StripSizing::Elastic)) return false;
+    if (!strip || (sizing != StripSizing::Content && sizing != StripSizing::Elastic)
+        || (sizing == StripSizing::Elastic && !strip->constraints.elasticAllowed)) return false;
     if (isDragging()) finishDrag(false);
     if (strip->sizing == sizing) return true;
     strip->sizing = sizing;
+    if (sizing == StripSizing::Elastic) for (int row = 0; row < 2; ++row)
+        if (d->rows[row].contains(id)) normalizeElastic(row, id);
     arrange(); changed(); return true;
 }
 
@@ -406,11 +465,77 @@ bool CommandStripHost::isStripOptionsEnabled(const QString& id) const
     return strip && strip->optionsEnabled;
 }
 
+bool CommandStripHost::setStripConstraints(const QString& id, StripConstraints constraints)
+{
+    auto* strip = d->strips.value(id);
+    if (!strip) return false;
+    if (isDragging()) finishDrag(false);
+    strip->constraints = constraints;
+    if (!constraints.elasticAllowed) strip->sizing = StripSizing::Content;
+    if (strip->requestedWidth >= 0)
+        strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());
+    arrange();
+    return true;
+}
+
+CommandStripHost::StripConstraints CommandStripHost::stripConstraints(const QString& id) const
+{
+    const auto* strip = d->strips.value(id);
+    return strip ? strip->constraints : StripConstraints{};
+}
+
+void CommandStripHost::normalizeElastic(int row, const QString& preferred)
+{
+    QString winner;
+    for (const auto& id : d->rows[row]) {
+        auto* strip = d->strips.value(id);
+        if (!strip->constraints.elasticAllowed) strip->sizing = StripSizing::Content;
+        if (strip->sizing == StripSizing::Elastic) winner = id;
+    }
+    if (!preferred.isEmpty() && d->rows[row].contains(preferred)
+        && d->strips.value(preferred)->sizing == StripSizing::Elastic) winner = preferred;
+    for (const auto& id : d->rows[row]) if (id != winner) d->strips.value(id)->sizing = StripSizing::Content;
+}
+
+void CommandStripHost::removeFromRows(const QString& id)
+{
+    auto* removed = d->strips.value(id);
+    for (int row = 0; row < 2; ++row) {
+        const int index = d->rows[row].indexOf(id);
+        if (index < 0) continue;
+        StripFrame* previous = nullptr;
+        StripFrame* next = nullptr;
+        for (int before = index - 1; before >= 0; --before) {
+            auto* candidate = d->strips.value(d->rows[row][before]);
+            if (candidate->visible) { previous = candidate; break; }
+        }
+        for (int after = index + 1; after < d->rows[row].size(); ++after) {
+            auto* candidate = d->strips.value(d->rows[row][after]);
+            if (candidate->visible) { next = candidate; break; }
+        }
+        if (removed->visible && previous && previous->sizing == StripSizing::Content) {
+            if (!next || next->sizing == StripSizing::Elastic) previous->requestedWidth = -1;
+            else {
+                const int previousWidth = isDragging() ? d->originalBounds.value(previous->id).width() : previous->width();
+                const int removedWidth = isDragging() ? d->originalBounds.value(id).width() : removed->width();
+                previous->requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
+                    qint64(previousWidth) + removedWidth + stripSpacing));
+            }
+        }
+        d->rows[row].removeAt(index);
+    }
+}
+
 bool CommandStripHost::moveStrip(const QString& id, int row, int index)
 {
     if (!d->strips.contains(id) || row < 0 || row > 1) return false;
-    d->rows[0].removeAll(id); d->rows[1].removeAll(id);
+    if (isDragging()) finishDrag(false);
+    // An unchanged placement must not run the vacancy rule a second time.
+    const int currentIndex = d->rows[row].indexOf(id);
+    if (currentIndex >= 0 && currentIndex == qBound(0, index, int(d->rows[row].size()) - 1)) return true;
+    removeFromRows(id);
     d->rows[row].insert(qBound(0, index, int(d->rows[row].size())), id);
+    normalizeElastic(row, d->strips.value(id)->sizing == StripSizing::Elastic ? id : QString{});
     arrange(); changed(); return true;
 }
 bool CommandStripHost::setStripWidth(const QString& id, int width)
@@ -485,16 +610,18 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
     auto* customize = new DismissOnlyMenu(QStringLiteral("添加或移除按钮"), menu);
     menu->addMenu(customize);
     customize->setObjectName("StripCustomizeMenu");
-    auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
-    elastic->setObjectName("StripElasticAction");
-    elastic->setCheckable(true);
-    elastic->setChecked(strip->sizing == StripSizing::Elastic);
-    connect(elastic, &QAction::toggled, this, [this, id](bool checked) {
-        const auto sizing = checked ? StripSizing::Elastic : StripSizing::Content;
-        if (d->sizingChangeRequest) d->sizingChangeRequest(id, sizing);
-        else setStripSizing(id, sizing);
-    });
-    customize->addSeparator();
+    if (strip->constraints.elasticAllowed) {
+        auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
+        elastic->setObjectName("StripElasticAction");
+        elastic->setCheckable(true);
+        elastic->setChecked(strip->sizing == StripSizing::Elastic);
+        connect(elastic, &QAction::toggled, this, [this, id](bool checked) {
+            const auto sizing = checked ? StripSizing::Elastic : StripSizing::Content;
+            if (d->sizingChangeRequest) d->sizingChangeRequest(id, sizing);
+            else setStripSizing(id, sizing);
+        });
+        customize->addSeparator();
+    }
     if (strip->items.isEmpty() && strip->content) {
         auto* action = customize->addAction(strip->title);
         action->setData(QStringLiteral("content")); action->setCheckable(true);
@@ -526,7 +653,24 @@ QSize CommandStripHost::sizeHint() const
     }
     return {width, height};
 }
-QSize CommandStripHost::minimumSizeHint() const { return {0, sizeHint().height()}; }
+QSize CommandStripHost::minimumSizeHint() const
+{
+    int minimum = 0;
+    for (int row = 0; row < 2; ++row) {
+        int rowMinimum = rowMargin * 2;
+        int count = 0;
+        bool protectedContent = false;
+        for (const auto& id : d->rows[row]) {
+            const auto* strip = d->strips.value(id);
+            if (!strip->visible) continue;
+            rowMinimum += strip->minimumWidthForLayout();
+            protectedContent |= !strip->constraints.compressible;
+            ++count;
+        }
+        if (protectedContent) minimum = std::max(minimum, rowMinimum + std::max(0, count - 1) * stripSpacing);
+    }
+    return {minimum, sizeHint().height()};
+}
 
 void CommandStripHost::arrange()
 {
@@ -537,10 +681,13 @@ void CommandStripHost::arrange()
     for (auto* strip : d->strips) if (qobject_cast<QMenuBar*>(strip->content.data())) {
         for (const auto& item : strip->items) if (item.action) item.action->setVisible(item.included);
     }
+    // Constrain the host rather than clipping protected final strip geometry.
+    setMinimumWidth(minimumSizeHint().width());
     int y = 0;
     for (int row = 0; row < 2; ++row) {
         QStringList visible;
-        for (const auto& id : d->rows[row]) if (d->strips.value(id)->visible && id != d->dragging) visible.append(id);
+        for (const auto& id : d->rows[row])
+            if (d->strips.value(id)->visible && (id != d->dragging || d->reserveDragSlot)) visible.append(id);
         auto* rowWidget = d->rowWidgets[row];
         const bool showRow = !visible.isEmpty() || isDragging();
         rowWidget->setVisible(showRow);
@@ -548,7 +695,7 @@ void CommandStripHost::arrange()
         if (showRow) y += rowHeight;
         const int available = std::max(0, width() - rowMargin * 2 - std::max(0, int(visible.size()) - 1) * stripSpacing);
         QVector<int> sizes;
-        int total = 0;
+        qint64 total = 0;
         for (const auto& id : visible) {
             const auto* strip = d->strips.value(id);
             const int value = std::max(strip->minimumWidthForLayout(), strip->requestedWidth < 0 ? strip->naturalWidth() : strip->requestedWidth);
@@ -566,12 +713,12 @@ void CommandStripHost::arrange()
         // shrink into each strip's overflow menu rather than widening the window.
         for (int index = 0; index < sizes.size() && total > available; ++index) {
             const int minimum = d->strips.value(visible[index])->minimumWidthForLayout();
-            const int reduction = std::min(total - available, std::max(0, sizes[index] - minimum));
+            const int reduction = int(std::min<qint64>(total - available, std::max(0, sizes[index] - minimum)));
             sizes[index] -= reduction; total -= reduction;
         }
-        // Elastic strips share the free space at any position in the row. A
-        // trailing content-sized strip therefore remains at the right edge.
-        int extra = std::max(0, available - total);
+        // A row has one elastic owner. Its trailing content-sized strips
+        // therefore remain at the right edge.
+        int extra = int(std::max<qint64>(0, qint64(available) - total));
         for (int index = 0; index < visible.size() && elasticCount > 0; ++index) {
             if (d->strips.value(visible[index])->sizing != StripSizing::Elastic) continue;
             const int share = extra / elasticCount;
@@ -582,10 +729,10 @@ void CommandStripHost::arrange()
         for (const auto& id : d->rows[row]) {
             auto* strip = d->strips.value(id);
             if (strip->parentWidget() != rowWidget) strip->setParent(rowWidget);
-            const bool show = strip->visible && id != d->dragging;
-            strip->setVisible(show);
-            if (!show) continue;
-            strip->setGeometry(x, 0, std::max(0, std::min(sizes[index], width() - x)), rowHeight);
+            const bool occupies = strip->visible && (id != d->dragging || d->reserveDragSlot);
+            strip->setVisible(occupies && id != d->dragging);
+            if (!occupies) continue;
+            strip->setGeometry(x, 0, sizes[index], rowHeight);
             strip->layoutItems(); x += sizes[index++] + stripSpacing;
         }
     }
@@ -607,8 +754,9 @@ QJsonObject CommandStripHost::saveLayout() const
             QJsonArray excluded;
             for (const auto& item : strip->items) if (!item.included) excluded.append(item.id);
             const int savedWidth = isDragging() ? d->originalWidths.value(id, -1) : strip->requestedWidth;
+            const auto savedSizing = isDragging() ? d->originalSizing.value(id, strip->sizing) : strip->sizing;
             strips.insert(id, QJsonObject{{"visible", strip->visible}, {"width", savedWidth},
-                {"sizing", strip->sizing == StripSizing::Elastic ? "elastic" : "content"},
+                {"sizing", savedSizing == StripSizing::Elastic ? "elastic" : "content"},
                 {"excluded", excluded}, {"contentVisible", !strip->content || !strip->content->isHidden()}});
         }
         rows.append(entries);
@@ -622,8 +770,10 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
     if (rows.size() != 2) return;
     QStringList proposed[2]; QSet<QString> seen;
     for (int row = 0; row < 2; ++row) for (const auto& entry : rows[row].toArray()) {
+        if (!entry.isString() || entry.toString().isEmpty()) return;
         const auto id = entry.toString();
-        if (!d->strips.contains(id) || seen.contains(id)) return;
+        if (!d->strips.contains(id)) continue;
+        if (seen.contains(id)) return;
         proposed[row].append(id); seen.insert(id);
     }
     // New strips may be introduced by an application upgrade. Keep their
@@ -653,7 +803,10 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         const auto excluded = value.value("excluded").toArray();
         for (auto& item : strip->items) item.included = !excluded.contains(item.id);
         if (strip->content && strip->items.isEmpty()) strip->content->setVisible(value.value("contentVisible").toBool(true));
+        if (strip->requestedWidth >= 0)
+            strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());
     }
+    normalizeElastic(0); normalizeElastic(1);
     arrange();
 }
 
@@ -693,7 +846,11 @@ void CommandStripHost::beginDrag(const QString& id, QPoint globalPosition, QPoin
     auto* strip = d->strips.value(id);
     if (!strip || d->locked || isDragging()) return;
     d->originalRows[0] = d->rows[0]; d->originalRows[1] = d->rows[1];
-    for (auto* entry : d->strips) d->originalWidths.insert(entry->id, entry->requestedWidth);
+    for (auto* entry : d->strips) {
+        d->originalWidths.insert(entry->id, entry->requestedWidth);
+        d->originalBounds.insert(entry->id, entry->geometry());
+        d->originalSizing.insert(entry->id, entry->sizing);
+    }
     const auto pixmap = strip->grab();
     d->preview = new QLabel(this, Qt::Tool | Qt::FramelessWindowHint | Qt::BypassWindowManagerHint);
     d->preview->setObjectName("StripDragPreview");
@@ -709,44 +866,102 @@ void CommandStripHost::beginDrag(const QString& id, QPoint globalPosition, QPoin
     arrange(); updateDrag(globalPosition);
 }
 
-void CommandStripHost::updateDrag(QPoint globalPosition)
+bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
 {
-    if (!isDragging()) return;
-    if (d->preview) d->preview->move(globalPosition - d->pressOffset);
-    for (int row = 0; row < 2; ++row) { d->rows[row] = d->originalRows[row]; d->rows[row].removeAll(d->dragging); }
-    for (auto* strip : d->strips) strip->requestedWidth = d->originalWidths.value(strip->id, -1);
+    auto* dragged = d->strips.value(d->dragging);
+    const int originalIndex = d->originalRows[row].indexOf(d->dragging);
+    StripFrame* previous = nullptr;
+    StripFrame* next = nullptr;
+    bool elasticBefore = false;
+    if (originalIndex >= 0) {
+        for (int before = 0; before < originalIndex; ++before) {
+            auto* candidate = d->strips.value(d->originalRows[row][before]);
+            if (!candidate->visible) continue;
+            previous = candidate;
+            elasticBefore |= candidate->sizing == StripSizing::Elastic;
+        }
+        for (int after = originalIndex + 1; after < d->originalRows[row].size(); ++after) {
+            auto* candidate = d->strips.value(d->originalRows[row][after]);
+            if (candidate->visible) { next = candidate; break; }
+        }
+    }
+    const bool adjustBoundary = previous
+        && requestedLeft >= d->originalBounds.value(previous->id).left() + previous->minimumWidthForLayout() / 2
+        && (!next || requestedLeft < d->originalBounds.value(next->id).left() + next->minimumWidthForLayout() / 2);
+    if (!adjustBoundary) return false;
+    // On the right of the elastic owner, resizing transfers width between
+    // adjacent strips while the right edge and all following strips stay put.
+    d->reserveDragSlot = true;
+    const auto previousBounds = d->originalBounds.value(previous->id);
+    int left = std::max(requestedLeft, previousBounds.left() + previous->minimumWidthForLayout() + stripSpacing);
+    if (elasticBefore && dragged->sizing == StripSizing::Content) {
+        const auto ownBounds = d->originalBounds.value(d->dragging);
+        left = std::min(left, ownBounds.right() - dragged->minimumWidthForLayout() + 1);
+        dragged->requestedWidth = ownBounds.right() - left + 1;
+    } else {
+        int trailingMinimum = dragged->minimumWidthForLayout();
+        for (int after = originalIndex + 1; after < d->rows[row].size(); ++after) {
+            const auto* candidate = d->strips.value(d->rows[row][after]);
+            if (candidate->visible) trailingMinimum += candidate->minimumWidthForLayout() + stripSpacing;
+        }
+        left = std::min(left, width() - rowMargin - trailingMinimum);
+    }
+    if (previous->sizing == StripSizing::Content)
+        previous->requestedWidth = std::max(previous->minimumWidthForLayout(), left - previousBounds.left() - stripSpacing);
+    return true;
+}
+
+void CommandStripHost::insertDraggedStrip(int row, QPoint position)
+{
+    d->reserveDragSlot = false;
+    removeFromRows(d->dragging);
     arrange();
-    const QPoint position = mapFromGlobal(globalPosition);
-    const int row = qBound(0, position.y() / rowHeight, 1);
     int index = 0;
-    int markerX = rowMargin;
     for (int itemIndex = 0; itemIndex < d->rows[row].size(); ++itemIndex) {
         auto* strip = d->strips.value(d->rows[row][itemIndex]);
         if (!strip->visible) continue;
         const auto bounds = strip->geometry();
         if (position.x() < bounds.left() + strip->minimumWidthForLayout() / 2) break;
         index = itemIndex + 1;
-        markerX = bounds.right() + stripSpacing;
         if (position.x() < bounds.right()) break;
     }
-    // The insertion handle is also the boundary after the preceding strip.
-    // Expand as well as compress it, including the empty space left after a
-    // previous compression. Restrict this to the strip immediately before the
-    // insertion point, so crossing another handle still reorders normally.
+    // At a new insertion point, the handle becomes the left neighbour's
+    // boundary. Other rows already received the vacated source slot above.
     for (int previous = index - 1; previous >= 0; --previous) {
         auto* strip = d->strips.value(d->rows[row][previous]);
         if (!strip->visible) continue;
         if (strip->sizing == StripSizing::Content) {
             strip->requestedWidth = std::max(strip->minimumWidthForLayout(),
                 position.x() - d->pressOffset.x() - strip->geometry().left() - stripSpacing);
-            markerX = strip->geometry().left() + strip->requestedWidth + stripSpacing;
         }
         break;
     }
     d->rows[row].insert(index, d->dragging);
+    auto* dragged = d->strips.value(d->dragging);
+    normalizeElastic(row, dragged->sizing == StripSizing::Elastic ? d->dragging : QString{});
+    d->reserveDragSlot = true;
+}
+
+void CommandStripHost::updateDrag(QPoint globalPosition)
+{
+    if (!isDragging()) return;
+    if (d->preview) d->preview->move(globalPosition - d->pressOffset);
+    for (int row = 0; row < 2; ++row) d->rows[row] = d->originalRows[row];
+    for (auto* strip : d->strips) {
+        strip->requestedWidth = d->originalWidths.value(strip->id, -1);
+        strip->sizing = d->originalSizing.value(strip->id, StripSizing::Content);
+    }
+    const QPoint position = mapFromGlobal(globalPosition);
+    const int row = qBound(0, position.y() / rowHeight, 1);
+    if (!resizeDragBoundary(row, position.x() - d->pressOffset.x())) insertDraggedStrip(row, position);
     arrange();
+    auto* dragged = d->strips.value(d->dragging);
+    if (d->preview) {
+        d->preview->setPixmap(dragged->grab());
+        d->preview->resize(dragged->size());
+    }
     if (d->marker) {
-        d->marker->setGeometry(qBound(0, markerX, std::max(0, width() - 2)), row * rowHeight, 2, rowHeight);
+        d->marker->setGeometry(qBound(0, dragged->geometry().left(), std::max(0, width() - 2)), row * rowHeight, 2, rowHeight);
         d->marker->show(); d->marker->raise();
     }
 }
@@ -756,9 +971,13 @@ void CommandStripHost::finishDrag(bool commit)
     if (!isDragging()) return;
     if (!commit) {
         d->rows[0] = d->originalRows[0]; d->rows[1] = d->originalRows[1];
-        for (auto* strip : d->strips) strip->requestedWidth = d->originalWidths.value(strip->id, -1);
+        for (auto* strip : d->strips) {
+            strip->requestedWidth = d->originalWidths.value(strip->id, -1);
+            strip->sizing = d->originalSizing.value(strip->id, StripSizing::Content);
+        }
     }
     d->dragging.clear(); d->pendingStrip.clear(); d->originalWidths.clear();
+    d->originalBounds.clear(); d->originalSizing.clear(); d->reserveDragSlot = false;
     if (QWidget::mouseGrabber() == this) releaseMouse();
     delete d->preview; delete d->marker;
     d->preview.clear(); d->marker.clear(); arrange();

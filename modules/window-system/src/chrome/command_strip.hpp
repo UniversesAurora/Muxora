@@ -19,6 +19,10 @@ namespace window_system {
 class CommandStripHost final : public QFrame {
 public:
     enum class StripSizing { Content, Elastic };
+    struct StripConstraints {
+        bool compressible = true;
+        bool elasticAllowed = true;
+    };
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;
 
@@ -33,6 +37,10 @@ public:
     // layout. Disabled strips reserve no options-button space.
     bool setStripOptionsEnabled(const QString& id, bool enabled);
     [[nodiscard]] bool isStripOptionsEnabled(const QString& id) const;
+    // Host constraints are not user layout. A protected strip can grow but
+    // never shrink below its complete content or opt into elastic sizing.
+    bool setStripConstraints(const QString& id, StripConstraints constraints);
+    [[nodiscard]] StripConstraints stripConstraints(const QString& id) const;
     void setLocked(bool locked);
     [[nodiscard]] bool isLocked() const;
     bool setStripVisible(const QString& id, bool visible);
@@ -78,6 +86,10 @@ private:
     void beginDrag(const QString& id, QPoint globalPosition, QPoint offset);
     void updateDrag(QPoint globalPosition);
     void finishDrag(bool commit);
+    void removeFromRows(const QString& id);
+    void normalizeElastic(int row, const QString& preferred = {});
+    bool resizeDragBoundary(int row, int requestedLeft);
+    void insertDraggedStrip(int row, QPoint position);
 };
 
 } // namespace window_system

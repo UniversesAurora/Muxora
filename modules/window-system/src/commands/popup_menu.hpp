@@ -13,6 +13,14 @@ public:
     using QMenu::QMenu;
 
 protected:
+    bool event(QEvent* event) override
+    {
+        // Qt clears this attribute before each mouse event. Keep it enabled
+        // after every event as well, so keyboard or programmatic dismissal
+        // cannot leave a pending replay for a later popup's closing click.
+        setAttribute(Qt::WA_NoMouseReplay);
+        return QMenu::event(event);
+    }
     void mousePressEvent(QMouseEvent* event) override
     {
         if (!rect().contains(event->position().toPoint())) {

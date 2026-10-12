@@ -281,7 +281,7 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { return closePane(c.tab, c.pane); }, hasTab);
     add("window.toggleStripsLock", QStringLiteral("锁定／解锁菜单与工具条"), "工具", {},
         [this](const CommandContext& c) { auto* window = d->windows.value(c.window).data(); if (!window || !window->strips()) return false; window->strips()->setLocked(!window->strips()->isLocked()); return true; },
-        [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Workbench; });
+        [this](const CommandContext& c) { const auto* window = d->windows.value(c.window).data(); return window && window->strips(); });
     add("window.drag.selectTarget", QStringLiteral("拖拽中选择目标窗口"), "窗口", {},
         [this](const CommandContext&) { d->drag->selectTarget(); return true; }, [this](const CommandContext&) { return d->drag->isActive(); });
     add("window.drag.cancel", QStringLiteral("取消当前拖拽"), "窗口", {},
@@ -323,7 +323,7 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
         "window.moveAllTabs", "window.select", "window.toggleStripsLock", "window.settings", "window.close"};
     for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
         if ((id == "window.promote" || id == "window.reassignFamily" || id == "window.redock") && kind != WindowKind::Floating) continue;
-        if ((id == "window.demote" || id == "window.toggleStripsLock") && kind != WindowKind::Workbench) continue;
+        if (id == "window.demote" && kind != WindowKind::Workbench) continue;
         auto* action = menu.addAction(command->title); action->setData(id);
         action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
     }
