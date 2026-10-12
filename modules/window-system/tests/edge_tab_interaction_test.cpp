@@ -1,11 +1,14 @@
 #include <window_system/window_manager.hpp>
+#include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QEnterEvent>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QStyle>
 #include <QTest>
@@ -29,6 +32,11 @@ class EdgeTabInteractionTest final : public QObject {
     Q_OBJECT
 private slots:
     void peekShowsOnlyTheChosenTabAndPinsOnlyThatTab();
+    void peekShowsTheRealContentAndSharedBars_data();
+    void peekShowsTheRealContentAndSharedBars();
+    void edgeBarCornerOwnership_data();
+    void edgeBarCornerOwnership();
+    void allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs();
     void unpinRepinRestoresTheOriginalGroupAndContentPointers();
     void tabWheelScrollsWithoutChangingSelection();
     void tabListUsesHoverCloseAndIncludesEveryTab();
@@ -54,6 +62,8 @@ void EdgeTabInteractionTest::peekShowsOnlyTheChosenTabAndPinsOnlyThatTab()
     QVERIFY(manager.activateTab(a));
     auto* peek = window->findChild<QFrame*>("PeekPanel"); QVERIFY(peek);
     QVERIFY(peek->isAncestorOf(aContent)); QVERIFY(!peek->isAncestorOf(bContent));
+    QTRY_VERIFY(aContent->isVisible());
+    QVERIFY(aContent->width() > 120); QVERIFY(aContent->height() > 80);
     QVERIFY(!bContent->isVisible());
     QCOMPARE(peek->findChildren<QTabBar*>().size(), 0);
     for (auto* label : peek->findChildren<QLabel*>()) QVERIFY(label->text() != QStringLiteral("临时展开"));
@@ -63,6 +73,119 @@ void EdgeTabInteractionTest::peekShowsOnlyTheChosenTabAndPinsOnlyThatTab()
     QCOMPARE(manager.model().group(manager.model().groupForTab(b))->location, GroupLocation::AutoHide);
     QVERIFY(!edgeButton(window, a)); QVERIFY(edgeButton(window, b));
     QVERIFY(!window->findChild<QFrame*>("PeekPanel"));
+    QVERIFY(manager.model().validate().ok);
+}
+void EdgeTabInteractionTest::peekShowsTheRealContentAndSharedBars_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+void EdgeTabInteractionTest::peekShowsTheRealContentAndSharedBars()
+{
+    QFETCH(int, edge);
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    auto* document = new QPlainTextEdit;
+    document->setPlainText(QStringLiteral("Persistent editor content"));
+    const auto tab = manager.addTab(windowId, document, options("Editor"));
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* top = content("top shared bar"); auto* bottom = content("bottom shared bar");
+    QVERIFY(manager.setPaneTopBar(pane, top)); QVERIFY(manager.setPaneBottomBar(pane, bottom));
+    QVERIFY(manager.moveTabToEdge(tab, Edge(edge)));
+    auto* window = manager.windowWidget(windowId); showTestWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(manager.activateTab(tab));
+    auto* peek = window->findChild<QFrame*>("PeekPanel"); QVERIFY(peek);
+    QTRY_VERIFY(document->isVisible()); QTRY_VERIFY(top->isVisible()); QTRY_VERIFY(bottom->isVisible());
+    QVERIFY(document->width() > 120); QVERIFY(document->height() > 80);
+    QVERIFY(peek->isAncestorOf(document)); QVERIFY(peek->isAncestorOf(top)); QVERIFY(peek->isAncestorOf(bottom));
+    QCOMPARE(manager.paneWidget(pane), document);
+    QTest::keyClicks(document, " kept");
+    QVERIFY(document->toPlainText().contains(" kept"));
+    auto* surface = dynamic_cast<DockSurface*>(window->findChild<QFrame*>("DockSurface")); QVERIFY(surface);
+    surface->closePeek(); QVERIFY(!document->isVisible());
+    QVERIFY(manager.activateTab(tab));
+    QTRY_VERIFY(document->isVisible()); QVERIFY(top->isVisible()); QVERIFY(bottom->isVisible());
+    QCOMPARE(manager.paneWidget(pane), document);
+    QVERIFY(document->toPlainText().contains(" kept"));
+    QVERIFY(manager.pinTab(tab, true));
+    QTRY_VERIFY(document->isVisible()); QCOMPARE(manager.paneWidget(pane), document);
+    QVERIFY(manager.model().validate().ok);
+}
+void EdgeTabInteractionTest::edgeBarCornerOwnership_data()
+{
+    QTest::addColumn<int>("visibleEdges");
+    for (int mask = 0; mask < 16; ++mask)
+        QTest::newRow(qPrintable(QStringLiteral("visible-edges-%1").arg(mask, 4, 2, QChar('0')))) << mask;
+}
+void EdgeTabInteractionTest::edgeBarCornerOwnership()
+{
+    QFETCH(int, visibleEdges);
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    manager.addTab(windowId, content("central"), options("Central"));
+    const QVector<Edge> edges{Edge::Left, Edge::Right, Edge::Top, Edge::Bottom};
+    for (int i = 0; i < edges.size(); ++i) if (visibleEdges & (1 << i)) {
+        const auto tab = manager.addTab(windowId, content(QString::number(i)), options(QStringLiteral("Edge %1").arg(i)));
+        QVERIFY(manager.moveTabToEdge(tab, edges[i]));
+    }
+    auto* window = manager.windowWidget(windowId); showTestWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* surface = dynamic_cast<DockSurface*>(window->findChild<QFrame*>("DockSurface")); QVERIFY(surface);
+    const auto bars = surface->edgeBarRects();
+    const QRect area(surface->mapToGlobal(QPoint()), surface->size());
+    for (int i = 0; i < edges.size(); ++i) QCOMPARE(bars.contains(edges[i]), bool(visibleEdges & (1 << i)));
+    if (bars.contains(Edge::Left)) {
+        QCOMPARE(bars[Edge::Left].top(), area.top());
+        QCOMPARE(bars[Edge::Left].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 1 : area.bottom());
+    }
+    if (bars.contains(Edge::Right)) {
+        QCOMPARE(bars[Edge::Right].top(), area.top());
+        QCOMPARE(bars[Edge::Right].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 1 : area.bottom());
+    }
+    if (bars.contains(Edge::Top)) {
+        QCOMPARE(bars[Edge::Top].left(), bars.contains(Edge::Left) ? bars[Edge::Left].right() + 1 : area.left());
+        QCOMPARE(bars[Edge::Top].right(), bars.contains(Edge::Right) ? bars[Edge::Right].left() - 1 : area.right());
+    }
+    if (bars.contains(Edge::Bottom)) {
+        QCOMPARE(bars[Edge::Bottom].left(), area.left()); QCOMPARE(bars[Edge::Bottom].right(), area.right());
+    }
+    for (int i = 0; i < edges.size(); ++i) for (int j = i + 1; j < edges.size(); ++j)
+        if (bars.contains(edges[i]) && bars.contains(edges[j])) QVERIFY(!bars[edges[i]].intersects(bars[edges[j]]));
+}
+void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs()
+{
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    const auto a = manager.addTab(windowId, content("A"), options("A"));
+    const auto b = manager.addTab(windowId, content("B"), options("B"));
+    QVERIFY(manager.moveTabToEdge(a, Edge::Left));
+    QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
+    auto* window = manager.windowWidget(windowId); showTestWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* buttonA = edgeButton(window, a); auto* buttonB = edgeButton(window, b);
+    QVERIFY(buttonA); QVERIFY(buttonB);
+    auto* pinAll = buttonA->parentWidget()->findChild<QToolButton*>("PinEdgeButton"); QVERIFY(pinAll);
+    auto* row = buttonA->parentWidget()->layout();
+    QVERIFY(row->indexOf(pinAll) > row->indexOf(buttonA)); QVERIFY(row->indexOf(pinAll) > row->indexOf(buttonB));
+    QVERIFY(manager.activateTab(a));
+    auto* pinCurrent = window->findChild<QToolButton*>("PinPeekTabButton"); QVERIFY(pinCurrent);
+    QVERIFY(pinCurrent->icon().pixmap(16, 16).toImage() != pinAll->icon().pixmap(16, 16).toImage());
+    pinAll->click();
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->location, GroupLocation::Pinned);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(b))->location, GroupLocation::Pinned);
+    QToolButton* unpinCurrent = nullptr; QToolButton* unpinAll = nullptr;
+    for (auto* button : window->findChildren<QToolButton*>()) if (button->isVisible()) {
+        if (button->toolTip() == QStringLiteral("取消固定当前标签")) unpinCurrent = button;
+        if (button->toolTip() == QStringLiteral("取消固定这一侧全部标签")) unpinAll = button;
+    }
+    QVERIFY(unpinCurrent); QVERIFY(unpinAll);
+    QVERIFY(unpinCurrent->icon().pixmap(16, 16).toImage() != unpinAll->icon().pixmap(16, 16).toImage());
+    unpinAll->click();
+    QVERIFY(edgeButton(window, a)); QVERIFY(edgeButton(window, b));
     QVERIFY(manager.model().validate().ok);
 }
 void EdgeTabInteractionTest::unpinRepinRestoresTheOriginalGroupAndContentPointers()

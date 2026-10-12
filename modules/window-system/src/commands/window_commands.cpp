@@ -27,6 +27,7 @@
 #include <limits>
 
 namespace window_system {
+using StripSizing = CommandStripHost::StripSizing;
 void WindowManager::registerWindowCommands()
 {
     auto add = [this](QString id, QString title, QString category, QKeySequence shortcut,
@@ -44,6 +45,23 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { showSettings(c.window); return true; });
     add("preferences.openKeyboardShortcuts", QStringLiteral("编辑快捷键…"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
+    add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间"), "布局", {},
+        [this](const CommandContext& c) {
+            auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
+            auto* strips = window ? window->strips() : nullptr;
+            if (!strips) return false;
+            const auto id = c.args.value("strip", QStringLiteral("title")).toString();
+            if (!strips->stripIds().contains(id)) return false;
+            const auto value = c.args.value("sizing").toString();
+            if (!value.isEmpty() && value != "elastic" && value != "content") return false;
+            const auto sizing = value.isEmpty()
+                ? (strips->stripSizing(id) == StripSizing::Elastic ? StripSizing::Content : StripSizing::Elastic)
+                : (value == "elastic" ? StripSizing::Elastic : StripSizing::Content);
+            return strips->setStripSizing(id, sizing);
+        }, [this](const CommandContext& c) {
+            auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
+            return window && window->strips();
+        });
     add("workspace.closeTab", QStringLiteral("关闭当前标签"), "文件", QKeySequence("Ctrl+W"),
         [this](const CommandContext& c) { return closeTab(c.tab); }, hasTab);
     add("window.close", QStringLiteral("关闭当前窗口"), "窗口", QKeySequence("Alt+F4"),

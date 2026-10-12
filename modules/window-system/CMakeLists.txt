@@ -32,6 +32,7 @@ add_library(WindowSystemWidgets STATIC
     src/docking/drag_controller.cpp
     src/panes/tab_content.cpp
     src/style/theme.cpp
+    src/style/themed_controls.cpp
     src/settings/settings_page.cpp
     include/window_system/window_manager.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)

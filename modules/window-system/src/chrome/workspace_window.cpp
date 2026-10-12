@@ -73,6 +73,10 @@ void WorkspaceWindow::createChrome()
     if (kind_ == WindowKind::Workbench) {
         strips_ = new CommandStripHost(chrome_);
         strips_->setLayoutChangedCallback([this] { emit manager_->layoutChanged(); });
+        strips_->setSizingChangeRequest([this](const QString& strip, CommandStripHost::StripSizing sizing) {
+            manager_->execute("window.toolbar.setSizing", {{"strip", strip},
+                {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
+        });
         strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
         auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
         const QVector<QPair<QString, QString>> categories = {
@@ -118,7 +122,8 @@ void WorkspaceWindow::createChrome()
         caption_ = new QLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
         caption_->setContentsMargins(7, 0, 7, 0); caption_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         caption_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, true);
+        caption_->setProperty("windowDragArea", true);
+        strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
         for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
         row->addWidget(strips_, 1);
         status_ = new QLabel(QStringLiteral("就绪  ·  窗口系统预览"), this); status_->setObjectName("StatusBar");

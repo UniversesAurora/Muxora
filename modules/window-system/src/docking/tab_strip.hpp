@@ -8,6 +8,7 @@
 #include <QTabBar>
 
 class QScrollArea;
+class QMenu;
 class QScrollBar;
 class QStackedWidget;
 class QToolButton;
@@ -68,6 +69,7 @@ private:
     QToolButton* list_;
     Theme theme_;
     QPointer<QTimer> autoScroll_;
+    QPointer<QMenu> tabListMenu_;
     int scrollDirection_ = 0;
     QSet<QObject*> hoveredSurfaces_;
 };

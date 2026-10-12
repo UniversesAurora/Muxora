@@ -49,6 +49,7 @@ struct Theme {
     QColor selectionText = QColor(QStringLiteral("#2c173d"));
     QColor focus = QColor(QStringLiteral("#8e4fc4"));
     QColor danger = QColor(QStringLiteral("#c42b42"));
+    QColor checkedIndicatorText = QColor(QStringLiteral("#ffffff"));
     Metrics metrics;
 };
 
@@ -61,7 +62,7 @@ void applyTheme(QWidget* root, const Theme& theme = defaultTheme());
 
 /// Vector icons render at the exact requested device pixel ratio.
 /// Names: app, close, minimize, maximize, restore, add, terminal, files, settings,
-/// search, pin, unpin, lock, unlock, split-horizontal, split-vertical, detach,
+/// search, pin, unpin, pin-all, unpin-all, lock, unlock, split-horizontal, split-vertical, detach,
 /// window, return, save, command, help, chevron-left/right/up/down.
 /// Unknown names return a null icon. No resources or SVG dependency are needed.
 [[nodiscard]] QIcon iconFor(QString name, const Theme& theme = defaultTheme(),

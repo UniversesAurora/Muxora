@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "settings_page.hpp"
+#include "../style/themed_controls.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,11 +11,15 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStyle>
+#include <QStyleOptionViewItem>
+#include <QStyledItemDelegate>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -60,6 +65,21 @@ QVBoxLayout* pageLayout(QWidget* page, const QString& heading, const QString& de
     return layout;
 }
 
+// Keep the native tree's keyboard navigation, expansion and accessibility,
+// while presenting its current location with typography rather than a box.
+class CategoryDelegate final : public QStyledItemDelegate {
+public:
+    explicit CategoryDelegate(QObject* parent) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override
+    {
+        auto plain = option;
+        plain.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver | QStyle::State_HasFocus);
+        QStyledItemDelegate::paint(painter, plain, index);
+    }
+};
+
 } // namespace
 
 SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
@@ -76,69 +96,82 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto* body = new QHBoxLayout;
-    body->setSpacing(24);
-    categories_ = new QListWidget(this);
+    body->setSpacing(12);
+    categories_ = new QTreeWidget(this);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
     categories_->setAccessibleName(QStringLiteral("设置分类"));
-    categories_->addItems({QStringLiteral("全部设置"), QStringLiteral("窗口"), QStringLiteral("拖拽")});
+    categories_->setHeaderHidden(true);
+    categories_->setFrameShape(QFrame::NoFrame);
+    categories_->setColumnCount(1);
+    categories_->setSelectionMode(QAbstractItemView::SingleSelection);
+    categories_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    categories_->setUniformRowHeights(true);
+    categories_->setIndentation(14);
+    categories_->setItemDelegate(new CategoryDelegate(categories_));
     categories_->setMaximumWidth(180);
     categories_->setMinimumWidth(90);
-    categories_->setCurrentRow(0);
     body->addWidget(categories_);
+    auto* divider = new QFrame(this);
+    divider->setObjectName(QStringLiteral("SettingsCategoryDivider"));
+    divider->setFixedWidth(1);
+    divider->setAttribute(Qt::WA_StyledBackground);
+    body->addWidget(divider);
     auto* right = new QVBoxLayout;
     results_ = descriptionLabel({}, this);
     results_->setObjectName(QStringLiteral("SettingsResultCount"));
     right->addWidget(results_);
-    auto* scroll = new QScrollArea(this);
-    scroll->setObjectName(QStringLiteral("SettingsScrollArea"));
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->viewport()->setObjectName(QStringLiteral("SettingsViewport"));
-    scroll->viewport()->setAttribute(Qt::WA_StyledBackground);
-    auto* contents = new QWidget(scroll);
+    scroll_ = new QScrollArea(this);
+    scroll_->setObjectName(QStringLiteral("SettingsScrollArea"));
+    scroll_->setWidgetResizable(true);
+    scroll_->setFrameShape(QFrame::NoFrame);
+    scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll_->viewport()->setObjectName(QStringLiteral("SettingsViewport"));
+    scroll_->viewport()->setAttribute(Qt::WA_StyledBackground);
+    auto* contents = new QWidget(scroll_);
     contents->setObjectName(QStringLiteral("SettingsRows"));
     contents->setAttribute(Qt::WA_StyledBackground);
     auto* rows = new QVBoxLayout(contents);
     rows->setContentsMargins(0, 0, 12, 0);
     rows->setSpacing(18);
 
-    detachKind_ = new QComboBox(contents);
+    addCategory(contents, rows, QStringLiteral("window"), QStringLiteral("窗口"));
+    detachKind_ = new ThemedComboBox(contents);
     detachKind_->setObjectName(QStringLiteral("DetachWindowKind"));
     detachKind_->setAccessibleName(QStringLiteral("拖出标签的窗口形态"));
     detachKind_->addItem(QStringLiteral("轻量浮窗（保留所属窗口）"), int(WindowKind::Floating));
     detachKind_->addItem(QStringLiteral("完整工作窗口"), int(WindowKind::Workbench));
-    rows->addWidget(addRow(contents, QStringLiteral("窗口"), QStringLiteral("窗口：拖出标签的形态"),
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("拖出标签的形态"),
         QStringLiteral("window.dragOutsideKind"),
         QStringLiteral("将标签拖出时使用轻量浮窗或完整工作窗口。"), detachKind_));
 
-    emptyPolicy_ = new QComboBox(contents);
+    emptyPolicy_ = new ThemedComboBox(contents);
     emptyPolicy_->setObjectName(QStringLiteral("EmptyWorkbenchPolicy"));
     emptyPolicy_->setAccessibleName(QStringLiteral("完整窗口移空后的行为"));
     emptyPolicy_->addItem(QStringLiteral("保留空的完整窗口"), false);
     emptyPolicy_->addItem(QStringLiteral("自动关闭空的完整窗口"), true);
-    rows->addWidget(addRow(contents, QStringLiteral("窗口"), QStringLiteral("窗口：移空后的行为"),
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("移空后的行为"),
         QStringLiteral("window.closeEmptyWorkbench"),
         QStringLiteral("如果还有从属轻量浮窗，完整窗口会继续保留。"), emptyPolicy_));
 
-    reveal_ = new QCheckBox(QStringLiteral("悬停时抬起被遮挡的目标窗口"), contents);
+    addCategory(contents, rows, QStringLiteral("window/drag"), QStringLiteral("拖拽"));
+    reveal_ = new ThemedCheckBox(QStringLiteral("悬停时抬起被遮挡的目标窗口"), contents);
     reveal_->setObjectName(QStringLiteral("RevealDuringDrag"));
-    rows->addWidget(addRow(contents, QStringLiteral("拖拽"), QStringLiteral("拖拽：显示目标窗口"),
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QStringLiteral("显示目标窗口"),
         QStringLiteral("window.revealDuringDrag"),
         QStringLiteral("拖动标签停留在目标窗口位置时，显示该窗口以便投放。"), reveal_));
 
-    delay_ = new QSpinBox(contents);
+    delay_ = new ThemedSpinBox(contents);
     delay_->setObjectName(QStringLiteral("RevealDelayMs"));
     delay_->setAccessibleName(QStringLiteral("显示拖拽目标的悬停时间"));
     delay_->setRange(200, 2000);
     delay_->setSingleStep(100);
     delay_->setSuffix(QStringLiteral(" 毫秒"));
-    rows->addWidget(addRow(contents, QStringLiteral("拖拽"), QStringLiteral("拖拽：悬停时间"),
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QStringLiteral("悬停时间"),
         QStringLiteral("window.revealDelayMs"),
         QStringLiteral("显示被遮挡窗口前的等待时间。"), delay_));
     rows->addStretch();
-    scroll->setWidget(contents);
-    right->addWidget(scroll, 1);
+    scroll_->setWidget(contents);
+    right->addWidget(scroll_, 1);
     body->addLayout(right, 1);
     layout->addLayout(body, 1);
 
@@ -157,7 +190,14 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     QObject::connect(reveal_, &QCheckBox::toggled, this, change);
     QObject::connect(delay_, &QSpinBox::valueChanged, this, change);
     QObject::connect(search_, &QLineEdit::textChanged, this, [this] { filterRows(); });
-    QObject::connect(categories_, &QListWidget::currentRowChanged, this, [this] { filterRows(); });
+    QObject::connect(categories_, &QTreeWidget::currentItemChanged, this,
+        [this](QTreeWidgetItem* item) { scrollToCategory(item); });
+    QObject::connect(categories_, &QTreeWidget::itemClicked, this,
+        [this](QTreeWidgetItem* item) { scrollToCategory(item); });
+    QObject::connect(categories_, &QTreeWidget::itemCollapsed, this, [this] { syncNavigation(); });
+    QObject::connect(categories_, &QTreeWidget::itemExpanded, this, [this] { syncNavigation(); });
+    QObject::connect(scroll_->verticalScrollBar(), &QScrollBar::valueChanged, this,
+        [this] { syncNavigation(); });
     QObject::connect(manager, &WindowManager::layoutChanged, this, [this] { syncControls(); });
     syncControls();
     filterRows();
@@ -186,9 +226,79 @@ QWidget* SettingsPage::addRow(QWidget* parent, const QString& category,
     auto* idLabel = descriptionLabel(key, row);
     idLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     column->addWidget(idLabel);
-    rows_.push_back({category, category + QLatin1Char(' ') + title + QLatin1Char(' ') +
+    QString categoryTitles;
+    for (const auto& section : sections_)
+        if (category == section.id || category.startsWith(section.id + QLatin1Char('/')))
+            categoryTitles += section.item->text(0) + QLatin1Char(' ');
+    rows_.push_back({category, categoryTitles + title + QLatin1Char(' ') +
                               key + QLatin1Char(' ') + description, row});
     return row;
+}
+
+void SettingsPage::addCategory(QWidget* parent, QVBoxLayout* rows,
+                               const QString& id, const QString& title)
+{
+    QTreeWidgetItem* parentItem = nullptr;
+    const qsizetype separator = id.lastIndexOf(QLatin1Char('/'));
+    const QString parentId = separator < 0 ? QString() : id.left(separator);
+    for (const auto& section : sections_)
+        if (section.id == parentId) { parentItem = section.item; break; }
+    auto* item = parentItem ? new QTreeWidgetItem(parentItem, {title}) :
+                              new QTreeWidgetItem(categories_, {title});
+    item->setData(0, Qt::UserRole, id);
+    item->setExpanded(true);
+    if (parentItem) parentItem->setExpanded(true);
+    auto* heading = new QLabel(title, parent);
+    heading->setObjectName(QStringLiteral("SettingsCategoryHeading"));
+    heading->setProperty("categoryId", id);
+    heading->setProperty("role", QStringLiteral("heading"));
+    QFont font = heading->font();
+    font.setPointSizeF(font.pointSizeF() + 2);
+    font.setBold(true);
+    heading->setFont(font);
+    rows->addWidget(heading);
+    sections_.push_back({id, heading, item});
+}
+
+void SettingsPage::scrollToCategory(QTreeWidgetItem* item)
+{
+    if (!item || item->isHidden()) return;
+    const auto section = std::find_if(sections_.cbegin(), sections_.cend(),
+        [item](const Category& candidate) { return candidate.item == item; });
+    if (section == sections_.cend() || !section->heading || section->heading->isHidden()) return;
+    scroll_->widget()->layout()->activate();
+    navigating_ = true;
+    scroll_->verticalScrollBar()->setValue(section->heading->y());
+    markCurrentCategory(item);
+    navigating_ = false;
+}
+
+void SettingsPage::markCurrentCategory(QTreeWidgetItem* item)
+{
+    // A collapsed ancestor represents the location of its hidden descendants.
+    for (auto* parent = item ? item->parent() : nullptr; parent; parent = parent->parent())
+        if (!parent->isExpanded()) item = parent;
+    const QSignalBlocker blocker(categories_);
+    categories_->setCurrentItem(item);
+    for (const auto& section : sections_) {
+        auto font = section.item->font(0);
+        font.setBold(section.item == item);
+        section.item->setFont(0, font);
+    }
+}
+
+void SettingsPage::syncNavigation()
+{
+    if (navigating_) return;
+    auto* bar = scroll_->verticalScrollBar();
+    QTreeWidgetItem* current = nullptr;
+    const bool atBottom = bar->value() > 0 && bar->value() == bar->maximum();
+    for (const auto& section : sections_) {
+        if (!section.heading || section.heading->isHidden()) continue;
+        if (!current || atBottom || section.heading->y() <= bar->value() + 4)
+            current = section.item;
+    }
+    markCurrentCategory(current);
 }
 
 void SettingsPage::syncControls()
@@ -208,16 +318,26 @@ void SettingsPage::syncControls()
 
 void SettingsPage::filterRows()
 {
-    const auto* category = categories_->currentItem();
-    const QString selected = categories_->currentRow() <= 0 || !category ? QString() : category->text();
     int count = 0;
     for (const auto& row : rows_) {
-        const bool visible = (selected.isEmpty() || row.category == selected) &&
-                             matches(row.searchable, search_->text());
+        const bool visible = matches(row.searchable, search_->text());
         if (row.widget) row.widget->setVisible(visible);
         if (visible) ++count;
     }
+    for (const auto& section : sections_) {
+        const bool visible = std::any_of(rows_.cbegin(), rows_.cend(), [&section](const Row& row) {
+            return row.widget && !row.widget->isHidden() &&
+                   (row.category == section.id || row.category.startsWith(section.id + QLatin1Char('/')));
+        });
+        if (section.heading) section.heading->setVisible(visible);
+        section.item->setHidden(!visible);
+    }
     results_->setText(count ? QStringLiteral("%1 项设置").arg(count) : QStringLiteral("没有匹配的设置"));
+    scroll_->widget()->layout()->activate();
+    syncNavigation();
+    // QScrollArea updates its range after child layouts respond to visibility.
+    // Re-evaluate then without storing a stale content coordinate.
+    QTimer::singleShot(0, this, [this] { syncNavigation(); });
 }
 
 ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)

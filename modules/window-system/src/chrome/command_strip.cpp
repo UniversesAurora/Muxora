@@ -2,7 +2,6 @@
 #include "command_strip.hpp"
 
 #include <QAction>
-#include <QAbstractButton>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QJsonArray>
@@ -15,6 +14,9 @@
 #include <QPointer>
 #include <QResizeEvent>
 #include <QSet>
+#include <QScopedValueRollback>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 #include <QToolButton>
 
 #include <algorithm>
@@ -46,25 +48,46 @@ protected:
     }
 };
 
-class OverflowButton final : public QAbstractButton {
+class OverflowButton final : public QToolButton {
 public:
-    explicit OverflowButton(QWidget* parent) : QAbstractButton(parent)
+    explicit OverflowButton(QWidget* parent) : QToolButton(parent)
     {
         setObjectName("StripOverflowButton");
         setCursor(Qt::ArrowCursor);
         setToolTip(QStringLiteral("工具条选项"));
         setAccessibleName(toolTip());
         setFocusPolicy(Qt::StrongFocus);
-        connect(this, &QAbstractButton::clicked, this, [this] { if (openMenu) openMenu(); });
+        setAutoRaise(true);
+        setPopupMode(QToolButton::InstantPopup);
     }
     bool hasOverflow = false;
-    std::function<void()> openMenu;
 protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton && menu() && menu()->isVisible()) {
+            dismissRelease_ = true;
+            menu()->hide(); setDown(false); update(); event->accept(); return;
+        }
+        QToolButton::mousePressEvent(event);
+    }
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        if (dismissRelease_ && event->button() == Qt::LeftButton) {
+            dismissRelease_ = false; event->accept(); return;
+        }
+        QToolButton::mouseReleaseEvent(event);
+    }
     void paintEvent(QPaintEvent*) override
     {
-        QPainter painter(this);
+        QStylePainter painter(this);
+        QStyleOptionToolButton option;
+        initStyleOption(&option);
+        // Keep the themed tool-button hover, pressed and keyboard-focus states;
+        // the narrow tail paints its own two compact arrows below.
+        option.features = QStyleOptionToolButton::None;
+        option.subControls = QStyle::SC_ToolButton;
+        painter.drawComplexControl(QStyle::CC_ToolButton, option);
         painter.setRenderHint(QPainter::Antialiasing);
-        if (underMouse() || hasFocus()) painter.fillRect(rect(), palette().color(QPalette::Highlight).lighter(170));
         painter.setPen(QPen(palette().color(QPalette::WindowText), 1.0));
         const qreal x = width() / 2.0;
         if (hasOverflow) {
@@ -73,17 +96,8 @@ protected:
         }
         painter.drawPolyline(QPolygonF{{x - 3, height() - 11.0}, {x, height() - 8.0}, {x + 3, height() - 11.0}});
     }
-    void enterEvent(QEnterEvent* event) override { update(); QAbstractButton::enterEvent(event); }
-    void leaveEvent(QEvent* event) override { update(); QAbstractButton::leaveEvent(event); }
-    void focusInEvent(QFocusEvent* event) override { update(); QAbstractButton::focusInEvent(event); }
-    void focusOutEvent(QFocusEvent* event) override { update(); QAbstractButton::focusOutEvent(event); }
-    void keyPressEvent(QKeyEvent* event) override
-    {
-        if (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return || event->key() == Qt::Key_Down) {
-            if (openMenu) openMenu();
-            event->accept();
-        } else QAbstractButton::keyPressEvent(event);
-    }
+private:
+    bool dismissRelease_ = false;
 };
 
 struct ActionItem {
@@ -121,7 +135,7 @@ public:
     [[nodiscard]] int naturalWidth() const
     {
         int width = handle->isHidden() ? 0 : handleWidth;
-        if (content) width += content->sizeHint().width();
+        if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
         return std::max(minimumWidthForLayout(), width + tailWidth);
@@ -140,7 +154,7 @@ public:
         viewport->setGeometry(handleSize, 0, std::max(0, width() - handleSize - tailWidth), height());
         overflow.clear();
         if (content) {
-            const int contentWidth = fillWhenFirst ? viewport->width() : std::max(viewport->width(), content->sizeHint().width());
+            const int contentWidth = sizing == CommandStripHost::StripSizing::Elastic ? viewport->width() : std::max(viewport->width(), content->sizeHint().width());
             content->setGeometry(0, 0, contentWidth, height());
             if (auto* menu = qobject_cast<QMenuBar*>(content.data())) {
                 for (const auto& item : items) {
@@ -148,7 +162,9 @@ public:
                     item.action->setVisible(item.included);
                     if (item.included && menu->actionGeometry(item.action).right() >= viewport->width()) overflow.append(item.id);
                 }
-            } else if (content->sizeHint().width() > viewport->width()) overflow.append(QStringLiteral("content"));
+            } else if (!content->isHidden() && content->sizeHint().width() > viewport->width()) {
+                overflow.append(QStringLiteral("content"));
+            }
         } else {
             int x = 0;
             bool full = false;
@@ -176,7 +192,7 @@ public:
     QList<ActionItem> items;
     QStringList overflow;
     bool visible = true;
-    bool fillWhenFirst = false;
+    CommandStripHost::StripSizing sizing = CommandStripHost::StripSizing::Content;
     int requestedWidth = -1;
 
 protected:
@@ -190,8 +206,10 @@ struct CommandStripHost::Private {
     QStringList rows[2];
     QWidget* rowWidgets[2] = {};
     bool locked = true;
+    bool arranging = false;
     std::function<void(QMenu*)> contextMenuCustomizer;
     std::function<void()> layoutChanged;
+    std::function<void(const QString&, StripSizing)> sizingChangeRequest;
     QString pendingStrip;
     QPoint pressPosition;
     QPoint pressOffset;
@@ -216,19 +234,29 @@ CommandStripHost::CommandStripHost(QWidget* parent)
     }
 }
 
-CommandStripHost::~CommandStripHost() = default;
+CommandStripHost::~CommandStripHost()
+{
+    // Actions can outlive their presentations or emit while children tear down.
+    // Stop callbacks before the private layout state is destroyed.
+    for (auto* strip : d->strips) {
+        strip->removeEventFilter(this);
+        strip->handle->removeEventFilter(this);
+        for (const auto& item : strip->items) if (item.action) disconnect(item.action, nullptr, this, nullptr);
+        if (strip->tail->menu()) disconnect(strip->tail->menu(), nullptr, this, nullptr);
+    }
+}
 
 void CommandStripHost::addStrip(QString id, QWidget* content, int row)
 {
     addStrip(id, id, content, row);
 }
 
-void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int row, bool fillWhenFirst)
+void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int row, StripSizing sizing)
 {
     if (!content || id.isEmpty() || d->strips.contains(id)) return;
     auto* strip = new StripFrame(id, std::move(title), d->rowWidgets[qBound(0, row, 1)]);
     strip->content = content;
-    strip->fillWhenFirst = fillWhenFirst;
+    strip->sizing = sizing;
     content->setParent(strip->viewport);
     content->show();
     if (auto* menu = qobject_cast<QMenuBar*>(content)) {
@@ -237,27 +265,29 @@ void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int
             auto itemId = action->objectName();
             if (itemId.isEmpty()) itemId = QString::number(index);
             strip->items.append({itemId, action, {}, true});
+            connect(action, &QAction::changed, this, [this] { if (!d->arranging) arrange(); });
             ++index;
         }
     }
     strip->handle->installEventFilter(this);
     strip->setLocked(d->locked);
-    strip->tail->openMenu = [this, id] {
-        auto* strip = d->strips.value(id);
-        if (!strip) return;
-        QPointer<QMenu> menu = createOverflowMenu(id, this);
-        if (menu) { menu->exec(strip->tail->mapToGlobal(QPoint(0, strip->tail->height()))); delete menu; }
-    };
+    auto* overflowMenu = new QMenu(strip->tail);
+    overflowMenu->setAttribute(Qt::WA_NoMouseReplay);
+    overflowMenu->setObjectName("StripOverflowMenu");
+    strip->tail->setMenu(overflowMenu);
+    connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
     strip->installEventFilter(this);
     d->strips.insert(id, strip);
     d->rows[qBound(0, row, 1)].append(id);
     arrange();
+    populateOverflowMenu(id, overflowMenu);
 }
 
-void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAction*>& actions, int row)
+void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAction*>& actions, int row, StripSizing sizing)
 {
     if (id.isEmpty() || d->strips.contains(id)) return;
     auto* strip = new StripFrame(id, std::move(title), d->rowWidgets[qBound(0, row, 1)]);
+    strip->sizing = sizing;
     int index = 0;
     for (auto* action : actions) {
         if (!action) continue;
@@ -270,20 +300,21 @@ void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAc
         button->setProperty("commandId", itemId);
         button->setAccessibleName(action->text());
         strip->items.append({itemId, action, button, true});
+        connect(action, &QAction::changed, this, [this] { if (!d->arranging) arrange(); });
         ++index;
     }
     strip->handle->installEventFilter(this);
     strip->setLocked(d->locked);
-    strip->tail->openMenu = [this, id] {
-        auto* strip = d->strips.value(id);
-        if (!strip) return;
-        QPointer<QMenu> menu = createOverflowMenu(id, this);
-        if (menu) { menu->exec(strip->tail->mapToGlobal(QPoint(0, strip->tail->height()))); delete menu; }
-    };
+    auto* overflowMenu = new QMenu(strip->tail);
+    overflowMenu->setAttribute(Qt::WA_NoMouseReplay);
+    overflowMenu->setObjectName("StripOverflowMenu");
+    strip->tail->setMenu(overflowMenu);
+    connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
     strip->installEventFilter(this);
     d->strips.insert(id, strip);
     d->rows[qBound(0, row, 1)].append(id);
     arrange();
+    populateOverflowMenu(id, overflowMenu);
 }
 
 void CommandStripHost::setLocked(bool locked)
@@ -327,7 +358,7 @@ bool CommandStripHost::setStripItemVisible(const QString& id, const QString& ite
         entry.included = visible; arrange(); changed(); return true;
     }
     if (item == QStringLiteral("content") && strip->content && strip->items.isEmpty()) {
-        strip->content->setVisible(visible); changed(); return true;
+        strip->content->setVisible(visible); arrange(); changed(); return true;
     }
     return false;
 }
@@ -337,6 +368,22 @@ bool CommandStripHost::isStripItemVisible(const QString& id, const QString& item
     if (!strip) return false;
     for (const auto& entry : strip->items) if (entry.id == item) return entry.included;
     return item == QStringLiteral("content") && strip->content && !strip->content->isHidden();
+}
+
+bool CommandStripHost::setStripSizing(const QString& id, StripSizing sizing)
+{
+    auto* strip = d->strips.value(id);
+    if (!strip || (sizing != StripSizing::Content && sizing != StripSizing::Elastic)) return false;
+    if (isDragging()) finishDrag(false);
+    if (strip->sizing == sizing) return true;
+    strip->sizing = sizing;
+    arrange(); changed(); return true;
+}
+
+CommandStripHost::StripSizing CommandStripHost::stripSizing(const QString& id) const
+{
+    const auto* strip = d->strips.value(id);
+    return strip ? strip->sizing : StripSizing::Content;
 }
 
 bool CommandStripHost::moveStrip(const QString& id, int row, int index)
@@ -362,6 +409,10 @@ void CommandStripHost::setLayoutChangedCallback(std::function<void()> callback)
 {
     d->layoutChanged = std::move(callback);
 }
+void CommandStripHost::setSizingChangeRequest(std::function<void(const QString&, StripSizing)> request)
+{
+    d->sizingChangeRequest = std::move(request);
+}
 void CommandStripHost::changed() { if (d->layoutChanged) d->layoutChanged(); }
 
 QList<QWidget*> CommandStripHost::windowDragAreas() const
@@ -369,7 +420,7 @@ QList<QWidget*> CommandStripHost::windowDragAreas() const
     QList<QWidget*> areas = {d->rowWidgets[0], d->rowWidgets[1]};
     for (auto* strip : d->strips) {
         areas.append(strip); areas.append(strip->viewport);
-        if (strip->fillWhenFirst && strip->content) areas.append(strip->content);
+        if (strip->content && strip->content->property("windowDragArea").toBool()) areas.append(strip->content);
     }
     return areas;
 }
@@ -394,15 +445,35 @@ QMenu* CommandStripHost::createContextMenu(QWidget* parent)
 
 QMenu* CommandStripHost::createOverflowMenu(const QString& id, QWidget* parent)
 {
-    auto* strip = d->strips.value(id);
-    if (!strip) return nullptr;
+    if (!d->strips.contains(id)) return nullptr;
     auto* menu = new QMenu(parent);
+    populateOverflowMenu(id, menu);
+    return menu;
+}
+
+void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
+{
+    const auto* strip = d->strips.value(id);
+    if (!strip || !menu) return;
+    QPointer<QMenu> oldCustomize = menu->findChild<QMenu*>("StripCustomizeMenu", Qt::FindDirectChildrenOnly);
+    menu->clear();
+    delete oldCustomize;
     for (const auto& item : strip->items) if (strip->overflow.contains(item.id) && item.action) {
         menu->addAction(item.action);
     }
     if (!menu->actions().isEmpty()) menu->addSeparator();
     auto* customize = menu->addMenu(QStringLiteral("添加或移除按钮"));
     customize->setObjectName("StripCustomizeMenu");
+    auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
+    elastic->setObjectName("StripElasticAction");
+    elastic->setCheckable(true);
+    elastic->setChecked(strip->sizing == StripSizing::Elastic);
+    connect(elastic, &QAction::toggled, this, [this, id](bool checked) {
+        const auto sizing = checked ? StripSizing::Elastic : StripSizing::Content;
+        if (d->sizingChangeRequest) d->sizingChangeRequest(id, sizing);
+        else setStripSizing(id, sizing);
+    });
+    customize->addSeparator();
     if (strip->items.isEmpty() && strip->content) {
         auto* action = customize->addAction(strip->title);
         action->setData(QStringLiteral("content")); action->setCheckable(true);
@@ -416,7 +487,6 @@ QMenu* CommandStripHost::createOverflowMenu(const QString& id, QWidget* parent)
             setStripItemVisible(id, itemId, included);
         });
     }
-    return menu;
 }
 
 QSize CommandStripHost::sizeHint() const
@@ -439,6 +509,13 @@ QSize CommandStripHost::minimumSizeHint() const { return {0, sizeHint().height()
 
 void CommandStripHost::arrange()
 {
+    if (d->arranging) return;
+    QScopedValueRollback arranging(d->arranging, true);
+    // QMenuBar caches its size hint until its actions change. Apply inclusion
+    // before measuring either strip, so customization takes effect this frame.
+    for (auto* strip : d->strips) if (qobject_cast<QMenuBar*>(strip->content.data())) {
+        for (const auto& item : strip->items) if (item.action) item.action->setVisible(item.included);
+    }
     int y = 0;
     for (int row = 0; row < 2; ++row) {
         QStringList visible;
@@ -456,8 +533,13 @@ void CommandStripHost::arrange()
             const int value = std::max(strip->minimumWidthForLayout(), strip->requestedWidth < 0 ? strip->naturalWidth() : strip->requestedWidth);
             sizes.append(value); total += value;
         }
-        if (!visible.isEmpty() && d->strips.value(visible.first())->fillWhenFirst && total < available) {
-            sizes[0] += available - total; total = available;
+        int elasticCount = 0;
+        for (int index = 0; index < visible.size(); ++index) {
+            const auto* strip = d->strips.value(visible[index]);
+            if (strip->sizing != StripSizing::Elastic) continue;
+            total -= sizes[index] - strip->minimumWidthForLayout();
+            sizes[index] = strip->minimumWidthForLayout();
+            ++elasticCount;
         }
         // Reserve enough space for every visible handle and tail. The buttons
         // shrink into each strip's overflow menu rather than widening the window.
@@ -465,6 +547,14 @@ void CommandStripHost::arrange()
             const int minimum = d->strips.value(visible[index])->minimumWidthForLayout();
             const int reduction = std::min(total - available, std::max(0, sizes[index] - minimum));
             sizes[index] -= reduction; total -= reduction;
+        }
+        // Elastic strips share the free space at any position in the row. A
+        // trailing content-sized strip therefore remains at the right edge.
+        int extra = std::max(0, available - total);
+        for (int index = 0; index < visible.size() && elasticCount > 0; ++index) {
+            if (d->strips.value(visible[index])->sizing != StripSizing::Elastic) continue;
+            const int share = extra / elasticCount;
+            sizes[index] += share; extra -= share; --elasticCount;
         }
         int x = rowMargin;
         int index = 0;
@@ -497,6 +587,7 @@ QJsonObject CommandStripHost::saveLayout() const
             for (const auto& item : strip->items) if (!item.included) excluded.append(item.id);
             const int savedWidth = isDragging() ? d->originalWidths.value(id, -1) : strip->requestedWidth;
             strips.insert(id, QJsonObject{{"visible", strip->visible}, {"width", savedWidth},
+                {"sizing", strip->sizing == StripSizing::Elastic ? "elastic" : "content"},
                 {"excluded", excluded}, {"contentVisible", !strip->content || !strip->content->isHidden()}});
         }
         rows.append(entries);
@@ -525,6 +616,7 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         const auto value = settings.value(id).toObject();
         const int requested = value.value("width").toInt(-1);
         if (requested != -1 && requested < savedMinimumWidth) return;
+        if (value.contains("sizing") && value.value("sizing") != "elastic" && value.value("sizing") != "content") return;
     }
     if (isDragging()) finishDrag(false);
     d->rows[0] = proposed[0]; d->rows[1] = proposed[1];
@@ -535,6 +627,7 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         const auto value = settings.value(strip->id).toObject();
         strip->visible = value.value("visible").toBool(true);
         strip->requestedWidth = value.value("width").toInt(-1);
+        if (value.contains("sizing")) strip->sizing = value.value("sizing") == "elastic" ? StripSizing::Elastic : StripSizing::Content;
         const auto excluded = value.value("excluded").toArray();
         for (auto& item : strip->items) item.included = !excluded.contains(item.id);
         if (strip->content && strip->items.isEmpty()) strip->content->setVisible(value.value("contentVisible").toBool(true));
@@ -612,11 +705,21 @@ void CommandStripHost::updateDrag(QPoint globalPosition)
         if (position.x() < bounds.left() + strip->minimumWidthForLayout() / 2) break;
         index = itemIndex + 1;
         markerX = bounds.right() + stripSpacing;
-        if (position.x() < bounds.right()) {
-            strip->requestedWidth = std::max(strip->minimumWidthForLayout(), position.x() - bounds.left() - stripSpacing);
-            markerX = bounds.left() + strip->requestedWidth + stripSpacing;
-            break;
+        if (position.x() < bounds.right()) break;
+    }
+    // The insertion handle is also the boundary after the preceding strip.
+    // Expand as well as compress it, including the empty space left after a
+    // previous compression. Restrict this to the strip immediately before the
+    // insertion point, so crossing another handle still reorders normally.
+    for (int previous = index - 1; previous >= 0; --previous) {
+        auto* strip = d->strips.value(d->rows[row][previous]);
+        if (!strip->visible) continue;
+        if (strip->sizing == StripSizing::Content) {
+            strip->requestedWidth = std::max(strip->minimumWidthForLayout(),
+                position.x() - d->pressOffset.x() - strip->geometry().left() - stripSpacing);
+            markerX = strip->geometry().left() + strip->requestedWidth + stripSpacing;
         }
+        break;
     }
     d->rows[row].insert(index, d->dragging);
     arrange();

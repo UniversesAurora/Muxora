@@ -14,6 +14,7 @@
 #include <QToolButton>
 #include <QWheelEvent>
 #include <QWidgetAction>
+#include <tuple>
 
 namespace window_system {
 namespace {
@@ -183,12 +184,13 @@ void GroupTabs::setDragHover(QPoint global) {
 }
 void GroupTabs::setPinnedActions(std::function<void()> current, std::function<void()> all) {
     auto* row = qobject_cast<QHBoxLayout*>(list_->parentWidget()->layout());
-    for (auto item : {std::pair{std::move(current), QStringLiteral("取消固定当前标签")},
-                      std::pair{std::move(all), QStringLiteral("取消固定这一侧全部标签")}}) {
-        auto* button = new QToolButton(list_->parentWidget()); button->setIcon(iconFor("unpin", theme_));
-        button->setToolTip(item.second); button->setAccessibleName(item.second);
+    for (auto item : {std::tuple{std::move(current), QStringLiteral("取消固定当前标签"), QStringLiteral("unpin")},
+                      std::tuple{std::move(all), QStringLiteral("取消固定这一侧全部标签"), QStringLiteral("unpin-all")}}) {
+        auto* button = new QToolButton(list_->parentWidget()); button->setIcon(iconFor(std::get<2>(item), theme_));
+        button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
+        button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
         row->insertWidget(row->count() - 1, button);
-        QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(item.first)] { if (callback) callback(); });
+        QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
     }
 }
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
@@ -214,7 +216,12 @@ bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
 }
 void GroupTabs::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); updateBarGeometry(); }
 void GroupTabs::showTabList() {
+    if (tabListMenu_ && tabListMenu_->isVisible()) { tabListMenu_->close(); return; }
     auto* menu = new QMenu(this); menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setAttribute(Qt::WA_NoMouseReplay);
+    tabListMenu_ = menu;
+    list_->setDown(true);
+    QObject::connect(menu, &QMenu::aboutToHide, this, [this] { list_->setDown(false); list_->update(); });
     menu->setStyleSheet("QMenu{menu-scrollable:1;}");
     for (int index = 0; index < bar_->count(); ++index) {
         auto* action = new QWidgetAction(menu);

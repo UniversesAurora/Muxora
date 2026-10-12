@@ -18,13 +18,17 @@ namespace window_system {
 // ownership. Layout storage contains stable strip/action IDs, never pointers.
 class CommandStripHost final : public QFrame {
 public:
+    enum class StripSizing { Content, Elastic };
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;
 
     void addStrip(QString id, QWidget* content, int row);
     void addStrip(QString id, QString title, QWidget* content, int row,
-                  bool fillWhenFirst = false);
-    void addActionStrip(QString id, QString title, const QList<QAction*>& actions, int row);
+                  StripSizing sizing = StripSizing::Content);
+    void addActionStrip(QString id, QString title, const QList<QAction*>& actions, int row,
+                        StripSizing sizing = StripSizing::Content);
+    bool setStripSizing(const QString& id, StripSizing sizing);
+    [[nodiscard]] StripSizing stripSizing(const QString& id) const;
     void setLocked(bool locked);
     [[nodiscard]] bool isLocked() const;
     bool setStripVisible(const QString& id, bool visible);
@@ -45,6 +49,7 @@ public:
     [[nodiscard]] QList<QWidget*> windowDragAreas() const;
     void setContextMenuCustomizer(std::function<void(QMenu*)> customizer);
     void setLayoutChangedCallback(std::function<void()> callback);
+    void setSizingChangeRequest(std::function<void(const QString&, StripSizing)> request);
 
     [[nodiscard]] QJsonObject saveLayout() const;
     void restoreLayout(const QJsonObject& json);
@@ -65,6 +70,7 @@ private:
     std::unique_ptr<Private> d;
     void arrange();
     void changed();
+    void populateOverflowMenu(const QString& id, QMenu* menu);
     void beginDrag(const QString& id, QPoint globalPosition, QPoint offset);
     void updateDrag(QPoint globalPosition);
     void finishDrag(bool commit);

@@ -11,10 +11,12 @@ class QComboBox;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
-class QListWidget;
 class QPushButton;
+class QScrollArea;
 class QSpinBox;
 class QTreeWidget;
+class QTreeWidgetItem;
+class QVBoxLayout;
 
 namespace window_system {
 
@@ -30,20 +32,33 @@ private:
         QString searchable;
         QPointer<QWidget> widget;
     };
+    struct Category {
+        QString id;
+        QPointer<QWidget> heading;
+        QTreeWidgetItem* item = nullptr; // Owned by categories_; never rebuilt.
+    };
     void syncControls();
     void filterRows();
+    void addCategory(QWidget* parent, QVBoxLayout* rows, const QString& id,
+                     const QString& title);
+    void scrollToCategory(QTreeWidgetItem* item);
+    void syncNavigation();
+    void markCurrentCategory(QTreeWidgetItem* item);
     QWidget* addRow(QWidget* parent, const QString& category, const QString& title,
                     const QString& key, const QString& description, QWidget* control);
 
     QPointer<WindowManager> manager_;
     QLineEdit* search_ = nullptr;
-    QListWidget* categories_ = nullptr;
+    QTreeWidget* categories_ = nullptr;
+    QScrollArea* scroll_ = nullptr;
     QLabel* results_ = nullptr;
     QComboBox* detachKind_ = nullptr;
     QComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
     QVector<Row> rows_;
+    QVector<Category> sections_;
+    bool navigating_ = false;
 };
 
 class ShortcutsPage final : public QWidget {

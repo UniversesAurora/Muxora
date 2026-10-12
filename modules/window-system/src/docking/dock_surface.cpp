@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QEvent>
+#include <QGridLayout>
 #include <QLabel>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -93,14 +94,24 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         root_->deleteLater();
     }
     root_ = new QWidget(this);
-    auto* outer = new QVBoxLayout(root_);
+    auto* outer = new QGridLayout(root_);
     outer->setContentsMargins(0, 0, 0, 0); outer->setSpacing(0);
-    if (auto* top = buildEdge(Edge::Top, contents)) outer->addWidget(top);
-    auto* middle = new QWidget(root_);
-    auto* row = new QHBoxLayout(middle);
-    row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
-    if (auto* left = buildEdge(Edge::Left, contents)) row->addWidget(left);
-    auto* vertical = new QSplitter(Qt::Vertical, middle);
+    outer->setRowStretch(1, 1); outer->setColumnStretch(1, 1);
+    auto* topBar = buildEdge(Edge::Top, contents);
+    auto* leftBar = buildEdge(Edge::Left, contents);
+    auto* rightBar = buildEdge(Edge::Right, contents);
+    auto* bottomBar = buildEdge(Edge::Bottom, contents);
+    // Bottom owns both lower corners; the vertical bars own the upper
+    // corners. Missing neighbours leave their corner to the remaining bar.
+    if (leftBar) outer->addWidget(leftBar, 0, 0, bottomBar ? 2 : 3, 1);
+    if (rightBar) outer->addWidget(rightBar, 0, 2, bottomBar ? 2 : 3, 1);
+    if (topBar) {
+        const int firstColumn = leftBar ? 1 : 0;
+        const int lastColumn = rightBar ? 1 : 2;
+        outer->addWidget(topBar, 0, firstColumn, 1, lastColumn - firstColumn + 1);
+    }
+    if (bottomBar) outer->addWidget(bottomBar, 2, 0, 1, 3);
+    auto* vertical = new QSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
     configureSplitter(vertical);
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
@@ -131,10 +142,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         : vertical->widget(i)->property("preferredExtent").toInt());
     vertical->setSizes(sizes);
     QObject::connect(vertical, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
-    row->addWidget(vertical, 1);
-    if (auto* right = buildEdge(Edge::Right, contents)) row->addWidget(right);
-    outer->addWidget(middle, 1);
-    if (auto* bottom = buildEdge(Edge::Bottom, contents)) outer->addWidget(bottom);
+    outer->addWidget(vertical, 1, 1);
     layout()->addWidget(root_);
     // Layout insertion into an already visible parent defers the implicit show.
     // A completed API mutation must expose its replacement controls immediately,
@@ -218,11 +226,6 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     auto* layout = new QBoxLayout(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, bar);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(2);
-    auto* pinAll = new QToolButton(bar); pinAll->setObjectName("PinEdgeButton");
-    pinAll->setIcon(iconFor("pin", manager_->theme())); pinAll->setToolTip(QStringLiteral("固定这一侧全部标签"));
-    pinAll->setAccessibleName(pinAll->toolTip());
-    QObject::connect(pinAll, &QToolButton::clicked, manager_, [this, edge] { manager_->pinEdge(window_, edge, true); });
-    layout->addWidget(pinAll);
     for (const auto groupId : ids) {
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
             auto* button = new EdgeButton(manager_->model().tab(tabId)->title, vertical, bar);
@@ -235,6 +238,11 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             layout->addWidget(button);
         }
     }
+    auto* pinAll = new QToolButton(bar); pinAll->setObjectName("PinEdgeButton");
+    pinAll->setIcon(iconFor("pin-all", manager_->theme())); pinAll->setToolTip(QStringLiteral("固定这一侧全部标签"));
+    pinAll->setAccessibleName(pinAll->toolTip());
+    QObject::connect(pinAll, &QToolButton::clicked, manager_, [this, edge] { manager_->pinEdge(window_, edge, true); });
+    layout->addWidget(pinAll);
     layout->addStretch();
     return bar;
 }
@@ -383,8 +391,14 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     QObject::connect(pin, &QToolButton::clicked, manager_, [this, tab] { manager_->pinTab(tab, true); });
     QObject::connect(close, &QToolButton::clicked, this, [this] { closePeek(); });
     layout->addWidget(header);
-    if (auto content = contents_.value(tab)) layout->addWidget(content, 1);
+    if (auto content = contents_.value(tab)) {
+        layout->addWidget(content, 1);
+        // Refresh parks tabs explicitly hidden. Showing their new ancestor
+        // does not undo that flag, so restore the actual content visibility.
+        content->show();
+    }
     placePeek(); peek_->show(); peek_->raise();
+    layout->activate();
 }
 void DockSurface::closePeek()
 {
@@ -398,13 +412,18 @@ void DockSurface::placePeek()
     if (!peek_) return;
     const auto* group = manager_->model().group(peekGroup_);
     if (!group) return;
-    const auto h = qMin(height() - 40, qMax(140, height() / 2));
-    const auto w = qMin(width() - 40, qMax(240, width() / 3));
+    QRect available = rect();
+    if (auto bar = edgeBars_.value(Edge::Left)) available.setLeft(bar->mapTo(this, QPoint(bar->width(), 0)).x());
+    if (auto bar = edgeBars_.value(Edge::Right)) available.setRight(bar->mapTo(this, QPoint()).x() - 1);
+    if (auto bar = edgeBars_.value(Edge::Top)) available.setTop(bar->mapTo(this, QPoint(0, bar->height())).y());
+    if (auto bar = edgeBars_.value(Edge::Bottom)) available.setBottom(bar->mapTo(this, QPoint()).y() - 1);
+    const auto h = qMin(available.height(), qMax(140, available.height() / 2));
+    const auto w = qMin(available.width(), qMax(240, available.width() / 3));
     switch (group->edge) {
-    case Edge::Left: peek_->setGeometry(26, 0, w, height()); break;
-    case Edge::Right: peek_->setGeometry(width() - w - 26, 0, w, height()); break;
-    case Edge::Top: peek_->setGeometry(0, 26, width(), h); break;
-    case Edge::Bottom: peek_->setGeometry(0, height() - h - 26, width(), h); break;
+    case Edge::Left: peek_->setGeometry(available.x(), available.y(), w, available.height()); break;
+    case Edge::Right: peek_->setGeometry(available.right() - w + 1, available.y(), w, available.height()); break;
+    case Edge::Top: peek_->setGeometry(available.x(), available.y(), available.width(), h); break;
+    case Edge::Bottom: peek_->setGeometry(available.x(), available.bottom() - h + 1, available.width(), h); break;
     }
 }
 void DockSurface::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); restorePinnedExtents(); placePeek(); }

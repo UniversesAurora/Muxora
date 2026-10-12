@@ -8,13 +8,16 @@
 #include <QAction>
 #include <QApplication>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
 #include <QToolButton>
+#include <QTimer>
 
 #include <algorithm>
 #include <memory>
@@ -57,11 +60,17 @@ private slots:
     void initTestCase();
     void narrowStripsKeepTheTailAndExposeOverflowActions();
     void hiddenActionsDoNotReserveButtonsOrOverflowEntries();
+    void hiddenStripContentDoesNotReserveWidthOrOverflow();
     void visibilityCustomizationAndWidthsSurviveRestore();
     void restoringLockedMinimumWidthDoesNotUseTheCurrentUnlockedMinimum();
     void titleFirstFillsTheRowAndIsAWindowDragArea();
+    void elasticStripsShareRemainingSpaceAtEveryPositionAndRestoreLegacyDefaults();
+    void elasticContentDoesNotBecomeAWindowDragTarget();
+    void customizationUpdatesMenuAndActionGeometryImmediately();
+    void overflowToggleRestoresHoverAndPressState();
     void toolbarDragImmediatelyMovesThePresentationAndCancelsCleanly();
     void slidingTheFollowingHandleCompressesThePreviousStrip();
+    void slidingTheFollowingHandleRestoresPreviouslyCompressedButtons();
     void contextMenuListsEveryStripAndOmitsUnrelatedWindowKinds();
     void stripCustomizationsSurviveWindowKindConversions();
 };
@@ -106,7 +115,7 @@ void ChromeInteractionTest::visibilityCustomizationAndWidthsSurviveRestore()
 {
     CommandStripHost original;
     original.addActionStrip("tools", "Tools", actions(&original, 6), 0);
-    original.addStrip("title", "Title", new QLabel("Workspace"), 0, true);
+    original.addStrip("title", "Title", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
     original.setLocked(false);
     QVERIFY(original.setStripItemVisible("tools", "command.1", false));
     QVERIFY(original.setStripWidth("tools", 90));
@@ -115,7 +124,7 @@ void ChromeInteractionTest::visibilityCustomizationAndWidthsSurviveRestore()
     const auto snapshot = original.saveLayout();
     CommandStripHost restored;
     restored.addActionStrip("tools", "Tools", actions(&restored, 6), 0);
-    restored.addStrip("title", "Title", new QLabel("Workspace"), 0, true);
+    restored.addStrip("title", "Title", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
     restored.restoreLayout(snapshot);
     QCOMPARE(restored.saveLayout(), snapshot);
     QVERIFY(!restored.isLocked());
@@ -154,11 +163,47 @@ void ChromeInteractionTest::hiddenActionsDoNotReserveButtonsOrOverflowEntries()
     QVERIFY(!host.overflowItems("tools").contains(commands.last()->objectName()));
 }
 
+void ChromeInteractionTest::hiddenStripContentDoesNotReserveWidthOrOverflow()
+{
+    CommandStripHost host;
+    host.addStrip("content", "Content", new QLabel("A long custom toolbar content widget"), 0);
+    host.resize(650, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* strip = host.stripWidget("content");
+    auto* tail = strip->findChild<QToolButton*>("StripOverflowButton");
+    QVERIFY(tail);
+    const int originalWidth = strip->width();
+    QVERIFY(host.setStripItemVisible("content", "content", false));
+    QVERIFY(strip->width() < originalWidth);
+    QVERIFY(host.overflowItems("content").isEmpty());
+    QVERIFY(!tail->property("hasOverflow").toBool());
+    QVERIFY(tail->isVisible());
+    QVERIFY(host.setStripItemVisible("content", "content", true));
+    QCOMPARE(strip->width(), originalWidth);
+    QVERIFY(host.setStripWidth("content", 24));
+    QCOMPARE(host.overflowItems("content"), QStringList({"content"}));
+    QVERIFY(tail->property("hasOverflow").toBool());
+    QVERIFY(host.setStripItemVisible("content", "content", false));
+    QVERIFY(host.overflowItems("content").isEmpty());
+    QVERIFY(!tail->property("hasOverflow").toBool());
+    std::unique_ptr<QMenu> menu(host.createOverflowMenu("content", &host));
+    QCOMPARE(menu->actions().size(), 1);
+    QVERIFY(menu->actions().first()->menu());
+    auto* customize = menu->findChild<QMenu*>("StripCustomizeMenu"); QVERIFY(customize);
+    QAction* contentItem = nullptr;
+    for (auto* action : customize->actions()) if (action->data().toString() == "content") contentItem = action;
+    QVERIFY(contentItem); QVERIFY(!contentItem->isChecked());
+    contentItem->trigger();
+    QCOMPARE(host.overflowItems("content"), QStringList({"content"}));
+    QVERIFY(tail->property("hasOverflow").toBool());
+}
+
 void ChromeInteractionTest::titleFirstFillsTheRowAndIsAWindowDragArea()
 {
     CommandStripHost host;
     auto* title = new QLabel("Workspace");
-    host.addStrip("title", "Title", title, 0, true);
+    title->setProperty("windowDragArea", true);
+    host.addStrip("title", "Title", title, 0, CommandStripHost::StripSizing::Elastic);
     host.addActionStrip("tools", "Tools", actions(&host, 2), 0);
     host.resize(640, host.height()); host.show();
     QVERIFY(QTest::qWaitForWindowExposed(&host));
@@ -167,11 +212,142 @@ void ChromeInteractionTest::titleFirstFillsTheRowAndIsAWindowDragArea()
     QVERIFY(host.windowDragAreas().contains(title));
     QCOMPARE(title->alignment() & Qt::AlignHorizontal_Mask, Qt::AlignLeft);
     QVERIFY(host.moveStrip("title", 0, 1));
-    QVERIFY(host.stripWidget("title")->width() < titleWidth);
+    // Elastic sizing supersedes the former "only when first" condition.
+    QCOMPARE(host.stripWidget("title")->width(), titleWidth);
+    QCOMPARE(host.stripWidget("tools")->geometry().left(), 2);
+    QCOMPARE(host.stripWidget("title")->geometry().right(), host.width() - 3);
     host.setLocked(false);
     auto* handle = host.stripWidget("title")->findChild<QWidget*>("StripHandle");
     QVERIFY(handle); QCOMPARE(handle->cursor().shape(), Qt::SizeAllCursor);
     QVERIFY(!qobject_cast<QToolButton*>(handle));
+}
+
+void ChromeInteractionTest::elasticStripsShareRemainingSpaceAtEveryPositionAndRestoreLegacyDefaults()
+{
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 2), 0);
+    host.addStrip("elastic", "Elastic", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("after", "After", actions(&host, 3), 0);
+    host.resize(850, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const int beforeWidth = host.stripWidget("before")->width();
+    const int afterWidth = host.stripWidget("after")->width();
+    const int elasticWidth = host.stripWidget("elastic")->width();
+    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 3);
+    host.resize(1000, host.height());
+    QCOMPARE(host.stripWidget("before")->width(), beforeWidth);
+    QCOMPARE(host.stripWidget("after")->width(), afterWidth);
+    QCOMPARE(host.stripWidget("elastic")->width(), elasticWidth + 150);
+    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 3);
+    QVERIFY(host.setStripSizing("before", CommandStripHost::StripSizing::Elastic));
+    QVERIFY(std::abs(host.stripWidget("before")->width() - host.stripWidget("elastic")->width()) <= 1);
+    QCOMPARE(host.stripWidget("after")->width(), afterWidth);
+    const auto snapshot = host.saveLayout();
+    auto legacy = snapshot;
+    auto settings = legacy.value("strips").toObject();
+    for (const auto& id : host.stripIds()) {
+        auto entry = settings.value(id).toObject(); entry.remove("sizing"); settings.insert(id, entry);
+    }
+    legacy.insert("strips", settings);
+    CommandStripHost restored;
+    restored.addActionStrip("before", "Before", actions(&restored, 2), 0);
+    restored.addStrip("elastic", "Elastic", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
+    restored.addActionStrip("after", "After", actions(&restored, 3), 0);
+    restored.restoreLayout(legacy);
+    QCOMPARE(restored.stripSizing("before"), CommandStripHost::StripSizing::Content);
+    QCOMPARE(restored.stripSizing("elastic"), CommandStripHost::StripSizing::Elastic);
+    restored.restoreLayout(snapshot);
+    QCOMPARE(restored.saveLayout(), snapshot);
+}
+
+void ChromeInteractionTest::elasticContentDoesNotBecomeAWindowDragTarget()
+{
+    CommandStripHost host;
+    auto* interactive = new QToolButton;
+    interactive->setText("Interactive content");
+    auto* caption = new QLabel("Workspace");
+    caption->setProperty("windowDragArea", true);
+    host.addStrip("interactive", "Interactive", interactive, 0, CommandStripHost::StripSizing::Elastic);
+    host.addStrip("caption", "Caption", caption, 0, CommandStripHost::StripSizing::Elastic);
+    QVERIFY(!host.windowDragAreas().contains(interactive));
+    QVERIFY(host.windowDragAreas().contains(caption));
+    QVERIFY(host.setStripSizing("caption", CommandStripHost::StripSizing::Content));
+    QVERIFY(host.windowDragAreas().contains(caption));
+    QVERIFY(host.setStripSizing("interactive", CommandStripHost::StripSizing::Content));
+    QVERIFY(!host.windowDragAreas().contains(interactive));
+}
+
+void ChromeInteractionTest::customizationUpdatesMenuAndActionGeometryImmediately()
+{
+    CommandStripHost host;
+    auto* menuBar = new QMenuBar;
+    menuBar->setNativeMenuBar(false);
+    for (int index = 0; index < 4; ++index) {
+        auto* action = menuBar->addMenu(QStringLiteral("Category %1").arg(index))->menuAction();
+        action->setObjectName(QStringLiteral("category.%1").arg(index));
+    }
+    host.addStrip("menu", "Menu", menuBar, 0);
+    const auto commands = actions(&host, 3);
+    host.addActionStrip("tools", "Tools", commands, 0);
+    host.resize(900, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const int originalWidth = host.stripWidget("menu")->width();
+    std::unique_ptr<QMenu> menu(host.createOverflowMenu("menu", &host));
+    auto* customized = menu->findChild<QMenu*>("StripCustomizeMenu"); QVERIFY(customized);
+    QAction* item = nullptr;
+    for (auto* action : customized->actions()) if (action->data().toString() == "category.0") item = action;
+    QVERIFY(item); item->trigger();
+    QVERIFY(!menuBar->actions().first()->isVisible());
+    QVERIFY(host.stripWidget("menu")->width() < originalWidth);
+    item->trigger(); QCOMPARE(host.stripWidget("menu")->width(), originalWidth);
+    auto* strip = host.stripWidget("tools");
+    const int toolWidth = strip->width();
+    QVERIFY(host.setStripItemVisible("tools", "command.0", false));
+    QVERIFY(strip->width() < toolWidth);
+    for (auto* button : strip->findChildren<QToolButton*>()) {
+        if (button->property("commandId").toString() == "command.0") QVERIFY(button->isHidden());
+    }
+    commands[1]->setVisible(false);
+    QVERIFY(!host.overflowItems("tools").contains("command.1"));
+    QVERIFY(strip->width() < toolWidth);
+}
+
+void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
+{
+    CommandStripHost host;
+    host.setWindowFlag(Qt::WindowStaysOnTopHint);
+    host.move(150, 150);
+    applyTheme(&host, defaultTheme());
+    host.addActionStrip("tools", "Tools", actions(&host, 3), 0);
+    host.resize(400, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    host.raise(); host.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host));
+    auto* tail = host.stripWidget("tools")->findChild<QToolButton*>("StripOverflowButton");
+    QVERIFY(tail); QVERIFY(tail->menu());
+    bool visibleBeforeSecondClick = false;
+    bool watchdogFired = false;
+    QTimer::singleShot(30, &host, [&] {
+        visibleBeforeSecondClick = tail->menu()->isVisible();
+        QTest::mouseClick(tail, Qt::LeftButton);
+    });
+    // Watchdog closes only after recording the expected toggle; it prevents a
+    // broken nested popup from hanging the test runner.
+    QTimer::singleShot(300, &host, [tail, &watchdogFired] {
+        if (tail->menu() && tail->menu()->isVisible()) { watchdogFired = true; tail->menu()->close(); }
+    });
+    QTest::mouseClick(tail, Qt::LeftButton);
+    QTRY_VERIFY(visibleBeforeSecondClick);
+    QVERIFY(!watchdogFired);
+    QVERIFY(!tail->menu()->isVisible());
+    QVERIFY(!tail->isDown());
+    QVERIFY(!QApplication::activePopupWidget());
+    auto* button = host.stripWidget("tools")->findChild<QToolButton*>("StripCommandButton");
+    QVERIFY(button);
+    QTest::mouseMove(button, button->rect().center());
+    QCoreApplication::processEvents();
+    QTRY_VERIFY(button->underMouse());
+    QTRY_VERIFY(!tail->underMouse());
 }
 
 void ChromeInteractionTest::restoringLockedMinimumWidthDoesNotUseTheCurrentUnlockedMinimum()
@@ -192,7 +368,7 @@ void ChromeInteractionTest::toolbarDragImmediatelyMovesThePresentationAndCancels
 {
     CommandStripHost host;
     host.addActionStrip("tools", "Tools", actions(&host, 6), 0);
-    host.addStrip("title", "Title", new QLabel("Workspace"), 1, true);
+    host.addStrip("title", "Title", new QLabel("Workspace"), 1, CommandStripHost::StripSizing::Elastic);
     host.setLocked(false); host.resize(650, host.height()); host.move(150, 150); host.show();
     QVERIFY(QTest::qWaitForWindowExposed(&host));
     const auto snapshot = host.saveLayout();
@@ -217,7 +393,7 @@ void ChromeInteractionTest::slidingTheFollowingHandleCompressesThePreviousStrip(
 {
     CommandStripHost host;
     host.addActionStrip("tools", "Tools", actions(&host, 12), 0);
-    host.addStrip("title", "Title", new QLabel("Workspace"), 0, true);
+    host.addStrip("title", "Title", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
     host.setLocked(false); host.resize(800, host.height()); host.show();
     QVERIFY(QTest::qWaitForWindowExposed(&host));
     auto* first = host.stripWidget("tools");
@@ -232,6 +408,35 @@ void ChromeInteractionTest::slidingTheFollowingHandleCompressesThePreviousStrip(
     QVERIFY(!host.overflowItems("tools").isEmpty());
     const int firstRight = first->geometry().right();
     QVERIFY(host.stripWidget("title")->geometry().left() > firstRight);
+}
+
+void ChromeInteractionTest::slidingTheFollowingHandleRestoresPreviouslyCompressedButtons()
+{
+    CommandStripHost host;
+    host.addActionStrip("tools", "Tools", actions(&host, 10), 0);
+    host.addStrip("title", "Title", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
+    host.setLocked(false); host.resize(900, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* first = host.stripWidget("tools");
+    const int originalWidth = first->width();
+    auto* handle = host.stripWidget("title")->findChild<QWidget*>("StripHandle");
+    const auto compressed = host.mapToGlobal(QPoint(95, 12));
+    startDrag(host, handle, compressed);
+    mouse(&host, QEvent::MouseButtonRelease, compressed, Qt::LeftButton, Qt::NoButton);
+    QVERIFY(!host.isDragging()); QVERIFY(first->width() < originalWidth);
+    QVERIFY(!host.overflowItems("tools").isEmpty());
+    const auto expanded = host.mapToGlobal(QPoint(originalWidth + 35, 12));
+    startDrag(host, handle, expanded);
+    mouse(&host, QEvent::MouseButtonRelease, expanded, Qt::LeftButton, Qt::NoButton);
+    QVERIFY(!host.isDragging());
+    QCOMPARE(host.stripOrder(0), QStringList({"tools", "title"}));
+    QVERIFY(first->width() >= originalWidth);
+    QVERIFY(host.overflowItems("tools").isEmpty());
+    const auto snapshot = host.saveLayout();
+    startDrag(host, handle, compressed);
+    QTest::keyClick(&host, Qt::Key_Escape);
+    QCOMPARE(host.saveLayout(), snapshot);
+    QVERIFY(host.overflowItems("tools").isEmpty());
 }
 
 void ChromeInteractionTest::contextMenuListsEveryStripAndOmitsUnrelatedWindowKinds()

@@ -8,6 +8,7 @@
 #include <QPixmap>
 #include <QPolygonF>
 #include <QStringList>
+#include <QVariantMap>
 #include <QWidget>
 
 #include <algorithm>
@@ -41,6 +42,7 @@ bool supportedIcon(const QString& name)
         QStringLiteral("maximize"), QStringLiteral("restore"), QStringLiteral("add"),
         QStringLiteral("terminal"), QStringLiteral("files"), QStringLiteral("settings"),
         QStringLiteral("search"), QStringLiteral("pin"), QStringLiteral("unpin"),
+        QStringLiteral("pin-all"), QStringLiteral("unpin-all"),
         QStringLiteral("lock"), QStringLiteral("unlock"), QStringLiteral("split-horizontal"),
         QStringLiteral("split-vertical"), QStringLiteral("detach"), QStringLiteral("window"),
         QStringLiteral("return"), QStringLiteral("save"), QStringLiteral("command"),
@@ -140,9 +142,11 @@ public:
         } else if (name_ == QStringLiteral("search")) {
             painter->drawEllipse(QRectF(2.5, 2.5, 7.5, 7.5));
             painter->drawLine(QPointF(9, 9), QPointF(13, 13));
-        } else if (name_ == QStringLiteral("pin") || name_ == QStringLiteral("unpin")) {
+        } else if (name_ == QStringLiteral("pin") || name_ == QStringLiteral("unpin") ||
+                   name_ == QStringLiteral("pin-all") || name_ == QStringLiteral("unpin-all")) {
             painter->save();
-            if (name_ == QStringLiteral("unpin")) {
+            if (name_.endsWith(QStringLiteral("-all"))) painter->scale(0.8, 0.8);
+            if (name_.startsWith(QStringLiteral("unpin"))) {
                 painter->translate(8, 8);
                 painter->rotate(45);
                 painter->translate(-8, -8);
@@ -150,6 +154,11 @@ public:
             painter->drawPolyline(QPolygonF{{5, 3}, {11, 3}, {10, 5}, {10, 8}, {12, 10}, {4, 10}, {6, 8}, {6, 5}, {5, 3}});
             painter->drawLine(QPointF(8, 10), QPointF(8, 14));
             painter->restore();
+            if (name_.endsWith(QStringLiteral("-all"))) {
+                painter->setBrush(theme_.surface);
+                painter->drawRect(QRectF(11, 10, 3.5, 3.5));
+                painter->drawRect(QRectF(9.5, 11.5, 3.5, 3.5));
+            }
         } else if (name_ == QStringLiteral("lock") || name_ == QStringLiteral("unlock")) {
             painter->drawRect(QRectF(3.5, 7.5, 9, 6));
             QPainterPath shackle;
@@ -255,6 +264,10 @@ QMenu::item:selected { background: @selection; color: @selectionText; }
 QMenu::item:disabled { color: @muted; }
 QMenu::separator { height: 1px; background: @border; margin: 3px 5px; }
 QWidget#SettingsRows, QWidget#SettingsViewport { background: @surface; color: @text; }
+QTreeView#SettingsCategories { background: @surface; border: none; outline: none; }
+QTreeView#SettingsCategories:focus { border: none; }
+QTreeView#SettingsCategories::item, QTreeView#SettingsCategories::item:hover, QTreeView#SettingsCategories::item:selected { background: transparent; color: @text; border: none; }
+QFrame#SettingsCategoryDivider { background: @border; border: none; }
 QToolBar { background: @header; border: none; spacing: 3px; padding: 2px; }
 QToolBar::separator { width: 1px; background: @border; margin: 3px 4px; }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit { background: @surface; color: @text; border: 1px solid @border; border-radius: @radiuspx; padding: 2px 5px; selection-background-color: @selection; selection-color: @selectionText; }
@@ -262,7 +275,11 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { min-height: @controlInnerpx; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus { border-color: @focus; }
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { background: @raised; color: @muted; }
 QComboBox { padding-right: 22px; }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 19px; border-left: 1px solid @border; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 19px; border: none; }
+QSpinBox, QDoubleSpinBox { padding-right: 20px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: 1px solid transparent; background: transparent; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: padding; subcontrol-position: bottom right; width: 18px; border: 1px solid transparent; background: transparent; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { border-color: @accent; background: @soft; }
 QComboBox QAbstractItemView { background: @surface; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; }
 QAbstractItemView { background: @surface; alternate-background-color: @raised; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; outline: 0; }
 QAbstractItemView::item { padding: 3px 4px; min-height: 18px; }
@@ -295,6 +312,11 @@ QStatusBar QToolButton, QWidget#StatusBar QToolButton { color: @statusText; }
 QToolTip { background: @surface; color: @text; border: 1px solid @border; padding: 4px 6px; }
 QCheckBox, QRadioButton { spacing: 5px; }
 QCheckBox::indicator, QRadioButton::indicator { width: 14px; height: 14px; }
+QCheckBox::indicator { background: @surface; border: 1px solid @border; border-radius: @radiuspx; }
+QCheckBox::indicator:hover { border-color: @accent; }
+QCheckBox::indicator:checked, QCheckBox::indicator:indeterminate { background: @accent; border-color: @accent; }
+QCheckBox::indicator:disabled { background: @raised; border-color: @border; }
+QCheckBox::indicator:checked:disabled { background: @muted; }
 QGroupBox { background: transparent; border: 1px solid @border; margin-top: 10px; padding-top: 8px; }
 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 4px; left: 7px; }
 QProgressBar { border: 1px solid @border; background: @raised; text-align: center; color: @text; }
@@ -323,6 +345,14 @@ QProgressBar::chunk { background: @accent; }
 void applyTheme(QWidget* root, const Theme& theme)
 {
     if (!root) return;
+    // QStyleSheetStyle can derive and replace widget palette roles during
+    // polish. Keep the explicit paint tokens on the root for vector controls;
+    // reparented content resolves the nearest root rather than keeping a style
+    // pointer or stale colors from its previous window.
+    root->setProperty("windowSystemThemeColors", QVariantMap{
+        {"text", theme.text}, {"mutedText", theme.mutedText}, {"accent", theme.accent},
+        {"accentSoft", theme.accentSoft}, {"selection", theme.selection},
+        {"checkedIndicatorText", theme.checkedIndicatorText}});
     QPalette palette = root->palette();
     palette.setColor(QPalette::Window, theme.background);
     palette.setColor(QPalette::WindowText, theme.text);
@@ -331,6 +361,8 @@ void applyTheme(QWidget* root, const Theme& theme)
     palette.setColor(QPalette::Text, theme.text);
     palette.setColor(QPalette::Button, theme.raisedSurface);
     palette.setColor(QPalette::ButtonText, theme.text);
+    palette.setColor(QPalette::BrightText, theme.checkedIndicatorText);
+    palette.setColor(QPalette::Midlight, theme.accentSoft);
     palette.setColor(QPalette::Highlight, theme.selection);
     palette.setColor(QPalette::HighlightedText, theme.selectionText);
     palette.setColor(QPalette::Link, theme.accent);
