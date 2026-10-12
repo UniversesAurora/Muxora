@@ -38,6 +38,18 @@ pwsh ./tools/build.ps1 -Configuration Release -Test -Package
 
 应用构建目标为 `muxora`。部署目录中的 Qt 运行文件保留其许可证；该目录是本机试用产物，正式分发仍需完成依赖清单与许可证检查。
 
+交付到另一台 Windows x64 电脑试用时，使用 7-Zip 便携包：
+
+```powershell
+pwsh ./tools/package-portable.ps1
+```
+
+构建机器需要 7-Zip，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。每次打包使用新的部署目录，避免旧插件、私人布局和重复许可证目录混入包内；`build.ps1 -PackageDirectory <path>` 可指定部署位置。
+
+压缩包和 SHA-256 校验文件位于 `out/dist/`。解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
+
+脚本检查 7-Zip 压缩包完整性，再解压到含空格和中文的路径。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。解压检查使用另一个目录，不把检查生成的布局放入交付包。
+
 完整验证入口：
 
 ```powershell
@@ -92,16 +104,19 @@ pwsh ./tools/verify.ps1
 
 ## 已取得的验证记录
 
-本次最终代码通过 `tools/verify.ps1` 完整检查，取得以下结果：
+窗口交互版本通过 `tools/verify.ps1` 完整检查，取得以下结果：
 
 六组包含 100 个实际测试行，不含各组初始化和清理；Debug、Release 与独立构建均无失败、跳过或黑名单用例。
 
+便携支持另增加四个应用状态目录用例：相邻目录启用、普通默认路径、显式路径优先和同名文件排除。本轮 Debug / Release 均通过七组、104 个实际测试行；窗口模块的独立构建仍为六组、100 行。
+
 | 检查 | 结果与证据 |
 | --- | --- |
-| Debug / Release | 模型、控件、拖拽、窗格与设置、边栏与标签、工具条六组 CTest 均通过，失败数为 0；报告为 `out/test-results/dev-debug.xml` 与 `dev-release.xml` |
+| Debug / Release | 窗口模块六组及应用状态目录一组 CTest 均通过，失败数为 0；报告为 `out/test-results/dev-debug.xml` 与 `dev-release.xml` |
 | 模块独立构建 | 单独配置 `modules/window-system/`，六组 CTest 均通过；报告为 `out/test-results/standalone.xml` |
 | 安装后的 API 复用 | 外部宿主夹具仅通过安装导出的 CMake 包引用模块，构建及运行契约测试通过；报告为 `out/test-results/external-host.xml` |
 | 部署启动 | 从 PATH 移除 SDK 与编译器后，部署应用启动检查退出码为 0，并成功写入带空格的状态目录；记录为 `out/test-results/package-smoke.json` |
+| 7-Zip 便携包 | 完整性检查通过；解压到中文及空格路径后，首次启动与重启均退出 0，包内布局保存和恢复通过；记录为 `out/test-results/portable-package.json` |
 
 拖拽测试在 Windows 桌面上向 Qt 控件注入输入事件，同时检查 Windows 原生命中和独立进程的透明、非透明遮挡窗口。它验证事件排队、跨窗口投放和遮挡回归，不等同于全部系统输入、混合 DPI 或 Snap 行为的实机验收。
 

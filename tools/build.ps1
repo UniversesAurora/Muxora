@@ -4,7 +4,8 @@ param(
     [string]$QtRoot,
     [switch]$Test,
     [switch]$Run,
-    [switch]$Package
+    [switch]$Package,
+    [string]$PackageDirectory
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
@@ -96,7 +97,11 @@ try {
         }
         $taskExecutable = Join-Path $taskBuild 'bin/muxora.exe'
         if ($Package) {
-            $taskPackageDirectory = Join-Path $taskRepository 'out/package/muxora-preview'
+            $taskPackageDirectory = if ($PackageDirectory) {
+                [IO.Path]::GetFullPath($PackageDirectory, $taskRepository)
+            } else {
+                Join-Path $taskRepository 'out/package/muxora-preview'
+            }
             New-Item -ItemType Directory -Path $taskPackageDirectory -Force | Out-Null
             Copy-Item -LiteralPath $taskExecutable -Destination $taskPackageDirectory -Force
             $taskPackagedExe = Join-Path $taskPackageDirectory 'muxora.exe'

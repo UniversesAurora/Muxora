@@ -14,6 +14,8 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 
 脚本支持 `-QtRoot` 指定 Qt kit 目录，或读取 `QT_ROOT`；也会发现仓库旁的 SDK 和忽略提交的 `.local/sdk.json`。完整检查入口为 `pwsh ./tools/verify.ps1`。构建、运行、测试和部署参数见 [窗口系统预览说明](docs/development/window-system-preview.md)。这是供试用与改进的首个版本，功能范围、验证记录和待完成项以该说明为准。
 
+交付 Windows x64 便携预览时，安装 7-Zip 后运行 `pwsh ./tools/package-portable.ps1`。脚本构建并测试 Release，将运行库和许可证打包到 `out/dist/*.7z`，随后解压检查启动与布局恢复。用户解压整个文件夹即可运行 `muxora.exe`，状态保存在相邻的 `data/` 中。
+
 ## 仓库结构
 
 | 目录 | 内容 |

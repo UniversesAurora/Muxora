@@ -1,5 +1,6 @@
 #include <window_system/window_manager.hpp>
 #include "workspace_host/placeholder_content.hpp"
+#include "state_paths.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -8,7 +9,6 @@
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QSaveFile>
-#include <QStandardPaths>
 #include <QTimer>
 
 int main(int argc, char* argv[])
@@ -30,9 +30,8 @@ int main(int argc, char* argv[])
     QObject::connect(&windows, &window_system::WindowManager::allWindowsClosed, &app, [&] {
         QTimer::singleShot(0, &app, [&] { if (windows.model().windows().isEmpty()) app.quit(); });
     });
-    const auto stateRoot = parser.value("state-dir").isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::StateLocation) + "/window-preview"
-        : parser.value("state-dir");
+    const auto stateRoot = muxora::resolveStateDirectory(parser.value("state-dir"),
+        QCoreApplication::applicationDirPath());
     const auto stateFile = stateRoot + "/window-layout.json";
     auto save = [&] {
         if (windows.model().windows().isEmpty()) return true;
