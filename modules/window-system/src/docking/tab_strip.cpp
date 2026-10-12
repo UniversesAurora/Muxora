@@ -17,10 +17,35 @@
 #include <QToolButton>
 #include <QWheelEvent>
 #include <QWidgetAction>
+#include <QVariantMap>
 #include <tuple>
 
 namespace window_system {
 namespace {
+QColor tabListColor(const QWidget* widget, const char* token, QPalette::ColorRole fallback)
+{
+    for (auto* root = widget; root; root = root->parentWidget()) {
+        const auto tokens = root->property("windowSystemThemeColors");
+        if (!tokens.isValid()) continue;
+        const auto value = tokens.toMap().value(QString::fromLatin1(token));
+        if (value.canConvert<QColor>()) return value.value<QColor>();
+    }
+    return widget->palette().color(fallback);
+}
+
+class TabListTitle final : public QLabel {
+public:
+    using QLabel::QLabel;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        const bool emphasized = parentWidget()->property("emphasized").toBool();
+        QPainter painter(this);
+        painter.setPen(tabListColor(this, emphasized ? "selectionText" : "text",
+            emphasized ? QPalette::HighlightedText : QPalette::WindowText));
+        painter.drawText(contentsRect(), alignment().toInt() | Qt::TextSingleLine, text());
+    }
+};
+
 class TabListRow final : public QWidget {
 public:
     TabListRow(QString text, QIcon icon, QWidget* parent) : QWidget(parent) {
@@ -31,22 +56,57 @@ public:
         if (!icon.isNull()) {
             auto* image = new QLabel(this); image->setPixmap(icon.pixmap(16, 16)); layout->addWidget(image);
         }
-        auto* title = new QLabel(text, this); title->setToolTip(text);
-        title->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title, 1);
+        title_ = new TabListTitle(text, this); title_->setToolTip(text);
+        title_->setObjectName("TabListTitle");
+        title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
         closeButton = new QToolButton(this);
         auto policy = closeButton->sizePolicy(); policy.setRetainSizeWhenHidden(true);
         closeButton->setSizePolicy(policy); closeButton->hide(); layout->addWidget(closeButton);
         setMinimumWidth(240); setMaximumWidth(520);
+        if (auto* menu = qobject_cast<QMenu*>(parent))
+            QObject::connect(menu, &QMenu::hovered, this, [this] { updateEmphasis(); });
     }
     QToolButton* closeButton;
     std::function<void()> activate;
 protected:
-    void enterEvent(QEnterEvent* event) override { closeButton->show(); QWidget::enterEvent(event); }
-    void leaveEvent(QEvent* event) override { closeButton->hide(); QWidget::leaveEvent(event); }
+    void enterEvent(QEnterEvent* event) override {
+        // QWidgetAction children receive their own mouse events. Selecting
+        // their action explicitly gives the menu one highlight owner, shared
+        // with keyboard navigation rather than an independent hover state.
+        if (auto* menu = qobject_cast<QMenu*>(parentWidget()))
+            for (auto* action : menu->actions())
+                if (auto* item = qobject_cast<QWidgetAction*>(action); item && item->defaultWidget() == this) {
+                    menu->setActiveAction(action);
+                    break;
+                }
+        closeButton->show(); updateEmphasis(); QWidget::enterEvent(event);
+    }
+    void leaveEvent(QEvent* event) override {
+        if (auto* menu = qobject_cast<QMenu*>(parentWidget()))
+            if (auto* action = qobject_cast<QWidgetAction*>(menu->activeAction()); action && action->defaultWidget() == this)
+                menu->setActiveAction(nullptr);
+        closeButton->hide(); updateEmphasis(); QWidget::leaveEvent(event);
+    }
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        const bool emphasized = property("emphasized").toBool();
+        painter.fillRect(rect(), tabListColor(this, emphasized ? "selection" : "surface",
+            emphasized ? QPalette::Highlight : QPalette::Base));
+    }
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) { const auto callback = activate; if (callback) callback(); }
         else QWidget::mouseReleaseEvent(event);
     }
+private:
+    void updateEmphasis() {
+        auto* menu = qobject_cast<QMenu*>(parentWidget());
+        auto* action = menu ? qobject_cast<QWidgetAction*>(menu->activeAction()) : nullptr;
+        const bool emphasized = action && action->defaultWidget() == this;
+        if (property("emphasized").toBool() == emphasized) return;
+        setProperty("emphasized", emphasized);
+        update(); title_->update();
+    }
+    QLabel* title_ = nullptr;
 };
 } // namespace
 

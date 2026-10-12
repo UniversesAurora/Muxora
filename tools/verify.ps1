@@ -1,11 +1,21 @@
 [CmdletBinding()]
-param([string]$QtRoot)
+param(
+    [string]$QtRoot,
+    [string]$PackageDirectory
+)
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
 $taskBuildArguments = @{}
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
+$taskPackage = if ($PackageDirectory) {
+    [IO.Path]::GetFullPath($PackageDirectory, $taskRepository)
+} else {
+    Join-Path $taskRepository 'out/package/muxora-preview'
+}
+$taskReleaseArguments = $taskBuildArguments.Clone()
+if ($PackageDirectory) { $taskReleaseArguments.PackageDirectory = $taskPackage }
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
-& (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskBuildArguments
+& (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskReleaseArguments
 $taskSdk = Get-Content -LiteralPath (Join-Path $taskRepository '.local/sdk.json') -Raw | ConvertFrom-Json
 $taskQt = $taskSdk.qtRoot
 $taskTools = Join-Path (Split-Path -Parent (Split-Path -Parent $taskQt)) 'Tools'
@@ -38,7 +48,6 @@ try {
     # The packaged application must start without SDK or compiler directories on
     # PATH; its deployment directory is the only source of Qt/runtime DLLs.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-    $taskPackage = Join-Path $taskRepository 'out/package/muxora-preview'
     $taskSmokeState = Join-Path $taskRepository 'out/package smoke state'
     $taskLaunch = @{
         FilePath = Join-Path $taskPackage 'muxora.exe'
@@ -46,6 +55,7 @@ try {
         WorkingDirectory = $taskPackage
         Wait = $true
         PassThru = $true
+        WindowStyle = 'Hidden'
     }
     $taskProcess = Start-Process @taskLaunch
     if ($taskProcess.ExitCode -ne 0) { throw "Packaged application smoke failed: $($taskProcess.ExitCode)" }

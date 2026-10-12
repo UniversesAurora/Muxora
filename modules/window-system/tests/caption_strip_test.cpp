@@ -78,6 +78,16 @@ void doubleClickCaption(QLabel* caption)
     QCoreApplication::sendEvent(caption, &release);
 }
 
+bool reserveTitleWidth(WorkspaceWindow* window, int contentWidth)
+{
+    // The title is now required to remain elastic. Reserve the rest of the
+    // row with its right neighbour, exercising the actual elastic layout.
+    auto* caption = window->findChild<QLabel*>("CaptionTitle");
+    auto* controls = window->strips()->stripWidget("caption-controls");
+    return caption && controls && window->strips()->setStripWidth("caption-controls",
+        controls->width() + caption->width() - contentWidth);
+}
+
 } // namespace
 
 class CaptionStripTest final : public QObject {
@@ -296,9 +306,9 @@ void CaptionStripTest::titleCentersAndElidesWithoutLosingItsFullCaption()
     auto* caption = window->findChild<QLabel*>("CaptionTitle"); QVERIFY(caption);
     auto* strip = strips->stripWidget("title"); QVERIFY(strip);
     auto* viewport = strip->findChild<QWidget*>("StripViewport"); QVERIFY(viewport);
-    QVERIFY(strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
-    QVERIFY(strips->setStripWidth("title", 96));
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(!strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
+    QVERIFY(reserveTitleWidth(window, 96));
     QCOMPARE(caption->alignment(), Qt::Alignment(Qt::AlignCenter));
     QCOMPARE(strip->width(), 96);
     QCOMPARE(caption->width(), viewport->width());
@@ -314,8 +324,8 @@ void CaptionStripTest::titleCentersAndElidesWithoutLosingItsFullCaption()
     QVERIFY(compressed != referenceCaption(caption, full, compressed));
     const int completeWidth = QFontMetrics(caption->font()).horizontalAdvance(full) + 40;
     window->resize(completeWidth + 600, window->height());
-    QVERIFY(strips->setStripWidth("title", completeWidth));
     QCoreApplication::processEvents();
+    QVERIFY(reserveTitleWidth(window, completeWidth));
     QCOMPARE(caption->width(), completeWidth);
     const auto expanded = caption->grab().toImage().convertToFormat(QImage::Format_ARGB32);
     QCOMPARE(expanded, referenceCaption(caption, full, expanded));
@@ -331,13 +341,14 @@ void CaptionStripTest::titleMinimumIncludesTheUnlockedHandleAndCannotBeOverridde
     auto* strips = window->strips(); QVERIFY(strips);
     QCOMPARE(strips->stripConstraints("title").minimumContentWidth, 96);
     QVERIFY(!strips->setStripWidth("title", 95));
-    QVERIFY(strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
+    QVERIFY(!strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
     QVERIFY(strips->setStripWidth("title", 96));
     QVERIFY(manager.execute("window.toggleStripsLock", {}, id));
     auto* strip = strips->stripWidget("title"); QVERIFY(strip);
     auto* viewport = strip->findChild<QWidget*>("StripViewport"); QVERIFY(viewport);
     auto* handle = strip->findChild<QWidget*>("StripHandle"); QVERIFY(handle);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(reserveTitleWidth(window, 96));
     QVERIFY(handle->isVisible());
     QCOMPARE(viewport->width(), 96);
     QVERIFY(!strips->setStripWidth("title", 96 + handle->width() - 1));

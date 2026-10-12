@@ -47,6 +47,7 @@ private:
     void updateWindowControlState();
     void queuePlacementNotification();
     void notifyPlacementChanged();
+    [[nodiscard]] bool hasNormalPlacement() const;
     WindowManager* manager_;
     WindowId id_;
     WindowKind kind_ = WindowKind::Floating;

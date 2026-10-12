@@ -8,7 +8,6 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPropertyAnimation>
 #include <QWindow>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -96,7 +95,7 @@ void DragController::beginTab(TabId tab, QPoint global)
     originalModel_ = manager_->d->model; originalOptions_ = manager_->d->options;
     originalWindows_.clear(); originalMaximizedWindows_.clear();
     for (const auto id : manager_->model().windowOrder()) if (auto* window = manager_->windowWidget(id)) {
-        originalWindows_.insert(id, window->isMaximized() ? window->normalGeometry() : window->geometry());
+        originalWindows_.insert(id, static_cast<WorkspaceWindow*>(window)->normalPlacementGeometry());
         if (window->isMaximized()) originalMaximizedWindows_.insert(id);
     }
     auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
@@ -107,18 +106,13 @@ void DragController::beginTab(TabId tab, QPoint global)
         origin = QRect(peek->mapToGlobal(QPoint()), peek->size());
     if (origin.isEmpty() && source) if (const auto* record = manager_->model().group(group); record && record->location == GroupLocation::AutoHide)
         origin = source->surface()->edgeBarRects().value(record->edge);
-    movingWindow_ = manager_->detachTab(tab, WindowKind::Floating);
+    movingWindow_ = manager_->detachTabImpl(tab, WindowKind::Floating, [this, global, origin](QWidget* window) {
+        windowOffset_ = QPoint(qBound(28, global.x() - origin.left(), window->width() - 28), 16);
+        window->move(global - windowOffset_);
+    });
     if (movingWindow_.isNull()) { detached_ = false; return; }
     capture_ = manager_->windowWidget(movingWindow_);
     if (!capture_) return;
-    windowOffset_ = QPoint(qBound(28, global.x() - origin.left(), capture_->width() - 28), 16);
-    capture_->move(global - windowOffset_);
-    if (QApplication::isEffectEnabled(Qt::UI_AnimateMenu)) {
-        capture_->setWindowOpacity(0.78);
-        auto* animation = new QPropertyAnimation(capture_, "windowOpacity", capture_);
-        animation->setDuration(100); animation->setEndValue(1.0);
-        animation->start(QAbstractAnimation::DeleteWhenStopped);
-    }
     start(global);
 }
 void DragController::beginWindow(WindowId window, QPoint global)
@@ -128,7 +122,8 @@ void DragController::beginWindow(WindowId window, QPoint global)
     wholeWindow_ = window; tab_ = TabId{}; sourceWindow_ = window; movingWindow_ = window; detached_ = false;
     capture_ = manager_->windowWidget(window);
     if (!capture_) return;
-    originalGeometry_ = capture_->geometry(); originalMaximized_ = capture_->isMaximized();
+    originalGeometry_ = static_cast<WorkspaceWindow*>(capture_.data())->normalPlacementGeometry();
+    originalMaximized_ = capture_->isMaximized();
     windowOffset_ = global - capture_->pos();
     if (originalMaximized_) { capture_->showNormal(); windowOffset_ = QPoint(capture_->width() / 2, 16); }
     start(global);
@@ -315,12 +310,11 @@ void DragController::cancel()
         if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
             source->restoreStripLayout(originalSourceStrips_);
         for (auto it = originalWindows_.cbegin(); it != originalWindows_.cend(); ++it) if (auto* widget = manager_->windowWidget(it.key())) {
-            widget->setGeometry(it.value());
-            originalMaximizedWindows_.contains(it.key()) ? widget->showMaximized() : widget->show();
+            static_cast<WorkspaceWindow*>(widget)->restorePlacement(it.value(), originalMaximizedWindows_.contains(it.key()));
         }
         manager_->showWindow(sourceWindow_); manager_->activateTab(tab_);
     } else if (auto* widget = manager_->windowWidget(window)) {
-        widget->setGeometry(geometry); if (maximized) widget->showMaximized();
+        static_cast<WorkspaceWindow*>(widget)->restorePlacement(geometry, maximized);
     }
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
     originalSourceStrips_ = {};

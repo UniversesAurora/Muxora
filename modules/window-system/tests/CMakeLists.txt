@@ -27,7 +27,7 @@ if(WIN32)
 endif()
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset presentation)
+foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu presentation)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -37,3 +37,13 @@ foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentatio
         -o ${CMAKE_CURRENT_BINARY_DIR}/${suite}-results.txt,txt)
     set_tests_properties(window-system.${suite} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endforeach()
+
+if(WIN32)
+    qt_add_executable(window-system-native-frame-test native_frame_test.cpp)
+    target_link_libraries(window-system-native-frame-test PRIVATE WindowSystem::Widgets Qt6::Test)
+    target_include_directories(window-system-native-frame-test PRIVATE ../src)
+    set_target_properties(window-system-native-frame-test PROPERTIES AUTOMOC ON)
+    add_test(NAME window-system.native-frame COMMAND window-system-native-frame-test
+        -o ${CMAKE_CURRENT_BINARY_DIR}/native-frame-results.txt,txt)
+    set_tests_properties(window-system.native-frame PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+endif()

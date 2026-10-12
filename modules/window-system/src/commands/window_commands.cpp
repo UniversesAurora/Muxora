@@ -64,22 +64,43 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { showSettings(c.window); return true; });
     add("preferences.openKeyboardShortcuts", QStringLiteral("编辑快捷键…"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
-    add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间"), "布局", {},
+    add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
             auto* strips = window ? window->strips() : nullptr;
             if (!strips) return false;
-            const auto id = c.args.value("strip", QStringLiteral("title")).toString();
-            if (!strips->stripIds().contains(id)) return false;
             const auto value = c.args.value("sizing").toString();
             if (!value.isEmpty() && value != "elastic" && value != "content") return false;
+            QString id = c.args.value("strip").toString();
+            if (!c.args.contains("strip")) {
+                QPointer<WorkspaceWindow> observed(window);
+                DismissOnlyMenu picker;
+                picker.setObjectName(QStringLiteral("ToolbarSizingPicker"));
+                applyTheme(&picker, theme());
+                for (const auto& stripId : strips->stripIds()) if (strips->isStripSizingEditable(stripId)) {
+                    auto* action = picker.addAction(strips->stripTitle(stripId));
+                    action->setData(stripId);
+                }
+                if (picker.actions().isEmpty()) return false;
+                connect(window, &QObject::destroyed, &picker, &QMenu::close);
+                const auto* chosen = picker.exec(QCursor::pos());
+                if (!observed) return false;
+                if (!chosen) return true;
+                id = chosen->data().toString();
+                strips = observed->strips();
+            }
+            if (!strips || !strips->stripIds().contains(id)) return false;
             const auto sizing = value.isEmpty()
                 ? (strips->stripSizing(id) == StripSizing::Elastic ? StripSizing::Content : StripSizing::Elastic)
                 : (value == "elastic" ? StripSizing::Elastic : StripSizing::Content);
             return strips->setStripSizing(id, sizing);
         }, [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
-            return window && window->strips();
+            if (!window || !window->strips()) return false;
+            if (c.args.contains("strip")) return true;
+            for (const auto& id : window->strips()->stripIds())
+                if (window->strips()->isStripSizingEditable(id)) return true;
+            return false;
         });
     add("window.toolbar.resetSize", QStringLiteral("重置工具条大小…"), "布局", {},
         [this](const CommandContext& c) {

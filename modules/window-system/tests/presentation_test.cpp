@@ -13,6 +13,7 @@
 #include <QScopeGuard>
 #include <QStyleOption>
 #include <QTest>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -156,10 +157,28 @@ void PresentationTest::sizingCommandChangesOnlyTheRequestedStripAndRejectsInvali
     QVERIFY(!manager.execute("window.toolbar.setSizing", {{"strip", "missing"}, {"sizing", "elastic"}}, id));
     QVERIFY(!manager.execute("window.toolbar.setSizing", {{"strip", "title"}, {"sizing", "invalid"}}, id));
     QCOMPARE(strips->saveLayout(), before);
-    QVERIFY(manager.execute("window.toolbar.setSizing", {{"strip", "title"}, {"sizing", "content"}}, id));
-    QCOMPARE(strips->stripSizing("title"), StripSizing::Content);
+    QVERIFY(!manager.execute("window.toolbar.setSizing", {{"strip", "title"}, {"sizing", "content"}}, id));
+    QCOMPARE(strips->saveLayout(), before);
+    QVERIFY(manager.execute("window.toolbar.setSizing", {{"strip", "workspace"}, {"sizing", "elastic"}}, id));
+    QCOMPARE(strips->stripSizing("workspace"), StripSizing::Elastic);
+    QCOMPARE(strips->stripSizing("title"), StripSizing::Elastic);
     QCOMPARE(strips->stripSizing("menu"), StripSizing::Content);
+    QVERIFY(manager.execute("window.toolbar.setSizing", {{"strip", "workspace"}, {"sizing", "content"}}, id));
+    QCOMPARE(strips->stripSizing("workspace"), StripSizing::Content);
+    bool selected = false;
+    QTimer::singleShot(30, &manager, [&] {
+        auto* picker = qobject_cast<QMenu*>(QApplication::activePopupWidget()); QVERIFY(picker);
+        QCOMPARE(picker->objectName(), QStringLiteral("ToolbarSizingPicker"));
+        QCOMPARE(picker->actions().size(), 1);
+        QCOMPARE(picker->actions().first()->data().toString(), QStringLiteral("workspace"));
+        QTest::keyClick(picker, Qt::Key_Down); QTest::keyClick(picker, Qt::Key_Return); selected = true;
+    });
+    QTimer::singleShot(900, &manager, [] {
+        if (auto* picker = QApplication::activePopupWidget()) picker->close();
+    });
     QVERIFY(manager.execute("window.toolbar.setSizing", {}, id));
+    QVERIFY(selected);
+    QCOMPARE(strips->stripSizing("workspace"), StripSizing::Elastic);
     QCOMPARE(strips->stripSizing("title"), StripSizing::Elastic);
 }
 

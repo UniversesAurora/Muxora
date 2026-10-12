@@ -14,7 +14,7 @@ namespace window_system {
 struct WindowOptions {
     QString title = QStringLiteral("WindowSystem");
     QSize size = QSize(1280, 800);
-    bool tabBarsVisible = true;
+    bool tabBarsVisible = true; // Central groups only; sidebar controls stay visible.
 };
 
 enum class PaneBarSharing { Shared, PerPane };
@@ -64,6 +64,8 @@ public:
     bool setPaneBottomBar(PaneId pane, QWidget* bar);
     bool setTabTopBarSharing(TabId tab, PaneBarSharing sharing);
     bool setTabBottomBarSharing(TabId tab, PaneBarSharing sharing);
+    // Central group headers only. Pinned panels, auto-hide rails and peek
+    // headers retain their own controls and drop targets.
     bool setTabBarsVisible(WindowId window, bool visible);
     [[nodiscard]] bool tabBarsVisible(WindowId window) const;
     bool setTabIconVisible(TabId tab, bool visible);
@@ -144,6 +146,7 @@ private:
     void resizeActive(Placement direction, bool panes);
     void focusWindowCycle(bool forward, const QString& scope);
     void beginTabDrag(TabId tab, QPoint globalPosition);
+    WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow);
     void beginWindowDrag(WindowId window, QPoint globalPosition);
     void showTabMenu(TabId tab, QPoint globalPosition);
     void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);

@@ -75,6 +75,11 @@ WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const Wind
     column_->setContentsMargins(1, 1, 1, 1); column_->setSpacing(0);
     column_->addWidget(surface_, 1); syncKind();
     applyTheme(this, manager_->theme());
+    // Prepare the hidden HWND before its first ShowWindow, so the compositor
+    // can use the same native transitions for full and detached windows.
+#ifdef Q_OS_WIN
+    applyNativeFrame(this);
+#endif
 }
 WindowId WorkspaceWindow::id() const { return id_; }
 DockSurface* WorkspaceWindow::surface() const { return surface_; }
@@ -177,7 +182,7 @@ void WorkspaceWindow::createChrome()
     caption_->setProperty("windowDragArea", true);
     strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
     strips_->setStripOptionsEnabled("title", false);
-    strips_->setStripConstraints("title", {true, true, 96});
+    strips_->setStripConstraints("title", {true, true, 96, true});
     auto* controls = new QWidget(strips_);
     controls->setObjectName("CaptionControls");
     controls->setProperty("windowDragArea", true);
@@ -217,6 +222,15 @@ void WorkspaceWindow::updateWindowControlState()
 }
 void WorkspaceWindow::changeEvent(QEvent* event)
 {
+    if (event->type() == QEvent::WindowStateChange && !isVisible()) {
+        const auto* stateEvent = static_cast<QWindowStateChangeEvent*>(event);
+        constexpr auto expanded = Qt::WindowMinimized | Qt::WindowMaximized | Qt::WindowFullScreen;
+        // Hidden QWidget geometry changes defer their move/resize events until
+        // show. Capture that requested normal rectangle before the first show
+        // in an expanded state can replace it with the monitor's geometry.
+        if (!stateEvent->oldState().testAnyFlags(expanded) && windowState().testAnyFlags(expanded))
+            normalPlacement_ = geometry();
+    }
     QWidget::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange) {
         if (!isMinimized()) maximizedPlacement_ = isMaximized();
@@ -295,11 +309,21 @@ void WorkspaceWindow::setOptions(const WindowOptions& options) { options_ = opti
 void WorkspaceWindow::setStatus(const QString& text) { if (status_) status_->setText(text); }
 QRect WorkspaceWindow::normalPlacementGeometry() const
 {
-    if (isMaximized() || isMinimized()) {
-        const auto normal = normalGeometry();
-        return normal.isValid() ? normal : normalPlacement_;
-    }
-    return geometry();
+    // Qt's normalGeometry subtracts the current maximized frame margins from
+    // WINDOWPLACEMENT, although this window has no margins in normal state.
+    // Keep the logical normal rectangle independently of the native frame.
+    return hasNormalPlacement() ? geometry() : normalPlacement_;
+}
+bool WorkspaceWindow::hasNormalPlacement() const
+{
+    constexpr auto expanded = Qt::WindowMinimized | Qt::WindowMaximized | Qt::WindowFullScreen;
+    if (windowState().testAnyFlags(expanded)
+        || (windowHandle() && windowHandle()->windowStates().testAnyFlags(expanded))) return false;
+#ifdef Q_OS_WIN
+    return hasNormalNativePlacement(this);
+#else
+    return true;
+#endif
 }
 bool WorkspaceWindow::placementMaximized() const
 {
@@ -320,8 +344,8 @@ void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
 }
 void WorkspaceWindow::queuePlacementNotification()
 {
+    if (!restoringPlacement_ && hasNormalPlacement()) normalPlacement_ = geometry();
     if (!isVisible() || restoringPlacement_ || manager_->d->destroying) return;
-    if (!isMaximized() && !isMinimized()) normalPlacement_ = geometry();
     if (!placementTimer_->isActive()) placementTimer_->start(0);
 }
 void WorkspaceWindow::notifyPlacementChanged()

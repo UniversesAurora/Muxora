@@ -147,7 +147,46 @@ private slots:
     void sideBarDragReordersAcrossInternalGroups();
     void sideBarDragAcrossWindowsKeepsTheOriginalContent();
     void sideBarDragEscapeRestoresAnEmptiedSourceGroup();
+    void cancelFromMaximizedWindowPreservesItsNormalPlacement_data();
+    void cancelFromMaximizedWindowPreservesItsNormalPlacement();
 };
+void DragInteractionTest::cancelFromMaximizedWindowPreservesItsNormalPlacement_data()
+{
+    QTest::addColumn<bool>("whole");
+    QTest::newRow("workbench-tab") << false;
+    QTest::newRow("floating-title") << true;
+}
+void DragInteractionTest::cancelFromMaximizedWindowPreservesItsNormalPlacement()
+{
+    QFETCH(bool, whole);
+    WindowManager manager; const auto root = manager.createWindow();
+    const auto source = whole ? manager.createWindow(WindowKind::Floating, {}, root) : root;
+    const auto kept = manager.addTab(source, new QLabel("Kept"), {"Kept", "label", {}});
+    auto* content = new QLabel("Live content");
+    const auto tab = manager.addTab(source, content, {"Live", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(source));
+    prepareDesktopFixture(window);
+    const QRect normal(150, 140, 900, 650);
+    window->restorePlacement(normal, true); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QCOMPARE(window->normalPlacementGeometry(), normal);
+    const auto model = manager.model().toJson();
+    if (whole) {
+        auto* title = window->findChild<QLabel*>("CaptionTitle"); QVERIFY(title);
+        const auto point = title->mapToGlobal(title->rect().center());
+        mouse(title, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
+        mouse(title, QEvent::MouseMove, point + QPoint(32, 20), Qt::NoButton, Qt::LeftButton);
+    } else {
+        auto* bar = tabBar(window, tab); QVERIFY(bar); startTabDrag(window, bar, tab);
+    }
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    QTest::keyClick(actor, Qt::Key_Escape);
+    QCOMPARE(manager.model().toJson(), model);
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(manager.model().tab(kept));
+    QTRY_VERIFY(window->isMaximized()); QCOMPARE(window->normalPlacementGeometry(), normal);
+    window->showNormal(); QTRY_COMPARE(window->geometry(), normal);
+}
+
 void DragInteractionTest::tearOffUsesTheDefaultLightweightWindow()
 {
     WindowManager manager;

@@ -64,16 +64,21 @@ void TabBarPresentationTest::hidingAppliesToTheWholeWindow()
     QCOMPARE(headers.size(), 3);
     QVERIFY(manager.execute("window.tabBars.toggle", {}, target));
     QVERIFY(!manager.tabBarsVisible(target));
-    QVERIFY(surface->tabBarRects().isEmpty()); QVERIFY(surface->edgeBarRects().isEmpty());
+    QCOMPARE(surface->tabBarRects().size(), 1); QCOMPARE(surface->edgeBarRects().size(), 1);
     for (auto* header : headers) {
-        QVERIFY(header->isHidden());
+        const auto groupId = header->parentWidget()->property("groupId").toUuid();
+        const auto* record = manager.model().group(groupId); QVERIFY(record);
         auto* stack = header->parentWidget()->findChild<QStackedWidget*>(); QVERIFY(stack);
-        QCOMPARE(stack->geometry().top(), 0);
+        if (record->location == GroupLocation::Central) {
+            QVERIFY(header->isHidden()); QCOMPARE(stack->geometry().top(), 0);
+        } else {
+            QVERIFY(header->isVisible()); QVERIFY(stack->geometry().top() >= header->height());
+        }
     }
     QCOMPARE(manager.model().toJson(), model);
     QCOMPARE(manager.paneWidget(manager.model().tab(first)->activePane), firstContent);
     QVERIFY(manager.activateTab(hidden));
-    auto* peek = window->findChild<QWidget*>("PeekTitleBar"); QVERIFY(peek); QVERIFY(peek->isHidden());
+    auto* peek = window->findChild<QWidget*>("PeekTitleBar"); QVERIFY(peek); QVERIFY(peek->isVisible());
     QVERIFY(manager.setTabBarsVisible(target, true));
     for (auto* header : headers) QVERIFY(header->isVisible());
     QVERIFY(peek->isVisible());
@@ -89,15 +94,22 @@ void TabBarPresentationTest::hiddenSettingRestoresAndSurvivesNewGroups()
     QVERIFY(manager.setTabBarsVisible(root, false));
     const auto other = manager.addTab(root, new QLabel("two"), {"two", "label", {}});
     QVERIFY(manager.moveTab(other, manager.model().groupForTab(tab), Placement::Right));
+    const auto pinned = manager.addTab(root, new QLabel("pinned"), {"pinned", "label", {}});
+    QVERIFY(manager.moveTabToEdge(pinned, Edge::Right, true));
+    const auto hidden = manager.addTab(root, new QLabel("hidden"), {"hidden", "label", {}});
+    QVERIFY(manager.moveTabToEdge(hidden, Edge::Top));
     WindowManager restored;
     restored.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("Restored"); });
     QVERIFY(restored.restoreLayout(manager.saveLayout()));
     QVERIFY(!restored.tabBarsVisible(root));
     auto* window = static_cast<WorkspaceWindow*>(restored.windowWidget(root));
     QVERIFY(QTest::qWaitForWindowExposed(window));
-    QVERIFY(window->surface()->tabBarRects().isEmpty());
+    QCOMPARE(window->surface()->tabBarRects().size(), 1);
+    QCOMPARE(window->surface()->edgeBarRects().size(), 1);
+    QVERIFY(restored.activateTab(hidden));
+    QVERIFY(window->findChild<QWidget*>("PeekTitleBar")->isVisible());
     QVERIFY(restored.setTabBarsVisible(root, true));
-    QCOMPARE(window->surface()->tabBarRects().size(), 2);
+    QCOMPARE(window->surface()->tabBarRects().size(), 3);
     auto* toggle = window->findChild<QAction*>("window.tabBars.toggle"); QVERIFY(toggle);
     auto* menu = qobject_cast<QMenu*>(toggle->parent()); QVERIFY(menu);
     QMetaObject::invokeMethod(menu, "aboutToShow");

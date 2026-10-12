@@ -23,6 +23,9 @@ public:
         bool compressible = true;
         bool elasticAllowed = true;
         int minimumContentWidth = 12;
+        // A required elastic strip owns its row's spare space. Moving an
+        // ordinary elastic strip into that row makes the latter content-sized.
+        bool elasticRequired = false;
     };
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;
@@ -34,6 +37,7 @@ public:
                         StripSizing sizing = StripSizing::Content);
     bool setStripSizing(const QString& id, StripSizing sizing);
     [[nodiscard]] StripSizing stripSizing(const QString& id) const;
+    [[nodiscard]] bool isStripSizingEditable(const QString& id) const;
     // Presentation policy supplied by the host, independent of saved user
     // layout. Disabled strips reserve no options-button space.
     bool setStripOptionsEnabled(const QString& id, bool enabled);
@@ -92,6 +96,7 @@ private:
     void finishDrag(bool commit);
     void removeFromRows(const QString& id);
     void normalizeElastic(int row, const QString& preferred = {});
+    [[nodiscard]] QString requiredElasticInRow(int row, const QString& except = {}, bool committed = false) const;
     bool resizeDragBoundary(int row, int requestedLeft);
     void insertDraggedStrip(int row, QPoint position);
     void clearWidthPriority(int row);

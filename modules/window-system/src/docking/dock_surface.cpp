@@ -4,6 +4,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QBoxLayout>
+#include <QContextMenuEvent>
 #include <QEvent>
 #include <QGridLayout>
 #include <QLabel>
@@ -22,6 +23,7 @@ namespace {
 class EdgeButton final : public QAbstractButton {
 public:
     std::function<void(QPoint)> drag;
+    std::function<void(QPoint)> menu;
     EdgeButton(QString title, bool vertical, QWidget* parent)
         : QAbstractButton(parent), vertical_(vertical) {
         setText(title); setToolTip(title); setAccessibleName(title);
@@ -44,6 +46,11 @@ protected:
             return;
         }
         QAbstractButton::mouseMoveEvent(event);
+    }
+    void contextMenuEvent(QContextMenuEvent* event) override {
+        const auto callback = menu;
+        if (callback) { event->accept(); callback(event->globalPos()); }
+        else QAbstractButton::contextMenuEvent(event);
     }
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);
@@ -179,7 +186,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     if (!group) return nullptr;
     auto* tabs = new GroupTabs(manager_->theme(), this);
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
-    tabs->setTabBarVisible(manager_->tabBarsVisible(window_));
+    tabs->setTabBarVisible(group->location != GroupLocation::Central || manager_->tabBarsVisible(window_));
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
         if (auto content = contents.value(tabId)) {
@@ -224,7 +231,6 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     auto* bar = new QFrame(this); bar->setObjectName("EdgeBar");
-    if (!manager_->tabBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     auto* layout = new QBoxLayout(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, bar);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(2);
@@ -233,6 +239,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             auto* button = new EdgeButton(manager_->model().tab(tabId)->title, vertical, bar);
             button->setProperty("tabId", tabId);
             button->drag = [this, tabId](QPoint point) { manager_->beginTabDrag(tabId, point); };
+            button->menu = [this, tabId](QPoint point) { manager_->showTabMenu(tabId, point); };
             QObject::connect(button, &QAbstractButton::clicked, manager_, [this, groupId, tabId] {
                 if (peek_ && peekTab_ == tabId) closePeek();
                 else showEdgeGroup(groupId, tabId);
@@ -416,7 +423,6 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
-    if (!manager_->tabBarsVisible(window_)) header->hide();
     header->drag = [this, tab](QPoint point) { manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
     auto* title = new QLabel(manager_->model().tab(tab)->title, header);
@@ -424,9 +430,11 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     auto* pin = new QToolButton(header); pin->setIcon(iconFor("pin", manager_->theme()));
     pin->setToolTip(QStringLiteral("固定并占用布局空间")); row->addWidget(pin);
     auto* close = new QToolButton(header); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
+    close->setObjectName("ClosePeekTabButton");
+    close->setToolTip(QStringLiteral("关闭标签")); close->setAccessibleName(close->toolTip());
     pin->setObjectName("PinPeekTabButton");
     QObject::connect(pin, &QToolButton::clicked, manager_, [this, tab] { manager_->pinTab(tab, true); });
-    QObject::connect(close, &QToolButton::clicked, this, [this] { closePeek(); });
+    QObject::connect(close, &QToolButton::clicked, manager_, [this, tab] { manager_->closeTab(tab); });
     layout->addWidget(header);
     if (auto content = contents_.value(tab)) {
         layout->addWidget(content, 1);
@@ -439,9 +447,11 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
 }
 void DockSurface::setTabBarsVisible(bool visible)
 {
-    for (auto group : groups_) if (group) group->setTabBarVisible(visible);
-    for (auto bar : edgeBars_) if (bar) bar->setVisible(visible);
-    if (peek_) if (auto* header = peek_->findChild<QWidget*>("PeekTitleBar")) header->setVisible(visible);
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        const auto* record = manager_->model().group(it.key());
+        if (it.value() && record && record->location == GroupLocation::Central)
+            it.value()->setTabBarVisible(visible);
+    }
     if (root_) root_->layout()->activate();
     placePeek();
 }
@@ -477,7 +487,9 @@ bool DockSurface::eventFilter(QObject* watched, QEvent* event)
     if (!peek_) return QFrame::eventFilter(watched, event);
     if (event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
-        if (key->key() == Qt::Key_Escape) { closePeek(); return true; }
+        auto* widget = qobject_cast<QWidget*>(watched);
+        if (key->key() == Qt::Key_Escape && widget && widget->window() == window() &&
+            !QApplication::activePopupWidget()) { closePeek(); return true; }
     }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* widget = qobject_cast<QWidget*>(watched);

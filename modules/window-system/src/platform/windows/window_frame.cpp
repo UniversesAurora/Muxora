@@ -8,9 +8,12 @@
 #include <QPointer>
 #include <QVariant>
 #include <QWidget>
+#include <QWindow>
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
+#include <limits>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -23,6 +26,22 @@ namespace window_system {
 namespace {
 
 constexpr auto frameStateName = "_windowSystemNativeFrameState";
+
+bool fullScreenRequested(QWidget* window)
+{
+    // QWindow is updated before QWidget receives WindowStateChange. Consult
+    // both while Qt is applying a full-screen transition to the native style.
+    return window->isFullScreen() || (window->windowHandle()
+        && window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen));
+}
+
+DWORD normalFrameStyle(DWORD style)
+{
+    // Removing the painted caption is the responsibility of WM_NCCALCSIZE.
+    // Its native style must remain: DWM recognizes a normal overlapped window
+    // for show/hide and minimize/maximize transitions, including custom frames.
+    return (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP);
+}
 
 class NativeFrameState final : public QObject {
 public:
@@ -61,10 +80,19 @@ public:
     QPointer<QAbstractButton> hovered;
     QPointer<QAbstractButton> pressed;
     bool trackingNonClient = false;
+    HWND configuredHandle = nullptr;
+    NativeTransitionConfiguration transitions;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
+        if (watched == window_ && event->type() == QEvent::WinIdChange
+            && window_ && window_->testAttribute(Qt::WA_WState_Created)
+            && window_->effectiveWinId()) {
+            // Window flag changes may replace the HWND. Do not wait for a
+            // later showEvent to make the replacement eligible for transitions.
+            applyNativeFrame(window_);
+        }
         if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowStateChange) {
             cancelPress();
             setHovered(nullptr);
@@ -76,13 +104,19 @@ private:
     QPointer<QWidget> window_;
 };
 
-NativeFrameState* frameState(QWidget* window)
+NativeFrameState* findFrameState(QWidget* window)
 {
     for (auto* child : window->children()) {
         if (child->objectName() == QString::fromLatin1(frameStateName)) {
             if (auto* state = dynamic_cast<NativeFrameState*>(child)) return state;
         }
     }
+    return nullptr;
+}
+
+NativeFrameState* frameState(QWidget* window)
+{
+    if (auto* state = findFrameState(window)) return state;
     return new NativeFrameState(window);
 }
 
@@ -138,10 +172,19 @@ QAbstractButton* maximizeButtonAt(QWidget* window, const QPoint& position)
     return nullptr;
 }
 
-void extendFrame(HWND handle)
+void extendFrame(QWidget* window, HWND handle)
 {
     const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
     DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
+    // Permit the compositor's ordinary transitions. This is not an animation
+    // request and does not override Windows' global animation/accessibility
+    // preferences. We never change SPI_SETANIMATION or client-area settings.
+    const BOOL forceDisableTransitions = FALSE;
+    const HRESULT transitionResult = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED,
+        &forceDisableTransitions, sizeof(forceDisableTransitions));
+    auto* state = frameState(window);
+    state->configuredHandle = handle;
+    state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
     const MARGINS margins{1, 1, 1, 1};
     DwmExtendFrameIntoClientArea(handle, &margins);
     // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND. Older Windows returns
@@ -198,41 +241,112 @@ void applyNativeFrame(QWidget* window)
 {
 #ifdef Q_OS_WIN
     if (!window || !window->isWindow() || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return;
+    frameState(window); // Observe HWND creation/replacement before requesting it.
     const auto handle = reinterpret_cast<HWND>(window->winId());
     if (!IsWindow(handle)) return;
-    frameState(window);
-    if (!window->isFullScreen()) {
+    if (!fullScreenRequested(window)) {
         const LONG_PTR original = GetWindowLongPtrW(handle, GWL_STYLE);
-        const LONG_PTR desired = (original | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU) & ~LONG_PTR(WS_CAPTION);
+        const LONG_PTR desired = normalFrameStyle(DWORD(original));
         if (desired != original) {
             SetWindowLongPtrW(handle, GWL_STYLE, desired);
             SetWindowPos(handle, nullptr, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
         }
     }
-    extendFrame(handle);
+    extendFrame(window, handle);
 #else
     Q_UNUSED(window)
+#endif
+}
+
+NativeTransitionConfiguration nativeTransitionConfiguration(QWidget* window)
+{
+#ifdef Q_OS_WIN
+    if (window) if (const auto* state = findFrameState(window))
+        if (state->configuredHandle == reinterpret_cast<HWND>(window->effectiveWinId())) return state->transitions;
+#else
+    Q_UNUSED(window)
+#endif
+    return {};
+}
+
+bool hasNormalNativePlacement(const QWidget* window)
+{
+#ifdef Q_OS_WIN
+    const auto handle = window ? reinterpret_cast<HWND>(window->effectiveWinId()) : nullptr;
+    return !handle || (!IsZoomed(handle) && !IsIconic(handle));
+#else
+    Q_UNUSED(window)
+    return true;
 #endif
 }
 
 bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
 {
 #ifdef Q_OS_WIN
-    if (!window || !message || !result || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return false;
+    if (!window || !message || !result || !window->isWindow()
+        || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return false;
     auto* msg = static_cast<MSG*>(message);
     switch (msg->message) {
-    case WM_NCCALCSIZE: {
-        if (!msg->lParam) return false;
-        auto* bounds = msg->wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam)->rgrc[0] :
-                                    reinterpret_cast<RECT*>(msg->lParam);
-        if (IsZoomed(msg->hwnd) && !window->isFullScreen()) {
+    case WM_STYLECHANGING:
+        if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam && !fullScreenRequested(window)) {
+            auto* styles = reinterpret_cast<STYLESTRUCT*>(msg->lParam);
+            if (!(styles->styleNew & WS_CHILD)) styles->styleNew = normalFrameStyle(styles->styleNew);
+        }
+        // Keep Qt's window flags, state bookkeeping and style-change dispatch.
+        return false;
+    case WM_GETMINMAXINFO:
+        if (msg->lParam && !fullScreenRequested(window)) {
+            // Initialize the Win32 defaults, then apply the host's public Qt
+            // limits without adding a normal painted caption's frame margins.
+            // This custom client owns the full normal window rectangle.
+            DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
             MONITORINFO monitor{};
             monitor.cbSize = sizeof(MONITORINFO);
-            const HMONITOR handle = MonitorFromRect(bounds, MONITOR_DEFAULTTONEAREST);
-            if (GetMonitorInfoW(handle, &monitor)) {
-                // Intersect rather than blindly replacing the rectangle: a host
-                // can give the Qt window a maximum size smaller than a monitor.
+            if (GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
+                auto* sizes = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+                // Supply work-area limits and public Qt track hints. Windows
+                // may add its normal invisible maximized borders; NCCALCSIZE
+                // constrains the complete custom client to this visible area.
+                sizes->ptMaxPosition = {monitor.rcWork.left - monitor.rcMonitor.left,
+                                        monitor.rcWork.top - monitor.rcMonitor.top};
+                const qreal ratio = window->devicePixelRatioF();
+                const auto nativeSize = [ratio](int logical, bool minimum) {
+                    const double scaled = logical * ratio;
+                    const double rounded = minimum ? std::ceil(scaled) : std::floor(scaled);
+                    return LONG(std::clamp(rounded, 0.0, double(std::numeric_limits<LONG>::max())));
+                };
+                auto minimum = window->minimumSize();
+                auto maximum = window->maximumSize();
+                if (auto* qtWindow = window->windowHandle()) {
+                    minimum = minimum.expandedTo(qtWindow->minimumSize());
+                    maximum = maximum.boundedTo(qtWindow->maximumSize());
+                }
+                sizes->ptMinTrackSize = {nativeSize(minimum.width(), true), nativeSize(minimum.height(), true)};
+                sizes->ptMaxTrackSize = {
+                    std::max(sizes->ptMinTrackSize.x, nativeSize(maximum.width(), false)),
+                    std::max(sizes->ptMinTrackSize.y, nativeSize(maximum.height(), false))};
+                sizes->ptMaxSize = {
+                    std::min(monitor.rcWork.right - monitor.rcWork.left, sizes->ptMaxTrackSize.x),
+                    std::min(monitor.rcWork.bottom - monitor.rcWork.top, sizes->ptMaxTrackSize.y)};
+                *result = 0;
+                return true;
+            }
+        }
+        // Unavailable monitors and full-screen transitions keep Qt's handler.
+        // Normal cases use Qt's public size limits, scaled for this HWND's
+        // associated Qt window; WM_DPICHANGED remains entirely with Qt.
+        return false;
+    case WM_NCCALCSIZE: {
+        if (!msg->lParam) return false;
+        if (IsZoomed(msg->hwnd) && !IsIconic(msg->hwnd) && !fullScreenRequested(window)) {
+            auto* bounds = msg->wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam)->rgrc[0]
+                                      : reinterpret_cast<RECT*>(msg->lParam);
+            MONITORINFO monitor{}; monitor.cbSize = sizeof(monitor);
+            if (GetMonitorInfoW(MonitorFromRect(bounds, MONITOR_DEFAULTTONEAREST), &monitor)) {
+                // Windows retains invisible resize borders around a maximized
+                // overlapped window. Its client area must exclude that frame,
+                // so custom chrome is fully visible inside the work area.
                 bounds->left = std::max(bounds->left, monitor.rcWork.left);
                 bounds->top = std::max(bounds->top, monitor.rcWork.top);
                 bounds->right = std::min(bounds->right, monitor.rcWork.right);
@@ -338,7 +452,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return false;
     case WM_ACTIVATE:
     case WM_DWMCOMPOSITIONCHANGED:
-        extendFrame(msg->hwnd);
+        extendFrame(window, msg->hwnd);
         return false;
     default:
         // In particular, Qt retains WM_GETMINMAXINFO / WM_DPICHANGED handling

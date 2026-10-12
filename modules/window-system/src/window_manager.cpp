@@ -254,10 +254,16 @@ bool WindowManager::moveTab(TabId tab, GroupId group, Placement placement, int i
 { return applyResult(d->model.moveTab(tab, group, placement, index)); }
 WindowId WindowManager::detachTab(TabId tab, WindowKind kind)
 {
+    return detachTabImpl(tab, kind, {});
+}
+WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow)
+{
     const auto source = context(d->model.group(d->model.groupForTab(tab)) ? d->model.group(d->model.groupForTab(tab))->windowId : WindowId{});
     const auto id = d->model.detachTab(tab, kind); if (id.isNull()) return {};
     auto options = d->options.value(source.window); options.size = QSize(880, 560); d->options.insert(id, options);
-    refresh(); showWindow(id); activateTab(tab); return id;
+    refresh();
+    if (beforeShow) if (auto* window = windowWidget(id)) beforeShow(window);
+    showWindow(id); activateTab(tab); return id;
 }
 bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement, int insertionIndex)
 { return applyResult(d->model.moveAllTabs(source, target, placement, insertionIndex)); }

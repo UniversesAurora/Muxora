@@ -443,7 +443,11 @@ bool CommandStripHost::setStripSizing(const QString& id, StripSizing sizing)
 {
     auto* strip = d->strips.value(id);
     if (!strip || (sizing != StripSizing::Content && sizing != StripSizing::Elastic)
+        || (sizing == StripSizing::Content && strip->constraints.elasticRequired)
         || (sizing == StripSizing::Elastic && !strip->constraints.elasticAllowed)) return false;
+    if (sizing == StripSizing::Elastic) for (int row = 0; row < 2; ++row)
+        if ((isDragging() ? d->originalRows[row] : d->rows[row]).contains(id)
+            && !requiredElasticInRow(row, id, true).isEmpty()) return false;
     if (isDragging()) finishDrag(false);
     if (strip->sizing == sizing) return true;
     strip->sizing = sizing;
@@ -457,6 +461,16 @@ CommandStripHost::StripSizing CommandStripHost::stripSizing(const QString& id) c
 {
     const auto* strip = d->strips.value(id);
     return strip ? strip->sizing : StripSizing::Content;
+}
+
+bool CommandStripHost::isStripSizingEditable(const QString& id) const
+{
+    const auto* strip = d->strips.value(id);
+    if (!strip || !strip->constraints.elasticAllowed || strip->constraints.elasticRequired) return false;
+    for (int row = 0; row < 2; ++row)
+        if ((isDragging() ? d->originalRows[row] : d->rows[row]).contains(id)
+            && !requiredElasticInRow(row, id, true).isEmpty()) return false;
+    return true;
 }
 
 bool CommandStripHost::setStripOptionsEnabled(const QString& id, bool enabled)
@@ -481,10 +495,15 @@ bool CommandStripHost::setStripConstraints(const QString& id, StripConstraints c
 {
     auto* strip = d->strips.value(id);
     if (!strip || constraints.minimumContentWidth <= 0
-        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - handleWidth - tailWidth) return false;
+        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - handleWidth - tailWidth
+        || (constraints.elasticRequired && !constraints.elasticAllowed)) return false;
+    if (constraints.elasticRequired) for (int row = 0; row < 2; ++row)
+        if ((isDragging() ? d->originalRows[row] : d->rows[row]).contains(id)
+            && !requiredElasticInRow(row, id, true).isEmpty()) return false;
     if (isDragging()) finishDrag(false);
     strip->constraints = constraints;
     if (!constraints.elasticAllowed) strip->sizing = StripSizing::Content;
+    for (int row = 0; row < 2; ++row) if (d->rows[row].contains(id)) normalizeElastic(row);
     if (strip->requestedWidth >= 0)
         strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());
     arrange();
@@ -497,6 +516,14 @@ CommandStripHost::StripConstraints CommandStripHost::stripConstraints(const QStr
     return strip ? strip->constraints : StripConstraints{};
 }
 
+QString CommandStripHost::requiredElasticInRow(int row, const QString& except, bool committed) const
+{
+    const auto& entries = committed && isDragging() ? d->originalRows[row] : d->rows[row];
+    for (const auto& id : entries)
+        if (id != except && d->strips.value(id)->constraints.elasticRequired) return id;
+    return {};
+}
+
 void CommandStripHost::normalizeElastic(int row, const QString& preferred)
 {
     QString winner;
@@ -507,6 +534,9 @@ void CommandStripHost::normalizeElastic(int row, const QString& preferred)
     }
     if (!preferred.isEmpty() && d->rows[row].contains(preferred)
         && d->strips.value(preferred)->sizing == StripSizing::Elastic) winner = preferred;
+    const auto required = requiredElasticInRow(row);
+    if (!required.isEmpty()) winner = required;
+    if (!winner.isEmpty()) d->strips.value(winner)->sizing = StripSizing::Elastic;
     for (const auto& id : d->rows[row]) if (id != winner) d->strips.value(id)->sizing = StripSizing::Content;
 }
 
@@ -542,6 +572,7 @@ void CommandStripHost::removeFromRows(const QString& id)
 bool CommandStripHost::moveStrip(const QString& id, int row, int index)
 {
     if (!d->strips.contains(id) || row < 0 || row > 1) return false;
+    if (d->strips.value(id)->constraints.elasticRequired && !requiredElasticInRow(row, id, true).isEmpty()) return false;
     if (isDragging()) finishDrag(false);
     // An unchanged placement must not run the vacancy rule a second time.
     const int currentIndex = d->rows[row].indexOf(id);
@@ -668,7 +699,7 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
     auto* customize = new DismissOnlyMenu(QStringLiteral("添加或移除按钮"), menu);
     menu->addMenu(customize);
     customize->setObjectName("StripCustomizeMenu");
-    if (strip->constraints.elasticAllowed) {
+    if (isStripSizingEditable(id)) {
         auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
         elastic->setObjectName("StripElasticAction");
         elastic->setCheckable(true);
@@ -873,6 +904,13 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
     // New strips may be introduced by an application upgrade. Keep their
     // defaults while preserving the saved position of the known strips.
     for (int row = 0; row < 2; ++row) for (const auto& id : d->rows[row]) if (!seen.contains(id)) proposed[row].append(id);
+    // Host policy is authoritative; reject ambiguous rows before changing
+    // widgets. Old layouts with a content-sized required strip are migrated.
+    for (int row = 0; row < 2; ++row) {
+        int requiredCount = 0;
+        for (const auto& id : proposed[row]) requiredCount += d->strips.value(id)->constraints.elasticRequired ? 1 : 0;
+        if (requiredCount > 1) return;
+    }
     const auto settings = json.value("strips").toObject();
     const bool savedLocked = json.value("locked").toBool(true);
     for (const auto& id : stripIds()) {
@@ -1011,6 +1049,8 @@ bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
 
 void CommandStripHost::insertDraggedStrip(int row, QPoint position)
 {
+    if (d->strips.value(d->dragging)->constraints.elasticRequired
+        && !requiredElasticInRow(row, d->dragging).isEmpty()) return;
     d->reserveDragSlot = false;
     removeFromRows(d->dragging);
     arrange();

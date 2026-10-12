@@ -352,7 +352,8 @@ void applyTheme(QWidget* root, const Theme& theme)
     // pointer or stale colors from its previous window.
     root->setProperty("windowSystemThemeColors", QVariantMap{
         {"text", theme.text}, {"mutedText", theme.mutedText}, {"accent", theme.accent},
-        {"accentSoft", theme.accentSoft}, {"selection", theme.selection},
+        {"surface", theme.surface}, {"accentSoft", theme.accentSoft},
+        {"selection", theme.selection}, {"selectionText", theme.selectionText},
         {"checkedIndicatorText", theme.checkedIndicatorText}});
     QPalette palette = root->palette();
     palette.setColor(QPalette::Window, theme.background);
