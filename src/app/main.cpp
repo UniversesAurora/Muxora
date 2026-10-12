@@ -91,6 +91,7 @@ int main(int argc, char* argv[])
     if (parser.isSet("command")) QTimer::singleShot(0, &app, [&] {
         if (!windows.execute(parser.value("command"))) app.exit(4);
     });
+    QObject::connect(&windows, &window_system::WindowManager::lastWindowAboutToClose, &app, [&] { save(); });
     QTimer persistTimer; persistTimer.setSingleShot(true); persistTimer.setInterval(700);
     QObject::connect(&windows, &window_system::WindowManager::layoutChanged, &persistTimer, [&persistTimer] { persistTimer.start(); });
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);

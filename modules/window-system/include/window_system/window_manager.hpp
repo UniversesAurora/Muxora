@@ -14,13 +14,18 @@ namespace window_system {
 struct WindowOptions {
     QString title = QStringLiteral("WindowSystem");
     QSize size = QSize(1280, 800);
+    bool tabBarsVisible = true;
 };
+
+enum class PaneBarSharing { Shared, PerPane };
 
 struct TabOptions {
     QString title;
     QString contentType;
     QVariantMap state;
     bool showIcon = true;
+    PaneBarSharing topBarSharing = PaneBarSharing::Shared;
+    PaneBarSharing bottomBarSharing = PaneBarSharing::Shared;
 };
 
 struct WindowBehavior {
@@ -57,6 +62,10 @@ public:
     bool setTabBottomBar(TabId tab, QWidget* bar);
     bool setPaneTopBar(PaneId pane, QWidget* bar);
     bool setPaneBottomBar(PaneId pane, QWidget* bar);
+    bool setTabTopBarSharing(TabId tab, PaneBarSharing sharing);
+    bool setTabBottomBarSharing(TabId tab, PaneBarSharing sharing);
+    bool setTabBarsVisible(WindowId window, bool visible);
+    [[nodiscard]] bool tabBarsVisible(WindowId window) const;
     bool setTabIconVisible(TabId tab, bool visible);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
@@ -109,6 +118,9 @@ signals:
     void layoutChanged();
     void commandFailed(const QString& message);
     void allWindowsClosed();
+    // Emitted before an approved close removes the final window. The layout
+    // is still available for the host to persist synchronously.
+    void lastWindowAboutToClose();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -125,6 +137,7 @@ private:
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
     bool setPaneBar(PaneId pane, QWidget* bar, bool top);
+    bool setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top);
     QWidget* createContent(const TabOptions& options, PaneId pane);
     bool focusGroup(GroupId group);
     bool navigate(Placement direction, bool panes);

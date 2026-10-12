@@ -54,7 +54,9 @@ WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& optio
 }
 TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions& options, GroupId group)
 {
-    if (!content || content->property("windowSystemManaged").toBool()) return {};
+    if (!content || content->property("windowSystemManaged").toBool()
+        || (options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
+        || (options.bottomBarSharing != PaneBarSharing::Shared && options.bottomBarSharing != PaneBarSharing::PerPane)) return {};
     const auto id = d->model.addTab(window, options.title, group);
     if (id.isNull()) return {};
     const auto pane = d->model.tab(id)->activePane;
@@ -86,6 +88,35 @@ bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar)
 }
 bool WindowManager::setPaneTopBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, true); }
 bool WindowManager::setPaneBottomBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, false); }
+bool WindowManager::setTabTopBarSharing(TabId tab, PaneBarSharing sharing) { return setTabBarSharing(tab, sharing, true); }
+bool WindowManager::setTabBottomBarSharing(TabId tab, PaneBarSharing sharing) { return setTabBarSharing(tab, sharing, false); }
+bool WindowManager::setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top)
+{
+    if (!d->model.tab(tab) || (sharing != PaneBarSharing::Shared && sharing != PaneBarSharing::PerPane)) return false;
+    for (const auto pane : d->model.panes(tab)) {
+        auto& options = d->descriptors[pane];
+        (top ? options.topBarSharing : options.bottomBarSharing) = sharing;
+    }
+    const auto options = tabOptions(tab);
+    if (auto view = d->tabs.value(tab)) view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
+    emit layoutChanged();
+    return true;
+}
+bool WindowManager::tabBarsVisible(WindowId window) const
+{
+    return d->model.window(window) && d->options.value(window).tabBarsVisible;
+}
+bool WindowManager::setTabBarsVisible(WindowId window, bool visible)
+{
+    auto view = d->windows.value(window);
+    if (!view || !d->model.window(window)) return false;
+    if (d->options.value(window).tabBarsVisible == visible) return true;
+    d->options[window].tabBarsVisible = visible;
+    view->setOptions(d->options.value(window));
+    view->surface()->setTabBarsVisible(visible);
+    emit layoutChanged();
+    return true;
+}
 bool WindowManager::setPaneBar(PaneId pane, QWidget* bar, bool top)
 {
     if (!d->panes.contains(pane)) return false;
@@ -178,7 +209,16 @@ bool WindowManager::requestCloseWindow(WindowId window)
     if (!record || record->kind != kind || record->familyId != family || windowScope() != originalScope) return false;
     const auto currentTabs = collectTabs(originalScope);
     if (QSet<TabId>(affected.cbegin(), affected.cend()) != QSet<TabId>(currentTabs.cbegin(), currentTabs.cend())) return false;
-    d->drag->releaseForMutation(); return applyResult(d->model.closeWindow(window));
+    d->drag->releaseForMutation();
+    auto candidate = d->model;
+    const auto result = candidate.closeWindow(window);
+    if (!result) return false;
+    if (candidate.windows().isEmpty()) {
+        const auto revision = d->model.revision();
+        emit lastWindowAboutToClose();
+        if (!self || d->model.revision() != revision) return false;
+    }
+    d->model = std::move(candidate); refresh(); return true;
 }
 bool WindowManager::approveClose(const QVector<TabId>& tabs)
 {
@@ -363,7 +403,9 @@ void WindowManager::refresh()
     for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it) {
         auto& view = d->tabs[it.key()];
         if (!view) view = new TabContent(this, it.key(), d->storage);
+        const auto options = d->descriptors.value(it.value().activePane);
         view->rebuild(it.value(), d->panes, d->paneTopBars, d->paneBottomBars); d->renderedTrees.insert(it.key(), it.value().panes);
+        view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
     }
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (!d->model.window(it.key())) {

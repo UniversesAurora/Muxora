@@ -289,7 +289,7 @@ QAbstractItemView::item:selected { background: @selection; color: @selectionText
 QAbstractItemView:focus { border-color: @focus; }
 QHeaderView::section { background: @raised; color: @text; padding: 4px 6px; border: none; border-right: 1px solid @border; border-bottom: 1px solid @border; }
 QTabBar, QTabBar#TabBar { background: @background; }
-QTabBar::tab { background: @inactive; color: @text; border: 1px solid @border; border-bottom: 2px solid @border; padding: 3px 11px; min-height: @tabInnerpx; margin-right: 1px; }
+QTabBar::tab { background: @inactive; color: @text; border: 1px solid @border; border-bottom: 2px solid @border; padding: 3px 6px; min-height: @tabInnerpx; margin-right: 1px; }
 QTabBar::tab:hover { background: @soft; }
 QTabBar::tab:selected { background: @active; border-bottom: 2px solid @accent; }
 QTabBar::tab:disabled { color: @muted; background: @raised; }

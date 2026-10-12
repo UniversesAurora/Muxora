@@ -18,6 +18,10 @@ int main(int argc, char** argv)
     QPointer<QLabel> observer(text);
     const auto tab = windows.addTab(root, text, {"External content", "contract.text", {}});
     if (tab.isNull()) { delete text; return 1; }
+    if (!windows.setTabTopBarSharing(tab, window_system::PaneBarSharing::PerPane)
+        || !windows.setTabBottomBarSharing(tab, window_system::PaneBarSharing::Shared)
+        || !windows.setTabBarsVisible(root, false) || windows.tabBarsVisible(root)
+        || !windows.execute("window.tabBars.toggle", {}, root) || !windows.tabBarsVisible(root)) return 13;
     const auto floating = windows.detachTab(tab);
     if (floating.isNull() || !observer || !windows.promoteWindow(floating)) return 2;
     if (!windows.demoteWindow(floating, root)) return 3;

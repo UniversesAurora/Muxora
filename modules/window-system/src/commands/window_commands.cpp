@@ -38,6 +38,24 @@ void WindowManager::registerWindowCommands()
     };
     auto hasTab = [this](const CommandContext& c) { return d->model.tab(c.tab) != nullptr; };
     auto hasWindow = [this](const CommandContext& c) { return d->model.window(c.window) != nullptr; };
+    add("window.tabBars.toggle", QStringLiteral("显示标签栏"), "视图", QKeySequence("Ctrl+Alt+T"),
+        [this](const CommandContext& c) {
+            return setTabBarsVisible(c.window, !tabBarsVisible(c.window));
+        }, hasWindow);
+    for (const bool top : {true, false}) {
+        add(top ? "tab.topBar.setSharing" : "tab.bottomBar.setSharing",
+            top ? QStringLiteral("切换上方窗格栏共享") : QStringLiteral("切换下方窗格栏共享"), "布局", {},
+            [this, top](const CommandContext& c) {
+                const auto options = tabOptions(c.tab);
+                auto sharing = top ? options.topBarSharing : options.bottomBarSharing;
+                if (c.args.contains("sharing")) {
+                    const auto value = c.args.value("sharing").toString();
+                    if (value != "shared" && value != "perPane") return false;
+                    sharing = value == "shared" ? PaneBarSharing::Shared : PaneBarSharing::PerPane;
+                } else sharing = sharing == PaneBarSharing::Shared ? PaneBarSharing::PerPane : PaneBarSharing::Shared;
+                return top ? setTabTopBarSharing(c.tab, sharing) : setTabBottomBarSharing(c.tab, sharing);
+            }, hasTab);
+    }
     add("workbench.showCommandPalette", QStringLiteral("显示命令面板"), "视图", QKeySequence("Ctrl+Shift+P"),
         [this](const CommandContext& c) { showCommandPalette(c.window); return true; });
     add("window.select", QStringLiteral("选择窗口…"), "窗口", QKeySequence("Ctrl+Alt+W"),

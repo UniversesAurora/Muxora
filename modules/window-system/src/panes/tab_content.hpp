@@ -13,6 +13,7 @@ public:
                  const QHash<PaneId, QPointer<QWidget>>& paneTopBars = {},
                  const QHash<PaneId, QPointer<QWidget>>& paneBottomBars = {});
     void setActivePane(PaneId pane);
+    void setBarSharing(PaneBarSharing top, PaneBarSharing bottom);
     void setTopBar(QWidget* widget);
     void setBottomBar(QWidget* widget);
     QWidget* takeTopBar();
@@ -23,6 +24,8 @@ private:
                        const QHash<PaneId, QPointer<QWidget>>& contents);
     void updateBars();
     void replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool top);
+    void placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
+                       PaneBarSharing sharing, QWidget* shared, bool top);
     WindowManager* manager_;
     TabId tab_;
     QVBoxLayout* layout_;
@@ -34,6 +37,8 @@ private:
     QHash<PaneId, QPointer<QWidget>> paneTopBars_;
     QHash<PaneId, QPointer<QWidget>> paneBottomBars_;
     PaneId activePane_;
+    PaneBarSharing topSharing_ = PaneBarSharing::Shared;
+    PaneBarSharing bottomSharing_ = PaneBarSharing::Shared;
     QHash<PaneId, QWidget*> frames_;
 };
 } // namespace window_system

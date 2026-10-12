@@ -4,6 +4,7 @@
 #include "window_title_label.hpp"
 #include "docking/dock_surface.hpp"
 #include "platform/windows/window_frame.hpp"
+#include "window_manager_p.hpp"
 #include <QApplication>
 #include <QAction>
 #include <QCloseEvent>
@@ -15,6 +16,8 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QMoveEvent>
+#include <QResizeEvent>
 #include <QSet>
 #include <QToolButton>
 #include <QTimer>
@@ -61,10 +64,14 @@ QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObjec
 
 WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const WindowOptions& options)
     : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint), manager_(manager), id_(id),
-      options_(options), column_(new QVBoxLayout(this)), surface_(new DockSurface(manager, id, this))
+      options_(options), column_(new QVBoxLayout(this)), surface_(new DockSurface(manager, id, this)),
+      placementTimer_(new QTimer(this))
 {
     setObjectName("WorkspaceWindow"); setProperty("windowId", id);
     setMinimumSize(480, 320); resize(options.size);
+    normalPlacement_ = geometry();
+    placementTimer_->setSingleShot(true);
+    connect(placementTimer_, &QTimer::timeout, this, [this] { notifyPlacementChanged(); });
     column_->setContentsMargins(1, 1, 1, 1); column_->setSpacing(0);
     column_->addWidget(surface_, 1); syncKind();
     applyTheme(this, manager_->theme());
@@ -134,6 +141,7 @@ void WorkspaceWindow::createChrome()
                 auto* action = entry->addAction(command.title);
                 action->setData(command.id);
                 action->setObjectName(command.id);
+                if (command.id == "window.tabBars.toggle") action->setCheckable(true);
                 commandActions_.append(action);
                 if (!command.shortcut.isEmpty()) action->setText(command.title + "\t" + command.shortcut.toString(QKeySequence::NativeText));
                 const auto id = command.id;
@@ -210,7 +218,15 @@ void WorkspaceWindow::updateWindowControlState()
 void WorkspaceWindow::changeEvent(QEvent* event)
 {
     QWidget::changeEvent(event);
-    if (event->type() == QEvent::WindowStateChange) updateWindowControlState();
+    if (event->type() == QEvent::WindowStateChange) {
+        if (!isMinimized()) maximizedPlacement_ = isMaximized();
+        else {
+            const auto* stateEvent = static_cast<QWindowStateChangeEvent*>(event);
+            maximizedPlacement_ = stateEvent->oldState().testFlag(Qt::WindowMaximized);
+        }
+        updateWindowControlState();
+        queuePlacementNotification();
+    }
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {
@@ -240,6 +256,7 @@ void WorkspaceWindow::updateCommandStates()
     for (const auto& action : commandActions_) {
         if (!action) continue;
         const auto id = action->data().toString();
+        if (id == "window.tabBars.toggle") action->setChecked(manager_->tabBarsVisible(id_));
         const auto* command = manager_->commands().find(id);
         const bool enabled = command && (!command->enabled || command->enabled(context));
         if (command) {
@@ -276,6 +293,62 @@ void WorkspaceWindow::updateCaption()
 }
 void WorkspaceWindow::setOptions(const WindowOptions& options) { options_ = options; }
 void WorkspaceWindow::setStatus(const QString& text) { if (status_) status_->setText(text); }
+QRect WorkspaceWindow::normalPlacementGeometry() const
+{
+    if (isMaximized() || isMinimized()) {
+        const auto normal = normalGeometry();
+        return normal.isValid() ? normal : normalPlacement_;
+    }
+    return geometry();
+}
+bool WorkspaceWindow::placementMaximized() const
+{
+    return isMinimized() ? maximizedPlacement_ : isMaximized();
+}
+void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
+{
+    restoringPlacement_ = true;
+    placementTimer_->stop();
+    if (isMaximized() || isMinimized()) showNormal();
+    setGeometry(geometry);
+    normalPlacement_ = this->geometry();
+    maximizedPlacement_ = maximized;
+    maximized ? showMaximized() : showNormal();
+    notifiedPlacement_ = normalPlacementGeometry();
+    notifiedMaximized_ = placementMaximized();
+    restoringPlacement_ = false;
+}
+void WorkspaceWindow::queuePlacementNotification()
+{
+    if (!isVisible() || restoringPlacement_ || manager_->d->destroying) return;
+    if (!isMaximized() && !isMinimized()) normalPlacement_ = geometry();
+    if (!placementTimer_->isActive()) placementTimer_->start(0);
+}
+void WorkspaceWindow::notifyPlacementChanged()
+{
+    if (!isVisible() || restoringPlacement_ || manager_->d->destroying ||
+        !manager_->model().window(id_)) return;
+    // Drag previews and native state changes may deliver several geometries in
+    // one event turn. Publish only the final placement after the transaction.
+    if (manager_->d->refreshing || manager_->d->drag->isActive()) {
+        placementTimer_->start(50); return;
+    }
+    const auto placement = normalPlacementGeometry();
+    const bool maximized = placementMaximized();
+    if (notifiedPlacement_ == placement && notifiedMaximized_ == maximized) return;
+    normalPlacement_ = placement;
+    notifiedPlacement_ = placement;
+    notifiedMaximized_ = maximized;
+    emit manager_->layoutChanged();
+}
+void WorkspaceWindow::moveEvent(QMoveEvent* event)
+{
+    QWidget::moveEvent(event); queuePlacementNotification();
+}
+void WorkspaceWindow::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event); queuePlacementNotification();
+}
 void WorkspaceWindow::closeEvent(QCloseEvent* event)
 {
     if (allowClose) { event->accept(); return; }
@@ -318,6 +391,7 @@ void WorkspaceWindow::showEvent(QShowEvent* event)
 #ifdef Q_OS_WIN
     applyNativeFrame(this);
 #endif
+    queuePlacementNotification();
 }
 bool WorkspaceWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {

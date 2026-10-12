@@ -8,6 +8,9 @@
 class QAction;
 class QLabel;
 class QMenu;
+class QMoveEvent;
+class QResizeEvent;
+class QTimer;
 class QToolButton;
 class QVBoxLayout;
 namespace window_system {
@@ -25,6 +28,9 @@ public:
     void setOptions(const WindowOptions& options);
     void updateCaption();
     void setStatus(const QString& text);
+    [[nodiscard]] QRect normalPlacementGeometry() const;
+    [[nodiscard]] bool placementMaximized() const;
+    void restorePlacement(const QRect& geometry, bool maximized);
     bool allowClose = false;
 protected:
     void changeEvent(QEvent* event) override;
@@ -32,11 +38,15 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void showEvent(QShowEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 private:
     void createChrome();
     void addWindowMenuActions(QMenu* menu);
     void updateCommandStates();
     void updateWindowControlState();
+    void queuePlacementNotification();
+    void notifyPlacementChanged();
     WindowManager* manager_;
     WindowId id_;
     WindowKind kind_ = WindowKind::Floating;
@@ -52,5 +62,11 @@ private:
     DockSurface* surface_;
     QPoint press_;
     bool pendingTitleDrag_ = false;
+    QRect normalPlacement_;
+    QRect notifiedPlacement_;
+    bool maximizedPlacement_ = false;
+    bool notifiedMaximized_ = false;
+    bool restoringPlacement_ = false;
+    QTimer* placementTimer_;
 };
 } // namespace window_system

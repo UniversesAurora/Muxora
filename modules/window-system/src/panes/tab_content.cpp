@@ -1,4 +1,5 @@
 #include "tab_content.hpp"
+#include <QApplication>
 #include <QSplitter>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -17,8 +18,8 @@ void TabContent::rebuild(const TabRecord& record,
                          const QHash<PaneId, QPointer<QWidget>>& paneTopBars,
                          const QHash<PaneId, QPointer<QWidget>>& paneBottomBars)
 {
-    // Pane bars occupy the tab's two shared slots. They never enter the split
-    // tree, so changing focus cannot change pane dimensions or create a title row.
+    // The manager parks content and pane bars before rebuilding hosts. Sharing
+    // policy changes only their presentation; the same widgets remain adopted.
     paneTopBars_.clear();
     paneBottomBars_.clear();
     for (const auto pane : manager_->model().panes(tab_)) {
@@ -63,7 +64,7 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
     column->setContentsMargins(1, 1, 1, 1);
     column->setSpacing(0);
     if (auto content = contents.value(node->itemId)) {
-        column->addWidget(content);
+        column->addWidget(content, 1);
         content->show();
     }
     frames_.insert(node->itemId, frame);
@@ -115,6 +116,14 @@ QWidget* TabContent::takeBottomBar()
 }
 QHash<PaneId, QWidget*> TabContent::paneFrames() const { return frames_; }
 
+void TabContent::setBarSharing(PaneBarSharing top, PaneBarSharing bottom)
+{
+    if (topSharing_ == top && bottomSharing_ == bottom) return;
+    topSharing_ = top;
+    bottomSharing_ = bottom;
+    updateBars();
+}
+
 void TabContent::setActivePane(PaneId pane)
 {
     if (activePane_ == pane) return;
@@ -149,9 +158,43 @@ void TabContent::replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool 
 
 void TabContent::updateBars()
 {
-    auto* top = paneTopBars_.value(activePane_).data();
-    auto* bottom = paneBottomBars_.value(activePane_).data();
+    QPointer<QWidget> focus = QApplication::focusWidget();
+    if (focus && !isAncestorOf(focus)) focus.clear();
+    auto* top = topSharing_ == PaneBarSharing::Shared ? paneTopBars_.value(activePane_).data() : nullptr;
+    auto* bottom = bottomSharing_ == PaneBarSharing::Shared ? paneBottomBars_.value(activePane_).data() : nullptr;
     replaceVisibleBar(visibleTop_, top ? top : top_.data(), true);
     replaceVisibleBar(visibleBottom_, bottom ? bottom : bottom_.data(), false);
+    placePaneBars(paneTopBars_, topSharing_, top, true);
+    placePaneBars(paneBottomBars_, bottomSharing_, bottom, false);
+    if (focus && focus->isVisible() && !focus->hasFocus()) focus->setFocus(Qt::OtherFocusReason);
+}
+
+void TabContent::placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
+                               PaneBarSharing sharing, QWidget* shared, bool top)
+{
+    for (auto it = bars.cbegin(); it != bars.cend(); ++it) {
+        auto* bar = it.value().data();
+        if (!bar || bar == shared) continue;
+        auto* frame = sharing == PaneBarSharing::PerPane ? frames_.value(it.key()) : nullptr;
+        auto* target = frame ? frame : this;
+        if (bar->parentWidget() != target) {
+            if (auto* previous = bar->parentWidget(); previous && previous->layout())
+                previous->layout()->removeWidget(bar);
+            bar->setParent(target);
+        }
+        if (!frame) {
+            layout_->removeWidget(bar);
+            bar->hide();
+            continue;
+        }
+        auto* column = static_cast<QVBoxLayout*>(frame->layout());
+        const int index = top ? 0 : column->count() - 1;
+        if (column->indexOf(bar) != index) {
+            column->removeWidget(bar);
+            if (top) column->insertWidget(0, bar);
+            else column->addWidget(bar);
+        }
+        bar->show();
+    }
 }
 } // namespace window_system

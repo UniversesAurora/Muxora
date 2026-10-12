@@ -179,6 +179,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     if (!group) return nullptr;
     auto* tabs = new GroupTabs(manager_->theme(), this);
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
+    tabs->setTabBarVisible(manager_->tabBarsVisible(window_));
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
         if (auto content = contents.value(tabId)) {
@@ -223,6 +224,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     auto* bar = new QFrame(this); bar->setObjectName("EdgeBar");
+    if (!manager_->tabBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     auto* layout = new QBoxLayout(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, bar);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(2);
@@ -329,7 +331,8 @@ QHash<GroupId, QRect> DockSurface::tabBarRects() const
 {
     QHash<GroupId, QRect> result;
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value() && it.value()->isVisible()) result.insert(it.key(), it.value()->viewportRectGlobal());
+        if (it.value() && it.value()->isVisible() && !it.value()->viewportRectGlobal().isEmpty())
+            result.insert(it.key(), it.value()->viewportRectGlobal());
     return result;
 }
 GroupId DockSurface::tabBarAt(QPoint point) const
@@ -413,6 +416,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
+    if (!manager_->tabBarsVisible(window_)) header->hide();
     header->drag = [this, tab](QPoint point) { manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
     auto* title = new QLabel(manager_->model().tab(tab)->title, header);
@@ -432,6 +436,14 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     }
     placePeek(); peek_->show(); peek_->raise();
     layout->activate();
+}
+void DockSurface::setTabBarsVisible(bool visible)
+{
+    for (auto group : groups_) if (group) group->setTabBarVisible(visible);
+    for (auto bar : edgeBars_) if (bar) bar->setVisible(visible);
+    if (peek_) if (auto* header = peek_->findChild<QWidget*>("PeekTitleBar")) header->setVisible(visible);
+    if (root_) root_->layout()->activate();
+    placePeek();
 }
 void DockSurface::closePeek()
 {

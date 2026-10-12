@@ -23,6 +23,7 @@ public:
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
     void closePeek();
+    void setTabBarsVisible(bool visible);
     [[nodiscard]] QRect centralRectGlobal() const;
 protected:
     void resizeEvent(QResizeEvent* event) override;

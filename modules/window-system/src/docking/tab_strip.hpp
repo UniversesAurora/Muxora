@@ -56,12 +56,15 @@ public:
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
+    void setTabBarVisible(bool visible);
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 private:
     void updateBarGeometry();
     void showTabList();
+    void updateScrollBarVisibility();
+    QWidget* header_;
     DragTabBar* bar_;
     QScrollArea* scroll_;
     QScrollBar* scrollbar_;

@@ -35,6 +35,14 @@
 
 当前 API 为 0.1 初版，尚在交互迭代阶段，不承诺稳定二进制 ABI。完整 JSONC 用户键位、条件表达式和后续扩展仍按设计逐步接入。
 
+`setTabBarsVisible(window, visible)` / `tabBarsVisible(window)` 按窗口控制全部标签栏，隐藏时内容与布局模型保持。窗口创建选项 `WindowOptions.tabBarsVisible` 默认为 `true`；命令 `window.tabBars.toggle` 可从菜单、命令面板或 `Ctrl+Alt+T` 调用，设置随布局保存。
+
+窗格上下栏分别使用 `PaneBarSharing::Shared` / `PerPane`，默认共享。创建标签时设置 `TabOptions.topBarSharing` / `bottomBarSharing`，运行中可调用 `setTabTopBarSharing` / `setTabBottomBarSharing`。各 Pane 栏继续由 `setPaneTopBar` / `setPaneBottomBar` 接入；显式 Tab 栏不会因逐窗格模式而复制。对应统一命令为 `tab.topBar.setSharing` / `tab.bottomBar.setSharing`，接受 `sharing: "shared"` 或 `"perPane"`，无参数时切换当前策略。
+
+共享策略进入布局快照；栏控件本身由宿主重建和接入，窗口模块不序列化任意 `QWidget`。
+
+窗口位置、正常尺寸和最大化状态随布局保存，最小化不覆盖正常位置。恢复时按全部屏幕的逻辑可用区域调整越界位置，保留有效的负坐标和跨屏位置。宿主收到 `lastWindowAboutToClose` 时可同步保存仍有效的快照，避免立即关闭最后一个窗口而错过异步保存；该通知中不得修改布局。
+
 ## 规范与验证
 
 - [窗口系统设计](../../docs/design/window-system-design.md)
