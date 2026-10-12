@@ -28,6 +28,11 @@ private slots:
     void directionalTabMovementIntoAnEmptyWindowCreatesOneGroup();
     void wholeWindowMovementIntoAnEmptyWindowSupportsBothPolicies();
     void movingOneTabFromAPinnedGroupKeepsTheOtherTabsPinned();
+    void individualPinningRestoresGroupAndTabPositionsInAnyOrder();
+    void pinningEveryEdgeTabPreservesMixedGroupsAndSnapshotPositions();
+    void explicitPinnedDropsCreateAnOuterPartition();
+    void wholeWindowCenterInsertionUsesTheDropIndex();
+    void wholeWindowEdgeMovementWorksWithoutCentralGroups();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -217,6 +222,9 @@ void LayoutModelTest::failedOperationsAreAtomic()
     QVERIFY(model.splitPane(a, model.tab(a)->activePane, Placement::Center).isNull());
     QVERIFY(!model.moveAllTabs(root, model.groupForTab(a)).ok);
     QVERIFY(!model.setGroupPinned(model.groupForTab(a), true).ok);
+    QVERIFY(!model.moveTabToEdge(a, static_cast<Edge>(99)).ok);
+    QVERIFY(!model.setEdgePinned(root, static_cast<Edge>(99), true).ok);
+    QVERIFY(model.createWindow(static_cast<WindowKind>(99)).isNull());
     QCOMPARE(model.toJson(), before);
     QCOMPARE(model.revision(), revision);
 }
@@ -420,6 +428,133 @@ void LayoutModelTest::movingOneTabFromAPinnedGroupKeepsTheOtherTabsPinned()
     QVERIFY(model.centralGroups(window).isEmpty());
     QCOMPARE(model.window(window)->edgeGroups.size(), 2);
     QVERIFY(model.validate().ok);
+}
+
+void LayoutModelTest::individualPinningRestoresGroupAndTabPositionsInAnyOrder()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto a = model.addTab(window, "A");
+    const auto b = model.addTab(window, "B");
+    const auto c = model.addTab(window, "C");
+    const auto original = model.groupForTab(a);
+    QVERIFY(model.moveGroupToEdge(original, Edge::Left, true).ok);
+    QVERIFY(model.setEdgeGroupExtent(original, 347).ok);
+    QVERIFY(model.setTabPinned(a, false).ok);
+    QCOMPARE(model.group(original)->tabs, (QVector<TabId>{b, c}));
+    QCOMPARE(model.group(model.groupForTab(a))->location, GroupLocation::AutoHide);
+    QVERIFY(model.setTabPinned(b, false).ok);
+    QVERIFY(model.setTabPinned(c, false).ok);
+    QVERIFY(!model.group(original));
+    QVERIFY(model.setTabPinned(c, true).ok);
+    QVERIFY(model.setTabPinned(b, true).ok);
+    QVERIFY(model.setTabPinned(a, true).ok);
+    QCOMPARE(model.groupForTab(a), original);
+    QCOMPARE(model.group(original)->tabs, (QVector<TabId>{a, b, c}));
+    QCOMPARE(model.group(original)->edgeExtent, 347);
+    QCOMPARE(model.window(window)->edgeGroups, (QVector<GroupId>{original}));
+    QVERIFY(model.validate().ok);
+}
+void LayoutModelTest::pinningEveryEdgeTabPreservesMixedGroupsAndSnapshotPositions()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto a = model.addTab(window, "A");
+    const auto b = model.addTab(window, "B");
+    const auto other = model.addTab(window, "Other");
+    QVERIFY(model.moveTabToEdge(other, Edge::Right, true).ok);
+    const auto original = model.groupForTab(a);
+    QVERIFY(model.moveGroupToEdge(original, Edge::Left, true).ok);
+    QVERIFY(model.setTabPinned(a, false).ok);
+    LayoutModel restored;
+    QVERIFY(restored.fromJson(model.toJson()).ok);
+    QCOMPARE(restored.toJson(), model.toJson());
+    QVERIFY(restored.setEdgePinned(window, Edge::Left, false).ok);
+    QVERIFY(!restored.group(original));
+    QCOMPARE(restored.group(restored.groupForTab(other))->location, GroupLocation::Pinned);
+    QVERIFY(restored.setEdgePinned(window, Edge::Left, true).ok);
+    QCOMPARE(restored.group(original)->tabs, (QVector<TabId>{a, b}));
+    QVERIFY(restored.validate().ok);
+    const auto before = restored.toJson();
+    QVERIFY(!restored.setTabPinned(QUuid::createUuid(), true).ok);
+    QVERIFY(!restored.setEdgeGroupExtent(original, 1).ok);
+    QCOMPARE(restored.toJson(), before);
+    const auto untouchedWindow = restored.createWindow();
+    const auto c = restored.addTab(untouchedWindow, "C");
+    const auto d = restored.addTab(untouchedWindow, "D");
+    const auto untouched = restored.groupForTab(c);
+    QVERIFY(restored.moveGroupToEdge(untouched, Edge::Top).ok);
+    QVERIFY(restored.setEdgePinned(untouchedWindow, Edge::Top, true).ok);
+    QCOMPARE(restored.group(untouched)->tabs, (QVector<TabId>{c, d}));
+    QCOMPARE(restored.group(untouched)->location, GroupLocation::Pinned);
+}
+void LayoutModelTest::explicitPinnedDropsCreateAnOuterPartition()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto inner = model.addTab(window, "Inner");
+    const auto outer = model.addTab(window, "Outer");
+    QVERIFY(model.moveTabToEdge(inner, Edge::Left, true).ok);
+    QVERIFY(model.moveTabToEdge(outer, Edge::Left, true).ok);
+    QCOMPARE(model.window(window)->edgeGroups,
+             (QVector<GroupId>{model.groupForTab(outer), model.groupForTab(inner)}));
+    QCOMPARE(model.group(model.groupForTab(inner))->tabs, (QVector<TabId>{inner}));
+    const auto ordered = model.window(window)->edgeGroups;
+    QVERIFY(model.setTabPinned(outer, false).ok);
+    QVERIFY(model.setTabPinned(inner, false).ok);
+    QVERIFY(model.setTabPinned(outer, true).ok);
+    QVERIFY(model.setTabPinned(inner, true).ok);
+    QCOMPARE(model.window(window)->edgeGroups, ordered);
+    QVERIFY(model.validate().ok);
+}
+void LayoutModelTest::wholeWindowCenterInsertionUsesTheDropIndex()
+{
+    LayoutModel model;
+    const auto destination = model.createWindow();
+    const auto a = model.addTab(destination, "A");
+    const auto b = model.addTab(destination, "B");
+    const auto source = model.createWindow(WindowKind::Floating, destination);
+    const auto c = model.addTab(source, "C");
+    const auto d = model.addTab(source, "D");
+    QVERIFY(model.moveAllTabs(source, model.groupForTab(a), Placement::Center, 1).ok);
+    QCOMPARE(model.group(model.groupForTab(a))->tabs, (QVector<TabId>{a, c, d, b}));
+    QVERIFY(!model.window(source));
+    QVERIFY(model.validate().ok);
+}
+
+void LayoutModelTest::wholeWindowEdgeMovementWorksWithoutCentralGroups()
+{
+    LayoutModel model;
+    const auto destination = model.createWindow();
+    const auto existing = model.addTab(destination, "Existing");
+    QVERIFY(model.moveTabToEdge(existing, Edge::Left, true).ok);
+    const auto previousGroup = model.groupForTab(existing);
+    const auto source = model.createWindow(WindowKind::Floating, destination);
+    const auto first = model.addTab(source, "First");
+    const auto second = model.addTab(source, "Second");
+    const auto sourcePane = model.tab(first)->activePane;
+    const auto extraPane = model.splitPane(first, sourcePane, Placement::Right);
+    const auto tree = model.tab(first)->panes;
+    QVERIFY(model.moveTabToEdge(second, Edge::Bottom).ok);
+    const auto movingOrder = model.orderedTabs(source);
+    QVERIFY(model.centralGroups(destination).isEmpty());
+    QVERIFY(model.moveAllTabsToEdge(source, destination, Edge::Left, true).ok);
+    const auto inserted = model.groupForTab(first);
+    QCOMPARE(model.group(inserted)->tabs, movingOrder);
+    QCOMPARE(model.group(inserted)->location, GroupLocation::Pinned);
+    QCOMPARE(model.window(destination)->edgeGroups, (QVector<GroupId>{inserted, previousGroup}));
+    QCOMPARE(model.group(previousGroup)->tabs, (QVector<TabId>{existing}));
+    QCOMPARE(model.tab(first)->panes, tree);
+    QCOMPARE(model.panes(first), (QVector<PaneId>{sourcePane, extraPane}));
+    QVERIFY(!model.window(source));
+    QVERIFY(model.centralGroups(destination).isEmpty());
+    QVERIFY(model.validate().ok);
+    const auto before = model.toJson();
+    QVERIFY(!model.moveAllTabsToEdge(destination, destination, Edge::Right).ok);
+    QVERIFY(!model.moveAllTabsToEdge(QUuid::createUuid(), destination, Edge::Right).ok);
+    QCOMPARE(model.toJson(), before);
+    const auto empty = model.createWindow();
+    QVERIFY(!model.moveAllTabsToEdge(empty, destination, Edge::Right).ok);
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

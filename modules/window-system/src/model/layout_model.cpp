@@ -338,7 +338,7 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup)
         }
         created = QUuid::createUuid();
         const auto paneId = QUuid::createUuid();
-        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId});
+        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt});
         auto& record = model.groups_[target];
         record.tabs.append(created);
         record.activeTab = created;
@@ -472,8 +472,20 @@ OperationResult LayoutModel::moveGroupToEdge(GroupId groupId, Edge edge, bool pi
         model.unlinkGroupUnchecked(groupId);
         auto& record = model.groups_[groupId];
         record.edge = edge;
+        record.edgeExtent = edge == Edge::Top || edge == Edge::Bottom ? 170 : 250;
         record.location = pinned ? GroupLocation::Pinned : GroupLocation::AutoHide;
-        model.windows_[windowId].edgeGroups.append(groupId);
+        // Ordered from the outer edge inward. An explicit pinned drop always
+        // creates the partition nearest that edge rather than joining a group.
+        auto& edgeGroups = model.windows_[windowId].edgeGroups;
+        if (pinned) {
+            auto position = edgeGroups.size();
+            for (int i = 0; i < edgeGroups.size(); ++i) {
+                const auto& other = model.groups_[edgeGroups[i]];
+                if (other.edge == edge && other.location == GroupLocation::Pinned) { position = i; break; }
+            }
+            edgeGroups.insert(position, groupId);
+        } else edgeGroups.append(groupId);
+        for (const auto tab : record.tabs) model.tabs_[tab].pinnedPosition.reset();
         model.windows_[windowId].activeGroup = groupId;
         return success();
     });
@@ -500,6 +512,135 @@ OperationResult LayoutModel::setGroupPinned(GroupId groupId, bool pinned)
         if (!record || record->location == GroupLocation::Central)
             return failure("Only an edge group can change its pinned state.");
         model.groups_[groupId].location = pinned ? GroupLocation::Pinned : GroupLocation::AutoHide;
+        return success();
+    });
+}
+OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
+{
+    const auto sourceId = groupForTab(tabId);
+    const auto* source = group(sourceId);
+    if (!source || source->location == GroupLocation::Central)
+        return failure("Only an edge tab can change its pinned state.");
+    if ((source->location == GroupLocation::Pinned) == pinned) return success();
+    const auto windowId = source->windowId;
+    const auto edge = source->edge;
+    const auto extent = source->edgeExtent;
+    GroupId targetId;
+    int insertion = -1;
+    if (!pinned) {
+        const auto order = windows_[windowId].edgeGroups;
+        const auto rebase = std::none_of(order.cbegin(), order.cend(), [&](GroupId id) {
+            const auto& group = groups_[id];
+            return group.edge == edge && group.location == GroupLocation::AutoHide
+                && std::any_of(group.tabs.cbegin(), group.tabs.cend(), [&](TabId tab) {
+                    const auto& saved = tabs_[tab].pinnedPosition;
+                    return saved && saved->window == windowId && saved->edge == edge;
+                });
+        });
+        // Capture the entire side before its first removal: a neighboring
+        // partition must keep its old rank even when earlier ones disappear.
+        for (int groupIndex = 0; groupIndex < order.size(); ++groupIndex) {
+            const auto& group = groups_[order[groupIndex]];
+            if (group.edge != edge || group.location != GroupLocation::Pinned) continue;
+            for (int i = 0; i < group.tabs.size(); ++i) {
+                auto& saved = tabs_[group.tabs[i]].pinnedPosition;
+                if (rebase || !saved || saved->window != windowId || saved->group != group.id)
+                    saved = TabRecord::PinnedPosition{windowId, group.id, edge, groupIndex, i, group.edgeExtent};
+                else saved->extent = group.edgeExtent;
+            }
+        }
+        targetId = createGroupUnchecked(windowId);
+        unlinkGroupUnchecked(targetId);
+        auto& target = groups_[targetId];
+        target.location = GroupLocation::AutoHide;
+        target.edge = edge;
+        target.edgeExtent = extent;
+        windows_[windowId].edgeGroups.append(targetId);
+    } else {
+        const auto saved = tabs_[tabId].pinnedPosition;
+        if (saved && saved->window == windowId && saved->edge == edge) {
+            const auto* previous = group(saved->group);
+            if (previous && previous->windowId == windowId && previous->edge == edge
+                && previous->location == GroupLocation::Pinned) targetId = saved->group;
+            else if (!previous || (previous->id == sourceId && previous->tabs.size() == 1)) {
+                if (previous) {
+                    groups_[sourceId].location = GroupLocation::Pinned;
+                    auto& order = windows_[windowId].edgeGroups;
+                    order.removeAll(sourceId);
+                    order.insert(std::clamp(saved->groupIndex, 0, int(order.size())), sourceId);
+                    return success();
+                }
+                targetId = saved->group;
+                GroupRecord target;
+                target.id = targetId; target.windowId = windowId;
+                target.location = GroupLocation::Pinned; target.edge = edge;
+                target.edgeExtent = saved->extent;
+                groups_.insert(targetId, target);
+                auto& order = windows_[windowId].edgeGroups;
+                order.insert(std::clamp(saved->groupIndex, 0, int(order.size())), targetId);
+            }
+            if (!targetId.isNull()) {
+                insertion = 0;
+                for (const auto member : groups_[targetId].tabs) {
+                    const auto& rank = tabs_[member].pinnedPosition;
+                    if (!rank || rank->group != saved->group || rank->tabIndex < saved->tabIndex) ++insertion;
+                }
+            }
+        }
+        if (targetId.isNull()) {
+            if (source->tabs.size() == 1) {
+                groups_[sourceId].location = GroupLocation::Pinned;
+                return success();
+            }
+            targetId = createGroupUnchecked(windowId);
+            unlinkGroupUnchecked(targetId);
+            groups_[targetId].location = GroupLocation::Pinned;
+            groups_[targetId].edge = edge;
+            groups_[targetId].edgeExtent = extent;
+            windows_[windowId].edgeGroups.append(targetId);
+        }
+    }
+    return moveTabUnchecked(tabId, targetId, Placement::Center, insertion);
+}
+OperationResult LayoutModel::setTabPinned(TabId tabId, bool pinned)
+{
+    return transact([&](LayoutModel& model) { return model.setTabPinnedUnchecked(tabId, pinned); });
+}
+OperationResult LayoutModel::setEdgePinned(WindowId windowId, Edge edge, bool pinned)
+{
+    return transact([&](LayoutModel& model) {
+        const auto* window = model.window(windowId);
+        if (!window) return failure("The window does not exist.");
+        if (edge != Edge::Left && edge != Edge::Right && edge != Edge::Top && edge != Edge::Bottom)
+            return failure("The edge direction is invalid.");
+        QVector<TabId> tabs;
+        for (auto id : window->edgeGroups) {
+            const auto* group = model.group(id);
+            if (!group || group->edge != edge) continue;
+            if (pinned && group->location == GroupLocation::AutoHide
+                && std::none_of(group->tabs.cbegin(), group->tabs.cend(), [&](TabId tab) {
+                    const auto& saved = model.tabs_[tab].pinnedPosition;
+                    return saved && saved->window == windowId && saved->edge == edge;
+                })) {
+                // A whole-side action keeps a previously untouched group
+                // together; individual pin actions still move just one tab.
+                model.groups_[id].location = GroupLocation::Pinned;
+            } else tabs += group->tabs;
+        }
+        for (auto tab : tabs) {
+            const auto result = model.setTabPinnedUnchecked(tab, pinned);
+            if (!result) return result;
+        }
+        return success();
+    });
+}
+OperationResult LayoutModel::setEdgeGroupExtent(GroupId groupId, int extent)
+{
+    return transact([&](LayoutModel& model) {
+        const auto* group = model.group(groupId);
+        if (!group || group->location == GroupLocation::Central || extent < 32 || extent > 32768)
+            return failure("Edge extents require an edge group and a size between 32 and 32768.");
+        model.groups_[groupId].edgeExtent = extent;
         return success();
     });
 }
@@ -593,10 +734,10 @@ OperationResult LayoutModel::reassignFamily(WindowId windowId, WindowId targetWo
     });
 }
 
-OperationResult LayoutModel::moveAllTabs(WindowId sourceWindow, GroupId targetGroup, Placement placement)
+OperationResult LayoutModel::moveAllTabs(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex)
 {
     return transact([&](LayoutModel& model) {
-        return model.moveAllTabsUnchecked(sourceWindow, targetGroup, placement);
+        return model.moveAllTabsUnchecked(sourceWindow, targetGroup, placement, insertionIndex);
     });
 }
 
@@ -630,7 +771,7 @@ LayoutTree LayoutModel::takeWindowTreeUnchecked(WindowId sourceWindow, WindowId 
     return carried;
 }
 
-OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup, Placement placement)
+OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex)
 {
     const auto* source = window(sourceWindow);
     const auto* target = group(targetGroup);
@@ -642,9 +783,11 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
     const auto activeGroup = source->activeGroup;
     const auto activeTab = group(activeGroup) ? groups_[activeGroup].activeTab : ordered.first();
     if (placement == Placement::Center) {
+        auto index = insertionIndex;
         for (auto tabId : ordered) {
-            auto moved = moveTabUnchecked(tabId, targetGroup, Placement::Center, -1);
+            auto moved = moveTabUnchecked(tabId, targetGroup, Placement::Center, index);
             if (!moved) return moved;
+            if (index >= 0) ++index;
         }
         groups_[targetGroup].activeTab = activeTab;
         windows_[targetWindow].activeGroup = targetGroup;
@@ -681,6 +824,20 @@ OperationResult LayoutModel::moveAllTabsToWindow(WindowId sourceWindow, WindowId
         model.windows_[targetWindow].activeGroup = activeGroup;
         model.eraseEmptyFloatingWindows();
         return success();
+    });
+}
+OperationResult LayoutModel::moveAllTabsToEdge(WindowId sourceWindow, WindowId targetWindow, Edge edge, bool pinned)
+{
+    return transact([&](LayoutModel& model) {
+        if (!model.window(sourceWindow) || !model.window(targetWindow) || sourceWindow == targetWindow)
+            return failure("Whole-window edge movement needs two existing, different windows.");
+        if (model.orderedTabs(sourceWindow).isEmpty()) return failure("The source window has no tabs.");
+        // Create an isolated destination directly. No temporary window, family,
+        // central target or transient merge with unrelated tabs is needed.
+        const auto destination = model.createGroupUnchecked(targetWindow);
+        const auto moved = model.moveAllTabsUnchecked(sourceWindow, destination, Placement::Center);
+        if (!moved) return moved;
+        return model.moveGroupToEdge(destination, edge, pinned);
     });
 }
 
@@ -762,7 +919,7 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
         created = QUuid::createUuid();
         const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
         const auto title = model.tabs_[sourceTab].title;
-        model.tabs_.insert(created, TabRecord{created, title, carried, paneId});
+        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt});
         model.groups_[sourceGroup].tabs.append(created);
         auto moved = model.moveTabUnchecked(created, targetGroup, placement, -1);
         if (!moved) return moved;
@@ -809,6 +966,8 @@ OperationResult LayoutModel::validate() const
         const auto& record = iterator.value();
         if (iterator.key() != record.id || !registerId(record.id) || record.familyId.isNull())
             return failure("Window identities are invalid.");
+        if (record.kind != WindowKind::Workbench && record.kind != WindowKind::Floating)
+            return failure("A window kind is invalid.");
         families.insert(record.familyId);
         if (record.kind == WindowKind::Workbench) ++roots[record.familyId];
         if (!record.activeGroup.isNull() && (!groups_.contains(record.activeGroup)
@@ -820,11 +979,22 @@ OperationResult LayoutModel::validate() const
         const auto& record = iterator.value();
         if (iterator.key() != record.id || !registerId(record.id) || !windows_.contains(record.windowId))
             return failure("Group identities or window references are invalid.");
+        if ((record.edge != Edge::Left && record.edge != Edge::Right && record.edge != Edge::Top && record.edge != Edge::Bottom)
+            || (record.location != GroupLocation::Central && record.location != GroupLocation::Pinned
+                && record.location != GroupLocation::AutoHide)) return failure("A group placement is invalid.");
         if (record.tabs.isEmpty() || !record.tabs.contains(record.activeTab))
             return failure("Groups must contain tabs and a valid active tab.");
+        if (record.edgeExtent < 32 || record.edgeExtent > 32768) return failure("An edge extent is invalid.");
     }
-    for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator)
+    for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
+        if (const auto& saved = iterator->pinnedPosition) {
+            if (saved->window.isNull() || saved->group.isNull() || saved->groupIndex < 0
+                || saved->groupIndex > maximumRecords || saved->tabIndex < 0 || saved->tabIndex > maximumRecords
+                || saved->extent < 32 || saved->extent > 32768)
+                return failure("A pinned position is malformed.");
+        }
+    }
 
     QSet<QUuid> treeIds;
     QSet<GroupId> placedGroups;
@@ -909,11 +1079,18 @@ QJsonObject LayoutModel::toJson() const
             const auto& groupRecord = groups_[groupId];
             groups.append(QJsonObject{{"id", uuidText(groupRecord.id)}, {"windowId", uuidText(groupRecord.windowId)},
                 {"location", locationText(groupRecord.location)}, {"edge", edgeText(groupRecord.edge)},
-                {"tabs", idArray(groupRecord.tabs)}, {"activeTab", uuidText(groupRecord.activeTab)}});
+                {"tabs", idArray(groupRecord.tabs)}, {"activeTab", uuidText(groupRecord.activeTab)},
+                {"edgeExtent", groupRecord.edgeExtent}});
             for (auto tabId : groupRecord.tabs) {
                 const auto& tabRecord = tabs_[tabId];
-                tabs.append(QJsonObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
-                    {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}});
+                QJsonObject tabObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
+                    {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}};
+                if (const auto& saved = tabRecord.pinnedPosition) {
+                    tabObject.insert("pinnedPosition", QJsonObject{{"window", uuidText(saved->window)},
+                        {"group", uuidText(saved->group)}, {"edge", edgeText(saved->edge)},
+                        {"groupIndex", saved->groupIndex}, {"tabIndex", saved->tabIndex}, {"extent", saved->extent}});
+                }
+                tabs.append(tabObject);
             }
         }
     }
@@ -960,6 +1137,12 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             : edge == "top" ? Edge::Top : Edge::Bottom;
         record.tabs = reader.ids(object, "tabs");
         record.activeTab = reader.id(object, "activeTab");
+        if (object.contains("edgeExtent")) {
+            const auto extent = object.value("edgeExtent");
+            if (!extent.isDouble() || extent.toDouble() < 32 || extent.toDouble() > 32768
+                || std::floor(extent.toDouble()) != extent.toDouble()) return failure("An edge extent must be a bounded integer.");
+            record.edgeExtent = extent.toInt();
+        } else if (record.edge == Edge::Top || record.edge == Edge::Bottom) record.edgeExtent = 170;
         if (candidate.groups_.contains(record.id)) reader.fail("Duplicate group identity.");
         candidate.groups_.insert(record.id, record);
     }
@@ -972,6 +1155,32 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.title = object.value("title").toString();
         record.panes = reader.tree(object.value("panes"));
         record.activePane = reader.id(object, "activePane");
+        if (object.contains("pinnedPosition")) {
+            if (!object.value("pinnedPosition").isObject()) return failure("A pinned position must be an object.");
+            const auto savedObject = object.value("pinnedPosition").toObject();
+            TabRecord::PinnedPosition saved;
+            saved.window = reader.id(savedObject, "window"); saved.group = reader.id(savedObject, "group");
+            const auto edge = savedObject.value("edge").toString();
+            if (edge != "left" && edge != "right" && edge != "top" && edge != "bottom")
+                return failure("A pinned position has an invalid edge.");
+            saved.edge = edge == "left" ? Edge::Left : edge == "right" ? Edge::Right
+                : edge == "top" ? Edge::Top : Edge::Bottom;
+            for (const auto* key : {"groupIndex", "tabIndex"}) {
+                const auto value = savedObject.value(QLatin1String(key));
+                if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > maximumRecords
+                    || std::floor(value.toDouble()) != value.toDouble())
+                    return failure("Pinned position indices must be bounded integers.");
+            }
+            saved.groupIndex = savedObject.value("groupIndex").toInt();
+            saved.tabIndex = savedObject.value("tabIndex").toInt();
+            if (savedObject.contains("extent")) {
+                const auto extent = savedObject.value("extent");
+                if (!extent.isDouble() || extent.toDouble() < 32 || extent.toDouble() > 32768
+                    || std::floor(extent.toDouble()) != extent.toDouble()) return failure("A pinned position extent is invalid.");
+                saved.extent = extent.toInt();
+            }
+            record.pinnedPosition = saved;
+        }
         if (candidate.tabs_.contains(record.id)) reader.fail("Duplicate tab identity.");
         candidate.tabs_.insert(record.id, record);
     }

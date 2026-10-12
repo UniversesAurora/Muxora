@@ -1,25 +1,20 @@
 // SPDX-License-Identifier: MIT
 #include "command_dialogs.hpp"
+#include "../settings/settings_page.hpp"
 
 #include <window_system/theme.hpp>
 #include <window_system/window_manager.hpp>
 
-#include <QCheckBox>
-#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QFormLayout>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QKeyEvent>
-#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QScreen>
-#include <QSignalBlocker>
-#include <QSpinBox>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -343,170 +338,65 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
     else widget->setFocus(Qt::ActiveWindowFocusReason);
 }
 
-void openBehaviorSettings(WindowManager* manager, QWidget* parent)
+namespace {
+
+void openSettingsTab(WindowManager* manager, QWidget* parent, const QString& type,
+                     const QString& title)
 {
     if (!manager) return;
     const QPointer<WindowManager> alive(manager);
-    WindowBehavior next = manager->behavior();
-    auto* dialog = createDialog(manager, parent, QStringLiteral("BehaviorSettings"),
-                                QStringLiteral("窗口预览设置"), QSize(590, 340));
-    auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(16, 12, 16, 12);
-    auto* intro = hintLabel(QStringLiteral("设置作用于窗口系统；保存和恢复由宿主应用负责。"), dialog);
-    layout->addWidget(intro);
-    auto* form = new QFormLayout;
-    form->setSpacing(10);
-    auto* detachKind = new QComboBox(dialog);
-    detachKind->setObjectName(QStringLiteral("DetachWindowKind"));
-    detachKind->addItem(QStringLiteral("轻量浮窗（保留所属窗口）"), int(WindowKind::Floating));
-    detachKind->addItem(QStringLiteral("完整工作窗口"), int(WindowKind::Workbench));
-    detachKind->setCurrentIndex(next.dragOutsideKind == WindowKind::Floating ? 0 : 1);
-    form->addRow(QStringLiteral("标签拖到窗口外"), detachKind);
-    auto* emptyPolicy = new QComboBox(dialog);
-    emptyPolicy->setObjectName(QStringLiteral("EmptyWorkbenchPolicy"));
-    emptyPolicy->addItem(QStringLiteral("保留空的完整窗口"), false);
-    emptyPolicy->addItem(QStringLiteral("自动关闭空的完整窗口"), true);
-    emptyPolicy->setCurrentIndex(next.closeEmptyWorkbench ? 1 : 0);
-    form->addRow(QStringLiteral("完整窗口移空后"), emptyPolicy);
-    auto* reveal = new QCheckBox(QStringLiteral("拖拽停留时抬起被遮挡的目标窗口"), dialog);
-    reveal->setObjectName(QStringLiteral("RevealDuringDrag"));
-    reveal->setChecked(next.revealDuringDrag);
-    form->addRow(QStringLiteral("跨窗口投放"), reveal);
-    auto* delay = new QSpinBox(dialog);
-    delay->setObjectName(QStringLiteral("RevealDelayMs"));
-    delay->setRange(200, 2000);
-    delay->setSingleStep(100);
-    delay->setSuffix(QStringLiteral(" 毫秒"));
-    delay->setValue(std::clamp(next.revealDelayMs, 200, 2000));
-    delay->setEnabled(next.revealDuringDrag);
-    form->addRow(QStringLiteral("停留时间"), delay);
-    QObject::connect(reveal, &QCheckBox::toggled, delay, &QSpinBox::setEnabled);
-    layout->addLayout(form);
-    layout->addWidget(hintLabel(QStringLiteral("仍有所属轻量浮窗时，完整窗口不会因为移空而自动关闭。"), dialog));
-    layout->addStretch();
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
-    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
-    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-    layout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, detachKind, emptyPolicy, reveal, delay, &next] {
-        next.dragOutsideKind = WindowKind(detachKind->currentData().toInt());
-        next.closeEmptyWorkbench = emptyPolicy->currentData().toBool();
-        next.revealDuringDrag = reveal->isChecked();
-        next.revealDelayMs = delay->value();
-        dialog->accept();
-    });
-    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-    if (runDialog(dialog, parent) == QDialog::Accepted && alive) alive->setBehavior(next);
+    // Built-in preferences are ordinary workspace content. Search stable pane
+    // IDs instead of keeping a weak tab cache that could become stale on moves.
+    for (const auto& record : manager->model().tabs()) {
+        for (const auto pane : manager->model().panes(record.id)) {
+            auto* widget = manager->paneWidget(pane);
+            if (!widget || widget->property("windowSystemSettingsKind").toString() != type) continue;
+            const auto* group = manager->model().group(manager->model().groupForTab(record.id));
+            if (!group) continue;
+            const WindowId targetWindow = group->windowId;
+            const TabId targetTab = record.id;
+            const PaneId targetPane = pane;
+            manager->showWindow(targetWindow);
+            if (!alive) return;
+            alive->activateTab(targetTab);
+            if (!alive) return;
+            alive->focusPane(targetTab, targetPane);
+            return;
+        }
+    }
+    const auto window = parent ? parent->window()->property("windowId").toUuid() : WindowId{};
+    const auto context = manager->context(window);
+    if (!manager->model().window(context.window)) return;
+    const TabOptions options{title, type, {}};
+    auto* page = createInternalSettingsContent(manager, options);
+    if (!page) return;
+    if (manager->addTab(context.window, page, options, context.group).isNull()) delete page;
+}
+
+} // namespace
+
+bool isInternalSettingsContentType(const QString& type)
+{
+    return type == QStringLiteral("window_system.settings") ||
+           type == QStringLiteral("window_system.shortcuts");
+}
+
+QWidget* createInternalSettingsContent(WindowManager* manager, const TabOptions& options)
+{
+    if (!manager) return nullptr;
+    if (options.contentType == QStringLiteral("window_system.settings")) return new SettingsPage(manager);
+    if (options.contentType == QStringLiteral("window_system.shortcuts")) return new ShortcutsPage(manager);
+    return nullptr;
+}
+
+void openBehaviorSettings(WindowManager* manager, QWidget* parent)
+{
+    openSettingsTab(manager, parent, QStringLiteral("window_system.settings"), QStringLiteral("设置"));
 }
 
 void openShortcutEditor(WindowManager* manager, QWidget* parent)
 {
-    if (!manager) return;
-    const QPointer<WindowManager> alive(manager);
-    auto* dialog = createDialog(manager, parent, QStringLiteral("ShortcutEditor"),
-                                QStringLiteral("键盘快捷键"), QSize(820, 570));
-    auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(12, 12, 12, 12);
-    auto* search = new QLineEdit(dialog);
-    search->setObjectName(QStringLiteral("ShortcutSearch"));
-    search->setPlaceholderText(QStringLiteral("搜索全部命令、分类、命令 ID 或快捷键…"));
-    layout->addWidget(search);
-    auto* tree = createList(dialog, {QStringLiteral("命令"), QStringLiteral("快捷键"), QStringLiteral("分类")});
-    tree->setObjectName(QStringLiteral("ShortcutCommands"));
-    layout->addWidget(tree, 1);
-    auto* selectedTitle = new QLabel(QStringLiteral("选择需要修改的命令"), dialog);
-    selectedTitle->setProperty("role", QStringLiteral("heading"));
-    layout->addWidget(selectedTitle);
-    auto* capture = new QKeySequenceEdit(dialog);
-    capture->setObjectName(QStringLiteral("ShortcutCapture"));
-    capture->setAccessibleName(QStringLiteral("录入命令快捷键"));
-    capture->setMaximumSequenceLength(4);
-    layout->addWidget(capture);
-    auto* diagnostic = hintLabel(QStringLiteral("可录入最多 4 段按键序列；修改立即作用于命令注册表。"), dialog);
-    diagnostic->setObjectName(QStringLiteral("ShortcutDiagnostic"));
-    layout->addWidget(diagnostic);
-    auto* actions = new QHBoxLayout;
-    auto* apply = new QPushButton(QStringLiteral("应用快捷键"), dialog);
-    apply->setObjectName(QStringLiteral("ApplyShortcut"));
-    auto* clear = new QPushButton(QStringLiteral("清除绑定"), dialog);
-    actions->addWidget(apply);
-    actions->addWidget(clear);
-    actions->addStretch();
-    auto* close = new QPushButton(QStringLiteral("关闭"), dialog);
-    actions->addWidget(close);
-    layout->addLayout(actions);
-    new SearchListNavigation(search, tree);
-    QString selectedId;
-
-    const auto updateDiagnostic = [alive, capture, apply, clear, diagnostic, &selectedId] {
-        if (!alive || selectedId.isEmpty()) {
-            capture->setEnabled(false);
-            apply->setEnabled(false);
-            clear->setEnabled(false);
-            return;
-        }
-        capture->setEnabled(true);
-        clear->setEnabled(true);
-        const QKeySequence sequence = capture->keySequence();
-        QStringList duplicates;
-        QStringList prefixes;
-        for (const auto& command : alive->commands().commands()) {
-            if (command.id == selectedId || command.shortcut.isEmpty() || sequence.isEmpty()) continue;
-            const auto forward = sequence.matches(command.shortcut);
-            const auto backward = command.shortcut.matches(sequence);
-            if (forward == QKeySequence::ExactMatch) duplicates.push_back(displayTitle(command));
-            else if (forward == QKeySequence::PartialMatch || backward == QKeySequence::PartialMatch) prefixes.push_back(displayTitle(command));
-        }
-        apply->setEnabled(duplicates.isEmpty());
-        if (!duplicates.isEmpty()) {
-            diagnostic->setText(QStringLiteral("此快捷键已绑定到：%1。请先清除其他绑定，避免执行目标不明确。").arg(duplicates.join(QStringLiteral("、"))));
-        } else if (!prefixes.isEmpty()) {
-            diagnostic->setText(QStringLiteral("此按键序列与以下命令有前缀关系：%1。请留意连续按键的触发顺序。").arg(prefixes.join(QStringLiteral("、"))));
-        } else {
-            diagnostic->setText(sequence.isEmpty() ? QStringLiteral("应用后将清除此命令的快捷键；命令仍可通过菜单和命令面板执行。") :
-                                QStringLiteral("可录入最多 4 段按键序列；点击应用后立即生效。"));
-        }
-    };
-    const auto updateSelected = [alive, tree, capture, selectedTitle, updateDiagnostic, &selectedId] {
-        selectedId = tree->currentItem() ? tree->currentItem()->data(0, Qt::UserRole).toString() : QString();
-        const auto* command = alive ? alive->commands().find(selectedId) : nullptr;
-        const QSignalBlocker blocker(capture);
-        capture->setKeySequence(command ? command->shortcut : QKeySequence());
-        selectedTitle->setText(command ? displayTitle(*command) + QStringLiteral("  ·  ") + command->id : QStringLiteral("没有匹配的命令"));
-        updateDiagnostic();
-    };
-    const auto rebuild = [alive, tree, search, updateSelected, &selectedId] {
-        const QString previous = selectedId;
-        const QSignalBlocker blocker(tree);
-        tree->clear();
-        if (alive) {
-            for (const auto& command : alive->commands().commands()) {
-                const QString searchable = displayTitle(command) + QLatin1Char(' ') + command.category + QLatin1Char(' ') + command.id + QLatin1Char(' ') + shortcutText(command.shortcut);
-                if (!matchesSearch(searchable, search->text())) continue;
-                auto* item = new QTreeWidgetItem(tree, {displayTitle(command), shortcutText(command.shortcut), command.category});
-                item->setData(0, Qt::UserRole, command.id);
-                item->setToolTip(0, command.id);
-                if (command.id == previous) tree->setCurrentItem(item);
-            }
-        }
-        if (!tree->currentItem()) selectFirstEnabled(tree);
-        updateSelected();
-    };
-    QObject::connect(search, &QLineEdit::textChanged, dialog, rebuild);
-    QObject::connect(tree, &QTreeWidget::currentItemChanged, dialog, updateSelected);
-    QObject::connect(capture, &QKeySequenceEdit::keySequenceChanged, dialog, updateDiagnostic);
-    QObject::connect(tree, &QTreeWidget::itemActivated, dialog, [capture] { capture->setFocus(); });
-    QObject::connect(apply, &QPushButton::clicked, dialog, [alive, capture, rebuild, updateDiagnostic, &selectedId] {
-        updateDiagnostic();
-        if (alive && !selectedId.isEmpty() && alive->commands().setShortcut(selectedId, capture->keySequence())) rebuild();
-    });
-    QObject::connect(clear, &QPushButton::clicked, dialog, [alive, rebuild, &selectedId] {
-        if (alive && !selectedId.isEmpty() && alive->commands().setShortcut(selectedId, {})) rebuild();
-    });
-    QObject::connect(close, &QPushButton::clicked, dialog, &QDialog::accept);
-    rebuild();
-    search->setFocus();
-    runDialog(dialog, parent);
+    openSettingsTab(manager, parent, QStringLiteral("window_system.shortcuts"), QStringLiteral("键盘快捷键"));
 }
 
 } // namespace window_system

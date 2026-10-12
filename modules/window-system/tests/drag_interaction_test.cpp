@@ -29,7 +29,7 @@ void mouse(QWidget* widget, QEvent::Type type, QPoint global,
 }
 QTabBar* tabBar(QWidget* window, TabId tab)
 {
-    for (auto* bar : window->findChildren<QTabBar*>())
+    for (auto* bar : window->findChildren<QTabBar*>()) if (bar->isVisible())
         for (int i = 0; i < bar->count(); ++i)
             if (bar->tabData(i).toUuid() == tab) return bar;
     return nullptr;
@@ -52,6 +52,13 @@ QPoint contentCenter(QWidget* window)
     for (auto* frame : window->findChildren<QWidget*>())
         if (frame->objectName() == "TabGroup" && frame->isVisible()) return frame->mapToGlobal(frame->rect().center());
     return window->mapToGlobal(window->rect().center());
+}
+QRect groupRect(QWidget* window, GroupId group)
+{
+    for (auto* widget : window->findChildren<QWidget*>())
+        if (widget->objectName() == "TabGroup" && widget->property("groupId").toUuid() == group && widget->isVisible())
+            return QRect(widget->mapToGlobal(QPoint()), widget->size());
+    return {};
 }
 void flushDeletes() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
 void prepareDesktopFixture(QWidget* window)
@@ -109,6 +116,16 @@ private slots:
     void floatingTitleDragMovesAllTabsTogether();
     void foreignClickThroughOverlayDoesNotBlockTabDrop();
     void foreignOpaqueOverlayBlocksTabDropWithoutLosingContent();
+    void tearOffIsVisibleBeforeReleaseAndCollapsesTheEmptyGroup();
+    void contentBodyDoesNotAcceptAnImplicitMerge();
+    void narrowGroupRecognizesDirectionalGuides_data();
+    void narrowGroupRecognizesDirectionalGuides();
+    void edgeGuidesSeparateHiddenAndPinnedDrops_data();
+    void edgeGuidesSeparateHiddenAndPinnedDrops();
+    void tabStripDropInsertsAtTheReleasedPosition();
+    void wholeWindowDropInsertsAllTabsAtTheReleasedPosition();
+    void draggingThePeekTitleImmediatelyRemovesThePeek();
+    void pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops();
 };
 void DragInteractionTest::tearOffUsesTheDefaultLightweightWindow()
 {
@@ -142,10 +159,135 @@ void DragInteractionTest::escapeCancelsBeforeAnyContentTransfer()
     auto* bar = tabBar(window, tab); QVERIFY(bar);
     const auto group = manager.model().groupForTab(tab);
     startTabDrag(window, bar, tab);
+    QCOMPARE(manager.model().windows().size(), 2);
+    QVERIFY(manager.model().groupForTab(tab) != group);
     QTest::keyClick(window, Qt::Key_Escape);
     QCOMPARE(manager.model().windows().size(), 1);
     QCOMPARE(manager.model().groupForTab(tab), group);
     QVERIFY(QWidget::mouseGrabber() != window);
+}
+void DragInteractionTest::tearOffIsVisibleBeforeReleaseAndCollapsesTheEmptyGroup()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Immediate", QSize(920, 600)});
+    const auto a = manager.addTab(root, new QLabel("A"), {"A", "label", {}});
+    auto* live = new QLabel("Live B"); QPointer<QWidget> preserved(live);
+    const auto b = manager.addTab(root, live, {"B", "label", {}});
+    QVERIFY(manager.moveTab(b, manager.model().groupForTab(a), Placement::Right));
+    const auto sourceGroup = manager.model().groupForTab(b);
+    const auto pane = manager.model().tab(b)->activePane;
+    auto* rootWindow = manager.windowWidget(root); prepareDesktopFixture(rootWindow);
+    rootWindow->move(20, 30); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(rootWindow));
+    auto* bar = tabBar(rootWindow, b); QVERIFY(bar);
+    const auto start = tabPoint(bar, b) + QPoint(20, 20);
+    startTabDrag(rootWindow, bar, b);
+    QCOMPARE(manager.model().windows().size(), 2);
+    QVERIFY(!manager.model().group(sourceGroup));
+    QCOMPARE(manager.model().centralGroups(root).size(), 1);
+    const auto moving = manager.model().group(manager.model().groupForTab(b))->windowId;
+    QPointer<QWidget> floating(manager.windowWidget(moving)); QVERIFY(floating && floating->isVisible());
+    QCOMPARE(manager.model().window(moving)->kind, WindowKind::Floating);
+    QCOMPARE(live->window(), floating.data());
+    QCOMPARE(manager.paneWidget(pane), live);
+    const auto before = floating->pos();
+    mouse(floating, QEvent::MouseMove, start + QPoint(91, 43), Qt::NoButton, Qt::LeftButton);
+    QCOMPARE(floating->pos(), before + QPoint(91, 43));
+    QTest::keyClick(floating, Qt::Key_Escape);
+    QCOMPARE(manager.model().windows().size(), 1);
+    QCOMPARE(manager.model().groupForTab(b), sourceGroup);
+    QCOMPARE(manager.paneWidget(pane), live);
+    QVERIFY(preserved);
+    flushDeletes(); QVERIFY(floating.isNull());
+}
+
+void DragInteractionTest::contentBodyDoesNotAcceptAnImplicitMerge()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Body", QSize(920, 600)});
+    const auto a = manager.addTab(root, new QLabel("A"), {"A", "label", {}});
+    const auto b = manager.addTab(root, new QLabel("B"), {"B", "label", {}});
+    auto* window = manager.windowWidget(root); prepareDesktopFixture(window); window->move(20, 30); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* bar = tabBar(window, b); QVERIFY(bar); startTabDrag(window, bar, b);
+    const auto moving = manager.model().group(manager.model().groupForTab(b))->windowId;
+    auto* actor = manager.windowWidget(moving); QVERIFY(actor);
+    const auto group = manager.model().groupForTab(a);
+    const auto point = groupRect(window, group).center() + QPoint(80, 80);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(b))->windowId, moving);
+    QCOMPARE(manager.model().orderedTabs(root), (QVector<TabId>{a}));
+    QCOMPARE(manager.model().windows().size(), 2);
+}
+
+void DragInteractionTest::narrowGroupRecognizesDirectionalGuides_data()
+{
+    QTest::addColumn<bool>("right");
+    QTest::newRow("left") << false; QTest::newRow("right") << true;
+}
+void DragInteractionTest::narrowGroupRecognizesDirectionalGuides()
+{
+    QFETCH(bool, right);
+    WindowManager manager;
+    const auto source = manager.createWindow(WindowKind::Workbench, {"Source", QSize(600, 500)});
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Narrow", QSize(560, 500)});
+    const auto a = manager.addTab(source, new QLabel("A"), {"A", "label", {}});
+    const auto b = manager.addTab(target, new QLabel("B"), {"B", "label", {}});
+    const auto c = manager.addTab(target, new QLabel("C"), {"C", "label", {}});
+    QVERIFY(manager.moveTab(c, manager.model().groupForTab(b), Placement::Right));
+    auto* first = manager.windowWidget(source); auto* second = manager.windowWidget(target);
+    prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(660, 30);
+    manager.showWindow(target); manager.showWindow(source);
+    QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
+    const auto destination = manager.model().groupForTab(b);
+    const auto area = groupRect(second, destination); QVERIFY(area.width() < 340 && area.width() >= 120);
+    auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    const auto point = area.center() + QPoint(right ? 32 : -32, 0);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().centralGroups(target).size(), 3);
+    QVERIFY(manager.model().groupForTab(a) != destination);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->windowId, target);
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::edgeGuidesSeparateHiddenAndPinnedDrops_data()
+{
+    QTest::addColumn<int>("side"); QTest::addColumn<bool>("pinned");
+    for (int side = 0; side < 4; ++side) for (const bool pinned : {false, true})
+        QTest::newRow(qPrintable(QStringLiteral("edge-%1-%2").arg(side).arg(pinned ? "pinned" : "hidden"))) << side << pinned;
+}
+void DragInteractionTest::edgeGuidesSeparateHiddenAndPinnedDrops()
+{
+    QFETCH(int, side); QFETCH(bool, pinned);
+    WindowManager manager;
+    const auto source = manager.createWindow(WindowKind::Workbench, {"Source", QSize(600, 500)});
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Edges", QSize(740, 600)});
+    const auto a = manager.addTab(source, new QLabel("A"), {"A", "label", {}});
+    manager.addTab(target, new QLabel("B"), {"B", "label", {}});
+    auto* first = manager.windowWidget(source); auto* second = manager.windowWidget(target);
+    prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(660, 30);
+    manager.showWindow(target); manager.showWindow(source);
+    QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
+    auto* surface = second->findChild<QWidget*>("DockSurface"); QVERIFY(surface);
+    const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
+    QPoint point, inward;
+    switch (static_cast<Edge>(side)) {
+    case Edge::Left: point = {bounds.left() + 20, bounds.center().y()}; inward = {28, 0}; break;
+    case Edge::Right: point = {bounds.right() - 19, bounds.center().y()}; inward = {-28, 0}; break;
+    case Edge::Top: point = {bounds.center().x(), bounds.top() + 20}; inward = {0, 28}; break;
+    case Edge::Bottom: point = {bounds.center().x(), bounds.bottom() - 19}; inward = {0, -28}; break;
+    }
+    if (pinned) point += inward;
+    auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    const auto* group = manager.model().group(manager.model().groupForTab(a)); QVERIFY(group);
+    QCOMPARE(group->windowId, target); QCOMPARE(group->edge, static_cast<Edge>(side));
+    QCOMPARE(group->location, pinned ? GroupLocation::Pinned : GroupLocation::AutoHide);
+    QVERIFY(manager.model().validate().ok);
 }
 void DragInteractionTest::actualTabBarDragMergesAcrossWindows()
 {
@@ -287,6 +429,99 @@ void DragInteractionTest::foreignOpaqueOverlayBlocksTabDropWithoutLosingContent(
     QVERIFY(stableContent);
     QCOMPARE(manager.paneWidget(pane), movedContent);
     QCOMPARE(movedContent->text(), QStringLiteral("Live content must survive an opaque blocker"));
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::tabStripDropInsertsAtTheReleasedPosition()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Insertion", QSize(920, 600)});
+    const auto a = manager.addTab(root, new QLabel("A"), {"A", "label", {}});
+    const auto b = manager.addTab(root, new QLabel("B"), {"B", "label", {}});
+    const auto c = manager.addTab(root, new QLabel("C"), {"C", "label", {}});
+    auto* window = manager.windowWidget(root); prepareDesktopFixture(window); window->move(20, 30); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* bar = tabBar(window, c); QVERIFY(bar); startTabDrag(window, bar, c);
+    auto* destination = tabBar(window, a); QVERIFY(destination);
+    const auto first = destination->tabRect(0);
+    const auto point = destination->mapToGlobal(QPoint(first.left() + 5, first.center().y()));
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    const auto group = manager.model().groupForTab(a);
+    QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{c, a, b}));
+    QCOMPARE(manager.model().windows().size(), 1);
+}
+void DragInteractionTest::wholeWindowDropInsertsAllTabsAtTheReleasedPosition()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Root", QSize(600, 500)});
+    const auto a = manager.addTab(root, new QLabel("A"), {"A", "label", {}});
+    const auto floating = manager.detachTab(a);
+    const auto b = manager.addTab(floating, new QLabel("B"), {"B", "label", {}});
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Target", QSize(740, 600)});
+    const auto c = manager.addTab(target, new QLabel("C"), {"C", "label", {}});
+    const auto d = manager.addTab(target, new QLabel("D"), {"D", "label", {}});
+    auto* first = manager.windowWidget(floating); auto* second = manager.windowWidget(target);
+    prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(1000, 30);
+    manager.showWindow(target); manager.showWindow(floating);
+    QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
+    auto* caption = first->findChild<QLabel*>("CaptionTitle"); QVERIFY(caption);
+    const auto start = caption->mapToGlobal(QPoint(40, 15));
+    mouse(caption, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    mouse(caption, QEvent::MouseMove, start + QPoint(25, 0), Qt::NoButton, Qt::LeftButton);
+    auto* bar = tabBar(second, d); QVERIFY(bar);
+    const auto item = bar->tabRect(1);
+    const auto point = bar->mapToGlobal(QPoint(item.left() + 5, item.center().y()));
+    mouse(first, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(first, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(c))->tabs, (QVector<TabId>{c, a, b, d}));
+    QVERIFY(!manager.model().window(floating));
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::draggingThePeekTitleImmediatelyRemovesThePeek()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Peek", QSize(920, 600)});
+    auto* content = new QLabel("Peek content"); QPointer<QWidget> preserved(content);
+    const auto a = manager.addTab(root, content, {"A", "label", {}});
+    QVERIFY(manager.moveTabToEdge(a, Edge::Left));
+    auto* window = manager.windowWidget(root); prepareDesktopFixture(window); window->move(20, 30); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(window)); QVERIFY(manager.activateTab(a));
+    QPointer<QWidget> peek = window->findChild<QWidget*>("PeekPanel"); QVERIFY(peek);
+    auto* header = peek->findChild<QWidget*>("PeekTitleBar"); QVERIFY(header);
+    const auto start = header->mapToGlobal(QPoint(40, 15));
+    mouse(header, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    mouse(header, QEvent::MouseMove, start + QPoint(25, 20), Qt::NoButton, Qt::LeftButton);
+    QVERIFY(peek.isNull()); QCOMPARE(manager.model().windows().size(), 2);
+    const auto moving = manager.model().group(manager.model().groupForTab(a))->windowId;
+    QVERIFY(moving != root); QCOMPARE(content->window(), manager.windowWidget(moving)); QVERIFY(preserved);
+    QTest::keyClick(manager.windowWidget(moving), Qt::Key_Escape);
+    QCOMPARE(manager.model().windows().size(), 1);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->location, GroupLocation::AutoHide);
+    QVERIFY(preserved); QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops()
+{
+    WindowManager manager;
+    const auto source = manager.createWindow(WindowKind::Workbench, {"Source", QSize(600, 500)});
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Pinned", QSize(740, 600)});
+    const auto a = manager.addTab(source, new QLabel("A"), {"A", "label", {}});
+    const auto b = manager.addTab(target, new QLabel("B"), {"B", "label", {}});
+    manager.addTab(target, new QLabel("Central"), {"Central", "label", {}});
+    QVERIFY(manager.moveTabToEdge(b, Edge::Left, true));
+    auto* first = manager.windowWidget(source); auto* second = manager.windowWidget(target);
+    prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(660, 30);
+    manager.showWindow(target); manager.showWindow(source);
+    QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
+    const auto area = groupRect(second, manager.model().groupForTab(b)); QVERIFY(!area.isEmpty());
+    auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
+    const auto moving = manager.model().group(manager.model().groupForTab(a))->windowId;
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    const auto point = area.center() + QPoint(32, 0);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->windowId, moving);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(b))->windowId, target);
     QVERIFY(manager.model().validate().ok);
 }
 QTEST_MAIN(DragInteractionTest)

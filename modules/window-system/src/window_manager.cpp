@@ -13,6 +13,7 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QKeySequenceEdit>
+#include <QContextMenuEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPointer>
@@ -36,7 +37,8 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
 }
 WindowManager::~WindowManager()
 {
-    d->destroying = true; qApp->removeEventFilter(this); d->drag->cancel();
+    d->destroying = true; qApp->removeEventFilter(this); d->drag->releaseForMutation();
+    delete d->drag; d->drag = nullptr;
     for (auto window : d->windows) if (window) { window->allowClose = true; delete window; }
     delete d->storage;
 }
@@ -62,6 +64,11 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
     refresh(); activateTab(id); return id;
 }
 void WindowManager::setContentFactory(ContentFactory factory) { d->factory = std::move(factory); }
+QWidget* WindowManager::createContent(const TabOptions& options, PaneId pane)
+{
+    if (isInternalSettingsContentType(options.contentType)) return createInternalSettingsContent(this, options);
+    return d->factory ? d->factory(options, pane) : nullptr;
+}
 void WindowManager::setCloseGuard(CloseGuard guard) { d->closeGuard = std::move(guard); }
 bool WindowManager::setTabTopBar(TabId tab, QWidget* bar)
 {
@@ -76,6 +83,36 @@ bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar)
     if (bar) bar->setProperty("windowSystemManaged", true);
     view->setBottomBar(bar);
     return true;
+}
+bool WindowManager::setPaneTopBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, true); }
+bool WindowManager::setPaneBottomBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, false); }
+bool WindowManager::setPaneBar(PaneId pane, QWidget* bar, bool top)
+{
+    if (!d->panes.contains(pane)) return false;
+    auto& bars = top ? d->paneTopBars : d->paneBottomBars;
+    if (bars.value(pane) == bar) return true;
+    if (bar && bar->property("windowSystemManaged").toBool()) return false;
+    if (auto previous = bars.take(pane)) {
+        previous->setParent(d->storage); previous->hide(); previous->deleteLater();
+    }
+    if (bar) {
+        bar->setProperty("windowSystemManaged", true);
+        bar->setParent(d->storage); bar->hide(); bars.insert(pane, bar);
+    }
+    refresh(); return true;
+}
+TabOptions WindowManager::tabOptions(TabId tab) const
+{
+    const auto* record = d->model.tab(tab);
+    if (!record) return {};
+    auto options = d->descriptors.value(record->activePane); options.title = record->title;
+    return options;
+}
+bool WindowManager::setTabIconVisible(TabId tab, bool visible)
+{
+    if (!d->model.tab(tab)) return false;
+    for (const auto pane : d->model.panes(tab)) d->descriptors[pane].showIcon = visible;
+    refresh(); return true;
 }
 PaneId WindowManager::splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement)
 {
@@ -92,7 +129,7 @@ bool WindowManager::closeTab(TabId tab)
 {
     if (!d->model.tab(tab)) return false;
     if (!approveClose({tab})) return false;
-    d->drag->cancel(); return applyResult(d->model.removeTab(tab));
+    d->drag->releaseForMutation(); return applyResult(d->model.removeTab(tab));
 }
 bool WindowManager::closePane(TabId tab, PaneId pane)
 {
@@ -100,6 +137,15 @@ bool WindowManager::closePane(TabId tab, PaneId pane)
     if (d->model.panes(tab).size() == 1) return closeTab(tab);
     if (!approveClose({tab})) return false;
     return applyResult(d->model.removePane(tab, pane));
+}
+bool WindowManager::closeTabs(const QVector<TabId>& tabs)
+{
+    if (tabs.isEmpty() || QSet<TabId>(tabs.cbegin(), tabs.cend()).size() != tabs.size()) return false;
+    if (!approveClose(tabs)) return false;
+    d->drag->releaseForMutation();
+    auto candidate = d->model;
+    for (const auto tab : tabs) if (!candidate.removeTab(tab)) return false;
+    d->model = std::move(candidate); refresh(); return true;
 }
 bool WindowManager::requestCloseWindow(WindowId window)
 {
@@ -132,7 +178,7 @@ bool WindowManager::requestCloseWindow(WindowId window)
     if (!record || record->kind != kind || record->familyId != family || windowScope() != originalScope) return false;
     const auto currentTabs = collectTabs(originalScope);
     if (QSet<TabId>(affected.cbegin(), affected.cend()) != QSet<TabId>(currentTabs.cbegin(), currentTabs.cend())) return false;
-    d->drag->cancel(); return applyResult(d->model.closeWindow(window));
+    d->drag->releaseForMutation(); return applyResult(d->model.closeWindow(window));
 }
 bool WindowManager::approveClose(const QVector<TabId>& tabs)
 {
@@ -173,16 +219,20 @@ WindowId WindowManager::detachTab(TabId tab, WindowKind kind)
     auto options = d->options.value(source.window); options.size = QSize(880, 560); d->options.insert(id, options);
     refresh(); showWindow(id); activateTab(tab); return id;
 }
-bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement)
-{ return applyResult(d->model.moveAllTabs(source, target, placement)); }
+bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement, int insertionIndex)
+{ return applyResult(d->model.moveAllTabs(source, target, placement, insertionIndex)); }
 bool WindowManager::moveTabToEdge(TabId tab, Edge edge, bool pinned)
 {
     return applyResult(d->model.moveTabToEdge(tab, edge, pinned));
 }
+bool WindowManager::moveAllTabsToEdge(WindowId source, WindowId target, Edge edge, bool pinned)
+{ return applyResult(d->model.moveAllTabsToEdge(source, target, edge, pinned)); }
 bool WindowManager::pinGroup(GroupId group, bool pinned) { return applyResult(d->model.setGroupPinned(group, pinned)); }
+bool WindowManager::pinTab(TabId tab, bool pinned) { return applyResult(d->model.setTabPinned(tab, pinned)); }
+bool WindowManager::pinEdge(WindowId window, Edge edge, bool pinned) { return applyResult(d->model.setEdgePinned(window, edge, pinned)); }
 bool WindowManager::moveGroupToCenter(GroupId group) { return applyResult(d->model.moveGroupToCenter(group)); }
-bool WindowManager::promoteWindow(WindowId window) { d->drag->cancel(); return applyResult(d->model.promoteWindow(window)); }
-bool WindowManager::demoteWindow(WindowId window, WindowId target) { d->drag->cancel(); return applyResult(d->model.demoteWindow(window, target)); }
+bool WindowManager::promoteWindow(WindowId window) { d->drag->releaseForMutation(); return applyResult(d->model.promoteWindow(window)); }
+bool WindowManager::demoteWindow(WindowId window, WindowId target) { d->drag->releaseForMutation(); return applyResult(d->model.demoteWindow(window, target)); }
 bool WindowManager::reassignFamily(WindowId window, WindowId target) { return applyResult(d->model.reassignFamily(window, target)); }
 TabId WindowManager::extractPane(TabId tab, PaneId pane, WindowKind kind)
 {
@@ -223,6 +273,7 @@ bool WindowManager::focusPane(TabId tab, PaneId pane)
             frame->setProperty("active", frame->property("paneId").toUuid() == pane);
             frame->style()->unpolish(frame); frame->style()->polish(frame); frame->update();
         }
+        if (auto view = d->tabs.value(tab)) view->setActivePane(pane);
         widget->setFocus(Qt::OtherFocusReason); return true;
     }
     return false;
@@ -248,6 +299,7 @@ WindowBehavior WindowManager::behavior() const { return d->behavior; }
 void WindowManager::setBehavior(const WindowBehavior& behavior)
 {
     d->behavior = behavior; d->behavior.revealDelayMs = qBound(200, behavior.revealDelayMs, 2000);
+    emit layoutChanged();
 }
 void WindowManager::setTheme(const Theme& theme)
 {
@@ -274,9 +326,12 @@ bool WindowManager::applyResult(const OperationResult& result)
 void WindowManager::refresh()
 {
     if (d->refreshing || d->destroying) return;
+    d->drag->releaseForMutation();
     d->refreshing = true;
     for (auto window : d->windows) if (window) window->surface()->closePeek();
     for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); }
+    for (const auto& bars : {d->paneTopBars, d->paneBottomBars})
+        for (auto bar : bars) if (bar) { bar->setParent(d->storage); bar->hide(); }
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->hide(); }
     QSet<PaneId> livePanes;
     for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it)
@@ -285,6 +340,11 @@ void WindowManager::refresh()
         if (!livePanes.contains(it.key())) { if (it.value()) it.value()->deleteLater(); d->descriptors.remove(it.key()); it = d->panes.erase(it); }
         else ++it;
     }
+    for (auto* bars : {&d->paneTopBars, &d->paneBottomBars})
+        for (auto it = bars->begin(); it != bars->end();) {
+            if (!livePanes.contains(it.key())) { if (it.value()) it.value()->deleteLater(); it = bars->erase(it); }
+            else ++it;
+        }
     for (auto it = d->tabs.begin(); it != d->tabs.end();) {
         if (!d->model.tab(it.key())) { if (it.value()) it.value()->deleteLater(); d->renderedTrees.remove(it.key()); it = d->tabs.erase(it); }
         else ++it;
@@ -294,7 +354,7 @@ void WindowManager::refresh()
     for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it) {
         auto& view = d->tabs[it.key()];
         if (!view) view = new TabContent(this, it.key(), d->storage);
-        view->rebuild(it.value(), d->panes); d->renderedTrees.insert(it.key(), it.value().panes);
+        view->rebuild(it.value(), d->panes, d->paneTopBars, d->paneBottomBars); d->renderedTrees.insert(it.key(), it.value().panes);
     }
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (!d->model.window(it.key())) {
@@ -413,13 +473,26 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
             const auto pane = current->property("paneId").toUuid();
             if (!pane.isNull()) {
                 for (const auto& tab : d->model.tabs()) if (d->model.panes(tab.id).contains(pane)) {
-                    d->model.activatePane(tab.id, pane);
-                    const auto group = d->model.groupForTab(tab.id); updateActive(d->model.group(group)->windowId, group, tab.id); break;
+                    const auto tabId = tab.id;
+                    d->model.activatePane(tabId, pane);
+                    if (auto view = d->tabs.value(tabId)) view->setActivePane(pane);
+                    const auto group = d->model.groupForTab(tabId); updateActive(d->model.group(group)->windowId, group, tabId); break;
                 }
                 break;
             }
         }
         d->pendingKeys = {};
+    }
+    if (event->type() == QEvent::ContextMenu && widget && !d->drag->isActive()) {
+        for (auto* current = widget; current; current = current->parentWidget()) {
+            const auto pane = current->property("paneId").toUuid();
+            if (pane.isNull()) continue;
+            for (const auto& tab : d->model.tabs()) if (d->model.panes(tab.id).contains(pane)) {
+                showPaneMenu(tab.id, pane, static_cast<QContextMenuEvent*>(event)->globalPos(), widget);
+                return true;
+            }
+            break;
+        }
     }
     if (event->type() != QEvent::KeyPress || d->drag->isActive() || !widget) return false;
     for (auto* current = widget; current; current = current->parentWidget()) if (qobject_cast<QKeySequenceEdit*>(current)) return false;

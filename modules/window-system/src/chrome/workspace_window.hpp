@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 #include <window_system/window_manager.hpp>
 #include <QWidget>
 #include <QPointer>
+#include <QList>
 
+class QAction;
 class QLabel;
+class QMenu;
 class QVBoxLayout;
 namespace window_system {
 class CommandStripHost;
@@ -14,6 +18,8 @@ public:
     [[nodiscard]] WindowId id() const;
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
+    [[nodiscard]] QJsonObject saveStripLayout() const;
+    void restoreStripLayout(const QJsonObject& layout);
     void syncKind();
     void setOptions(const WindowOptions& options);
     void updateCaption();
@@ -26,6 +32,8 @@ protected:
     void showEvent(QShowEvent* event) override;
 private:
     void createChrome();
+    void addWindowMenuActions(QMenu* menu);
+    void updateCommandStates();
     WindowManager* manager_;
     WindowId id_;
     WindowKind kind_ = WindowKind::Floating;
@@ -35,6 +43,8 @@ private:
     QPointer<CommandStripHost> strips_;
     QPointer<QLabel> caption_;
     QPointer<QLabel> status_;
+    QJsonObject savedStripLayout_;
+    QList<QPointer<QAction>> commandActions_;
     DockSurface* surface_;
     QPoint press_;
     bool pendingTitleDrag_ = false;

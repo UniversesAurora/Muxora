@@ -72,6 +72,9 @@ private slots:
     void emptyRootWithFloatingContentSurvivesAutomaticClosePolicy();
     void repeatedCrossWindowMovesDoNotRecreateOrDestroyContent();
     void edgePinAndReturnToCenterPreserveTheSameWidget();
+    void bulkCloseCommandsRespectTheSelectedTabAndGroup_data();
+    void bulkCloseCommandsRespectTheSelectedTabAndGroup();
+    void refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs();
 };
 
 void WorkspaceTest::initTestCase()
@@ -652,6 +655,57 @@ void WorkspaceTest::edgePinAndReturnToCenterPreserveTheSameWidget()
     QCOMPARE(manager.paneWidget(pane), side);
     QCOMPARE(side->toPlainText(), QStringLiteral("Sessions"));
     QCOMPARE(destroyed.count(), 0);
+    QVERIFY(manager.model().validate().ok);
+}
+
+void WorkspaceTest::bulkCloseCommandsRespectTheSelectedTabAndGroup_data()
+{
+    QTest::addColumn<QString>("scope"); QTest::addColumn<QVector<int>>("surviving");
+    QTest::newRow("left") << QStringLiteral("left") << QVector<int>{1, 2, 3};
+    QTest::newRow("right") << QStringLiteral("right") << QVector<int>{0, 1};
+    QTest::newRow("others") << QStringLiteral("others") << QVector<int>{1};
+    QTest::newRow("all") << QStringLiteral("all") << QVector<int>{};
+}
+void WorkspaceTest::bulkCloseCommandsRespectTheSelectedTabAndGroup()
+{
+    QFETCH(QString, scope); QFETCH(QVector<int>, surviving);
+    WindowManager manager; const auto window = manager.createWindow();
+    QVector<TabId> tabs; QVector<QPointer<QWidget>> contents;
+    for (int i = 0; i < 4; ++i) {
+        contents << editor(QString::number(i));
+        tabs << manager.addTab(window, contents.last(), editorOptions(QString::number(i), QString::number(i)));
+    }
+    QPointer<QWidget> independent = editor("Independent");
+    const auto other = manager.addTab(window, independent, editorOptions("Independent", "Independent"));
+    QVERIFY(manager.moveTab(other, manager.model().groupForTab(tabs.first()), Placement::Right));
+    QVERIFY(manager.activateTab(tabs[1]));
+    QVERIFY(manager.execute("workspace.closeTabs." + scope, {}, window));
+    deliverDeferredDeletes();
+    for (int i = 0; i < tabs.size(); ++i) {
+        QCOMPARE(manager.model().tab(tabs[i]) != nullptr, surviving.contains(i));
+        QCOMPARE(!contents[i].isNull(), surviving.contains(i));
+    }
+    QVERIFY(manager.model().tab(other)); QVERIFY(independent);
+    QVERIFY(manager.model().validate().ok);
+}
+void WorkspaceTest::refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto a = manager.addTab(window, editor("A"), editorOptions("A", "A"));
+    const auto b = manager.addTab(window, editor("B"), editorOptions("B", "B"));
+    int requests = 0;
+    manager.setCloseGuard([&](const QVector<TabId>& tabs) { ++requests; return tabs.size() == 1; });
+    const auto before = manager.model().toJson();
+    QVERIFY(!manager.closeTabs({a, b})); QCOMPARE(requests, 1); QCOMPARE(manager.model().toJson(), before);
+    TabId added;
+    manager.setCloseGuard([&](const QVector<TabId>& tabs) {
+        ++requests;
+        added = manager.addTab(window, editor("New"), editorOptions("New", "New"));
+        return tabSet(tabs) == (QSet<TabId>{a, b});
+    });
+    QVERIFY(manager.closeTabs({a, b}));
+    QVERIFY(!added.isNull()); QVERIFY(manager.model().tab(added));
+    QCOMPARE(manager.model().orderedTabs(window), (QVector<TabId>{added}));
     QVERIFY(manager.model().validate().ok);
 }
 

@@ -28,9 +28,11 @@ add_library(WindowSystemWidgets STATIC
     src/commands/window_commands.cpp
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
+    src/docking/tab_strip.cpp
     src/docking/drag_controller.cpp
     src/panes/tab_content.cpp
     src/style/theme.cpp
+    src/settings/settings_page.cpp
     include/window_system/window_manager.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)
 set_target_properties(WindowSystemWidgets PROPERTIES EXPORT_NAME Widgets AUTOMOC ON)

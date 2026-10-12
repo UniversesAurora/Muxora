@@ -17,6 +17,8 @@ struct WindowManager::Private {
     QHash<TabId, QPointer<TabContent>> tabs;
     QHash<TabId, LayoutTree> renderedTrees;
     QHash<PaneId, QPointer<QWidget>> panes;
+    QHash<PaneId, QPointer<QWidget>> paneTopBars;
+    QHash<PaneId, QPointer<QWidget>> paneBottomBars;
     QHash<PaneId, TabOptions> descriptors;
     QWidget* storage = nullptr;
     DragController* drag = nullptr;

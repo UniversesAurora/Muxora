@@ -9,7 +9,10 @@ namespace window_system {
 class TabContent final : public QFrame {
 public:
     TabContent(WindowManager* manager, TabId tab, QWidget* parent);
-    void rebuild(const TabRecord& record, const QHash<PaneId, QPointer<QWidget>>& contents);
+    void rebuild(const TabRecord& record, const QHash<PaneId, QPointer<QWidget>>& contents,
+                 const QHash<PaneId, QPointer<QWidget>>& paneTopBars = {},
+                 const QHash<PaneId, QPointer<QWidget>>& paneBottomBars = {});
+    void setActivePane(PaneId pane);
     void setTopBar(QWidget* widget);
     void setBottomBar(QWidget* widget);
     QWidget* takeTopBar();
@@ -18,12 +21,19 @@ public:
 private:
     QWidget* buildNode(LayoutTree node, const TabRecord& record,
                        const QHash<PaneId, QPointer<QWidget>>& contents);
+    void updateBars();
+    void replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool top);
     WindowManager* manager_;
     TabId tab_;
     QVBoxLayout* layout_;
     QPointer<QWidget> tree_;
     QPointer<QWidget> top_;
     QPointer<QWidget> bottom_;
+    QPointer<QWidget> visibleTop_;
+    QPointer<QWidget> visibleBottom_;
+    QHash<PaneId, QPointer<QWidget>> paneTopBars_;
+    QHash<PaneId, QPointer<QWidget>> paneBottomBars_;
+    PaneId activePane_;
     QHash<PaneId, QWidget*> frames_;
 };
 } // namespace window_system

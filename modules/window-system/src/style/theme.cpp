@@ -254,6 +254,7 @@ QMenu::item { padding: 5px 24px 5px 22px; }
 QMenu::item:selected { background: @selection; color: @selectionText; }
 QMenu::item:disabled { color: @muted; }
 QMenu::separator { height: 1px; background: @border; margin: 3px 5px; }
+QWidget#SettingsRows, QWidget#SettingsViewport { background: @surface; color: @text; }
 QToolBar { background: @header; border: none; spacing: 3px; padding: 2px; }
 QToolBar::separator { width: 1px; background: @border; margin: 3px 4px; }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit { background: @surface; color: @text; border: 1px solid @border; border-radius: @radiuspx; padding: 2px 5px; selection-background-color: @selection; selection-color: @selectionText; }

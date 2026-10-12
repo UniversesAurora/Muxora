@@ -20,6 +20,9 @@
 #include <QSet>
 #include <QStyle>
 #include <QTimer>
+#include <QPlainTextEdit>
+#include <QTextEdit>
+#include <QLineEdit>
 #include <algorithm>
 #include <limits>
 
@@ -102,7 +105,7 @@ void WindowManager::registerWindowCommands()
             if (target.isNull()) return false;
             const auto group = c.args.value("group").toUuid();
             const auto place = static_cast<Placement>(c.args.value("placement", int(Placement::Center)).toInt());
-            const auto result = group.isNull() ? d->model.moveAllTabsToWindow(source, target, place) : d->model.moveAllTabs(source, group, place);
+            const auto result = group.isNull() ? d->model.moveAllTabsToWindow(source, target, place) : d->model.moveAllTabs(source, group, place, c.args.value("index", -1).toInt());
             if (!applyResult(result)) return false;
             showWindow(target);
             return true;
@@ -130,21 +133,14 @@ void WindowManager::registerWindowCommands()
             const auto sourceWindow = sourceGroup->windowId;
             if (!target.isNull() && sourceWindow != target)
                 if (!candidate.moveTabToWindow(tab, target)) return false;
-            if (!candidate.moveTabToEdge(tab, static_cast<Edge>(c.args.value("edge", int(Edge::Left)).toInt()))) return false;
+            if (!candidate.moveTabToEdge(tab, static_cast<Edge>(c.args.value("edge", int(Edge::Left)).toInt()), c.args.value("pinned").toBool())) return false;
             d->model = std::move(candidate); refresh(); return true;
         }, hasTab);
     add("window.moveAllToEdge", QStringLiteral("整窗标签收纳到目标边栏"), "布局", {},
         [this](const CommandContext& c) {
-            auto candidate = d->model; const auto source = c.args.value("source", c.window).toUuid();
+            const auto source = c.args.value("source", c.window).toUuid();
             const auto target = c.args.value("targetWindow").toUuid(); if (target.isNull()) return false;
-            const auto moving = candidate.orderedTabs(source); if (moving.isEmpty()) return false;
-            // A temporary isolated group prevents unrelated destination tabs from
-            // being swept into the edge payload.
-            const auto temporary = candidate.createWindow(WindowKind::Workbench);
-            if (!candidate.moveAllTabsToWindow(source, temporary, Placement::Center)) return false;
-            if (!candidate.moveAllTabsToWindow(temporary, target, Placement::Right)) return false;
-            if (!candidate.moveGroupToEdge(candidate.groupForTab(moving.first()), static_cast<Edge>(c.args.value("edge", 0).toInt()))) return false;
-            candidate.closeWindow(temporary); d->model = std::move(candidate); refresh(); return true;
+            return moveAllTabsToEdge(source, target, static_cast<Edge>(c.args.value("edge", 0).toInt()), c.args.value("pinned").toBool());
         }, hasWindow);
     const QVector<QPair<QString, Placement>> directions = {{"left", Placement::Left}, {"right", Placement::Right}, {"up", Placement::Top}, {"down", Placement::Bottom}};
     for (const auto& direction : directions) {
@@ -160,18 +156,19 @@ void WindowManager::registerWindowCommands()
             [this, direction](const CommandContext&) { resizeActive(direction.second, true); return true; });
         add("workspace.splitGroup." + direction.first, QStringLiteral("新建%1侧标签组").arg(label), "布局", {},
             [this, direction](const CommandContext& c) {
-                if (!d->factory || !d->model.tab(c.tab)) return false;
+                if (!d->model.tab(c.tab)) return false;
+                const auto* target = d->model.group(c.group);
+                if (!target || target->location != GroupLocation::Central) return false;
                 auto options = d->descriptors.value(c.pane); options.title += QStringLiteral(" · 新组");
-                auto* content = d->factory(options, {}); if (!content) return false;
+                auto* content = createContent(options, {}); if (!content) return false;
                 const auto tab = addTab(c.window, content, options, c.group);
                 if (tab.isNull()) { delete content; return false; }
                 return moveTab(tab, c.group, direction.second);
-            }, hasTab);
+            }, [this](const CommandContext& c) { const auto* group = d->model.group(c.group); return d->model.tab(c.tab) && group && group->location == GroupLocation::Central; });
         add("pane.split." + direction.first, QStringLiteral("向%1拆分窗格").arg(label), "布局",
             direction.second == Placement::Right ? QKeySequence("Ctrl+Shift+E") : direction.second == Placement::Bottom ? QKeySequence("Ctrl+Shift+O") : QKeySequence{},
             [this, direction](const CommandContext& c) {
-                if (!d->factory) return false;
-                auto* content = d->factory(d->descriptors.value(c.pane), {});
+                auto* content = createContent(d->descriptors.value(c.pane), {});
                 if (!content) return false;
                 const auto pane = splitPane(c.tab, c.pane, content, direction.second);
                 if (pane.isNull()) { delete content; return false; } return true;
@@ -193,6 +190,34 @@ void WindowManager::registerWindowCommands()
     add("workspace.unpinGroup", QStringLiteral("取消固定并收纳到边栏"), "布局", {},
         [this](const CommandContext& c) { return pinGroup(c.group, false); },
         [this](const CommandContext& c) { const auto* g = d->model.group(c.group); return g && g->location == GroupLocation::Pinned; });
+    add("workspace.pinTab", QStringLiteral("固定当前边栏标签"), "布局", {},
+        [this](const CommandContext& c) { return pinTab(c.tab, true); },
+        [this](const CommandContext& c) { const auto* g = d->model.group(d->model.groupForTab(c.tab)); return g && g->location == GroupLocation::AutoHide; });
+    add("workspace.unpinTab", QStringLiteral("取消固定当前标签"), "布局", {},
+        [this](const CommandContext& c) { return pinTab(c.tab, false); },
+        [this](const CommandContext& c) { const auto* g = d->model.group(d->model.groupForTab(c.tab)); return g && g->location == GroupLocation::Pinned; });
+    for (const bool pinned : {true, false}) add(pinned ? "workspace.pinEdge" : "workspace.unpinEdge",
+        pinned ? QStringLiteral("固定该侧全部标签") : QStringLiteral("取消固定该侧全部标签"), "布局", {},
+        [this, pinned](const CommandContext& c) {
+            const auto* group = d->model.group(c.group);
+            const auto edge = static_cast<Edge>(c.args.value("edge", group ? int(group->edge) : int(Edge::Left)).toInt());
+            return pinEdge(c.window, edge, pinned);
+        }, hasWindow);
+    for (const auto& scope : {QStringLiteral("left"), QStringLiteral("right"), QStringLiteral("others"), QStringLiteral("all")}) {
+        const auto title = scope == "left" ? QStringLiteral("关闭左侧标签") : scope == "right" ? QStringLiteral("关闭右侧标签")
+            : scope == "others" ? QStringLiteral("关闭其他标签") : QStringLiteral("关闭该组全部标签");
+        auto selected = [this, scope](const CommandContext& c) {
+            QVector<TabId> tabs;
+            const auto* group = d->model.group(d->model.groupForTab(c.tab)); if (!group) return tabs;
+            const auto current = group->tabs.indexOf(c.tab);
+            for (int i = 0; i < group->tabs.size(); ++i)
+                if (scope == "all" || (scope == "others" && i != current) || (scope == "left" && i < current) || (scope == "right" && i > current)) tabs << group->tabs[i];
+            return tabs;
+        };
+        add("workspace.closeTabs." + scope, title, "文件", {},
+            [this, selected](const CommandContext& c) { return closeTabs(selected(c)); },
+            [selected](const CommandContext& c) { return !selected(c).isEmpty(); });
+    }
     add("workspace.restoreGroupToCenter", QStringLiteral("边栏标签组移回中央"), "布局", {},
         [this](const CommandContext& c) { return moveGroupToCenter(c.group); }, hasTab);
     add("pane.extractFloating", QStringLiteral("当前窗格移到轻量浮窗"), "窗口", {},
@@ -209,34 +234,73 @@ void WindowManager::registerWindowCommands()
     add("window.drag.cancel", QStringLiteral("取消当前拖拽"), "窗口", {},
         [this](const CommandContext&) { d->drag->cancel(); return true; }, [this](const CommandContext&) { return d->drag->isActive(); });
     add("layout.setRatio", QStringLiteral("设置分割比例"), "布局", {},
-        [this](const CommandContext& c) { const auto result = d->model.setSplitRatio(c.args.value("node").toUuid(), c.args.value("ratio").toDouble()); if (result) emit layoutChanged(); return result.ok; });
+        [this](const CommandContext& c) { const auto result = d->model.setSplitRatio(c.args.value("node").toUuid(), c.args.value("ratio").toDouble()); if (result) { d->drag->releaseForMutation(); emit layoutChanged(); } return result.ok; });
+    add("layout.setEdgeExtent", QStringLiteral("设置固定边栏分区大小"), "布局", {},
+        [this](const CommandContext& c) { const auto result = d->model.setEdgeGroupExtent(c.args.value("group").toUuid(), c.args.value("extent").toInt()); if (result) { d->drag->releaseForMutation(); emit layoutChanged(); } return result.ok; });
 }
 void WindowManager::showTabMenu(TabId tab, QPoint global)
 {
     if (!d->model.tab(tab)) return;
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
     activateTab(tab);
+    const auto captured = context(window);
+    const auto location = d->model.group(group)->location;
     QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     const QStringList ids = {"workspace.detachFloating", "workspace.detachWorkbench", "workspace.moveTabToWindow",
         "workspace.splitGroup.left", "workspace.splitGroup.right", "workspace.splitGroup.up", "workspace.splitGroup.down",
         "pane.split.right", "pane.split.down", "pane.extractFloating", "pane.extractWorkbench",
         "workspace.hideToEdge.left", "workspace.hideToEdge.right", "workspace.hideToEdge.up", "workspace.hideToEdge.down",
-        "workspace.pinGroup", "workspace.unpinGroup", "workspace.restoreGroupToCenter", "workspace.closeTab"};
+        "workspace.pinTab", "workspace.unpinTab", "workspace.pinEdge", "workspace.unpinEdge", "workspace.restoreGroupToCenter",
+        "workspace.closeTab", "workspace.closeTabs.left", "workspace.closeTabs.right", "workspace.closeTabs.others", "workspace.closeTabs.all"};
     for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
+        if (id == "workspace.pinTab" && location != GroupLocation::AutoHide) continue;
+        if (id == "workspace.unpinTab" && location != GroupLocation::Pinned) continue;
+        if ((id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter") && location == GroupLocation::Central) continue;
         auto* action = menu.addAction(command->title); action->setData(id);
-        action->setEnabled(!command->enabled || command->enabled(context(window)));
+        action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
     }
-    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, window] { execute(id, {}, window); }); }
+    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
 void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
+    const auto* record = d->model.window(window); if (!record) return;
+    const auto kind = record->kind; const auto captured = context(window);
     QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     const QStringList ids = {"window.promote", "window.demote", "window.reassignFamily", "window.redock",
         "window.moveAllTabs", "window.select", "window.toggleStripsLock", "window.settings", "window.close"};
     for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
+        if ((id == "window.promote" || id == "window.reassignFamily" || id == "window.redock") && kind != WindowKind::Floating) continue;
+        if ((id == "window.demote" || id == "window.toggleStripsLock") && kind != WindowKind::Workbench) continue;
         auto* action = menu.addAction(command->title); action->setData(id);
-        action->setEnabled(!command->enabled || command->enabled(context(window)));
+        action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
     }
-    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, window] { execute(id, {}, window); }); }
+    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
+}
+void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget* content)
+{
+    if (!d->model.panes(tab).contains(pane)) return;
+    activateTab(tab); focusPane(tab, pane);
+    const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
+    const auto captured = context(window);
+    QMenu* menu = nullptr;
+    for (auto* editor = content; editor; editor = editor->parentWidget()) {
+        if (auto* plain = qobject_cast<QPlainTextEdit*>(editor)) { menu = plain->createStandardContextMenu(); break; }
+        if (auto* rich = qobject_cast<QTextEdit*>(editor)) { menu = rich->createStandardContextMenu(); break; }
+        if (auto* input = qobject_cast<QLineEdit*>(editor)) { menu = input->createStandardContextMenu(); break; }
+        if (editor->property("paneId").toUuid() == pane) break;
+    }
+    if (!menu) menu = new QMenu(windowWidget(window));
+    else menu->addSeparator();
+    QPointer<QMenu> retained(menu); applyTheme(menu, theme());
+    for (const auto& id : {QStringLiteral("pane.close"), QStringLiteral("pane.split.right"), QStringLiteral("pane.split.down"),
+                          QStringLiteral("pane.extractFloating"), QStringLiteral("pane.extractWorkbench")})
+        if (const auto* command = d->commands.find(id)) {
+            auto* action = menu->addAction(command->title); action->setObjectName(id); action->setProperty("windowSystemCommand", id);
+            action->setEnabled(!command->enabled || command->enabled(captured));
+        }
+    QString chosen;
+    if (auto* action = menu->exec(global)) chosen = action->property("windowSystemCommand").toString();
+    delete retained.data();
+    if (!chosen.isEmpty()) QTimer::singleShot(0, this, [this, chosen, captured] { d->commands.execute(chosen, captured); });
 }
 } // namespace window_system

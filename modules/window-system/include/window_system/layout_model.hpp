@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace window_system {
 
@@ -54,6 +55,7 @@ struct GroupRecord {
     Edge edge = Edge::Left;
     QVector<TabId> tabs;
     TabId activeTab;
+    int edgeExtent = 250;
 };
 
 struct TabRecord {
@@ -61,6 +63,17 @@ struct TabRecord {
     QString title;
     LayoutTree panes;
     PaneId activePane;
+    struct PinnedPosition {
+        WindowId window;
+        GroupId group;
+        Edge edge = Edge::Left;
+        int groupIndex = 0;
+        int tabIndex = 0;
+        int extent = 250;
+    };
+    // A dormant group ID is intentional: unpinning its final tab removes the
+    // visible group, while repinning can reconstruct that same partition.
+    std::optional<PinnedPosition> pinnedPosition;
 };
 
 struct OperationResult {
@@ -101,6 +114,9 @@ public:
     OperationResult moveGroupToEdge(GroupId groupId, Edge edge, bool pinned = false);
     OperationResult moveTabToEdge(TabId tabId, Edge edge, bool pinned = false);
     OperationResult setGroupPinned(GroupId groupId, bool pinned);
+    OperationResult setTabPinned(TabId tabId, bool pinned);
+    OperationResult setEdgePinned(WindowId windowId, Edge edge, bool pinned);
+    OperationResult setEdgeGroupExtent(GroupId groupId, int extent);
     OperationResult moveGroupToCenter(GroupId groupId, GroupId targetGroup = {},
                                       Placement placement = Placement::Right);
     WindowId detachTab(TabId tabId, WindowKind kind = WindowKind::Floating);
@@ -108,9 +124,11 @@ public:
     OperationResult demoteWindow(WindowId windowId, WindowId targetWorkbench);
     OperationResult reassignFamily(WindowId floatingWindow, WindowId targetWorkbench);
     OperationResult moveAllTabs(WindowId sourceWindow, GroupId targetGroup,
-                                Placement placement = Placement::Center);
+                                Placement placement = Placement::Center, int insertionIndex = -1);
     OperationResult moveAllTabsToWindow(WindowId sourceWindow, WindowId targetWindow,
                                         Placement placement = Placement::Center);
+    OperationResult moveAllTabsToEdge(WindowId sourceWindow, WindowId targetWindow,
+                                     Edge edge, bool pinned = false);
     OperationResult removeTab(TabId tabId);
     // Closing a Workbench closes its whole family; permission belongs to the host.
     OperationResult closeWindow(WindowId windowId);
@@ -134,8 +152,9 @@ private:
     void eraseTabUnchecked(TabId tabId);
     OperationResult moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                      Placement placement, int insertionIndex);
+    OperationResult setTabPinnedUnchecked(TabId tabId, bool pinned);
     OperationResult moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup,
-                                         Placement placement);
+                                         Placement placement, int insertionIndex = -1);
     LayoutTree takeWindowTreeUnchecked(WindowId sourceWindow, WindowId targetWindow);
 
     QHash<WindowId, WindowRecord> windows_;

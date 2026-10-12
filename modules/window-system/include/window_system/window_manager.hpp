@@ -20,6 +20,7 @@ struct TabOptions {
     QString title;
     QString contentType;
     QVariantMap state;
+    bool showIcon = true;
 };
 
 struct WindowBehavior {
@@ -54,17 +55,25 @@ public:
     void setCloseGuard(CloseGuard guard);
     bool setTabTopBar(TabId tab, QWidget* bar);
     bool setTabBottomBar(TabId tab, QWidget* bar);
+    bool setPaneTopBar(PaneId pane, QWidget* bar);
+    bool setPaneBottomBar(PaneId pane, QWidget* bar);
+    bool setTabIconVisible(TabId tab, bool visible);
+    [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
     bool closeTab(TabId tab);
     bool closePane(TabId tab, PaneId pane);
+    bool closeTabs(const QVector<TabId>& tabs);
     bool requestCloseWindow(WindowId window);
     bool moveTab(TabId tab, GroupId group, Placement placement = Placement::Center,
                  int insertionIndex = -1);
     WindowId detachTab(TabId tab, WindowKind kind = WindowKind::Floating);
     bool moveAllTabs(WindowId source, GroupId group,
-                     Placement placement = Placement::Center);
+                     Placement placement = Placement::Center, int insertionIndex = -1);
     bool moveTabToEdge(TabId tab, Edge edge, bool pinned = false);
+    bool moveAllTabsToEdge(WindowId source, WindowId target, Edge edge, bool pinned = false);
     bool pinGroup(GroupId group, bool pinned);
+    bool pinTab(TabId tab, bool pinned);
+    bool pinEdge(WindowId window, Edge edge, bool pinned);
     bool moveGroupToCenter(GroupId group);
     bool promoteWindow(WindowId window);
     bool demoteWindow(WindowId window, WindowId targetWorkbench);
@@ -110,6 +119,8 @@ private:
     void registerWindowCommands();
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
+    bool setPaneBar(PaneId pane, QWidget* bar, bool top);
+    QWidget* createContent(const TabOptions& options, PaneId pane);
     bool focusGroup(GroupId group);
     bool navigate(Placement direction, bool panes);
     void resizeActive(Placement direction, bool panes);
@@ -117,6 +128,7 @@ private:
     void beginTabDrag(TabId tab, QPoint globalPosition);
     void beginWindowDrag(WindowId window, QPoint globalPosition);
     void showTabMenu(TabId tab, QPoint globalPosition);
+    void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);
     void showWindowMenu(WindowId window, QPoint globalPosition);
     void updateActive(WindowId window, GroupId group, TabId tab);
 };

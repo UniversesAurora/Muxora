@@ -21,6 +21,7 @@ int main(int argc, char* argv[])
     parser.addOption({"fresh", QStringLiteral("使用初始布局，不读取保存状态")});
     parser.addOption({"smoke", QStringLiteral("启动检查后自动退出")});
     parser.addOption({"screenshot", QStringLiteral("启动后保存窗口截图"), "path"});
+    parser.addOption({"command", QStringLiteral("启动后执行已注册命令"), "id"});
     parser.addOption({"state-dir", QStringLiteral("指定独立布局状态目录"), "path"}); parser.process(app);
     window_system::WindowManager windows;
     windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
@@ -88,6 +89,9 @@ int main(int argc, char* argv[])
         const auto window = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
         muxora::populateInitialWorkspace(windows, window); windows.showWindow(window);
     }
+    if (parser.isSet("command")) QTimer::singleShot(0, &app, [&] {
+        if (!windows.execute(parser.value("command"))) app.exit(4);
+    });
     QTimer persistTimer; persistTimer.setSingleShot(true); persistTimer.setInterval(700);
     QObject::connect(&windows, &window_system::WindowManager::layoutChanged, &persistTimer, [&persistTimer] { persistTimer.start(); });
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);
