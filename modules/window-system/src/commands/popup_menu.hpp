@@ -3,6 +3,7 @@
 
 #include <QMenu>
 #include <QMouseEvent>
+#include <QKeyEvent>
 
 namespace window_system {
 
@@ -13,6 +14,24 @@ public:
     using QMenu::QMenu;
 
 protected:
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        // QMenu's Home/End support depends on the platform style. Keep these
+        // navigation keys available with our own theme on every platform.
+        if (event->key() == Qt::Key_Home || event->key() == Qt::Key_End) {
+            const auto items = actions();
+            const bool last = event->key() == Qt::Key_End;
+            for (int offset = 0; offset < items.size(); ++offset) {
+                auto* action = items[last ? items.size() - 1 - offset : offset];
+                if (action->isVisible() && action->isEnabled() && !action->isSeparator()) {
+                    setActiveAction(action);
+                    event->accept();
+                    return;
+                }
+            }
+        }
+        QMenu::keyPressEvent(event);
+    }
     bool event(QEvent* event) override
     {
         // Qt clears this attribute before each mouse event. Keep it enabled

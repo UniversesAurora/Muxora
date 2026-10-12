@@ -27,12 +27,25 @@
 #endif
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <memory>
 
 using namespace window_system;
 
 namespace {
+
+class MenuShowObserver final : public QObject {
+public:
+    explicit MenuShowObserver(std::function<void()> onShow) : onShow_(std::move(onShow)) {}
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() == QEvent::Show) onShow_();
+        return false;
+    }
+private:
+    std::function<void()> onShow_;
+};
 
 QList<QAction*> actions(QWidget* owner, int count)
 {
@@ -137,6 +150,16 @@ private slots:
     void stripConstraintsProtectContentThroughSizingAndRestore();
     void partialRestoreIgnoresUnavailableStripsButRejectsMalformedKnownRows();
     void extremeRequestedWidthsRemainBoundedAndRestorable();
+    void resettingWidthsKeepsTheCorrectAnchorAndOtherRequests_data();
+    void resettingWidthsKeepsTheCorrectAnchorAndOtherRequests();
+    void resetWidthMenuUsesTheHostCommandCallback();
+    void resettingHiddenStripsDoesNotChangeVisibleGeometry();
+    void widthResetPrioritySurvivesRestoreAndDragCancellation();
+    void narrowWidthResetsYieldOnTheOppositeSide_data();
+    void narrowWidthResetsYieldOnTheOppositeSide();
+    void resetBeforeElasticKeepsAnAlreadyCompressedPrefix();
+    void rightBlockTracksTheWindowEdgeAndRecoversRequestedWidths_data();
+    void rightBlockTracksTheWindowEdgeAndRecoversRequestedWidths();
     void contextMenuListsEveryStripAndOmitsUnrelatedWindowKinds();
     void stripCustomizationsSurviveWindowKindConversions();
 };
@@ -173,8 +196,9 @@ void ChromeInteractionTest::narrowStripsKeepTheTailAndExposeOverflowActions()
     QVERIFY(tail->isVisible());
     QVERIFY(!tail->property("hasOverflow").toBool());
     std::unique_ptr<QMenu> withoutOverflow(host.createOverflowMenu("tools", &host));
-    QCOMPARE(withoutOverflow->actions().size(), 1);
-    QVERIFY(withoutOverflow->actions().first()->menu());
+    QCOMPARE(withoutOverflow->actions().size(), 2);
+    QVERIFY(withoutOverflow->findChild<QAction*>("StripResetWidthAction"));
+    QVERIFY(withoutOverflow->actions().last()->menu());
 }
 
 void ChromeInteractionTest::visibilityCustomizationAndWidthsSurviveRestore()
@@ -253,8 +277,9 @@ void ChromeInteractionTest::hiddenStripContentDoesNotReserveWidthOrOverflow()
     QVERIFY(host.overflowItems("content").isEmpty());
     QVERIFY(!tail->property("hasOverflow").toBool());
     std::unique_ptr<QMenu> menu(host.createOverflowMenu("content", &host));
-    QCOMPARE(menu->actions().size(), 1);
-    QVERIFY(menu->actions().first()->menu());
+    QCOMPARE(menu->actions().size(), 2);
+    QVERIFY(menu->findChild<QAction*>("StripResetWidthAction"));
+    QVERIFY(menu->actions().last()->menu());
     auto* customize = menu->findChild<QMenu*>("StripCustomizeMenu"); QVERIFY(customize);
     QAction* contentItem = nullptr;
     for (auto* action : customize->actions()) if (action->data().toString() == "content") contentItem = action;
@@ -439,10 +464,17 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     QVERIFY(tail); QVERIFY(tail->menu());
     bool visibleBeforeSecondClick = false;
     bool watchdogFired = false;
-    QTimer::singleShot(30, &host, [&] {
-        visibleBeforeSecondClick = tail->menu()->isVisible();
-        nativeMouse(tail, tail->rect().center(), true);
+    QSignalSpy shown(tail->menu(), &QMenu::aboutToShow);
+    // Native input is queued, and platform menu effects can defer Show. The
+    // closing click requires an already visible menu; keep the original delay
+    // after that event and the original overall watchdog below.
+    MenuShowObserver observer([&] {
+        QTimer::singleShot(30, &host, [&] {
+            visibleBeforeSecondClick = tail->menu()->isVisible();
+            nativeMouse(tail, tail->rect().center(), true);
+        });
     });
+    tail->menu()->installEventFilter(&observer);
     // Watchdog closes only after recording the expected toggle; it prevents a
     // broken nested popup from hanging the test runner.
     QTimer::singleShot(300, &host, [tail, &watchdogFired] {
@@ -452,8 +484,11 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     // QWidget notify injection bypasses replay cleanup and poisons later input.
     nativeMouse(tail, tail->rect().center(), true);
     QTRY_VERIFY(visibleBeforeSecondClick);
+    // SendInput queues the closing click as well. Observe its result before
+    // checking the watchdog, so forced dismissal can never count as success.
+    QTRY_VERIFY(!tail->menu()->isVisible());
+    QCOMPARE(shown.count(), 1);
     QVERIFY(!watchdogFired);
-    QVERIFY(!tail->menu()->isVisible());
     QVERIFY(!tail->isDown());
     QVERIFY(!QApplication::activePopupWidget());
     QTRY_COMPARE(QApplication::mouseButtons(), Qt::MouseButtons(Qt::NoButton));
@@ -896,6 +931,263 @@ void ChromeInteractionTest::extremeRequestedWidthsRemainBoundedAndRestorable()
     host.restoreLayout(saved);
     QCOMPARE(host.saveLayout(), saved);
     QCOMPARE(host.stripWidget("elastic")->geometry().right(), host.width() - 3);
+}
+
+void ChromeInteractionTest::resettingWidthsKeepsTheCorrectAnchorAndOtherRequests_data()
+{
+    QTest::addColumn<QString>("side");
+    QTest::addColumn<bool>("compressed");
+    for (const auto& side : {"no-elastic", "before-elastic", "after-elastic"})
+        for (bool compressed : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(side, compressed ? "compressed" : "stretched")))
+                << QString(side) << compressed;
+}
+
+void ChromeInteractionTest::resettingWidthsKeepsTheCorrectAnchorAndOtherRequests()
+{
+    QFETCH(QString, side);
+    QFETCH(bool, compressed);
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 2), 0);
+    if (side == "after-elastic") host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("target", "Target", actions(&host, 6), 0);
+    host.addActionStrip("after", "After", actions(&host, 4), 0);
+    if (side == "before-elastic") host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* target = host.stripWidget("target");
+    const int natural = target->width();
+    QVERIFY(host.setStripWidth("before", 100));
+    QVERIFY(host.setStripWidth("after", 150));
+    QVERIFY(host.setStripWidth("target", compressed ? 45 : natural + 80));
+    const int head = target->x(); const int tail = target->geometry().right();
+    const QRect after = host.stripWidget("after")->geometry();
+    const auto original = host.saveLayout();
+    QVERIFY(host.resetStripWidth("target"));
+    QCOMPARE(target->width(), natural);
+    if (side == "after-elastic") {
+        QCOMPARE(target->geometry().right(), tail);
+        QCOMPARE(host.stripWidget("after")->geometry(), after);
+    } else {
+        QCOMPARE(target->x(), head);
+        QCOMPARE(host.stripWidget("after")->x(), after.x() + natural - (compressed ? 45 : natural + 80));
+    }
+    const auto reset = host.saveLayout();
+    QCOMPARE(reset.value("rows"), original.value("rows"));
+    const auto settings = reset.value("strips").toObject();
+    for (const auto& id : host.stripIds()) if (id != "target")
+        QCOMPARE(settings.value(id), original.value("strips").toObject().value(id));
+    QCOMPARE(settings.value("target").toObject().value("width").toInt(), -1);
+    QVERIFY(settings.value("target").toObject().value("naturalWidthPriority").toBool());
+    const auto resetGeometry = target->geometry();
+    host.restoreLayout(original); host.restoreLayout(reset);
+    QCOMPARE(host.saveLayout(), reset); QCOMPARE(target->geometry(), resetGeometry);
+    host.refreshLayout(); QCOMPARE(target->geometry(), resetGeometry);
+}
+
+void ChromeInteractionTest::resetWidthMenuUsesTheHostCommandCallback()
+{
+    CommandStripHost host;
+    host.addActionStrip("tools", "工具测试", actions(&host, 5), 0);
+    host.resize(600, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const int natural = host.stripWidget("tools")->width();
+    QVERIFY(host.setStripWidth("tools", 45));
+    QCOMPARE(host.stripTitle("tools"), QStringLiteral("工具测试"));
+    QVERIFY(host.stripTitle("missing").isEmpty());
+    int requests = 0; QString requested;
+    host.setWidthResetRequest([&](const QString& id) { ++requests; requested = id; QVERIFY(host.resetStripWidth(id)); });
+    std::unique_ptr<QMenu> menu(host.createOverflowMenu("tools", &host));
+    auto* reset = menu->findChild<QAction*>("StripResetWidthAction"); QVERIFY(reset);
+    reset->trigger(); QCOMPARE(requests, 1); QCOMPARE(requested, QString("tools"));
+    QCOMPARE(host.stripWidget("tools")->width(), natural);
+    QVERIFY(!host.resetStripWidth("missing"));
+}
+
+void ChromeInteractionTest::resettingHiddenStripsDoesNotChangeVisibleGeometry()
+{
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 2), 0);
+    host.addActionStrip("target", "Target", actions(&host, 6), 0);
+    host.addActionStrip("hidden", "Hidden", actions(&host, 4), 0);
+    host.addActionStrip("after", "After", actions(&host, 3), 0);
+    host.setLocked(false); host.resize(700, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const int natural = host.stripWidget("target")->width();
+    QVERIFY(host.setStripWidth("hidden", 70)); QVERIFY(host.setStripVisible("hidden", false));
+    QVERIFY(host.setStripWidth("target", 45));
+    const int head = host.stripWidget("target")->x();
+    QVERIFY(host.resetStripWidth("target"));
+    QCOMPARE(host.stripWidget("target")->x(), head); QCOMPARE(host.stripWidget("target")->width(), natural);
+    const QRect before = host.stripWidget("before")->geometry();
+    const QRect target = host.stripWidget("target")->geometry();
+    const QRect after = host.stripWidget("after")->geometry();
+    const auto beforeReset = host.saveLayout();
+    QVERIFY(host.resetStripWidth("hidden"));
+    QCOMPARE(host.stripWidget("before")->geometry(), before);
+    QCOMPARE(host.stripWidget("target")->geometry(), target);
+    QCOMPARE(host.stripWidget("after")->geometry(), after);
+    const auto settings = host.saveLayout().value("strips").toObject();
+    QCOMPARE(settings.value("hidden").toObject().value("width").toInt(), -1);
+    QCOMPARE(settings.value("target"), beforeReset.value("strips").toObject().value("target"));
+}
+
+void ChromeInteractionTest::widthResetPrioritySurvivesRestoreAndDragCancellation()
+{
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 2), 0);
+    host.addActionStrip("target", "Target", actions(&host, 6), 0);
+    host.addActionStrip("after", "After", actions(&host, 4), 0);
+    host.addStrip("second-row", "Second row", new QLabel("Title"), 1, CommandStripHost::StripSizing::Elastic);
+    host.setLocked(false); host.resize(500, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    QVERIFY(host.setStripWidth("target", 45)); QVERIFY(host.resetStripWidth("target"));
+    const auto reset = host.saveLayout();
+    const QRect targetBounds = host.stripWidget("target")->geometry();
+    auto* handle = host.stripWidget("target")->findChild<QWidget*>("StripHandle");
+    startDrag(host, handle, host.mapToGlobal(QPoint(100, 48)));
+    QCOMPARE(host.saveLayout(), reset);
+    QTest::keyClick(&host, Qt::Key_Escape);
+    QCOMPARE(host.saveLayout(), reset); QCOMPARE(host.stripWidget("target")->geometry(), targetBounds);
+    QVERIFY(host.setStripWidth("target", 50));
+    QVERIFY(!host.saveLayout().value("strips").toObject().value("target").toObject().contains("naturalWidthPriority"));
+    host.restoreLayout(reset); QCOMPARE(host.saveLayout(), reset);
+    auto multiple = reset; auto settings = multiple.value("strips").toObject();
+    auto before = settings.value("before").toObject(); before.insert("naturalWidthPriority", true); settings.insert("before", before);
+    multiple.insert("strips", settings); host.restoreLayout(multiple);
+    const auto normalized = host.saveLayout().value("strips").toObject();
+    QVERIFY(!normalized.value("before").toObject().contains("naturalWidthPriority"));
+    QVERIFY(normalized.value("target").toObject().value("naturalWidthPriority").toBool());
+    auto malformed = reset; auto malformedSettings = malformed.value("strips").toObject();
+    auto target = malformedSettings.value("target").toObject(); target.insert("naturalWidthPriority", "invalid");
+    malformedSettings.insert("target", target); malformed.insert("strips", malformedSettings);
+    const auto valid = host.saveLayout(); host.restoreLayout(malformed); QCOMPARE(host.saveLayout(), valid);
+    auto explicitWidth = reset; auto explicitSettings = explicitWidth.value("strips").toObject();
+    auto explicitTarget = explicitSettings.value("target").toObject();
+    explicitTarget.insert("width", 90); explicitSettings.insert("target", explicitTarget);
+    explicitWidth.insert("strips", explicitSettings); host.restoreLayout(explicitWidth);
+    const auto restoredTarget = host.saveLayout().value("strips").toObject().value("target").toObject();
+    QCOMPARE(restoredTarget.value("width").toInt(), 90);
+    QVERIFY(!restoredTarget.contains("naturalWidthPriority"));
+    QVERIFY(host.moveStrip("target", 1, 0));
+    for (const auto& value : host.saveLayout().value("strips").toObject())
+        QVERIFY(!value.toObject().contains("naturalWidthPriority"));
+}
+
+void ChromeInteractionTest::resetBeforeElasticKeepsAnAlreadyCompressedPrefix()
+{
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 8), 0);
+    host.addActionStrip("target", "Target", actions(&host, 6), 0);
+    host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("right", "Right", actions(&host, 8), 0);
+    host.setLocked(false); host.resize(600, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    QVERIFY(host.setStripWidth("before", 400));
+    QVERIFY(host.setStripWidth("target", 45));
+    QVERIFY(host.setStripWidth("right", 400));
+    auto* before = host.stripWidget("before");
+    auto* target = host.stripWidget("target");
+    auto* right = host.stripWidget("right");
+    QVERIFY(before->width() < 400);
+    const int head = target->x();
+    const int prefixWidth = before->width();
+    const QRect rightBounds = right->geometry();
+    QVERIFY(host.resetStripWidth("target"));
+    QCOMPARE(target->x(), head);
+    QCOMPARE(before->width(), prefixWidth);
+    QCOMPARE(right->geometry(), rightBounds);
+    const auto state = host.saveLayout().value("strips").toObject();
+    QCOMPARE(state.value("before").toObject().value("width").toInt(), 400);
+    QCOMPARE(state.value("right").toObject().value("width").toInt(), 400);
+    QCOMPARE(state.value("target").toObject().value("width").toInt(), -1);
+}
+
+void ChromeInteractionTest::narrowWidthResetsYieldOnTheOppositeSide_data()
+{
+    QTest::addColumn<bool>("rightOfElastic");
+    QTest::newRow("head-fixed") << false;
+    QTest::newRow("tail-fixed") << true;
+}
+
+void ChromeInteractionTest::narrowWidthResetsYieldOnTheOppositeSide()
+{
+    QFETCH(bool, rightOfElastic);
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 2), 0);
+    if (rightOfElastic) {
+        host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+        host.addActionStrip("preceding", "Preceding", actions(&host, 8), 0);
+    }
+    host.addActionStrip("target", "Target", actions(&host, 8), 0);
+    host.addActionStrip("after", "After", actions(&host, 8), 0);
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const int natural = host.stripWidget("target")->width();
+    QVERIFY(host.setStripWidth("before", 100)); QVERIFY(host.setStripWidth("target", 45));
+    QVERIFY(host.setStripWidth("after", rightOfElastic ? 100 : 220));
+    if (rightOfElastic) QVERIFY(host.setStripWidth("preceding", 220));
+    host.resize(360, host.height());
+    const QRect original = host.stripWidget("target")->geometry();
+    const auto snapshot = host.saveLayout();
+    QVERIFY(host.resetStripWidth("target"));
+    auto* target = host.stripWidget("target");
+    QVERIFY(target->width() >= 36); QVERIFY(target->width() <= natural);
+    if (rightOfElastic) {
+        QCOMPARE(target->geometry().right(), original.right());
+        QCOMPARE(host.stripWidget("preceding")->width(), 36);
+    } else {
+        QCOMPARE(target->x(), original.x());
+        QCOMPARE(host.stripWidget("after")->width(), 36);
+    }
+    const auto requests = host.saveLayout().value("strips").toObject();
+    for (const auto& id : host.stripIds()) if (id != "target")
+        QCOMPARE(requests.value(id), snapshot.value("strips").toObject().value(id));
+    host.resize(1200, host.height());
+    QCOMPARE(target->width(), natural);
+    host.resize(host.minimumSizeHint().width(), host.height());
+    for (const auto& id : host.stripIds()) {
+        auto* strip = host.stripWidget(id);
+        QVERIFY(strip->width() >= 36);
+        QVERIFY(host.rect().contains(strip->mapTo(&host, strip->rect().bottomRight())));
+    }
+}
+
+void ChromeInteractionTest::rightBlockTracksTheWindowEdgeAndRecoversRequestedWidths_data()
+{
+    QTest::addColumn<bool>("hiddenTrailing");
+    QTest::newRow("two-trailing-strips") << false;
+    QTest::newRow("hidden-trailing-strip") << true;
+}
+
+void ChromeInteractionTest::rightBlockTracksTheWindowEdgeAndRecoversRequestedWidths()
+{
+    QFETCH(bool, hiddenTrailing);
+    CommandStripHost host;
+    host.addActionStrip("before", "Before", actions(&host, 10), 0);
+    host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("right-first", "Right first", actions(&host, 5), 0);
+    host.addActionStrip("right-last", "Right last", actions(&host, 3), 0);
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    QVERIFY(host.setStripWidth("before", 400)); QVERIFY(host.setStripWidth("right-first", 130));
+    QVERIFY(host.setStripWidth("right-last", 90));
+    if (hiddenTrailing) QVERIFY(host.setStripVisible("right-last", false));
+    const auto saved = host.saveLayout();
+    const auto lastId = hiddenTrailing ? "right-first" : "right-last";
+    for (const int width : {800, 500, host.minimumSizeHint().width(), 1300, 1200}) {
+        host.resize(width, host.height());
+        QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 2);
+        if (!hiddenTrailing) QCOMPARE(host.stripWidget("right-last")->x() - host.stripWidget("right-first")->geometry().right() - 1, 4);
+        QCOMPARE(host.saveLayout(), saved);
+        if (width >= 500) {
+            QCOMPARE(host.stripWidget("right-first")->width(), 130);
+            if (!hiddenTrailing) QCOMPARE(host.stripWidget("right-last")->width(), 90);
+        }
+    }
+    host.restoreLayout(saved);
+    QCOMPARE(host.stripWidget("right-first")->width(), 130);
+    QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 2);
 }
 
 void ChromeInteractionTest::contextMenuListsEveryStripAndOmitsUnrelatedWindowKinds()

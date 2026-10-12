@@ -9,6 +9,8 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QMenu>
+#include <QScrollArea>
+#include <QScopeGuard>
 #include <QStyleOption>
 #include <QTest>
 #include <QToolButton>
@@ -51,6 +53,8 @@ private slots:
     void tabListButtonTogglesItsOpenMenu();
     void popupOutsidePressDoesNotReplayAndReopen();
     void sizingCommandChangesOnlyTheRequestedStripAndRejectsInvalidInput();
+    void tabScrollCanvasUsesTheThemeAfterWindowCreation_data();
+    void tabScrollCanvasUsesTheThemeAfterWindowCreation();
     void allPinBadgesKeepTheirInteriorTransparent_data();
     void allPinBadgesKeepTheirInteriorTransparent();
 };
@@ -157,6 +161,43 @@ void PresentationTest::sizingCommandChangesOnlyTheRequestedStripAndRejectsInvali
     QCOMPARE(strips->stripSizing("menu"), StripSizing::Content);
     QVERIFY(manager.execute("window.toolbar.setSizing", {}, id));
     QCOMPARE(strips->stripSizing("title"), StripSizing::Elastic);
+}
+
+void PresentationTest::tabScrollCanvasUsesTheThemeAfterWindowCreation_data()
+{
+    QTest::addColumn<bool>("floating");
+    QTest::newRow("workbench") << false;
+    QTest::newRow("floating") << true;
+}
+
+void PresentationTest::tabScrollCanvasUsesTheThemeAfterWindowCreation()
+{
+    QFETCH(bool, floating);
+    const auto previousPalette = qApp->palette();
+    const auto restorePalette = qScopeGuard([&] { qApp->setPalette(previousPalette); });
+    auto darkPalette = previousPalette;
+    darkPalette.setColor(QPalette::Base, QColor("#1f1f1f"));
+    darkPalette.setColor(QPalette::Window, QColor("#1f1f1f"));
+    qApp->setPalette(darkPalette);
+    WindowManager manager;
+    const auto root = manager.createWindow();
+    const auto tab = manager.addTab(root, new QLabel("Content"), {"One", "test.label", {}});
+    QVERIFY(!tab.isNull());
+    manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(root)));
+    const auto target = floating ? manager.detachTab(tab, WindowKind::Floating) : root;
+    QVERIFY(!target.isNull());
+    auto* window = manager.windowWidget(target); QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* tabs = static_cast<GroupTabs*>(window->findChild<QWidget*>("TabGroup")); QVERIFY(tabs);
+    auto* scroll = tabs->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
+    const int firstEmptyPixel = tabs->tabBar()->width() + 12;
+    const QRect emptyArea(firstEmptyPixel, 4, scroll->viewport()->width() - firstEmptyPixel - 12,
+                          scroll->viewport()->height() - 8);
+    QVERIFY(emptyArea.width() > 20); QVERIFY(emptyArea.height() > 4);
+    const auto image = logicalImage(scroll->viewport());
+    QCOMPARE(matchingPixels(image, emptyArea, defaultTheme().background),
+             emptyArea.width() * emptyArea.height());
 }
 
 void PresentationTest::allPinBadgesKeepTheirInteriorTransparent_data()

@@ -233,6 +233,7 @@ QWidget#WorkspaceWindow { background: @background; border: 1px solid @border; }
 QWidget#WindowHeader, QWidget#CommandStripHost { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }
 QWidget#TabGroup { background: @background; }
+QScrollArea#TabScrollViewport { background: @background; }
 QWidget#TabPage, QWidget#PaneHost { background: @surface; }
 QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }

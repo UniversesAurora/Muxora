@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "workspace_window.hpp"
 #include "command_strip.hpp"
+#include "window_title_label.hpp"
 #include "docking/dock_surface.hpp"
 #include "platform/windows/window_frame.hpp"
 #include <QApplication>
@@ -115,6 +116,9 @@ void WorkspaceWindow::createChrome()
         manager_->execute("window.toolbar.setSizing", {{"strip", strip},
             {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
     });
+    strips_->setWidthResetRequest([this](const QString& strip) {
+        manager_->execute("window.toolbar.resetSize", {{"strip", strip}}, id_);
+    });
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
     if (kind_ == WindowKind::Workbench) {
         auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
@@ -161,12 +165,11 @@ void WorkspaceWindow::createChrome()
         status_ = new QLabel(QStringLiteral("就绪  ·  窗口系统预览"), this); status_->setObjectName("StatusBar");
         status_->setContentsMargins(10, 3, 10, 3); column_->addWidget(status_);
     }
-    caption_ = new QLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
-    caption_->setContentsMargins(7, 0, 7, 0); caption_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    caption_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    caption_ = new WindowTitleLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
     caption_->setProperty("windowDragArea", true);
     strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
     strips_->setStripOptionsEnabled("title", false);
+    strips_->setStripConstraints("title", {true, true, 96});
     auto* controls = new QWidget(strips_);
     controls->setObjectName("CaptionControls");
     controls->setProperty("windowDragArea", true);
@@ -262,7 +265,12 @@ void WorkspaceWindow::updateCaption()
     const auto* tab = manager_->model().tab(ctx.tab);
     const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + options_.title;
     setWindowTitle(title + (kind_ == WindowKind::Floating ? QStringLiteral(" · 浮动窗口") : QString()));
-    if (caption_) caption_->setText(kind_ == WindowKind::Floating ? windowTitle() : options_.title);
+    if (caption_) {
+        const auto caption = kind_ == WindowKind::Floating ? windowTitle() : options_.title;
+        caption_->setText(caption);
+        caption_->setAccessibleName(caption);
+        caption_->setToolTip(caption);
+    }
     updateCommandStates();
     if (strips_) strips_->refreshLayout();
 }

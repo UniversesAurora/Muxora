@@ -98,6 +98,9 @@ public:
     void showCommandPalette(WindowId window = {});
     void showWindowSelector(WindowId window = {});
     void showSettings(WindowId window = {});
+    // Restore a chrome strip's natural width, preserving its position and the
+    // width preferences of other strips. Sizing policy is unchanged.
+    bool resetToolbarWidth(WindowId window, const QString& stripId);
     [[nodiscard]] QJsonObject saveLayout() const;
     OperationResult restoreLayout(const QJsonObject& snapshot);
     void setStatus(WindowId window, const QString& text);

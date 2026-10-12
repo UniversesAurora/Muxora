@@ -321,6 +321,11 @@ bool WindowManager::execute(const QString& command, const QVariantMap& args, Win
 void WindowManager::showCommandPalette(WindowId window) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window)); }
 void WindowManager::showWindowSelector(WindowId window) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window)); }
 void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
+bool WindowManager::resetToolbarWidth(WindowId window, const QString& stripId)
+{
+    const auto view = d->windows.value(window);
+    return view && view->strips() && view->strips()->resetStripWidth(stripId);
+}
 void WindowManager::setStatus(WindowId window, const QString& text) { if (auto widget = d->windows.value(window)) widget->setStatus(text); }
 bool WindowManager::applyResult(const OperationResult& result)
 {

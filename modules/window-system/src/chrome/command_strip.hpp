@@ -22,6 +22,7 @@ public:
     struct StripConstraints {
         bool compressible = true;
         bool elasticAllowed = true;
+        int minimumContentWidth = 12;
     };
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;
@@ -49,9 +50,11 @@ public:
     [[nodiscard]] bool isStripItemVisible(const QString& id, const QString& item) const;
     bool moveStrip(const QString& id, int row, int index);
     bool setStripWidth(const QString& id, int width);
+    bool resetStripWidth(const QString& id);
     void refreshLayout();
     [[nodiscard]] QWidget* stripWidget(const QString& id) const;
     [[nodiscard]] QStringList stripIds() const;
+    [[nodiscard]] QString stripTitle(const QString& id) const;
     [[nodiscard]] QStringList stripOrder(int row) const;
     [[nodiscard]] QStringList overflowItems(const QString& id) const;
     [[nodiscard]] bool isDragging() const;
@@ -62,6 +65,7 @@ public:
     void setContextMenuCustomizer(std::function<void(QMenu*)> customizer);
     void setLayoutChangedCallback(std::function<void()> callback);
     void setSizingChangeRequest(std::function<void(const QString&, StripSizing)> request);
+    void setWidthResetRequest(std::function<void(const QString&)> request);
 
     [[nodiscard]] QJsonObject saveLayout() const;
     void restoreLayout(const QJsonObject& json);
@@ -90,6 +94,9 @@ private:
     void normalizeElastic(int row, const QString& preferred = {});
     bool resizeDragBoundary(int row, int requestedLeft);
     void insertDraggedStrip(int row, QPoint position);
+    void clearWidthPriority(int row);
+    void normalizeWidthPriority(int row);
+    [[nodiscard]] QVector<int> rowWidths(const QStringList& visible, int available) const;
 };
 
 } // namespace window_system

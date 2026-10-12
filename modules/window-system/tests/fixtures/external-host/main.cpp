@@ -11,6 +11,9 @@ int main(int argc, char** argv)
     app.setQuitOnLastWindowClosed(false);
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
+    if (!windows.resetToolbarWidth(root, "title")
+        || !windows.execute("window.toolbar.resetSize", {{"strip", "caption-controls"}}, root)
+        || windows.resetToolbarWidth(root, "missing")) return 12;
     auto* text = new QLabel("External installed-package contract");
     QPointer<QLabel> observer(text);
     const auto tab = windows.addTab(root, text, {"External content", "contract.text", {}});

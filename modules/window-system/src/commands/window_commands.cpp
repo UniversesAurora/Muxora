@@ -3,6 +3,7 @@
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "commands/command_dialogs.hpp"
+#include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
 #include "panes/tab_content.hpp"
@@ -60,6 +61,28 @@ void WindowManager::registerWindowCommands()
             return strips->setStripSizing(id, sizing);
         }, [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
+            return window && window->strips();
+        });
+    add("window.toolbar.resetSize", QStringLiteral("重置工具条大小…"), "布局", {},
+        [this](const CommandContext& c) {
+            QPointer<WorkspaceWindow> window = d->windows.value(c.window);
+            if (!window || !window->strips()) return false;
+            if (c.args.contains("strip")) return resetToolbarWidth(c.window, c.args.value("strip").toString());
+            // Keep the picker independent of QWidget parent ownership: its
+            // window may close while the menu's event loop is running.
+            DismissOnlyMenu picker;
+            picker.setObjectName(QStringLiteral("ToolbarResetPicker"));
+            applyTheme(&picker, theme());
+            for (const auto& id : window->strips()->stripIds()) {
+                auto* action = picker.addAction(window->strips()->stripTitle(id));
+                action->setData(id);
+            }
+            connect(window, &QObject::destroyed, &picker, &QMenu::close);
+            const auto* chosen = picker.exec(QCursor::pos());
+            if (!window) return false;
+            return !chosen || resetToolbarWidth(c.window, chosen->data().toString());
+        }, [this](const CommandContext& c) {
+            const auto window = d->windows.value(c.window);
             return window && window->strips();
         });
     add("workspace.closeTab", QStringLiteral("关闭当前标签"), "文件", QKeySequence("Ctrl+W"),

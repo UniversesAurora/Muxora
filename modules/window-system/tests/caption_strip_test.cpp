@@ -5,8 +5,12 @@
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
+#include <QFontMetrics>
+#include <QImage>
 #include <QJsonArray>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QPixmap>
 #include <QPointer>
 #include <QTest>
 #include <QToolButton>
@@ -19,10 +23,10 @@ using namespace window_system;
 
 namespace {
 
-WindowId createFixture(WindowManager& manager, bool floating)
+WindowId createFixture(WindowManager& manager, bool floating, const WindowOptions& options = {})
 {
-    const auto root = manager.createWindow();
-    return floating ? manager.createWindow(WindowKind::Floating, {}, root) : root;
+    const auto root = manager.createWindow(WindowKind::Workbench, options);
+    return floating ? manager.createWindow(WindowKind::Floating, options, root) : root;
 }
 
 QToolButton* captionButton(QWidget* window, const QString& role)
@@ -37,6 +41,41 @@ void addWindowKinds()
     QTest::addColumn<bool>("floating");
     QTest::newRow("workbench") << false;
     QTest::newRow("floating") << true;
+}
+
+QImage referenceCaption(QLabel* caption, const QString& text, const QImage& actual)
+{
+    // Use Qt's ordinary label as the independent drawing reference. It receives
+    // the expected visible text, while the real caption must retain full text.
+    QLabel reference(text);
+    reference.setTextFormat(Qt::PlainText);
+    reference.setAlignment(Qt::AlignCenter);
+    reference.setFont(caption->font());
+    reference.setContentsMargins(caption->contentsMargins());
+    auto palette = caption->palette();
+    palette.setColor(QPalette::Window, actual.pixelColor(0, 0));
+    reference.setPalette(palette);
+    reference.setAutoFillBackground(true);
+    reference.resize(caption->size());
+    // Match QWidget::grab's native raster surface. Rendering directly to an
+    // alpha QImage disables Windows ClearType and changes glyph edge pixels.
+    QPixmap expected(actual.size());
+    expected.setDevicePixelRatio(actual.devicePixelRatio());
+    expected.fill(palette.color(QPalette::Window));
+    reference.render(&expected);
+    return expected.toImage().convertToFormat(actual.format());
+}
+
+void doubleClickCaption(QLabel* caption)
+{
+    const auto position = caption->rect().center();
+    const auto global = caption->mapToGlobal(position);
+    QMouseEvent doubleClick(QEvent::MouseButtonDblClick, position, global,
+                           Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(caption, &doubleClick);
+    QMouseEvent release(QEvent::MouseButtonRelease, position, global,
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(caption, &release);
 }
 
 } // namespace
@@ -54,6 +93,12 @@ private slots:
     void movedMaximizeButtonRetainsNativeHitTesting();
     void lightweightCustomizationPreservesTheCompleteChromeCache();
     void legacyLayoutsIntroduceTheProtectedCaptionStrip();
+    void titleCentersAndElidesWithoutLosingItsFullCaption_data() { addWindowKinds(); }
+    void titleCentersAndElidesWithoutLosingItsFullCaption();
+    void titleMinimumIncludesTheUnlockedHandleAndCannotBeOverriddenByLayout_data() { addWindowKinds(); }
+    void titleMinimumIncludesTheUnlockedHandleAndCannotBeOverriddenByLayout();
+    void centeredTitleKeepsDoubleClickAndContentIdentity_data() { addWindowKinds(); }
+    void centeredTitleKeepsDoubleClickAndContentIdentity();
 };
 
 void CaptionStripTest::controlsCanGrowAndMoveButNeverCompressOrBecomeElastic()
@@ -238,6 +283,93 @@ void CaptionStripTest::legacyLayoutsIntroduceTheProtectedCaptionStrip()
     window->restoreStripLayout(modified);
     QCOMPARE(strips->stripSizing("caption-controls"), CommandStripHost::StripSizing::Content);
     QVERIFY(!strips->isStripOptionsEnabled("caption-controls"));
+}
+
+void CaptionStripTest::titleCentersAndElidesWithoutLosingItsFullCaption()
+{
+    QFETCH(bool, floating);
+    WindowManager manager;
+    const auto title = QStringLiteral("Muxora — 远程工作空间 / Production servers / Complete caption");
+    const auto id = createFixture(manager, floating, {title, QSize(900, 500)});
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    auto* strips = window->strips(); QVERIFY(strips);
+    auto* caption = window->findChild<QLabel*>("CaptionTitle"); QVERIFY(caption);
+    auto* strip = strips->stripWidget("title"); QVERIFY(strip);
+    auto* viewport = strip->findChild<QWidget*>("StripViewport"); QVERIFY(viewport);
+    QVERIFY(strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
+    QVERIFY(strips->setStripWidth("title", 96));
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QCOMPARE(caption->alignment(), Qt::Alignment(Qt::AlignCenter));
+    QCOMPARE(strip->width(), 96);
+    QCOMPARE(caption->width(), viewport->width());
+    const auto full = floating ? window->windowTitle() : title;
+    QCOMPARE(caption->text(), full);
+    QCOMPARE(caption->accessibleName(), full);
+    QCOMPARE(caption->toolTip(), full);
+    const auto expectedText = QFontMetrics(caption->font()).elidedText(full, Qt::ElideRight, caption->contentsRect().width());
+    QVERIFY(expectedText != full);
+    QVERIFY(expectedText.endsWith(QChar(0x2026)));
+    const auto compressed = caption->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    QCOMPARE(compressed, referenceCaption(caption, expectedText, compressed));
+    QVERIFY(compressed != referenceCaption(caption, full, compressed));
+    const int completeWidth = QFontMetrics(caption->font()).horizontalAdvance(full) + 40;
+    window->resize(completeWidth + 600, window->height());
+    QVERIFY(strips->setStripWidth("title", completeWidth));
+    QCoreApplication::processEvents();
+    QCOMPARE(caption->width(), completeWidth);
+    const auto expanded = caption->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    QCOMPARE(expanded, referenceCaption(caption, full, expanded));
+    QCOMPARE(caption->text(), full);
+}
+
+void CaptionStripTest::titleMinimumIncludesTheUnlockedHandleAndCannotBeOverriddenByLayout()
+{
+    QFETCH(bool, floating);
+    WindowManager manager;
+    const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    auto* strips = window->strips(); QVERIFY(strips);
+    QCOMPARE(strips->stripConstraints("title").minimumContentWidth, 96);
+    QVERIFY(!strips->setStripWidth("title", 95));
+    QVERIFY(strips->setStripSizing("title", CommandStripHost::StripSizing::Content));
+    QVERIFY(strips->setStripWidth("title", 96));
+    QVERIFY(manager.execute("window.toggleStripsLock", {}, id));
+    auto* strip = strips->stripWidget("title"); QVERIFY(strip);
+    auto* viewport = strip->findChild<QWidget*>("StripViewport"); QVERIFY(viewport);
+    auto* handle = strip->findChild<QWidget*>("StripHandle"); QVERIFY(handle);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(handle->isVisible());
+    QCOMPARE(viewport->width(), 96);
+    QVERIFY(!strips->setStripWidth("title", 96 + handle->width() - 1));
+    QVERIFY(strips->setStripWidth("title", 96 + handle->width()));
+    auto layout = window->saveStripLayout();
+    auto settings = layout.value("strips").toObject();
+    auto savedTitle = settings.value("title").toObject();
+    savedTitle.insert("width", 36); settings.insert("title", savedTitle); layout.insert("strips", settings);
+    window->restoreStripLayout(layout);
+    QCOMPARE(strips->stripConstraints("title").minimumContentWidth, 96);
+    QVERIFY(viewport->width() >= 96);
+    window->resize(window->minimumSize()); QCoreApplication::processEvents();
+    QVERIFY(viewport->width() >= 96);
+}
+
+void CaptionStripTest::centeredTitleKeepsDoubleClickAndContentIdentity()
+{
+    QFETCH(bool, floating);
+    WindowManager manager;
+    const auto id = createFixture(manager, floating);
+    auto* content = new QLabel("Persistent content");
+    const auto tab = manager.addTab(id, content, {"Content", "test.label", {}}); QVERIFY(!tab.isNull());
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    auto* caption = window->findChild<QLabel*>("CaptionTitle"); QVERIFY(caption);
+    QVERIFY(caption->property("windowDragArea").toBool());
+    QVERIFY(window->strips()->windowDragAreas().contains(caption));
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    doubleClickCaption(caption); QTRY_VERIFY(window->isMaximized());
+    doubleClickCaption(caption); QTRY_VERIFY(!window->isMaximized());
+    QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(tab))->windowId, id);
 }
 
 QTEST_MAIN(CaptionStripTest)
