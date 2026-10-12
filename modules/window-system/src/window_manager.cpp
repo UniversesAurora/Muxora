@@ -225,6 +225,10 @@ bool WindowManager::moveTabToEdge(TabId tab, Edge edge, bool pinned)
 {
     return applyResult(d->model.moveTabToEdge(tab, edge, pinned));
 }
+bool WindowManager::moveTabToEdgeBar(TabId tab, WindowId target, Edge edge, int insertionIndex)
+{ return applyResult(d->model.moveTabToEdgeBar(tab, target, edge, insertionIndex)); }
+bool WindowManager::moveAllTabsToEdgeBar(WindowId source, WindowId target, Edge edge, int insertionIndex)
+{ return applyResult(d->model.moveAllTabsToEdgeBar(source, target, edge, insertionIndex)); }
 bool WindowManager::moveAllTabsToEdge(WindowId source, WindowId target, Edge edge, bool pinned)
 { return applyResult(d->model.moveAllTabsToEdge(source, target, edge, pinned)); }
 bool WindowManager::pinGroup(GroupId group, bool pinned) { return applyResult(d->model.setGroupPinned(group, pinned)); }

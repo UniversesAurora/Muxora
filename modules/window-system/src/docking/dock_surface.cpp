@@ -349,6 +349,39 @@ QHash<Edge, QRect> DockSurface::edgeBarRects() const
         if (it.value() && it.value()->isVisible()) result.insert(it.key(), QRect(it.value()->mapToGlobal(QPoint()), it.value()->size()));
     return result;
 }
+int DockSurface::edgeTabInsertionIndex(Edge edge, QPoint point) const
+{
+    const auto bar = edgeBars_.value(edge);
+    if (!bar) return -1;
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    const auto local = bar->mapFromGlobal(point);
+    int index = 0;
+    for (int i = 0; i < bar->layout()->count(); ++i) {
+        const auto* button = bar->layout()->itemAt(i)->widget();
+        if (!button || button->objectName() != "EdgeButton") continue;
+        const auto center = button->geometry().center();
+        if ((vertical ? local.y() : local.x()) < (vertical ? center.y() : center.x())) return index;
+        ++index;
+    }
+    return index;
+}
+QRect DockSurface::edgeTabInsertionRect(Edge edge, int index) const
+{
+    const auto bar = edgeBars_.value(edge);
+    if (!bar || index < 0) return {};
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    int ordinal = 0; int position = 0;
+    for (int i = 0; i < bar->layout()->count(); ++i) {
+        const auto* button = bar->layout()->itemAt(i)->widget();
+        if (!button || button->objectName() != "EdgeButton") continue;
+        const auto rect = button->geometry();
+        if (ordinal++ == index) { position = vertical ? rect.top() : rect.left(); break; }
+        position = vertical ? rect.bottom() + 1 : rect.right() + 1;
+    }
+    const auto origin = bar->mapToGlobal(QPoint());
+    return vertical ? QRect(origin.x(), origin.y() + position - 2, bar->width(), 4)
+        : QRect(origin.x() + position - 2, origin.y(), 4, bar->height());
+}
 void DockSurface::setDragHover(QPoint point)
 {
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);

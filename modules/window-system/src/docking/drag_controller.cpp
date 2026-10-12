@@ -57,7 +57,8 @@ protected:
             p.fillRect(inner, QColor("#8A52C7"));
         }
         if (!target.accepted) return;
-        const auto text = target.toEdge ? (target.pinned ? QStringLiteral("固定到边栏") : QStringLiteral("收纳到边栏"))
+        const auto text = target.toEdgeBar ? QStringLiteral("插入 %1 个边栏标签").arg(count)
+            : target.toEdge ? (target.pinned ? QStringLiteral("固定到边栏") : QStringLiteral("收纳到边栏"))
             : target.insertionIndex >= 0 ? QStringLiteral("插入 %1 个标签").arg(count)
             : target.placement == Placement::Center ? QStringLiteral("合并 %1 个标签").arg(count)
             : whole ? QStringLiteral("保留分组并停靠") : QStringLiteral("创建相邻标签组");
@@ -104,6 +105,8 @@ void DragController::beginTab(TabId tab, QPoint global)
     auto origin = source ? source->surface()->groupRects().value(group) : QRect();
     if (origin.isEmpty() && source) if (auto* peek = source->findChild<QWidget*>("PeekPanel"); peek && peek->isVisible())
         origin = QRect(peek->mapToGlobal(QPoint()), peek->size());
+    if (origin.isEmpty() && source) if (const auto* record = manager_->model().group(group); record && record->location == GroupLocation::AutoHide)
+        origin = source->surface()->edgeBarRects().value(record->edge);
     movingWindow_ = manager_->detachTab(tab, WindowKind::Floating);
     if (movingWindow_.isNull()) { detached_ = false; return; }
     capture_ = manager_->windowWidget(movingWindow_);
@@ -192,7 +195,16 @@ DropTarget DragController::hit(QPoint global)
     if (const auto* group = manager_->model().group(result.group)) result.splitGroup = group->location == GroupLocation::Central;
     result.groupRect = surface->groupRects().value(result.group, surface->centralRectGlobal());
     if (result.groupRect.isEmpty()) result.groupRect = result.windowRect;
-    for (const auto& guide : dockGuides(result.windowRect, result.groupRect, result.splitGroup)) if (guide.rect.contains(global)) {
+    // A displayed side bar is an insertion strip along its full axis, including
+    // the area where the outer guide would otherwise overlap that strip.
+    const auto edgeBars = surface->edgeBarRects();
+    for (auto it = edgeBars.cbegin(); it != edgeBars.cend(); ++it) if (it.value().contains(global)) {
+        result.accepted = true; result.toEdge = true; result.edge = it.key(); result.pinned = false;
+        result.toEdgeBar = true;
+        result.insertionIndex = surface->edgeTabInsertionIndex(it.key(), global);
+        break;
+    }
+    for (const auto& guide : dockGuides(result.windowRect, result.groupRect, result.splitGroup)) if (!result.accepted && guide.rect.contains(global)) {
         result.accepted = true; result.toEdge = guide.toEdge; result.pinned = guide.pinned;
         result.edge = guide.edge; result.placement = guide.placement; break;
     }
@@ -204,12 +216,6 @@ DropTarget DragController::hit(QPoint global)
         result.placement = Placement::Center;
         result.groupRect = surface->groupRects().value(barGroup);
         result.insertionIndex = surface->tabInsertionIndex(barGroup, global);
-    } else if (!result.accepted) {
-        const auto edgeBars = surface->edgeBarRects();
-        for (auto it = edgeBars.cbegin(); it != edgeBars.cend(); ++it) if (it.value().contains(global)) {
-            result.accepted = true; result.toEdge = true; result.edge = it.key(); result.pinned = false;
-            break;
-        }
     }
     if (!result.accepted) return result;
     result.preview = result.groupRect;
@@ -222,6 +228,7 @@ DropTarget DragController::hit(QPoint global)
         case Edge::Top: result.preview = QRect(bounds.topLeft(), QSize(bounds.width(), extent)); break;
         case Edge::Bottom: result.preview = QRect(bounds.left(), bounds.bottom() - extent + 1, bounds.width(), extent); break;
         }
+        if (result.toEdgeBar) result.preview = surface->edgeTabInsertionRect(result.edge, result.insertionIndex);
     } else {
         const auto center = result.preview.center();
         switch (result.placement) {
@@ -268,7 +275,12 @@ void DragController::finish(QPoint global)
     stop();
     bool success = !target.accepted;
     if (target.accepted) {
-        if (target.toEdge) {
+        if (target.toEdgeBar) {
+            if (!tab.isNull()) success = manager_->execute("workspace.moveTabToEdgeBar",
+                {{"tab", tab}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, moving);
+            else success = manager_->execute("window.moveAllToEdgeBar",
+                {{"source", whole}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, source);
+        } else if (target.toEdge) {
             if (!tab.isNull()) success = manager_->execute("workspace.moveTabToEdge",
                 {{"tab", tab}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"pinned", target.pinned}}, moving);
             else success = manager_->execute("window.moveAllToEdge",

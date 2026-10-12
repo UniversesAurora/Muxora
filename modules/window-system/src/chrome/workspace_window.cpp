@@ -124,6 +124,7 @@ void WorkspaceWindow::createChrome()
         caption_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         caption_->setProperty("windowDragArea", true);
         strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
+        strips_->setStripOptionsEnabled("title", false);
         for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
         row->addWidget(strips_, 1);
         status_ = new QLabel(QStringLiteral("就绪  ·  窗口系统预览"), this); status_->setObjectName("StatusBar");

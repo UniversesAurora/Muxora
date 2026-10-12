@@ -70,6 +70,8 @@ public:
     bool moveAllTabs(WindowId source, GroupId group,
                      Placement placement = Placement::Center, int insertionIndex = -1);
     bool moveTabToEdge(TabId tab, Edge edge, bool pinned = false);
+    bool moveTabToEdgeBar(TabId tab, WindowId target, Edge edge, int insertionIndex = -1);
+    bool moveAllTabsToEdgeBar(WindowId source, WindowId target, Edge edge, int insertionIndex = -1);
     bool moveAllTabsToEdge(WindowId source, WindowId target, Edge edge, bool pinned = false);
     bool pinGroup(GroupId group, bool pinned);
     bool pinTab(TabId tab, bool pinned);

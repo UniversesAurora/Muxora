@@ -33,6 +33,9 @@ private slots:
     void explicitPinnedDropsCreateAnOuterPartition();
     void wholeWindowCenterInsertionUsesTheDropIndex();
     void wholeWindowEdgeMovementWorksWithoutCentralGroups();
+    void autoHideInsertionUsesTheWholeVisibleSide_data();
+    void autoHideInsertionUsesTheWholeVisibleSide();
+    void edgeBarTransfersAreAtomicAndKeepThePayloadOrder();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -555,6 +558,79 @@ void LayoutModelTest::wholeWindowEdgeMovementWorksWithoutCentralGroups()
     QCOMPARE(model.toJson(), before);
     const auto empty = model.createWindow();
     QVERIFY(!model.moveAllTabsToEdge(empty, destination, Edge::Right).ok);
+}
+
+void LayoutModelTest::autoHideInsertionUsesTheWholeVisibleSide_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+void LayoutModelTest::autoHideInsertionUsesTheWholeVisibleSide()
+{
+    QFETCH(int, edge);
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto a = model.addTab(window, "A");
+    const auto b = model.addTab(window, "B");
+    const auto c = model.addTab(window, "C");
+    const auto pinned = model.addTab(window, "Pinned");
+    const auto paneA = model.tab(a)->activePane;
+    QVERIFY(model.moveTabToEdge(a, Edge(edge)).ok);
+    QVERIFY(model.moveTab(b, model.groupForTab(a)).ok);
+    QVERIFY(model.moveTabToEdge(c, Edge(edge)).ok);
+    QVERIFY(model.moveTabToEdge(pinned, Edge(edge), true).ok);
+    QCOMPARE(model.autoHiddenTabs(window, Edge(edge)), (QVector<TabId>{a, b, c}));
+    QVERIFY(model.moveTabToEdgeBar(b, window, Edge(edge), 0).ok);
+    QCOMPARE(model.autoHiddenTabs(window, Edge(edge)), (QVector<TabId>{b, a, c}));
+    QVERIFY(model.moveTabToEdgeBar(a, window, Edge(edge), 2).ok);
+    QCOMPARE(model.autoHiddenTabs(window, Edge(edge)), (QVector<TabId>{b, c, a}));
+    QCOMPARE(model.tab(a)->activePane, paneA);
+    QCOMPARE(model.group(model.groupForTab(pinned))->location, GroupLocation::Pinned);
+    LayoutModel restored;
+    QVERIFY(restored.fromJson(model.toJson()).ok);
+    QCOMPARE(restored.autoHiddenTabs(window, Edge(edge)), (QVector<TabId>{b, c, a}));
+    QCOMPARE(restored.tab(a)->activePane, paneA);
+    QVERIFY(restored.validate().ok);
+}
+void LayoutModelTest::edgeBarTransfersAreAtomicAndKeepThePayloadOrder()
+{
+    LayoutModel model;
+    const auto destination = model.createWindow();
+    const auto first = model.addTab(destination, "First");
+    const auto last = model.addTab(destination, "Last");
+    QVERIFY(model.moveTabToEdge(first, Edge::Left).ok);
+    QVERIFY(model.moveTabToEdge(last, Edge::Left).ok);
+    const auto source = model.createWindow(WindowKind::Floating, destination);
+    const auto a = model.addTab(source, "A");
+    const auto b = model.addTab(source, "B");
+    const auto c = model.addTab(source, "C");
+    const auto panes = model.panes(a);
+    QVERIFY(model.moveTabToEdgeBar(a, destination, Edge::Left, 1).ok);
+    QCOMPARE(model.autoHiddenTabs(destination, Edge::Left), (QVector<TabId>{first, a, last}));
+    QCOMPARE(model.panes(a), panes);
+    const auto before = model.toJson();
+    QVERIFY(!model.moveTabToEdgeBar(b, destination, Edge(99), 0).ok);
+    QVERIFY(!model.moveAllTabsToEdgeBar(source, destination, Edge::Left, -2).ok);
+    QCOMPARE(model.toJson(), before);
+    QVERIFY(model.moveAllTabsToEdgeBar(source, destination, Edge::Left, 1).ok);
+    QCOMPARE(model.autoHiddenTabs(destination, Edge::Left), (QVector<TabId>{first, b, c, a, last}));
+    QVERIFY(!model.window(source));
+    const auto appendedSource = model.createWindow(WindowKind::Floating, destination);
+    const auto d = model.addTab(appendedSource, "D");
+    const auto e = model.addTab(appendedSource, "E");
+    QVERIFY(model.moveAllTabsToEdgeBar(appendedSource, destination, Edge::Left, std::numeric_limits<int>::max()).ok);
+    QCOMPARE(model.autoHiddenTabs(destination, Edge::Left), (QVector<TabId>{first, b, c, a, last, d, e}));
+    QVERIFY(!model.window(appendedSource));
+    const auto edgeOnly = model.createWindow();
+    const auto soloWindow = model.detachTab(c);
+    QVERIFY(model.moveTabToEdgeBar(c, edgeOnly, Edge::Bottom).ok);
+    QVERIFY(!model.window(soloWindow));
+    QVERIFY(model.centralGroups(edgeOnly).isEmpty());
+    QCOMPARE(model.autoHiddenTabs(edgeOnly, Edge::Bottom), (QVector<TabId>{c}));
+    QVERIFY(model.validate().ok);
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

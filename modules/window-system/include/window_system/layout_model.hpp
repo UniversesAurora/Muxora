@@ -95,6 +95,7 @@ public:
     [[nodiscard]] WindowId familyRoot(FamilyId id) const;
     [[nodiscard]] QVector<GroupId> centralGroups(WindowId id) const;
     [[nodiscard]] QVector<TabId> orderedTabs(WindowId id) const;
+    [[nodiscard]] QVector<TabId> autoHiddenTabs(WindowId windowId, Edge edge) const;
     [[nodiscard]] QVector<PaneId> panes(TabId id) const;
     [[nodiscard]] bool familyHasTabs(FamilyId id) const;
     [[nodiscard]] quint64 revision() const noexcept;
@@ -113,6 +114,12 @@ public:
                                     Placement placement = Placement::Center);
     OperationResult moveGroupToEdge(GroupId groupId, Edge edge, bool pinned = false);
     OperationResult moveTabToEdge(TabId tabId, Edge edge, bool pinned = false);
+    // The index addresses the side's visible tab sequence after removing the
+    // moving tab; -1 appends. Internal edge groups do not create UI boundaries.
+    OperationResult moveTabToEdgeBar(TabId tabId, WindowId targetWindow, Edge edge,
+                                     int insertionIndex = -1);
+    OperationResult moveAllTabsToEdgeBar(WindowId sourceWindow, WindowId targetWindow,
+                                         Edge edge, int insertionIndex = -1);
     OperationResult setGroupPinned(GroupId groupId, bool pinned);
     OperationResult setTabPinned(TabId tabId, bool pinned);
     OperationResult setEdgePinned(WindowId windowId, Edge edge, bool pinned);
@@ -153,6 +160,8 @@ private:
     OperationResult moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                      Placement placement, int insertionIndex);
     OperationResult setTabPinnedUnchecked(TabId tabId, bool pinned);
+    OperationResult moveTabToEdgeBarUnchecked(TabId tabId, WindowId targetWindow,
+                                              Edge edge, int insertionIndex);
     OperationResult moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup,
                                          Placement placement, int insertionIndex = -1);
     LayoutTree takeWindowTreeUnchecked(WindowId sourceWindow, WindowId targetWindow);

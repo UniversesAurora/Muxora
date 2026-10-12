@@ -5,11 +5,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDialog>
 #include <QFocusEvent>
+#include <QImage>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
@@ -19,10 +22,22 @@
 #include <QScrollBar>
 #include <QTest>
 #include <QTreeWidget>
+#include <QtMath>
 
 using namespace window_system;
 
 namespace {
+
+class MouseMoveProbe final : public QObject {
+public:
+    QPoint lastPosition{-1, -1};
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::MouseMove)
+            lastPosition = static_cast<QMouseEvent*>(event)->position().toPoint();
+        return QObject::eventFilter(watched, event);
+    }
+};
 
 void processDeletes()
 {
@@ -55,6 +70,24 @@ int visibleSettingRows(QWidget* page)
     return count;
 }
 
+QRect physicalRect(const QRect& logical, qreal ratio)
+{
+    const int left = qFloor(logical.left() * ratio);
+    const int top = qFloor(logical.top() * ratio);
+    return QRect(left, top, qCeil((logical.right() + 1) * ratio) - left,
+                 qCeil((logical.bottom() + 1) * ratio) - top);
+}
+
+QRect colorBounds(const QImage& image, const QRect& region, const QColor& color)
+{
+    QRect bounds;
+    const auto clipped = region.intersected(image.rect());
+    for (int y = clipped.top(); y <= clipped.bottom(); ++y)
+        for (int x = clipped.left(); x <= clipped.right(); ++x)
+            if (image.pixelColor(x, y) == color) bounds |= QRect(x, y, 1, 1);
+    return bounds;
+}
+
 } // namespace
 
 class PaneSettingsTest final : public QObject {
@@ -69,6 +102,8 @@ private slots:
     void settingsSearchAndCategoryNavigationKeepRealRows();
     void settingsCategoryNavigationScrollsAndFollowsTheViewport();
     void settingsCategoryTreeSupportsKeyboardExpansion();
+    void settingsDisclosureHoverChangesOnlyTheChevron();
+    void settingsCategoryIndicatorUsesItsOwnSpacedGutter();
     void settingsSearchKeepsMatchingCategoriesAndTheirAncestors();
     void settingControlsUpdateImmediatelyAndReflectExternalChanges();
     void internalSettingsRestoreWithoutHostContentFactory();
@@ -304,6 +339,124 @@ void PaneSettingsTest::settingsCategoryTreeSupportsKeyboardExpansion()
     QCOMPARE(categories->currentItem(), drag);
     QVERIFY(drag->font(0).bold());
     QCOMPARE(visibleSettingRows(page), 4);
+}
+
+void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
+{
+    WindowManager manager;
+    auto theme = manager.theme();
+    theme.surface = QColor("#F3F5F7");
+    theme.mutedText = QColor("#8995A1");
+    theme.text = QColor("#18212A");
+    theme.accent = QColor("#6939C5");
+    manager.setTheme(theme);
+    const auto window = manager.createWindow();
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings"));
+    QVERIFY(page);
+    auto* categories = page->findChild<QTreeWidget*>(QStringLiteral("SettingsCategories"));
+    QVERIFY(categories);
+    auto* fixture = manager.windowWidget(window);
+    fixture->setWindowFlag(Qt::WindowStaysOnTopHint);
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(fixture));
+    fixture->raise(); fixture->activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(fixture));
+    auto* root = categories->topLevelItem(0);
+    categories->setCurrentItem(root);
+    const auto row = categories->visualItemRect(root);
+    QVERIFY(!row.isEmpty());
+    const QRect branch(0, row.top(), row.left(), row.height());
+    const QPoint center(row.left() - categories->indentation() / 2, row.center().y());
+    MouseMoveProbe movement;
+    categories->viewport()->installEventFilter(&movement);
+    auto away = categories->viewport()->rect().bottomRight() - QPoint(8, 8);
+    if (away == categories->viewport()->mapFromGlobal(QCursor::pos())) away -= QPoint(20, 20);
+    QTest::mouseMove(categories->viewport(), away);
+    QTRY_COMPARE(movement.lastPosition, away);
+    const QImage normal = categories->viewport()->grab().toImage();
+    const qreal ratio = normal.devicePixelRatio();
+    const QRect pixels = physicalRect(branch, ratio);
+    QVERIFY(!colorBounds(normal, pixels, theme.mutedText).isEmpty());
+    const QRect glyphPixels = physicalRect(QRect(center - QPoint(5, 5), QSize(11, 11)), ratio);
+    const QRect plainGutter = physicalRect(QRect(6, row.top(), row.left() - 6, row.height()), ratio);
+    for (int y = plainGutter.top(); y <= plainGutter.bottom(); ++y)
+        for (int x = plainGutter.left(); x <= plainGutter.right(); ++x)
+            if (!glyphPixels.contains(x, y)) QCOMPARE(normal.pixelColor(x, y), theme.surface);
+    QTest::mouseMove(categories->viewport(), center);
+    // QWidget mouseMove only repositions the native cursor in this Qt version.
+    // Wait for dispatch before testing the same exact pixel colors and bounds.
+    QTRY_COMPARE(movement.lastPosition, center);
+    QTRY_VERIFY(!colorBounds(categories->viewport()->grab().toImage(), pixels, theme.text).isEmpty());
+    const QImage hovered = categories->viewport()->grab().toImage();
+    QVERIFY(!colorBounds(hovered, pixels, theme.text).isEmpty());
+    int changed = 0;
+    for (int y = pixels.top(); y <= pixels.bottom(); ++y) {
+        for (int x = pixels.left(); x <= pixels.right(); ++x) {
+            const QColor before = normal.pixelColor(x, y);
+            const QColor after = hovered.pixelColor(x, y);
+            if (before == theme.surface) QCOMPARE(after, theme.surface);
+            if (before != after) {
+                ++changed;
+                QVERIFY(glyphPixels.contains(x, y));
+            }
+        }
+    }
+    QVERIFY(changed > 0);
+    QTest::mouseMove(categories->viewport(), away);
+    QTRY_COMPARE(movement.lastPosition, away);
+    QTRY_COMPARE(categories->viewport()->grab().toImage().copy(pixels), normal.copy(pixels));
+}
+
+void PaneSettingsTest::settingsCategoryIndicatorUsesItsOwnSpacedGutter()
+{
+    WindowManager manager;
+    auto theme = manager.theme();
+    theme.surface = QColor("#F3F5F7");
+    theme.mutedText = QColor("#8995A1");
+    theme.text = QColor("#18212A");
+    theme.accent = QColor("#6939C5");
+    manager.setTheme(theme);
+    const auto window = manager.createWindow();
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings"));
+    QVERIFY(page);
+    auto* categories = page->findChild<QTreeWidget*>(QStringLiteral("SettingsCategories"));
+    QVERIFY(categories);
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    auto* root = categories->topLevelItem(0);
+    auto* child = root->child(0);
+    categories->setCurrentItem(root);
+    QTest::mouseMove(categories->viewport(), categories->viewport()->rect().bottomRight() - QPoint(8, 8));
+    const auto rootRow = categories->visualItemRect(root);
+    const QImage image = categories->viewport()->grab().toImage();
+    const qreal ratio = image.devicePixelRatio();
+    const QRect rootBranch = physicalRect(QRect(0, rootRow.top(), rootRow.left(), rootRow.height()), ratio);
+    const QRect indicator = colorBounds(image, rootBranch, theme.accent);
+    const QRect arrow = colorBounds(image, rootBranch, theme.mutedText);
+    QVERIFY(!indicator.isEmpty());
+    QVERIFY(!arrow.isEmpty());
+    QVERIFY(arrow.left() - indicator.right() - 1 >= qCeil(8 * ratio));
+    categories->setCurrentItem(child);
+    const auto childRow = categories->visualItemRect(child);
+    const QImage moved = categories->viewport()->grab().toImage();
+    QVERIFY(colorBounds(moved, rootBranch, theme.accent).isEmpty());
+    const QRect childBranch = physicalRect(QRect(0, childRow.top(), childRow.left(), childRow.height()), ratio);
+    const QRect childIndicator = colorBounds(moved, childBranch, theme.accent);
+    QVERIFY(!childIndicator.isEmpty());
+    QCOMPARE(childIndicator.left(), indicator.left());
+    QCOMPARE(childIndicator.width(), indicator.width());
+    QVERIFY(child->font(0).bold());
+    QVERIFY(!root->font(0).bold());
+    const QPoint rootCenter(rootRow.left() - categories->indentation() / 2, rootRow.center().y());
+    const QRect rootGlyph = physicalRect(QRect(rootCenter - QPoint(5, 5), QSize(11, 11)), ratio);
+    for (int y = rootBranch.top(); y <= rootBranch.bottom(); ++y)
+        for (int x = rootBranch.left(); x <= rootBranch.right(); ++x)
+            if (!rootGlyph.contains(x, y)) QCOMPARE(moved.pixelColor(x, y), theme.surface);
+    for (int y = childBranch.top(); y <= childBranch.bottom(); ++y)
+        for (int x = childBranch.left(); x <= childBranch.right(); ++x)
+            if (!childIndicator.contains(x, y)) QCOMPARE(moved.pixelColor(x, y), theme.surface);
 }
 
 void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()

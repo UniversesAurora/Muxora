@@ -1,4 +1,5 @@
 #include "tab_strip.hpp"
+#include "commands/popup_menu.hpp"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -217,8 +218,7 @@ bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
 void GroupTabs::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); updateBarGeometry(); }
 void GroupTabs::showTabList() {
     if (tabListMenu_ && tabListMenu_->isVisible()) { tabListMenu_->close(); return; }
-    auto* menu = new QMenu(this); menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->setAttribute(Qt::WA_NoMouseReplay);
+    auto* menu = new DismissOnlyMenu(this); menu->setAttribute(Qt::WA_DeleteOnClose);
     tabListMenu_ = menu;
     list_->setDown(true);
     QObject::connect(menu, &QMenu::aboutToHide, this, [this] { list_->setDown(false); list_->update(); });

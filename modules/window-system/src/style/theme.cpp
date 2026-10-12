@@ -155,7 +155,7 @@ public:
             painter->drawLine(QPointF(8, 10), QPointF(8, 14));
             painter->restore();
             if (name_.endsWith(QStringLiteral("-all"))) {
-                painter->setBrush(theme_.surface);
+                painter->setBrush(Qt::NoBrush);
                 painter->drawRect(QRectF(11, 10, 3.5, 3.5));
                 painter->drawRect(QRectF(9.5, 11.5, 3.5, 3.5));
             }

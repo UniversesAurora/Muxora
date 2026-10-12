@@ -29,6 +29,10 @@ public:
                         StripSizing sizing = StripSizing::Content);
     bool setStripSizing(const QString& id, StripSizing sizing);
     [[nodiscard]] StripSizing stripSizing(const QString& id) const;
+    // Presentation policy supplied by the host, independent of saved user
+    // layout. Disabled strips reserve no options-button space.
+    bool setStripOptionsEnabled(const QString& id, bool enabled);
+    [[nodiscard]] bool isStripOptionsEnabled(const QString& id) const;
     void setLocked(bool locked);
     [[nodiscard]] bool isLocked() const;
     bool setStripVisible(const QString& id, bool visible);

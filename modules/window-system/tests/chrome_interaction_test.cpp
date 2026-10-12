@@ -7,6 +7,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QCursor>
+#include <QImage>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QLabel>
@@ -18,6 +20,11 @@
 #include <QTest>
 #include <QToolButton>
 #include <QTimer>
+#include <QWindow>
+
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 #include <algorithm>
 #include <memory>
@@ -52,6 +59,51 @@ void startDrag(CommandStripHost& host, QWidget* handle, QPoint destination)
     QVERIFY(host.isDragging());
 }
 
+// Convert through the target HWND, rather than using the primary screen's
+// scale. These tests exercise native popup capture and its outside release.
+void nativeMouse(QWidget* target, QPoint local, bool click = false)
+{
+#ifdef Q_OS_WIN
+    auto* window = target->window();
+    const QPoint client = target->mapTo(window, local);
+    const qreal ratio = window->devicePixelRatioF();
+    POINT point{qRound(client.x() * ratio), qRound(client.y() * ratio)};
+    QVERIFY(ClientToScreen(reinterpret_cast<HWND>(window->winId()), &point));
+    QVERIFY(SetCursorPos(point.x, point.y));
+    if (click) {
+        INPUT events[2]{};
+        events[0].type = events[1].type = INPUT_MOUSE;
+        events[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        events[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
+    }
+#else
+    if (click) QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, local);
+    else QTest::mouseMove(target, local);
+#endif
+}
+
+void nativeEscape(QMenu* menu)
+{
+#ifdef Q_OS_WIN
+    INPUT events[2]{};
+    events[0].type = events[1].type = INPUT_KEYBOARD;
+    events[0].ki.wVk = events[1].ki.wVk = VK_ESCAPE;
+    events[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
+#else
+    QTest::keyClick(menu, Qt::Key_Escape);
+#endif
+}
+
+int pixelsOfColor(const QImage& image, QColor expected)
+{
+    int count = 0;
+    for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x)
+        if (image.pixelColor(x, y).rgb() == expected.rgb()) ++count;
+    return count;
+}
+
 } // namespace
 
 class ChromeInteractionTest final : public QObject {
@@ -64,10 +116,13 @@ private slots:
     void visibilityCustomizationAndWidthsSurviveRestore();
     void restoringLockedMinimumWidthDoesNotUseTheCurrentUnlockedMinimum();
     void titleFirstFillsTheRowAndIsAWindowDragArea();
+    void optionsPolicyDoesNotReserveSpaceOrChangeSavedLayout();
     void elasticStripsShareRemainingSpaceAtEveryPositionAndRestoreLegacyDefaults();
     void elasticContentDoesNotBecomeAWindowDragTarget();
     void customizationUpdatesMenuAndActionGeometryImmediately();
     void overflowToggleRestoresHoverAndPressState();
+    void outsidePopupDismissalRestoresNativeHoverAndPainting_data();
+    void outsidePopupDismissalRestoresNativeHoverAndPainting();
     void toolbarDragImmediatelyMovesThePresentationAndCancelsCleanly();
     void slidingTheFollowingHandleCompressesThePreviousStrip();
     void slidingTheFollowingHandleRestoresPreviouslyCompressedButtons();
@@ -329,25 +384,168 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     bool watchdogFired = false;
     QTimer::singleShot(30, &host, [&] {
         visibleBeforeSecondClick = tail->menu()->isVisible();
-        QTest::mouseClick(tail, Qt::LeftButton);
+        nativeMouse(tail, tail->rect().center(), true);
     });
     // Watchdog closes only after recording the expected toggle; it prevents a
     // broken nested popup from hanging the test runner.
     QTimer::singleShot(300, &host, [tail, &watchdogFired] {
         if (tail->menu() && tail->menu()->isVisible()) { watchdogFired = true; tail->menu()->close(); }
     });
-    QTest::mouseClick(tail, Qt::LeftButton);
+    // A native popup needs QWidgetWindow's complete input routing. Direct
+    // QWidget notify injection bypasses replay cleanup and poisons later input.
+    nativeMouse(tail, tail->rect().center(), true);
     QTRY_VERIFY(visibleBeforeSecondClick);
     QVERIFY(!watchdogFired);
     QVERIFY(!tail->menu()->isVisible());
     QVERIFY(!tail->isDown());
     QVERIFY(!QApplication::activePopupWidget());
+    QTRY_COMPARE(QApplication::mouseButtons(), Qt::MouseButtons(Qt::NoButton));
     auto* button = host.stripWidget("tools")->findChild<QToolButton*>("StripCommandButton");
     QVERIFY(button);
-    QTest::mouseMove(button, button->rect().center());
+    nativeMouse(button, button->rect().center());
     QCoreApplication::processEvents();
     QTRY_VERIFY(button->underMouse());
     QTRY_VERIFY(!tail->underMouse());
+}
+
+void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting_data()
+{
+    QTest::addColumn<bool>("workbench");
+    QTest::addColumn<QString>("closeTarget");
+    QTest::newRow("standalone-blank") << false << QString("blank");
+    QTest::newRow("workbench-title") << true << QString("blank");
+    QTest::newRow("workbench-content") << true << QString("content");
+    QTest::newRow("workbench-other-button") << true << QString("button");
+    QTest::newRow("workbench-escape") << true << QString("escape");
+    QTest::newRow("standalone-command") << false << QString("command");
+    QTest::newRow("workbench-submenu-outside") << true << QString("submenu");
+}
+
+void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting()
+{
+    QFETCH(bool, workbench);
+    QFETCH(QString, closeTarget);
+    WindowManager manager;
+    std::unique_ptr<CommandStripHost> standalone;
+    QWidget* window = nullptr;
+    QWidget* content = nullptr;
+    CommandStripHost* host = nullptr;
+    QString stripId;
+    const auto theme = defaultTheme();
+    if (workbench) {
+        const auto id = manager.createWindow();
+        auto* workspace = dynamic_cast<WorkspaceWindow*>(manager.windowWidget(id));
+        QVERIFY(workspace);
+        content = new QLabel("Content outside the menu");
+        QVERIFY(!manager.addTab(id, content, {"Content", "test.label", {}}).isNull());
+        window = workspace; host = workspace->strips(); stripId = "workspace";
+        window->resize(750, 460);
+    } else {
+        standalone = std::make_unique<CommandStripHost>();
+        host = standalone.get(); window = host; stripId = "tools";
+        applyTheme(host, theme);
+        host->addActionStrip(stripId, "Tools", actions(host, 6), 0);
+        if (closeTarget == "command") QVERIFY(host->setStripWidth(stripId, 70));
+        host->resize(600, host->height());
+    }
+    window->setWindowFlag(Qt::WindowStaysOnTopHint);
+    window->move(150, 150); window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->raise(); window->activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(window));
+    auto* tail = host->stripWidget(stripId)->findChild<QToolButton*>("StripOverflowButton");
+    auto* button = host->stripWidget(stripId)->findChild<QToolButton*>("StripCommandButton");
+    QVERIFY(tail); QVERIFY(tail->menu()); QVERIFY(button);
+    QPoint blank(host->width() - 30, host->height() / 2);
+    if (workbench) {
+        auto* caption = window->findChild<QLabel*>("CaptionTitle");
+        QVERIFY(caption); QVERIFY(caption->rect().contains(QPoint(50, 16)));
+        blank = host->mapFromGlobal(caption->mapToGlobal(QPoint(50, 16)));
+    }
+    nativeMouse(host, blank); QTest::qWait(30);
+    const int baseline = pixelsOfColor(button->grab().toImage(), theme.accentSoft);
+    QSignalSpy buttonTriggered(button->defaultAction(), &QAction::triggered);
+    QSignalSpy menuTriggered(tail->menu(), &QMenu::triggered);
+    bool visibleBeforeClose = false;
+    bool submenuBeforeClose = false;
+    bool watchdogFired = false;
+    QTimer::singleShot(100, host, [&] {
+        visibleBeforeClose = tail->menu()->isVisible();
+        if (closeTarget == "content") nativeMouse(content, content->rect().center(), true);
+        else if (closeTarget == "button") nativeMouse(button, button->rect().center(), true);
+        else if (closeTarget == "escape") nativeEscape(tail->menu());
+        else if (closeTarget == "command") {
+            nativeMouse(tail->menu(), tail->menu()->actionGeometry(tail->menu()->actions().first()).center(), true);
+        } else if (closeTarget == "submenu") {
+            auto* customize = tail->menu()->findChild<QMenu*>("StripCustomizeMenu");
+            QVERIFY(customize);
+            nativeMouse(tail->menu(), tail->menu()->actionGeometry(customize->menuAction()).center(), true);
+            QTimer::singleShot(350, host, [&, customize] {
+                submenuBeforeClose = customize->isVisible();
+                nativeMouse(host, blank, true);
+            });
+        } else nativeMouse(host, blank, true);
+    });
+    QTimer::singleShot(900, host, [&] {
+        if (tail->menu()->isVisible()) { watchdogFired = true; tail->menu()->close(); }
+    });
+    nativeMouse(tail, tail->rect().center(), true);
+    QTRY_VERIFY(visibleBeforeClose);
+    QVERIFY(!watchdogFired);
+    QTRY_VERIFY(!tail->menu()->isVisible());
+    if (closeTarget == "submenu") QVERIFY(submenuBeforeClose);
+    if (closeTarget == "command") QCOMPARE(menuTriggered.count(), 1);
+    else QCOMPARE(buttonTriggered.count(), 0);
+    QVERIFY(!QApplication::activePopupWidget());
+    QVERIFY(!QWidget::mouseGrabber());
+    QVERIFY(!tail->isDown());
+    QTRY_COMPARE(QApplication::mouseButtons(), Qt::MouseButtons(Qt::NoButton));
+    nativeMouse(button, button->rect().center());
+    QTRY_VERIFY(button->underMouse());
+    QTRY_VERIFY(pixelsOfColor(button->grab().toImage(), theme.accentSoft) > baseline + 15);
+    nativeMouse(host, blank); QTest::qWait(30);
+    QCOMPARE(pixelsOfColor(button->grab().toImage(), theme.accentSoft), baseline);
+}
+
+void ChromeInteractionTest::optionsPolicyDoesNotReserveSpaceOrChangeSavedLayout()
+{
+    CommandStripHost host;
+    auto* content = new QLabel("Workspace");
+    content->setProperty("windowDragArea", true);
+    host.addStrip("title", "Title", content, 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("tools", "Tools", actions(&host, 3), 0);
+    host.setLocked(false); host.resize(650, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    const auto layout = host.saveLayout();
+    auto* strip = host.stripWidget("title");
+    auto* tail = strip->findChild<QToolButton*>("StripOverflowButton");
+    auto* viewport = strip->findChild<QWidget*>("StripViewport");
+    QVERIFY(tail); QVERIFY(viewport); QVERIFY(tail->isVisible());
+    const int oldViewportWidth = viewport->width();
+    QVERIFY(host.setStripOptionsEnabled("title", false));
+    QVERIFY(!host.isStripOptionsEnabled("title"));
+    QVERIFY(host.isStripOptionsEnabled("tools"));
+    QVERIFY(tail->isHidden());
+    QCOMPARE(viewport->geometry().right(), strip->rect().right());
+    QCOMPARE(viewport->width(), oldViewportWidth + 12);
+    QVERIFY(!host.createOverflowMenu("title", &host));
+    QCOMPARE(host.saveLayout(), layout);
+    QVERIFY(host.windowDragAreas().contains(content));
+    host.restoreLayout(layout);
+    QVERIFY(tail->isHidden());
+    QCOMPARE(viewport->geometry().right(), strip->rect().right());
+    QVERIFY(host.setStripOptionsEnabled("title", true));
+    QVERIFY(tail->isVisible());
+    QCOMPARE(viewport->width(), oldViewportWidth);
+    WindowManager manager;
+    const auto id = manager.createWindow();
+    auto* window = dynamic_cast<WorkspaceWindow*>(manager.windowWidget(id));
+    QVERIFY(window); QVERIFY(window->strips());
+    QVERIFY(!window->strips()->isStripOptionsEnabled("title"));
+    QVERIFY(window->strips()->isStripOptionsEnabled("menu"));
+    QVERIFY(window->strips()->isStripOptionsEnabled("workspace"));
+    auto* titleTail = window->strips()->stripWidget("title")->findChild<QToolButton*>("StripOverflowButton");
+    QVERIFY(titleTail); QVERIFY(titleTail->isHidden());
 }
 
 void ChromeInteractionTest::restoringLockedMinimumWidthDoesNotUseTheCurrentUnlockedMinimum()

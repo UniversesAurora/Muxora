@@ -18,8 +18,20 @@ int main(int argc, char** argv)
     const auto floating = windows.detachTab(tab);
     if (floating.isNull() || !observer || !windows.promoteWindow(floating)) return 2;
     if (!windows.demoteWindow(floating, root)) return 3;
+    const auto pane = windows.model().tab(tab)->activePane;
+    if (!windows.moveTabToEdgeBar(tab, root, window_system::Edge::Right, 0)) return 7;
+    if (windows.paneWidget(pane) != text || windows.model().autoHiddenTabs(root, window_system::Edge::Right)
+        != QVector<window_system::TabId>{tab}) return 8;
+    const auto secondFloating = windows.createWindow(window_system::WindowKind::Floating, {}, root);
+    auto* secondText = new QLabel("Whole-window side insertion");
+    QPointer<QLabel> secondObserver(secondText);
+    const auto secondTab = windows.addTab(secondFloating, secondText, {"Second", "contract.text", {}});
+    if (secondTab.isNull()) { delete secondText; return 9; }
+    if (!windows.moveAllTabsToEdgeBar(secondFloating, root, window_system::Edge::Right, 0)) return 10;
+    if (windows.model().autoHiddenTabs(root, window_system::Edge::Right) != QVector<window_system::TabId>{secondTab, tab}
+        || windows.paneWidget(pane) != text) return 11;
     if (!windows.model().validate()) return 4;
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    return observer.isNull() && windows.model().windows().isEmpty() ? 0 : 6;
+    return observer.isNull() && secondObserver.isNull() && windows.model().windows().isEmpty() ? 0 : 6;
 }

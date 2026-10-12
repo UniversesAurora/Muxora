@@ -45,6 +45,9 @@ private slots:
     void tabIconVisibilityUsesTheHostApi();
     void pinnedExtentSurvivesRefreshAndUnpinRepin();
     void scrollbarRemainsVisibleWhenMovingFromTabsOntoTheHandle();
+    void sideBarInsertionUsesTheAppropriateAxis_data();
+    void sideBarInsertionUsesTheAppropriateAxis();
+    void sideBarReorderCommandsKeepLiveContent();
 };
 
 void EdgeTabInteractionTest::peekShowsOnlyTheChosenTabAndPinsOnlyThatTab()
@@ -323,6 +326,75 @@ void EdgeTabInteractionTest::scrollbarRemainsVisibleWhenMovingFromTabsOntoTheHan
     QVERIFY(scrollbar->isVisible());
     QEvent handleLeave(QEvent::Leave); QApplication::sendEvent(scrollbar, &handleLeave);
     QTRY_VERIFY(scrollbar->isHidden());
+}
+
+void EdgeTabInteractionTest::sideBarInsertionUsesTheAppropriateAxis_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+void EdgeTabInteractionTest::sideBarInsertionUsesTheAppropriateAxis()
+{
+    QFETCH(int, edge);
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    const auto a = manager.addTab(windowId, content("A"), options("A"));
+    const auto b = manager.addTab(windowId, content("B"), options("B"));
+    const auto c = manager.addTab(windowId, content("C"), options("C"));
+    QVERIFY(manager.moveTabToEdge(a, Edge(edge)));
+    QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
+    QVERIFY(manager.moveTabToEdge(c, Edge(edge)));
+    auto* window = manager.windowWidget(windowId); showTestWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* surface = dynamic_cast<DockSurface*>(window->findChild<QFrame*>("DockSurface")); QVERIFY(surface);
+    const bool vertical = edge == int(Edge::Left) || edge == int(Edge::Right);
+    for (int i = 0; i < 3; ++i) {
+        const auto id = QVector<TabId>{a, b, c}[i];
+        auto* button = edgeButton(window, id); QVERIFY(button);
+        const auto center = button->rect().center();
+        const auto offset = vertical ? QPoint(0, 8) : QPoint(8, 0);
+        QCOMPARE(surface->edgeTabInsertionIndex(Edge(edge), button->mapToGlobal(center - offset)), i);
+        QCOMPARE(surface->edgeTabInsertionIndex(Edge(edge), button->mapToGlobal(center + offset)), i + 1);
+        const auto marker = surface->edgeTabInsertionRect(Edge(edge), i);
+        QVERIFY(marker.isValid());
+        QCOMPARE(vertical ? marker.height() : marker.width(), 4);
+    }
+}
+void EdgeTabInteractionTest::sideBarReorderCommandsKeepLiveContent()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    auto* aContent = content("A");
+    const auto a = manager.addTab(window, aContent, options("A"));
+    const auto b = manager.addTab(window, content("B"), options("B"));
+    const auto c = manager.addTab(window, content("C"), options("C"));
+    const auto pane = manager.model().tab(a)->activePane;
+    QVERIFY(manager.moveTabToEdge(a, Edge::Left));
+    QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
+    QVERIFY(manager.moveTabToEdge(c, Edge::Left));
+    QVERIFY(manager.activateTab(a));
+    QVERIFY(!manager.execute("workspace.reorderTab.previous", {}, window));
+    QVERIFY(manager.execute("workspace.reorderTab.next", {}, window));
+    QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
+    QVERIFY(manager.execute("workspace.reorderTab.next", {}, window));
+    QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, c, a}));
+    QVERIFY(!manager.execute("workspace.reorderTab.next", {}, window));
+    QVERIFY(manager.execute("workspace.reorderTab.previous", {}, window));
+    QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
+    QCOMPARE(manager.paneWidget(pane), aContent);
+    QCOMPARE(manager.commands().find("workspace.reorderTab.previous")->shortcut, QKeySequence("Ctrl+Shift+PgUp"));
+    QCOMPARE(manager.commands().find("workspace.reorderTab.next")->shortcut, QKeySequence("Ctrl+Shift+PgDown"));
+    showTestWindow(manager.windowWidget(window));
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QTest::keyClick(manager.windowWidget(window), Qt::Key_PageDown, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, c, a}));
+    QTest::keyClick(manager.windowWidget(window), Qt::Key_PageUp, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
+    QCOMPARE(manager.paneWidget(pane), aContent);
+    QVERIFY(manager.model().validate().ok);
 }
 
 QTEST_MAIN(EdgeTabInteractionTest)

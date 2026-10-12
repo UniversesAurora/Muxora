@@ -13,6 +13,7 @@ struct DropTarget {
     GroupId group;
     Placement placement = Placement::Center;
     bool toEdge = false;
+    bool toEdgeBar = false;
     bool pinned = false;
     bool accepted = false;
     bool splitGroup = true;

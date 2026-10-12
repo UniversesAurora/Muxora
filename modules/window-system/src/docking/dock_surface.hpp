@@ -17,6 +17,8 @@ public:
     [[nodiscard]] GroupId tabBarAt(QPoint global) const;
     [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global) const;
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
+    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
+    [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});

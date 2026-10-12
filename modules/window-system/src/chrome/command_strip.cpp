@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "command_strip.hpp"
+#include "commands/popup_menu.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -138,20 +139,22 @@ public:
         if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
-        return std::max(minimumWidthForLayout(), width + tailWidth);
+        return std::max(minimumWidthForLayout(), width + (optionsEnabled ? tailWidth : 0));
     }
 
     [[nodiscard]] int minimumWidthForLayout() const
     {
-        return tailWidth + (handle->isHidden() ? 0 : handleWidth) + 12;
+        return (optionsEnabled ? tailWidth : 0) + (handle->isHidden() ? 0 : handleWidth) + 12;
     }
 
     void layoutItems()
     {
         const int handleSize = handle->isHidden() ? 0 : handleWidth;
+        const int optionsSize = optionsEnabled ? tailWidth : 0;
         handle->setGeometry(0, 0, handleSize, height());
-        tail->setGeometry(std::max(0, width() - tailWidth), 0, tailWidth, height());
-        viewport->setGeometry(handleSize, 0, std::max(0, width() - handleSize - tailWidth), height());
+        tail->setVisible(optionsEnabled);
+        tail->setGeometry(std::max(0, width() - optionsSize), 0, optionsSize, height());
+        viewport->setGeometry(handleSize, 0, std::max(0, width() - handleSize - optionsSize), height());
         overflow.clear();
         if (content) {
             const int contentWidth = sizing == CommandStripHost::StripSizing::Elastic ? viewport->width() : std::max(viewport->width(), content->sizeHint().width());
@@ -192,6 +195,7 @@ public:
     QList<ActionItem> items;
     QStringList overflow;
     bool visible = true;
+    bool optionsEnabled = true;
     CommandStripHost::StripSizing sizing = CommandStripHost::StripSizing::Content;
     int requestedWidth = -1;
 
@@ -271,8 +275,7 @@ void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int
     }
     strip->handle->installEventFilter(this);
     strip->setLocked(d->locked);
-    auto* overflowMenu = new QMenu(strip->tail);
-    overflowMenu->setAttribute(Qt::WA_NoMouseReplay);
+    auto* overflowMenu = new DismissOnlyMenu(strip->tail);
     overflowMenu->setObjectName("StripOverflowMenu");
     strip->tail->setMenu(overflowMenu);
     connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
@@ -305,8 +308,7 @@ void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAc
     }
     strip->handle->installEventFilter(this);
     strip->setLocked(d->locked);
-    auto* overflowMenu = new QMenu(strip->tail);
-    overflowMenu->setAttribute(Qt::WA_NoMouseReplay);
+    auto* overflowMenu = new DismissOnlyMenu(strip->tail);
     overflowMenu->setObjectName("StripOverflowMenu");
     strip->tail->setMenu(overflowMenu);
     connect(overflowMenu, &QMenu::aboutToShow, this, [this, id, overflowMenu] { populateOverflowMenu(id, overflowMenu); });
@@ -386,6 +388,24 @@ CommandStripHost::StripSizing CommandStripHost::stripSizing(const QString& id) c
     return strip ? strip->sizing : StripSizing::Content;
 }
 
+bool CommandStripHost::setStripOptionsEnabled(const QString& id, bool enabled)
+{
+    auto* strip = d->strips.value(id);
+    if (!strip) return false;
+    if (strip->optionsEnabled == enabled) return true;
+    if (isDragging()) finishDrag(false);
+    if (!enabled && strip->tail->menu()) strip->tail->menu()->hide();
+    strip->optionsEnabled = enabled;
+    arrange();
+    return true;
+}
+
+bool CommandStripHost::isStripOptionsEnabled(const QString& id) const
+{
+    const auto* strip = d->strips.value(id);
+    return strip && strip->optionsEnabled;
+}
+
 bool CommandStripHost::moveStrip(const QString& id, int row, int index)
 {
     if (!d->strips.contains(id) || row < 0 || row > 1) return false;
@@ -445,8 +465,8 @@ QMenu* CommandStripHost::createContextMenu(QWidget* parent)
 
 QMenu* CommandStripHost::createOverflowMenu(const QString& id, QWidget* parent)
 {
-    if (!d->strips.contains(id)) return nullptr;
-    auto* menu = new QMenu(parent);
+    if (!isStripOptionsEnabled(id)) return nullptr;
+    auto* menu = new DismissOnlyMenu(parent);
     populateOverflowMenu(id, menu);
     return menu;
 }
@@ -462,7 +482,8 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
         menu->addAction(item.action);
     }
     if (!menu->actions().isEmpty()) menu->addSeparator();
-    auto* customize = menu->addMenu(QStringLiteral("添加或移除按钮"));
+    auto* customize = new DismissOnlyMenu(QStringLiteral("添加或移除按钮"), menu);
+    menu->addMenu(customize);
     customize->setObjectName("StripCustomizeMenu");
     auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
     elastic->setObjectName("StripElasticAction");
@@ -610,11 +631,12 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
     for (int row = 0; row < 2; ++row) for (const auto& id : d->rows[row]) if (!seen.contains(id)) proposed[row].append(id);
     const auto settings = json.value("strips").toObject();
     const bool savedLocked = json.value("locked").toBool(true);
-    const int savedMinimumWidth = tailWidth + (savedLocked ? 0 : handleWidth) + 12;
     for (const auto& id : stripIds()) {
         if (!settings.contains(id)) continue;
         const auto value = settings.value(id).toObject();
         const int requested = value.value("width").toInt(-1);
+        const int savedMinimumWidth = (d->strips.value(id)->optionsEnabled ? tailWidth : 0)
+            + (savedLocked ? 0 : handleWidth) + 12;
         if (requested != -1 && requested < savedMinimumWidth) return;
         if (value.contains("sizing") && value.value("sizing") != "elastic" && value.value("sizing") != "content") return;
     }

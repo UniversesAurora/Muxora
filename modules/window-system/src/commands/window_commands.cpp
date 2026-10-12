@@ -154,6 +154,41 @@ void WindowManager::registerWindowCommands()
             if (!candidate.moveTabToEdge(tab, static_cast<Edge>(c.args.value("edge", int(Edge::Left)).toInt()), c.args.value("pinned").toBool())) return false;
             d->model = std::move(candidate); refresh(); return true;
         }, hasTab);
+    add("workspace.moveTabToEdgeBar", QStringLiteral("将当前标签插入边栏"), "布局", {},
+        [this](const CommandContext& c) {
+            const auto* group = d->model.group(d->model.groupForTab(c.args.value("tab", c.tab).toUuid()));
+            const auto target = c.args.value("targetWindow", c.window).toUuid();
+            const auto edge = static_cast<Edge>(c.args.value("edge", group ? int(group->edge) : int(Edge::Left)).toInt());
+            return moveTabToEdgeBar(c.args.value("tab", c.tab).toUuid(), target, edge, c.args.value("index", -1).toInt());
+        }, hasTab);
+    add("window.moveAllToEdgeBar", QStringLiteral("将整窗标签插入边栏"), "布局", {},
+        [this](const CommandContext& c) {
+            return moveAllTabsToEdgeBar(c.args.value("source", c.window).toUuid(), c.args.value("targetWindow").toUuid(),
+                static_cast<Edge>(c.args.value("edge", int(Edge::Left)).toInt()), c.args.value("index", -1).toInt());
+        }, hasWindow);
+    for (const bool next : {false, true}) {
+        auto canReorder = [this, next](const CommandContext& c) {
+            const auto* group = d->model.group(d->model.groupForTab(c.tab));
+            if (!group) return false;
+            const auto tabs = group->location == GroupLocation::AutoHide
+                ? d->model.autoHiddenTabs(group->windowId, group->edge) : group->tabs;
+            const auto index = tabs.indexOf(c.tab);
+            return index >= 0 && (next ? index + 1 < tabs.size() : index > 0);
+        };
+        add(next ? "workspace.reorderTab.next" : "workspace.reorderTab.previous",
+            next ? QStringLiteral("将当前标签后移一位") : QStringLiteral("将当前标签前移一位"), "布局",
+            QKeySequence(next ? "Ctrl+Shift+PgDown" : "Ctrl+Shift+PgUp"),
+            [this, next](const CommandContext& c) {
+                const auto* group = d->model.group(d->model.groupForTab(c.tab));
+                if (!group) return false;
+                const auto tabs = group->location == GroupLocation::AutoHide
+                    ? d->model.autoHiddenTabs(group->windowId, group->edge) : group->tabs;
+                const auto index = tabs.indexOf(c.tab) + (next ? 1 : -1);
+                return group->location == GroupLocation::AutoHide
+                    ? moveTabToEdgeBar(c.tab, group->windowId, group->edge, index)
+                    : moveTab(c.tab, group->id, Placement::Center, index);
+            }, canReorder);
+    }
     add("window.moveAllToEdge", QStringLiteral("整窗标签收纳到目标边栏"), "布局", {},
         [this](const CommandContext& c) {
             const auto source = c.args.value("source", c.window).toUuid();

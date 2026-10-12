@@ -505,6 +505,77 @@ OperationResult LayoutModel::moveTabToEdge(TabId tabId, Edge edge, bool pinned)
         return model.moveGroupToEdge(source, edge, pinned);
     });
 }
+QVector<TabId> LayoutModel::autoHiddenTabs(WindowId windowId, Edge edge) const
+{
+    QVector<TabId> result;
+    if (const auto* record = window(windowId)) for (const auto groupId : record->edgeGroups) {
+        const auto* candidate = group(groupId);
+        if (candidate && candidate->edge == edge && candidate->location == GroupLocation::AutoHide)
+            result += candidate->tabs;
+    }
+    return result;
+}
+OperationResult LayoutModel::moveTabToEdgeBarUnchecked(TabId tabId, WindowId targetWindow, Edge edge, int insertionIndex)
+{
+    const auto sourceId = groupForTab(tabId);
+    if (sourceId.isNull() || !window(targetWindow)) return failure("The source tab or target window does not exist.");
+    if (edge < Edge::Left || edge > Edge::Bottom || insertionIndex < -1)
+        return failure("The edge or insertion index is invalid.");
+    auto visibleTabs = autoHiddenTabs(targetWindow, edge);
+    visibleTabs.removeAll(tabId);
+    const int index = insertionIndex < 0 ? int(visibleTabs.size())
+        : std::clamp(insertionIndex, 0, int(visibleTabs.size()));
+    GroupId destination;
+    int groupIndex = 0;
+    if (!visibleTabs.isEmpty()) {
+        const auto adjacent = visibleTabs[index < visibleTabs.size() ? index : visibleTabs.size() - 1];
+        destination = groupForTab(adjacent);
+        groupIndex = groups_[destination].tabs.indexOf(adjacent) + (index == visibleTabs.size() ? 1 : 0);
+        if (sourceId == destination && groups_[sourceId].tabs.indexOf(tabId) < groupIndex) --groupIndex;
+    } else if (groups_[sourceId].windowId == targetWindow && groups_[sourceId].edge == edge
+               && groups_[sourceId].location == GroupLocation::AutoHide) {
+        destination = sourceId;
+    } else {
+        destination = QUuid::createUuid();
+        GroupRecord record;
+        record.id = destination; record.windowId = targetWindow; record.edge = edge;
+        record.location = GroupLocation::AutoHide;
+        record.edgeExtent = edge == Edge::Top || edge == Edge::Bottom ? 170 : 250;
+        groups_.insert(destination, std::move(record));
+        windows_[targetWindow].edgeGroups.append(destination);
+    }
+    // Reordering keeps a dormant pinned partition; moving to another side or
+    // window establishes a new placement instead of retaining a stale origin.
+    auto& saved = tabs_[tabId].pinnedPosition;
+    if (saved && (saved->window != targetWindow || saved->edge != edge)) saved.reset();
+    return moveTabUnchecked(tabId, destination, Placement::Center, groupIndex);
+}
+OperationResult LayoutModel::moveTabToEdgeBar(TabId tabId, WindowId targetWindow, Edge edge, int insertionIndex)
+{
+    return transact([&](LayoutModel& model) {
+        auto result = model.moveTabToEdgeBarUnchecked(tabId, targetWindow, edge, insertionIndex);
+        if (result) model.eraseEmptyFloatingWindows();
+        return result;
+    });
+}
+OperationResult LayoutModel::moveAllTabsToEdgeBar(WindowId sourceWindow, WindowId targetWindow, Edge edge, int insertionIndex)
+{
+    return transact([&](LayoutModel& model) {
+        if (!model.window(sourceWindow) || !model.window(targetWindow) || sourceWindow == targetWindow)
+            return failure("Whole-window movement requires two existing, different windows.");
+        const auto payload = model.orderedTabs(sourceWindow);
+        if (payload.isEmpty()) return failure("The source window has no tabs.");
+        if (insertionIndex < -1) return failure("The insertion index is invalid.");
+        const int count = int(model.autoHiddenTabs(targetWindow, edge).size());
+        int index = insertionIndex < 0 ? count : std::clamp(insertionIndex, 0, count);
+        for (const auto tab : payload) {
+            const auto result = model.moveTabToEdgeBarUnchecked(tab, targetWindow, edge, index++);
+            if (!result) return result;
+        }
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+}
 OperationResult LayoutModel::setGroupPinned(GroupId groupId, bool pinned)
 {
     return transact([&](LayoutModel& model) {

@@ -51,6 +51,8 @@ private slots:
     void tabListButtonTogglesItsOpenMenu();
     void popupOutsidePressDoesNotReplayAndReopen();
     void sizingCommandChangesOnlyTheRequestedStripAndRejectsInvalidInput();
+    void allPinBadgesKeepTheirInteriorTransparent_data();
+    void allPinBadgesKeepTheirInteriorTransparent();
 };
 
 void PresentationTest::checkedIndicatorUsesWhiteAndCanFollowTheme()
@@ -155,6 +157,33 @@ void PresentationTest::sizingCommandChangesOnlyTheRequestedStripAndRejectsInvali
     QCOMPARE(strips->stripSizing("menu"), StripSizing::Content);
     QVERIFY(manager.execute("window.toolbar.setSizing", {}, id));
     QCOMPARE(strips->stripSizing("title"), StripSizing::Elastic);
+}
+
+void PresentationTest::allPinBadgesKeepTheirInteriorTransparent_data()
+{
+    QTest::addColumn<QString>("name");
+    QTest::newRow("pin-all") << QStringLiteral("pin-all");
+    QTest::newRow("unpin-all") << QStringLiteral("unpin-all");
+}
+
+void PresentationTest::allPinBadgesKeepTheirInteriorTransparent()
+{
+    QFETCH(QString, name);
+    auto theme = defaultTheme();
+    theme.surface = QColor("#ff00bb");
+    const auto image = iconFor(name, theme).pixmap(48, 48).toImage();
+    QVERIFY(!image.isNull());
+    QCOMPARE(matchingPixels(image, image.rect(), theme.surface), 0);
+    const QRect badge(image.width() * 9 / 16, image.height() * 10 / 16,
+                      image.width() * 6 / 16, image.height() * 6 / 16);
+    int outlinePixels = 0;
+    int transparentPixels = 0;
+    for (int y = badge.top(); y <= badge.bottom(); ++y) for (int x = badge.left(); x <= badge.right(); ++x) {
+        if (image.pixelColor(x, y).alpha() > 0) ++outlinePixels;
+        else ++transparentPixels;
+    }
+    QVERIFY(outlinePixels > 5);
+    QVERIFY(transparentPixels > 5);
 }
 
 QTEST_MAIN(PresentationTest)

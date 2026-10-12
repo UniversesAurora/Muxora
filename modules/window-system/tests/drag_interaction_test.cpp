@@ -2,6 +2,7 @@
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCursor>
 #include <QDir>
@@ -48,6 +49,19 @@ void startTabDrag(QWidget* window, QTabBar* bar, TabId tab)
     mouse(bar, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
     mouse(bar, QEvent::MouseMove, point + QPoint(20, 20), Qt::NoButton, Qt::LeftButton);
     Q_UNUSED(window)
+}
+QAbstractButton* edgeTabButton(QWidget* window, TabId tab)
+{
+    for (auto* button : window->findChildren<QAbstractButton*>())
+        if (button->isVisible() && button->objectName() == "EdgeButton" && button->property("tabId").toUuid() == tab)
+            return button;
+    return nullptr;
+}
+void startEdgeTabDrag(QAbstractButton* button)
+{
+    const auto position = button->mapToGlobal(button->rect().center());
+    mouse(button, QEvent::MouseButtonPress, position, Qt::LeftButton, Qt::LeftButton);
+    mouse(button, QEvent::MouseMove, position + QPoint(20, 20), Qt::NoButton, Qt::LeftButton);
 }
 QPoint contentCenter(QWidget* window)
 {
@@ -129,6 +143,10 @@ private slots:
     void draggingThePeekTitleImmediatelyRemovesThePeek();
     void pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops();
     void cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences();
+    void sideBarDragReordersAcrossInternalGroups_data();
+    void sideBarDragReordersAcrossInternalGroups();
+    void sideBarDragAcrossWindowsKeepsTheOriginalContent();
+    void sideBarDragEscapeRestoresAnEmptiedSourceGroup();
 };
 void DragInteractionTest::tearOffUsesTheDefaultLightweightWindow()
 {
@@ -553,5 +571,105 @@ void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPre
     QCOMPARE(restored->strips()->saveLayout(), before);
     QVERIFY(manager.model().validate().ok);
 }
+void DragInteractionTest::sideBarDragReordersAcrossInternalGroups_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+void DragInteractionTest::sideBarDragReordersAcrossInternalGroups()
+{
+    QFETCH(int, edge);
+    WindowManager manager;
+    const auto root = manager.createWindow(WindowKind::Workbench, {"Side reorder", QSize(900, 620)});
+    auto* live = new QLabel("Stable side content");
+    const auto a = manager.addTab(root, live, {"A", "label", {}});
+    const auto b = manager.addTab(root, new QLabel("B"), {"B", "label", {}});
+    const auto c = manager.addTab(root, new QLabel("C"), {"C", "label", {}});
+    QVERIFY(manager.moveTabToEdge(a, Edge(edge)));
+    QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
+    QVERIFY(manager.moveTabToEdge(c, Edge(edge)));
+    const auto pane = manager.model().tab(a)->activePane;
+    auto* window = manager.windowWidget(root); prepareDesktopFixture(window);
+    window->move(30, 40); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* source = edgeTabButton(window, a); QVERIFY(source);
+    startEdgeTabDrag(source);
+    QCOMPARE(manager.model().windows().size(), 2);
+    QCOMPARE(manager.model().autoHiddenTabs(root, Edge(edge)), (QVector<TabId>{b, c}));
+    QVERIFY(!edgeTabButton(window, a));
+    const auto actorId = manager.model().group(manager.model().groupForTab(a))->windowId;
+    auto* actor = manager.windowWidget(actorId); QVERIFY(actor); QVERIFY(actor->isVisible());
+    auto* target = edgeTabButton(window, c); QVERIFY(target);
+    const auto offset = edge == int(Edge::Left) || edge == int(Edge::Right) ? QPoint(0, 8) : QPoint(8, 0);
+    const auto point = target->mapToGlobal(target->rect().center() + offset);
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().autoHiddenTabs(root, Edge(edge)), (QVector<TabId>{b, c, a}));
+    QCOMPARE(manager.model().windows().size(), 1);
+    QCOMPARE(manager.paneWidget(pane), live);
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::sideBarDragAcrossWindowsKeepsTheOriginalContent()
+{
+    WindowManager manager;
+    const auto sourceId = manager.createWindow(WindowKind::Workbench, {"Source", QSize(470, 450)});
+    const auto targetId = manager.createWindow(WindowKind::Workbench, {"Target", QSize(470, 450)});
+    auto* live = new QLabel("Cross window side content");
+    const auto a = manager.addTab(sourceId, live, {"A", "label", {}});
+    const auto b = manager.addTab(targetId, new QLabel("B"), {"B", "label", {}});
+    const auto c = manager.addTab(targetId, new QLabel("C"), {"C", "label", {}});
+    QVERIFY(manager.moveTabToEdge(a, Edge::Left));
+    QVERIFY(manager.moveTabToEdge(b, Edge::Top));
+    QVERIFY(manager.moveTabToEdge(c, Edge::Top));
+    const auto pane = manager.model().tab(a)->activePane;
+    const auto group = manager.model().groupForTab(a);
+    auto* source = manager.windowWidget(sourceId); auto* target = manager.windowWidget(targetId);
+    prepareDesktopFixture(source); prepareDesktopFixture(target);
+    source->move(20, 30); target->move(530, 30);
+    manager.showWindow(sourceId); manager.showWindow(targetId);
+    QVERIFY(QTest::qWaitForWindowExposed(source)); QVERIFY(QTest::qWaitForWindowExposed(target));
+    auto* button = edgeTabButton(source, a); QVERIFY(button);
+    startEdgeTabDrag(button);
+    QVERIFY(!manager.model().group(group));
+    auto* actor = manager.windowWidget(manager.model().group(manager.model().groupForTab(a))->windowId); QVERIFY(actor);
+    auto* destination = edgeTabButton(target, c); QVERIFY(destination);
+    const auto point = destination->mapToGlobal(destination->rect().center() - QPoint(8, 0));
+    mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
+    mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(manager.model().autoHiddenTabs(targetId, Edge::Top), (QVector<TabId>{b, a, c}));
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->windowId, targetId);
+    QCOMPARE(manager.paneWidget(pane), live);
+    QCOMPARE(manager.model().windows().size(), 2);
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::sideBarDragEscapeRestoresAnEmptiedSourceGroup()
+{
+    WindowManager manager;
+    const auto root = manager.createWindow();
+    auto* live = new QLabel("Cancelable side content");
+    const auto a = manager.addTab(root, live, {"A", "label", {}});
+    const auto b = manager.addTab(root, new QLabel("B"), {"B", "label", {}});
+    QVERIFY(manager.moveTabToEdge(a, Edge::Right));
+    QVERIFY(manager.moveTabToEdge(b, Edge::Right));
+    QVERIFY(manager.activateTab(a));
+    const auto before = manager.model().toJson();
+    const auto sourceGroup = manager.model().groupForTab(a);
+    const auto pane = manager.model().tab(a)->activePane;
+    auto* window = manager.windowWidget(root); prepareDesktopFixture(window); manager.showWindow(root);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* button = edgeTabButton(window, a); QVERIFY(button);
+    startEdgeTabDrag(button);
+    QVERIFY(!manager.model().group(sourceGroup));
+    QTest::keyClick(manager.windowWidget(manager.model().group(manager.model().groupForTab(a))->windowId), Qt::Key_Escape);
+    QCOMPARE(manager.model().toJson(), before);
+    QCOMPARE(manager.paneWidget(pane), live);
+    QCOMPARE(manager.model().groupForTab(a), sourceGroup);
+    QVERIFY(edgeTabButton(window, a));
+    QCOMPARE(manager.model().windows().size(), 1);
+}
+
 QTEST_MAIN(DragInteractionTest)
 #include "drag_interaction_test.moc"

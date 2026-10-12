@@ -8,9 +8,13 @@
 #include <QFont>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QItemSelectionModel>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPersistentModelIndex>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -66,7 +70,7 @@ QVBoxLayout* pageLayout(QWidget* page, const QString& heading, const QString& de
 }
 
 // Keep the native tree's keyboard navigation, expansion and accessibility,
-// while presenting its current location with typography rather than a box.
+// while presenting its current location with typography and a narrow marker.
 class CategoryDelegate final : public QStyledItemDelegate {
 public:
     explicit CategoryDelegate(QObject* parent) : QStyledItemDelegate(parent) {}
@@ -78,6 +82,96 @@ public:
         plain.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver | QStyle::State_HasFocus);
         QStyledItemDelegate::paint(painter, plain, index);
     }
+};
+
+// Native branch primitives can include connection lines and a platform hover
+// plate. Draw only the disclosure glyph, reserving a separate location gutter.
+class CategoryNavigation final : public QTreeWidget {
+public:
+    explicit CategoryNavigation(WindowManager* manager, QWidget* parent)
+        : QTreeWidget(parent), manager_(manager)
+    {
+        setIndentation(32);
+        setMouseTracking(true);
+        viewport()->setMouseTracking(true);
+        QObject::connect(selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this] { viewport()->update(); });
+    }
+
+protected:
+    void drawBranches(QPainter* painter, const QRect& rect, const QModelIndex& index) const override
+    {
+        // QTreeView paints the selected row's branch plate before this hook.
+        // Clear it for both parent and leaf rows; the location marker is drawn
+        // after the tree, separately from the disclosure glyph.
+        painter->fillRect(rect, manager_ ? manager_->theme().surface : palette().color(QPalette::Base));
+        if (!hasVisibleChildren(index)) return;
+        const auto glyph = arrowRect(index);
+        const bool hovered = hoveredBranch_ == index;
+        const QColor color = manager_ ? (hovered ? manager_->theme().text : manager_->theme().mutedText) :
+                                       palette().color(hovered ? QPalette::Text : QPalette::PlaceholderText);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(QPen(color, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const auto center = glyph.center();
+        QPolygonF arrow;
+        if (isExpanded(index))
+            arrow << center + QPointF(-3, -1.5) << center + QPointF(0, 1.5) << center + QPointF(3, -1.5);
+        else
+            arrow << center + QPointF(-1.5, -3) << center + QPointF(1.5, 0) << center + QPointF(-1.5, 3);
+        painter->drawPolyline(arrow);
+        painter->restore();
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        QTreeWidget::paintEvent(event);
+        const auto row = visualRect(currentIndex());
+        if (!currentIndex().isValid() || row.isEmpty()) return;
+        QPainter painter(viewport());
+        const QColor accent = manager_ ? manager_->theme().accent : palette().color(QPalette::Highlight);
+        painter.fillRect(QRect(2, row.top() + 4, 2, std::max(0, row.height() - 8)), accent);
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        QTreeWidget::mouseMoveEvent(event);
+        // The row can be found through its text column even when the pointer
+        // is over its branch gutter rather than over the text itself.
+        const QPoint position = event->position().toPoint();
+        const auto row = indexAt(QPoint(viewport()->width() / 2, position.y()));
+        const QPersistentModelIndex next = row.isValid() && hasVisibleChildren(row) &&
+            arrowRect(row).adjusted(-4, -4, 4, 4).contains(position) ? row : QModelIndex();
+        if (next == hoveredBranch_) return;
+        hoveredBranch_ = next;
+        viewport()->update();
+    }
+
+    bool viewportEvent(QEvent* event) override
+    {
+        if (event->type() == QEvent::Leave && hoveredBranch_.isValid()) {
+            hoveredBranch_ = QModelIndex();
+            viewport()->update();
+        }
+        return QTreeWidget::viewportEvent(event);
+    }
+
+private:
+    bool hasVisibleChildren(const QModelIndex& index) const
+    {
+        for (int row = 0; row < model()->rowCount(index); ++row)
+            if (!isRowHidden(row, index)) return true;
+        return false;
+    }
+
+    QRectF arrowRect(const QModelIndex& index) const
+    {
+        const auto row = visualRect(index);
+        return QRectF(row.left() - indentation() / 2.0 - 4, row.center().y() - 4, 8, 8);
+    }
+
+    QPointer<WindowManager> manager_;
+    QPersistentModelIndex hoveredBranch_;
 };
 
 } // namespace
@@ -97,7 +191,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     layout->addWidget(search_);
     auto* body = new QHBoxLayout;
     body->setSpacing(12);
-    categories_ = new QTreeWidget(this);
+    categories_ = new CategoryNavigation(manager, this);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
     categories_->setAccessibleName(QStringLiteral("设置分类"));
     categories_->setHeaderHidden(true);
@@ -106,7 +200,6 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     categories_->setSelectionMode(QAbstractItemView::SingleSelection);
     categories_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     categories_->setUniformRowHeights(true);
-    categories_->setIndentation(14);
     categories_->setItemDelegate(new CategoryDelegate(categories_));
     categories_->setMaximumWidth(180);
     categories_->setMinimumWidth(90);
