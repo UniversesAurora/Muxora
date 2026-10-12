@@ -99,6 +99,7 @@ void DragController::beginTab(TabId tab, QPoint global)
         if (window->isMaximized()) originalMaximizedWindows_.insert(id);
     }
     auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
+    originalSourceStrips_ = source ? source->saveStripLayout() : QJsonObject{};
     const auto group = manager_->model().groupForTab(tab);
     auto origin = source ? source->surface()->groupRects().value(group) : QRect();
     if (origin.isEmpty() && source) if (auto* peek = source->findChild<QWidget*>("PeekPanel"); peek && peek->isVisible())
@@ -287,6 +288,7 @@ void DragController::finish(QPoint global)
     // A failed or absent target leaves the real floating window and live content
     // intact. No second tear-out is created when the button is released.
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
+    originalSourceStrips_ = {};
     detached_ = false;
 }
 void DragController::cancel()
@@ -298,6 +300,8 @@ void DragController::cancel()
     if (detached) {
         manager_->d->model = originalModel_; manager_->d->options = originalOptions_;
         manager_->refresh();
+        if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
+            source->restoreStripLayout(originalSourceStrips_);
         for (auto it = originalWindows_.cbegin(); it != originalWindows_.cend(); ++it) if (auto* widget = manager_->windowWidget(it.key())) {
             widget->setGeometry(it.value());
             originalMaximizedWindows_.contains(it.key()) ? widget->showMaximized() : widget->show();
@@ -307,12 +311,14 @@ void DragController::cancel()
         widget->setGeometry(geometry); if (maximized) widget->showMaximized();
     }
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
+    originalSourceStrips_ = {};
 }
 void DragController::releaseForMutation()
 {
     if (!active_) return;
     stop(); detached_ = false;
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
+    originalSourceStrips_ = {};
 }
 void DragController::stop()
 {

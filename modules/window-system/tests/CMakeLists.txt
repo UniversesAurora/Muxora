@@ -13,6 +13,7 @@ set_tests_properties(window-system.widgets PROPERTIES TIMEOUT 60)
 
 qt_add_executable(window-system-drag-test drag_interaction_test.cpp)
 target_link_libraries(window-system-drag-test PRIVATE WindowSystem::Widgets Qt6::Test)
+target_include_directories(window-system-drag-test PRIVATE ../src)
 set_target_properties(window-system-drag-test PROPERTIES AUTOMOC ON)
 add_test(NAME window-system.drag-interaction COMMAND window-system-drag-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/drag-results.txt,txt)

@@ -50,6 +50,7 @@ private:
     WindowId movingWindow_;
     LayoutModel originalModel_;
     QHash<WindowId, WindowOptions> originalOptions_;
+    QJsonObject originalSourceStrips_;
     QHash<WindowId, QRect> originalWindows_;
     QSet<WindowId> originalMaximizedWindows_;
     bool detached_ = false;

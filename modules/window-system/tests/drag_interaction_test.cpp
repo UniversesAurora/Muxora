@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include "chrome/workspace_window.hpp"
+#include "chrome/command_strip.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QDir>
@@ -126,6 +128,7 @@ private slots:
     void wholeWindowDropInsertsAllTabsAtTheReleasedPosition();
     void draggingThePeekTitleImmediatelyRemovesThePeek();
     void pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops();
+    void cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences();
 };
 void DragInteractionTest::tearOffUsesTheDefaultLightweightWindow()
 {
@@ -522,6 +525,32 @@ void DragInteractionTest::pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops
     mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
     QCOMPARE(manager.model().group(manager.model().groupForTab(a))->windowId, moving);
     QCOMPARE(manager.model().group(manager.model().groupForTab(b))->windowId, target);
+    QVERIFY(manager.model().validate().ok);
+}
+void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences()
+{
+    WindowManager manager;
+    const auto owner = manager.createWindow(WindowKind::Workbench, {"Owner", QSize(600, 500)});
+    const auto source = manager.createWindow(WindowKind::Workbench, {"Customized", QSize(740, 600)});
+    const auto tab = manager.addTab(source, new QLabel("Live content"), {"Live", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    QPointer<QWidget> live = manager.paneWidget(pane);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(source));
+    auto* strips = window->strips(); QVERIFY(strips);
+    strips->setLocked(false); QVERIFY(strips->moveStrip("title", 1, 0));
+    QVERIFY(strips->setStripVisible("workspace", false));
+    const auto before = strips->saveLayout();
+    QVERIFY(manager.demoteWindow(source, owner));
+    prepareDesktopFixture(window); manager.showWindow(source);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* bar = tabBar(window, tab); QVERIFY(bar); startTabDrag(window, bar, tab);
+    QVERIFY(!manager.model().window(source));
+    auto* actor = QWidget::mouseGrabber(); QVERIFY(actor); QTest::keyClick(actor, Qt::Key_Escape);
+    auto* restored = static_cast<WorkspaceWindow*>(manager.windowWidget(source)); QVERIFY(restored);
+    QCOMPARE(restored->saveStripLayout(), before);
+    QCOMPARE(manager.paneWidget(pane), live.data());
+    QVERIFY(manager.promoteWindow(source));
+    QCOMPARE(restored->strips()->saveLayout(), before);
     QVERIFY(manager.model().validate().ok);
 }
 QTEST_MAIN(DragInteractionTest)
