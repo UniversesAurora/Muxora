@@ -196,7 +196,9 @@ void ChromeInteractionTest::narrowStripsKeepTheTailAndExposeOverflowActions()
     QVERIFY(tail->isVisible());
     QVERIFY(!tail->property("hasOverflow").toBool());
     std::unique_ptr<QMenu> withoutOverflow(host.createOverflowMenu("tools", &host));
-    QCOMPARE(withoutOverflow->actions().size(), 2);
+    QCOMPARE(withoutOverflow->actions().size(), 3);
+    QCOMPARE(withoutOverflow->actions()[0]->objectName(), QStringLiteral("StripResetWidthAction"));
+    QCOMPARE(withoutOverflow->actions()[1]->objectName(), QStringLiteral("StripElasticAction"));
     QVERIFY(withoutOverflow->findChild<QAction*>("StripResetWidthAction"));
     QVERIFY(withoutOverflow->actions().last()->menu());
 }
@@ -277,7 +279,9 @@ void ChromeInteractionTest::hiddenStripContentDoesNotReserveWidthOrOverflow()
     QVERIFY(host.overflowItems("content").isEmpty());
     QVERIFY(!tail->property("hasOverflow").toBool());
     std::unique_ptr<QMenu> menu(host.createOverflowMenu("content", &host));
-    QCOMPARE(menu->actions().size(), 2);
+    QCOMPARE(menu->actions().size(), 3);
+    QCOMPARE(menu->actions()[0]->objectName(), QStringLiteral("StripResetWidthAction"));
+    QCOMPARE(menu->actions()[1]->objectName(), QStringLiteral("StripElasticAction"));
     QVERIFY(menu->findChild<QAction*>("StripResetWidthAction"));
     QVERIFY(menu->actions().last()->menu());
     auto* customize = menu->findChild<QMenu*>("StripCustomizeMenu"); QVERIFY(customize);
@@ -555,6 +559,8 @@ void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting(
         blank = host->mapFromGlobal(caption->mapToGlobal(QPoint(50, 16)));
     }
     nativeMouse(host, blank); QTest::qWait(30);
+    QTRY_VERIFY(!button->underMouse());
+    QVERIFY(!button->isDown()); QVERIFY(!QApplication::activePopupWidget());
     const int baseline = pixelsOfColor(button->grab().toImage(), theme.accentSoft);
     QSignalSpy buttonTriggered(button->defaultAction(), &QAction::triggered);
     QSignalSpy menuTriggered(tail->menu(), &QMenu::triggered);
@@ -596,6 +602,7 @@ void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting(
     QTRY_VERIFY(button->underMouse());
     QTRY_VERIFY(pixelsOfColor(button->grab().toImage(), theme.accentSoft) > baseline + 15);
     nativeMouse(host, blank); QTest::qWait(30);
+    QTRY_VERIFY(!button->underMouse());
     QCOMPARE(pixelsOfColor(button->grab().toImage(), theme.accentSoft), baseline);
 }
 

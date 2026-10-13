@@ -21,6 +21,7 @@ target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 
 add_library(WindowSystemWidgets STATIC
     src/window_manager.cpp
+    src/navigation/workspace_navigation.cpp
     src/layout_persistence.cpp
     src/chrome/workspace_window.cpp
     src/chrome/command_strip.cpp
@@ -29,6 +30,9 @@ add_library(WindowSystemWidgets STATIC
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
+    src/docking/edge_strip.cpp
+    src/docking/drag_presentation.cpp
+    src/docking/edge_tab_button.cpp
     src/docking/drag_controller.cpp
     src/panes/tab_content.cpp
     src/style/theme.cpp

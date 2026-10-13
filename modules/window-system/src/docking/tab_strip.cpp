@@ -1,5 +1,6 @@
 #include "tab_strip.hpp"
 #include "commands/popup_menu.hpp"
+#include "style/compact_tool_button.hpp"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -18,6 +19,7 @@
 #include <QWheelEvent>
 #include <QWidgetAction>
 #include <QVariantMap>
+#include <algorithm>
 #include <tuple>
 
 namespace window_system {
@@ -116,6 +118,36 @@ DragTabBar::DragTabBar(QWidget* parent) : QTabBar(parent)
     setUsesScrollButtons(false); setMouseTracking(true); setDocumentMode(true);
 }
 void DragTabBar::setCloseIcon(QIcon icon) { closeIcon_ = std::move(icon); update(); }
+void DragTabBar::setInsertionPreview(int index, int extent, QColor color)
+{
+    insertionIndex_ = index < 0 ? -1 : qBound(0, index, count());
+    insertionExtent_ = insertionIndex_ < 0 ? 0 : qMax(1, extent);
+    insertionColor_ = color;
+    setProperty("insertionIndex", insertionIndex_);
+    update();
+}
+QRect DragTabBar::insertionPreviewRect() const
+{
+    if (insertionIndex_ < 0) return {};
+    const int x = insertionIndex_ < count() ? tabRect(insertionIndex_).left()
+        : count() ? tabRect(count() - 1).right() + 1 : 0;
+    return {x, 0, insertionExtent_, height()};
+}
+QRect DragTabBar::displayTabRect(int index) const
+{
+    auto result = tabRect(index);
+    if (insertionIndex_ >= 0 && index >= insertionIndex_) result.translate(insertionExtent_, 0);
+    return result;
+}
+int DragTabBar::insertionIndexAt(QPoint local) const
+{
+    const auto gap = insertionPreviewRect();
+    if (gap.contains(local)) return insertionIndex_;
+    int x = local.x();
+    if (!gap.isEmpty() && x > gap.right()) x -= gap.width();
+    for (int index = 0; index < count(); ++index) if (x < tabRect(index).center().x()) return index;
+    return count();
+}
 QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
     const int iconWidth = tabIcon(index).isNull() ? 0 : iconSize().width() + 4;
@@ -123,7 +155,7 @@ QSize DragTabBar::tabSizeHint(int index) const {
     return size;
 }
 QRect DragTabBar::closeRect(int index) const {
-    const auto area = tabRect(index);
+    const auto area = displayTabRect(index);
     return QRect(layoutDirection() == Qt::RightToLeft ? area.left() + 6 : area.right() - 22,
                  area.center().y() - 8, 16, 16);
 }
@@ -162,6 +194,7 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
     const auto draw = [&](int index) {
         QStyleOptionTab option; initStyleOption(&option, index);
+        option.rect = displayTabRect(index);
         if (!option.rect.intersects(event->rect())) return;
         painter.drawControl(QStyle::CE_TabBarTabShape, option);
         const bool rtl = layoutDirection() == Qt::RightToLeft;
@@ -181,6 +214,12 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
     };
     for (int index = 0; index < count(); ++index) if (index != currentIndex()) draw(index);
     if (currentIndex() >= 0) draw(currentIndex());
+    const auto gap = insertionPreviewRect();
+    if (!gap.isEmpty()) {
+        painter.fillRect(gap.adjusted(1, 1, -1, -1), insertionColor_);
+        painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
+        painter.drawRect(gap.adjusted(1, 1, -2, -2));
+    }
     if (hovered_ >= 0) closeIcon_.paint(&painter, closeRect(hovered_));
 }
 void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {
@@ -204,26 +243,29 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     bar_ = new DragTabBar(scroll_); bar_->setCloseIcon(iconFor("close", theme));
     bar_->setIconSize(QSize(theme.metrics.iconSize, theme.metrics.iconSize));
     bar_->installEventFilter(this); scroll_->setWidget(bar_);
-    scrollbar_ = new QScrollBar(Qt::Horizontal, strip); scrollbar_->setObjectName("TabScrollBar");
+    // The thin scrollbar overlays the tabs' bottom pixels. Showing it must
+    // not reserve a second row or move the content below the tab header.
+    scrollbar_ = new QScrollBar(Qt::Horizontal, scroll_->viewport()); scrollbar_->setObjectName("TabScrollBar");
     scrollbar_->setFixedHeight(4); scrollbar_->setSingleStep(28);
     scrollbar_->installEventFilter(this);
     scrollbar_->setStyleSheet("QScrollBar:horizontal{background:transparent;height:4px;border:0;}"
         "QScrollBar::handle:horizontal{background:#9C8FB0;min-width:18px;border-radius:2px;margin:0;}"
         "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}"
         "QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent;}");
-    auto policy = scrollbar_->sizePolicy(); policy.setRetainSizeWhenHidden(true); scrollbar_->setSizePolicy(policy);
     scrollbar_->hide();
-    stripLayout->addWidget(scroll_, 1); stripLayout->addWidget(scrollbar_);
-    list_ = new QToolButton(header); list_->setObjectName("TabListButton");
+    stripLayout->addWidget(scroll_, 1);
+    list_ = new CompactToolButton(header); list_->setObjectName("TabListButton");
     list_->installEventFilter(this); list_->setMouseTracking(true);
     list_->setIcon(iconFor("chevron-down", theme)); list_->setToolTip(QStringLiteral("所有标签"));
     list_->setAccessibleName(list_->toolTip());
-    row->addWidget(strip, 1); row->addWidget(list_);
+    row->addWidget(strip, 1); row->addWidget(list_, 0, Qt::AlignVCenter);
     layout->addWidget(header);
     stack_ = new QStackedWidget(this); layout->addWidget(stack_, 1);
     autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
     QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
-        auto* scroll = scroll_->horizontalScrollBar(); scroll->setValue(scroll->value() + scrollDirection_ * 12);
+        auto* scroll = scroll_->horizontalScrollBar(); const int previous = scroll->value();
+        scroll->setValue(previous + scrollDirection_ * 12);
+        if (scroll->value() == previous) { autoScroll_->stop(); return; }
         if (autoScroll_->interval() != 35) autoScroll_->setInterval(35);
     });
     QObject::connect(bar_, &QTabBar::currentChanged, this, [this](int index) {
@@ -237,9 +279,21 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         updateScrollBarVisibility();
     });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, scrollbar_, &QScrollBar::setValue);
+    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+        const auto callback = hoverGeometryChanged;
+        if (callback) callback();
+    });
     QObject::connect(scrollbar_, &QScrollBar::valueChanged, scroll_->horizontalScrollBar(), &QScrollBar::setValue);
 }
 DragTabBar* GroupTabs::tabBar() const { return bar_; }
+GroupTabs::~GroupTabs()
+{
+    autoScroll_->stop();
+    for (auto* child : findChildren<QObject*>()) {
+        child->removeEventFilter(this);
+        disconnect(child, nullptr, this, nullptr);
+    }
+}
 void GroupTabs::setTabBarVisible(bool visible)
 {
     if (header_->isHidden() == !visible) return;
@@ -254,7 +308,15 @@ void GroupTabs::setTabBarVisible(bool visible)
 void GroupTabs::updateScrollBarVisibility()
 {
     scrollbar_->setVisible(!header_->isHidden() && scrollbar_->maximum() > 0
-                           && (!hoveredSurfaces_.isEmpty() || header_->underMouse()));
+                           && (dragHovered_ || !hoveredSurfaces_.isEmpty() || header_->underMouse()));
+    if (scrollbar_->isVisible()) scrollbar_->raise();
+}
+void GroupTabs::updateScrollBarGeometry()
+{
+    if (!scrollbar_) return;
+    const auto area = scroll_->viewport()->rect();
+    scrollbar_->setGeometry(0, std::max(0, area.height() - 4), area.width(), 4);
+    scrollbar_->raise();
 }
 void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
     stack_->addWidget(widget); const auto index = bar_->addTab(icon, title);
@@ -272,37 +334,63 @@ void GroupTabs::setCurrentIndex(int index) {
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
 void GroupTabs::updateBarGeometry() {
-    const auto hint = bar_->sizeHint(); bar_->setFixedSize(qMax(1, hint.width()), qMax(24, hint.height()));
+    const auto hint = bar_->sizeHint();
+    bar_->setFixedSize(qMax(1, hint.width() + bar_->insertionExtent()), qMax(24, hint.height()));
     scroll_->setFixedHeight(bar_->height());
+    updateScrollBarGeometry();
 }
 QRect GroupTabs::viewportRectGlobal() const {
     if (header_->isHidden()) return {};
     return QRect(scroll_->viewport()->mapToGlobal(QPoint()), scroll_->viewport()->size());
 }
 int GroupTabs::insertionIndex(QPoint global) const {
-    const auto x = bar_->mapFromGlobal(global).x();
-    for (int index = 0; index < bar_->count(); ++index) if (x < bar_->tabRect(index).center().x()) return index;
-    return bar_->count();
+    return bar_->insertionIndexAt(bar_->mapFromGlobal(global));
+}
+void GroupTabs::setInsertionPreview(int index, int extent)
+{
+    if (bar_->property("insertionIndex").toInt() == index && bar_->insertionExtent() == (index < 0 ? 0 : extent)) return;
+    bar_->setInsertionPreview(index, extent, theme_.accentSoft);
+    updateBarGeometry();
+}
+QRect GroupTabs::insertionPreviewRectGlobal() const
+{
+    const auto area = bar_->insertionPreviewRect();
+    return area.isEmpty() ? QRect{} : QRect(bar_->mapToGlobal(area.topLeft()), area.size()).intersected(viewportRectGlobal());
+}
+void GroupTabs::setDragPresentation(bool compact, bool edge)
+{
+    list_->setVisible(!compact);
+    for (const auto name : {"UnpinCurrentButton", "UnpinAllButton"})
+        if (auto* button = header_->findChild<QToolButton*>(name)) button->setVisible(!compact);
+    if (compact) setTabBarVisible(!edge);
 }
 void GroupTabs::setDragHover(QPoint global) {
     const auto area = viewportRectGlobal();
-    scrollDirection_ = !area.contains(global) ? 0 : global.x() < area.left() + 24 ? -1
+    dragHovered_ = area.contains(global);
+    const int direction = !area.contains(global) ? 0 : global.x() < area.left() + 24 ? -1
         : global.x() > area.right() - 24 ? 1 : 0;
-    if (scrollDirection_ && !autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
-    else if (!scrollDirection_) autoScroll_->stop();
+    if (direction != scrollDirection_) autoScroll_->stop();
+    scrollDirection_ = direction;
+    const auto* scroll = scroll_->horizontalScrollBar();
+    const bool canScroll = direction < 0 ? scroll->value() > scroll->minimum() : direction > 0 && scroll->value() < scroll->maximum();
+    if (canScroll && !autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
+    else if (!canScroll) autoScroll_->stop();
+    updateScrollBarVisibility();
 }
 void GroupTabs::setPinnedActions(std::function<void()> current, std::function<void()> all) {
     auto* row = qobject_cast<QHBoxLayout*>(list_->parentWidget()->layout());
     for (auto item : {std::tuple{std::move(current), QStringLiteral("取消固定当前标签"), QStringLiteral("unpin")},
                       std::tuple{std::move(all), QStringLiteral("取消固定这一侧全部标签"), QStringLiteral("unpin-all")}}) {
-        auto* button = new QToolButton(list_->parentWidget()); button->setIcon(iconFor(std::get<2>(item), theme_));
+        auto* button = new CompactToolButton(list_->parentWidget()); button->setIcon(iconFor(std::get<2>(item), theme_));
         button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
         button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
-        row->insertWidget(row->count() - 1, button);
+        row->insertWidget(row->count() - 1, button, 0, Qt::AlignVCenter);
         QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
     }
 }
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
+    if (!scroll_ || !bar_ || !scrollbar_ || !list_) return QFrame::eventFilter(watched, event);
+    if (watched == scroll_->viewport() && event->type() == QEvent::Resize) updateScrollBarGeometry();
     if (watched == header_ || watched == list_ || watched == bar_ || watched == scroll_->viewport() || watched == scrollbar_) {
         if (event->type() == QEvent::Wheel) {
             auto* wheel = static_cast<QWheelEvent*>(event);

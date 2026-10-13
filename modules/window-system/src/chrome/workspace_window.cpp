@@ -3,6 +3,8 @@
 #include "command_strip.hpp"
 #include "window_title_label.hpp"
 #include "docking/dock_surface.hpp"
+#include "docking/drag_presentation.hpp"
+#include "docking/tab_strip.hpp"
 #include "platform/windows/window_frame.hpp"
 #include "window_manager_p.hpp"
 #include <QApplication>
@@ -84,6 +86,72 @@ WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const Wind
 WindowId WorkspaceWindow::id() const { return id_; }
 DockSurface* WorkspaceWindow::surface() const { return surface_; }
 CommandStripHost* WorkspaceWindow::strips() const { return strips_; }
+void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
+{
+    if (dragPresentation_ == presentation) return;
+    QPointer<QWidget> focused = QApplication::focusWidget();
+    if (focused && !surface_->isAncestorOf(focused)) focused.clear();
+    clearMask();
+    if (dragPresentationHost_) {
+        surface_->setParent(this);
+        column_->insertWidget(chrome_ ? 1 : 0, surface_, 1);
+        surface_->show();
+        delete dragPresentationHost_;
+    }
+    dragPresentation_ = presentation;
+    const bool compact = presentation != DragPresentation::Window;
+    const bool edge = presentation >= DragPresentation::Left;
+    setProperty("windowSystemDragPresentation", compact);
+    column_->setContentsMargins(compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1);
+    if (chrome_) chrome_->setVisible(!compact);
+    if (status_) status_->setVisible(!compact);
+    surface_->setDragPresentation(compact, edge);
+    if (edge) {
+        column_->removeWidget(surface_);
+        const auto context = manager_->context(id_);
+        const auto* tab = manager_->model().tab(context.tab);
+        auto* host = new EdgeDragPresentation(tab ? tab->title : windowTitle(),
+            Edge(int(presentation) - int(DragPresentation::Left)), manager_->theme(), surface_, this);
+        dragPresentationHost_ = host;
+        column_->addWidget(host, 1); host->show(); surface_->show();
+    }
+    applyTheme(this, manager_->theme());
+#ifdef Q_OS_WIN
+    applyNativeFrame(this);
+#endif
+    column_->activate();
+    if (dragPresentationHost_) dragPresentationHost_->layout()->activate();
+    updateDragMask();
+    if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
+}
+QPoint WorkspaceWindow::dragLabelAnchor() const
+{
+    if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data()))
+        return host->mapTo(this, host->labelAnchor());
+    for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget)) {
+        const auto* bar = group->tabBar();
+        if (bar->count() && bar->isVisible()) return bar->mapTo(this, bar->tabRect(0).center());
+    }
+    return {80, 13};
+}
+void WorkspaceWindow::updateDragMask()
+{
+    if (dragPresentation_ == DragPresentation::Window) return;
+    if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data())) {
+        setMask(host->visibleRegion().translated(host->pos())); return;
+    }
+    QRegion visible;
+    for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()) {
+        const auto origin = group->mapTo(this, QPoint());
+        const auto strip = group->viewportRectGlobal();
+        const int header = strip.height();
+        visible += QRect(origin + QPoint(0, header), QSize(group->width(), qMax(0, group->height() - header)));
+        const auto* bar = group->tabBar();
+        for (int i = 0; i < bar->count(); ++i)
+            visible += QRect(bar->mapTo(this, bar->tabRect(i).topLeft()), bar->tabRect(i).size());
+    }
+    if (!visible.isEmpty()) setMask(visible.intersected(QRegion(rect())));
+}
 QJsonObject WorkspaceWindow::saveStripLayout() const
 {
     return strips_ ? mergeRenderedStripLayout(savedStripLayout_, strips_->saveLayout()) : savedStripLayout_;
@@ -372,7 +440,7 @@ void WorkspaceWindow::moveEvent(QMoveEvent* event)
 }
 void WorkspaceWindow::resizeEvent(QResizeEvent* event)
 {
-    QWidget::resizeEvent(event); queuePlacementNotification();
+    QWidget::resizeEvent(event); queuePlacementNotification(); updateDragMask();
 }
 void WorkspaceWindow::closeEvent(QCloseEvent* event)
 {

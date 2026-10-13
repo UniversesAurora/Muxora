@@ -48,6 +48,9 @@ QList<QRect> availableScreenGeometries()
 
 QJsonObject WindowManager::saveLayout() const
 {
+    // Persist the last committed view during a drag, never its carrier,
+    // insertion gaps or transient edge presentation coordinates.
+    if (d->drag && d->drag->hasStableLayout()) return d->drag->stableLayout();
     QJsonArray windows, panes;
     for (const auto id : d->model.windowOrder()) {
         const auto widget = d->windows.value(id); if (!widget) continue;

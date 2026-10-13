@@ -696,11 +696,8 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
         if (d->widthResetRequest) d->widthResetRequest(id);
         else resetStripWidth(id);
     });
-    auto* customize = new DismissOnlyMenu(QStringLiteral("添加或移除按钮"), menu);
-    menu->addMenu(customize);
-    customize->setObjectName("StripCustomizeMenu");
     if (isStripSizingEditable(id)) {
-        auto* elastic = customize->addAction(QStringLiteral("弹性空间"));
+        auto* elastic = menu->addAction(QStringLiteral("弹性空间"));
         elastic->setObjectName("StripElasticAction");
         elastic->setCheckable(true);
         elastic->setChecked(strip->sizing == StripSizing::Elastic);
@@ -709,8 +706,10 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
             if (d->sizingChangeRequest) d->sizingChangeRequest(id, sizing);
             else setStripSizing(id, sizing);
         });
-        customize->addSeparator();
     }
+    auto* customize = new DismissOnlyMenu(QStringLiteral("添加或移除按钮"), menu);
+    menu->addMenu(customize);
+    customize->setObjectName("StripCustomizeMenu");
     if (strip->items.isEmpty() && strip->content) {
         auto* action = customize->addAction(strip->title);
         action->setData(QStringLiteral("content")); action->setCheckable(true);

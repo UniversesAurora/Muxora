@@ -73,11 +73,16 @@ Muxora 窗口系统预览 — Windows x64 便携版
 Ctrl+Shift+P：命令面板
 Ctrl+T：新建标签
 Ctrl+,：窗口设置
+Ctrl+Alt+T / Ctrl+Alt+B：显示或隐藏中央标签栏／侧边收纳条
+Ctrl+Shift+PgUp / Ctrl+Shift+PgDown：在当前栏中前后移动标签
+Alt+PgUp / Alt+PgDown：将当前窗格移到前后标签
 Ctrl+Alt+方向键：标签组导航
 Alt+方向键：窗格导航
 Ctrl+Shift+E / Ctrl+Shift+O：向右 / 向下拆分窗格
 
 标签拖出立即形成浮窗，Esc 恢复原布局。投放到停靠指示或标签条时合并。
+经过标签条或侧边收纳条时显示对应样式，并在插入位置让位；靠近两端停留可自动滚动。
+命令面板和右键菜单提供标签／窗格跨组、跨窗口移动及窗格方向交换。
 首次启动使用初始布局；恢复初始布局可从命令面板操作。
 
 本版供窗口交互试用，SSH、SFTP 和真实终端尚未接入。
@@ -128,6 +133,9 @@ function Invoke-PortableSmoke([bool]$Fresh) {
         $taskError = $taskProcess.StandardError.ReadToEndAsync()
         if (-not $taskProcess.WaitForExit(15000)) {
             $taskProcess.Kill()
+            if (-not $taskProcess.WaitForExit(5000)) {
+                throw 'The startup-check process did not exit after termination; scratch files may still be in use.'
+            }
             throw 'Extracted portable application did not complete its startup check within 15 seconds.'
         }
         $taskOutput.GetAwaiter().GetResult() | Out-Null

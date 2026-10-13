@@ -39,6 +39,16 @@ int main(int argc, char** argv)
     if (!windows.moveAllTabsToEdgeBar(secondFloating, root, window_system::Edge::Right, 0)) return 10;
     if (windows.model().autoHiddenTabs(root, window_system::Edge::Right) != QVector<window_system::TabId>{secondTab, tab}
         || windows.paneWidget(pane) != text) return 11;
+    const auto secondPane = windows.model().tab(secondTab)->activePane;
+    if (!windows.movePane(secondTab, secondPane, tab)
+        || windows.model().tab(secondTab) || windows.model().tabForPane(secondPane) != tab
+        || windows.paneWidget(secondPane) != secondText
+        || !windows.swapPanes(tab, pane, secondPane)) return 15;
+    const auto movementTarget = windows.createWindow();
+    if (!windows.movePaneToWindow(tab, secondPane, movementTarget)
+        || windows.model().tabForPane(secondPane) == tab || windows.paneWidget(secondPane) != secondText
+        || !windows.execute("workspace.moveTabToWindow", {{"targetWindow", root}}, movementTarget)) return 16;
+    if (!windows.requestCloseWindow(movementTarget)) return 17;
     if (!windows.model().validate()) return 4;
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

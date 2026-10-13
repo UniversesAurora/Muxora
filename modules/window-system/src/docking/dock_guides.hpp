@@ -4,6 +4,7 @@
 #include <window_system/layout_model.hpp>
 #include <QRect>
 #include <QVector>
+#include <algorithm>
 
 namespace window_system {
 
@@ -15,12 +16,18 @@ struct DockGuide {
     bool pinned = false;
 };
 
-inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup = true)
+inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup = true,
+                                    const QList<QRect>& strips = {})
 {
-    constexpr int cell = 28;
-    constexpr int step = 32;
     QVector<DockGuide> guides;
+    // Keep group controls below its real header, including narrow/short groups.
+    // Rendering and hit testing consume the same resulting rectangles.
+    for (const auto& strip : strips)
+        if (strip.intersects(group) && strip.top() <= group.top() + 1)
+            group.setTop(std::max(group.top(), strip.bottom() + 1));
     if (!group.isEmpty()) {
+        const int cell = std::clamp((std::min(group.width(), group.height()) - 8) / 3, 12, 28);
+        const int step = cell + 4;
         for (const auto placement : {Placement::Center, Placement::Left, Placement::Right, Placement::Top, Placement::Bottom}) {
             if (!splitGroup && placement != Placement::Center) continue;
             QPoint offset;
@@ -34,6 +41,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
             guides.append({QRect(group.center() + offset - QPoint(cell / 2, cell / 2), QSize(cell, cell)), placement});
         }
     }
+    constexpr int cell = 28;
     for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
         QPoint outer, inward;
         switch (edge) {
@@ -44,6 +52,21 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
         }
         guides.append({QRect(outer, QSize(cell, cell)), Placement::Center, true, edge, false});
         guides.append({QRect(outer + inward, QSize(cell, cell)), Placement::Center, true, edge, true});
+    }
+    for (int index = guides.size() - 8; index < guides.size(); index += 2) {
+        const auto edge = guides[index].edge;
+        for (qsizetype pass = 0; pass <= strips.size(); ++pass) {
+            const auto pair = guides[index].rect.united(guides[index + 1].rect);
+            QPoint shift;
+            for (const auto& strip : strips) if (pair.intersects(strip)) {
+                if (edge == Edge::Left) shift.setX(std::max(shift.x(), strip.right() + 1 - pair.left()));
+                if (edge == Edge::Right) shift.setX(std::min(shift.x(), strip.left() - 1 - pair.right()));
+                if (edge == Edge::Top) shift.setY(std::max(shift.y(), strip.bottom() + 1 - pair.top()));
+                if (edge == Edge::Bottom) shift.setY(std::min(shift.y(), strip.top() - 1 - pair.bottom()));
+            }
+            if (shift.isNull()) break;
+            guides[index].rect.translate(shift); guides[index + 1].rect.translate(shift);
+        }
     }
     return guides;
 }

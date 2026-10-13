@@ -174,7 +174,8 @@ QAbstractButton* maximizeButtonAt(QWidget* window, const QPoint& position)
 
 void extendFrame(QWidget* window, HWND handle)
 {
-    const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+    const bool compact = window->property("windowSystemDragPresentation").toBool();
+    const DWMNCRENDERINGPOLICY policy = compact ? DWMNCRP_DISABLED : DWMNCRP_ENABLED;
     DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
     // Permit the compositor's ordinary transitions. This is not an animation
     // request and does not override Windows' global animation/accessibility
@@ -185,13 +186,16 @@ void extendFrame(QWidget* window, HWND handle)
     auto* state = frameState(window);
     state->configuredHandle = handle;
     state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
-    const MARGINS margins{1, 1, 1, 1};
+    const MARGINS margins{compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1};
     DwmExtendFrameIntoClientArea(handle, &margins);
     // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND. Older Windows returns
     // E_INVALIDARG; its normal square corners and resize behavior remain valid.
     constexpr DWORD cornerPreferenceAttribute = 33;
-    const DWORD cornerPreference = 2;
+    const DWORD cornerPreference = compact ? 1 : 2;
     DwmSetWindowAttribute(handle, cornerPreferenceAttribute, &cornerPreference, sizeof(cornerPreference));
+    constexpr DWORD borderColorAttribute = 34;
+    const COLORREF borderColor = compact ? COLORREF(0xfffffffe) : COLORREF(0xffffffff);
+    DwmSetWindowAttribute(handle, borderColorAttribute, &borderColor, sizeof(borderColor));
 }
 
 void showSystemMenu(QWidget* window, HWND handle)
@@ -357,6 +361,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return true;
     }
     case WM_NCHITTEST: {
+        if (window->property("windowSystemDragPresentation").toBool()) { *result = HTCLIENT; return true; }
         const POINT point = screenPosition(msg->lParam);
         RECT bounds{};
         if (!GetWindowRect(msg->hwnd, &bounds)) return false;

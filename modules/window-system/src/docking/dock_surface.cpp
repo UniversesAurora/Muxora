@@ -1,6 +1,10 @@
 #include "dock_surface.hpp"
+#include "edge_strip.hpp"
+#include "edge_tab_button.hpp"
 #include "tab_strip.hpp"
+#include "window_manager_p.hpp"
 #include "panes/tab_content.hpp"
+#include "style/compact_tool_button.hpp"
 #include <QAbstractButton>
 #include <QApplication>
 #include <QBoxLayout>
@@ -10,7 +14,6 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QPainter>
 #include <QSplitter>
 #include <QTabBar>
 #include <QTabWidget>
@@ -20,49 +23,6 @@
 
 namespace window_system {
 namespace {
-class EdgeButton final : public QAbstractButton {
-public:
-    std::function<void(QPoint)> drag;
-    std::function<void(QPoint)> menu;
-    EdgeButton(QString title, bool vertical, QWidget* parent)
-        : QAbstractButton(parent), vertical_(vertical) {
-        setText(title); setToolTip(title); setAccessibleName(title);
-        setObjectName("EdgeButton"); setFocusPolicy(Qt::StrongFocus);
-        setMouseTracking(true);
-    }
-    QSize sizeHint() const override {
-        const auto extent = qBound(64, fontMetrics().horizontalAdvance(text()) + 24, 180);
-        return vertical_ ? QSize(26, extent) : QSize(extent, 26);
-    }
-protected:
-    void mousePressEvent(QMouseEvent* event) override {
-        start_ = event->position().toPoint(); QAbstractButton::mousePressEvent(event);
-    }
-    void mouseMoveEvent(QMouseEvent* event) override {
-        if (event->buttons().testFlag(Qt::LeftButton) &&
-            (event->position().toPoint() - start_).manhattanLength() >= QApplication::startDragDistance()) {
-            setDown(false); const auto callback = drag;
-            if (callback) callback(event->globalPosition().toPoint());
-            return;
-        }
-        QAbstractButton::mouseMoveEvent(event);
-    }
-    void contextMenuEvent(QContextMenuEvent* event) override {
-        const auto callback = menu;
-        if (callback) { event->accept(); callback(event->globalPos()); }
-        else QAbstractButton::contextMenuEvent(event);
-    }
-    void paintEvent(QPaintEvent*) override {
-        QPainter p(this);
-        p.fillRect(rect(), underMouse() || hasFocus() ? QColor("#8970AF") : QColor("#6A568C"));
-        p.setPen(Qt::white);
-        if (vertical_) { p.translate(width(), 0); p.rotate(90); p.drawText(QRect(0, 0, height(), width()), Qt::AlignCenter, text()); }
-        else p.drawText(rect(), Qt::AlignCenter, text());
-    }
-private:
-    bool vertical_;
-    QPoint start_;
-};
 class PeekHeader final : public QWidget {
 public:
     using QWidget::QWidget;
@@ -172,6 +132,7 @@ QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<Tab
     split->addWidget(buildTree(node->first, contents));
     split->addWidget(buildTree(node->second, contents));
     split->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
+    split->setProperty("splitNodeId", node->id);
     const auto nodeId = node->id;
     QObject::connect(split, &QSplitter::splitterMoved, manager_, [this, split, nodeId] {
         const auto sizes = split->sizes();
@@ -198,6 +159,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i);
     groups_.insert(id, tabs);
+    tabs->hoverGeometryChanged = [this] { manager_->d->drag->refreshHover(); };
     if (group->location == GroupLocation::Pinned) {
         tabs->setPinnedActions([this, id] {
             const auto* current = manager_->model().group(id);
@@ -230,14 +192,14 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     }
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
-    auto* bar = new QFrame(this); bar->setObjectName("EdgeBar");
+    auto* bar = new EdgeStrip(edge, manager_->theme(), this);
+    bar->hoverGeometryChanged = [this] { manager_->d->drag->refreshHover(); };
     if (!manager_->sideBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
-    auto* layout = new QBoxLayout(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, bar);
-    layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(2);
     for (const auto groupId : ids) {
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
-            auto* button = new EdgeButton(manager_->model().tab(tabId)->title, vertical, bar);
+            auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
+                manager_->theme().metrics.edgeThickness, bar);
             button->setProperty("tabId", tabId);
             button->drag = [this, tabId](QPoint point) { manager_->beginTabDrag(tabId, point); };
             button->menu = [this, tabId](QPoint point) { manager_->showTabMenu(tabId, point); };
@@ -245,15 +207,14 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
                 if (peek_ && peekTab_ == tabId) closePeek();
                 else showEdgeGroup(groupId, tabId);
             });
-            layout->addWidget(button);
+            bar->addButton(button);
         }
     }
-    auto* pinAll = new QToolButton(bar); pinAll->setObjectName("PinEdgeButton");
+    auto* pinAll = new CompactToolButton(bar, manager_->theme().metrics.edgeThickness); pinAll->setObjectName("PinEdgeButton");
     pinAll->setIcon(iconFor("pin-all", manager_->theme())); pinAll->setToolTip(QStringLiteral("固定这一侧全部标签"));
     pinAll->setAccessibleName(pinAll->toolTip());
     QObject::connect(pinAll, &QToolButton::clicked, manager_, [this, edge] { manager_->pinEdge(window_, edge, true); });
-    layout->addWidget(pinAll);
-    layout->addStretch();
+    bar->setTailWidget(pinAll);
     return bar;
 }
 QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents)
@@ -353,6 +314,18 @@ int DockSurface::tabInsertionIndex(GroupId group, QPoint point) const
 {
     const auto widget = groups_.value(group); return widget ? widget->insertionIndex(point) : -1;
 }
+int DockSurface::dragLabelExtent(TabId tab, bool edge) const
+{
+    const auto* record = manager_->model().tab(tab);
+    if (!record) return 0;
+    if (edge) return qBound(64, fontMetrics().horizontalAdvance(record->title) + 24, 180);
+    if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
+        const auto* bar = group->tabBar();
+        for (int i = 0; i < bar->count(); ++i) if (bar->tabData(i).toUuid() == tab) return bar->tabRect(i).width();
+    }
+    const int icon = manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
+    return qBound(1, fontMetrics().horizontalAdvance(record->title) + icon + 35, QWIDGETSIZE_MAX);
+}
 QHash<Edge, QRect> DockSurface::edgeBarRects() const
 {
     QHash<Edge, QRect> result;
@@ -362,40 +335,55 @@ QHash<Edge, QRect> DockSurface::edgeBarRects() const
 }
 int DockSurface::edgeTabInsertionIndex(Edge edge, QPoint point) const
 {
-    const auto bar = edgeBars_.value(edge);
-    if (!bar) return -1;
-    const bool vertical = edge == Edge::Left || edge == Edge::Right;
-    const auto local = bar->mapFromGlobal(point);
-    int index = 0;
-    for (int i = 0; i < bar->layout()->count(); ++i) {
-        const auto* button = bar->layout()->itemAt(i)->widget();
-        if (!button || button->objectName() != "EdgeButton") continue;
-        const auto center = button->geometry().center();
-        if ((vertical ? local.y() : local.x()) < (vertical ? center.y() : center.x())) return index;
-        ++index;
-    }
-    return index;
+    const auto* bar = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
+    return bar ? bar->insertionIndex(point) : -1;
 }
 QRect DockSurface::edgeTabInsertionRect(Edge edge, int index) const
 {
-    const auto bar = edgeBars_.value(edge);
-    if (!bar || index < 0) return {};
-    const bool vertical = edge == Edge::Left || edge == Edge::Right;
-    int ordinal = 0; int position = 0;
-    for (int i = 0; i < bar->layout()->count(); ++i) {
-        const auto* button = bar->layout()->itemAt(i)->widget();
-        if (!button || button->objectName() != "EdgeButton") continue;
-        const auto rect = button->geometry();
-        if (ordinal++ == index) { position = vertical ? rect.top() : rect.left(); break; }
-        position = vertical ? rect.bottom() + 1 : rect.right() + 1;
-    }
-    const auto origin = bar->mapToGlobal(QPoint());
-    return vertical ? QRect(origin.x(), origin.y() + position - 2, bar->width(), 4)
-        : QRect(origin.x() + position - 2, origin.y(), 4, bar->height());
+    const auto* bar = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
+    return bar ? bar->insertionMarkerRect(index) : QRect{};
 }
 void DockSurface::setDragHover(QPoint point)
 {
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);
+    for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(point);
+}
+void DockSurface::setInsertionPreview(GroupId group, int index, int extent)
+{
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent);
+    for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
+}
+void DockSurface::setEdgeInsertionPreview(Edge edge, int index, int extent)
+{
+    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, 0);
+    for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) strip->setInsertionPreview(it.key() == edge ? index : -1, extent);
+}
+void DockSurface::clearInsertionPreviews()
+{
+    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, 0);
+    for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
+}
+QRect DockSurface::insertionPreviewRect(GroupId group) const
+{
+    const auto widget = groups_.value(group);
+    return widget ? widget->insertionPreviewRectGlobal() : QRect{};
+}
+QRect DockSurface::edgeInsertionPreviewRect(Edge edge) const
+{
+    const auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
+    return strip ? strip->insertionPreviewRect() : QRect{};
+}
+void DockSurface::setDragPresentation(bool compact, bool edge)
+{
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value()) {
+        it.value()->setDragPresentation(compact, edge);
+        if (!compact) {
+            const auto* group = manager_->model().group(it.key());
+            it.value()->setTabBarVisible(group && (group->location != GroupLocation::Central || manager_->tabBarsVisible(window_)));
+        }
+    }
 }
 QRect DockSurface::centralRectGlobal() const
 {
@@ -424,13 +412,15 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
+    header->setFixedHeight(24);
     header->drag = [this, tab](QPoint point) { manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
+    row->setSpacing(2);
     auto* title = new QLabel(manager_->model().tab(tab)->title, header);
     title->setAttribute(Qt::WA_TransparentForMouseEvents); row->addWidget(title); row->addStretch();
-    auto* pin = new QToolButton(header); pin->setIcon(iconFor("pin", manager_->theme()));
-    pin->setToolTip(QStringLiteral("固定并占用布局空间")); row->addWidget(pin);
-    auto* close = new QToolButton(header); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
+    auto* pin = new CompactToolButton(header); pin->setIcon(iconFor("pin", manager_->theme()));
+    pin->setToolTip(QStringLiteral("固定并占用布局空间")); pin->setAccessibleName(pin->toolTip()); row->addWidget(pin);
+    auto* close = new CompactToolButton(header); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
     close->setObjectName("ClosePeekTabButton");
     close->setToolTip(QStringLiteral("关闭标签")); close->setAccessibleName(close->toolTip());
     pin->setObjectName("PinPeekTabButton");

@@ -8,6 +8,7 @@
 #include "panes/tab_content.hpp"
 #include <QApplication>
 #include <QEvent>
+#include <QFocusEvent>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -333,6 +334,7 @@ bool WindowManager::activateTab(TabId tab)
 bool WindowManager::focusPane(TabId tab, PaneId pane)
 {
     if (!d->model.activatePane(tab, pane)) return false;
+    if (!d->directionalNavigation) d->navigationAnchor.reset();
     if (auto widget = d->panes.value(pane)) {
         if (auto view = d->tabs.value(tab)) for (auto* frame : view->paneFrames()) {
             frame->setProperty("active", frame->property("paneId").toUuid() == pane);
@@ -395,9 +397,10 @@ bool WindowManager::applyResult(const OperationResult& result)
 }
 void WindowManager::refresh()
 {
+    d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
-    d->drag->releaseForMutation();
     d->refreshing = true;
+    d->drag->releaseForMutation();
     for (auto window : d->windows) if (window) window->surface()->closePeek();
     for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); }
     for (const auto& bars : {d->paneTopBars, d->paneBottomBars})
@@ -475,35 +478,6 @@ bool WindowManager::focusGroup(GroupId group)
     const auto* record = d->model.group(group); if (!record) return false;
     return activateTab(record->activeTab);
 }
-bool WindowManager::navigate(Placement direction, bool panes)
-{
-    const auto ctx = context();
-    QHash<QUuid, QRect> rectangles;
-    QUuid current = panes ? ctx.pane : ctx.group;
-    if (panes) {
-        if (auto view = d->tabs.value(ctx.tab)) {
-            const auto frames = view->paneFrames();
-            for (auto it = frames.cbegin(); it != frames.cend(); ++it) {
-                auto* frame = it.value(); rectangles.insert(it.key(), QRect(frame->mapToGlobal(QPoint()), frame->size()));
-            }
-        }
-    } else if (auto window = d->windows.value(ctx.window)) rectangles = window->surface()->groupRects();
-    const auto origin = rectangles.value(current); if (origin.isEmpty()) return false;
-    QUuid best; double score = std::numeric_limits<double>::max();
-    for (auto it = rectangles.cbegin(); it != rectangles.cend(); ++it) {
-        if (it.key() == current) continue;
-        const auto delta = it.value().center() - origin.center();
-        const bool horizontal = direction == Placement::Left || direction == Placement::Right;
-        const int primary = horizontal ? delta.x() : delta.y();
-        const int sign = direction == Placement::Left || direction == Placement::Top ? -1 : 1;
-        if (primary * sign <= 0) continue;
-        const int secondary = horizontal ? std::abs(delta.y()) : std::abs(delta.x());
-        const double cost = std::abs(primary) + secondary * 2.;
-        if (cost < score) { score = cost; best = it.key(); }
-    }
-    if (best.isNull()) return false;
-    return panes ? focusPane(ctx.tab, best) : focusGroup(best);
-}
 void WindowManager::resizeActive(Placement direction, bool panes)
 {
     const auto ctx = context();
@@ -540,7 +514,11 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
 {
     if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);
+    if (widget && (event->type() == QEvent::Move || event->type() == QEvent::Resize)
+        && d->navigationAnchor && widget->property("windowId").toUuid() == d->navigationAnchor->window)
+        d->navigationAnchor.reset();
     if (event->type() == QEvent::FocusIn && widget) {
+        if (static_cast<QFocusEvent*>(event)->reason() == Qt::MouseFocusReason) d->navigationAnchor.reset();
         for (auto* current = widget; current; current = current->parentWidget()) {
             const auto pane = current->property("paneId").toUuid();
             if (!pane.isNull()) {

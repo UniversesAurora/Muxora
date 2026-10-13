@@ -24,6 +24,8 @@
 #include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QLineEdit>
+#include <QSignalBlocker>
+#include <QSplitter>
 #include <algorithm>
 #include <limits>
 
@@ -38,6 +40,24 @@ void WindowManager::registerWindowCommands()
     };
     auto hasTab = [this](const CommandContext& c) { return d->model.tab(c.tab) != nullptr; };
     auto hasWindow = [this](const CommandContext& c) { return d->model.window(c.window) != nullptr; };
+    auto hasPane = [this](const CommandContext& c) {
+        return d->model.panes(c.args.value("tab", c.tab).toUuid()).contains(c.args.value("pane", c.pane).toUuid());
+    };
+    auto chooseWindow = [this](WindowId source, const CommandContext& c) -> WindowId {
+        if (c.args.contains("targetWindow")) return c.args.value("targetWindow").toUuid();
+        QPointer<QWidget> owner(windowWidget(c.window));
+        DismissOnlyMenu picker;
+        picker.setObjectName(QStringLiteral("ContentWindowPicker"));
+        applyTheme(&picker, theme());
+        for (const auto id : d->model.windowOrder()) if (id != source) {
+            auto* action = picker.addAction(windowWidget(id)->windowTitle());
+            action->setData(id);
+        }
+        if (picker.actions().isEmpty()) return {};
+        if (owner) connect(owner, &QObject::destroyed, &picker, &QMenu::close);
+        if (const auto* selected = picker.exec(QCursor::pos()); owner && selected) return selected->data().toUuid();
+        return {};
+    };
     add("window.tabBars.toggle", QStringLiteral("显示标签栏"), "视图", QKeySequence("Ctrl+Alt+T"),
         [this](const CommandContext& c) {
             return setTabBarsVisible(c.window, !tabBarsVisible(c.window));
@@ -195,18 +215,61 @@ void WindowManager::registerWindowCommands()
             return true;
         }, hasWindow);
     add("workspace.moveTabToWindow", QStringLiteral("移动当前标签到另一个窗口…"), "窗口", {},
-        [this](const CommandContext& c) {
+        [this, chooseWindow](const CommandContext& c) {
             const auto tab = c.args.value("tab", c.tab).toUuid();
-            auto target = c.args.value("targetWindow").toUuid();
-            if (target.isNull()) {
-                QMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
-                for (const auto id : d->model.windowOrder()) if (id != c.window) { auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id); }
-                if (auto* action = menu.exec(QCursor::pos())) target = action->data().toUuid();
-            }
+            const auto* source = d->model.group(d->model.groupForTab(tab));
+            if (!source) return false;
+            const auto target = chooseWindow(source->windowId, c);
             if (target.isNull()) return false;
             const auto place = static_cast<Placement>(c.args.value("placement", int(Placement::Center)).toInt());
-            return applyResult(d->model.moveTabToWindow(tab, target, place));
+            return moveTabToWindow(tab, target, place);
         }, hasTab);
+    add("pane.moveToWindow", QStringLiteral("移动当前窗格到已有窗口…"), "窗口", {},
+        [this, chooseWindow](const CommandContext& c) {
+            const auto tab = c.args.value("tab", c.tab).toUuid();
+            const auto pane = c.args.value("pane", c.pane).toUuid();
+            const auto* source = d->model.group(d->model.groupForTab(tab));
+            if (!source) return false;
+            const auto target = chooseWindow(source->windowId, c);
+            return !target.isNull() && movePaneToWindow(tab, pane, target,
+                static_cast<Placement>(c.args.value("placement", int(Placement::Right)).toInt()));
+        }, hasPane);
+    add("pane.moveToTab", QStringLiteral("移动当前窗格到其他标签…"), "布局", {},
+        [this](const CommandContext& c) {
+            const auto sourceTab = c.args.value("tab", c.tab).toUuid();
+            const auto sourcePane = c.args.value("pane", c.pane).toUuid();
+            auto target = c.args.value("targetTab").toUuid();
+            if (!c.args.contains("targetTab")) {
+                QPointer<QWidget> owner(windowWidget(c.window));
+                DismissOnlyMenu picker;
+                picker.setObjectName(QStringLiteral("PaneTabPicker"));
+                applyTheme(&picker, theme());
+                for (const auto window : d->model.windowOrder())
+                    for (const auto tab : d->model.orderedTabs(window)) if (tab != sourceTab) {
+                        auto* action = picker.addAction(QStringLiteral("%1 — %2").arg(d->model.tab(tab)->title, windowWidget(window)->windowTitle()));
+                        action->setData(tab);
+                    }
+                if (picker.actions().isEmpty()) return false;
+                if (owner) connect(owner, &QObject::destroyed, &picker, &QMenu::close);
+                if (const auto* selected = picker.exec(QCursor::pos()); owner && selected) target = selected->data().toUuid();
+            }
+            return !target.isNull() && movePane(sourceTab, sourcePane, target, c.args.value("targetPane").toUuid(),
+                static_cast<Placement>(c.args.value("placement", int(Placement::Right)).toInt()));
+        }, hasPane);
+    for (const bool forward : {false, true}) {
+        const auto suffix = forward ? QStringLiteral("next") : QStringLiteral("previous");
+        const auto label = forward ? QStringLiteral("下一个") : QStringLiteral("上一个");
+        add("workspace.moveTabToWindow." + suffix, QStringLiteral("将当前标签移到%1窗口").arg(label), "窗口", {},
+            [this, forward](const CommandContext& c) { return moveTabToWindowCycle(c.tab, forward); },
+            [this](const CommandContext& c) { return d->model.tab(c.tab) && d->model.windowOrder().size() > 1; });
+        add("pane.moveToWindow." + suffix, QStringLiteral("将当前窗格移到%1窗口").arg(label), "窗口", {},
+            [this, forward](const CommandContext& c) { return movePaneToWindowCycle(c.tab, c.pane, forward); },
+            [this, hasPane](const CommandContext& c) { return hasPane(c) && d->model.windowOrder().size() > 1; });
+        add("pane.moveToTab." + suffix, QStringLiteral("将当前窗格移到%1标签").arg(label), "布局",
+            QKeySequence(forward ? "Alt+PgDown" : "Alt+PgUp"),
+            [this, forward](const CommandContext& c) { return movePaneToAdjacentTab(c.tab, c.pane, forward); },
+            [this, hasPane](const CommandContext& c) { const auto* group = d->model.group(c.group); return hasPane(c) && group && group->tabs.size() > 1; });
+    }
     add("workspace.moveTabToEdge", QStringLiteral("当前标签收纳到边栏"), "布局", {},
         [this](const CommandContext& c) {
             const auto tab = c.args.value("tab", c.tab).toUuid();
@@ -233,27 +296,17 @@ void WindowManager::registerWindowCommands()
                 static_cast<Edge>(c.args.value("edge", int(Edge::Left)).toInt()), c.args.value("index", -1).toInt());
         }, hasWindow);
     for (const bool next : {false, true}) {
-        auto canReorder = [this, next](const CommandContext& c) {
+        auto canReorder = [this](const CommandContext& c) {
             const auto* group = d->model.group(d->model.groupForTab(c.tab));
             if (!group) return false;
             const auto tabs = group->location == GroupLocation::AutoHide
                 ? d->model.autoHiddenTabs(group->windowId, group->edge) : group->tabs;
-            const auto index = tabs.indexOf(c.tab);
-            return index >= 0 && (next ? index + 1 < tabs.size() : index > 0);
+            return tabs.contains(c.tab) && tabs.size() > 1;
         };
         add(next ? "workspace.reorderTab.next" : "workspace.reorderTab.previous",
             next ? QStringLiteral("将当前标签后移一位") : QStringLiteral("将当前标签前移一位"), "布局",
             QKeySequence(next ? "Ctrl+Shift+PgDown" : "Ctrl+Shift+PgUp"),
-            [this, next](const CommandContext& c) {
-                const auto* group = d->model.group(d->model.groupForTab(c.tab));
-                if (!group) return false;
-                const auto tabs = group->location == GroupLocation::AutoHide
-                    ? d->model.autoHiddenTabs(group->windowId, group->edge) : group->tabs;
-                const auto index = tabs.indexOf(c.tab) + (next ? 1 : -1);
-                return group->location == GroupLocation::AutoHide
-                    ? moveTabToEdgeBar(c.tab, group->windowId, group->edge, index)
-                    : moveTab(c.tab, group->id, Placement::Center, index);
-            }, canReorder);
+            [this, next](const CommandContext& c) { return reorderTab(c.tab, next); }, canReorder);
     }
     add("window.moveAllToEdge", QStringLiteral("整窗标签收纳到目标边栏"), "布局", {},
         [this](const CommandContext& c) {
@@ -266,9 +319,18 @@ void WindowManager::registerWindowCommands()
         const auto keyName = direction.first == "up" ? "Up" : direction.first == "down" ? "Down" : direction.first == "left" ? "Left" : "Right";
         const auto label = direction.first == "up" ? QStringLiteral("上") : direction.first == "down" ? QStringLiteral("下") : direction.first == "left" ? QStringLiteral("左") : QStringLiteral("右");
         add("workspace.focusGroup." + direction.first, QStringLiteral("聚焦%1侧标签组").arg(label), "布局", QKeySequence("Ctrl+Alt+" + QString(keyName)),
-            [this, direction](const CommandContext&) { return navigate(direction.second, false); });
+            [this, direction](const CommandContext& c) { return navigate(direction.second, false, c); });
         add("pane.focus." + direction.first, QStringLiteral("聚焦%1侧窗格").arg(label), "布局", QKeySequence("Alt+" + QString(keyName)),
-            [this, direction](const CommandContext&) { return navigate(direction.second, true); });
+            [this, direction](const CommandContext& c) { return navigate(direction.second, true, c); });
+        add("workspace.moveTabToGroup." + direction.first, QStringLiteral("将当前标签移到%1侧标签组").arg(label), "布局", {},
+            [this, direction](const CommandContext& c) { return moveTabToAdjacentGroup(c.tab, direction.second); },
+            [this, direction](const CommandContext& c) { return !adjacentGroup(c.tab, direction.second).isNull(); });
+        add("pane.moveToGroup." + direction.first, QStringLiteral("将当前窗格移到%1侧标签组").arg(label), "布局", {},
+            [this, direction](const CommandContext& c) { return movePaneToAdjacentGroup(c.tab, c.pane, direction.second); },
+            [this, direction, hasPane](const CommandContext& c) { return hasPane(c) && !adjacentGroup(c.tab, direction.second).isNull(); });
+        add("pane.swap." + direction.first, QStringLiteral("与%1侧窗格交换位置").arg(label), "布局", {},
+            [this, direction](const CommandContext& c) { return swapPaneDirection(c.tab, c.pane, direction.second); },
+            [this, direction](const CommandContext& c) { return !adjacentPane(c.tab, c.pane, direction.second).isNull(); });
         add("workspace.resizeGroup." + direction.first, QStringLiteral("向%1调整标签组边界").arg(label), "布局", QKeySequence("Ctrl+Alt+Shift+" + QString(keyName)),
             [this, direction](const CommandContext&) { resizeActive(direction.second, false); return true; });
         add("pane.resize." + direction.first, QStringLiteral("向%1调整窗格边界").arg(label), "布局", QKeySequence("Alt+Shift+" + QString(keyName)),
@@ -353,7 +415,30 @@ void WindowManager::registerWindowCommands()
     add("window.drag.cancel", QStringLiteral("取消当前拖拽"), "窗口", {},
         [this](const CommandContext&) { d->drag->cancel(); return true; }, [this](const CommandContext&) { return d->drag->isActive(); });
     add("layout.setRatio", QStringLiteral("设置分割比例"), "布局", {},
-        [this](const CommandContext& c) { const auto result = d->model.setSplitRatio(c.args.value("node").toUuid(), c.args.value("ratio").toDouble()); if (result) { d->drag->releaseForMutation(); emit layoutChanged(); } return result.ok; });
+        [this](const CommandContext& c) {
+            const auto node = c.args.value("node").toUuid();
+            const auto ratio = c.args.value("ratio").toDouble();
+            if (!d->model.setSplitRatio(node, ratio)) return false;
+            d->drag->releaseForMutation();
+            d->navigationAnchor.reset();
+            auto update = [node, ratio](QWidget* owner) {
+                if (!owner) return false;
+                for (auto* splitter : owner->findChildren<QSplitter*>()) {
+                    if (splitter->property("splitNodeId").toUuid() != node || !splitter->isVisibleTo(owner)) continue;
+                    const auto sizes = splitter->sizes();
+                    const int available = qMax(1000, sizes.value(0) + sizes.value(1));
+                    const QSignalBlocker suppressFeedback(splitter);
+                    splitter->setSizes({qRound(available * ratio), qRound(available * (1. - ratio))});
+                    return true;
+                }
+                return false;
+            };
+            bool updated = false;
+            for (const auto& view : d->tabs) if (view && update(view)) { updated = true; break; }
+            if (!updated) for (const auto& view : d->windows) if (view && update(view->surface())) break;
+            emit layoutChanged();
+            return true;
+        });
     add("layout.setEdgeExtent", QStringLiteral("设置固定边栏分区大小"), "布局", {},
         [this](const CommandContext& c) { const auto result = d->model.setEdgeGroupExtent(c.args.value("group").toUuid(), c.args.value("extent").toInt()); if (result) { d->drag->releaseForMutation(); emit layoutChanged(); } return result.ok; });
 }
@@ -378,6 +463,15 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
         auto* action = menu.addAction(command->title); action->setData(id);
         action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
     }
+    auto* movement = menu.addMenu(QStringLiteral("移动标签"));
+    for (const auto& id : {QStringLiteral("workspace.reorderTab.previous"), QStringLiteral("workspace.reorderTab.next"),
+        QStringLiteral("workspace.moveTabToGroup.left"), QStringLiteral("workspace.moveTabToGroup.right"),
+        QStringLiteral("workspace.moveTabToGroup.up"), QStringLiteral("workspace.moveTabToGroup.down"),
+        QStringLiteral("workspace.moveTabToWindow.previous"), QStringLiteral("workspace.moveTabToWindow.next")})
+        if (const auto* command = d->commands.find(id)) {
+            auto* action = movement->addAction(command->title); action->setData(id); action->setObjectName(id);
+            action->setEnabled(!command->enabled || command->enabled(captured));
+        }
     if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
 void WindowManager::showWindowMenu(WindowId window, QPoint global)
@@ -417,6 +511,16 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
             auto* action = menu->addAction(command->title); action->setObjectName(id); action->setProperty("windowSystemCommand", id);
             action->setEnabled(!command->enabled || command->enabled(captured));
         }
+    auto appendCommands = [this, captured](QMenu* submenu, const QStringList& ids) {
+        for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
+            auto* action = submenu->addAction(command->title); action->setObjectName(id); action->setProperty("windowSystemCommand", id);
+            action->setEnabled(!command->enabled || command->enabled(captured));
+        }
+    };
+    appendCommands(menu->addMenu(QStringLiteral("移动窗格")), {"pane.moveToTab.previous", "pane.moveToTab.next", "pane.moveToTab",
+        "pane.moveToGroup.left", "pane.moveToGroup.right", "pane.moveToGroup.up", "pane.moveToGroup.down",
+        "pane.moveToWindow", "pane.moveToWindow.previous", "pane.moveToWindow.next"});
+    appendCommands(menu->addMenu(QStringLiteral("交换窗格位置")), {"pane.swap.left", "pane.swap.right", "pane.swap.up", "pane.swap.down"});
     QString chosen;
     if (auto* action = menu->exec(global)) chosen = action->property("windowSystemCommand").toString();
     delete retained.data();

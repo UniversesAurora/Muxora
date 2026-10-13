@@ -35,6 +35,15 @@ struct WindowManager::Private {
     QKeySequence pendingKeys;
     WindowId keyWindow;
     QTimer* keyTimer = nullptr;
+    struct NavigationAnchor {
+        WindowId window;
+        TabId tab;
+        bool panes = false;
+        Qt::Orientation axis = Qt::Horizontal;
+        int coordinate = 0;
+    };
+    std::optional<NavigationAnchor> navigationAnchor;
+    bool directionalNavigation = false;
 };
 
 } // namespace window_system

@@ -16,10 +16,17 @@ public:
     [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const;
     [[nodiscard]] GroupId tabBarAt(QPoint global) const;
     [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global) const;
+    [[nodiscard]] int dragLabelExtent(TabId tab, bool edge) const;
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
+    void setInsertionPreview(GroupId group, int index, int extent);
+    void setEdgeInsertionPreview(Edge edge, int index, int extent);
+    void clearInsertionPreviews();
+    [[nodiscard]] QRect insertionPreviewRect(GroupId group) const;
+    [[nodiscard]] QRect edgeInsertionPreviewRect(Edge edge) const;
+    void setDragPresentation(bool compact, bool edge);
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
     void closePeek();

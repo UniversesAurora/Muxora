@@ -27,6 +27,10 @@
 
 菜单、命令面板和快捷键共用 [CommandRegistry](include/window_system/command_registry.hpp)。宿主可以注册自己的操作；主题使用 [Theme](include/window_system/theme.hpp) 令牌，默认不添加应用 logo。布局快照由宿主选择保存位置，模块不写 Muxora 用户文件。
 
+`movePane(sourceTab, pane, targetTab, targetPane, placement)` 将原窗格合入另一个标签；`swapPanes()` 交换同标签的树叶位置。方向和循环版本包括 `movePaneToAdjacentTab()`、`movePaneToAdjacentGroup()`、`movePaneToWindowCycle()`、`swapPaneDirection()`；标签提供 `reorderTab()`、`moveTabToAdjacentGroup()`、`moveTabToWindowCycle()`。已有窗口也可通过 `movePaneToWindow()` / `moveTabToWindow()` 显式指定。移动保留内容与专属栏，合入现有标签采用目标的共享策略；空目标继承源策略。
+
+对应命令为 `pane.moveToTab`、`pane.moveToGroup.left/right/up/down`、`pane.moveToWindow`、`pane.swap.left/right/up/down` 及 `workspace.moveTabToGroup.left/right/up/down`、`workspace.moveTabToWindow`。标签和窗口选择命令支持 ID 参数或键盘选择菜单，`.previous` / `.next` 提供循环移动。窗格前后标签移动默认 `Alt+PgUp` / `Alt+PgDown`；标签重排继续使用 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown`。全部命令可从快捷键编辑器绑定。
+
 `WindowManager::resetToolbarWidth(window, stripId)` 重置指定工具条的宽度，保留排列顺序和其他条带的请求宽度。工具条选项中的“重置尺寸”调用统一命令 `window.toolbar.resetSize`；指定 `strip` 可直接执行，不带参数则显示工具条列表，支持键盘选择。目标在弹性左侧或无弹性行中保持左端，在弹性右侧保持右端，在相应方向分配或收回空间；空间不足时遵守各自最小宽度。重置隐藏条不改变可见布局，重置弹性条仍保留弹性策略。
 
 每行最多一条弹性工具条。标题条必须保持弹性，同一行的其他条带不能设为弹性；把弹性条拖入标题行时，它会改为普通条。宿主约束优先于保存布局，旧布局中的普通标题会恢复弹性。窗口宽度变化时先调整弹性空间，右侧条带直接相对右边缘排列；缩窄时的临时压缩不改写请求宽度，放大后恢复。标题在自身条带内居中，过长时右侧省略，内容区至少 96 个逻辑像素。

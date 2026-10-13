@@ -86,6 +86,23 @@ LayoutTree findLeaf(LayoutTree tree, QUuid itemId)
     return findLeaf(tree->second, itemId);
 }
 
+LayoutTree swapLeafItems(LayoutTree tree, QUuid firstId, QUuid secondId)
+{
+    if (tree->isLeaf()) {
+        if (tree->itemId != firstId && tree->itemId != secondId) return tree;
+        auto node = *tree;
+        node.itemId = node.itemId == firstId ? secondId : firstId;
+        return std::make_shared<LayoutNode>(std::move(node));
+    }
+    const auto first = swapLeafItems(tree->first, firstId, secondId);
+    const auto second = swapLeafItems(tree->second, firstId, secondId);
+    if (first == tree->first && second == tree->second) return tree;
+    auto node = *tree;
+    node.first = first;
+    node.second = second;
+    return std::make_shared<LayoutNode>(std::move(node));
+}
+
 QString uuidText(QUuid id) { return id.toString(QUuid::WithoutBraces); }
 QJsonValue treeJson(LayoutTree tree)
 {
@@ -262,6 +279,13 @@ QVector<PaneId> LayoutModel::panes(TabId id) const
     QVector<PaneId> result;
     if (const auto* record = tab(id)) collect(record->panes, result);
     return result;
+}
+TabId LayoutModel::tabForPane(PaneId id) const
+{
+    if (id.isNull()) return {};
+    for (auto it = tabs_.cbegin(); it != tabs_.cend(); ++it)
+        if (findLeaf(it.value().panes, id)) return it.key();
+    return {};
 }
 bool LayoutModel::familyHasTabs(FamilyId id) const
 {
@@ -1008,6 +1032,67 @@ OperationResult LayoutModel::removePane(TabId tabId, PaneId paneId)
         model.eraseEmptyFloatingWindows();
         return success();
     });
+}
+OperationResult LayoutModel::movePane(TabId sourceTab, PaneId paneId, TabId targetTab,
+                                      PaneId targetPane, Placement placement)
+{
+    return transact([&](LayoutModel& model) {
+        if (sourceTab == targetTab || !model.panes(sourceTab).contains(paneId) || !model.tab(targetTab))
+            return failure("Pane transfer needs different existing source and target tabs.");
+        if (placement != Placement::Left && placement != Placement::Right
+            && placement != Placement::Top && placement != Placement::Bottom)
+            return failure("Pane transfer needs a split direction.");
+        if (targetPane.isNull()) targetPane = model.tabs_[targetTab].activePane;
+        if (!model.panes(targetTab).contains(targetPane)) return failure("The target pane does not belong to the target tab.");
+        const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
+        auto& destination = model.tabs_[targetTab];
+        destination.panes = replace(destination.panes, targetPane,
+            split(findLeaf(destination.panes, targetPane), carried, placement));
+        destination.activePane = paneId;
+        auto& source = model.tabs_[sourceTab];
+        source.panes = replace(source.panes, paneId, {});
+        if (!source.panes) model.eraseTabUnchecked(sourceTab);
+        else if (source.activePane == paneId) source.activePane = model.panes(sourceTab).first();
+        const auto targetGroup = model.groupForTab(targetTab);
+        model.groups_[targetGroup].activeTab = targetTab;
+        model.windows_[model.groups_[targetGroup].windowId].activeGroup = targetGroup;
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+}
+OperationResult LayoutModel::swapPanes(TabId tabId, PaneId first, PaneId second)
+{
+    return transact([&](LayoutModel& model) {
+        const auto panes = model.panes(tabId);
+        if (first == second || !panes.contains(first) || !panes.contains(second))
+            return failure("Pane swapping needs two different panes in the same tab.");
+        model.tabs_[tabId].panes = swapLeafItems(model.tabs_[tabId].panes, first, second);
+        return success();
+    });
+}
+TabId LayoutModel::movePaneToWindow(TabId sourceTab, PaneId paneId, WindowId targetWindow,
+                                    Placement placement)
+{
+    TabId destination;
+    const auto result = transact([&](LayoutModel& model) {
+        if (!model.panes(sourceTab).contains(paneId) || !model.window(targetWindow))
+            return failure("The source pane or target window does not exist.");
+        const auto* sourceGroup = model.group(model.groupForTab(sourceTab));
+        if (!sourceGroup || sourceGroup->windowId == targetWindow)
+            return failure("Window transfer needs a different target window.");
+        const auto targetGroup = model.windows_[targetWindow].activeGroup;
+        if (const auto* group = model.group(targetGroup)) {
+            destination = group->activeTab;
+            return model.movePane(sourceTab, paneId, destination, {}, placement);
+        }
+        if (placement != Placement::Left && placement != Placement::Right
+            && placement != Placement::Top && placement != Placement::Bottom)
+            return failure("Pane transfer needs a split direction.");
+        const auto createdGroup = model.createGroupUnchecked(targetWindow);
+        destination = model.extractPane(sourceTab, paneId, createdGroup);
+        return destination.isNull() ? failure("The pane could not be transferred.") : success();
+    });
+    return result ? destination : TabId{};
 }
 TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGroup, Placement placement)
 {

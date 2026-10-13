@@ -16,7 +16,7 @@ struct ThemeMetrics {
     int headerHeight = 32;
     int tabHeight = 27;
     int statusHeight = 23;
-    int edgeThickness = 26;
+    int edgeThickness = 22;
     int paneHeaderHeight = 22;
     int splitterWidth = 4;
     int cornerRadius = 2;

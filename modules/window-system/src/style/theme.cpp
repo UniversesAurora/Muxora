@@ -239,12 +239,20 @@ QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }
 QWidget#EdgeBar { background: @background; }
 QWidget#PeekPanel { background: @surface; border: 1px solid @accent; }
+QWidget#DragEdgeContent { background: @surface; border: 1px solid @border; }
+QWidget#DragPeekTitle { background: @header; color: @headerText; }
+QWidget#WorkspaceWindow[windowSystemDragPresentation="true"] { border: 0; }
+QWidget#WorkspaceWindow[windowSystemDragPresentation="true"] QFrame#TabGroup { border: 0; }
 QWidget#DockOverlay { background: transparent; }
 QWidget#CommandPalette { background: @surface; border: 1px solid @accent; }
 QLabel[role="hint"] { color: @muted; }
 QLabel[role="heading"] { color: @accent; font-weight: 600; }
 QPushButton, QToolButton { background: @raised; border: 1px solid @border; border-radius: @radiuspx; padding: 2px 7px; min-height: @controlInnerpx; }
 QToolButton { background: transparent; border-color: transparent; padding: 2px 4px; }
+QToolButton#TabListButton, QToolButton#UnpinCurrentButton, QToolButton#UnpinAllButton,
+QToolButton#PinPeekTabButton, QToolButton#ClosePeekTabButton, QToolButton#PinEdgeButton {
+    padding: 0; min-height: 0; min-width: 0;
+}
 QPushButton:hover, QToolButton:hover { background: @soft; border-color: @accent; }
 QPushButton:pressed, QToolButton:pressed, QToolButton:checked { background: @selection; border-color: @accent; }
 QPushButton:focus, QToolButton:focus { border-color: @focus; }

@@ -97,6 +97,7 @@ public:
     [[nodiscard]] QVector<TabId> orderedTabs(WindowId id) const;
     [[nodiscard]] QVector<TabId> autoHiddenTabs(WindowId windowId, Edge edge) const;
     [[nodiscard]] QVector<PaneId> panes(TabId id) const;
+    [[nodiscard]] TabId tabForPane(PaneId id) const;
     [[nodiscard]] bool familyHasTabs(FamilyId id) const;
     [[nodiscard]] quint64 revision() const noexcept;
 
@@ -141,6 +142,14 @@ public:
     OperationResult closeWindow(WindowId windowId);
     PaneId splitPane(TabId tabId, PaneId paneId, Placement placement);
     OperationResult removePane(TabId tabId, PaneId paneId);
+    // Transfer into a target tab's pane tree. Last-pane transfer removes the
+    // empty source tab/group, while keeping the carried leaf and Pane ID.
+    OperationResult movePane(TabId sourceTab, PaneId paneId, TabId targetTab,
+                             PaneId targetPane = {}, Placement placement = Placement::Right);
+    OperationResult swapPanes(TabId tabId, PaneId first, PaneId second);
+    // Existing active tab receives a split. An empty window receives a new tab.
+    TabId movePaneToWindow(TabId sourceTab, PaneId paneId, WindowId targetWindow,
+                           Placement placement = Placement::Right);
     TabId extractPane(TabId sourceTab, PaneId paneId, GroupId targetGroup,
                       Placement placement = Placement::Center);
     OperationResult setSplitRatio(QUuid nodeId, double ratio);

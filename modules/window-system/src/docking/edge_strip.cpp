@@ -1,0 +1,276 @@
+// SPDX-License-Identifier: MIT
+#include "edge_strip.hpp"
+
+#include <QAbstractButton>
+#include <QBoxLayout>
+#include <QEvent>
+#include <QHideEvent>
+#include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QScopedValueRollback>
+#include <QTimer>
+#include <QWheelEvent>
+
+#include <algorithm>
+
+namespace window_system {
+namespace {
+constexpr int spacing = 2;
+constexpr int scrollbarThickness = 4;
+constexpr int hoverMargin = 24;
+}
+
+EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
+    : QFrame(parent), vertical_(edge == Edge::Left || edge == Edge::Right), theme_(theme),
+      scroll_(new QScrollArea(this)), track_(new QWidget),
+      trackLayout_(new QBoxLayout(vertical_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, track_)),
+      scrollbar_(new QScrollBar(vertical_ ? Qt::Vertical : Qt::Horizontal, scroll_->viewport())),
+      gap_(new QWidget(track_)), autoScroll_(new QTimer(this))
+{
+    setObjectName("EdgeBar"); setProperty("edge", int(edge)); setFrameShape(QFrame::NoFrame);
+    const int thickness = std::max(1, theme_.metrics.edgeThickness);
+    if (vertical_) setFixedWidth(thickness); else setFixedHeight(thickness);
+    auto* column = new QVBoxLayout(this); column->setContentsMargins(0, 0, 0, 0); column->setSpacing(0);
+    scroll_->setObjectName("EdgeScrollViewport"); scroll_->setFrameShape(QFrame::NoFrame);
+    scroll_->setWidgetResizable(false);
+    scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    track_->setObjectName("EdgeTabTrack");
+    track_->setStyleSheet(QStringLiteral("QWidget#EdgeTabTrack { background: %1; }").arg(theme_.background.name()));
+    trackLayout_->setContentsMargins(0, 0, 0, 0); trackLayout_->setSpacing(spacing);
+    trackLayout_->setSizeConstraint(QLayout::SetNoConstraint); trackLayout_->addStretch();
+    gap_->setObjectName("EdgeInsertionPreview");
+    gap_->setAttribute(Qt::WA_TransparentForMouseEvents); gap_->setFocusPolicy(Qt::NoFocus);
+    gap_->setStyleSheet(QStringLiteral("QWidget#EdgeInsertionPreview { background: %1; border: none; }")
+        .arg(theme_.inactiveTab.name()));
+    gap_->hide();
+    scroll_->setWidget(track_); column->addWidget(scroll_);
+
+    scrollbar_->setObjectName("EdgeScrollBar"); scrollbar_->setSingleStep(28);
+    scrollbar_->setStyleSheet(QStringLiteral(
+        "QScrollBar { background: transparent; border: none; margin: 0; }"
+        "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
+        "QScrollBar::handle { background: %1; border-radius: 2px; margin: 0; }"
+        "QScrollBar::handle:vertical { min-height: 18px; }"
+        "QScrollBar::handle:horizontal { min-width: 18px; }"
+        "QScrollBar::handle:hover { background: %2; }"
+        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
+        .arg(theme_.border.name(), theme_.accent.name()));
+    scrollbar_->hide();
+    observe(scroll_->viewport()); observe(track_); observe(scrollbar_);
+    autoScroll_->setObjectName("EdgeAutoScrollTimer"); autoScroll_->setInterval(200);
+    connect(autoScroll_, &QTimer::timeout, this, [this] {
+        auto* bar = axisScrollBar(); const int old = bar->value();
+        bar->setValue(old + scrollDirection_ * 12);
+        if (bar->value() == old) autoScroll_->stop();
+        else autoScroll_->setInterval(35);
+    });
+    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this](int low, int high) {
+        scrollbar_->setRange(low, high);
+        scrollbar_->setPageStep(vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width());
+        updateScrollBarVisibility();
+    });
+    connect(axisScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
+        scrollbar_->setValue(value); queueHoverGeometryChanged();
+    });
+    connect(scrollbar_, &QScrollBar::valueChanged, axisScrollBar(), &QScrollBar::setValue);
+    layoutTrack();
+}
+
+EdgeStrip::~EdgeStrip()
+{
+    autoScroll_->stop();
+    // Child destruction can emit signals after member storage is gone.
+    for (auto* object : findChildren<QObject*>()) {
+        object->removeEventFilter(this); disconnect(object, nullptr, this, nullptr);
+    }
+}
+
+void EdgeStrip::observe(QWidget* widget)
+{
+    widget->installEventFilter(this); widget->setMouseTracking(true);
+    connect(widget, &QObject::destroyed, this, [this, widget] { hoveredSurfaces_.remove(widget); });
+}
+
+void EdgeStrip::addButton(QAbstractButton* button)
+{
+    if (!button || std::any_of(buttons_.cbegin(), buttons_.cend(), [button](const auto& existing) { return existing == button; })) return;
+    button->setParent(track_); buttons_.append(button); observe(button);
+    const int index = tail_ ? trackLayout_->indexOf(tail_) : trackLayout_->count() - 1;
+    trackLayout_->insertWidget(index, button); button->show(); layoutTrack();
+}
+
+void EdgeStrip::setTailWidget(QWidget* widget)
+{
+    if (tail_ == widget) return;
+    if (tail_) { trackLayout_->removeWidget(tail_); tail_->hide(); }
+    tail_ = widget;
+    if (widget) {
+        widget->setParent(track_); observe(widget);
+        trackLayout_->insertWidget(trackLayout_->count() - 1, widget); widget->show();
+    }
+    layoutTrack();
+}
+
+int EdgeStrip::axis(QPoint point) const { return vertical_ ? point.y() : point.x(); }
+QScrollBar* EdgeStrip::axisScrollBar() const
+{
+    return vertical_ ? scroll_->verticalScrollBar() : scroll_->horizontalScrollBar();
+}
+QRect EdgeStrip::viewportRectGlobal() const
+{
+    return isVisible() ? QRect(scroll_->viewport()->mapToGlobal(QPoint()), scroll_->viewport()->size()) : QRect();
+}
+
+int EdgeStrip::insertionIndex(QPoint global) const
+{
+    if (!viewportRectGlobal().contains(global)) return -1;
+    // A gap captures its own index before midpoint testing, so the shifted
+    // neighbour cannot make a stationary cursor alternate between two slots.
+    if (previewIndex_ >= 0 && insertionPreviewRect().contains(global)) return previewIndex_;
+    const int position = axis(track_->mapFromGlobal(global));
+    int index = 0;
+    for (const auto& button : buttons_) if (button) {
+        if (position < axis(button->geometry().center())) return index;
+        ++index;
+    }
+    return index;
+}
+
+QRect EdgeStrip::insertionMarkerRect(int index) const
+{
+    if (index < 0 || index > buttons_.size()) return {};
+    int position = 0;
+    if (index == previewIndex_) position = axis(gap_->pos());
+    else if (index < buttons_.size() && buttons_[index]) position = axis(buttons_[index]->pos());
+    else if (!buttons_.isEmpty() && buttons_.last()) {
+        const auto bounds = buttons_.last()->geometry();
+        position = vertical_ ? bounds.bottom() + 1 : bounds.right() + 1;
+    }
+    const auto viewport = viewportRectGlobal();
+    if (viewport.isEmpty()) return {};
+    const auto origin = track_->mapToGlobal(vertical_ ? QPoint(0, position) : QPoint(position, 0));
+    const int coordinate = axis(origin);
+    const int first = vertical_ ? viewport.top() : viewport.left();
+    const int last = vertical_ ? viewport.bottom() : viewport.right();
+    if (coordinate < first || coordinate > last) return {};
+    const int center = qBound(first + 2, coordinate, std::max(first + 2, last - 1));
+    return vertical_ ? QRect(viewport.left(), center - 2, viewport.width(), 4)
+                     : QRect(center - 2, viewport.top(), 4, viewport.height());
+}
+
+void EdgeStrip::setInsertionPreview(int index, int extent)
+{
+    const bool valid = index >= 0 && index <= buttons_.size() && extent > 0;
+    const int nextIndex = valid ? index : -1;
+    const int nextExtent = valid ? std::min(extent, QWIDGETSIZE_MAX) : 0;
+    if (nextIndex == previewIndex_ && nextExtent == previewExtent_) return;
+    trackLayout_->removeWidget(gap_); gap_->hide();
+    previewIndex_ = nextIndex; previewExtent_ = nextExtent;
+    if (valid) {
+        const int insertion = index < buttons_.size() ? trackLayout_->indexOf(buttons_[index])
+            : tail_ ? trackLayout_->indexOf(tail_) : trackLayout_->count() - 1;
+        trackLayout_->insertWidget(insertion, gap_); gap_->show();
+    }
+    layoutTrack();
+}
+
+QRect EdgeStrip::insertionPreviewRect() const
+{
+    if (previewIndex_ < 0 || gap_->isHidden()) return {};
+    return QRect(gap_->mapToGlobal(QPoint()), gap_->size()).intersected(viewportRectGlobal());
+}
+
+void EdgeStrip::layoutTrack()
+{
+    if (arranging_) return;
+    QScopedValueRollback guard(arranging_, true);
+    const int thickness = std::max(1, theme_.metrics.edgeThickness);
+    qint64 total = 0; int count = 0;
+    for (const auto& button : buttons_) if (button) {
+        const auto hint = button->sizeHint();
+        const int extent = std::clamp(vertical_ ? hint.height() : hint.width(), 1, QWIDGETSIZE_MAX);
+        button->setFixedSize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
+        total += extent; ++count;
+    }
+    if (tail_) { tail_->setFixedSize(thickness, thickness); total += thickness; ++count; }
+    if (previewIndex_ >= 0) {
+        gap_->setFixedSize(vertical_ ? QSize(thickness, previewExtent_) : QSize(previewExtent_, thickness));
+        total += previewExtent_; ++count;
+    }
+    total += std::max(0, count - 1) * spacing;
+    const int available = vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width();
+    const int extent = int(std::clamp<qint64>(std::max<qint64>(total, available), 1, QWIDGETSIZE_MAX));
+    track_->resize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
+    trackLayout_->activate();
+    scrollbar_->setPageStep(available);
+    updateScrollBarGeometry(); updateScrollBarVisibility();
+}
+
+void EdgeStrip::updateScrollBarGeometry()
+{
+    const auto area = scroll_->viewport()->rect();
+    scrollbar_->setGeometry(vertical_ ? QRect(std::max(0, area.width() - scrollbarThickness), 0, scrollbarThickness, area.height())
+        : QRect(0, std::max(0, area.height() - scrollbarThickness), area.width(), scrollbarThickness));
+    scrollbar_->raise();
+}
+void EdgeStrip::updateScrollBarVisibility()
+{
+    scrollbar_->setVisible(isVisible() && scrollbar_->maximum() > 0 && (!hoveredSurfaces_.isEmpty() || scrollDirection_));
+    if (scrollbar_->isVisible()) scrollbar_->raise();
+}
+void EdgeStrip::queueHoverGeometryChanged()
+{
+    if (!hoverGeometryChanged || hoverNotificationQueued_) return;
+    hoverNotificationQueued_ = true;
+    QTimer::singleShot(0, this, [this] {
+        hoverNotificationQueued_ = false;
+        const auto callback = hoverGeometryChanged; if (callback) callback();
+    });
+}
+
+void EdgeStrip::setDragHover(QPoint global)
+{
+    const auto viewport = viewportRectGlobal();
+    int nextDirection = 0;
+    if (viewport.contains(global)) {
+        const int position = axis(global);
+        const int first = vertical_ ? viewport.top() : viewport.left();
+        const int last = vertical_ ? viewport.bottom() : viewport.right();
+        nextDirection = position < first + hoverMargin ? -1 : position > last - hoverMargin ? 1 : 0;
+    }
+    if (nextDirection != scrollDirection_) autoScroll_->stop();
+    scrollDirection_ = nextDirection;
+    if (!scrollDirection_) autoScroll_->stop();
+    else if (!autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
+    updateScrollBarVisibility();
+}
+
+bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {
+        layoutTrack(); queueHoverGeometryChanged();
+    } else if (event->type() == QEvent::Wheel) {
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
+        const int distance = vertical_ ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
+        auto* bar = axisScrollBar(); bar->setValue(bar->value() - distance);
+        wheel->accept(); return true;
+    } else if (event->type() == QEvent::Enter) {
+        hoveredSurfaces_.insert(watched); updateScrollBarVisibility();
+    } else if (event->type() == QEvent::Leave) {
+        hoveredSurfaces_.remove(watched);
+        QTimer::singleShot(0, this, [this] { updateScrollBarVisibility(); });
+    }
+    return QFrame::eventFilter(watched, event);
+}
+void EdgeStrip::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); layoutTrack(); }
+void EdgeStrip::hideEvent(QHideEvent* event)
+{
+    autoScroll_->stop(); scrollDirection_ = 0; hoveredSurfaces_.clear(); scrollbar_->hide();
+    QFrame::hideEvent(event);
+}
+
+} // namespace window_system

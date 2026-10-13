@@ -2,6 +2,8 @@
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
+#include "docking/dock_surface.hpp"
+#include "docking/dock_guides.hpp"
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCursor>
@@ -330,16 +332,16 @@ void DragInteractionTest::edgeGuidesSeparateHiddenAndPinnedDrops()
     prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(660, 30);
     manager.showWindow(target); manager.showWindow(source);
     QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
-    auto* surface = second->findChild<QWidget*>("DockSurface"); QVERIFY(surface);
+    auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
-    QPoint point, inward;
-    switch (static_cast<Edge>(side)) {
-    case Edge::Left: point = {bounds.left() + 20, bounds.center().y()}; inward = {28, 0}; break;
-    case Edge::Right: point = {bounds.right() - 19, bounds.center().y()}; inward = {-28, 0}; break;
-    case Edge::Top: point = {bounds.center().x(), bounds.top() + 20}; inward = {0, 28}; break;
-    case Edge::Bottom: point = {bounds.center().x(), bounds.bottom() - 19}; inward = {0, -28}; break;
+    const auto strips = surface->tabBarRects().values() + surface->edgeBarRects().values();
+    const auto guides = dockGuides(bounds, surface->centralRectGlobal(), true, strips);
+    QPoint point;
+    for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(side) && guide.pinned == pinned) {
+        for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip));
+        point = guide.rect.center();
     }
-    if (pinned) point += inward;
+    QVERIFY(!point.isNull());
     auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
     mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);

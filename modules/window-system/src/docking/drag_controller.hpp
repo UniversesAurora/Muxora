@@ -1,5 +1,6 @@
 #pragma once
 #include <window_system/window_manager.hpp>
+#include "dock_guides.hpp"
 #include <QObject>
 #include <QPointer>
 #include <QRect>
@@ -22,6 +23,7 @@ struct DropTarget {
     QRect groupRect;
     QRect windowRect;
     int insertionIndex = -1;
+    QVector<DockGuide> guides;
 };
 class DragController final : public QObject {
 public:
@@ -32,7 +34,10 @@ public:
     void cancel();
     void releaseForMutation();
     [[nodiscard]] bool isActive() const;
+    [[nodiscard]] bool hasStableLayout() const { return preparing_ || active_ || finalizing_; }
     void selectTarget();
+    void refreshHover();
+    [[nodiscard]] QJsonObject stableLayout() const { return originalLayout_; }
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
@@ -40,6 +45,7 @@ private:
     void update(QPoint global);
     void finish(QPoint global);
     void stop();
+    void completeLayoutTransaction();
     DropTarget hit(QPoint global);
     WindowId candidateAt(QPoint global) const;
     WindowManager* manager_;
@@ -52,6 +58,7 @@ private:
     LayoutModel originalModel_;
     QHash<WindowId, WindowOptions> originalOptions_;
     QJsonObject originalSourceStrips_;
+    QJsonObject originalLayout_;
     QHash<WindowId, QRect> originalWindows_;
     QSet<WindowId> originalMaximizedWindows_;
     bool detached_ = false;
@@ -59,6 +66,7 @@ private:
     bool originalMaximized_ = false;
     QPoint startPosition_;
     QPoint windowOffset_;
+    QPoint normalOffset_;
     QPoint lastPosition_;
     DropTarget target_;
     WindowId revealCandidate_;
@@ -66,6 +74,9 @@ private:
     WindowId forcedWindow_;
     QTimer revealTimer_;
     bool active_ = false;
+    bool preparing_ = false;
+    bool finalizing_ = false;
     bool choosing_ = false;
+    bool hoverUpdateQueued_ = false;
 };
 } // namespace window_system

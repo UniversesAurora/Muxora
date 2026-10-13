@@ -18,6 +18,7 @@ class CommandStripHost;
 class DockSurface;
 class WorkspaceWindow final : public QWidget {
 public:
+    enum class DragPresentation { Window, Tab, Left, Right, Top, Bottom };
     WorkspaceWindow(WindowManager* manager, WindowId id, const WindowOptions& options);
     [[nodiscard]] WindowId id() const;
     [[nodiscard]] DockSurface* surface() const;
@@ -31,6 +32,9 @@ public:
     [[nodiscard]] QRect normalPlacementGeometry() const;
     [[nodiscard]] bool placementMaximized() const;
     void restorePlacement(const QRect& geometry, bool maximized);
+    void setDragPresentation(DragPresentation presentation);
+    [[nodiscard]] DragPresentation dragPresentation() const { return dragPresentation_; }
+    [[nodiscard]] QPoint dragLabelAnchor() const;
     bool allowClose = false;
 protected:
     void changeEvent(QEvent* event) override;
@@ -47,6 +51,7 @@ private:
     void updateWindowControlState();
     void queuePlacementNotification();
     void notifyPlacementChanged();
+    void updateDragMask();
     [[nodiscard]] bool hasNormalPlacement() const;
     WindowManager* manager_;
     WindowId id_;
@@ -69,5 +74,7 @@ private:
     bool notifiedMaximized_ = false;
     bool restoringPlacement_ = false;
     QTimer* placementTimer_;
+    DragPresentation dragPresentation_ = DragPresentation::Window;
+    QPointer<QWidget> dragPresentationHost_;
 };
 } // namespace window_system

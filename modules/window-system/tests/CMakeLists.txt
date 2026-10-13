@@ -27,7 +27,7 @@ if(WIN32)
 endif()
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation)
+foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -37,6 +37,12 @@ foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentatio
         -o ${CMAKE_CURRENT_BINARY_DIR}/${suite}-results.txt,txt)
     set_tests_properties(window-system.${suite} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endforeach()
+
+qt_add_executable(window-system-movement-model-test movement_model_test.cpp)
+target_link_libraries(window-system-movement-model-test PRIVATE WindowSystem::Model Qt6::Test)
+set_target_properties(window-system-movement-model-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.movement-model COMMAND window-system-movement-model-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/movement-model-results.txt,txt)
 
 if(WIN32)
     qt_add_executable(window-system-native-frame-test native_frame_test.cpp)

@@ -80,6 +80,20 @@ public:
     bool requestCloseWindow(WindowId window);
     bool moveTab(TabId tab, GroupId group, Placement placement = Placement::Center,
                  int insertionIndex = -1);
+    bool moveTabToWindow(TabId tab, WindowId target,
+                         Placement placement = Placement::Center);
+    bool reorderTab(TabId tab, bool forward);
+    bool moveTabToAdjacentGroup(TabId tab, Placement direction);
+    bool moveTabToWindowCycle(TabId tab, bool forward);
+    bool movePane(TabId sourceTab, PaneId pane, TabId targetTab,
+                   PaneId targetPane = {}, Placement placement = Placement::Right);
+    bool movePaneToAdjacentTab(TabId tab, PaneId pane, bool forward);
+    bool movePaneToAdjacentGroup(TabId tab, PaneId pane, Placement direction);
+    bool movePaneToWindow(TabId tab, PaneId pane, WindowId target,
+                          Placement placement = Placement::Right);
+    bool movePaneToWindowCycle(TabId tab, PaneId pane, bool forward);
+    bool swapPanes(TabId tab, PaneId first, PaneId second);
+    bool swapPaneDirection(TabId tab, PaneId pane, Placement direction);
     WindowId detachTab(TabId tab, WindowKind kind = WindowKind::Floating);
     bool moveAllTabs(WindowId source, GroupId group,
                      Placement placement = Placement::Center, int insertionIndex = -1);
@@ -145,7 +159,10 @@ private:
     bool setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top);
     QWidget* createContent(const TabOptions& options, PaneId pane);
     bool focusGroup(GroupId group);
-    bool navigate(Placement direction, bool panes);
+    bool navigate(Placement direction, bool panes, const CommandContext& source);
+    GroupId adjacentGroup(TabId tab, Placement direction, std::optional<int> anchor = {}) const;
+    PaneId adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor = {}) const;
+    WindowId adjacentWindow(WindowId window, bool forward) const;
     void resizeActive(Placement direction, bool panes);
     void focusWindowCycle(bool forward, const QString& scope);
     void beginTabDrag(TabId tab, QPoint globalPosition);
