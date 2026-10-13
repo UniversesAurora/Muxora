@@ -3,6 +3,9 @@
 #include <QApplication>
 #include <QEvent>
 #include <QLabel>
+#include <QAction>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPointer>
 
 int main(int argc, char** argv)
@@ -11,6 +14,17 @@ int main(int argc, char** argv)
     app.setQuitOnLastWindowClosed(false);
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
+    int menuExecutions = 0;
+    if (!windows.commands().add({"external.menu", "External menu action", "Host", {}, {},
+        [&menuExecutions](const window_system::CommandContext&) { ++menuExecutions; return true; }, {"工具", "外部宿主"}, 20})) return 80;
+    auto* menuBar = windows.windowWidget(root)->findChild<QMenuBar*>("MenuStrip");
+    if (!menuBar) return 81;
+    auto* fileMenu = menuBar->findChild<QMenu*>("文件");
+    if (!fileMenu || !QMetaObject::invokeMethod(fileMenu, "aboutToShow")) return 82;
+    auto* externalAction = menuBar->findChild<QAction*>("external.menu");
+    if (!externalAction || !externalAction->isVisible() || !externalAction->shortcut().isEmpty()) return 83;
+    externalAction->trigger(); QCoreApplication::processEvents();
+    if (menuExecutions != 1) return 84;
     if (!windows.resetToolbarWidth(root, "title")
         || !windows.execute("window.toolbar.resetSize", {{"strip", "caption-controls"}}, root)
         || windows.resetToolbarWidth(root, "missing")) return 12;

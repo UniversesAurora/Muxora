@@ -75,6 +75,16 @@ private slots:
     void bulkCloseCommandsRespectTheSelectedTabAndGroup_data();
     void bulkCloseCommandsRespectTheSelectedTabAndGroup();
     void refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs();
+    void closeAllApprovesOnceAndSavesTheCompleteWorkspace();
+    void refusedCloseAllPreservesEveryFamily();
+    void closeAllRejectsChangesDuringCallbacks_data();
+    void closeAllRejectsChangesDuringCallbacks();
+    void recursiveCloseAllCannotBypassConfirmation();
+    void closeAllRejectsContentReplacementWithTheSameIds();
+    void closeAllHandlesManagerDestruction_data();
+    void closeAllHandlesManagerDestruction();
+    void closeAllFromLayoutNotificationEmitsClosedOnce();
+    void closeAllAllowsUnchangedFocusAfterApproval();
 };
 
 void WorkspaceTest::initTestCase()
@@ -707,6 +717,184 @@ void WorkspaceTest::refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs()
     QVERIFY(!added.isNull()); QVERIFY(manager.model().tab(added));
     QCOMPARE(manager.model().orderedTabs(window), (QVector<TabId>{added}));
     QVERIFY(manager.model().validate().ok);
+}
+
+void WorkspaceTest::closeAllApprovesOnceAndSavesTheCompleteWorkspace()
+{
+    WindowManager manager;
+    const auto first = manager.createWindow();
+    const auto second = manager.createWindow();
+    QVector<QPointer<QWidget>> contents{editor("First"), editor("Second"), editor("Float")};
+    const auto a = manager.addTab(first, contents[0], editorOptions("First", "First"));
+    const auto b = manager.addTab(second, contents[1], editorOptions("Second", "Second"));
+    const auto c = manager.addTab(first, contents[2], editorOptions("Float", "Float"));
+    const auto floating = manager.detachTab(c);
+    const auto before = manager.saveLayout();
+    int approvalCalls = 0;
+    manager.setCloseGuard([&](const QVector<TabId>& tabs) {
+        ++approvalCalls;
+        return tabSet(tabs) == (QSet<TabId>{a, b, c});
+    });
+    QJsonObject saved;
+    QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] {
+        saved = manager.saveLayout();
+        QVERIFY(manager.model().window(first)); QVERIFY(manager.model().window(second));
+        QVERIFY(manager.model().window(floating));
+        for (const auto& content : contents) QVERIFY(content);
+    });
+    QSignalSpy finalSave(&manager, &WindowManager::lastWindowAboutToClose);
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QVERIFY(manager.requestCloseAllWindows());
+    QCOMPARE(approvalCalls, 1); QCOMPARE(finalSave.count(), 1); QCOMPARE(closed.count(), 1);
+    QCOMPARE(saved, before); QCOMPARE(saved.value("windows").toArray().size(), 3);
+    QVERIFY(manager.model().windows().isEmpty()); QVERIFY(manager.model().tabs().isEmpty());
+    QVERIFY(!manager.requestCloseAllWindows()); QCOMPARE(closed.count(), 1);
+    deliverDeferredDeletes();
+    for (const auto& content : contents) QVERIFY(content.isNull());
+}
+
+void WorkspaceTest::refusedCloseAllPreservesEveryFamily()
+{
+    WindowManager manager;
+    const auto first = manager.createWindow(); const auto second = manager.createWindow();
+    QPointer<QWidget> a = editor("First"); QPointer<QWidget> b = editor("Second");
+    const auto firstTab = manager.addTab(first, a, editorOptions("First", "First"));
+    const auto secondTab = manager.addTab(second, b, editorOptions("Second", "Second"));
+    const auto floating = manager.detachTab(secondTab);
+    const auto before = manager.saveLayout();
+    int approvals = 0;
+    QVector<TabId> requested;
+    manager.setCloseGuard([&](const QVector<TabId>& tabs) {
+        ++approvals; requested = tabs; return false;
+    });
+    QSignalSpy finalSave(&manager, &WindowManager::lastWindowAboutToClose);
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QVERIFY(!manager.requestCloseAllWindows());
+    QCOMPARE(approvals, 1); QCOMPARE(manager.saveLayout(), before);
+    QCOMPARE(tabSet(requested), (QSet<TabId>{firstTab, secondTab}));
+    QCOMPARE(finalSave.count(), 0); QCOMPARE(closed.count(), 0);
+    deliverDeferredDeletes(); QVERIFY(a && b); QVERIFY(manager.model().window(floating));
+    manager.setCloseGuard({}); QVERIFY(manager.requestCloseAllWindows());
+    QCOMPARE(closed.count(), 1);
+}
+
+void WorkspaceTest::closeAllRejectsChangesDuringCallbacks_data()
+{
+    QTest::addColumn<bool>("notification"); QTest::addColumn<QString>("mutation");
+    for (const bool notification : {false, true})
+        for (const auto* mutation : {"pane", "tab", "window", "options", "placement", "layout"})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(notification ? "notification" : "approval", mutation)))
+                << notification << QString(mutation);
+}
+void WorkspaceTest::closeAllRejectsChangesDuringCallbacks()
+{
+    QFETCH(bool, notification); QFETCH(QString, mutation);
+    WindowManager manager; const auto first = manager.createWindow(); const auto second = manager.createWindow();
+    QPointer<QWidget> original = editor("Original");
+    const auto tab = manager.addTab(first, original, editorOptions("Original", "Original"));
+    const auto pane = manager.model().tab(tab)->activePane;
+    const auto other = manager.addTab(second, editor("Other"), editorOptions("Other", "Other"));
+    QPointer<QWidget> added; TabId addedTab; PaneId addedPane; WindowId addedWindow;
+    bool changed = false;
+    auto mutate = [&] {
+        changed = true;
+        if (mutation == "pane") {
+            added = editor("Added"); addedPane = manager.splitPane(tab, pane, added, Placement::Right);
+        } else if (mutation == "tab") {
+            added = editor("Added"); addedTab = manager.addTab(first, added, editorOptions("Added", "Added"));
+        } else if (mutation == "window") addedWindow = manager.createWindow();
+        else if (mutation == "options") QVERIFY(manager.setSideBarsVisible(first, false));
+        else if (mutation == "placement") manager.windowWidget(first)->move(321, 234);
+        else QVERIFY(manager.moveTab(other, manager.model().groupForTab(tab), Placement::Right));
+    };
+    manager.setCloseGuard([&](const QVector<TabId>&) { if (!notification) mutate(); return true; });
+    QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] { if (notification) mutate(); });
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QVERIFY(!manager.requestCloseAllWindows()); QVERIFY(changed); QCOMPARE(closed.count(), 0);
+    deliverDeferredDeletes(); QVERIFY(original); QVERIFY(manager.model().window(first));
+    QVERIFY(manager.model().window(second)); QVERIFY(manager.model().tab(tab)); QVERIFY(manager.model().tab(other));
+    if (mutation == "pane") { QVERIFY(!addedPane.isNull()); QCOMPARE(manager.paneWidget(addedPane), added.data()); }
+    if (mutation == "tab") { QVERIFY(!addedTab.isNull()); QVERIFY(manager.model().tab(addedTab)); QVERIFY(added); }
+    if (mutation == "window") { QVERIFY(!addedWindow.isNull()); QVERIFY(manager.model().window(addedWindow)); }
+    QVERIFY(manager.model().validate().ok);
+}
+
+void WorkspaceTest::recursiveCloseAllCannotBypassConfirmation()
+{
+    WindowManager manager; const auto root = manager.createWindow();
+    const auto empty = manager.createWindow();
+    QPointer<QWidget> original = editor("Original");
+    const auto tab = manager.addTab(root, original, editorOptions("Original", "Original"));
+    const auto pane = manager.model().tab(tab)->activePane;
+    int approvals = 0;
+    QVector<bool> nestedResults;
+    manager.setCloseGuard([&](const QVector<TabId>&) {
+        ++approvals; manager.setCloseGuard({});
+        nestedResults = {manager.requestCloseAllWindows(), manager.requestCloseWindow(root),
+            manager.requestCloseWindow(empty), manager.closeTab(tab), manager.closeTabs({tab}), manager.closePane(tab, pane)};
+        return false;
+    });
+    const auto before = manager.saveLayout();
+    QVERIFY(!manager.requestCloseAllWindows()); QCOMPARE(approvals, 1);
+    QCOMPARE(nestedResults, (QVector<bool>{false, false, false, false, false, false}));
+    QCOMPARE(manager.saveLayout(), before); QVERIFY(original);
+    QVERIFY(manager.requestCloseAllWindows());
+}
+
+void WorkspaceTest::closeAllRejectsContentReplacementWithTheSameIds()
+{
+    WindowManager manager; const auto root = manager.createWindow();
+    QPointer<QWidget> original = editor("Original");
+    const auto tab = manager.addTab(root, original, editorOptions("Original", "Original"));
+    const auto pane = manager.model().tab(tab)->activePane;
+    manager.setContentFactory([](const TabOptions& options, PaneId) { return editor(options.state.value("text").toString()); });
+    manager.setCloseGuard([&](const QVector<TabId>&) { return manager.restoreLayout(manager.saveLayout()).ok; });
+    QVERIFY(!manager.requestCloseAllWindows());
+    QPointer<QWidget> replacement = manager.paneWidget(pane); QVERIFY(replacement && replacement != original);
+    deliverDeferredDeletes(); QVERIFY(original.isNull()); QVERIFY(replacement);
+    QVERIFY(manager.model().tab(tab)); QVERIFY(manager.model().window(root)); QVERIFY(manager.model().validate().ok);
+}
+
+void WorkspaceTest::closeAllHandlesManagerDestruction_data()
+{
+    QTest::addColumn<QString>("stage");
+    for (const auto* stage : {"approval", "notification", "closed"}) QTest::newRow(stage) << QString(stage);
+}
+void WorkspaceTest::closeAllHandlesManagerDestruction()
+{
+    QFETCH(QString, stage);
+    auto manager = std::make_unique<WindowManager>(); const auto root = manager->createWindow();
+    manager->addTab(root, editor("Original"), editorOptions("Original", "Original"));
+    QPointer<WindowManager> observed(manager.get());
+    if (stage == "approval") manager->setCloseGuard([&](const QVector<TabId>&) { manager.reset(); return true; });
+    else QObject::connect(manager.get(), stage == "notification" ? &WindowManager::lastWindowAboutToClose
+        : &WindowManager::allWindowsClosed, [&] { manager.reset(); });
+    const bool accepted = manager->requestCloseAllWindows();
+    QVERIFY(observed.isNull()); QCOMPARE(accepted, stage == "closed");
+}
+
+void WorkspaceTest::closeAllFromLayoutNotificationEmitsClosedOnce()
+{
+    WindowManager manager; const auto root = manager.createWindow();
+    const auto tab = manager.addTab(root, editor("Original"), editorOptions("Original", "Original"));
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QSignalSpy finalSave(&manager, &WindowManager::lastWindowAboutToClose);
+    bool requested = false; bool accepted = false;
+    QObject::connect(&manager, &WindowManager::layoutChanged, &manager, [&] {
+        if (!requested) { requested = true; accepted = manager.requestCloseAllWindows(); }
+    });
+    QVERIFY(manager.setTabIconVisible(tab, false)); QVERIFY(requested && accepted);
+    QCOMPARE(closed.count(), 1); QCOMPARE(finalSave.count(), 1); QVERIFY(manager.model().windows().isEmpty());
+}
+void WorkspaceTest::closeAllAllowsUnchangedFocusAfterApproval()
+{
+    WindowManager manager; const auto root = manager.createWindow();
+    const auto tab = manager.addTab(root, editor("Original"), editorOptions("Original", "Original"));
+    const auto before = manager.saveLayout(); bool focused = false;
+    manager.setCloseGuard([&](const QVector<TabId>&) { focused = manager.activateTab(tab); return true; });
+    QJsonObject saved;
+    QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] { saved = manager.saveLayout(); });
+    QVERIFY(manager.requestCloseAllWindows()); QVERIFY(focused); QCOMPARE(saved, before);
 }
 
 QTEST_MAIN(WorkspaceTest)

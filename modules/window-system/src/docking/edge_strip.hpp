@@ -45,7 +45,9 @@ private:
     [[nodiscard]] int axis(QPoint point) const;
     void layoutTrack();
     void updateScrollBarGeometry();
+    void synchronizeScrollBar();
     void updateScrollBarVisibility();
+    void queueTrackLayout();
     void queueHoverGeometryChanged();
     void observe(QWidget* widget);
 
@@ -65,6 +67,7 @@ private:
     int scrollDirection_ = 0;
     bool arranging_ = false;
     bool hoverNotificationQueued_ = false;
+    bool trackLayoutQueued_ = false;
 };
 
 } // namespace window_system

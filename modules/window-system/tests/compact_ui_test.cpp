@@ -8,6 +8,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
+#include <QDir>
 #include <QEnterEvent>
 #include <QImage>
 #include <QLabel>
@@ -226,7 +227,8 @@ void CompactUiTest::compactTargetsSurviveThemeAndFontChanges()
     QList<QToolButton*> buttons;
     for (const auto& name : {"TabListButton", "UnpinCurrentButton", "UnpinAllButton",
                            "PinPeekTabButton", "ClosePeekTabButton", "PinEdgeButton"}) {
-        const int extent = QString::fromLatin1(name) == "PinEdgeButton" ? 22 : 20;
+        const QString objectName = QString::fromLatin1(name);
+        const int extent = objectName == "PinEdgeButton" ? 22 : objectName.contains("PeekTab") ? 18 : 20;
         auto* button = new CompactToolButton(&root, extent); button->setObjectName(name);
         button->setIcon(iconFor("pin")); column->addWidget(button); buttons.append(button);
     }
@@ -234,7 +236,8 @@ void CompactUiTest::compactTargetsSurviveThemeAndFontChanges()
     QVERIFY(QTest::qWaitForWindowExposed(&root));
     const auto verifyTargets = [&] {
         for (auto* button : buttons) {
-            const int extent = button->objectName() == "PinEdgeButton" ? 22 : 20;
+            const auto name = button->objectName();
+            const int extent = name == "PinEdgeButton" ? 22 : name.contains("PeekTab") ? 18 : 20;
             const QSize target(extent, extent);
             QCOMPARE(button->minimumSize(), target); QCOMPARE(button->maximumSize(), target);
             QCOMPARE(button->size(), target); QCOMPARE(button->iconSize(), QSize(14, 14));
@@ -262,7 +265,16 @@ void CompactUiTest::compactPeekAndEdgeBarsKeepRealContent()
 {
     QFETCH(int, edgeValue); const auto edge = Edge(edgeValue);
     WindowManager manager; const auto id = manager.createWindow();
-    manager.addTab(id, new QLabel("Center"), {"Center", "label", {}});
+    const auto center = manager.addTab(id, new QLabel("Center"), {"Center", "label", {}});
+    auto visibleGroup = [&](TabId target) -> GroupTabs* {
+        for (auto* widget : manager.windowWidget(id)->findChildren<QWidget*>())
+            if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()
+                && group->property("groupId").toUuid() == manager.model().groupForTab(target)) return group;
+        return nullptr;
+    };
+    manager.showWindow(id);
+    auto* central = visibleGroup(center); QVERIFY(central);
+    const int originalTabHeight = central->tabBar()->height();
     auto* content = new QLabel("Live side content");
     const QColor contentColor("#19ab7c");
     content->setStyleSheet(QStringLiteral("background: %1;").arg(contentColor.name()));
@@ -281,20 +293,47 @@ void CompactUiTest::compactPeekAndEdgeBarsKeepRealContent()
     QCOMPARE(pinEdge->size(), QSize(22, 22));
     QVERIFY(manager.activateTab(tab));
     auto* header = window->findChild<QWidget*>("PeekTitleBar"); QVERIFY(header); QVERIFY(header->isVisible());
-    QCOMPARE(header->height(), 24);
+    QCOMPARE(header->height(), 20);
+    QCOMPARE(header->minimumHeight(), 20); QCOMPARE(header->maximumHeight(), 20);
+    central = visibleGroup(center); QVERIFY(central);
+    QCOMPARE(central->tabBar()->height(), originalTabHeight);
     for (const auto& name : {"PinPeekTabButton", "ClosePeekTabButton"}) {
         auto* button = header->findChild<QToolButton*>(name); QVERIFY(button);
-        QCOMPARE(button->size(), QSize(20, 20)); QCOMPARE(button->iconSize(), QSize(14, 14));
+        QCOMPARE(button->size(), QSize(18, 18)); QCOMPARE(button->iconSize(), QSize(14, 14));
         QVERIFY(header->rect().contains(button->geometry()));
         QVERIFY(!button->icon().isNull()); QVERIFY(!button->accessibleName().isEmpty());
     }
+    const auto originalFont = window->font();
+    auto largerFont = originalFont; largerFont.setPointSizeF(std::max(qreal(12), originalFont.pointSizeF() + 3));
+    window->setFont(largerFont); QCoreApplication::processEvents(); header->layout()->activate();
+    QCOMPARE(header->height(), std::max(20, header->fontMetrics().height() + 2));
+    auto* title = header->findChild<QLabel*>(); QVERIFY(title);
+    QVERIFY(title->height() >= title->fontMetrics().height());
+    for (const auto& name : {"PinPeekTabButton", "ClosePeekTabButton"}) {
+        auto* button = header->findChild<QToolButton*>(name); QVERIFY(button);
+        QCOMPARE(button->size(), QSize(18, 18)); QVERIFY(header->rect().contains(button->geometry()));
+    }
+    window->setFont(originalFont); applyTheme(window, manager.theme()); QCoreApplication::processEvents();
+    header->layout()->activate(); QCOMPARE(header->height(), 20);
     QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
     const auto image = window->grab().toImage(); const auto point = content->mapTo(window, QPoint(4, 4));
     QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())).rgb(),
         contentColor.rgb());
+    const auto screenshots = qEnvironmentVariable("WINDOW_SYSTEM_SCREENSHOT_DIR");
+    if (!screenshots.isEmpty()) {
+        QVERIFY(QDir().mkpath(screenshots));
+        auto* peek = window->findChild<QWidget*>("PeekPanel"); QVERIFY(peek);
+        QVERIFY(peek->grab().save(QDir(screenshots).filePath(QString("peek-compact-%1.png").arg(edgeValue))));
+    }
     QTest::mouseClick(header->findChild<QToolButton*>("PinPeekTabButton"), Qt::LeftButton);
     QCOMPARE(manager.model().group(manager.model().groupForTab(tab))->location, GroupLocation::Pinned);
     QCOMPARE(manager.paneWidget(pane), content);
+    auto* pinned = visibleGroup(tab); QVERIFY(pinned);
+    QCOMPARE(pinned->tabBar()->height(), originalTabHeight);
+    for (const auto& name : {"UnpinCurrentButton", "UnpinAllButton", "TabListButton"}) {
+        auto* button = pinned->findChild<QToolButton*>(name); QVERIFY(button);
+        QCOMPARE(button->size(), QSize(20, 20)); QCOMPARE(button->iconSize(), QSize(14, 14));
+    }
 }
 
 QTEST_MAIN(CompactUiTest)

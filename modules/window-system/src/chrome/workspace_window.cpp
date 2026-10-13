@@ -2,6 +2,7 @@
 #include "workspace_window.hpp"
 #include "command_strip.hpp"
 #include "window_title_label.hpp"
+#include "commands/command_menus.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_presentation.hpp"
 #include "docking/tab_strip.hpp"
@@ -202,28 +203,8 @@ void WorkspaceWindow::createChrome()
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
     if (kind_ == WindowKind::Workbench) {
         auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
-        const QVector<QPair<QString, QString>> categories = {
-            {QStringLiteral("文件(&F)"), "文件"}, {QStringLiteral("视图(&V)"), "视图"},
-            {QStringLiteral("布局(&L)"), "布局"}, {QStringLiteral("窗口(&W)"), "窗口"},
-            {QStringLiteral("工具(&T)"), "工具"}, {QStringLiteral("帮助(&H)"), "帮助"}};
-        for (const auto& category : categories) {
-            auto* entry = menu->addMenu(category.first);
-            entry->menuAction()->setObjectName(category.second);
-            for (const auto& command : manager_->commands().commands()) {
-                if (command.category != category.second) continue;
-                auto* action = entry->addAction(command.title);
-                action->setData(command.id);
-                action->setObjectName(command.id);
-                if (command.id == "window.tabBars.toggle" || command.id == "window.sideBars.toggle") action->setCheckable(true);
-                commandActions_.append(action);
-                if (!command.shortcut.isEmpty()) action->setText(command.title + "\t" + command.shortcut.toString(QKeySequence::NativeText));
-                const auto id = command.id;
-                QObject::connect(action, &QAction::triggered, manager_, [manager = manager_, window = id_, id] {
-                    QTimer::singleShot(0, manager, [manager, window, id] { manager->execute(id, {}, window); });
-                });
-            }
-            QObject::connect(entry, &QMenu::aboutToShow, this, [this] { updateCommandStates(); });
-        }
+        menus_ = new ApplicationCommandMenus(menu, manager_, id_);
+        menus_->structureChanged = [this] { if (strips_) strips_->refreshLayout(); };
         strips_->addStrip("menu", QStringLiteral("菜单"), menu, 0);
         QList<QAction*> toolActions;
         const QVector<QPair<QString, QString>> buttons = {{"host.newTab", "add"},
@@ -312,52 +293,17 @@ void WorkspaceWindow::changeEvent(QEvent* event)
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {
-    const QStringList ids = kind_ == WindowKind::Workbench
-        ? QStringList{"window.demote", "window.moveAllTabs", "window.select", "window.settings", "window.close"}
-        : QStringList{"window.promote", "window.reassignFamily", "window.redock", "window.moveAllTabs", "window.select", "window.settings", "window.close"};
-    for (const auto& id : ids) {
-        const auto* command = manager_->commands().find(id);
-        if (!command) continue;
-        const auto context = manager_->context(id_);
-        // Window-kind/family operations are absent when there is no valid
-        // target. Existing content operations retain their disabled state.
-        if ((id == "window.demote" || id == "window.redock" || id == "window.reassignFamily") &&
-            command->enabled && !command->enabled(context)) continue;
-        auto* action = menu->addAction(command->title);
-        action->setData(id);
-        action->setEnabled(!command->enabled || command->enabled(context));
-        connect(action, &QAction::triggered, manager_, [manager = manager_, window = id_, id] {
+    populateContextMenu(menu, CommandMenuSurface::Window, manager_, manager_->context(id_));
+    for (auto* action : menu->findChildren<QAction*>()) if (!action->property("windowSystemCommand").toString().isEmpty())
+        connect(action, &QAction::triggered, manager_, [manager = manager_, window = id_, id = action->data().toString()] {
             QTimer::singleShot(0, manager, [manager, window, id] { manager->execute(id, {}, window); });
         });
-    }
 }
 void WorkspaceWindow::updateCommandStates()
 {
+    if (menus_) menus_->refresh();
     const auto context = manager_->context(id_);
-    const auto* group = manager_->model().group(context.group);
-    for (const auto& action : commandActions_) {
-        if (!action) continue;
-        const auto id = action->data().toString();
-        if (id == "window.tabBars.toggle") action->setChecked(manager_->tabBarsVisible(id_));
-        if (id == "window.sideBars.toggle") action->setChecked(manager_->sideBarsVisible(id_));
-        const auto* command = manager_->commands().find(id);
-        const bool enabled = command && (!command->enabled || command->enabled(context));
-        if (command) {
-            const auto shortcut = command->shortcut.toString(QKeySequence::NativeText);
-            action->setText(command->title + (!action->property("stripCommand").toBool() && !shortcut.isEmpty() ? "\t" + shortcut : QString()));
-            action->setToolTip(command->title + (shortcut.isEmpty() ? QString() : "  " + shortcut));
-        }
-        bool visible = true;
-        if (id == "window.promote") visible = kind_ == WindowKind::Floating;
-        if (id == "window.redock" || id == "window.reassignFamily") visible = kind_ == WindowKind::Floating && enabled;
-        if (id == "window.demote") visible = kind_ == WindowKind::Workbench && enabled;
-        if (id.startsWith("window.drag.")) visible = enabled;
-        if (id == "workspace.pinTab" || id == "workspace.pinGroup") visible = group && group->location == GroupLocation::AutoHide;
-        if (id == "workspace.unpinTab" || id == "workspace.unpinGroup") visible = group && group->location == GroupLocation::Pinned;
-        if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")
-            visible = group && group->location != GroupLocation::Central;
-        action->setVisible(visible); action->setEnabled(enabled);
-    }
+    for (const auto& action : commandActions_) if (action) refreshCommandAction(manager_, action, context);
 }
 void WorkspaceWindow::updateCaption()
 {

@@ -174,12 +174,14 @@ PaneId WindowManager::splitPane(TabId tab, PaneId pane, QWidget* content, Placem
 }
 bool WindowManager::closeTab(TabId tab)
 {
+    if (d->closeAllPending) return false;
     if (!d->model.tab(tab)) return false;
     if (!approveClose({tab})) return false;
     d->drag->releaseForMutation(); return applyResult(d->model.removeTab(tab));
 }
 bool WindowManager::closePane(TabId tab, PaneId pane)
 {
+    if (d->closeAllPending) return false;
     if (!d->model.panes(tab).contains(pane)) return false;
     if (d->model.panes(tab).size() == 1) return closeTab(tab);
     if (!approveClose({tab})) return false;
@@ -187,6 +189,7 @@ bool WindowManager::closePane(TabId tab, PaneId pane)
 }
 bool WindowManager::closeTabs(const QVector<TabId>& tabs)
 {
+    if (d->closeAllPending) return false;
     if (tabs.isEmpty() || QSet<TabId>(tabs.cbegin(), tabs.cend()).size() != tabs.size()) return false;
     if (!approveClose(tabs)) return false;
     d->drag->releaseForMutation();
@@ -196,6 +199,7 @@ bool WindowManager::closeTabs(const QVector<TabId>& tabs)
 }
 bool WindowManager::requestCloseWindow(WindowId window)
 {
+    if (d->closeAllPending) return false;
     const auto* record = d->model.window(window); if (!record) return false;
     if (d->closeRequests.contains(window)) return false;
     const auto kind = record->kind;
@@ -235,6 +239,47 @@ bool WindowManager::requestCloseWindow(WindowId window)
         if (!self || d->model.revision() != revision) return false;
     }
     d->model = std::move(candidate); refresh(); return true;
+}
+bool WindowManager::requestCloseAllWindows()
+{
+    if (d->closeAllPending || !d->closeRequests.isEmpty() || !d->guardedTabs.isEmpty()
+        || d->model.windows().isEmpty()) return false;
+    // A callback during preparation/finalization must not close half of a
+    // drag transaction. A fully active drag can first restore its stable view.
+    if (d->drag->hasStableLayout() && !d->drag->isActive()) return false;
+    QPointer<WindowManager> self(this);
+    d->closeAllPending = true;
+    const auto releaseRequest = qScopeGuard([self] {
+        if (self) self->d->closeAllPending = false;
+    });
+    d->drag->cancel();
+    if (!self) return false;
+
+    const auto before = saveLayout();
+    const auto windows = d->windows;
+    const auto panes = d->panes;
+    auto unchanged = [this, &before, &windows, &panes] {
+        if (saveLayout() != before || d->windows.size() != windows.size() || d->panes.size() != panes.size()) return false;
+        for (auto it = windows.cbegin(); it != windows.cend(); ++it)
+            if (!it.value() || d->windows.value(it.key()) != it.value()) return false;
+        for (auto it = panes.cbegin(); it != panes.cend(); ++it)
+            if (!it.value() || d->panes.value(it.key()) != it.value()) return false;
+        return true;
+    };
+    QVector<TabId> affected;
+    for (const auto id : d->model.windowOrder()) affected += d->model.orderedTabs(id);
+    if (!approveClose(affected) || !self || !unchanged()) return false;
+
+    auto candidate = d->model;
+    for (const auto id : d->model.windowOrder())
+        if (candidate.window(id) && !candidate.closeWindow(id)) return false;
+    if (!candidate.windows().isEmpty()) return false;
+    const auto revision = d->model.revision();
+    emit lastWindowAboutToClose();
+    if (!self || d->model.revision() != revision || !unchanged()) return false;
+    d->model = std::move(candidate);
+    refresh();
+    return true;
 }
 bool WindowManager::approveClose(const QVector<TabId>& tabs)
 {
@@ -444,11 +489,20 @@ void WindowManager::refresh()
         window->syncKind(); window->surface()->rebuild(d->tabs); window->updateCaption();
     }
     d->refreshing = false;
+    QPointer<WindowManager> self(this);
     const auto active = context();
     if (auto window = d->windows.value(active.window); window && window->isVisible() && window->isActiveWindow())
         if (!active.pane.isNull()) focusPane(active.tab, active.pane);
+    if (!self) return;
+    const bool emptyAtNotification = d->model.windows().isEmpty();
+    const auto notificationRevision = d->model.revision();
     emit layoutChanged();
-    if (d->model.windows().isEmpty()) emit allWindowsClosed();
+    if (!self) return;
+    // A direct layout listener may already close everything in a nested
+    // refresh. That inner transaction owns its terminal notification.
+    if (emptyAtNotification && d->model.windows().isEmpty()
+        && d->model.revision() == notificationRevision) emit allWindowsClosed();
+    if (!self) return;
     if (d->behavior.closeEmptyWorkbench) {
         QVector<WindowId> empty;
         for (const auto id : d->model.windowOrder()) {
@@ -468,6 +522,10 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
     if (d->refreshing || !d->model.tab(tab)) return;
     d->activeWindow = window; d->model.activateTab(tab);
     if (auto widget = d->windows.value(window)) widget->updateCaption();
+    // The drag transaction publishes after its focus/placement restoration.
+    // A host may destroy the manager in that notification, which must happen
+    // after Qt has returned from setFocus on the content being restored.
+    if (d->drag->hasStableLayout()) return;
     emit layoutChanged();
 }
 void WindowManager::beginTabDrag(TabId tab, QPoint global) { d->pendingKeys = {}; d->drag->beginTab(tab, global); }
@@ -518,6 +576,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         && d->navigationAnchor && widget->property("windowId").toUuid() == d->navigationAnchor->window)
         d->navigationAnchor.reset();
     if (event->type() == QEvent::FocusIn && widget) {
+        const QPointer<WindowManager> self(this);
         if (static_cast<QFocusEvent*>(event)->reason() == Qt::MouseFocusReason) d->navigationAnchor.reset();
         for (auto* current = widget; current; current = current->parentWidget()) {
             const auto pane = current->property("paneId").toUuid();
@@ -526,7 +585,12 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
                     const auto tabId = tab.id;
                     d->model.activatePane(tabId, pane);
                     if (auto view = d->tabs.value(tabId)) view->setActivePane(pane);
-                    const auto group = d->model.groupForTab(tabId); updateActive(d->model.group(group)->windowId, group, tabId); break;
+                    const auto group = d->model.groupForTab(tabId);
+                    updateActive(d->model.group(group)->windowId, group, tabId);
+                    // The host can destroy its manager in a synchronous layout
+                    // listener while this focus event is still being delivered.
+                    if (!self) return true;
+                    break;
                 }
                 break;
             }

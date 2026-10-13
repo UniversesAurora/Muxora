@@ -15,6 +15,7 @@ class QToolButton;
 class QVBoxLayout;
 namespace window_system {
 class CommandStripHost;
+class ApplicationCommandMenus;
 class DockSurface;
 class WorkspaceWindow final : public QWidget {
 public:
@@ -65,6 +66,7 @@ private:
     QPointer<QToolButton> maximizeButton_;
     QJsonObject savedStripLayout_;
     QList<QPointer<QAction>> commandActions_;
+    QPointer<ApplicationCommandMenus> menus_;
     DockSurface* surface_;
     QPoint press_;
     bool pendingTitleDrag_ = false;

@@ -215,7 +215,8 @@ public:
             if (auto* menu = qobject_cast<QMenuBar*>(content.data())) {
                 for (const auto& item : items) {
                     if (!item.action) continue;
-                    item.action->setVisible(item.included);
+                    const auto available = item.action->property("commandMenuAvailable");
+                    item.action->setVisible(item.included && (!available.isValid() || available.toBool()));
                     if (item.included && menu->actionGeometry(item.action).right() >= viewport->width()) overflow.append(item.id);
                 }
             } else if (!content->isHidden() && content->sizeHint().width() > viewport->width()) {
@@ -812,8 +813,17 @@ void CommandStripHost::arrange()
     QScopedValueRollback arranging(d->arranging, true);
     // QMenuBar caches its size hint until its actions change. Apply inclusion
     // before measuring either strip, so customization takes effect this frame.
-    for (auto* strip : d->strips) if (qobject_cast<QMenuBar*>(strip->content.data())) {
-        for (const auto& item : strip->items) if (item.action) item.action->setVisible(item.included);
+    for (auto* strip : d->strips) if (auto* menu = qobject_cast<QMenuBar*>(strip->content.data())) {
+        QList<ActionItem> current;
+        for (auto* action : menu->actions()) {
+            const auto old = std::find_if(strip->items.cbegin(), strip->items.cend(), [action](const auto& item) { return item.action == action; });
+            current.append(old != strip->items.cend() ? *old : ActionItem{action->objectName(), action, {}, true});
+        }
+        strip->items = std::move(current);
+        for (const auto& item : strip->items) if (item.action) {
+            const auto available = item.action->property("commandMenuAvailable");
+            item.action->setVisible(item.included && (!available.isValid() || available.toBool()));
+        }
     }
     // Constrain the host rather than clipping protected final strip geometry.
     setMinimumWidth(minimumSizeHint().width());

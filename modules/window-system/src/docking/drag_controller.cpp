@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
+#include <QLayout>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -16,6 +17,24 @@
 #endif
 
 namespace window_system {
+namespace {
+bool affectsDockGeometry(QEvent::Type type)
+{
+    switch (type) {
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::LayoutRequest:
+    case QEvent::WindowStateChange:
+    case QEvent::ScreenChangeInternal:
+    case QEvent::DevicePixelRatioChange:
+    case QEvent::Show:
+    case QEvent::Hide:
+        return true;
+    default:
+        return false;
+    }
+}
+} // namespace
 class DockOverlay final : public QWidget {
 public:
     DropTarget target;
@@ -138,6 +157,7 @@ void DragController::start(QPoint global)
 {
     if (!capture_) return;
     active_ = true; preparing_ = false; startPosition_ = global;
+    ++hoverGeneration_; hoverUpdateQueued_ = false;
     normalOffset_ = windowOffset_;
     overlay_ = new DockOverlay; overlay_->whole = !wholeWindow_.isNull();
     overlay_->count = wholeWindow_.isNull() ? 1 : manager_->model().orderedTabs(wholeWindow_).size();
@@ -215,8 +235,8 @@ DropTarget DragController::hit(QPoint global)
         result.groupRect = surface->groupRects().value(barGroup);
         result.insertionIndex = surface->tabInsertionIndex(barGroup, global);
     }
-    const auto strips = surface->tabBarRects().values() + surface->edgeBarRects().values();
-    result.guides = dockGuides(result.windowRect, result.groupRect, result.splitGroup, strips);
+    const auto strips = surface->tabBarRects().values();
+    result.guides = dockGuides(result.windowRect, result.groupRect, result.splitGroup, strips, edgeBars);
     for (const auto& guide : result.guides) if (!result.accepted && guide.rect.contains(global)) {
         result.accepted = true; result.toEdge = guide.toEdge; result.pinned = guide.pinned;
         result.edge = guide.edge; result.placement = guide.placement; break;
@@ -297,10 +317,33 @@ void DragController::refreshHover()
 {
     if (!active_ || hoverUpdateQueued_) return;
     hoverUpdateQueued_ = true;
-    QTimer::singleShot(0, this, [this] {
+    const auto generation = hoverGeneration_;
+    QTimer::singleShot(0, this, [this, generation] {
+        if (generation != hoverGeneration_) return;
         hoverUpdateQueued_ = false;
         if (active_ && !choosing_) update(lastPosition_);
     });
+}
+bool DragController::belongsToDropWindow(QObject* object) const
+{
+    auto* widget = qobject_cast<QWidget*>(object);
+    if (!widget) {
+        if (auto* layout = qobject_cast<QLayout*>(object)) widget = layout->parentWidget();
+    }
+    if (widget) {
+        const auto* window = widget->window();
+        if (window == capture_.data() || window == overlay_.data()) return false;
+        const auto id = window->property("windowId").toUuid();
+        return !id.isNull() && id != movingWindow_ && manager_->windowWidget(id) == window;
+    }
+    const auto* native = qobject_cast<QWindow*>(object);
+    if (!native || (capture_ && native == capture_->windowHandle())
+        || (overlay_ && native == overlay_->windowHandle())) return false;
+    for (const auto id : manager_->model().windowOrder()) if (id != movingWindow_) {
+        const auto* window = manager_->windowWidget(id);
+        if (window && window->windowHandle() == native) return true;
+    }
+    return false;
 }
 void DragController::finish(QPoint global)
 {
@@ -344,21 +387,30 @@ void DragController::finish(QPoint global)
 void DragController::cancel()
 {
     if (!active_) return;
+    const QPointer<DragController> self(this);
     const bool detached = detached_;
     const auto window = wholeWindow_; const auto geometry = originalGeometry_; const bool maximized = originalMaximized_;
     finalizing_ = true;
     stop();
+    if (!self) return;
     if (detached) {
         manager_->d->model = originalModel_; manager_->d->options = originalOptions_;
         manager_->refresh();
+        if (!self) return;
         if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
             source->restoreStripLayout(originalSourceStrips_);
+        if (!self) return;
         for (auto it = originalWindows_.cbegin(); it != originalWindows_.cend(); ++it) if (auto* widget = manager_->windowWidget(it.key())) {
             static_cast<WorkspaceWindow*>(widget)->restorePlacement(it.value(), originalMaximizedWindows_.contains(it.key()));
+            if (!self) return;
         }
-        manager_->showWindow(sourceWindow_); manager_->activateTab(tab_);
+        manager_->showWindow(sourceWindow_);
+        if (!self) return;
+        manager_->activateTab(tab_);
+        if (!self) return;
     } else if (auto* widget = manager_->windowWidget(window)) {
         static_cast<WorkspaceWindow*>(widget)->restorePlacement(geometry, maximized);
+        if (!self) return;
     }
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
     originalSourceStrips_ = {};
@@ -380,11 +432,15 @@ void DragController::releaseForMutation()
 }
 void DragController::stop()
 {
+    const QPointer<DragController> self(this);
     revealTimer_.stop(); active_ = false; qApp->removeEventFilter(this);
+    ++hoverGeneration_; hoverUpdateQueued_ = false;
     if (!finalizing_) originalLayout_ = {};
     if (auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data()))
         moving->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+    if (!self) return;
     if (capture_ && QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
+    if (!self) return;
     capture_.clear();
     if (overlay_) delete overlay_;
     overlay_.clear(); revealCandidate_ = WindowId{}; revealedWindow_ = WindowId{}; forcedWindow_ = WindowId{};
@@ -419,6 +475,11 @@ void DragController::selectTarget()
 bool DragController::eventFilter(QObject* watched, QEvent* event)
 {
     if (!active_ || choosing_) return false;
+    // State changes arrive before their final geometry/layout in some native
+    // transitions. Recompute from the last queued mouse position after those
+    // notifications, while keeping this drag's carrier movement out of the
+    // invalidation path. A stationary pointer must not leave old guides alive.
+    if (affectsDockGeometry(event->type()) && belongsToDropWindow(watched)) refreshHover();
     if (event->type() == QEvent::MouseMove) { update(static_cast<QMouseEvent*>(event)->globalPosition().toPoint()); return true; }
     if (event->type() == QEvent::MouseButtonRelease && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
         finish(static_cast<QMouseEvent*>(event)->globalPosition().toPoint()); return true;

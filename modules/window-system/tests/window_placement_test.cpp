@@ -6,10 +6,13 @@
 #include <QApplication>
 #include <QJsonArray>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTabBar>
+#include <memory>
 
 using namespace window_system;
 
@@ -94,6 +97,9 @@ private slots:
     void restoringOverAnExistingMaximizedWindowHonorsNormalState_data() { addWindowKinds(); }
     void restoringOverAnExistingMaximizedWindowHonorsNormalState();
     void queuedNotificationDoesNotOutliveAClosedWindow();
+    void closeAllCancelsDragBeforeApprovalAndSaving_data();
+    void closeAllCancelsDragBeforeApprovalAndSaving();
+    void closeAllSurvivesManagerDeletionWhileCancellingDrag();
 };
 
 void WindowPlacementTest::normalizationUsesAllLogicalScreenAreas_data()
@@ -290,6 +296,68 @@ void WindowPlacementTest::queuedNotificationDoesNotOutliveAClosedWindow()
     QCoreApplication::processEvents();
     QVERIFY(!window);
     QVERIFY(manager.model().window(root));
+}
+
+void WindowPlacementTest::closeAllCancelsDragBeforeApprovalAndSaving_data()
+{
+    QTest::addColumn<bool>("approved");
+    QTest::newRow("refused") << false; QTest::newRow("approved") << true;
+}
+void WindowPlacementTest::closeAllCancelsDragBeforeApprovalAndSaving()
+{
+    QFETCH(bool, approved);
+    WindowManager manager; const auto root = manager.createWindow();
+    QPointer<QWidget> content = new QLabel("Stable content");
+    const auto tab = manager.addTab(root, content, {"Original", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* window = manager.windowWidget(root);
+    window->setGeometry(visibleFixtureGeometry(qApp->primaryScreen()));
+    manager.showWindow(root); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto before = manager.saveLayout();
+    auto* bar = window->findChild<QTabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
+    const auto local = bar->tabRect(0).center(); const auto global = bar->mapToGlobal(local);
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &press);
+    const QPoint dragged = global + QPoint(0, QApplication::startDragDistance() + 20);
+    QMouseEvent move(QEvent::MouseMove, bar->mapFromGlobal(dragged), dragged, Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &move);
+    QVERIFY(QWidget::mouseGrabber()); QCOMPARE(manager.model().windows().size(), 2);
+    const auto carrier = QWidget::mouseGrabber()->property("windowId").toUuid(); QVERIFY(carrier != root);
+    QVector<TabId> requested;
+    QJsonObject approvalSnapshot; QJsonObject saved;
+    manager.setCloseGuard([&](const QVector<TabId>& tabs) {
+        requested = tabs; approvalSnapshot = manager.saveLayout(); return approved;
+    });
+    QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] { saved = manager.saveLayout(); });
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QCOMPARE(manager.requestCloseAllWindows(), approved);
+    QCOMPARE(requested, (QVector<TabId>{tab})); QCOMPARE(approvalSnapshot, before);
+    QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!manager.model().window(carrier));
+    if (approved) { QCOMPARE(saved, before); QCOMPARE(closed.count(), 1); QVERIFY(manager.model().windows().isEmpty()); }
+    else {
+        QCOMPARE(manager.saveLayout(), before); QCOMPARE(closed.count(), 0);
+        QCOMPARE(manager.paneWidget(pane), content.data()); QVERIFY(content);
+    }
+}
+
+void WindowPlacementTest::closeAllSurvivesManagerDeletionWhileCancellingDrag()
+{
+    auto manager = std::make_unique<WindowManager>(); const auto root = manager->createWindow();
+    manager->addTab(root, new QLabel("Original"), {"Original", "label", {}});
+    auto* window = manager->windowWidget(root);
+    window->setGeometry(visibleFixtureGeometry(qApp->primaryScreen()));
+    manager->showWindow(root); QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* bar = window->findChild<QTabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
+    const auto local = bar->tabRect(0).center(); const auto global = bar->mapToGlobal(local);
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &press);
+    const QPoint dragged = global + QPoint(0, QApplication::startDragDistance() + 20);
+    QMouseEvent move(QEvent::MouseMove, bar->mapFromGlobal(dragged), dragged, Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &move);
+    QVERIFY(QWidget::mouseGrabber()); QCOMPARE(manager->model().windows().size(), 2);
+    QPointer<WindowManager> observed(manager.get());
+    QObject::connect(manager.get(), &WindowManager::layoutChanged, [&] { manager.reset(); });
+    QVERIFY(!manager->requestCloseAllWindows()); QVERIFY(observed.isNull()); QVERIFY(!QWidget::mouseGrabber());
 }
 
 QTEST_MAIN(WindowPlacementTest)

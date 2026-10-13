@@ -335,7 +335,7 @@ void DragInteractionTest::edgeGuidesSeparateHiddenAndPinnedDrops()
     auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
     const auto strips = surface->tabBarRects().values() + surface->edgeBarRects().values();
-    const auto guides = dockGuides(bounds, surface->centralRectGlobal(), true, strips);
+    const auto guides = dockGuides(bounds, surface->centralRectGlobal(), true, surface->tabBarRects().values(), surface->edgeBarRects());
     QPoint point;
     for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(side) && guide.pinned == pinned) {
         for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip));

@@ -50,12 +50,12 @@ private:
 
 class Fixture final {
 public:
-    explicit Fixture(Edge edge) : edge(edge), strip(new EdgeStrip(edge, defaultTheme(), &root))
+    explicit Fixture(Edge edge, int buttonCount = 8) : edge(edge), strip(new EdgeStrip(edge, defaultTheme(), &root))
     {
         auto* layout = new QBoxLayout(isVertical(edge) ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom, &root);
         layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
         layout->addWidget(strip); layout->addStretch();
-        for (int index = 0; index < 8; ++index) {
+        for (int index = 0; index < buttonCount; ++index) {
             auto* button = new TestButton(edge, index); buttons.append(button); strip->addButton(button);
             QObject::connect(button, &QAbstractButton::clicked, &root, [this] { ++clicks; });
         }
@@ -67,6 +67,10 @@ public:
     QScrollArea* scroll() const { return strip->findChild<QScrollArea*>("EdgeScrollViewport"); }
     QScrollBar* overlay() const { return strip->findChild<QScrollBar*>("EdgeScrollBar"); }
     QScrollBar* axisBar() const { return isVertical(edge) ? scroll()->verticalScrollBar() : scroll()->horizontalScrollBar(); }
+    void resizeAxis(int length)
+    {
+        root.resize(isVertical(edge) ? QSize(160, length) : QSize(length, 160));
+    }
     Edge edge;
     QWidget root;
     EdgeStrip* strip;
@@ -96,7 +100,112 @@ private slots:
     void dragHoverScrollsThenStopsAndNotifiesGeometry();
     void previewDoesNotCreateModelTabsOrReplaceContent_data() { addEdges(); }
     void previewDoesNotCreateModelTabsOrReplaceContent();
+    void initialOverlayRangeMatchesTheViewport_data() { addEdges(); }
+    void initialOverlayRangeMatchesTheViewport();
+    void fewLabelsNeverShowAScrollBar_data() { addEdges(); }
+    void fewLabelsNeverShowAScrollBar();
+    void exactFitAndOnePixelOverflowFollowResize_data() { addEdges(); }
+    void exactFitAndOnePixelOverflowFollowResize();
+    void removingGapAndLabelsReclaimsTheScrollRange_data() { addEdges(); }
+    void removingGapAndLabelsReclaimsTheScrollRange();
 };
+
+void EdgeStripTest::initialOverlayRangeMatchesTheViewport()
+{
+    QFETCH(int, edgeValue); const auto edge = Edge(edgeValue);
+    QWidget root; EdgeStrip strip(edge, defaultTheme(), &root);
+    auto* scroll = strip.findChild<QScrollArea*>("EdgeScrollViewport"); QVERIFY(scroll);
+    auto* overlay = strip.findChild<QScrollBar*>("EdgeScrollBar"); QVERIFY(overlay);
+    auto* source = isVertical(edge) ? scroll->verticalScrollBar() : scroll->horizontalScrollBar();
+    QCOMPARE(source->minimum(), 0); QCOMPARE(source->maximum(), 0);
+    QCOMPARE(overlay->minimum(), source->minimum()); QCOMPARE(overlay->maximum(), source->maximum());
+    QCOMPARE(overlay->pageStep(), extent(edge, scroll->viewport()->rect()));
+    QCOMPARE(overlay->value(), source->value()); QVERIFY(overlay->isHidden());
+
+    strip.addButton(new TestButton(edge, 0));
+    strip.setTailWidget(new QToolButton);
+    QCOMPARE(overlay->minimum(), source->minimum()); QCOMPARE(overlay->maximum(), source->maximum());
+    QCOMPARE(overlay->pageStep(), extent(edge, scroll->viewport()->rect()));
+    QCOMPARE(overlay->value(), source->value());
+    root.resize(isVertical(edge) ? QSize(160, 400) : QSize(400, 160));
+    strip.resize(isVertical(edge) ? QSize(22, 400) : QSize(400, 22)); root.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&root));
+    QCOMPARE(source->maximum(), 0); enter(scroll->viewport());
+    QCOMPARE(overlay->maximum(), 0); QVERIFY(overlay->isHidden());
+}
+
+void EdgeStripTest::fewLabelsNeverShowAScrollBar()
+{
+    QFETCH(int, edgeValue); const auto edge = Edge(edgeValue); Fixture fixture(edge, 1);
+    QVERIFY(QTest::qWaitForWindowExposed(&fixture.root));
+    const auto viewport = fixture.strip->viewportRectGlobal();
+    QVERIFY(extent(edge, viewport) > 124);
+    QCOMPARE(fixture.axisBar()->maximum(), 0);
+    enter(fixture.scroll()->viewport());
+    QVERIFY(fixture.overlay()->isHidden());
+    fixture.strip->setDragHover(isVertical(edge) ? QPoint(viewport.center().x(), viewport.bottom() - 1)
+        : QPoint(viewport.right() - 1, viewport.center().y()));
+    QVERIFY(fixture.overlay()->isHidden());
+    auto* timer = fixture.strip->findChild<QTimer*>("EdgeAutoScrollTimer"); QVERIFY(timer);
+    QVERIFY(!timer->isActive());
+    QCOMPARE(fixture.axisBar()->value(), 0); QCOMPARE(fixture.clicks, 0);
+}
+
+void EdgeStripTest::exactFitAndOnePixelOverflowFollowResize()
+{
+    QFETCH(int, edgeValue); const auto edge = Edge(edgeValue); Fixture fixture(edge, 1);
+    fixture.resizeAxis(124); // 100px label + 2px spacing + 22px all-pin control.
+    QVERIFY(QTest::qWaitForWindowExposed(&fixture.root));
+    QCOMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 124);
+    QCOMPARE(extent(edge, fixture.buttons.first()->geometry()), 100);
+    QCOMPARE(extent(edge, fixture.tail->geometry()), 22);
+    QCOMPARE(axis(edge, fixture.tail->geometry().topLeft()), 102);
+    QCOMPARE(fixture.axisBar()->maximum(), 0);
+    enter(fixture.scroll()->viewport()); QVERIFY(fixture.overlay()->isHidden());
+
+    fixture.resizeAxis(123);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 123);
+    QTRY_COMPARE(fixture.axisBar()->maximum(), 1);
+    QTRY_VERIFY(fixture.overlay()->isVisible());
+    QCOMPARE(fixture.overlay()->maximum(), 1);
+    fixture.axisBar()->setValue(1); QCOMPARE(fixture.overlay()->value(), 1);
+
+    fixture.resizeAxis(124);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 124);
+    QTRY_COMPARE(fixture.axisBar()->maximum(), 0);
+    QTRY_VERIFY(fixture.overlay()->isHidden());
+    QCOMPARE(fixture.axisBar()->value(), 0); QCOMPARE(fixture.overlay()->value(), 0);
+    fixture.resizeAxis(400);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 400);
+    QCOMPARE(fixture.axisBar()->maximum(), 0); QVERIFY(fixture.overlay()->isHidden());
+}
+
+void EdgeStripTest::removingGapAndLabelsReclaimsTheScrollRange()
+{
+    QFETCH(int, edgeValue); const auto edge = Edge(edgeValue); Fixture fixture(edge, 2);
+    fixture.resizeAxis(226); // Two 100px labels, two 2px spacings and the 22px tail.
+    QVERIFY(QTest::qWaitForWindowExposed(&fixture.root));
+    enter(fixture.scroll()->viewport()); QCOMPARE(fixture.axisBar()->maximum(), 0);
+    QVERIFY(fixture.overlay()->isHidden());
+    fixture.strip->setInsertionPreview(1, 40);
+    QTRY_COMPARE(fixture.axisBar()->maximum(), 42);
+    QTRY_VERIFY(fixture.overlay()->isVisible());
+    fixture.axisBar()->setValue(42);
+    fixture.strip->setInsertionPreview(-1, 0);
+    QTRY_COMPARE(fixture.axisBar()->maximum(), 0);
+    QTRY_VERIFY(fixture.overlay()->isHidden()); QCOMPARE(fixture.axisBar()->value(), 0);
+
+    fixture.resizeAxis(124); QTRY_COMPARE(fixture.axisBar()->maximum(), 102);
+    QTRY_VERIFY(fixture.overlay()->isVisible()); fixture.axisBar()->setValue(102);
+    auto* remaining = fixture.buttons.first();
+    delete fixture.buttons.takeLast();
+    QTRY_COMPARE(fixture.axisBar()->maximum(), 0);
+    QTRY_VERIFY(fixture.overlay()->isHidden()); QCOMPARE(fixture.axisBar()->value(), 0);
+    QCOMPARE(fixture.buttons.first(), remaining);
+    QCOMPARE(remaining->property("ordinal").toInt(), 0);
+    QCOMPARE(axis(edge, fixture.tail->geometry().topLeft()), 102);
+    QCOMPARE(fixture.clicks, 0);
+}
 
 void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
 {

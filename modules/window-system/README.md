@@ -27,6 +27,10 @@
 
 菜单、命令面板和快捷键共用 [CommandRegistry](include/window_system/command_registry.hpp)。宿主可以注册自己的操作；主题使用 [Theme](include/window_system/theme.hpp) 令牌，默认不添加应用 logo。布局快照由宿主选择保存位置，模块不写 Muxora 用户文件。
 
+`Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
+
+`requestCloseAllWindows()` 为整个工作区申请一次关闭许可，再原子关闭所有窗口族与轻量窗口；任一标签被拒绝或许可回调改变布局时，保留整个工作区。最后关闭前发出 `lastWindowAboutToClose`，此时全部窗口与内容仍可保存；最终只发出一次 `allWindowsClosed`。模块不调用应用退出，宿主负责保存、处理写入失败并决定结束进程。Muxora 的“文件 → 退出”使用该接口。
+
 `movePane(sourceTab, pane, targetTab, targetPane, placement)` 将原窗格合入另一个标签；`swapPanes()` 交换同标签的树叶位置。方向和循环版本包括 `movePaneToAdjacentTab()`、`movePaneToAdjacentGroup()`、`movePaneToWindowCycle()`、`swapPaneDirection()`；标签提供 `reorderTab()`、`moveTabToAdjacentGroup()`、`moveTabToWindowCycle()`。已有窗口也可通过 `movePaneToWindow()` / `moveTabToWindow()` 显式指定。移动保留内容与专属栏，合入现有标签采用目标的共享策略；空目标继承源策略。
 
 对应命令为 `pane.moveToTab`、`pane.moveToGroup.left/right/up/down`、`pane.moveToWindow`、`pane.swap.left/right/up/down` 及 `workspace.moveTabToGroup.left/right/up/down`、`workspace.moveTabToWindow`。标签和窗口选择命令支持 ID 参数或键盘选择菜单，`.previous` / `.next` 提供循环移动。窗格前后标签移动默认 `Alt+PgUp` / `Alt+PgDown`；标签重排继续使用 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown`。全部命令可从快捷键编辑器绑定。

@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QPointer>
 #include <QScrollBar>
+#include <QScreen>
 #include <QTest>
 
 using namespace window_system;
@@ -59,6 +60,12 @@ private slots:
     void gapDisplacesOnlyTheVisualTabs();
     void guidesAvoidVisibleStripsAndShortGroupHeaders_data();
     void guidesAvoidVisibleStripsAndShortGroupHeaders();
+    void edgeGuidesStayInTheirOwnSideBand_data();
+    void edgeGuidesStayInTheirOwnSideBand();
+    void edgeGuidesAcceptDropsBesideStackedGroups_data();
+    void edgeGuidesAcceptDropsBesideStackedGroups();
+    void guidesTrackWindowGeometryWithoutMouseMovement_data();
+    void guidesTrackWindowGeometryWithoutMouseMovement();
     void tabTargetKeepsCarrierAndLiveContent_data();
     void tabTargetKeepsCarrierAndLiveContent();
     void edgeTargetMirrorsTheLabelAndClearsOnCancel_data();
@@ -114,6 +121,142 @@ void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent_data()
 {
     QTest::addColumn<bool>("floating");
     QTest::newRow("workbench") << false; QTest::newRow("floating") << true;
+}
+void DragPresentationTest::edgeGuidesStayInTheirOwnSideBand_data()
+{
+    QTest::addColumn<int>("edge"); QTest::addColumn<bool>("rail");
+    for (int edge : {int(Edge::Left), int(Edge::Right)}) for (bool rail : {false, true})
+        QTest::newRow(qPrintable(QString("side-%1-rail-%2").arg(edge).arg(rail))) << edge << rail;
+}
+void DragPresentationTest::edgeGuidesStayInTheirOwnSideBand()
+{
+    QFETCH(int, edge); QFETCH(bool, rail);
+    const QRect bounds(120, 70, 1000, 600);
+    QHash<Edge, QRect> rails;
+    if (rail) rails.insert(Edge(edge), edge == int(Edge::Left)
+        ? QRect(bounds.left(), bounds.top(), 22, bounds.height())
+        : QRect(bounds.right() - 21, bounds.top(), 22, bounds.height()));
+    const auto middle = QRect(edge == int(Edge::Left) ? bounds.left() : bounds.center().x(),
+        bounds.center().y() - 12, bounds.width() / 2 + 1, 27);
+    const QList<QRect> tabs{QRect(bounds.left(), bounds.top(), bounds.width(), 27), middle};
+    const auto guides = dockGuides(bounds, bounds, true, tabs, rails);
+    QCOMPARE(guides.size(), 13);
+    int count = 0;
+    for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(edge)) {
+        ++count; QVERIFY(bounds.contains(guide.rect));
+        for (const auto& strip : tabs + rails.values()) QVERIFY(!guide.rect.intersects(strip));
+        const int offset = 6 + (rail ? 22 : 0) + (guide.pinned ? 28 : 0);
+        if (edge == int(Edge::Left)) QCOMPARE(guide.rect.left(), bounds.left() + offset);
+        else QCOMPARE(bounds.right() - guide.rect.right(), offset);
+    }
+    QCOMPARE(count, 2);
+}
+void DragPresentationTest::edgeGuidesAcceptDropsBesideStackedGroups_data()
+{
+    QTest::addColumn<int>("edge"); QTest::addColumn<bool>("pinned");
+    for (int edge : {int(Edge::Left), int(Edge::Right)}) for (bool pinned : {false, true})
+        QTest::newRow(qPrintable(QString("side-%1-pinned-%2").arg(edge).arg(pinned))) << edge << pinned;
+}
+void DragPresentationTest::edgeGuidesAcceptDropsBesideStackedGroups()
+{
+    QFETCH(int, edge); QFETCH(bool, pinned);
+    WindowManager manager;
+    const auto source = manager.createWindow(); auto* content = new QLabel("Live content");
+    const auto moving = manager.addTab(source, content, {"Moving", "label", {}});
+    const auto pane = manager.model().tab(moving)->activePane;
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Target", {700, 450}});
+    const auto top = manager.addTab(target, new QLabel("Top"), {"Top", "label", {}});
+    const auto bottom = manager.addTab(target, new QLabel("Bottom"), {"Bottom", "label", {}});
+    QVERIFY(manager.moveTab(bottom, manager.model().groupForTab(top), Placement::Bottom));
+    auto* sourceWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(source));
+    auto* targetWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(target));
+    showFixture(sourceWindow, {20, 20}); showFixture(targetWindow, {70, 70});
+    QVERIFY(QTest::qWaitForWindowExposed(targetWindow));
+    QPointer<WorkspaceWindow> carrier = beginDrag(manager, source, moving); QVERIFY(carrier);
+    auto* surface = targetWindow->surface();
+    const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
+    const auto guides = dockGuides(bounds, surface->groupRects().value(manager.model().groupForTab(top)),
+        true, surface->tabBarRects().values(), surface->edgeBarRects());
+    QPoint targetPoint;
+    for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(edge) && guide.pinned == pinned) {
+        targetPoint = guide.rect.center();
+        if (edge == int(Edge::Left)) QVERIFY(guide.rect.right() < bounds.left() + 70);
+        else QVERIFY(guide.rect.left() > bounds.right() - 70);
+        for (const auto& strip : surface->tabBarRects()) QVERIFY(!guide.rect.intersects(strip));
+    }
+    QVERIFY(!targetPoint.isNull()); moveMouse(carrier, targetPoint);
+    QMouseEvent release(QEvent::MouseButtonRelease, carrier->mapFromGlobal(targetPoint), targetPoint,
+        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(carrier, &release); QApplication::processEvents();
+    const auto* group = manager.model().group(manager.model().groupForTab(moving)); QVERIFY(group);
+    QCOMPARE(group->windowId, target); QCOMPARE(group->edge, Edge(edge));
+    QCOMPARE(group->location, pinned ? GroupLocation::Pinned : GroupLocation::AutoHide);
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(!QWidget::mouseGrabber()); QVERIFY(manager.model().validate());
+}
+void DragPresentationTest::guidesTrackWindowGeometryWithoutMouseMovement_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<QString>("change");
+    for (bool floating : {false, true}) for (const auto* change : {"move", "resize", "maximize", "restore"})
+        QTest::newRow(qPrintable(QString("floating-%1-%2").arg(floating).arg(change))) << floating << QString::fromLatin1(change);
+}
+void DragPresentationTest::guidesTrackWindowGeometryWithoutMouseMovement()
+{
+    QFETCH(bool, floating); QFETCH(QString, change);
+    WindowManager manager;
+    auto behavior = manager.behavior(); behavior.revealDuringDrag = false; manager.setBehavior(behavior);
+    const auto source = manager.createWindow(); auto* content = new QLabel("Live content");
+    const auto moving = manager.addTab(source, content, {"Moving", "label", {}});
+    const auto pane = manager.model().tab(moving)->activePane;
+    const auto target = manager.createWindow(floating ? WindowKind::Floating : WindowKind::Workbench,
+        {"Target", {700, 450}}, source);
+    manager.addTab(target, new QLabel("Target"), {"Target", "label", {}});
+    auto* sourceWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(source));
+    auto* targetWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(target));
+    showFixture(sourceWindow, {20, 20}); showFixture(targetWindow, {90, 90});
+    QVERIFY(QTest::qWaitForWindowExposed(targetWindow));
+    if (change == "restore") { targetWindow->showMaximized(); QTRY_VERIFY(targetWindow->isMaximized()); }
+    QPointer<WorkspaceWindow> carrier = beginDrag(manager, source, moving); QVERIFY(carrier);
+    const auto hover = targetWindow->surface()->centralRectGlobal().center() + QPoint(50, 0);
+    moveMouse(carrier, hover);
+    QPointer<QWidget> overlay;
+    for (auto* widget : QApplication::topLevelWidgets()) if (widget->objectName() == "DockOverlay") overlay = widget;
+    QVERIFY(overlay); QTRY_VERIFY(overlay->isVisible());
+    const auto original = overlay->geometry();
+    if (change == "move") targetWindow->move(targetWindow->pos() + QPoint(60, 40));
+    else if (change == "resize") targetWindow->resize(840, 520);
+    else if (change == "maximize") targetWindow->showMaximized();
+    else targetWindow->showNormal();
+    // No mouse event follows the window change. Stationary drag guides must
+    // refresh their target coordinates as soon as the actual layout settles.
+    QTRY_COMPARE(overlay->geometry(), QRect(targetWindow->mapToGlobal(QPoint()), targetWindow->size()));
+    QVERIFY(overlay->geometry() != original); QVERIFY(overlay->isVisible());
+    auto* surface = targetWindow->surface();
+    const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
+    const auto group = surface->groupAt(hover);
+    const auto guides = dockGuides(bounds, surface->groupRects().value(group, surface->centralRectGlobal()),
+        true, surface->tabBarRects().values(), surface->edgeBarRects());
+    const auto image = overlay->grab().toImage();
+    QPoint drop;
+    for (const auto& guide : guides) if (guide.toEdge) {
+        QVERIFY(bounds.contains(guide.rect));
+        const auto local = guide.rect.translated(-overlay->mapToGlobal(QPoint()));
+        QVERIFY(overlay->rect().contains(local));
+        int ink = 0;
+        const auto pixels = QRect(qRound(local.x() * image.devicePixelRatio()), qRound(local.y() * image.devicePixelRatio()),
+            qRound(local.width() * image.devicePixelRatio()), qRound(local.height() * image.devicePixelRatio()));
+        for (int y = pixels.top(); y <= pixels.bottom(); ++y) for (int x = pixels.left(); x <= pixels.right(); ++x)
+            if (image.pixelColor(x, y) == QColor("#8A52C7")) ++ink;
+        QVERIFY2(ink > 0, "The visible guide must be painted at its current hit rectangle");
+        if (!guide.pinned && guide.edge == (floating ? Edge::Right : Edge::Left)) drop = guide.rect.center();
+    }
+    QVERIFY(!drop.isNull()); moveMouse(carrier, drop);
+    QMouseEvent release(QEvent::MouseButtonRelease, carrier->mapFromGlobal(drop), drop,
+        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(carrier, &release); QApplication::processEvents();
+    const auto* result = manager.model().group(manager.model().groupForTab(moving)); QVERIFY(result);
+    QCOMPARE(result->windowId, target); QCOMPARE(result->edge, floating ? Edge::Right : Edge::Left);
+    QCOMPARE(result->location, GroupLocation::AutoHide); QCOMPARE(manager.paneWidget(pane), content);
+    QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!overlay); QVERIFY(manager.model().validate());
 }
 void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent()
 {
@@ -200,6 +343,8 @@ void DragPresentationTest::edgeTargetMirrorsTheLabelAndClearsOnCancel()
     QCOMPARE(carrier->winId(), hwnd); QCOMPARE(QWidget::mouseGrabber(), carrier.data());
     auto* label = carrier->findChild<QWidget*>("DragEdgeLabel"); auto* panel = carrier->findChild<QWidget*>("DragEdgeContent");
     QVERIFY(label && label->isVisible()); QVERIFY(panel && panel->isVisible());
+    auto* title = carrier->findChild<QWidget*>("DragPeekTitle"); QVERIFY(title);
+    QCOMPARE(title->height(), 20);
     QWidget* railLabel = nullptr;
     for (auto* candidate : targetWindow->surface()->findChildren<QWidget*>("EdgeButton"))
         if (candidate->property("tabId").toUuid() == a) railLabel = candidate;

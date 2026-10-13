@@ -9,6 +9,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScopedValueRollback>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QWheelEvent>
 
@@ -48,6 +49,9 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     scroll_->setWidget(track_); column->addWidget(scroll_);
 
     scrollbar_->setObjectName("EdgeScrollBar"); scrollbar_->setSingleStep(28);
+    // The overlay is not managed by QScrollArea. A new QScrollBar otherwise
+    // keeps its default 0..99 range when the real range never changes from 0.
+    scrollbar_->setRange(0, 0);
     scrollbar_->setStyleSheet(QStringLiteral(
         "QScrollBar { background: transparent; border: none; margin: 0; }"
         "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
@@ -67,11 +71,7 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
         if (bar->value() == old) autoScroll_->stop();
         else autoScroll_->setInterval(35);
     });
-    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this](int low, int high) {
-        scrollbar_->setRange(low, high);
-        scrollbar_->setPageStep(vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width());
-        updateScrollBarVisibility();
-    });
+    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this] { synchronizeScrollBar(); });
     connect(axisScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
         scrollbar_->setValue(value); queueHoverGeometryChanged();
     });
@@ -91,7 +91,9 @@ EdgeStrip::~EdgeStrip()
 void EdgeStrip::observe(QWidget* widget)
 {
     widget->installEventFilter(this); widget->setMouseTracking(true);
-    connect(widget, &QObject::destroyed, this, [this, widget] { hoveredSurfaces_.remove(widget); });
+    connect(widget, &QObject::destroyed, this, [this, widget] {
+        hoveredSurfaces_.remove(widget); queueTrackLayout();
+    });
 }
 
 void EdgeStrip::addButton(QAbstractButton* button)
@@ -205,8 +207,7 @@ void EdgeStrip::layoutTrack()
     const int extent = int(std::clamp<qint64>(std::max<qint64>(total, available), 1, QWIDGETSIZE_MAX));
     track_->resize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
     trackLayout_->activate();
-    scrollbar_->setPageStep(available);
-    updateScrollBarGeometry(); updateScrollBarVisibility();
+    updateScrollBarGeometry(); synchronizeScrollBar();
 }
 
 void EdgeStrip::updateScrollBarGeometry()
@@ -216,10 +217,38 @@ void EdgeStrip::updateScrollBarGeometry()
         : QRect(0, std::max(0, area.height() - scrollbarThickness), area.width(), scrollbarThickness));
     scrollbar_->raise();
 }
+void EdgeStrip::synchronizeScrollBar()
+{
+    const auto* source = axisScrollBar();
+    const QSignalBlocker blocker(scrollbar_);
+    scrollbar_->setRange(source->minimum(), source->maximum());
+    scrollbar_->setPageStep(vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width());
+    scrollbar_->setValue(source->value());
+    if (source->maximum() == source->minimum()) {
+        autoScroll_->stop(); scrollDirection_ = 0;
+    }
+    updateScrollBarVisibility();
+}
 void EdgeStrip::updateScrollBarVisibility()
 {
-    scrollbar_->setVisible(isVisible() && scrollbar_->maximum() > 0 && (!hoveredSurfaces_.isEmpty() || scrollDirection_));
+    const auto* source = axisScrollBar();
+    scrollbar_->setVisible(isVisible() && source->maximum() > source->minimum() &&
+        (!hoveredSurfaces_.isEmpty() || scrollDirection_));
     if (scrollbar_->isVisible()) scrollbar_->raise();
+}
+void EdgeStrip::queueTrackLayout()
+{
+    if (trackLayoutQueued_) return;
+    trackLayoutQueued_ = true;
+    QTimer::singleShot(0, this, [this] {
+        trackLayoutQueued_ = false;
+        int removedBeforePreview = 0;
+        for (int index = 0; index < buttons_.size() && index < previewIndex_; ++index)
+            if (!buttons_[index]) ++removedBeforePreview;
+        buttons_.removeIf([](const auto& button) { return button.isNull(); });
+        if (previewIndex_ >= 0) previewIndex_ -= removedBeforePreview;
+        layoutTrack(); queueHoverGeometryChanged();
+    });
 }
 void EdgeStrip::queueHoverGeometryChanged()
 {
@@ -235,11 +264,14 @@ void EdgeStrip::setDragHover(QPoint global)
 {
     const auto viewport = viewportRectGlobal();
     int nextDirection = 0;
-    if (viewport.contains(global)) {
+    const auto* bar = axisScrollBar();
+    if (bar->maximum() > bar->minimum() && viewport.contains(global)) {
         const int position = axis(global);
         const int first = vertical_ ? viewport.top() : viewport.left();
         const int last = vertical_ ? viewport.bottom() : viewport.right();
         nextDirection = position < first + hoverMargin ? -1 : position > last - hoverMargin ? 1 : 0;
+        if ((nextDirection < 0 && bar->value() == bar->minimum()) ||
+            (nextDirection > 0 && bar->value() == bar->maximum())) nextDirection = 0;
     }
     if (nextDirection != scrollDirection_) autoScroll_->stop();
     scrollDirection_ = nextDirection;
@@ -252,6 +284,8 @@ bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {
         layoutTrack(); queueHoverGeometryChanged();
+    } else if (watched == track_ && event->type() == QEvent::LayoutRequest) {
+        queueTrackLayout();
     } else if (event->type() == QEvent::Wheel) {
         auto* wheel = static_cast<QWheelEvent*>(event);
         const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();

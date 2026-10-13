@@ -47,21 +47,27 @@ int main(int argc, char* argv[])
             auto* content = muxora::createPlaceholder(options, &windows);
             const auto id = windows.addTab(ctx.window, content, options, ctx.group);
             if (id.isNull()) { delete content; return false; } return true;
-        }});
-    windows.commands().add({"layout.save", QStringLiteral("保存当前窗口布局"), "文件", QKeySequence("Ctrl+S"), {},
-        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QStringLiteral("布局已保存") : QStringLiteral("布局保存失败")); return ok; }});
-    windows.commands().add({"layout.reset", QStringLiteral("恢复初始工作区布局"), "视图", {}, {},
+        }, {"文件"}, 10});
+    windows.commands().add({"layout.save", QStringLiteral("保存工作区布局"), "文件", QKeySequence("Ctrl+S"), {},
+        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QStringLiteral("布局已保存") : QStringLiteral("布局保存失败")); return ok; }, {"文件"}, 40});
+    windows.commands().add({"application.exit", QStringLiteral("退出"), "文件", QKeySequence(QKeySequence::Quit),
+        [&windows](const window_system::CommandContext&) { return !windows.model().windows().isEmpty(); },
+        [&windows, &save](const window_system::CommandContext& ctx) {
+            if (!save()) { windows.setStatus(ctx.window, QStringLiteral("布局保存失败，未退出")); return false; }
+            return windows.requestCloseAllWindows();
+        }, {"文件"}, 100});
+    windows.commands().add({"layout.reset", QStringLiteral("恢复初始工作区布局"), "布局", {}, {},
         [&windows](const window_system::CommandContext&) {
             const auto current = windows.model().windowOrder();
             for (const auto id : current) if (windows.model().window(id)) windows.requestCloseWindow(id);
             const auto id = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
             muxora::populateInitialWorkspace(windows, id); windows.showWindow(id); return true;
-        }});
+        }, {"布局"}, 1000});
     windows.commands().add({"help.about", QStringLiteral("关于 Muxora"), "帮助", {}, {},
         [&windows](const window_system::CommandContext& ctx) {
             QMessageBox::about(windows.windowWidget(ctx.window), QStringLiteral("Muxora"),
                 QStringLiteral("Muxora 0.1.0\n窗口系统首个预览\n\nQt / 原生 C++，MIT 开源。\n远程连接与文件功能将在窗口系统确定后接入。")); return true;
-        }});
+        }, {"帮助"}, 10});
     QObject::connect(&windows, &window_system::WindowManager::commandFailed, &windows, [&windows](const QString& text) { windows.setStatus(windows.context().window, text); });
     bool restored = false;
     if (!parser.isSet("fresh")) {

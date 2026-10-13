@@ -2,6 +2,7 @@
 
 #include <window_system/layout_model.hpp>
 #include <QKeySequence>
+#include <QStringList>
 #include <QVariantMap>
 #include <QVector>
 #include <functional>
@@ -23,6 +24,11 @@ struct Command {
     QKeySequence shortcut;
     std::function<bool(const CommandContext&)> enabled;
     std::function<bool(const CommandContext&)> execute;
+    // Optional presentation metadata. The first segment names a top-level
+    // menu; later segments name real subcategories. It never changes routing
+    // or shortcut execution. Empty paths use the category's extension group.
+    QStringList menuPath = {};
+    int menuOrder = 0;
 };
 
 // A host registers operations here. Menus, the palette and keyboard all invoke

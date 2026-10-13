@@ -78,6 +78,9 @@ public:
     bool closePane(TabId tab, PaneId pane);
     bool closeTabs(const QVector<TabId>& tabs);
     bool requestCloseWindow(WindowId window);
+    // Approve the complete workspace once, then close it atomically. The
+    // final-save notification observes every original window and content ID.
+    bool requestCloseAllWindows();
     bool moveTab(TabId tab, GroupId group, Placement placement = Placement::Center,
                  int insertionIndex = -1);
     bool moveTabToWindow(TabId tab, WindowId target,

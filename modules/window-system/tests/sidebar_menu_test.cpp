@@ -179,7 +179,8 @@ void SidebarMenuTest::sidebarContextMenuUsesTheExistingTabCommands()
     QTimer::singleShot(30, &manager, [&] {
         if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
             observed = true;
-            for (auto* action : menu->actions()) commandIds.append(action->data().toString());
+            for (auto* action : menu->findChildren<QAction*>())
+                if (action->isVisible()) commandIds.append(action->data().toString());
             QTest::keyClick(menu, Qt::Key_Escape);
         }
     });

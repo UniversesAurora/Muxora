@@ -3,6 +3,7 @@
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "commands/command_dialogs.hpp"
+#include "commands/command_menus.hpp"
 #include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
@@ -84,9 +85,9 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { showCommandPalette(c.window); return true; });
     add("window.select", QStringLiteral("选择窗口…"), "窗口", QKeySequence("Ctrl+Alt+W"),
         [this](const CommandContext& c) { showWindowSelector(c.window); return true; });
-    add("window.settings", QStringLiteral("窗口行为设置…"), "工具", QKeySequence("Ctrl+,"),
+    add("window.settings", QStringLiteral("设置"), "工具", QKeySequence("Ctrl+,"),
         [this](const CommandContext& c) { showSettings(c.window); return true; });
-    add("preferences.openKeyboardShortcuts", QStringLiteral("编辑快捷键…"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
+    add("preferences.openKeyboardShortcuts", QStringLiteral("键盘快捷方式"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
     add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
@@ -448,45 +449,16 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
     activateTab(tab);
     const auto captured = context(window);
-    const auto location = d->model.group(group)->location;
     QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
-    const QStringList ids = {"workspace.detachFloating", "workspace.detachWorkbench", "workspace.moveTabToWindow",
-        "workspace.splitGroup.left", "workspace.splitGroup.right", "workspace.splitGroup.up", "workspace.splitGroup.down",
-        "pane.split.right", "pane.split.down", "pane.extractFloating", "pane.extractWorkbench",
-        "workspace.hideToEdge.left", "workspace.hideToEdge.right", "workspace.hideToEdge.up", "workspace.hideToEdge.down",
-        "workspace.pinTab", "workspace.unpinTab", "workspace.pinEdge", "workspace.unpinEdge", "workspace.restoreGroupToCenter",
-        "workspace.closeTab", "workspace.closeTabs.left", "workspace.closeTabs.right", "workspace.closeTabs.others", "workspace.closeTabs.all"};
-    for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
-        if (id == "workspace.pinTab" && location != GroupLocation::AutoHide) continue;
-        if (id == "workspace.unpinTab" && location != GroupLocation::Pinned) continue;
-        if ((id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter") && location == GroupLocation::Central) continue;
-        auto* action = menu.addAction(command->title); action->setData(id);
-        action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
-    }
-    auto* movement = menu.addMenu(QStringLiteral("移动标签"));
-    for (const auto& id : {QStringLiteral("workspace.reorderTab.previous"), QStringLiteral("workspace.reorderTab.next"),
-        QStringLiteral("workspace.moveTabToGroup.left"), QStringLiteral("workspace.moveTabToGroup.right"),
-        QStringLiteral("workspace.moveTabToGroup.up"), QStringLiteral("workspace.moveTabToGroup.down"),
-        QStringLiteral("workspace.moveTabToWindow.previous"), QStringLiteral("workspace.moveTabToWindow.next")})
-        if (const auto* command = d->commands.find(id)) {
-            auto* action = movement->addAction(command->title); action->setData(id); action->setObjectName(id);
-            action->setEnabled(!command->enabled || command->enabled(captured));
-        }
+    populateContextMenu(&menu, CommandMenuSurface::Tab, this, captured);
     if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
 void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
     const auto* record = d->model.window(window); if (!record) return;
-    const auto kind = record->kind; const auto captured = context(window);
+    const auto captured = context(window);
     QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
-    const QStringList ids = {"window.promote", "window.demote", "window.reassignFamily", "window.redock",
-        "window.moveAllTabs", "window.select", "window.toggleStripsLock", "window.settings", "window.close"};
-    for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
-        if ((id == "window.promote" || id == "window.reassignFamily" || id == "window.redock") && kind != WindowKind::Floating) continue;
-        if (id == "window.demote" && kind != WindowKind::Workbench) continue;
-        auto* action = menu.addAction(command->title); action->setData(id);
-        action->setObjectName(id); action->setEnabled(!command->enabled || command->enabled(captured));
-    }
+    populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
     if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
 void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget* content)
@@ -503,24 +475,8 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
         if (editor->property("paneId").toUuid() == pane) break;
     }
     if (!menu) menu = new QMenu(windowWidget(window));
-    else menu->addSeparator();
     QPointer<QMenu> retained(menu); applyTheme(menu, theme());
-    for (const auto& id : {QStringLiteral("pane.close"), QStringLiteral("pane.split.right"), QStringLiteral("pane.split.down"),
-                          QStringLiteral("pane.extractFloating"), QStringLiteral("pane.extractWorkbench")})
-        if (const auto* command = d->commands.find(id)) {
-            auto* action = menu->addAction(command->title); action->setObjectName(id); action->setProperty("windowSystemCommand", id);
-            action->setEnabled(!command->enabled || command->enabled(captured));
-        }
-    auto appendCommands = [this, captured](QMenu* submenu, const QStringList& ids) {
-        for (const auto& id : ids) if (const auto* command = d->commands.find(id)) {
-            auto* action = submenu->addAction(command->title); action->setObjectName(id); action->setProperty("windowSystemCommand", id);
-            action->setEnabled(!command->enabled || command->enabled(captured));
-        }
-    };
-    appendCommands(menu->addMenu(QStringLiteral("移动窗格")), {"pane.moveToTab.previous", "pane.moveToTab.next", "pane.moveToTab",
-        "pane.moveToGroup.left", "pane.moveToGroup.right", "pane.moveToGroup.up", "pane.moveToGroup.down",
-        "pane.moveToWindow", "pane.moveToWindow.previous", "pane.moveToWindow.next"});
-    appendCommands(menu->addMenu(QStringLiteral("交换窗格位置")), {"pane.swap.left", "pane.swap.right", "pane.swap.up", "pane.swap.down"});
+    populateContextMenu(menu, CommandMenuSurface::Pane, this, captured);
     QString chosen;
     if (auto* action = menu->exec(global)) chosen = action->property("windowSystemCommand").toString();
     delete retained.data();

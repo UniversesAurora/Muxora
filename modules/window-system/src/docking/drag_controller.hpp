@@ -46,6 +46,7 @@ private:
     void finish(QPoint global);
     void stop();
     void completeLayoutTransaction();
+    [[nodiscard]] bool belongsToDropWindow(QObject* object) const;
     DropTarget hit(QPoint global);
     WindowId candidateAt(QPoint global) const;
     WindowManager* manager_;
@@ -78,5 +79,6 @@ private:
     bool finalizing_ = false;
     bool choosing_ = false;
     bool hoverUpdateQueued_ = false;
+    quint64 hoverGeneration_ = 0;
 };
 } // namespace window_system

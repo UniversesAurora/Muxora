@@ -26,6 +26,7 @@ add_library(WindowSystemWidgets STATIC
     src/chrome/workspace_window.cpp
     src/chrome/command_strip.cpp
     src/commands/command_registry.cpp
+    src/commands/command_menus.cpp
     src/commands/window_commands.cpp
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp

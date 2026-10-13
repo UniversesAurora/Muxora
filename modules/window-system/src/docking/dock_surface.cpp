@@ -1,6 +1,7 @@
 #include "dock_surface.hpp"
 #include "edge_strip.hpp"
 #include "edge_tab_button.hpp"
+#include "peek_metrics.hpp"
 #include "tab_strip.hpp"
 #include "window_manager_p.hpp"
 #include "panes/tab_content.hpp"
@@ -25,9 +26,15 @@ namespace window_system {
 namespace {
 class PeekHeader final : public QWidget {
 public:
-    using QWidget::QWidget;
+    explicit PeekHeader(QWidget* parent) : QWidget(parent) { updatePeekHeaderHeight(this); }
     std::function<void(QPoint)> drag;
 protected:
+    bool event(QEvent* event) override {
+        const bool handled = QWidget::event(event);
+        if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange)
+            updatePeekHeaderHeight(this);
+        return handled;
+    }
     void mousePressEvent(QMouseEvent* event) override { start_ = event->position().toPoint(); }
     void mouseMoveEvent(QMouseEvent* event) override {
         if (event->buttons().testFlag(Qt::LeftButton) &&
@@ -412,15 +419,14 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
-    header->setFixedHeight(24);
     header->drag = [this, tab](QPoint point) { manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
     row->setSpacing(2);
     auto* title = new QLabel(manager_->model().tab(tab)->title, header);
     title->setAttribute(Qt::WA_TransparentForMouseEvents); row->addWidget(title); row->addStretch();
-    auto* pin = new CompactToolButton(header); pin->setIcon(iconFor("pin", manager_->theme()));
+    auto* pin = new CompactToolButton(header, peekButtonExtent); pin->setIcon(iconFor("pin", manager_->theme()));
     pin->setToolTip(QStringLiteral("固定并占用布局空间")); pin->setAccessibleName(pin->toolTip()); row->addWidget(pin);
-    auto* close = new CompactToolButton(header); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
+    auto* close = new CompactToolButton(header, peekButtonExtent); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
     close->setObjectName("ClosePeekTabButton");
     close->setToolTip(QStringLiteral("关闭标签")); close->setAccessibleName(close->toolTip());
     pin->setObjectName("PinPeekTabButton");

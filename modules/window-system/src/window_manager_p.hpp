@@ -32,6 +32,7 @@ struct WindowManager::Private {
     bool destroying = false;
     QSet<TabId> guardedTabs;
     QSet<WindowId> closeRequests;
+    bool closeAllPending = false;
     QKeySequence pendingKeys;
     WindowId keyWindow;
     QTimer* keyTimer = nullptr;

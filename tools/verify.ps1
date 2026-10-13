@@ -68,5 +68,6 @@ try {
        sdkRemovedFromPath = $true; statePathWithSpaces = $true;
        executableSha256 = (Get-FileHash -LiteralPath $taskLaunch.FilePath -Algorithm SHA256).Hash } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/package-smoke.json') -Encoding utf8NoBOM
-    Write-Host 'Verification passed: debug, release, standalone, installed API and deployed application.'
+    & (Join-Path $PSScriptRoot 'tests/application-exit-test.ps1') -PackageDirectory $taskPackage
+    Write-Host 'Verification passed: debug, release, standalone, installed API, deployed application and exit/restart.'
 } finally { $env:PATH = $taskOriginalPath }
