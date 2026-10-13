@@ -197,7 +197,15 @@ void CaptionStripTest::movedMaximizeButtonRetainsNativeHitTesting()
     window->setWindowFlag(Qt::WindowStaysOnTopHint);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* button = captionButton(window, "maximize"); QVERIFY(button); QVERIFY(button->isVisible());
-    QVERIFY(button->mapTo(window, QPoint()).y() >= 32);
+    auto* strips = window->strips();
+    QCOMPARE(strips->stripArea("caption-controls"), CommandStripHost::Area::Top);
+    QVERIFY(strips->stripOrder(CommandStripHost::Area::Top, 1).contains("caption-controls"));
+    auto* previousRow = strips->stripWidget("title")->parentWidget();
+    auto* controlsRow = strips->stripWidget("caption-controls")->parentWidget();
+    QVERIFY(previousRow != controlsRow && previousRow->isVisible() && previousRow->height() > 0);
+    const int nextRowTop = previousRow->mapTo(window, QPoint()).y() + previousRow->height();
+    QCOMPARE(controlsRow->mapTo(window, QPoint()).y(), nextRowTop);
+    QVERIFY(button->mapTo(window, QPoint()).y() >= nextRowTop);
 #ifdef Q_OS_WIN
     const auto handle = reinterpret_cast<HWND>(window->winId());
     const auto client = button->mapTo(window, button->rect().center());

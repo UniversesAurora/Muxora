@@ -7,6 +7,7 @@
 #include "docking/drag_controller.hpp"
 #include "panes/tab_content.hpp"
 #include "platform/window_placement.hpp"
+#include "view_state_p.hpp"
 #include <QApplication>
 #include <QEvent>
 #include <QCursor>
@@ -44,6 +45,55 @@ QList<QRect> availableScreenGeometries()
     return available;
 }
 
+OperationResult validateStripLayout(const QJsonValue& value)
+{
+    if (value.isUndefined()) return {true, {}};
+    if (!value.isObject()) return {false, QStringLiteral("工具条布局无效")};
+    const auto object = value.toObject();
+    if (object.isEmpty()) return {true, {}};
+    if (object.contains("locked") && !object.value("locked").isBool())
+        return {false, QStringLiteral("工具条锁定设置无效")};
+    QSet<QString> seen;
+    for (const auto* field : {"rows", "bottomRows"}) {
+        const auto rows = object.value(field);
+        if (rows.isUndefined()) continue;
+        if (!rows.isArray()) return {false, QStringLiteral("工具条行布局无效")};
+        for (const auto& row : rows.toArray()) {
+            if (!row.isArray()) return {false, QStringLiteral("工具条行布局无效")};
+            for (const auto& entry : row.toArray()) {
+                if (!entry.isString() || entry.toString().isEmpty() || seen.contains(entry.toString()))
+                    return {false, QStringLiteral("重复或非法工具条 ID")};
+                seen.insert(entry.toString());
+            }
+        }
+    }
+    const auto settings = object.value("strips");
+    if (settings.isUndefined()) return {true, {}};
+    if (!settings.isObject()) return {false, QStringLiteral("工具条设置无效")};
+    const auto entries = settings.toObject();
+    for (auto it = entries.begin(); it != entries.end(); ++it) {
+        if (it.key().isEmpty() || !it->isObject()) return {false, QStringLiteral("工具条设置无效")};
+        const auto strip = it->toObject();
+        for (const auto* flag : {"visible", "contentVisible", "naturalWidthPriority"})
+            if (strip.contains(flag) && !strip.value(flag).isBool()) return {false, QStringLiteral("工具条显示设置无效")};
+        const auto width = strip.value("width");
+        if (!width.isUndefined() && (!width.isDouble() || width.toDouble() != width.toInt(-2)
+            || width.toInt(-2) < -1 || width.toInt(-2) > QWIDGETSIZE_MAX)) return {false, QStringLiteral("工具条宽度无效")};
+        const auto sizing = strip.value("sizing");
+        if (!sizing.isUndefined() && sizing != "elastic" && sizing != "content") return {false, QStringLiteral("工具条伸缩设置无效")};
+        const auto excluded = strip.value("excluded");
+        if (excluded.isUndefined()) continue;
+        if (!excluded.isArray()) return {false, QStringLiteral("工具条按钮设置无效")};
+        QSet<QString> buttons;
+        for (const auto& button : excluded.toArray()) {
+            if (!button.isString() || button.toString().isEmpty() || buttons.contains(button.toString()))
+                return {false, QStringLiteral("工具条按钮 ID 无效")};
+            buttons.insert(button.toString());
+        }
+    }
+    return {true, {}};
+}
+
 } // namespace
 
 QJsonObject WindowManager::saveLayout() const
@@ -59,7 +109,10 @@ QJsonObject WindowManager::saveLayout() const
             {"x", geometry.x()}, {"y", geometry.y()}, {"width", geometry.width()}, {"height", geometry.height()},
             {"maximized", widget->placementMaximized()},
             {"tabBarsVisible", d->options.value(id).tabBarsVisible},
-            {"sideBarsVisible", d->options.value(id).sideBarsVisible}};
+            {"sideBarsVisible", d->options.value(id).sideBarsVisible},
+            {"toolbarsVisible", d->options.value(id).toolbarsVisible},
+            {"statusBarVisible", d->options.value(id).statusBarVisible},
+            {"viewState", windowViewStateToJson(windowViewState(id))}};
         record.insert("strips", widget->saveStripLayout());
         windows.append(record);
     }
@@ -78,13 +131,31 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     if (snapshot.value("schemaVersion").toInt() != 1) return {false, QStringLiteral("布局版本无效")};
     LayoutModel candidate;
     const auto parsed = candidate.fromJson(snapshot.value("model").toObject()); if (!parsed) return parsed;
+    WindowBehavior restoredBehavior;
+    const auto settings = snapshot.value("behavior").toObject();
+    restoredBehavior.dragOutsideKind = settings.value("dragOutsideFloating").toBool(true) ? WindowKind::Floating : WindowKind::Workbench;
+    restoredBehavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
+    restoredBehavior.revealDuringDrag = settings.value("revealDuringDrag").toBool(true);
+    restoredBehavior.revealDelayMs = qBound(200, settings.value("revealDelayMs").toInt(500), 2000);
+    QHash<WindowId, WindowViewState> restoredViews;
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject();
-        if (!candidate.window(WindowId(object.value("id").toString()))) continue;
+        const WindowId id(object.value("id").toString());
+        if (!candidate.window(id)) continue;
         if (object.contains("tabBarsVisible") && !object.value("tabBarsVisible").isBool())
             return {false, QStringLiteral("标签栏显示设置无效")};
         if (object.contains("sideBarsVisible") && !object.value("sideBarsVisible").isBool())
             return {false, QStringLiteral("侧边栏显示设置无效")};
+        if (object.contains("toolbarsVisible") && !object.value("toolbarsVisible").isBool())
+            return {false, QStringLiteral("工具栏显示设置无效")};
+        if (object.contains("statusBarVisible") && !object.value("statusBarVisible").isBool())
+            return {false, QStringLiteral("状态栏显示设置无效")};
+        WindowViewState state;
+        const auto parsedState = parseWindowViewState(object.value("viewState"), candidate, id, state);
+        if (!parsedState) return parsedState;
+        const auto parsedStrips = validateStripLayout(object.value("strips"));
+        if (!parsedStrips) return parsedStrips;
+        restoredViews.insert(id, state);
     }
     QHash<PaneId, TabOptions> descriptors;
     for (const auto& entry : snapshot.value("panes").toArray()) {
@@ -128,7 +199,7 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     }
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->deleteLater(); }
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
-    d->options.clear();
+    d->options.clear(); d->viewStates.clear(); d->behavior = restoredBehavior;
     const auto available = availableScreenGeometries();
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
@@ -138,10 +209,14 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         options.size = normalizeWindowPlacement(savedWindowGeometry(object), available, {480, 320}).size();
         options.tabBarsVisible = object.value("tabBarsVisible").toBool(true);
         options.sideBarsVisible = object.value("sideBarsVisible").toBool(true);
+        options.toolbarsVisible = object.value("toolbarsVisible").toBool(true);
+        options.statusBarVisible = object.value("statusBarVisible").toBool(true);
         d->options.insert(id, options);
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
+    const QPointer<WindowManager> self(this);
     refresh();
+    if (!self) return {false, QStringLiteral("窗口管理器在恢复时被销毁")};
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
         auto widget = d->windows.value(id); if (!widget) continue;
@@ -149,13 +224,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         const auto minimum = widget->minimumSize().expandedTo(widget->minimumSizeHint());
         const auto desired = normalizeWindowPlacement(savedWindowGeometry(object), available, minimum);
         widget->restorePlacement(desired, object.value("maximized").toBool());
+        if (!self) return {false, QStringLiteral("窗口管理器在恢复时被销毁")};
     }
-    const auto settings = snapshot.value("behavior").toObject();
-    WindowBehavior behavior;
-    behavior.dragOutsideKind = settings.value("dragOutsideFloating").toBool(true) ? WindowKind::Floating : WindowKind::Workbench;
-    behavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
-    behavior.revealDuringDrag = settings.value("revealDuringDrag").toBool(true);
-    behavior.revealDelayMs = settings.value("revealDelayMs").toInt(500); setBehavior(behavior);
+    // Establish the saved normal placement before entering native fullscreen.
+    // A temporary screen-sized view must never replace the restart geometry.
+    d->viewStates = std::move(restoredViews);
+    applyWindowViewStates();
+    if (self) emit layoutChanged();
     return {true, {}};
 }
 } // namespace window_system

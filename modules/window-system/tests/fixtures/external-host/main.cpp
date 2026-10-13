@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/toolbar_layout.hpp>
 #include <QApplication>
 #include <QEvent>
 #include <QLabel>
@@ -7,6 +8,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QPointer>
+#include <QJsonArray>
 
 int main(int argc, char** argv)
 {
@@ -14,6 +16,15 @@ int main(int argc, char** argv)
     app.setQuitOnLastWindowClosed(false);
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
+    auto findToolbar = [&windows](window_system::WindowId id) -> QWidget* {
+        for (auto* widget : windows.windowWidget(id)->findChildren<QWidget*>("CommandStrip"))
+            if (widget->property("stripId").toString() == "workspace") return widget;
+        return nullptr;
+    };
+    QPointer<QWidget> toolbar = findToolbar(root);
+    if (!toolbar || !windows.moveToolbar(root, "workspace", window_system::ToolbarArea::Bottom, 0)) return 90;
+    if (!toolbar || findToolbar(root) != toolbar.data()
+        || toolbar->parentWidget()->parentWidget()->property("toolbarArea").toString() != "bottom") return 91;
     int menuExecutions = 0;
     if (!windows.commands().add({"external.menu", "External menu action", "Host", {}, {},
         [&menuExecutions](const window_system::CommandContext&) { ++menuExecutions; return true; }, {"工具", "外部宿主"}, 20})) return 80;
@@ -64,7 +75,28 @@ int main(int argc, char** argv)
         || !windows.execute("workspace.moveTabToWindow", {{"targetWindow", root}}, movementTarget)) return 16;
     if (!windows.requestCloseWindow(movementTarget)) return 17;
     if (!windows.model().validate()) return 4;
+    const auto saved = windows.saveLayout();
+    QPointer<QLabel> restoredFirst, restoredSecond;
+    windows.setContentFactory([&](const window_system::TabOptions& options, window_system::PaneId id) -> QWidget* {
+        auto* label = new QLabel(options.title);
+        if (id == pane) restoredFirst = label;
+        if (id == secondPane) restoredSecond = label;
+        return label;
+    });
+    if (!windows.restoreLayout(saved) || !toolbar || !restoredFirst || !restoredSecond
+        || findToolbar(root) != toolbar.data() || windows.paneWidget(pane) != restoredFirst.data()
+        || windows.paneWidget(secondPane) != restoredSecond.data()) return 92;
+    if (toolbar->parentWidget()->parentWidget()->property("toolbarArea").toString() != "bottom") return 93;
+    auto toolbarLayout = [](const QJsonObject& snapshot, window_system::WindowId id) {
+        for (const auto& entry : snapshot.value("windows").toArray()) {
+            const auto object = entry.toObject();
+            if (object.value("id").toString() == id.toString(QUuid::WithoutBraces)) return object.value("strips").toObject();
+        }
+        return QJsonObject{};
+    };
+    if (toolbarLayout(windows.saveLayout(), root) != toolbarLayout(saved, root)) return 94;
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    return observer.isNull() && secondObserver.isNull() && windows.model().windows().isEmpty() ? 0 : 6;
+    return observer.isNull() && secondObserver.isNull() && restoredFirst.isNull() && restoredSecond.isNull()
+        && toolbar.isNull() && windows.model().windows().isEmpty() ? 0 : 6;
 }

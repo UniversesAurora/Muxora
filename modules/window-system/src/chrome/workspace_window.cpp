@@ -33,32 +33,38 @@ namespace {
 QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObject& rendered)
 {
     if (cached.isEmpty()) return rendered;
-    const auto cachedRows = cached.value("rows").toArray();
-    const auto renderedRows = rendered.value("rows").toArray();
-    if (cachedRows.size() != 2 || renderedRows.size() != 2) return rendered;
     QSet<QString> present;
     auto settings = cached.value("strips").toObject();
     const auto renderedSettings = rendered.value("strips").toObject();
     for (auto entry = renderedSettings.begin(); entry != renderedSettings.end(); ++entry) {
         present.insert(entry.key()); settings.insert(entry.key(), entry.value());
     }
-    QJsonArray rows;
-    for (int row = 0; row < 2; ++row) {
-        const auto current = renderedRows[row].toArray();
-        QJsonArray merged;
-        qsizetype next = 0;
-        // Reuse the shared strips' slots while leaving absent Workbench strips
-        // in place. The floating chrome never retains their live widgets.
-        for (const auto& entry : cachedRows[row].toArray()) {
-            if (!present.contains(entry.toString())) merged.append(entry);
-            else if (next < current.size()) merged.append(current[next++]);
-        }
-        while (next < current.size()) merged.append(current[next++]);
-        rows.append(merged);
-    }
     auto result = cached;
+    for (const auto* field : {"rows", "bottomRows"}) {
+        const auto cachedRows = cached.value(field).toArray();
+        const auto renderedRows = rendered.value(field).toArray();
+        QJsonArray rows;
+        for (qsizetype row = 0; row < qMax(cachedRows.size(), renderedRows.size()); ++row) {
+            const auto current = row < renderedRows.size() ? renderedRows.at(row).toArray() : QJsonArray{};
+            QJsonArray merged;
+            qsizetype next = 0;
+            // Reuse the shared strips' slots while leaving absent Workbench strips
+            // in place. The floating chrome never retains their live widgets.
+            const auto previous = row < cachedRows.size() ? cachedRows.at(row).toArray() : QJsonArray{};
+            for (const auto& entry : previous) {
+                if (!present.contains(entry.toString())) merged.append(entry);
+                else if (next < current.size()) merged.append(current[next++]);
+            }
+            while (next < current.size()) merged.append(current[next++]);
+            if (!merged.isEmpty()) rows.append(merged);
+        }
+        if (QString::fromLatin1(field) == "rows") {
+            while (rows.size() < 2) rows.append(QJsonArray{});
+            result.insert(field, rows);
+        } else if (rows.isEmpty()) result.remove(field);
+        else result.insert(field, rows);
+    }
     result.insert("locked", rendered.value("locked"));
-    result.insert("rows", rows);
     result.insert("strips", settings);
     return result;
 }
@@ -104,8 +110,9 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
     const bool edge = presentation >= DragPresentation::Left;
     setProperty("windowSystemDragPresentation", compact);
     column_->setContentsMargins(compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1);
-    if (chrome_) chrome_->setVisible(!compact);
-    if (status_) status_->setVisible(!compact);
+    if (chrome_) chrome_->setVisible(!compact && viewState_.effective.toolbars);
+    if (bottomChrome_) bottomChrome_->setVisible(!compact && viewState_.effective.toolbars);
+    if (status_) status_->setVisible(!compact && viewState_.effective.statusBar);
     surface_->setDragPresentation(compact, edge);
     if (edge) {
         column_->removeWidget(surface_);
@@ -179,6 +186,7 @@ void WorkspaceWindow::syncKind()
         strips_.clear(); caption_.clear(); maximizeButton_.clear(); chrome_.clear();
         delete oldChrome;
     }
+    bottomChrome_.clear();
     if (status_) { column_->removeWidget(status_); delete status_; }
     kind_ = record->kind;
     createChrome();
@@ -192,7 +200,10 @@ void WorkspaceWindow::createChrome()
     auto* row = new QHBoxLayout(chrome_); row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
     chrome_->installEventFilter(this);
     strips_ = new CommandStripHost(chrome_);
-    strips_->setLayoutChangedCallback([this] { emit manager_->layoutChanged(); });
+    strips_->setLayoutChangedCallback([this] {
+        for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
+        emit manager_->layoutChanged();
+    });
     strips_->setSizingChangeRequest([this](const QString& strip, CommandStripHost::StripSizing sizing) {
         manager_->execute("window.toolbar.setSizing", {{"strip", strip},
             {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
@@ -234,6 +245,7 @@ void WorkspaceWindow::createChrome()
     strips_->setStripConstraints("title", {true, true, 96, true});
     auto* controls = new QWidget(strips_);
     controls->setObjectName("CaptionControls");
+    controls->setMinimumHeight(32);
     controls->setProperty("windowDragArea", true);
     auto* controlRow = new QHBoxLayout(controls); controlRow->setContentsMargins(0, 0, 0, 0); controlRow->setSpacing(0);
     controlRow->addStretch();
@@ -248,7 +260,10 @@ void WorkspaceWindow::createChrome()
         return button;
     };
     addCaption("minimize", QStringLiteral("最小化"), [this] { showMinimized(); });
-    maximizeButton_ = addCaption("maximize", QStringLiteral("最大化"), [this] { isMaximized() ? showNormal() : showMaximized(); });
+    maximizeButton_ = addCaption("maximize", QStringLiteral("最大化"), [this] {
+        if (viewState_.mode != ViewMode::Normal) manager_->setViewMode(id_, ViewMode::Normal);
+        else isMaximized() ? showNormal() : showMaximized();
+    });
     addCaption("close", QStringLiteral("关闭窗口"), [this] { close(); });
     strips_->addStrip("caption-controls", QStringLiteral("窗口控制"), controls, 0);
     strips_->setStripOptionsEnabled("caption-controls", false);
@@ -256,14 +271,20 @@ void WorkspaceWindow::createChrome()
     for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
     row->addWidget(strips_, 1);
     column_->insertWidget(0, chrome_);
+    bottomChrome_ = strips_->bottomArea();
+    bottomChrome_->setParent(this);
+    column_->insertWidget(column_->indexOf(surface_) + 1, bottomChrome_);
+    bottomChrome_->installEventFilter(this);
+    bottomChrome_->show();
     updateWindowControlState();
     updateCommandStates();
 }
 void WorkspaceWindow::updateWindowControlState()
 {
     if (!maximizeButton_) return;
-    const auto role = isMaximized() ? QStringLiteral("restore") : QStringLiteral("maximize");
-    const auto title = isMaximized() ? QStringLiteral("还原") : QStringLiteral("最大化");
+    const bool expanded = isMaximized() || viewState_.mode != ViewMode::Normal;
+    const auto role = expanded ? QStringLiteral("restore") : QStringLiteral("maximize");
+    const auto title = expanded ? QStringLiteral("还原") : QStringLiteral("最大化");
     maximizeButton_->setProperty("role", role);
     maximizeButton_->setIcon(iconFor(role, manager_->theme()));
     maximizeButton_->setToolTip(title);
@@ -289,6 +310,11 @@ void WorkspaceWindow::changeEvent(QEvent* event)
         }
         updateWindowControlState();
         queuePlacementNotification();
+        if (!applyingViewState_ && viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
+            QTimer::singleShot(0, this, [this] {
+                if (viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
+                    manager_->setViewMode(id_, ViewMode::Normal);
+            });
     }
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
@@ -342,13 +368,14 @@ bool WorkspaceWindow::hasNormalPlacement() const
 }
 bool WorkspaceWindow::placementMaximized() const
 {
+    if (viewState_.mode != ViewMode::Normal) return viewNormalMaximized_;
     return isMinimized() ? maximizedPlacement_ : isMaximized();
 }
 void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
 {
     restoringPlacement_ = true;
     placementTimer_->stop();
-    if (isMaximized() || isMinimized()) showNormal();
+    if (isMaximized() || isMinimized() || isFullScreen()) showNormal();
     setGeometry(geometry);
     normalPlacement_ = this->geometry();
     maximizedPlacement_ = maximized;
@@ -404,7 +431,11 @@ bool WorkspaceWindow::eventFilter(QObject* watched, QEvent* event)
     }
     if (event->type() == QEvent::MouseButtonDblClick) {
         auto* mouse = static_cast<QMouseEvent*>(event);
-        if (mouse->button() == Qt::LeftButton) { isMaximized() ? showNormal() : showMaximized(); return true; }
+        if (mouse->button() == Qt::LeftButton) {
+            if (viewState_.mode != ViewMode::Normal) manager_->setViewMode(id_, ViewMode::Normal);
+            else isMaximized() ? showNormal() : showMaximized();
+            return true;
+        }
     }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);

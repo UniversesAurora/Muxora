@@ -25,9 +25,11 @@ QVector<Command> CommandRegistry::commands() const { return commands_; }
 bool CommandRegistry::execute(const QString& id, const CommandContext& context) const
 {
     const auto* command = find(id);
-    if (!command || (command->enabled && !command->enabled(context))) return false;
-    // Copy: a command may register another command and reallocate the catalog.
-    const auto handler = command->execute;
-    return handler(context);
+    if (!command) return false;
+    // The enabled callback may register more commands and reallocate the list.
+    // Retain both callbacks before invoking either of them.
+    const Command retained = *command;
+    if (retained.enabled && !retained.enabled(context)) return false;
+    return retained.execute(context);
 }
 } // namespace window_system

@@ -14,6 +14,8 @@ struct WindowManager::Private {
     LayoutModel model;
     QHash<WindowId, QPointer<WorkspaceWindow>> windows;
     QHash<WindowId, WindowOptions> options;
+    QHash<WindowId, WindowViewState> viewStates;
+    QSet<WindowId> projectingViews;
     QHash<TabId, QPointer<TabContent>> tabs;
     QHash<TabId, LayoutTree> renderedTrees;
     QHash<PaneId, QPointer<QWidget>> panes;

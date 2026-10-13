@@ -179,6 +179,7 @@ private:
 SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     : QWidget(parent), manager_(manager)
 {
+    initialWindow_ = manager->context().window;
     setObjectName(QStringLiteral("SettingsPage"));
     setProperty("windowSystemSettingsKind", QStringLiteral("window_system.settings"));
     auto* layout = pageLayout(this, QStringLiteral("设置"),
@@ -262,6 +263,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QStringLiteral("悬停时间"),
         QStringLiteral("window.revealDelayMs"),
         QStringLiteral("显示被遮挡窗口前的等待时间。"), delay_));
+    addViewOptions(contents, rows);
     rows->addStretch();
     scroll_->setWidget(contents);
     right->addWidget(scroll_, 1);
@@ -407,6 +409,7 @@ void SettingsPage::syncControls()
     reveal_->setChecked(behavior.revealDuringDrag);
     delay_->setValue(behavior.revealDelayMs);
     delay_->setEnabled(behavior.revealDuringDrag);
+    syncViewOptions();
 }
 
 void SettingsPage::filterRows()

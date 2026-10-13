@@ -38,6 +38,9 @@ private:
         QTreeWidgetItem* item = nullptr; // Owned by categories_; never rebuilt.
     };
     void syncControls();
+    void addViewOptions(QWidget* parent, QVBoxLayout* rows);
+    void syncViewOptions();
+    [[nodiscard]] WindowId settingsWindow() const;
     void filterRows();
     void addCategory(QWidget* parent, QVBoxLayout* rows, const QString& id,
                      const QString& title);
@@ -56,6 +59,11 @@ private:
     QComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
+    QComboBox* viewMode_ = nullptr;
+    QCheckBox* zen_ = nullptr;
+    WindowId initialWindow_;
+    struct VisibilityControl { WindowBar bar; QCheckBox* control; };
+    QVector<VisibilityControl> visibilityControls_;
     QVector<Row> rows_;
     QVector<Category> sections_;
     bool navigating_ = false;

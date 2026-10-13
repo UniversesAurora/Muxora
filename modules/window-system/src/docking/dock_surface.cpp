@@ -61,6 +61,7 @@ DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* paren
 }
 void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
+    restoreFocusScope();
     closePeek(); groups_.clear(); edgeBars_.clear(); pinnedRegions_.clear(); contents_ = contents;
     if (root_) {
         layout()->removeWidget(root_);
@@ -129,6 +130,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     // pixel extents after that pass instead of repeatedly scaling saved widths
     // against a hard-coded central-region size during each rebuild.
     QTimer::singleShot(0, this, [this] { restorePinnedExtents(); });
+    applyFocusScope();
 }
 QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<TabContent>>& contents)
 {
@@ -252,6 +254,7 @@ QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabCont
 }
 void DockSurface::savePinnedExtents()
 {
+    if (hasContentFocusScope()) return;
     for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator) {
         const auto* record = manager_->model().group(iterator.key());
         if (!record || record->location != GroupLocation::Pinned || !iterator.value()) continue;
@@ -264,6 +267,7 @@ void DockSurface::savePinnedExtents()
 }
 void DockSurface::restorePinnedExtents()
 {
+    if (hasContentFocusScope()) return;
     if (!horizontal_ || !vertical_) return;
     const auto requested = [](QWidget* widget) { return widget->property("preferredExtent").toInt(); };
     auto restoreOuter = [&](QSplitter* splitter, QWidget* flexible) {
@@ -394,13 +398,18 @@ void DockSurface::setDragPresentation(bool compact, bool edge)
 }
 QRect DockSurface::centralRectGlobal() const
 {
+    if (hasContentFocusScope())
+        if (auto group = groups_.value(focusState_.group))
+            return QRect(group->mapToGlobal(QPoint()), group->size());
     return center_ ? QRect(center_->mapToGlobal(QPoint()), center_->size()) : QRect();
 }
 void DockSurface::selectTab(TabId tab)
 {
     const auto group = manager_->model().groupForTab(tab);
     const auto* record = manager_->model().group(group);
-    if (record && record->location == GroupLocation::AutoHide) { showEdgeGroup(group, tab); return; }
+    if (record && record->location == GroupLocation::AutoHide && !focusedAutoHideGroup_) {
+        showEdgeGroup(group, tab); return;
+    }
     if (auto widget = groups_.value(group)) {
         const auto index = record->tabs.indexOf(tab);
         widget->setCurrentIndex(index);
@@ -408,11 +417,18 @@ void DockSurface::selectTab(TabId tab)
 }
 void DockSurface::showEdgeGroup(GroupId group, TabId tab)
 {
-    closePeek();
     const auto* record = manager_->model().group(group);
     if (!record || record->location != GroupLocation::AutoHide) return;
     if (tab.isNull()) tab = record->activeTab;
     if (!record->tabs.contains(tab)) return;
+    if (hasContentFocusScope()) {
+        if (group == focusState_.group && (focusState_.mode != ViewMode::PaneFullscreen || tab == focusState_.tab))
+            selectTab(tab);
+        else
+            manager_->activateTab(tab);
+        return;
+    }
+    closePeek();
     manager_->updateActive(window_, group, tab);
     peekGroup_ = group;
     peekTab_ = tab;
@@ -446,8 +462,8 @@ void DockSurface::setTabBarsVisible(bool visible)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
         const auto* record = manager_->model().group(it.key());
-        if (it.value() && record && record->location == GroupLocation::Central)
-            it.value()->setTabBarVisible(visible);
+        if (it.value() && record)
+            it.value()->setTabBarVisible(!focusState_.zen && (record->location != GroupLocation::Central || visible));
     }
     if (root_) root_->layout()->activate();
     placePeek();
@@ -459,6 +475,122 @@ void DockSurface::setSideBarsVisible(bool visible)
     if (root_) root_->layout()->activate();
     restorePinnedExtents();
     placePeek();
+}
+bool DockSurface::hasContentFocusScope() const
+{
+    return focusState_.mode == ViewMode::GroupFullscreen || focusState_.mode == ViewMode::PaneFullscreen;
+}
+bool DockSurface::ownsTab(TabId tab) const
+{
+    const auto* group = manager_->model().group(manager_->model().groupForTab(tab));
+    return group && group->windowId == window_;
+}
+void DockSurface::restoreFocusScope()
+{
+    focusProjection_.restore();
+    for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator) {
+        const auto* group = manager_->model().group(iterator.key());
+        if (iterator.value() && group && group->location == GroupLocation::Pinned)
+            iterator.value()->setTabBarVisible(true);
+    }
+    for (auto iterator = contents_.cbegin(); iterator != contents_.cend(); ++iterator)
+        if (iterator.value() && ownsTab(iterator.key())) iterator.value()->setFocusedPane({});
+    if (focusedAutoHideGroup_) {
+        // The transient group owns only chrome. Return the same live tab views
+        // before deleting its stack, including after a manager refresh parks
+        // those views in storage.
+        for (const auto& content : contents_) if (content && focusedAutoHideGroup_->isAncestorOf(content)) {
+            content->setParent(this);
+            content->hide();
+        }
+        const auto group = focusedAutoHideGroup_->property("groupId").toUuid();
+        if (groups_.value(group) == focusedAutoHideGroup_) groups_.remove(group);
+        delete focusedAutoHideGroup_;
+        focusedAutoHideGroup_.clear();
+        if (vertical_) vertical_->setVisible(!focusedVerticalWasHidden_);
+    }
+    if (root_) root_->show();
+}
+void DockSurface::applyFocusScope()
+{
+    if (!hasContentFocusScope()) return;
+    const auto* record = manager_->model().group(focusState_.group);
+    if (!record || record->windowId != window_) {
+        focusState_.mode = ViewMode::Normal;
+        return;
+    }
+    closePeek();
+    auto* target = groups_.value(focusState_.group).data();
+    if (record->location == GroupLocation::AutoHide) {
+        focusedAutoHideGroup_ = buildGroup(record->id, contents_);
+        target = focusedAutoHideGroup_;
+        if (!target) return;
+        focusedVerticalWasHidden_ = vertical_ && vertical_->isHidden();
+        if (vertical_) vertical_->hide();
+        auto* outer = root_ ? qobject_cast<QGridLayout*>(root_->layout()) : nullptr;
+        if (!outer) return;
+        outer->addWidget(target, 1, 1);
+        target->show();
+    } else {
+        focusProjection_.apply(target, root_);
+    }
+    if (target) target->setTabBarVisible(!focusState_.zen
+        && (record->location != GroupLocation::Central || focusState_.effective.tabBars));
+    if (focusState_.mode == ViewMode::PaneFullscreen)
+        if (auto content = contents_.value(focusState_.tab)) content->setFocusedPane(focusState_.pane);
+    layout()->activate();
+}
+void DockSurface::setFocusScope(const WindowViewState& state)
+{
+    QPointer<QWidget> focused = QApplication::focusWidget();
+    if (focused && !isAncestorOf(focused)) focused.clear();
+    const bool wasFocused = hasContentFocusScope();
+    const bool focusedMode = state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen;
+    const auto* group = manager_->model().group(state.group);
+    const bool validTarget = group && group->windowId == window_
+        && (state.mode != ViewMode::PaneFullscreen || (group->tabs.contains(state.tab)
+            && manager_->model().panes(state.tab).contains(state.pane)));
+    // Display preference changes must not replace the projection's original
+    // splitter sizes with dimensions already enlarged by the focused scope.
+    // Keep the group projection until its target actually changes.
+    if (wasFocused && focusedMode && validTarget && focusState_.group == state.group) {
+        const bool samePane = focusState_.mode == ViewMode::PaneFullscreen && state.mode == ViewMode::PaneFullscreen
+            && focusState_.tab == state.tab && focusState_.pane == state.pane;
+        if (!samePane) {
+            for (auto iterator = contents_.cbegin(); iterator != contents_.cend(); ++iterator)
+                if (iterator.value() && ownsTab(iterator.key())) iterator.value()->setFocusedPane({});
+            if (state.mode == ViewMode::PaneFullscreen)
+                if (auto content = contents_.value(state.tab)) content->setFocusedPane(state.pane);
+        }
+        focusState_ = state;
+        for (auto iterator = contents_.cbegin(); iterator != contents_.cend(); ++iterator)
+            if (iterator.value() && ownsTab(iterator.key())) iterator.value()->setBarsVisible(!state.zen);
+        setTabBarsVisible(state.effective.tabBars);
+        setSideBarsVisible(state.effective.sideBars);
+        if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
+        return;
+    }
+    if (!wasFocused && (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen)) {
+        previousPeekGroup_ = peekGroup_;
+        previousPeekTab_ = peekTab_;
+    }
+    restoreFocusScope();
+    focusState_ = state;
+    if (hasContentFocusScope() && !validTarget)
+        focusState_.mode = ViewMode::Normal;
+    applyFocusScope();
+    for (auto iterator = contents_.cbegin(); iterator != contents_.cend(); ++iterator)
+        if (iterator.value() && ownsTab(iterator.key())) iterator.value()->setBarsVisible(!state.zen);
+    setTabBarsVisible(state.effective.tabBars);
+    setSideBarsVisible(state.effective.sideBars);
+    if (wasFocused && !hasContentFocusScope()) {
+        const auto* previous = manager_->model().group(previousPeekGroup_);
+        if (previous && previous->location == GroupLocation::AutoHide && previous->tabs.contains(previousPeekTab_))
+            showEdgeGroup(previousPeekGroup_, previousPeekTab_);
+        previousPeekGroup_ = GroupId{};
+        previousPeekTab_ = TabId{};
+    }
+    if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
 }
 void DockSurface::closePeek()
 {

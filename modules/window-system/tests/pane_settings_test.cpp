@@ -20,6 +20,7 @@
 #include <QSpinBox>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QTest>
 #include <QTreeWidget>
 #include <QtMath>
@@ -68,6 +69,21 @@ int visibleSettingRows(QWidget* page)
     for (auto* row : page->findChildren<QWidget*>(QStringLiteral("SettingRow")))
         if (!row->isHidden()) ++count;
     return count;
+}
+
+QSet<QString> settingKeys(QWidget* page)
+{
+    QSet<QString> result;
+    for (auto* row : page->findChildren<QWidget*>(QStringLiteral("SettingRow")))
+        result.insert(row->property("settingId").toString());
+    return result;
+}
+
+QSet<QString> allSettingKeys()
+{
+    return {"window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
+            "window.viewMode", "window.zenMode", "window.visibility.toolbars", "window.visibility.statusBar",
+            "window.visibility.tabBars", "window.visibility.sideBars"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -261,11 +277,16 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     QCOMPARE(categories->topLevelItemCount(), 1);
     auto* windowCategory = categories->topLevelItem(0);
     QCOMPARE(windowCategory->text(0), QStringLiteral("窗口"));
-    QCOMPARE(windowCategory->childCount(), 1);
+    QCOMPARE(windowCategory->childCount(), 2);
     QCOMPARE(windowCategory->child(0)->text(0), QStringLiteral("拖拽"));
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(windowCategory->child(1)->text(0), QStringLiteral("显示与全屏"));
+    QCOMPARE(windowCategory->child(0)->data(0, Qt::UserRole).toString(), QStringLiteral("window/drag"));
+    QCOMPARE(windowCategory->child(1)->data(0, Qt::UserRole).toString(), QStringLiteral("window/display"));
+    QCOMPARE(settingKeys(page), allSettingKeys());
+    QCOMPARE(page->findChildren<QWidget*>(QStringLiteral("SettingRow")).size(), 10);
+    QCOMPARE(visibleSettingRows(page), 10);
     categories->setCurrentItem(windowCategory->child(0));
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
     search->setText(QStringLiteral("window.revealDelayMs"));
     QCOMPARE(visibleSettingRows(page), 1);
     categories->setCurrentItem(windowCategory);
@@ -275,9 +296,9 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     categories->setCurrentItem(windowCategory);
     QCOMPARE(visibleSettingRows(page), 2);
     search->setText(QStringLiteral("窗口"));
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
 }
 
 void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
@@ -292,6 +313,7 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QVERIFY(categories && scroll);
     auto* root = categories->topLevelItem(0);
     auto* drag = root->child(0);
+    auto* display = root->child(1);
     manager.windowWidget(window)->resize(780, 480);
     manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
@@ -299,7 +321,7 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QTest::mouseClick(categories->viewport(), Qt::LeftButton, Qt::NoModifier,
                      categories->visualItemRect(drag).center());
     QVERIFY(scroll->verticalScrollBar()->value() > 0);
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
     QVERIFY(drag->font(0).bold());
     QVERIFY(!root->font(0).bold());
     scroll->verticalScrollBar()->setValue(0);
@@ -307,7 +329,10 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QVERIFY(root->font(0).bold());
     QVERIFY(!drag->font(0).bold());
     scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
-    QCOMPARE(categories->currentItem(), drag);
+    QCOMPARE(categories->currentItem(), display);
+    QVERIFY(display->font(0).bold());
+    QVERIFY(!drag->font(0).bold());
+    QVERIFY(!root->font(0).bold());
     QCOMPARE(categories->frameShape(), QFrame::NoFrame);
     auto* divider = page->findChild<QFrame*>(QStringLiteral("SettingsCategoryDivider"));
     QVERIFY(divider);
@@ -332,13 +357,13 @@ void PaneSettingsTest::settingsCategoryTreeSupportsKeyboardExpansion()
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Left);
     QVERIFY(!root->isExpanded());
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
     QTest::keyClick(categories, Qt::Key_Right);
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Down);
     QCOMPARE(categories->currentItem(), drag);
     QVERIFY(drag->font(0).bold());
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
 }
 
 void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
@@ -471,28 +496,39 @@ void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()
     QVERIFY(search && categories);
     auto* root = categories->topLevelItem(0);
     auto* drag = root->child(0);
+    auto* display = root->child(1);
     const auto headings = page->findChildren<QLabel*>(QStringLiteral("SettingsCategoryHeading"));
-    QCOMPARE(headings.size(), 2);
+    QCOMPARE(headings.size(), 3);
+    QSet<QString> headingIds;
+    for (auto* heading : headings) headingIds.insert(heading->property("categoryId").toString());
+    QCOMPARE(headingIds, (QSet<QString>{"window", "window/drag", "window/display"}));
     search->setText(QStringLiteral("window.revealDelayMs"));
     QCOMPARE(visibleSettingRows(page), 1);
     QVERIFY(!root->isHidden());
     QVERIFY(!drag->isHidden());
-    for (auto* heading : headings) QVERIFY(!heading->isHidden());
+    QVERIFY(display->isHidden());
+    for (auto* heading : headings)
+        QCOMPARE(heading->isHidden(), heading->property("categoryId").toString() == QStringLiteral("window/display"));
     search->setText(QStringLiteral("window.closeEmptyWorkbench"));
     QCOMPARE(visibleSettingRows(page), 1);
     QVERIFY(!root->isHidden());
     QVERIFY(drag->isHidden());
+    QVERIFY(display->isHidden());
     for (auto* heading : headings)
-        QCOMPARE(heading->isHidden(), heading->property("categoryId").toString() == QStringLiteral("window/drag"));
+        QCOMPARE(heading->isHidden(), heading->property("categoryId").toString() != QStringLiteral("window"));
     search->setText(QStringLiteral("no-such-setting"));
     QCOMPARE(visibleSettingRows(page), 0);
     QVERIFY(root->isHidden());
     QVERIFY(drag->isHidden());
+    QVERIFY(display->isHidden());
     for (auto* heading : headings) QVERIFY(heading->isHidden());
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 4);
+    QCOMPARE(visibleSettingRows(page), 10);
     QVERIFY(!root->isHidden());
     QVERIFY(!drag->isHidden());
+    QVERIFY(!display->isHidden());
+    QCOMPARE(settingKeys(page), allSettingKeys());
+    for (auto* heading : headings) QVERIFY(!heading->isHidden());
 }
 
 void PaneSettingsTest::settingControlsUpdateImmediatelyAndReflectExternalChanges()

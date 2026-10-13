@@ -3,6 +3,7 @@
 #include <QFrame>
 #include <QHash>
 #include <QPointer>
+#include "focus_projection.hpp"
 
 class QVBoxLayout;
 namespace window_system {
@@ -13,6 +14,8 @@ public:
                  const QHash<PaneId, QPointer<QWidget>>& paneTopBars = {},
                  const QHash<PaneId, QPointer<QWidget>>& paneBottomBars = {});
     void setActivePane(PaneId pane);
+    void setFocusedPane(PaneId pane);
+    void setBarsVisible(bool visible);
     void setBarSharing(PaneBarSharing top, PaneBarSharing bottom);
     void setTopBar(QWidget* widget);
     void setBottomBar(QWidget* widget);
@@ -40,5 +43,8 @@ private:
     PaneBarSharing topSharing_ = PaneBarSharing::Shared;
     PaneBarSharing bottomSharing_ = PaneBarSharing::Shared;
     QHash<PaneId, QWidget*> frames_;
+    PaneId focusedPane_;
+    FocusProjection focusProjection_;
+    bool barsVisible_ = true;
 };
 } // namespace window_system

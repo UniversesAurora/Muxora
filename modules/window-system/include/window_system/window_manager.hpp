@@ -2,6 +2,8 @@
 
 #include <window_system/command_registry.hpp>
 #include <window_system/theme.hpp>
+#include <window_system/toolbar_layout.hpp>
+#include <window_system/view_state.hpp>
 #include <QJsonObject>
 #include <QObject>
 #include <QSize>
@@ -16,6 +18,8 @@ struct WindowOptions {
     QSize size = QSize(1280, 800);
     bool tabBarsVisible = true; // Central groups only; sidebar controls stay visible.
     bool sideBarsVisible = true; // Auto-hide rails only; pinned groups stay visible.
+    bool toolbarsVisible = true;
+    bool statusBarVisible = true;
 };
 
 enum class PaneBarSharing { Shared, PerPane };
@@ -71,6 +75,17 @@ public:
     [[nodiscard]] bool tabBarsVisible(WindowId window) const;
     bool setSideBarsVisible(WindowId window, bool visible);
     [[nodiscard]] bool sideBarsVisible(WindowId window) const;
+    bool setToolbarsVisible(WindowId window, bool visible);
+    [[nodiscard]] bool toolbarsVisible(WindowId window) const;
+    bool setStatusBarVisible(WindowId window, bool visible);
+    [[nodiscard]] bool statusBarVisible(WindowId window) const;
+    [[nodiscard]] BarVisibility preferredBarVisibility(WindowId window) const;
+    [[nodiscard]] BarVisibility barVisibility(WindowId window) const;
+    bool setViewMode(WindowId window, ViewMode mode);
+    [[nodiscard]] ViewMode viewMode(WindowId window) const;
+    bool setZenMode(WindowId window, bool enabled);
+    [[nodiscard]] bool zenMode(WindowId window) const;
+    [[nodiscard]] WindowViewState windowViewState(WindowId window) const;
     bool setTabIconVisible(TabId tab, bool visible);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
@@ -132,6 +147,10 @@ public:
     // Restore a chrome strip's natural width, preserving its position and the
     // width preferences of other strips. Sizing policy is unchanged.
     bool resetToolbarWidth(WindowId window, const QString& stripId);
+    // Move an existing strip without replacing its content. Row is a saved
+    // logical slot or the next slot after the last row; index -1 appends.
+    bool moveToolbar(WindowId window, const QString& stripId, ToolbarArea area,
+                     int row, int index = -1);
     [[nodiscard]] QJsonObject saveLayout() const;
     OperationResult restoreLayout(const QJsonObject& snapshot);
     void setStatus(WindowId window, const QString& text);
@@ -175,6 +194,11 @@ private:
     void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);
     void showWindowMenu(WindowId window, QPoint globalPosition);
     void updateActive(WindowId window, GroupId group, TabId tab);
+    bool setBarVisible(WindowId window, WindowBar bar, bool visible);
+    void applyWindowViewState(WindowId window);
+    void applyWindowViewStates();
+    void reconcileWindowViewState(WindowId window);
+    void leaveFocusScopeFor(TabId tab, PaneId pane);
 };
 
 } // namespace window_system

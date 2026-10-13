@@ -18,6 +18,8 @@ namespace window_system {
 // ownership. Layout storage contains stable strip/action IDs, never pointers.
 class CommandStripHost final : public QFrame {
 public:
+    // Rows count from the outer edge: top rows grow down, bottom rows grow up.
+    enum class Area { Top, Bottom };
     enum class StripSizing { Content, Elastic };
     struct StripConstraints {
         bool compressible = true;
@@ -53,6 +55,13 @@ public:
     bool setStripItemVisible(const QString& id, const QString& item, bool visible);
     [[nodiscard]] bool isStripItemVisible(const QString& id, const QString& item) const;
     bool moveStrip(const QString& id, int row, int index);
+    bool moveStrip(const QString& id, Area area, int row, int index);
+    // Insert this owned view below workspace content and above global status.
+    [[nodiscard]] QWidget* bottomArea() const;
+    [[nodiscard]] Area stripArea(const QString& id) const;
+    // Visible occupied rows. Saved row slots can retain empty positions so a
+    // hidden strip returns to its previous row without leaving a visual gap.
+    [[nodiscard]] int rowCount(Area area) const;
     bool setStripWidth(const QString& id, int width);
     bool resetStripWidth(const QString& id);
     void refreshLayout();
@@ -60,6 +69,7 @@ public:
     [[nodiscard]] QStringList stripIds() const;
     [[nodiscard]] QString stripTitle(const QString& id) const;
     [[nodiscard]] QStringList stripOrder(int row) const;
+    [[nodiscard]] QStringList stripOrder(Area area, int row) const;
     [[nodiscard]] QStringList overflowItems(const QString& id) const;
     [[nodiscard]] bool isDragging() const;
 
@@ -101,6 +111,16 @@ private:
     void insertDraggedStrip(int row, QPoint position);
     void clearWidthPriority(int row);
     void normalizeWidthPriority(int row);
+    [[nodiscard]] int rowIndex(Area area, int row) const;
+    int ensureRow(Area area, int row);
+    QWidget* ensureRowWidget(int row);
+    void destroyRowWidget(int row);
+    [[nodiscard]] int rowExtent(int row) const;
+    [[nodiscard]] QWidget* areaWidget(Area area) const;
+    void prepareDragRows();
+    [[nodiscard]] int dragRowAt(QPoint globalPosition);
+    [[nodiscard]] QSize areaSizeHint(Area area, bool minimum) const;
+    void replaceRows(QVector<QStringList> rows, QVector<Area> areas, bool retainSpareRows = false);
     [[nodiscard]] QVector<int> rowWidths(const QStringList& visible, int available) const;
 };
 

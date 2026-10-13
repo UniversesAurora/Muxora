@@ -2,7 +2,7 @@
 
 可独立构建的 Qt Widgets 工作区模块。Muxora 通过公开 API 使用它；其他项目也可通过 CMake package 接入，模块不依赖 SSH、终端、文件业务或 Muxora 配置。
 
-当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签与整窗移动、命令面板、快捷键入口和布局快照。首轮功能与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
+当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签与整窗移动、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
 
 ## 构建边界
 
@@ -41,11 +41,31 @@
 
 重置优先级以可选 `naturalWidthPriority` 字段进入布局快照，每行最多一个；未启用时省略该字段，旧布局仍可读取。手动调整宽度、改变尺寸策略或移动条带会清除受影响行的优先级；Esc 取消拖动恢复原值。
 
+`moveToolbar(window, stripId, ToolbarArea::Top/Bottom, row, index = -1)` 将已有工具条放入指定区域与行，保留其内容、按钮选择和尺寸策略。顶部与底部均支持任意多行，底部工具区位于下侧收纳条之下、全局状态栏之上。各区从外侧的第 0 行向工作区增加，顶部向下、底部向上；`index = -1` 追加到行末。允许已有行或末尾新一行，错误目标和越界索引返回 `false`，不创建空控件或改变布局。
+
+解锁拖动到最后一行时，工作区一侧出现一行投放预览；其他时候空行没有高度，移走最后一条后该行立即消失。上下区域共用锁定、弹性、压缩和溢出规则。`window.toolbar.move` 支持 `strip`、`area: "top" / "bottom"`、`row`、`index`；不带参数时提供工具条和区域／行的键盘选择菜单，位于“视图 → 工具条 → 移动工具条…”。区域随布局中的 `rows`／`bottomRows` 保存，旧快照沿用顶部区域。
+
 当前 API 为 0.1 初版，尚在交互迭代阶段，不承诺稳定二进制 ABI。完整 JSONC 用户键位、条件表达式和后续扩展仍按设计逐步接入。
 
 `setTabBarsVisible(window, visible)` / `tabBarsVisible(window)` 按窗口控制中央标签组的标签栏，隐藏时内容与布局模型保持。侧边收纳条、固定面板标签栏及临时展开标题继续显示。窗口创建选项 `WindowOptions.tabBarsVisible` 默认为 `true`；命令 `window.tabBars.toggle` 可从菜单、命令面板或 `Ctrl+Alt+T` 调用，设置随布局保存。
 
 `setSideBarsVisible(window, visible)` / `sideBarsVisible(window)` 独立控制四边收纳条，隐藏时关闭当前临时面板，保留固定分区。`WindowOptions.sideBarsVisible` 默认为 `true`；命令 `window.sideBars.toggle` 默认绑定 `Ctrl+Alt+B`，状态随窗口布局保存。隐藏后仍可通过明确的标签激活操作打开临时面板。没有该字段的旧快照默认显示侧栏；非法字段拒绝恢复，不修改现有布局。
+
+`setToolbarsVisible(window, visible)` 控制顶部与底部工具区，`setStatusBarVisible(window, visible)` 控制完整窗口的全局状态栏；对应 `WindowOptions.toolbarsVisible` / `statusBarVisible` 默认均为 `true`。命令 `window.toolbars.toggle` / `window.statusBar.toggle` 默认使用 `Ctrl+Alt+H` / `Ctrl+Alt+S`。这四项显隐偏好按窗口保存，与是否全屏无关，其他窗口保持自己的设置。
+
+`setViewMode(window, ViewMode::Normal/WindowFullscreen/GroupFullscreen/PaneFullscreen)` 选择全屏范围。窗口范围保留整个工作区；组与窗格范围投影当前目标的原控件，不复制内容、不改布局树。组范围仍可切换本组标签，窗格范围按 Pane ID 跟随同窗口移动；激活范围外内容会退回窗口全屏，目标关闭或跨窗口移走后安全退出。退出恢复原分割尺寸和进入前的正常位置／最大化状态。中央标签栏开关在这些模式中继续只影响中央组，固定／收纳标题保持原规则。
+
+`setZenMode(window, enabled)` 仅允许在全屏范围开启。禅模式临时关闭四栏的有效显示，另隐藏固定标题及所有 Tab／Pane 上下附加栏，保留原控件和四项偏好。显示任一栏会退出禅模式，恢复其他偏好并应用本次显示；关闭禅模式或退出全屏同样恢复。`preferredBarVisibility()` 返回保存的偏好，`barVisibility()` 返回有效显示值，`windowViewState()` 另包含模式、禅状态与稳定目标 ID。
+
+| 命令 | 默认键位 |
+| --- | --- |
+| `window.fullscreen.toggle` | `F11` |
+| `window.fullscreen.group` | `Ctrl+Shift+F11` |
+| `window.fullscreen.pane` | `Shift+F11` |
+| `window.zen.toggle` | 依次按 `Ctrl+K`、`Z` |
+| `window.fullscreen.exit` | `Esc` |
+
+全屏状态和目标通过 `viewState` 随窗口快照保存；正常矩形仍独立保存，不使用全屏尺寸替代。恢复先检查目标属于该窗口。普通窗口没有禅模式，旧快照缺失的新显示字段采用默认值；无效字段拒绝恢复并保留当前工作区。
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
 

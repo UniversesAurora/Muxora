@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include <window_system/window_manager.hpp>
+#include <window_system/view_state.hpp>
 #include <QWidget>
 #include <QPointer>
 #include <QList>
@@ -30,6 +31,7 @@ public:
     void setOptions(const WindowOptions& options);
     void updateCaption();
     void setStatus(const QString& text);
+    void applyViewState(const WindowViewState& state);
     [[nodiscard]] QRect normalPlacementGeometry() const;
     [[nodiscard]] bool placementMaximized() const;
     void restorePlacement(const QRect& geometry, bool maximized);
@@ -60,6 +62,7 @@ private:
     WindowOptions options_;
     QVBoxLayout* column_;
     QPointer<QWidget> chrome_;
+    QPointer<QWidget> bottomChrome_;
     QPointer<CommandStripHost> strips_;
     QPointer<QLabel> caption_;
     QPointer<QLabel> status_;
@@ -77,6 +80,10 @@ private:
     bool restoringPlacement_ = false;
     QTimer* placementTimer_;
     DragPresentation dragPresentation_ = DragPresentation::Window;
+    WindowViewState viewState_;
+    QRect viewNormalPlacement_;
+    bool viewNormalMaximized_ = false;
+    bool applyingViewState_ = false;
     QPointer<QWidget> dragPresentationHost_;
 };
 } // namespace window_system

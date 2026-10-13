@@ -1,5 +1,7 @@
 #pragma once
 #include <window_system/window_manager.hpp>
+#include <window_system/view_state.hpp>
+#include "panes/focus_projection.hpp"
 #include <QFrame>
 #include <QHash>
 #include <QPointer>
@@ -32,6 +34,7 @@ public:
     void closePeek();
     void setTabBarsVisible(bool visible);
     void setSideBarsVisible(bool visible);
+    void setFocusScope(const WindowViewState& state);
     [[nodiscard]] QRect centralRectGlobal() const;
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -44,6 +47,10 @@ private:
     void placePeek();
     void savePinnedExtents();
     void restorePinnedExtents();
+    void restoreFocusScope();
+    void applyFocusScope();
+    [[nodiscard]] bool hasContentFocusScope() const;
+    [[nodiscard]] bool ownsTab(TabId tab) const;
     WindowManager* manager_;
     WindowId window_;
     QPointer<QWidget> root_;
@@ -57,5 +64,11 @@ private:
     QPointer<QSplitter> horizontal_;
     QPointer<QSplitter> vertical_;
     QHash<TabId, QPointer<TabContent>> contents_;
+    WindowViewState focusState_;
+    FocusProjection focusProjection_;
+    QPointer<GroupTabs> focusedAutoHideGroup_;
+    bool focusedVerticalWasHidden_ = false;
+    GroupId previousPeekGroup_;
+    TabId previousPeekTab_;
 };
 } // namespace window_system

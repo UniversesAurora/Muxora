@@ -21,13 +21,17 @@ target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 
 add_library(WindowSystemWidgets STATIC
     src/window_manager.cpp
+    src/view_state.cpp
     src/navigation/workspace_navigation.cpp
     src/layout_persistence.cpp
     src/chrome/workspace_window.cpp
+    src/chrome/workspace_view.cpp
     src/chrome/command_strip.cpp
+    src/chrome/toolbar_api.cpp
     src/commands/command_registry.cpp
     src/commands/command_menus.cpp
     src/commands/window_commands.cpp
+    src/commands/toolbar_move_command.cpp
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
@@ -39,6 +43,7 @@ add_library(WindowSystemWidgets STATIC
     src/style/theme.cpp
     src/style/themed_controls.cpp
     src/settings/settings_page.cpp
+    src/settings/settings_view_options.cpp
     include/window_system/window_manager.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)
 set_target_properties(WindowSystemWidgets PROPERTIES EXPORT_NAME Widgets AUTOMOC ON)

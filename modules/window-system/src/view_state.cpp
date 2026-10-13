@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: MIT
+#include "window_manager_p.hpp"
+#include "view_state_p.hpp"
+
+#include <QJsonValue>
+#include <utility>
+
+namespace window_system {
+namespace {
+
+bool& visibleFlag(BarVisibility& bars, WindowBar bar)
+{
+    switch (bar) {
+    case WindowBar::Toolbars: return bars.toolbars;
+    case WindowBar::StatusBar: return bars.statusBar;
+    case WindowBar::TabBars: return bars.tabBars;
+    case WindowBar::SideBars: return bars.sideBars;
+    }
+    Q_UNREACHABLE();
+}
+
+QString modeName(ViewMode mode)
+{
+    switch (mode) {
+    case ViewMode::Normal: return QStringLiteral("normal");
+    case ViewMode::WindowFullscreen: return QStringLiteral("windowFullscreen");
+    case ViewMode::GroupFullscreen: return QStringLiteral("groupFullscreen");
+    case ViewMode::PaneFullscreen: return QStringLiteral("paneFullscreen");
+    }
+    return {};
+}
+
+OperationResult parseTargetId(const QJsonObject& object, const char* key, QUuid& id)
+{
+    const auto value = object.value(key);
+    if (value.isUndefined()) { id = QUuid(); return {true, {}}; }
+    if (!value.isString()) return {false, QStringLiteral("全屏内容目标 ID 无效")};
+    id = QUuid(value.toString());
+    if (id.isNull()) return {false, QStringLiteral("全屏内容目标 ID 无效")};
+    return {true, {}};
+}
+
+} // namespace
+
+bool validViewMode(ViewMode mode)
+{
+    return mode == ViewMode::Normal || mode == ViewMode::WindowFullscreen
+        || mode == ViewMode::GroupFullscreen || mode == ViewMode::PaneFullscreen;
+}
+
+BarVisibility WindowManager::preferredBarVisibility(WindowId window) const
+{
+    if (!d->model.window(window)) return {false, false, false, false};
+    const auto options = d->options.value(window);
+    return {options.toolbarsVisible, options.statusBarVisible, options.tabBarsVisible, options.sideBarsVisible};
+}
+
+WindowViewState WindowManager::windowViewState(WindowId window) const
+{
+    auto state = d->viewStates.value(window);
+    if (!d->model.window(window)) { state.effective = {false, false, false, false}; return state; }
+    state.effective = preferredBarVisibility(window);
+    if (state.mode == ViewMode::GroupFullscreen) {
+        if (const auto* group = d->model.group(state.group)) {
+            state.tab = group->activeTab;
+            if (const auto* tab = d->model.tab(state.tab)) state.pane = tab->activePane;
+        }
+    }
+    if (state.zen) state.effective = {false, false, false, false};
+    return state;
+}
+
+BarVisibility WindowManager::barVisibility(WindowId window) const { return windowViewState(window).effective; }
+ViewMode WindowManager::viewMode(WindowId window) const { return d->viewStates.value(window).mode; }
+bool WindowManager::zenMode(WindowId window) const { return d->viewStates.value(window).zen; }
+bool WindowManager::tabBarsVisible(WindowId window) const { return barVisibility(window).tabBars; }
+bool WindowManager::sideBarsVisible(WindowId window) const { return barVisibility(window).sideBars; }
+bool WindowManager::toolbarsVisible(WindowId window) const { return barVisibility(window).toolbars; }
+bool WindowManager::statusBarVisible(WindowId window) const { return barVisibility(window).statusBar; }
+bool WindowManager::setTabBarsVisible(WindowId window, bool visible) { return setBarVisible(window, WindowBar::TabBars, visible); }
+bool WindowManager::setSideBarsVisible(WindowId window, bool visible) { return setBarVisible(window, WindowBar::SideBars, visible); }
+bool WindowManager::setToolbarsVisible(WindowId window, bool visible) { return setBarVisible(window, WindowBar::Toolbars, visible); }
+bool WindowManager::setStatusBarVisible(WindowId window, bool visible) { return setBarVisible(window, WindowBar::StatusBar, visible); }
+
+bool WindowManager::setBarVisible(WindowId window, WindowBar bar, bool visible)
+{
+    if (!d->model.window(window) || !d->windows.value(window)) return false;
+    auto& state = d->viewStates[window];
+    // Zen is a projection, not a second preference store. Hiding an already
+    // hidden bar leaves the pre-Zen settings untouched, including other windows.
+    if (state.zen && !visible) return true;
+    const bool leavingZen = state.zen;
+    if (visible) state.zen = false;
+    bool changed = leavingZen;
+    auto bars = preferredBarVisibility(window);
+    changed = changed || visibleFlag(bars, bar) != visible;
+    visibleFlag(bars, bar) = visible;
+    auto& options = d->options[window];
+    options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
+    options.tabBarsVisible = bars.tabBars; options.sideBarsVisible = bars.sideBars;
+    if (!changed) return true;
+    QPointer<WindowManager> self(this);
+    applyWindowViewState(window);
+    if (self) emit layoutChanged();
+    return true;
+}
+
+bool WindowManager::setViewMode(WindowId window, ViewMode mode)
+{
+    if (!validViewMode(mode) || !d->model.window(window) || !d->windows.value(window)
+        || (d->drag && d->drag->isActive())) return false;
+    auto state = d->viewStates.value(window);
+    if (state.mode == mode) return true;
+    state.mode = mode; state.group = GroupId(); state.tab = TabId(); state.pane = PaneId();
+    if (mode == ViewMode::Normal) state.zen = false;
+    if (mode == ViewMode::GroupFullscreen || mode == ViewMode::PaneFullscreen) {
+        const auto active = context(window);
+        const auto* group = d->model.group(active.group);
+        const auto* tab = d->model.tab(active.tab);
+        if (!group || group->windowId != window || !tab || !d->model.panes(active.tab).contains(active.pane)) return false;
+        state.group = active.group; state.tab = active.tab; state.pane = active.pane;
+    }
+    d->viewStates.insert(window, state);
+    QPointer<WindowManager> self(this);
+    applyWindowViewState(window);
+    if (self) emit layoutChanged();
+    return true;
+}
+
+bool WindowManager::setZenMode(WindowId window, bool enabled)
+{
+    if (!d->model.window(window) || !d->windows.value(window)) return false;
+    auto& state = d->viewStates[window];
+    if (enabled && state.mode == ViewMode::Normal) return false;
+    if (state.zen == enabled) return true;
+    state.zen = enabled;
+    QPointer<WindowManager> self(this);
+    applyWindowViewState(window);
+    if (self) emit layoutChanged();
+    return true;
+}
+
+void WindowManager::reconcileWindowViewState(WindowId window)
+{
+    auto& state = d->viewStates[window];
+    if (state.mode == ViewMode::Normal || state.mode == ViewMode::WindowFullscreen) return;
+    if (state.mode == ViewMode::PaneFullscreen) {
+        const auto tab = d->model.tabForPane(state.pane);
+        const auto group = d->model.groupForTab(tab);
+        const auto* record = d->model.group(group);
+        if (!record || record->windowId != window) { state = {}; return; }
+        state.tab = tab; state.group = group;
+        const auto* target = d->model.tab(tab);
+        if (record->activeTab != tab || target->activePane != state.pane)
+            d->model.activatePane(tab, state.pane);
+    } else {
+        const auto* group = d->model.group(state.group);
+        if (!group || group->windowId != window || group->activeTab.isNull()) { state = {}; return; }
+        state.tab = group->activeTab;
+        state.pane = d->model.tab(state.tab)->activePane;
+    }
+}
+
+void WindowManager::applyWindowViewState(WindowId id)
+{
+    if (!d->model.window(id)) return;
+    reconcileWindowViewState(id);
+    if (auto window = d->windows.value(id)) {
+        window->setOptions(d->options.value(id));
+        window->applyViewState(windowViewState(id));
+    }
+}
+
+void WindowManager::applyWindowViewStates()
+{
+    const auto order = d->model.windowOrder();
+    const QPointer<WindowManager> self(this);
+    for (const auto id : order) {
+        applyWindowViewState(id);
+        if (!self) return;
+    }
+}
+
+void WindowManager::leaveFocusScopeFor(TabId tab, PaneId pane)
+{
+    const auto group = d->model.groupForTab(tab);
+    const auto* record = d->model.group(group); if (!record) return;
+    const auto state = d->viewStates.value(record->windowId);
+    if ((state.mode == ViewMode::GroupFullscreen && state.group != group)
+        || (state.mode == ViewMode::PaneFullscreen && (state.tab != tab || (!pane.isNull() && state.pane != pane))))
+        setViewMode(record->windowId, ViewMode::WindowFullscreen);
+}
+
+QJsonObject windowViewStateToJson(const WindowViewState& state)
+{
+    QJsonObject object{{"mode", modeName(state.mode)}, {"zen", state.zen}};
+    if (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen) {
+        object.insert("group", state.group.toString(QUuid::WithoutBraces));
+        object.insert("tab", state.tab.toString(QUuid::WithoutBraces));
+        object.insert("pane", state.pane.toString(QUuid::WithoutBraces));
+    }
+    return object;
+}
+
+OperationResult parseWindowViewState(const QJsonValue& value, const LayoutModel& model,
+                                    WindowId window, WindowViewState& state)
+{
+    if (value.isUndefined()) { state = {}; return {true, {}}; }
+    if (!value.isObject()) return {false, QStringLiteral("窗口显示模式无效")};
+    const auto object = value.toObject();
+    const auto name = object.value("mode");
+    if (!name.isString()) return {false, QStringLiteral("窗口显示模式无效")};
+    WindowViewState candidate;
+    bool found = false;
+    for (const auto mode : {ViewMode::Normal, ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen})
+        if (name.toString() == modeName(mode)) { candidate.mode = mode; found = true; break; }
+    if (!found) return {false, QStringLiteral("窗口显示模式无效")};
+    const auto zen = object.value("zen");
+    if (!zen.isUndefined() && !zen.isBool()) return {false, QStringLiteral("禅模式设置无效")};
+    candidate.zen = zen.toBool(false);
+    if (candidate.zen && candidate.mode == ViewMode::Normal) return {false, QStringLiteral("普通窗口不能恢复禅模式")};
+    for (const auto& target : {std::pair{"group", &candidate.group}, std::pair{"tab", &candidate.tab}, std::pair{"pane", &candidate.pane}}) {
+        const auto result = parseTargetId(object, target.first, *target.second);
+        if (!result) return result;
+    }
+    if (candidate.mode == ViewMode::Normal || candidate.mode == ViewMode::WindowFullscreen) {
+        if (!candidate.group.isNull() || !candidate.tab.isNull() || !candidate.pane.isNull())
+            return {false, QStringLiteral("窗口模式不能包含内容目标")};
+    } else {
+        const auto* group = model.group(candidate.group);
+        if (!group || group->windowId != window || !group->tabs.contains(candidate.tab)
+            || !model.panes(candidate.tab).contains(candidate.pane)) return {false, QStringLiteral("全屏内容目标不属于当前窗口")};
+        if (group->activeTab != candidate.tab)
+            return {false, QStringLiteral("标签组全屏目标与活动标签不一致")};
+        if (candidate.mode == ViewMode::PaneFullscreen && model.tab(candidate.tab)->activePane != candidate.pane)
+            return {false, QStringLiteral("窗格全屏目标与活动窗格不一致")};
+    }
+    state = candidate;
+    return {true, {}};
+}
+
+} // namespace window_system

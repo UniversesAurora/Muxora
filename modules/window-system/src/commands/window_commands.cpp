@@ -5,6 +5,7 @@
 #include "commands/command_dialogs.hpp"
 #include "commands/command_menus.hpp"
 #include "commands/popup_menu.hpp"
+#include "commands/toolbar_move_command.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
 #include "panes/tab_content.hpp"
@@ -67,6 +68,28 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) {
             return setSideBarsVisible(c.window, !sideBarsVisible(c.window));
         }, hasWindow);
+    add("window.toolbars.toggle", QStringLiteral("显示工具栏"), "视图", QKeySequence("Ctrl+Alt+H"),
+        [this](const CommandContext& c) { return setToolbarsVisible(c.window, !toolbarsVisible(c.window)); }, hasWindow);
+    add("window.statusBar.toggle", QStringLiteral("显示状态栏"), "视图", QKeySequence("Ctrl+Alt+S"),
+        [this](const CommandContext& c) { return setStatusBarVisible(c.window, !statusBarVisible(c.window)); }, hasWindow);
+    for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen}) {
+        const bool group = mode == ViewMode::GroupFullscreen;
+        const bool pane = mode == ViewMode::PaneFullscreen;
+        const auto id = group ? "window.fullscreen.group" : pane ? "window.fullscreen.pane" : "window.fullscreen.toggle";
+        const auto title = group ? QStringLiteral("标签组全屏") : pane ? QStringLiteral("窗格全屏") : QStringLiteral("窗口全屏");
+        const auto key = group ? "Ctrl+Shift+F11" : pane ? "Shift+F11" : "F11";
+        std::function<bool(const CommandContext&)> enabled = hasWindow;
+        if (group || pane) enabled = hasTab;
+        add(id, title, "视图", QKeySequence(key), [this, mode](const CommandContext& c) {
+            return setViewMode(c.window, viewMode(c.window) == mode ? ViewMode::Normal : mode);
+        }, std::move(enabled));
+    }
+    add("window.fullscreen.exit", QStringLiteral("退出全屏"), "视图", QKeySequence(Qt::Key_Escape),
+        [this](const CommandContext& c) { return setViewMode(c.window, ViewMode::Normal); },
+        [this](const CommandContext& c) { return viewMode(c.window) != ViewMode::Normal; });
+    add("window.zen.toggle", QStringLiteral("禅模式"), "视图", QKeySequence("Ctrl+K, Z"),
+        [this](const CommandContext& c) { return setZenMode(c.window, !zenMode(c.window)); },
+        [this](const CommandContext& c) { return viewMode(c.window) != ViewMode::Normal; });
     for (const bool top : {true, false}) {
         add(top ? "tab.topBar.setSharing" : "tab.bottomBar.setSharing",
             top ? QStringLiteral("切换上方窗格栏共享") : QStringLiteral("切换下方窗格栏共享"), "布局", {},
@@ -89,6 +112,7 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { showSettings(c.window); return true; });
     add("preferences.openKeyboardShortcuts", QStringLiteral("键盘快捷方式"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
+    registerToolbarMoveCommand(this);
     add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));

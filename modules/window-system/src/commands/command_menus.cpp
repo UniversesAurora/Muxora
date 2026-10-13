@@ -75,11 +75,14 @@ const Items& layout(CommandMenuSurface surface)
         group("文件", "文件(&F)", {command("window.new", 20), separator(30), separator(60),
             command("workspace.closeTab", 70), command("window.close", 80), separator(90)}, 10),
         group("视图", "视图(&V)", {command("workbench.showCommandPalette"), separator(),
-            group("view.visibility", "显示", {command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
+            group("view.visibility", "显示", {command("window.toolbars.toggle"), command("window.statusBar.toggle"),
+                command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
+            group("view.fullscreen", "全屏", {command("window.fullscreen.toggle"), command("window.fullscreen.group"),
+                command("window.fullscreen.pane"), separator(), command("window.zen.toggle"), command("window.fullscreen.exit")}),
             group("view.tabs", "切换标签", {command("workspace.previousTab"), command("workspace.nextTab")}),
             group("view.groups", "聚焦标签组", directions("workspace.focusGroup.")),
             group("view.panes", "聚焦窗格", directions("pane.focus.")),
-            group("view.toolbars", "工具条", {command("window.toggleStripsLock")})}, 20),
+            group("view.toolbars", "工具条", {command("window.toggleStripsLock"), command("window.toolbar.move")})}, 20),
         group("布局", "布局(&L)", {
             group("layout.groups", "标签组", {group("group.create", "新建标签组", directions("workspace.splitGroup.")),
                 group("group.resize", "调整边界", directions("workspace.resizeGroup."))}),
@@ -252,10 +255,18 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")
         visible = group && group->location != GroupLocation::Central;
     const bool checkedCommand = id == "window.tabBars.toggle" || id == "window.sideBars.toggle"
+        || id == "window.toolbars.toggle" || id == "window.statusBar.toggle" || id == "window.zen.toggle"
+        || (id.startsWith("window.fullscreen.") && id != "window.fullscreen.exit")
         || id == "window.toggleStripsLock" || id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing";
     const QSignalBlocker blocker(action); action->setCheckable(checkedCommand);
     if (id == "window.tabBars.toggle") action->setChecked(manager->tabBarsVisible(context.window));
     if (id == "window.sideBars.toggle") action->setChecked(manager->sideBarsVisible(context.window));
+    if (id == "window.toolbars.toggle") action->setChecked(manager->toolbarsVisible(context.window));
+    if (id == "window.statusBar.toggle") action->setChecked(manager->statusBarVisible(context.window));
+    if (id == "window.zen.toggle") action->setChecked(manager->zenMode(context.window));
+    if (id == "window.fullscreen.toggle") action->setChecked(manager->viewMode(context.window) == ViewMode::WindowFullscreen);
+    if (id == "window.fullscreen.group") action->setChecked(manager->viewMode(context.window) == ViewMode::GroupFullscreen);
+    if (id == "window.fullscreen.pane") action->setChecked(manager->viewMode(context.window) == ViewMode::PaneFullscreen);
     if (id == "window.toggleStripsLock") {
         const auto* view = static_cast<WorkspaceWindow*>(manager->windowWidget(context.window));
         action->setChecked(view && view->strips() && view->strips()->isLocked());

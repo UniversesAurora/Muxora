@@ -20,6 +20,7 @@ void TabContent::rebuild(const TabRecord& record,
 {
     // The manager parks content and pane bars before rebuilding hosts. Sharing
     // policy changes only their presentation; the same widgets remain adopted.
+    focusProjection_.restore();
     paneTopBars_.clear();
     paneBottomBars_.clear();
     for (const auto pane : manager_->model().panes(tab_)) {
@@ -33,6 +34,7 @@ void TabContent::rebuild(const TabRecord& record,
     const int topIndex = visibleTop_ ? layout_->indexOf(visibleTop_) : -1;
     if (tree_) layout_->insertWidget(topIndex >= 0 ? topIndex + 1 : 0, tree_, 1);
     updateBars();
+    setFocusedPane(focusedPane_);
 }
 QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
                               const QHash<PaneId, QPointer<QWidget>>& contents)
@@ -117,6 +119,23 @@ QWidget* TabContent::takeBottomBar()
 }
 QHash<PaneId, QWidget*> TabContent::paneFrames() const { return frames_; }
 
+void TabContent::setFocusedPane(PaneId pane)
+{
+    focusProjection_.restore();
+    focusedPane_ = frames_.contains(pane) ? pane : PaneId{};
+    if (focusedPane_.isNull()) return;
+    focusProjection_.apply(frames_.value(focusedPane_), this);
+    layout_->activate();
+}
+
+void TabContent::setBarsVisible(bool visible)
+{
+    if (barsVisible_ == visible) return;
+    barsVisible_ = visible;
+    updateBars();
+    layout_->activate();
+}
+
 void TabContent::setBarSharing(PaneBarSharing top, PaneBarSharing bottom)
 {
     if (topSharing_ == top && bottomSharing_ == bottom) return;
@@ -154,7 +173,7 @@ void TabContent::replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool 
     layout_->removeWidget(slot);
     if (top) layout_->insertWidget(0, slot);
     else layout_->addWidget(slot);
-    slot->show();
+    slot->setVisible(barsVisible_);
 }
 
 void TabContent::updateBars()
@@ -195,7 +214,7 @@ void TabContent::placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
             if (top) column->insertWidget(0, bar);
             else column->addWidget(bar);
         }
-        bar->show();
+        bar->setVisible(barsVisible_);
     }
 }
 } // namespace window_system
