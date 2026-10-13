@@ -7,6 +7,7 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QPolygonF>
+#include <QSplitter>
 #include <QStringList>
 #include <QVariantMap>
 #include <QWidget>
@@ -314,6 +315,8 @@ QSplitter::handle { background: @background; }
 QSplitter::handle:hover { background: @accent; }
 QSplitter::handle:horizontal { width: @splitterpx; }
 QSplitter::handle:vertical { height: @splitterpx; }
+QSplitter[windowSystemGroupSplitter="true"]::handle:horizontal { width: @groupSplitterpx; }
+QSplitter[windowSystemGroupSplitter="true"]::handle:vertical { height: @groupSplitterpx; }
 QStatusBar, QWidget#StatusBar { background: @status; color: @statusText; border: none; padding: 1px 6px; }
 QStatusBar QLabel, QWidget#StatusBar QLabel { color: @statusText; }
 QStatusBar::item { border: none; }
@@ -348,6 +351,7 @@ QProgressBar::chunk { background: @accent; }
     rules.replace(QStringLiteral("@controlInner"), QString::number(std::max(14, theme.metrics.controlHeight - 6)));
     rules.replace(QStringLiteral("@tabInner"), QString::number(std::max(14, theme.metrics.tabHeight - 9)));
     rules.replace(QStringLiteral("@splitter"), QString::number(std::max(1, theme.metrics.splitterWidth)));
+    rules.replace(QStringLiteral("@groupSplitter"), QString::number(std::max(1, theme.metrics.groupSplitterWidth)));
     return rules;
 }
 
@@ -385,6 +389,12 @@ void applyTheme(QWidget* root, const Theme& theme)
     root->setPalette(palette);
     root->setAutoFillBackground(true);
     root->setStyleSheet(styleSheet(theme));
+    const auto updateGroupSplitter = [&](QSplitter* splitter) {
+        if (splitter && splitter->property("windowSystemGroupSplitter").toBool())
+            splitter->setHandleWidth(std::max(1, theme.metrics.groupSplitterWidth));
+    };
+    updateGroupSplitter(qobject_cast<QSplitter*>(root));
+    for (auto* splitter : root->findChildren<QSplitter*>()) updateGroupSplitter(splitter);
     root->update();
 }
 

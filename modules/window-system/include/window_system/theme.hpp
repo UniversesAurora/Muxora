@@ -23,6 +23,7 @@ struct ThemeMetrics {
     int padding = 6;
     int spacing = 4;
     int iconSize = 16;
+    int groupSplitterWidth = 2;
 };
 
 /// Value tokens also available to hosts that paint their own content.

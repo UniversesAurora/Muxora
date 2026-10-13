@@ -287,14 +287,20 @@ WindowId WindowManager::detachTab(TabId tab, WindowKind kind)
 {
     return detachTabImpl(tab, kind, {});
 }
-WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow)
+WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag)
 {
+    const QPointer<WindowManager> self(this);
     const auto source = context(d->model.group(d->model.groupForTab(tab)) ? d->model.group(d->model.groupForTab(tab))->windowId : WindowId{});
     const auto id = d->model.detachTab(tab, kind); if (id.isNull()) return {};
     auto options = d->options.value(source.window); options.size = QSize(880, 560); d->options.insert(id, options);
-    refresh();
+    refresh(preserveDrag);
+    if (!self) return {};
     if (beforeShow) if (auto* window = windowWidget(id)) beforeShow(window);
-    showWindow(id); activateTab(tab); return id;
+    if (!self) return {};
+    showWindow(id);
+    if (!self) return {};
+    activateTab(tab);
+    return self ? id : WindowId{};
 }
 bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement, int insertionIndex)
 { return applyResult(d->model.moveAllTabs(source, target, placement, insertionIndex)); }
@@ -430,12 +436,12 @@ bool WindowManager::applyResult(const OperationResult& result)
     if (!result) { emit commandFailed(result.error); return false; }
     refresh(); return true;
 }
-void WindowManager::refresh()
+void WindowManager::refresh(bool preserveDrag)
 {
     d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
     d->refreshing = true;
-    d->drag->releaseForMutation();
+    if (!preserveDrag) d->drag->releaseForMutation();
     for (auto window : d->windows) if (window) window->surface()->closePeek();
     for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); }
     for (const auto& bars : {d->paneTopBars, d->paneBottomBars})

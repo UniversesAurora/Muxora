@@ -14,11 +14,12 @@ class QMenuBar;
 namespace window_system {
 class WindowManager;
 
-enum class CommandMenuSurface { Application, Tab, Pane, Window };
+enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window };
 
 // Built-in menu taxonomy, also used to audit complete command coverage.
 [[nodiscard]] QStringList declaredMenuCommands(CommandMenuSurface surface);
 [[nodiscard]] QString applicationMenuExclusion(const QString& commandId);
+[[nodiscard]] QString floatingMenuExclusion(const QString& commandId);
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context);
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager,
                          const CommandContext& captured);
@@ -27,7 +28,8 @@ void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager*
 // registrations are added incrementally without destroying a displayed menu.
 class ApplicationCommandMenus final : public QObject {
 public:
-    ApplicationCommandMenus(QMenuBar* bar, WindowManager* manager, WindowId window);
+    ApplicationCommandMenus(QMenuBar* bar, WindowManager* manager, WindowId window,
+                            CommandMenuSurface surface = CommandMenuSurface::Application);
     ~ApplicationCommandMenus() override = default;
     void refresh();
     std::function<void()> structureChanged;
@@ -35,6 +37,7 @@ private:
     QPointer<QMenuBar> bar_;
     QPointer<WindowManager> manager_;
     WindowId window_;
+    CommandMenuSurface surface_;
     QList<QPointer<QAction>> actions_;
     QList<QPointer<QMenu>> menus_;
     QMenu* menuAtPath(const QStringList& path);

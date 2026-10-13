@@ -134,7 +134,7 @@ int EdgeStrip::insertionIndex(QPoint global) const
     if (previewIndex_ >= 0 && insertionPreviewRect().contains(global)) return previewIndex_;
     const int position = axis(track_->mapFromGlobal(global));
     int index = 0;
-    for (const auto& button : buttons_) if (button) {
+    for (const auto& button : buttons_) if (button && button != draggedButton_) {
         if (position < axis(button->geometry().center())) return index;
         ++index;
     }
@@ -165,16 +165,27 @@ QRect EdgeStrip::insertionMarkerRect(int index) const
 
 void EdgeStrip::setInsertionPreview(int index, int extent)
 {
-    const bool valid = index >= 0 && index <= buttons_.size() && extent > 0;
+    QList<QAbstractButton*> visible;
+    for (const auto& button : buttons_) if (button && button != draggedButton_) visible.append(button);
+    const bool valid = index >= 0 && index <= visible.size() && extent > 0;
     const int nextIndex = valid ? index : -1;
     const int nextExtent = valid ? std::min(extent, QWIDGETSIZE_MAX) : 0;
     if (nextIndex == previewIndex_ && nextExtent == previewExtent_) return;
     trackLayout_->removeWidget(gap_); gap_->hide();
     previewIndex_ = nextIndex; previewExtent_ = nextExtent;
     if (valid) {
-        const int insertion = index < buttons_.size() ? trackLayout_->indexOf(buttons_[index])
+        const int insertion = index < visible.size() ? trackLayout_->indexOf(visible[index])
             : tail_ ? trackLayout_->indexOf(tail_) : trackLayout_->count() - 1;
         trackLayout_->insertWidget(insertion, gap_); gap_->show();
+    }
+    layoutTrack();
+}
+void EdgeStrip::setDraggedTab(TabId tab)
+{
+    if (draggedButton_) draggedButton_->show();
+    draggedButton_.clear();
+    for (const auto& button : buttons_) if (button && !tab.isNull() && button->property("tabId").toUuid() == tab) {
+        draggedButton_ = button; button->hide(); break;
     }
     layoutTrack();
 }
@@ -191,7 +202,7 @@ void EdgeStrip::layoutTrack()
     QScopedValueRollback guard(arranging_, true);
     const int thickness = std::max(1, theme_.metrics.edgeThickness);
     qint64 total = 0; int count = 0;
-    for (const auto& button : buttons_) if (button) {
+    for (const auto& button : buttons_) if (button && button != draggedButton_) {
         const auto hint = button->sizeHint();
         const int extent = std::clamp(vertical_ ? hint.height() : hint.width(), 1, QWIDGETSIZE_MAX);
         button->setFixedSize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));

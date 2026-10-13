@@ -6,6 +6,7 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QVariant>
 #include <QWidget>
 #include <QWindow>
@@ -82,16 +83,25 @@ public:
     bool trackingNonClient = false;
     HWND configuredHandle = nullptr;
     NativeTransitionConfiguration transitions;
+    NativeFrameConfiguration configuration;
+    NativePaintGuardActivity paintGuards;
+    bool attributesReady = false;
+    bool configuring = false;
+    bool extending = false;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == window_ && event->type() == QEvent::WinIdChange
-            && window_ && window_->testAttribute(Qt::WA_WState_Created)
-            && window_->effectiveWinId()) {
+        if (watched == window_ && event->type() == QEvent::WinIdChange) {
+            // Invalidate even for a zero handle. Windows can recycle the same
+            // numeric HWND after Qt changes flags, so identity alone is not a
+            // sufficient cache key across a destroy/create pair.
+            configuredHandle = nullptr;
+            attributesReady = false;
             // Window flag changes may replace the HWND. Do not wait for a
             // later showEvent to make the replacement eligible for transitions.
-            applyNativeFrame(window_);
+            if (window_ && window_->testAttribute(Qt::WA_WState_Created) && window_->effectiveWinId())
+                applyNativeFrame(window_);
         }
         if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowStateChange) {
             cancelPress();
@@ -172,22 +182,40 @@ QAbstractButton* maximizeButtonAt(QWidget* window, const QPoint& position)
     return nullptr;
 }
 
-void extendFrame(QWidget* window, HWND handle)
+void extendFrame(QWidget* window, HWND handle, bool force = false)
 {
+    auto* state = frameState(window);
     const bool compact = window->property("windowSystemDragPresentation").toBool();
-    const DWMNCRENDERINGPOLICY policy = compact ? DWMNCRP_DISABLED : DWMNCRP_ENABLED;
-    DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
+    if (state->extending) return;
+    if (!force && state->attributesReady && state->configuredHandle == handle && state->configuration.compact == compact) {
+        BOOL enabled = FALSE;
+        // Windows renders a shaped HWND without DWM's non-client surface,
+        // regardless of the successful enabled-policy request. Its custom
+        // client is protected by the NC paint guards below; rewriting the same
+        // attributes on every activation cannot change this native region rule.
+        if (SUCCEEDED(DwmGetWindowAttribute(handle, DWMWA_NCRENDERING_ENABLED, &enabled, sizeof(enabled)))
+            && (enabled || (compact && !window->mask().isEmpty()))) return;
+    }
+    const QPointer<NativeFrameState> retained(state);
+    state->extending = true;
+    const auto reset = qScopeGuard([retained] { if (retained) retained->extending = false; });
+    const auto revision = state->configuration.revision + 1;
+    // Retain DWM composition in every presentation. Switching it off invalidates
+    // the extended frame and allows an intermediate basic non-client frame.
+    // Compact previews change margins/corners, never the compositor's policy.
+    const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+    const HRESULT policyResult = DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
+    if (!retained) return;
     // Permit the compositor's ordinary transitions. This is not an animation
     // request and does not override Windows' global animation/accessibility
     // preferences. We never change SPI_SETANIMATION or client-area settings.
     const BOOL forceDisableTransitions = FALSE;
     const HRESULT transitionResult = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED,
         &forceDisableTransitions, sizeof(forceDisableTransitions));
-    auto* state = frameState(window);
-    state->configuredHandle = handle;
-    state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
+    if (!retained) return;
     const MARGINS margins{compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1};
-    DwmExtendFrameIntoClientArea(handle, &margins);
+    const HRESULT marginsResult = DwmExtendFrameIntoClientArea(handle, &margins);
+    if (!retained) return;
     // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND. Older Windows returns
     // E_INVALIDARG; its normal square corners and resize behavior remain valid.
     constexpr DWORD cornerPreferenceAttribute = 33;
@@ -196,6 +224,11 @@ void extendFrame(QWidget* window, HWND handle)
     constexpr DWORD borderColorAttribute = 34;
     const COLORREF borderColor = compact ? COLORREF(0xfffffffe) : COLORREF(0xffffffff);
     DwmSetWindowAttribute(handle, borderColorAttribute, &borderColor, sizeof(borderColor));
+    if (!retained) return;
+    state->configuredHandle = handle;
+    state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
+    state->configuration = {true, compact, true, qint32(policyResult), qint32(marginsResult), revision};
+    state->attributesReady = SUCCEEDED(policyResult) && SUCCEEDED(transitionResult) && SUCCEEDED(marginsResult);
 }
 
 void showSystemMenu(QWidget* window, HWND handle)
@@ -245,19 +278,30 @@ void applyNativeFrame(QWidget* window)
 {
 #ifdef Q_OS_WIN
     if (!window || !window->isWindow() || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return;
-    frameState(window); // Observe HWND creation/replacement before requesting it.
+    auto* state = frameState(window); // Observe HWND creation/replacement before requesting it.
+    if (state->configuring) return;
+    const QPointer<NativeFrameState> retained(state);
+    const QPointer<QWidget> observed(window);
+    state->configuring = true;
+    const auto reset = qScopeGuard([retained] { if (retained) retained->configuring = false; });
     const auto handle = reinterpret_cast<HWND>(window->winId());
-    if (!IsWindow(handle)) return;
+    if (!observed || !retained || !IsWindow(handle)) return;
+    // Establish the compositor attributes before requesting the native frame
+    // recalculation. A visible replacement must not paint the interim style.
+    extendFrame(window, handle);
+    if (!observed) return;
     if (!fullScreenRequested(window)) {
         const LONG_PTR original = GetWindowLongPtrW(handle, GWL_STYLE);
         const LONG_PTR desired = normalFrameStyle(DWORD(original));
         if (desired != original) {
             SetWindowLongPtrW(handle, GWL_STYLE, desired);
+            if (!observed) return;
             SetWindowPos(handle, nullptr, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW);
+            if (!observed) return;
+            window->update(); // Repaint the custom client, with no basic caption pass.
         }
     }
-    extendFrame(window, handle);
 #else
     Q_UNUSED(window)
 #endif
@@ -268,6 +312,27 @@ NativeTransitionConfiguration nativeTransitionConfiguration(QWidget* window)
 #ifdef Q_OS_WIN
     if (window) if (const auto* state = findFrameState(window))
         if (state->configuredHandle == reinterpret_cast<HWND>(window->effectiveWinId())) return state->transitions;
+#else
+    Q_UNUSED(window)
+#endif
+    return {};
+}
+
+NativeFrameConfiguration nativeFrameConfiguration(QWidget* window)
+{
+#ifdef Q_OS_WIN
+    if (window) if (const auto* state = findFrameState(window))
+        if (state->configuredHandle == reinterpret_cast<HWND>(window->effectiveWinId())) return state->configuration;
+#else
+    Q_UNUSED(window)
+#endif
+    return {};
+}
+
+NativePaintGuardActivity nativePaintGuardActivity(QWidget* window)
+{
+#ifdef Q_OS_WIN
+    if (window) if (const auto* state = findFrameState(window)) return state->paintGuards;
 #else
     Q_UNUSED(window)
 #endif
@@ -341,6 +406,21 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         // Normal cases use Qt's public size limits, scaled for this HWND's
         // associated Qt window; WM_DPICHANGED remains entirely with Qt.
         return false;
+    case WM_NCPAINT:
+        // The complete frame is a Qt client. A native window region can make
+        // DWM NC rendering ineligible even with DWMNCRP_ENABLED, so letting
+        // DefWindowProc paint here would expose a basic caption while dragging.
+        if (!window->property("windowSystemDragPresentation").toBool()) return false;
+        ++frameState(window)->paintGuards.paintsSuppressed;
+        *result = 0;
+        return true;
+    case WM_NCACTIVATE:
+        // Keep the native activation bookkeeping, without its NC repaint.
+        // Minimized windows retain the documented default processing.
+        if (IsIconic(msg->hwnd) || !window->property("windowSystemDragPresentation").toBool()) return false;
+        ++frameState(window)->paintGuards.activationsSuppressed;
+        *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, LPARAM(-1));
+        return true;
     case WM_NCCALCSIZE: {
         if (!msg->lParam) return false;
         if (IsZoomed(msg->hwnd) && !IsIconic(msg->hwnd) && !fullScreenRequested(window)) {
@@ -456,8 +536,10 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         }
         return false;
     case WM_ACTIVATE:
-    case WM_DWMCOMPOSITIONCHANGED:
         extendFrame(window, msg->hwnd);
+        return false;
+    case WM_DWMCOMPOSITIONCHANGED:
+        extendFrame(window, msg->hwnd, true);
         return false;
     default:
         // In particular, Qt retains WM_GETMINMAXINFO / WM_DPICHANGED handling

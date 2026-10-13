@@ -4,8 +4,20 @@
 #include <window_system/layout_model.hpp>
 #include <QFrame>
 #include <QRegion>
+#include <QPixmap>
 
 namespace window_system {
+// Only the small label is cached. Live content stays in its original tab until
+// the pointer first leaves the source strip.
+class DragLabelPreview final : public QWidget {
+public:
+    explicit DragLabelPreview(QPixmap label);
+    void follow(QPoint global);
+protected:
+    void paintEvent(QPaintEvent*) override;
+private:
+    QPixmap label_;
+};
 // A transient view of the same live DockSurface. It owns only its decorations;
 // the caller reparents the surface out before deleting this host.
 class EdgeDragPresentation final : public QFrame {

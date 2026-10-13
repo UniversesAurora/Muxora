@@ -6,6 +6,7 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QPainter>
 
 namespace window_system {
 namespace {
@@ -21,6 +22,29 @@ protected:
     }
 };
 } // namespace
+DragLabelPreview::DragLabelPreview(QPixmap label)
+    : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus), label_(std::move(label))
+{
+    setObjectName("DragLabelPreview");
+    setAttribute(Qt::WA_TranslucentBackground); setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_ShowWithoutActivating);
+    resize(label_.deviceIndependentSize().toSize() + QSize(12, 12));
+}
+void DragLabelPreview::follow(QPoint global)
+{
+    move(global - QPoint(width() / 2, height() / 2));
+    if (!isVisible()) show();
+    raise();
+}
+void DragLabelPreview::paintEvent(QPaintEvent*)
+{
+    QPainter painter(this);
+    const QRect label(QPoint(4, 4), label_.deviceIndependentSize().toSize());
+    // Bounded shadow geometry avoids allocating a content-sized blurred image.
+    for (int spread = 4; spread > 0; --spread)
+        painter.fillRect(label.translated(2, 2).adjusted(-spread, -spread, spread, spread), QColor(0, 0, 0, 10));
+    painter.drawPixmap(label.topLeft(), label_);
+}
 EdgeDragPresentation::EdgeDragPresentation(QString title, Edge edge, const Theme& theme, QWidget* content, QWidget* parent)
     : QFrame(parent), label_(new EdgeTabButton(title, edge == Edge::Left || edge == Edge::Right, theme.metrics.edgeThickness, this)), panel_(new QFrame(this))
 {

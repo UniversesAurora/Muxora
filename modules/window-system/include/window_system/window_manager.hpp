@@ -173,7 +173,7 @@ private:
     friend class TabContent;
     struct Private;
     std::unique_ptr<Private> d;
-    void refresh();
+    void refresh(bool preserveDrag = false);
     void registerWindowCommands();
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
@@ -188,7 +188,7 @@ private:
     void resizeActive(Placement direction, bool panes);
     void focusWindowCycle(bool forward, const QString& scope);
     void beginTabDrag(TabId tab, QPoint globalPosition);
-    WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow);
+    WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag = false);
     void beginWindowDrag(WindowId window, QPoint globalPosition);
     void showTabMenu(TabId tab, QPoint globalPosition);
     void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);

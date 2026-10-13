@@ -31,6 +31,7 @@ public:
     [[nodiscard]] int insertionIndex(QPoint global) const;
     [[nodiscard]] QRect insertionMarkerRect(int index) const;
     void setInsertionPreview(int index, int extent);
+    void setDraggedTab(TabId tab);
     [[nodiscard]] QRect insertionPreviewRect() const;
     void setDragHover(QPoint global);
     std::function<void()> hoverGeometryChanged;
@@ -61,6 +62,7 @@ private:
     QTimer* autoScroll_;
     QList<QPointer<QAbstractButton>> buttons_;
     QPointer<QWidget> tail_;
+    QPointer<QAbstractButton> draggedButton_;
     QSet<QObject*> hoveredSurfaces_;
     int previewIndex_ = -1;
     int previewExtent_ = 0;

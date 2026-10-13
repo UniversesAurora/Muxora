@@ -17,6 +17,8 @@
 #include <QPointer>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSignalSpy>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStyleOptionSlider>
 #include <QTest>
@@ -82,6 +84,10 @@ private slots:
     void compactTargetsSurviveThemeAndFontChanges();
     void compactPeekAndEdgeBarsKeepRealContent_data();
     void compactPeekAndEdgeBarsKeepRealContent();
+    void groupSeparatorsRemainCompactAndResizable_data();
+    void groupSeparatorsRemainCompactAndResizable();
+    void pinnedGroupSeparatorsUseIndependentThemeMetric_data();
+    void pinnedGroupSeparatorsUseIndependentThemeMetric();
 };
 
 void CompactUiTest::elasticSizingIsAdjacentToResetAndUsesTheHostCommand()
@@ -334,6 +340,103 @@ void CompactUiTest::compactPeekAndEdgeBarsKeepRealContent()
         auto* button = pinned->findChild<QToolButton*>(name); QVERIFY(button);
         QCOMPARE(button->size(), QSize(20, 20)); QCOMPARE(button->iconSize(), QSize(14, 14));
     }
+}
+
+void CompactUiTest::groupSeparatorsRemainCompactAndResizable_data()
+{
+    QTest::addColumn<bool>("vertical");
+    QTest::newRow("side-by-side") << false;
+    QTest::newRow("stacked") << true;
+}
+
+void CompactUiTest::groupSeparatorsRemainCompactAndResizable()
+{
+    QFETCH(bool, vertical);
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    auto* firstContent = new QLabel("First");
+    const auto first = manager.addTab(windowId, firstContent, {"First", "label", {}});
+    const auto firstPane = manager.model().tab(first)->activePane;
+    auto* paneContent = new QLabel("Pane");
+    QVERIFY(!manager.splitPane(first, firstPane, paneContent, Placement::Right).isNull());
+    const auto second = manager.addTab(windowId, new QLabel("Second"), {"Second", "label", {}});
+    QVERIFY(manager.moveTab(second, manager.model().groupForTab(first), vertical ? Placement::Bottom : Placement::Right));
+    manager.showWindow(windowId);
+    auto* window = manager.windowWidget(windowId);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* splitter = window->findChild<QSplitter*>("GroupSplitter"); QVERIFY(splitter);
+    auto* paneSplitter = window->findChild<QSplitter*>("PaneSplitter"); QVERIFY(paneSplitter);
+    QCOMPARE(splitter->orientation(), vertical ? Qt::Vertical : Qt::Horizontal);
+    const auto gap = [vertical](QSplitter* target) {
+        const auto firstRect = target->widget(0)->geometry();
+        const auto secondRect = target->widget(1)->geometry();
+        return vertical ? secondRect.top() - firstRect.bottom() - 1 : secondRect.left() - firstRect.right() - 1;
+    };
+    QCOMPARE(splitter->handleWidth(), 2);
+    QCOMPARE(gap(splitter), 2);
+    QCOMPARE(paneSplitter->handleWidth(), 4);
+    QCOMPARE(paneSplitter->widget(1)->x() - paneSplitter->widget(0)->geometry().right() - 1, 4);
+    const auto node = manager.model().window(windowId)->central->id;
+    const auto initialRatio = manager.model().window(windowId)->central->ratio;
+    auto* handle = splitter->handle(1); QVERIFY(handle);
+    QSignalSpy moves(splitter, &QSplitter::splitterMoved);
+    const auto start = handle->rect().center();
+    const auto delta = vertical ? QPoint(0, 45) : QPoint(45, 0);
+    QTest::mousePress(handle, Qt::LeftButton, Qt::NoModifier, start);
+    QTest::mouseMove(handle, start + delta);
+    QTest::mouseRelease(handle, Qt::LeftButton, Qt::NoModifier, start + delta);
+    QTRY_VERIFY(!moves.isEmpty());
+    QCOMPARE(manager.model().window(windowId)->central->id, node);
+    QVERIFY(manager.model().window(windowId)->central->ratio > initialRatio);
+    QCOMPARE(gap(splitter), 2);
+    QCOMPARE(manager.paneWidget(firstPane), firstContent);
+    QVERIFY(paneContent->isVisible());
+    window->resize(window->width() - 100, window->height() - 80);
+    QCoreApplication::processEvents();
+    QCOMPARE(gap(splitter), 2);
+    QCOMPARE(paneSplitter->handleWidth(), 4);
+    QVERIFY(manager.model().validate());
+}
+
+void CompactUiTest::pinnedGroupSeparatorsUseIndependentThemeMetric_data()
+{
+    QTest::addColumn<int>("edgeValue");
+    for (int edge = 0; edge < 4; ++edge) QTest::newRow(qPrintable(QString("edge-%1").arg(edge))) << edge;
+}
+
+void CompactUiTest::pinnedGroupSeparatorsUseIndependentThemeMetric()
+{
+    QFETCH(int, edgeValue);
+    WindowManager manager;
+    const auto windowId = manager.createWindow();
+    manager.addTab(windowId, new QLabel("Central"), {"Central", "label", {}});
+    const auto first = manager.addTab(windowId, new QLabel("First"), {"First", "label", {}});
+    const auto second = manager.addTab(windowId, new QLabel("Second"), {"Second", "label", {}});
+    QVERIFY(manager.moveTabToEdge(first, Edge(edgeValue), true));
+    QVERIFY(manager.moveTabToEdge(second, Edge(edgeValue), true));
+    manager.showWindow(windowId);
+    auto* window = manager.windowWidget(windowId);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* splitter = window->findChild<QSplitter*>("PinnedRegion"); QVERIFY(splitter);
+    QCOMPARE(splitter->count(), 2);
+    const auto gap = [splitter] {
+        const auto firstRect = splitter->widget(0)->geometry();
+        const auto secondRect = splitter->widget(1)->geometry();
+        return splitter->orientation() == Qt::Vertical
+            ? secondRect.top() - firstRect.bottom() - 1 : secondRect.left() - firstRect.right() - 1;
+    };
+    QCOMPARE(splitter->handleWidth(), 2);
+    QCOMPARE(gap(), 2);
+    for (int requestedWidth : {5, 0, 2}) {
+        auto theme = manager.theme(); theme.metrics.groupSplitterWidth = requestedWidth;
+        manager.setTheme(theme);
+        QCoreApplication::processEvents();
+        QCOMPARE(splitter->handleWidth(), std::max(1, requestedWidth));
+        QCOMPARE(gap(), std::max(1, requestedWidth));
+    }
+    QVERIFY(manager.model().validate());
 }
 
 QTEST_MAIN(CompactUiTest)

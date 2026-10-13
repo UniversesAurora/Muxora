@@ -9,6 +9,7 @@
 
 namespace window_system {
 class DockOverlay;
+class DragLabelPreview;
 struct DropTarget {
     WindowId window;
     GroupId group;
@@ -42,6 +43,8 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
     void start(QPoint global);
+    bool detach(QPoint global);
+    bool updateSourceStrip(QPoint global);
     void update(QPoint global);
     void finish(QPoint global);
     void stop();
@@ -52,10 +55,16 @@ private:
     WindowManager* manager_;
     QPointer<DockOverlay> overlay_;
     QPointer<QWidget> capture_;
+    QPointer<DragLabelPreview> labelPreview_;
     TabId tab_;
     WindowId wholeWindow_;
     WindowId sourceWindow_;
     WindowId movingWindow_;
+    GroupId sourceGroup_;
+    Edge sourceEdge_ = Edge::Left;
+    bool sourceIsEdge_ = false;
+    bool labelOnly_ = false;
+    bool transferringCapture_ = false;
     LayoutModel originalModel_;
     QHash<WindowId, WindowOptions> originalOptions_;
     QJsonObject originalSourceStrips_;

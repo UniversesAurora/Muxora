@@ -45,9 +45,13 @@ protected:
 private:
     QPoint start_;
 };
-void configureSplitter(QSplitter* splitter) {
+void configureSplitter(QSplitter* splitter, int width = 4) {
     splitter->setChildrenCollapsible(false);
-    splitter->setHandleWidth(4);
+    splitter->setHandleWidth(qMax(1, width));
+}
+void configureGroupSplitter(QSplitter* splitter, const Theme& theme) {
+    splitter->setProperty("windowSystemGroupSplitter", true);
+    configureSplitter(splitter, theme.metrics.groupSplitterWidth);
 }
 } // namespace
 
@@ -137,7 +141,7 @@ QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<Tab
     if (!node) return nullptr;
     if (node->isLeaf()) return buildGroup(node->itemId, contents);
     auto* split = new QSplitter(node->orientation, this);
-    split->setObjectName("GroupSplitter"); configureSplitter(split);
+    split->setObjectName("GroupSplitter"); configureGroupSplitter(split, manager_->theme());
     split->addWidget(buildTree(node->first, contents));
     split->addWidget(buildTree(node->second, contents));
     split->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
@@ -239,7 +243,7 @@ QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabCont
     const auto orientation = edge == Edge::Left || edge == Edge::Right ? Qt::Horizontal : Qt::Vertical;
     auto* region = new QSplitter(orientation, this); region->setObjectName("PinnedRegion");
     pinnedRegions_.insert(edge, region);
-    configureSplitter(region);
+    configureGroupSplitter(region, manager_->theme());
     int totalExtent = 0;
     for (const auto id : ids) totalExtent += manager_->model().group(id)->edgeExtent;
     totalExtent += (ids.size() - 1) * region->handleWidth();
@@ -343,6 +347,24 @@ QHash<Edge, QRect> DockSurface::edgeBarRects() const
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
         if (it.value() && it.value()->isVisible()) result.insert(it.key(), QRect(it.value()->mapToGlobal(QPoint()), it.value()->size()));
     return result;
+}
+QPixmap DockSurface::dragLabelPixmap(TabId tab) const
+{
+    if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
+        auto* bar = group->tabBar();
+        for (int i = 0; i < bar->count(); ++i)
+            if (bar->tabData(i).toUuid() == tab) return bar->grab(bar->tabRect(i));
+    }
+    for (const auto& strip : edgeBars_) if (strip)
+        for (auto* button : strip->findChildren<QAbstractButton*>())
+            if (button->property("tabId").toUuid() == tab) return button->grab();
+    return {};
+}
+void DockSurface::setDraggedTab(TabId tab)
+{
+    for (const auto& group : groups_) if (group) group->setDraggedTab(tab);
+    for (const auto& widget : edgeBars_)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDraggedTab(tab);
 }
 int DockSurface::edgeTabInsertionIndex(Edge edge, QPoint point) const
 {

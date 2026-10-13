@@ -69,6 +69,17 @@ Items windowOperations()
     return {group("window.kind", "窗口形态", {command("window.promote"), command("window.demote"), command("window.reassignFamily")}),
         group("window.transfer", "整窗移动", {command("window.moveAllTabs"), command("window.redock")})};
 }
+Items floatingItems(Items items)
+{
+    for (auto iterator = items.begin(); iterator != items.end();) {
+        if (iterator->command && !floatingMenuExclusion(iterator->id).isEmpty()) iterator = items.erase(iterator);
+        else {
+            iterator->children = floatingItems(std::move(iterator->children));
+            ++iterator;
+        }
+    }
+    return items;
+}
 const Items& layout(CommandMenuSurface surface)
 {
     static const Items application = {
@@ -101,6 +112,7 @@ const Items& layout(CommandMenuSurface surface)
             group("window.drag", "拖动", {command("window.drag.selectTarget"), command("window.drag.cancel")})}, 40),
         group("工具", "工具(&T)", {command("window.settings"), command("preferences.openKeyboardShortcuts")}, 50),
         group("帮助", "帮助(&H)", {}, 60)};
+    static const Items floating = floatingItems(application);
     static const Items tab = {command("workspace.closeTab"), command("workspace.pinTab"), command("workspace.unpinTab"),
         group("tab.closeRange", "批量关闭标签", {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
@@ -119,6 +131,7 @@ const Items& layout(CommandMenuSurface surface)
         windowOperations()[0], windowOperations()[1], separator(), command("window.settings"), command("window.close")};
     switch (surface) {
     case CommandMenuSurface::Application: return application;
+    case CommandMenuSurface::FloatingApplication: return floating;
     case CommandMenuSurface::Tab: return tab;
     case CommandMenuSurface::Pane: return pane;
     case CommandMenuSurface::Window: return window;
@@ -232,6 +245,16 @@ QString applicationMenuExclusion(const QString& id)
     if (closeScopes.contains(id)) return QStringLiteral("标签右键提供关闭范围；文件菜单保留关闭当前标签");
     return {};
 }
+QString floatingMenuExclusion(const QString& id)
+{
+    if (const auto reason = applicationMenuExclusion(id); !reason.isEmpty()) return reason;
+    if (id == "application.exit") return QStringLiteral("退出整个应用只在完整窗口提供菜单入口");
+    if (id == "layout.save" || id == "layout.reset") return QStringLiteral("完整工作区保存与重置只在完整窗口提供菜单入口");
+    if (id == "window.new") return QStringLiteral("新建完整工作窗口只在完整窗口提供菜单入口");
+    if (id == "window.statusBar.toggle") return QStringLiteral("轻量窗口没有全局状态栏");
+    if (id == "window.demote") return QStringLiteral("轻量窗口已经采用浮动形态");
+    return {};
+}
 
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context)
 {
@@ -295,10 +318,11 @@ void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager*
     });
 }
 
-ApplicationCommandMenus::ApplicationCommandMenus(QMenuBar* bar, WindowManager* manager, WindowId window)
-    : QObject(bar), bar_(bar), manager_(manager), window_(window)
+ApplicationCommandMenus::ApplicationCommandMenus(QMenuBar* bar, WindowManager* manager, WindowId window,
+                                               CommandMenuSurface surface)
+    : QObject(bar), bar_(bar), manager_(manager), window_(window), surface_(surface)
 {
-    for (const auto& item : layout(CommandMenuSurface::Application)) {
+    for (const auto& item : layout(surface_)) {
         auto* menu = makeMenu(bar, item, {item.id}); bar->addMenu(menu); menus_.append(menu);
         addItems(menu, item.children, manager_, [this] { return manager_ ? manager_->context(window_) : CommandContext{}; }, actions_, &menus_, this);
     }
@@ -330,9 +354,11 @@ void ApplicationCommandMenus::addContributions()
 {
     if (!manager_ || !bar_) return;
     const QPointer<ApplicationCommandMenus> retained(this);
-    const auto declared = declaredMenuCommands(CommandMenuSurface::Application);
+    const auto declared = declaredMenuCommands(surface_);
     for (const auto& definition : manager_->commands().commands()) {
-        if (declared.contains(definition.id) || !applicationMenuExclusion(definition.id).isEmpty()) continue;
+        const auto exclusion = surface_ == CommandMenuSurface::FloatingApplication
+            ? floatingMenuExclusion(definition.id) : applicationMenuExclusion(definition.id);
+        if (declared.contains(definition.id) || !exclusion.isEmpty()) continue;
         if (std::any_of(actions_.cbegin(), actions_.cend(), [&definition](const auto& action) {
             return action && action->data().toString() == definition.id;
         })) continue;

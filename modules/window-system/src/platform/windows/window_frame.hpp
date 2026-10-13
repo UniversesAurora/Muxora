@@ -25,4 +25,24 @@ struct NativeTransitionConfiguration {
 };
 [[nodiscard]] NativeTransitionConfiguration nativeTransitionConfiguration(QWidget* window);
 
+// Diagnostics describe the attributes actually written for this HWND. A cached
+// repeated preparation has the same revision; composition changes refresh it.
+struct NativeFrameConfiguration {
+    bool attempted = false;
+    bool compact = false;
+    bool nonClientEnabled = false;
+    qint32 nonClientResult = 0;
+    qint32 marginsResult = 0;
+    quint64 revision = 0;
+};
+[[nodiscard]] NativeFrameConfiguration nativeFrameConfiguration(QWidget* window);
+
+// Counts the custom-frame paint guards reached by real native messages. The
+// requested DWM policy does not imply NC composition for a shaped HWND.
+struct NativePaintGuardActivity {
+    quint64 paintsSuppressed = 0;
+    quint64 activationsSuppressed = 0;
+};
+[[nodiscard]] NativePaintGuardActivity nativePaintGuardActivity(QWidget* window);
+
 } // namespace window_system

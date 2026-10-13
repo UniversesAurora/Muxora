@@ -118,9 +118,19 @@ DragTabBar::DragTabBar(QWidget* parent) : QTabBar(parent)
     setUsesScrollButtons(false); setMouseTracking(true); setDocumentMode(true);
 }
 void DragTabBar::setCloseIcon(QIcon icon) { closeIcon_ = std::move(icon); update(); }
+void DragTabBar::setDraggedTab(TabId tab)
+{
+    draggedIndex_ = -1;
+    for (int i = 0; i < count(); ++i) if (!tab.isNull() && tabData(i).toUuid() == tab) draggedIndex_ = i;
+    update();
+}
+int DragTabBar::draggedExtent() const
+{
+    return draggedIndex_ < 0 ? 0 : tabRect(draggedIndex_).width();
+}
 void DragTabBar::setInsertionPreview(int index, int extent, QColor color)
 {
-    insertionIndex_ = index < 0 ? -1 : qBound(0, index, count());
+    insertionIndex_ = index < 0 ? -1 : qBound(0, index, count() - (draggedIndex_ >= 0 ? 1 : 0));
     insertionExtent_ = insertionIndex_ < 0 ? 0 : qMax(1, extent);
     insertionColor_ = color;
     setProperty("insertionIndex", insertionIndex_);
@@ -129,14 +139,18 @@ void DragTabBar::setInsertionPreview(int index, int extent, QColor color)
 QRect DragTabBar::insertionPreviewRect() const
 {
     if (insertionIndex_ < 0) return {};
-    const int x = insertionIndex_ < count() ? tabRect(insertionIndex_).left()
-        : count() ? tabRect(count() - 1).right() + 1 : 0;
+    int x = 0, visible = 0;
+    for (int i = 0; i < count() && visible < insertionIndex_; ++i)
+        if (i != draggedIndex_) { x += tabRect(i).width(); ++visible; }
     return {x, 0, insertionExtent_, height()};
 }
 QRect DragTabBar::displayTabRect(int index) const
 {
     auto result = tabRect(index);
-    if (insertionIndex_ >= 0 && index >= insertionIndex_) result.translate(insertionExtent_, 0);
+    if (index == draggedIndex_) return {};
+    const int visibleIndex = index - (draggedIndex_ >= 0 && index > draggedIndex_ ? 1 : 0);
+    if (draggedIndex_ >= 0 && index > draggedIndex_) result.translate(-draggedExtent(), 0);
+    if (insertionIndex_ >= 0 && visibleIndex >= insertionIndex_) result.translate(insertionExtent_, 0);
     return result;
 }
 int DragTabBar::insertionIndexAt(QPoint local) const
@@ -145,8 +159,13 @@ int DragTabBar::insertionIndexAt(QPoint local) const
     if (gap.contains(local)) return insertionIndex_;
     int x = local.x();
     if (!gap.isEmpty() && x > gap.right()) x -= gap.width();
-    for (int index = 0; index < count(); ++index) if (x < tabRect(index).center().x()) return index;
-    return count();
+    int visible = 0, left = 0;
+    for (int index = 0; index < count(); ++index) if (index != draggedIndex_) {
+        const int width = tabRect(index).width();
+        if (x < left + width / 2) return visible;
+        left += width; ++visible;
+    }
+    return visible;
 }
 QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
@@ -193,6 +212,7 @@ void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; update(); QTabBar::l
 void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
     const auto draw = [&](int index) {
+        if (index == draggedIndex_) return;
         QStyleOptionTab option; initStyleOption(&option, index);
         option.rect = displayTabRect(index);
         if (!option.rect.intersects(event->rect())) return;
@@ -220,7 +240,7 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
         painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
         painter.drawRect(gap.adjusted(1, 1, -2, -2));
     }
-    if (hovered_ >= 0) closeIcon_.paint(&painter, closeRect(hovered_));
+    if (hovered_ >= 0 && hovered_ != draggedIndex_) closeIcon_.paint(&painter, closeRect(hovered_));
 }
 void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {
     const auto callback = menu; if (callback) callback(tabAt(event->pos()), event->globalPos());
@@ -335,7 +355,7 @@ int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
 void GroupTabs::updateBarGeometry() {
     const auto hint = bar_->sizeHint();
-    bar_->setFixedSize(qMax(1, hint.width() + bar_->insertionExtent()), qMax(24, hint.height()));
+    bar_->setFixedSize(qMax(1, hint.width() - bar_->draggedExtent() + bar_->insertionExtent()), qMax(24, hint.height()));
     scroll_->setFixedHeight(bar_->height());
     updateScrollBarGeometry();
 }
@@ -351,6 +371,10 @@ void GroupTabs::setInsertionPreview(int index, int extent)
     if (bar_->property("insertionIndex").toInt() == index && bar_->insertionExtent() == (index < 0 ? 0 : extent)) return;
     bar_->setInsertionPreview(index, extent, theme_.accentSoft);
     updateBarGeometry();
+}
+void GroupTabs::setDraggedTab(TabId tab)
+{
+    bar_->setDraggedTab(tab); updateBarGeometry();
 }
 QRect GroupTabs::insertionPreviewRectGlobal() const
 {

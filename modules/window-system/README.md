@@ -29,6 +29,8 @@
 
 `Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
 
+轻量浮窗也提供菜单，默认放在标题同一行最左侧；执行使用本浮窗的 Window／Tab／Pane 上下文。它保留内容、布局和窗口操作，省去退出整个应用、保存／重置完整工作区等入口，不创建完整工作区按钮条或全局状态栏。浮窗条带 ID 为 `floating-menu`，与完整窗口的 `menu` 分开保存；升降级保留完整菜单的位置和定制，恢复浮窗时局部菜单与标题同行。
+
 `requestCloseAllWindows()` 为整个工作区申请一次关闭许可，再原子关闭所有窗口族与轻量窗口；任一标签被拒绝或许可回调改变布局时，保留整个工作区。最后关闭前发出 `lastWindowAboutToClose`，此时全部窗口与内容仍可保存；最终只发出一次 `allWindowsClosed`。模块不调用应用退出，宿主负责保存、处理写入失败并决定结束进程。Muxora 的“文件 → 退出”使用该接口。
 
 `movePane(sourceTab, pane, targetTab, targetPane, placement)` 将原窗格合入另一个标签；`swapPanes()` 交换同标签的树叶位置。方向和循环版本包括 `movePaneToAdjacentTab()`、`movePaneToAdjacentGroup()`、`movePaneToWindowCycle()`、`swapPaneDirection()`；标签提供 `reorderTab()`、`moveTabToAdjacentGroup()`、`moveTabToWindowCycle()`。已有窗口也可通过 `movePaneToWindow()` / `moveTabToWindow()` 显式指定。移动保留内容与专属栏，合入现有标签采用目标的共享策略；空目标继承源策略。

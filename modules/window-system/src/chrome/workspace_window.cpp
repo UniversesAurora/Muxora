@@ -22,6 +22,7 @@
 #include <QMoveEvent>
 #include <QResizeEvent>
 #include <QSet>
+#include <QScopeGuard>
 #include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -30,10 +31,48 @@
 namespace window_system {
 namespace {
 
+qsizetype newStripInsertion(const QJsonArray& merged, const QJsonArray& current, qsizetype index)
+{
+    for (qsizetype before = index; before-- > 0;)
+        for (qsizetype position = 0; position < merged.size(); ++position)
+            if (merged[position] == current[before]) return position + 1;
+    for (qsizetype after = index + 1; after < current.size(); ++after)
+        for (qsizetype position = 0; position < merged.size(); ++position)
+            if (merged[position] == current[after]) return position;
+    return merged.size();
+}
+
+QJsonArray mergeStripRow(const QJsonArray& previous, const QJsonArray& current,
+                        const QSet<QString>& present, const QSet<QString>& cachedIds)
+{
+    QJsonArray currentExisting;
+    for (const auto& entry : current)
+        if (cachedIds.contains(entry.toString())) currentExisting.append(entry);
+    QJsonArray merged;
+    qsizetype next = 0;
+    // Reuse shared slots while keeping dormant Workbench strips in place.
+    for (const auto& entry : previous) {
+        if (!present.contains(entry.toString())) merged.append(entry);
+        else if (next < currentExisting.size()) merged.append(currentExisting[next++]);
+    }
+    while (next < currentExisting.size()) merged.append(currentExisting[next++]);
+    // New presentations are inserted beside their renderer neighbours after
+    // merging. They cannot consume a shared strip's original slot.
+    for (qsizetype index = 0; index < current.size(); ++index) {
+        const auto entry = current[index];
+        if (!cachedIds.contains(entry.toString())) merged.insert(newStripInsertion(merged, current, index), entry);
+    }
+    return merged;
+}
+
 QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObject& rendered)
 {
     if (cached.isEmpty()) return rendered;
     QSet<QString> present;
+    QSet<QString> cachedIds;
+    for (const auto* field : {"rows", "bottomRows"})
+        for (const auto& row : cached.value(field).toArray())
+            for (const auto& entry : row.toArray()) cachedIds.insert(entry.toString());
     auto settings = cached.value("strips").toObject();
     const auto renderedSettings = rendered.value("strips").toObject();
     for (auto entry = renderedSettings.begin(); entry != renderedSettings.end(); ++entry) {
@@ -46,16 +85,8 @@ QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObjec
         QJsonArray rows;
         for (qsizetype row = 0; row < qMax(cachedRows.size(), renderedRows.size()); ++row) {
             const auto current = row < renderedRows.size() ? renderedRows.at(row).toArray() : QJsonArray{};
-            QJsonArray merged;
-            qsizetype next = 0;
-            // Reuse the shared strips' slots while leaving absent Workbench strips
-            // in place. The floating chrome never retains their live widgets.
             const auto previous = row < cachedRows.size() ? cachedRows.at(row).toArray() : QJsonArray{};
-            for (const auto& entry : previous) {
-                if (!present.contains(entry.toString())) merged.append(entry);
-                else if (next < current.size()) merged.append(current[next++]);
-            }
-            while (next < current.size()) merged.append(current[next++]);
+            const auto merged = mergeStripRow(previous, current, present, cachedIds);
             if (!merged.isEmpty()) rows.append(merged);
         }
         if (QString::fromLatin1(field) == "rows") {
@@ -67,6 +98,33 @@ QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObjec
     result.insert("locked", rendered.value("locked"));
     result.insert("strips", settings);
     return result;
+}
+
+QJsonObject floatingMenuLayout(QJsonObject layout)
+{
+    const QString menuId = QStringLiteral("floating-menu");
+    const char* targetArea = "rows";
+    qsizetype targetRow = 0;
+    bool foundTitle = false;
+    for (const auto* field : {"rows", "bottomRows"}) {
+        auto rows = layout.value(field).toArray();
+        for (qsizetype row = 0; row < rows.size(); ++row) {
+            auto entries = rows[row].toArray();
+            for (qsizetype index = entries.size(); index-- > 0;)
+                if (entries[index].toString() == menuId) entries.removeAt(index);
+            if (!foundTitle && entries.contains(QStringLiteral("title"))) {
+                targetArea = field; targetRow = row; foundTitle = true;
+            }
+            rows[row] = entries;
+        }
+        if (!rows.isEmpty() || layout.contains(field)) layout.insert(field, rows);
+    }
+    auto rows = layout.value(targetArea).toArray();
+    while (rows.size() <= targetRow) rows.append(QJsonArray{});
+    auto entries = rows[targetRow].toArray();
+    entries.insert(0, menuId); rows[targetRow] = entries;
+    layout.insert(targetArea, rows);
+    return layout;
 }
 
 } // namespace
@@ -96,6 +154,12 @@ CommandStripHost* WorkspaceWindow::strips() const { return strips_; }
 void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
 {
     if (dragPresentation_ == presentation) return;
+    const QPointer<WorkspaceWindow> retained(this);
+    const bool wasUpdating = updatesEnabled();
+    setUpdatesEnabled(false);
+    const auto restoreUpdates = qScopeGuard([retained, wasUpdating] {
+        if (retained) { retained->setUpdatesEnabled(wasUpdating); if (wasUpdating) retained->update(); }
+    });
     QPointer<QWidget> focused = QApplication::focusWidget();
     if (focused && !surface_->isAncestorOf(focused)) focused.clear();
     clearMask();
@@ -145,20 +209,28 @@ QPoint WorkspaceWindow::dragLabelAnchor() const
 void WorkspaceWindow::updateDragMask()
 {
     if (dragPresentation_ == DragPresentation::Window) return;
-    if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data())) {
-        setMask(host->visibleRegion().translated(host->pos())); return;
-    }
     QRegion visible;
-    for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()) {
-        const auto origin = group->mapTo(this, QPoint());
-        const auto strip = group->viewportRectGlobal();
-        const int header = strip.height();
-        visible += QRect(origin + QPoint(0, header), QSize(group->width(), qMax(0, group->height() - header)));
-        const auto* bar = group->tabBar();
-        for (int i = 0; i < bar->count(); ++i)
-            visible += QRect(bar->mapTo(this, bar->tabRect(i).topLeft()), bar->tabRect(i).size());
+    if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data())) {
+        visible = host->visibleRegion().translated(host->pos());
+    } else {
+        for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()) {
+            const auto origin = group->mapTo(this, QPoint());
+            const auto strip = group->viewportRectGlobal();
+            const int header = strip.height();
+            visible += QRect(origin + QPoint(0, header), QSize(group->width(), qMax(0, group->height() - header)));
+            const auto* bar = group->tabBar();
+            for (int i = 0; i < bar->count(); ++i)
+                visible += QRect(bar->mapTo(this, bar->tabRect(i).topLeft()), bar->tabRect(i).size());
+        }
     }
-    if (!visible.isEmpty()) setMask(visible.intersected(QRegion(rect())));
+    if (visible.isEmpty()) return;
+    visible &= QRegion(rect());
+    if (mask() != visible) setMask(visible);
+#ifdef Q_OS_WIN
+    // Qt's native mask update can disable DWM non-client composition. Restore
+    // the custom frame only after that update, including compact resizes.
+    applyNativeFrame(this);
+#endif
 }
 QJsonObject WorkspaceWindow::saveStripLayout() const
 {
@@ -167,7 +239,7 @@ QJsonObject WorkspaceWindow::saveStripLayout() const
 void WorkspaceWindow::restoreStripLayout(const QJsonObject& layout)
 {
     savedStripLayout_ = layout;
-    if (strips_) strips_->restoreLayout(layout);
+    if (strips_) strips_->restoreLayout(kind_ == WindowKind::Floating ? floatingMenuLayout(layout) : layout);
 }
 void WorkspaceWindow::syncKind()
 {
@@ -190,7 +262,7 @@ void WorkspaceWindow::syncKind()
     if (status_) { column_->removeWidget(status_); delete status_; }
     kind_ = record->kind;
     createChrome();
-    if (strips_ && !savedStripLayout_.isEmpty()) strips_->restoreLayout(savedStripLayout_);
+    if (strips_ && !savedStripLayout_.isEmpty()) restoreStripLayout(savedStripLayout_);
     updateCaption();
 }
 void WorkspaceWindow::createChrome()
@@ -212,11 +284,13 @@ void WorkspaceWindow::createChrome()
         manager_->execute("window.toolbar.resetSize", {{"strip", strip}}, id_);
     });
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
+    auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
+    const bool floating = kind_ == WindowKind::Floating;
+    menus_ = new ApplicationCommandMenus(menu, manager_, id_, floating
+        ? CommandMenuSurface::FloatingApplication : CommandMenuSurface::Application);
+    menus_->structureChanged = [this] { if (strips_) strips_->refreshLayout(); };
+    strips_->addStrip(floating ? "floating-menu" : "menu", QStringLiteral("菜单"), menu, 0);
     if (kind_ == WindowKind::Workbench) {
-        auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
-        menus_ = new ApplicationCommandMenus(menu, manager_, id_);
-        menus_->structureChanged = [this] { if (strips_) strips_->refreshLayout(); };
-        strips_->addStrip("menu", QStringLiteral("菜单"), menu, 0);
         QList<QAction*> toolActions;
         const QVector<QPair<QString, QString>> buttons = {{"host.newTab", "add"},
             {"workspace.splitGroup.right", "split-horizontal"}, {"pane.split.right", "split-vertical"},

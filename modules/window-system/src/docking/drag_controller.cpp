@@ -2,6 +2,7 @@
 #include "drag_controller.hpp"
 #include "window_manager_p.hpp"
 #include "dock_guides.hpp"
+#include "drag_presentation.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
@@ -10,6 +11,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
 #include <QWindow>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -112,9 +114,15 @@ void DragController::beginTab(TabId tab, QPoint global)
 {
     if (hasStableLayout() || !manager_->model().tab(tab)) return;
     originalLayout_ = manager_->saveLayout();
-    const QScopedValueRollback preparing(preparing_, true);
-    tab_ = tab; wholeWindow_ = WindowId{}; detached_ = true;
+    const QPointer<DragController> self(this);
+    preparing_ = true;
+    const auto endPreparation = qScopeGuard([self] { if (self) self->preparing_ = false; });
+    tab_ = tab; wholeWindow_ = WindowId{}; detached_ = false; movingWindow_ = WindowId{};
     sourceWindow_ = manager_->model().group(manager_->model().groupForTab(tab))->windowId;
+    sourceGroup_ = manager_->model().groupForTab(tab);
+    const auto* sourceGroup = manager_->model().group(sourceGroup_);
+    sourceIsEdge_ = sourceGroup->location == GroupLocation::AutoHide;
+    sourceEdge_ = sourceGroup->edge;
     originalModel_ = manager_->d->model; originalOptions_ = manager_->d->options;
     originalWindows_.clear(); originalMaximizedWindows_.clear();
     for (const auto id : manager_->model().windowOrder()) if (auto* window = manager_->windowWidget(id)) {
@@ -123,20 +131,58 @@ void DragController::beginTab(TabId tab, QPoint global)
     }
     auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
     originalSourceStrips_ = source ? source->saveStripLayout() : QJsonObject{};
+    if (!source) { originalLayout_ = {}; return; }
+    const auto strip = sourceIsEdge_ ? source->surface()->edgeBarRects().value(sourceEdge_)
+        : source->surface()->tabBarRects().value(sourceGroup_);
+    labelOnly_ = strip.contains(global);
+    capture_ = source;
+    if (labelOnly_) {
+        const auto pixmap = source->surface()->dragLabelPixmap(tab);
+        if (pixmap.isNull()) { labelOnly_ = false; originalLayout_ = {}; return; }
+        labelPreview_ = new DragLabelPreview(pixmap);
+        source->surface()->setDraggedTab(tab);
+        const int extent = source->surface()->dragLabelExtent(tab, sourceIsEdge_);
+        const int index = sourceIsEdge_ ? manager_->model().autoHiddenTabs(sourceWindow_, sourceEdge_).indexOf(tab)
+            : manager_->model().group(sourceGroup_)->tabs.indexOf(tab);
+        if (sourceIsEdge_) source->surface()->setEdgeInsertionPreview(sourceEdge_, index, extent);
+        else source->surface()->setInsertionPreview(sourceGroup_, index, extent);
+    } else if (!detach(global)) { if (self) originalLayout_ = {}; return; }
+    if (self) start(global);
+}
+bool DragController::detach(QPoint global)
+{
+    const QPointer<DragController> self(this);
+    const bool wasActive = active_;
+    transferringCapture_ = true;
+    QPointer<WorkspaceWindow> source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
+    if (source) { source->surface()->setDraggedTab({}); source->surface()->clearInsertionPreviews(); }
+    if (capture_ && QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
+    if (!self) return false;
+    auto* preview = labelPreview_.data(); labelPreview_.clear();
+    delete preview;
+    if (!self) return false;
+    labelPreview_.clear(); labelOnly_ = false;
+    if ((wasActive && !active_) || !manager_->model().tab(tab_)) { transferringCapture_ = false; return false; }
+    const auto tab = tab_;
     const auto group = manager_->model().groupForTab(tab);
     auto origin = source ? source->surface()->groupRects().value(group) : QRect();
     if (origin.isEmpty() && source) if (auto* peek = source->findChild<QWidget*>("PeekPanel"); peek && peek->isVisible())
         origin = QRect(peek->mapToGlobal(QPoint()), peek->size());
     if (origin.isEmpty() && source) if (const auto* record = manager_->model().group(group); record && record->location == GroupLocation::AutoHide)
         origin = source->surface()->edgeBarRects().value(record->edge);
-    movingWindow_ = manager_->detachTabImpl(tab, WindowKind::Floating, [this, global, origin](QWidget* window) {
-        windowOffset_ = QPoint(qBound(28, global.x() - origin.left(), window->width() - 28), 16);
-        window->move(global - windowOffset_);
-    });
-    if (movingWindow_.isNull()) { detached_ = false; originalLayout_ = {}; return; }
+    const auto moving = manager_->detachTabImpl(tab, WindowKind::Floating, [self, global, origin](QWidget* window) {
+        if (!self) return;
+        self->windowOffset_ = QPoint(qBound(28, global.x() - origin.left(), window->width() - 28), 16);
+        window->move(global - self->windowOffset_);
+    }, true);
+    if (!self) return false;
+    transferringCapture_ = false; movingWindow_ = moving;
+    if (movingWindow_.isNull()) return false;
     capture_ = manager_->windowWidget(movingWindow_);
-    if (!capture_) { detached_ = false; originalLayout_ = {}; return; }
-    start(global);
+    if (!capture_) return false;
+    detached_ = true; normalOffset_ = windowOffset_;
+    if (active_) capture_->grabMouse(Qt::ClosedHandCursor);
+    return self && capture_;
 }
 void DragController::beginWindow(WindowId window, QPoint global)
 {
@@ -144,7 +190,7 @@ void DragController::beginWindow(WindowId window, QPoint global)
     if (hasStableLayout() || !record || record->kind != WindowKind::Floating) return;
     originalLayout_ = manager_->saveLayout();
     const QScopedValueRollback preparing(preparing_, true);
-    wholeWindow_ = window; tab_ = TabId{}; sourceWindow_ = window; movingWindow_ = window; detached_ = false;
+    wholeWindow_ = window; tab_ = TabId{}; sourceWindow_ = window; movingWindow_ = window; detached_ = false; labelOnly_ = false;
     capture_ = manager_->windowWidget(window);
     if (!capture_) { originalLayout_ = {}; return; }
     originalGeometry_ = static_cast<WorkspaceWindow*>(capture_.data())->normalPlacementGeometry();
@@ -156,13 +202,14 @@ void DragController::beginWindow(WindowId window, QPoint global)
 void DragController::start(QPoint global)
 {
     if (!capture_) return;
+    const QPointer<DragController> self(this);
     active_ = true; preparing_ = false; startPosition_ = global;
     ++hoverGeneration_; hoverUpdateQueued_ = false;
     normalOffset_ = windowOffset_;
     overlay_ = new DockOverlay; overlay_->whole = !wholeWindow_.isNull();
     overlay_->count = wholeWindow_.isNull() ? 1 : manager_->model().orderedTabs(wholeWindow_).size();
     qApp->installEventFilter(this); capture_->grabMouse(Qt::ClosedHandCursor);
-    update(global);
+    if (self) update(global);
 }
 WindowId DragController::candidateAt(QPoint global) const
 {
@@ -272,7 +319,13 @@ DropTarget DragController::hit(QPoint global)
 void DragController::update(QPoint global)
 {
     if (!active_) return;
+    const QPointer<DragController> self(this);
     lastPosition_ = global;
+    if (labelOnly_) {
+        if (updateSourceStrip(global)) return;
+        if (!detach(global)) { if (self) cancel(); return; }
+        if (!self || !active_) return;
+    }
     target_ = hit(global);
     const bool insertion = target_.accepted && target_.insertionIndex >= 0;
     qint64 carriedExtent = 0;
@@ -292,12 +345,13 @@ void DragController::update(QPoint global)
         } else surface->clearInsertionPreviews();
         surface->setDragHover(id == target_.window ? global : QPoint(-100000, -100000));
     }
-    if (auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data())) {
+    if (QPointer<WorkspaceWindow> moving = dynamic_cast<WorkspaceWindow*>(capture_.data())) {
         const auto presentation = !insertion ? WorkspaceWindow::DragPresentation::Window
             : !target_.toEdgeBar ? WorkspaceWindow::DragPresentation::Tab
             : WorkspaceWindow::DragPresentation(int(WorkspaceWindow::DragPresentation::Left) + int(target_.edge));
         if (moving->dragPresentation() != presentation) {
             moving->setDragPresentation(presentation);
+            if (!self || !active_ || !moving) return;
             windowOffset_ = presentation == WorkspaceWindow::DragPresentation::Window ? normalOffset_ : moving->dragLabelAnchor();
         }
         moving->move(global - windowOffset_);
@@ -312,6 +366,27 @@ void DragController::update(QPoint global)
     overlay_->target = target_;
     overlay_->setGeometry(QRect(window->mapToGlobal(QPoint()), window->size()));
     overlay_->show(); overlay_->raise(); overlay_->update();
+}
+bool DragController::updateSourceStrip(QPoint global)
+{
+    auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
+    if (!window || !manager_->model().tab(tab_)) return false;
+    auto* surface = window->surface();
+    const auto strip = sourceIsEdge_ ? surface->edgeBarRects().value(sourceEdge_)
+        : surface->tabBarRects().value(sourceGroup_);
+    if (!strip.contains(global)) return false;
+    target_ = {}; target_.window = sourceWindow_; target_.group = sourceGroup_;
+    target_.accepted = true; target_.toEdge = sourceIsEdge_; target_.toEdgeBar = sourceIsEdge_;
+    target_.edge = sourceEdge_;
+    target_.insertionIndex = sourceIsEdge_ ? surface->edgeTabInsertionIndex(sourceEdge_, global)
+        : surface->tabInsertionIndex(sourceGroup_, global);
+    const int extent = surface->dragLabelExtent(tab_, sourceIsEdge_);
+    if (sourceIsEdge_) surface->setEdgeInsertionPreview(sourceEdge_, target_.insertionIndex, extent);
+    else surface->setInsertionPreview(sourceGroup_, target_.insertionIndex, extent);
+    surface->setDragHover(global);
+    if (labelPreview_) labelPreview_->follow(global);
+    if (overlay_) overlay_->hide();
+    return true;
 }
 void DragController::refreshHover()
 {
@@ -332,12 +407,12 @@ bool DragController::belongsToDropWindow(QObject* object) const
     }
     if (widget) {
         const auto* window = widget->window();
-        if (window == capture_.data() || window == overlay_.data()) return false;
+        if ((!labelOnly_ && window == capture_.data()) || window == overlay_.data() || window == labelPreview_.data()) return false;
         const auto id = window->property("windowId").toUuid();
         return !id.isNull() && id != movingWindow_ && manager_->windowWidget(id) == window;
     }
     const auto* native = qobject_cast<QWindow*>(object);
-    if (!native || (capture_ && native == capture_->windowHandle())
+    if (!native || (!labelOnly_ && capture_ && native == capture_->windowHandle())
         || (overlay_ && native == overlay_->windowHandle())) return false;
     for (const auto id : manager_->model().windowOrder()) if (id != movingWindow_) {
         const auto* window = manager_->windowWidget(id);
@@ -348,16 +423,19 @@ bool DragController::belongsToDropWindow(QObject* object) const
 void DragController::finish(QPoint global)
 {
     if (!active_) return;
+    const QPointer<DragController> self(this);
     update(global);
+    if (!self || !active_) return;
     const auto target = target_; const auto tab = tab_; const auto whole = wholeWindow_;
     const auto moving = movingWindow_; const auto source = sourceWindow_;
     finalizing_ = true;
     stop();
+    if (!self) return;
     bool success = !target.accepted;
     if (target.accepted) {
         if (target.toEdgeBar) {
             if (!tab.isNull()) success = manager_->execute("workspace.moveTabToEdgeBar",
-                {{"tab", tab}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, moving);
+                {{"tab", tab}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, moving.isNull() ? source : moving);
             else success = manager_->execute("window.moveAllToEdgeBar",
                 {{"source", whole}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, source);
         } else if (target.toEdge) {
@@ -371,12 +449,15 @@ void DragController::finish(QPoint global)
         else if (target.group.isNull()) success = manager_->execute("workspace.moveTabToWindow",
             {{"tab", tab}, {"targetWindow", target.window}, {"placement", int(target.placement)}}, moving);
         else success = manager_->moveTab(tab, target.group, target.placement, target.insertionIndex);
-    } else if (!tab.isNull() && manager_->behavior().dragOutsideKind == WindowKind::Workbench)
+    } else if (detached_ && !tab.isNull() && manager_->behavior().dragOutsideKind == WindowKind::Workbench)
         success = manager_->promoteWindow(moving);
+    if (!self) return;
     if (success && target.accepted) {
         manager_->showWindow(target.window);
+        if (!self) return;
         if (!tab.isNull()) manager_->activateTab(tab);
     }
+    if (!self) return;
     // A failed or absent target leaves the real floating window and live content
     // intact. No second tear-out is created when the button is released.
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
@@ -426,7 +507,10 @@ void DragController::completeLayoutTransaction()
 void DragController::releaseForMutation()
 {
     if (!active_) return;
-    stop(); detached_ = false;
+    const QPointer<DragController> self(this);
+    stop();
+    if (!self) return;
+    detached_ = false;
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
     originalSourceStrips_ = {};
 }
@@ -442,11 +526,18 @@ void DragController::stop()
     if (capture_ && QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
     if (!self) return;
     capture_.clear();
-    if (overlay_) delete overlay_;
+    auto* preview = labelPreview_.data(); labelPreview_.clear();
+    delete preview;
+    if (!self) return;
+    labelPreview_.clear(); labelOnly_ = false;
+    auto* overlay = overlay_.data(); overlay_.clear();
+    delete overlay;
+    if (!self) return;
     overlay_.clear(); revealCandidate_ = WindowId{}; revealedWindow_ = WindowId{}; forcedWindow_ = WindowId{};
     for (const auto id : manager_->model().windowOrder()) {
         auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(id));
         if (window) {
+            window->surface()->setDraggedTab({});
             window->surface()->clearInsertionPreviews();
             window->surface()->setDragHover(QPoint(-100000, -100000));
         }
@@ -455,22 +546,30 @@ void DragController::stop()
 void DragController::selectTarget()
 {
     if (!active_ || choosing_) return;
-    choosing_ = true; QMenu menu(capture_); applyTheme(&menu, manager_->theme());
+    const QPointer<DragController> self(this);
+    if (labelOnly_ && !detach(lastPosition_)) { if (self) cancel(); return; }
+    if (!self || !active_) return;
+    choosing_ = true;
+    QPointer<QMenu> menu = new QMenu(capture_); applyTheme(menu, manager_->theme());
     for (const auto id : manager_->model().windowOrder()) {
         if (id == movingWindow_) continue;
         if (auto* window = manager_->windowWidget(id)) {
-            auto* action = menu.addAction(window->windowTitle()); action->setData(id);
+            auto* action = menu->addAction(window->windowTitle()); action->setData(id);
         }
     }
-    if (auto* action = menu.exec(lastPosition_)) {
+    auto* action = menu->exec(lastPosition_);
+    if (!self) { if (menu) delete menu; return; }
+    if (menu && action && active_) {
         forcedWindow_ = action->data().toUuid();
         if (auto* widget = manager_->windowWidget(forcedWindow_)) {
             if (widget->isMinimized()) widget->showNormal();
             widget->raise();
         }
     }
+    if (menu) delete menu;
+    if (!self) return;
     choosing_ = false;
-    if (capture_ && active_) { capture_->grabMouse(Qt::ClosedHandCursor); update(lastPosition_); }
+    if (capture_ && active_) { capture_->grabMouse(Qt::ClosedHandCursor); if (self) update(lastPosition_); }
 }
 bool DragController::eventFilter(QObject* watched, QEvent* event)
 {
@@ -490,7 +589,7 @@ bool DragController::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     if (event->type() == QEvent::ApplicationDeactivate ||
-        (event->type() == QEvent::UngrabMouse && watched == capture_)) cancel();
+        (event->type() == QEvent::UngrabMouse && watched == capture_ && !transferringCapture_)) cancel();
     return false;
 }
 } // namespace window_system

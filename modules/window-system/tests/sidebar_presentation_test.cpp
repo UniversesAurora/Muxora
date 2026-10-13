@@ -61,13 +61,11 @@ void SidebarPresentationTest::hidingKeepsPinnedContentAndCentralTabs()
     QCOMPARE(manager.model().toJson(), model); QVERIFY(!changes.isEmpty());
     const auto* command = manager.commands().find("window.sideBars.toggle"); QVERIFY(command);
     QCOMPARE(command->shortcut, QKeySequence("Ctrl+Alt+B")); QVERIFY(command->enabled(manager.context(id)));
-    // Lightweight windows intentionally have no main menu. Their registry and
-    // keyboard entry remain available; only the Workbench has menu actions.
-    if (!floating) {
-        auto* toggle = window->findChild<QAction*>("window.sideBars.toggle"); QVERIFY(toggle);
-        QVERIFY(toggle->isCheckable()); auto* menu = qobject_cast<QMenu*>(toggle->parent()); QVERIFY(menu);
-        QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(!toggle->isChecked());
-    } else QCOMPARE(window->strips()->stripIds(), (QStringList{"title", "caption-controls"}));
+    // Both window kinds expose a menu action bound to their own display state.
+    auto* toggle = window->findChild<QAction*>("window.sideBars.toggle"); QVERIFY(toggle);
+    QVERIFY(toggle->isCheckable()); auto* menu = qobject_cast<QMenu*>(toggle->parent()); QVERIFY(menu);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(!toggle->isChecked());
+    if (floating) QCOMPARE(window->strips()->stripIds(), (QStringList{"floating-menu", "title", "caption-controls"}));
     // Rebuild while hidden: new rails inherit the preference, pinned content
     // and its identity survive, and tab-bar visibility remains independent.
     const auto extra = manager.addTab(id, new QLabel("extra"), {"extra", "label", {}});

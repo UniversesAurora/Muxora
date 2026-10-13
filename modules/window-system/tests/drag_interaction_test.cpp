@@ -600,13 +600,14 @@ void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPre
     QVERIFY(strips->setStripVisible("workspace", false));
     const auto before = strips->saveLayout();
     QVERIFY(manager.demoteWindow(source, owner));
+    const auto floatingBefore = window->saveStripLayout();
     prepareDesktopFixture(window); manager.showWindow(source);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* bar = tabBar(window, tab); QVERIFY(bar); startTabDrag(window, bar, tab);
     QVERIFY(!manager.model().window(source));
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor); QTest::keyClick(actor, Qt::Key_Escape);
     auto* restored = static_cast<WorkspaceWindow*>(manager.windowWidget(source)); QVERIFY(restored);
-    QCOMPARE(restored->saveStripLayout(), before);
+    QCOMPARE(restored->saveStripLayout(), floatingBefore);
     QCOMPARE(manager.paneWidget(pane), live.data());
     QVERIFY(manager.promoteWindow(source));
     QCOMPARE(restored->strips()->saveLayout(), before);

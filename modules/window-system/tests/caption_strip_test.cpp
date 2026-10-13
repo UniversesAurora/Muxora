@@ -8,6 +8,7 @@
 #include <QFontMetrics>
 #include <QImage>
 #include <QJsonArray>
+#include <QMenuBar>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPixmap>
@@ -88,6 +89,24 @@ bool reserveTitleWidth(WorkspaceWindow* window, int contentWidth)
         controls->width() + caption->width() - contentWidth);
 }
 
+QJsonObject withoutFloatingMenu(QJsonObject layout)
+{
+    for (const auto* field : {"rows", "bottomRows"}) {
+        if (!layout.contains(field)) continue;
+        auto rows = layout.value(field).toArray();
+        for (qsizetype row = 0; row < rows.size(); ++row) {
+            auto entries = rows[row].toArray();
+            for (qsizetype index = entries.size(); index-- > 0;)
+                if (entries[index].toString() == QStringLiteral("floating-menu")) entries.removeAt(index);
+            rows[row] = entries;
+        }
+        layout.insert(field, rows);
+    }
+    auto settings = layout.value("strips").toObject(); settings.remove("floating-menu");
+    layout.insert("strips", settings);
+    return layout;
+}
+
 } // namespace
 
 class CaptionStripTest final : public QObject {
@@ -109,6 +128,7 @@ private slots:
     void titleMinimumIncludesTheUnlockedHandleAndCannotBeOverriddenByLayout();
     void centeredTitleKeepsDoubleClickAndContentIdentity_data() { addWindowKinds(); }
     void centeredTitleKeepsDoubleClickAndContentIdentity();
+    void floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkbenchMenu();
 };
 
 void CaptionStripTest::controlsCanGrowAndMoveButNeverCompressOrBecomeElastic()
@@ -241,9 +261,9 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     const auto complete = window->saveStripLayout();
     QVERIFY(manager.demoteWindow(id, owner));
     strips = window->strips(); QVERIFY(strips);
-    QCOMPARE(strips->stripIds(), QStringList({"title", "caption-controls"}));
-    QCOMPARE(window->saveStripLayout(), complete);
-    QVERIFY(!window->findChild<QWidget*>("MenuStrip"));
+    QCOMPARE(strips->stripIds(), QStringList({"floating-menu", "title", "caption-controls"}));
+    QCOMPARE(withoutFloatingMenu(window->saveStripLayout()), complete);
+    QVERIFY(window->findChild<QMenuBar*>("MenuStrip"));
     QVERIFY(!window->findChild<QWidget*>("StatusBar"));
     QVERIFY(strips->setStripWidth("caption-controls", 206));
     QVERIFY(strips->moveStrip("caption-controls", 1, 0));
@@ -252,7 +272,7 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     QCOMPARE(settings.value("workspace"), complete.value("strips").toObject().value("workspace"));
     QVERIFY(manager.promoteWindow(id));
     strips = window->strips(); QVERIFY(strips);
-    QCOMPARE(strips->saveLayout(), changed);
+    QCOMPARE(strips->saveLayout(), withoutFloatingMenu(changed));
     QVERIFY(!strips->isStripVisible("workspace"));
     QVERIFY(!strips->isStripItemVisible("workspace", "pane.split.right"));
     QCOMPARE(strips->stripOrder(1).last(), QStringLiteral("caption-controls"));
@@ -301,6 +321,42 @@ void CaptionStripTest::legacyLayoutsIntroduceTheProtectedCaptionStrip()
     window->restoreStripLayout(modified);
     QCOMPARE(strips->stripSizing("caption-controls"), CommandStripHost::StripSizing::Content);
     QVERIFY(!strips->isStripOptionsEnabled("caption-controls"));
+}
+
+void CaptionStripTest::floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkbenchMenu()
+{
+    WindowManager manager; const auto id = manager.createWindow(); const auto owner = manager.createWindow();
+    auto* content = new QLabel("Retained body");
+    const auto tab = manager.addTab(id, content, {"local menu", {}, {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id));
+    QVERIFY(window->strips()->moveStrip("menu", CommandStripHost::Area::Bottom, 0, 0));
+    QVERIFY(window->strips()->moveStrip("title", CommandStripHost::Area::Bottom, 1, 0));
+    QVERIFY(window->strips()->setStripItemVisible("menu", "视图", false));
+    const auto complete = window->saveStripLayout();
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        QVERIFY(manager.demoteWindow(id, owner));
+        auto* strips = window->strips();
+        QVERIFY(strips->stripWidget("floating-menu")); QVERIFY(!strips->stripWidget("menu"));
+        QCOMPARE(strips->stripArea("floating-menu"), CommandStripHost::Area::Bottom);
+        QCOMPARE(strips->stripWidget("floating-menu")->parentWidget(), strips->stripWidget("title")->parentWidget());
+        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 1), (QStringList{"floating-menu", "title"}));
+        QCOMPARE(strips->rowCount(CommandStripHost::Area::Top), 1);
+        QCOMPARE(strips->rowCount(CommandStripHost::Area::Bottom), 1);
+        QCOMPARE(withoutFloatingMenu(window->saveStripLayout()), complete);
+        QCOMPARE(window->findChildren<QMenuBar*>("MenuStrip").size(), 1);
+        QCOMPARE(manager.paneWidget(pane), content);
+        QVERIFY(manager.promoteWindow(id));
+        strips = window->strips();
+        QVERIFY(strips->stripWidget("menu")); QVERIFY(!strips->stripWidget("floating-menu"));
+        QCOMPARE(strips->stripArea("menu"), CommandStripHost::Area::Bottom);
+        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 0), (QStringList{"menu"}));
+        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 1), (QStringList{"title"}));
+        QVERIFY(!strips->isStripItemVisible("menu", "视图"));
+        QCOMPARE(strips->saveLayout(), complete);
+        QCOMPARE(window->findChildren<QMenuBar*>("MenuStrip").size(), 1);
+        QCOMPARE(manager.paneWidget(pane), content);
+    }
 }
 
 void CaptionStripTest::titleCentersAndElidesWithoutLosingItsFullCaption()

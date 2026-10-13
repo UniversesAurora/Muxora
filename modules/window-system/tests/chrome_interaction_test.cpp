@@ -1237,8 +1237,23 @@ void ChromeInteractionTest::stripCustomizationsSurviveWindowKindConversions()
     const auto snapshot = strips->saveLayout();
     QVERIFY(manager.demoteWindow(windowId, otherId));
     QVERIFY(window->strips());
-    QCOMPARE(window->strips()->stripIds(), QStringList({"caption-controls", "title"}));
-    QCOMPARE(window->saveStripLayout(), snapshot);
+    QCOMPARE(window->strips()->stripIds(), QStringList({"caption-controls", "floating-menu", "title"}));
+    // The new local menu adds exactly one record; every pre-existing toolbar
+    // placement and customization still has to match the complete-window cache.
+    auto floating = window->saveStripLayout();
+    auto cachedStrips = floating.value("strips").toObject();
+    QVERIFY(cachedStrips.contains("floating-menu")); cachedStrips.remove("floating-menu");
+    floating.insert("strips", cachedStrips);
+    for (const auto* field : {"rows", "bottomRows"}) if (floating.contains(field)) {
+        auto rows = floating.value(field).toArray();
+        for (qsizetype i = 0; i < rows.size(); ++i) {
+            auto row = rows[i].toArray();
+            for (qsizetype j = row.size(); j-- > 0;) if (row[j].toString() == "floating-menu") row.removeAt(j);
+            rows[i] = row;
+        }
+        floating.insert(field, rows);
+    }
+    QCOMPARE(floating, snapshot);
     QVERIFY(manager.promoteWindow(windowId));
     QVERIFY(window->strips());
     QCOMPARE(window->strips()->saveLayout(), snapshot);

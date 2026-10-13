@@ -24,6 +24,8 @@ public:
     std::function<void(int)> close;
     void setCloseIcon(QIcon icon);
     void setInsertionPreview(int index, int extent, QColor color);
+    void setDraggedTab(TabId tab);
+    [[nodiscard]] int draggedExtent() const;
     [[nodiscard]] QRect insertionPreviewRect() const;
     [[nodiscard]] QRect displayTabRect(int index) const;
     [[nodiscard]] int insertionIndexAt(QPoint local) const;
@@ -46,6 +48,7 @@ private:
     int insertionIndex_ = -1;
     int insertionExtent_ = 0;
     QColor insertionColor_;
+    int draggedIndex_ = -1;
 };
 
 // The bar keeps natural tab widths inside a scroll viewport. Native QTabBar
@@ -66,6 +69,7 @@ public:
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);
     void setInsertionPreview(int index, int extent);
+    void setDraggedTab(TabId tab);
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
     void setDragPresentation(bool compact, bool edge);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);

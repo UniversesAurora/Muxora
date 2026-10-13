@@ -82,6 +82,9 @@ private slots:
     void lateTopLevelMenusJoinToolbarCustomizationWithoutResettingChoices();
     void windowCloseAndKindChangesReleaseTheirMenuObjects();
     void externalMenuHostCanOutliveItsManager();
+    void floatingMenusAreLocalAndExcludeWholeApplicationOperations();
+    void floatingMenuExecutionKeepsItsTabAndPaneContext();
+    void floatingMenuContributionsStayIncrementalAndClassified();
 };
 
 void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
@@ -326,7 +329,9 @@ void MenuStructureTest::windowCloseAndKindChangesReleaseTheirMenuObjects()
         QPointer<QMenuBar> promotedBar = menuBar(manager, floating); QVERIFY(promotedBar);
         QPointer<QAction> promotedAction = promotedBar->findChild<QAction*>("window.tabBars.toggle"); QVERIFY(promotedAction);
         QVERIFY(manager.demoteWindow(floating, root));
-        QVERIFY(!promotedBar); QVERIFY(!promotedAction); QVERIFY(!menuBar(manager, floating));
+        QVERIFY(!promotedBar); QVERIFY(!promotedAction);
+        auto* lightweightBar = menuBar(manager, floating); QVERIFY(lightweightBar);
+        QVERIFY(lightweightBar->findChild<QAction*>("window.tabBars.toggle"));
         QCOMPARE(manager.paneWidget(pane), content);
         QCOMPARE(manager.model().tab(tab)->activePane, pane);
         QCOMPARE(manager.model().window(floating)->kind, WindowKind::Floating);
@@ -356,6 +361,83 @@ void MenuStructureTest::externalMenuHostCanOutliveItsManager()
     action->setEnabled(true); action->trigger(); QCoreApplication::processEvents(); QCOMPARE(executions, 0);
     delete presentation.data(); QVERIFY(!presentation);
     action->trigger(); QCoreApplication::processEvents(); QCOMPARE(executions, 0);
+}
+
+void MenuStructureTest::floatingMenusAreLocalAndExcludeWholeApplicationOperations()
+{
+    WindowManager manager; contributeApplicationCommands(manager);
+    const auto owner = manager.createWindow();
+    manager.addTab(owner, new QLabel("Owner content"), {"owner", {}, {}});
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
+    manager.addTab(floating, new QLabel("Floating content"), {"floating", {}, {}});
+    auto* view = static_cast<WorkspaceWindow*>(manager.windowWidget(floating));
+    auto* bar = menuBar(manager, floating); QVERIFY(bar);
+    QCOMPARE(ids(menuAt(bar, {"文件"})), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
+    QCOMPARE(ids(menuAt(bar, {"工具"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
+    const QStringList excluded{"application.exit", "layout.save", "layout.reset", "window.new", "window.statusBar.toggle", "window.demote"};
+    for (const auto& id : excluded) {
+        QVERIFY2(!floatingMenuExclusion(id).isEmpty(), qPrintable(id));
+        QVERIFY2(!bar->findChild<QAction*>(id), qPrintable(id));
+    }
+    QHash<QString, int> occurrences;
+    for (auto* action : bar->actions()) if (action->menu()) {
+        walk(action->menu(), occurrences); verifySeparators(action->menu());
+    }
+    for (const auto& definition : manager.commands().commands())
+        QCOMPARE(occurrences.value(definition.id), floatingMenuExclusion(definition.id).isEmpty() ? 1 : 0);
+    QCOMPARE(view->strips()->stripOrder(0), (QStringList{"floating-menu", "title", "caption-controls"}));
+    QCOMPARE(view->strips()->rowCount(CommandStripHost::Area::Top), 1);
+    QVERIFY(!view->strips()->stripWidget("workspace")); QVERIFY(!view->findChild<QWidget*>("StatusBar"));
+    QCOMPARE(view->strips()->stripWidget("floating-menu")->parentWidget(), view->strips()->stripWidget("title")->parentWidget());
+}
+
+void MenuStructureTest::floatingMenuExecutionKeepsItsTabAndPaneContext()
+{
+    WindowManager manager; const auto owner = manager.createWindow();
+    const auto ownerTab = manager.addTab(owner, new QLabel("Owner content"), {"owner", {}, {}});
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
+    const auto localTab = manager.addTab(floating, new QLabel("Local first pane"), {"local", {}, {}});
+    const auto firstPane = manager.model().tab(localTab)->activePane;
+    const auto localPane = manager.splitPane(localTab, firstPane, new QLabel("Local second pane"), Placement::Right);
+    QVERIFY(manager.focusPane(localTab, localPane));
+    int executions = 0; CommandContext captured;
+    QVERIFY(manager.commands().add({"host.inspectLocal", "检查当前窗格", "工具", {}, {},
+        [&](const CommandContext& context) { captured = context; ++executions; return true; }, {"工具", "检查"}, 10}));
+    manager.showWindow(owner); manager.showWindow(floating);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(floating)));
+    QVERIFY(manager.focusPane(localTab, localPane));
+    QVERIFY(manager.activateTab(ownerTab));
+    QCOMPARE(manager.context(owner).tab, ownerTab);
+    auto* bar = menuBar(manager, floating); QVERIFY(bar);
+    QMetaObject::invokeMethod(menuAt(bar, {"工具"}), "aboutToShow");
+    auto* action = bar->findChild<QAction*>("host.inspectLocal"); QVERIFY(action);
+    QVERIFY(action->shortcut().isEmpty()); action->trigger();
+    QTRY_COMPARE(executions, 1);
+    QCOMPARE(captured.window, floating); QCOMPARE(captured.group, manager.model().groupForTab(localTab));
+    QCOMPARE(captured.tab, localTab); QCOMPARE(captured.pane, localPane);
+    QCOMPARE(manager.context(owner).tab, ownerTab);
+    auto* sharing = bar->findChild<QAction*>("pane.split.left"); QVERIFY(sharing);
+    QVERIFY(sharing->isEnabled());
+    auto* localToggle = bar->findChild<QAction*>("window.tabBars.toggle"); QVERIFY(localToggle);
+    localToggle->trigger(); QTRY_VERIFY(!manager.tabBarsVisible(floating)); QVERIFY(manager.tabBarsVisible(owner));
+}
+
+void MenuStructureTest::floatingMenuContributionsStayIncrementalAndClassified()
+{
+    WindowManager manager; const auto owner = manager.createWindow();
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
+    manager.addTab(floating, new QLabel("Local"), {"local", {}, {}});
+    auto* bar = menuBar(manager, floating); QVERIFY(bar);
+    QPointer<QMenu> file = menuAt(bar, {"文件"}); QVERIFY(file);
+    QPointer<QAction> close = file->findChild<QAction*>("window.close"); QVERIFY(close);
+    contributeApplicationCommands(manager);
+    QVERIFY(manager.commands().add({"host.localLate", "本地工具", "工具", {}, {}, [](const CommandContext&) { return true; }, {"工具", "检查"}, 20}));
+    QMetaObject::invokeMethod(file, "aboutToShow");
+    QCOMPARE(menuAt(bar, {"文件"}), file.data()); QCOMPARE(file->findChild<QAction*>("window.close"), close.data());
+    QVERIFY(!bar->findChild<QAction*>("application.exit")); QVERIFY(!bar->findChild<QAction*>("layout.reset"));
+    QCOMPARE(ids(menuAt(bar, {"工具", "检查"})), (QStringList{"host.localLate"}));
+    QCOMPARE(ids(file), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
+    QMetaObject::invokeMethod(file, "aboutToShow"); QCOMPARE(bar->findChildren<QAction*>("host.localLate").size(), 1);
 }
 
 QTEST_MAIN(MenuStructureTest)

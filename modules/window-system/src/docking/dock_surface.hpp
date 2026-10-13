@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QHash>
 #include <QPointer>
+#include <QPixmap>
 
 class QSplitter;
 namespace window_system {
@@ -19,6 +20,8 @@ public:
     [[nodiscard]] GroupId tabBarAt(QPoint global) const;
     [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global) const;
     [[nodiscard]] int dragLabelExtent(TabId tab, bool edge) const;
+    [[nodiscard]] QPixmap dragLabelPixmap(TabId tab) const;
+    void setDraggedTab(TabId tab);
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
