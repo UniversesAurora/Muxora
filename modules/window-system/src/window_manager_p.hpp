@@ -15,6 +15,9 @@ struct WindowManager::Private {
     QHash<WindowId, QPointer<WorkspaceWindow>> windows;
     QHash<WindowId, WindowOptions> options;
     QHash<WindowId, WindowViewState> viewStates;
+    // Updated only by committed chrome edits. Saving an older window must not
+    // replace the most recently edited default for its window kind.
+    QHash<WindowKind, QJsonObject> toolbarProfiles;
     QSet<WindowId> projectingViews;
     QHash<TabId, QPointer<TabContent>> tabs;
     QHash<TabId, LayoutTree> renderedTrees;
@@ -32,6 +35,7 @@ struct WindowManager::Private {
     WindowId activeWindow;
     bool refreshing = false;
     bool destroying = false;
+    int geometryUpdateDepth = 0;
     QSet<TabId> guardedTabs;
     QSet<WindowId> closeRequests;
     bool closeAllPending = false;

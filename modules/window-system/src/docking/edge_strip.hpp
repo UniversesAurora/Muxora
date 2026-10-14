@@ -9,6 +9,7 @@
 #include <QPointer>
 #include <QSet>
 #include <functional>
+#include <optional>
 
 class QAbstractButton;
 class QBoxLayout;
@@ -34,6 +35,9 @@ public:
     void setDraggedTab(TabId tab);
     [[nodiscard]] QRect insertionPreviewRect() const;
     void setDragHover(QPoint global);
+    [[nodiscard]] int scrollOffset() const;
+    void restoreScrollOffset(int offset);
+    void scrollByWheel(QPoint delta);
     std::function<void()> hoverGeometryChanged;
 
 protected:
@@ -51,6 +55,7 @@ private:
     void queueTrackLayout();
     void queueHoverGeometryChanged();
     void observe(QWidget* widget);
+    void applyPendingScrollOffset();
 
     bool vertical_;
     Theme theme_;
@@ -70,6 +75,7 @@ private:
     bool arranging_ = false;
     bool hoverNotificationQueued_ = false;
     bool trackLayoutQueued_ = false;
+    std::optional<int> pendingScrollOffset_;
 };
 
 } // namespace window_system

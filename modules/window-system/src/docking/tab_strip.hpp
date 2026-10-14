@@ -6,6 +6,7 @@
 #include <QPointer>
 #include <QSet>
 #include <QTabBar>
+#include <optional>
 
 class QScrollArea;
 class QMenu;
@@ -62,7 +63,10 @@ public:
     std::function<void()> hoverGeometryChanged;
     DragTabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
-    void setCurrentIndex(int index);
+    void setCurrentIndex(int index, bool reveal = true);
+    [[nodiscard]] int scrollOffset() const;
+    void restoreScrollOffset(int offset);
+    void scrollByWheel(QPoint delta);
     int currentIndex() const;
     int count() const;
     QRect viewportRectGlobal() const;
@@ -82,6 +86,7 @@ private:
     void showTabList();
     void updateScrollBarVisibility();
     void updateScrollBarGeometry();
+    void applyPendingScrollOffset();
     QWidget* header_ = nullptr;
     DragTabBar* bar_ = nullptr;
     QScrollArea* scroll_ = nullptr;
@@ -94,6 +99,7 @@ private:
     int scrollDirection_ = 0;
     QSet<QObject*> hoveredSurfaces_;
     bool dragHovered_ = false;
+    std::optional<int> pendingScrollOffset_;
 };
 
 } // namespace window_system

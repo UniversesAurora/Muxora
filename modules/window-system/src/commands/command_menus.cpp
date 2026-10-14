@@ -59,6 +59,7 @@ Items edgeOperations(bool includeCurrent = true)
     Items result{group("edge.collect", "收纳当前标签", directions("workspace.hideToEdge.")), separator()};
     if (includeCurrent) result += {command("workspace.pinTab"), command("workspace.unpinTab")};
     result += {
+        group("edge.peek", "临时展开大小", {command("tab.peek.setSize"), command("tab.peek.resetSize")}),
         group("edge.group", "当前边栏组", {command("workspace.pinGroup"), command("workspace.unpinGroup"),
             command("workspace.restoreGroupToCenter")}),
         group("edge.all", "当前侧全部标签", {command("workspace.pinEdge"), command("workspace.unpinEdge")})};
@@ -274,6 +275,7 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     if (id == "window.redock" || id == "window.reassignFamily") visible = window && window->kind == WindowKind::Floating && enabled;
     if (id == "window.drag.selectTarget" || id == "window.drag.cancel") visible = enabled;
     if (id == "workspace.pinTab" || id == "workspace.pinGroup") visible = group && group->location == GroupLocation::AutoHide;
+    if (id == "tab.peek.setSize" || id == "tab.peek.resetSize") visible = group && group->location == GroupLocation::AutoHide;
     if (id == "workspace.unpinTab" || id == "workspace.unpinGroup") visible = group && group->location == GroupLocation::Pinned;
     if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")
         visible = group && group->location != GroupLocation::Central;

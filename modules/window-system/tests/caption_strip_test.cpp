@@ -44,6 +44,45 @@ void addWindowKinds()
     QTest::newRow("floating") << true;
 }
 
+#ifdef Q_OS_WIN
+LPARAM nativePoint(QWidget* window, QWidget* child, QPoint local)
+{
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto client = child->mapTo(window, local);
+    const qreal ratio = window->devicePixelRatioF();
+    POINT point{qRound(client.x() * ratio), qRound(client.y() * ratio)};
+    if (!ClientToScreen(handle, &point)) return 0;
+    return MAKELPARAM(point.x, point.y);
+}
+
+class CaptionHoverProbe final : public QObject {
+public:
+    explicit CaptionHoverProbe(QWidget* button) : QObject(button) { button->installEventFilter(this); }
+    int enters = 0;
+    int leaves = 0;
+protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Enter) ++enters;
+        if (event->type() == QEvent::Leave) ++leaves;
+        return false;
+    }
+};
+
+QVector<QPair<LPARAM, LRESULT>> resizeHits(const RECT& bounds)
+{
+    const int midX = (bounds.left + bounds.right) / 2;
+    const int midY = (bounds.top + bounds.bottom) / 2;
+    return {{MAKELPARAM(bounds.left + 1, midY), HTLEFT},
+            {MAKELPARAM(bounds.right - 2, midY), HTRIGHT},
+            {MAKELPARAM(midX, bounds.top + 1), HTTOP},
+            {MAKELPARAM(midX, bounds.bottom - 2), HTBOTTOM},
+            {MAKELPARAM(bounds.left + 1, bounds.top + 1), HTTOPLEFT},
+            {MAKELPARAM(bounds.right - 2, bounds.top + 1), HTTOPRIGHT},
+            {MAKELPARAM(bounds.left + 1, bounds.bottom - 2), HTBOTTOMLEFT},
+            {MAKELPARAM(bounds.right - 2, bounds.bottom - 2), HTBOTTOMRIGHT}};
+}
+#endif
+
 QImage referenceCaption(QLabel* caption, const QString& text, const QImage& actual)
 {
     // Use Qt's ordinary label as the independent drawing reference. It receives
@@ -89,24 +128,6 @@ bool reserveTitleWidth(WorkspaceWindow* window, int contentWidth)
         controls->width() + caption->width() - contentWidth);
 }
 
-QJsonObject withoutFloatingMenu(QJsonObject layout)
-{
-    for (const auto* field : {"rows", "bottomRows"}) {
-        if (!layout.contains(field)) continue;
-        auto rows = layout.value(field).toArray();
-        for (qsizetype row = 0; row < rows.size(); ++row) {
-            auto entries = rows[row].toArray();
-            for (qsizetype index = entries.size(); index-- > 0;)
-                if (entries[index].toString() == QStringLiteral("floating-menu")) entries.removeAt(index);
-            rows[row] = entries;
-        }
-        layout.insert(field, rows);
-    }
-    auto settings = layout.value("strips").toObject(); settings.remove("floating-menu");
-    layout.insert("strips", settings);
-    return layout;
-}
-
 } // namespace
 
 class CaptionStripTest final : public QObject {
@@ -129,6 +150,16 @@ private slots:
     void centeredTitleKeepsDoubleClickAndContentIdentity_data() { addWindowKinds(); }
     void centeredTitleKeepsDoubleClickAndContentIdentity();
     void floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkbenchMenu();
+#ifdef Q_OS_WIN
+    void maximizeEntireRectangleRetainsNativeSnapHitAndQtHover_data();
+    void maximizeEntireRectangleRetainsNativeSnapHitAndQtHover();
+    void captionHitPriorityPreservesResizeEdgesAndCorners_data() { addWindowKinds(); }
+    void captionHitPriorityPreservesResizeEdgesAndCorners();
+    void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap_data() { addWindowKinds(); }
+    void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap();
+    void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
+    void fixedResizeAxesRemainRespected();
+#endif
 };
 
 void CaptionStripTest::controlsCanGrowAndMoveButNeverCompressOrBecomeElastic()
@@ -262,20 +293,22 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     QVERIFY(manager.demoteWindow(id, owner));
     strips = window->strips(); QVERIFY(strips);
     QCOMPARE(strips->stripIds(), QStringList({"floating-menu", "title", "caption-controls"}));
-    QCOMPARE(withoutFloatingMenu(window->saveStripLayout()), complete);
+    QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), complete);
+    QVERIFY(!window->saveStripLayout().value("strips").toObject().contains("menu"));
+    QVERIFY(!window->saveStripLayout().value("strips").toObject().contains("workspace"));
     QVERIFY(window->findChild<QMenuBar*>("MenuStrip"));
     QVERIFY(!window->findChild<QWidget*>("StatusBar"));
     QVERIFY(strips->setStripWidth("caption-controls", 206));
     QVERIFY(strips->moveStrip("caption-controls", 1, 0));
     const auto changed = window->saveStripLayout();
-    const auto settings = changed.value("strips").toObject();
-    QCOMPARE(settings.value("workspace"), complete.value("strips").toObject().value("workspace"));
+    QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), complete);
     QVERIFY(manager.promoteWindow(id));
     strips = window->strips(); QVERIFY(strips);
-    QCOMPARE(strips->saveLayout(), withoutFloatingMenu(changed));
+    QCOMPARE(strips->saveLayout(), complete);
     QVERIFY(!strips->isStripVisible("workspace"));
     QVERIFY(!strips->isStripItemVisible("workspace", "pane.split.right"));
-    QCOMPARE(strips->stripOrder(1).last(), QStringLiteral("caption-controls"));
+    QCOMPARE(strips->stripOrder(0), (QStringList{"menu", "title", "caption-controls"}));
+    QCOMPARE(window->saveInactiveStripLayouts().value("floating").toObject(), changed);
     QCOMPARE(manager.paneWidget(pane), content);
     const auto snapshot = manager.saveLayout();
     int restoredContents = 0;
@@ -284,7 +317,11 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     });
     QVERIFY(manager.restoreLayout(snapshot));
     auto* restored = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(restored);
+    QCOMPARE(restored->saveStripLayout(), complete);
+    QCOMPARE(restored->saveInactiveStripLayouts().value("floating").toObject(), changed);
+    QVERIFY(manager.demoteWindow(id, owner));
     QCOMPARE(restored->saveStripLayout(), changed);
+    QCOMPARE(restored->strips()->stripOrder(1), (QStringList{"caption-controls"}));
     QCOMPARE(restoredContents, 1);
     auto* restoredContent = qobject_cast<QLabel*>(manager.paneWidget(pane)); QVERIFY(restoredContent);
     QCOMPARE(restoredContent->text(), QStringLiteral("Content"));
@@ -334,16 +371,23 @@ void CaptionStripTest::floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkben
     QVERIFY(window->strips()->moveStrip("title", CommandStripHost::Area::Bottom, 1, 0));
     QVERIFY(window->strips()->setStripItemVisible("menu", "视图", false));
     const auto complete = window->saveStripLayout();
+    QVERIFY(manager.demoteWindow(id, owner));
+    QVERIFY(window->strips()->moveStrip("floating-menu", CommandStripHost::Area::Bottom, 0, 0));
+    QVERIFY(window->strips()->moveStrip("title", CommandStripHost::Area::Bottom, 1, 0));
+    const auto floating = window->saveStripLayout();
+    QVERIFY(manager.promoteWindow(id));
     for (int cycle = 0; cycle < 3; ++cycle) {
         QVERIFY(manager.demoteWindow(id, owner));
         auto* strips = window->strips();
         QVERIFY(strips->stripWidget("floating-menu")); QVERIFY(!strips->stripWidget("menu"));
         QCOMPARE(strips->stripArea("floating-menu"), CommandStripHost::Area::Bottom);
-        QCOMPARE(strips->stripWidget("floating-menu")->parentWidget(), strips->stripWidget("title")->parentWidget());
-        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 1), (QStringList{"floating-menu", "title"}));
+        QVERIFY(strips->stripWidget("floating-menu")->parentWidget() != strips->stripWidget("title")->parentWidget());
+        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 0), (QStringList{"floating-menu"}));
+        QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 1), (QStringList{"title"}));
         QCOMPARE(strips->rowCount(CommandStripHost::Area::Top), 1);
-        QCOMPARE(strips->rowCount(CommandStripHost::Area::Bottom), 1);
-        QCOMPARE(withoutFloatingMenu(window->saveStripLayout()), complete);
+        QCOMPARE(strips->rowCount(CommandStripHost::Area::Bottom), 2);
+        QCOMPARE(window->saveStripLayout(), floating);
+        QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), complete);
         QCOMPARE(window->findChildren<QMenuBar*>("MenuStrip").size(), 1);
         QCOMPARE(manager.paneWidget(pane), content);
         QVERIFY(manager.promoteWindow(id));
@@ -446,6 +490,120 @@ void CaptionStripTest::centeredTitleKeepsDoubleClickAndContentIdentity()
     QCOMPARE(manager.paneWidget(pane), content);
     QCOMPARE(manager.model().group(manager.model().groupForTab(tab))->windowId, id);
 }
+
+#ifdef Q_OS_WIN
+void CaptionStripTest::maximizeEntireRectangleRetainsNativeSnapHitAndQtHover_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<bool>("maximized"); QTest::addColumn<int>("vertical");
+    for (const bool floating : {false, true}) for (const bool maximized : {false, true})
+        for (const int vertical : {0, 1, 2})
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(floating ? "floating" : "workbench")
+                .arg(maximized ? "maximized" : "restored").arg(vertical))) << floating << maximized << vertical;
+}
+
+void CaptionStripTest::maximizeEntireRectangleRetainsNativeSnapHitAndQtHover()
+{
+    QFETCH(bool, floating); QFETCH(bool, maximized); QFETCH(int, vertical);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    if (maximized) { window->showMaximized(); QTRY_VERIFY(window->isMaximized()); }
+    auto* button = captionButton(window, maximized ? "restore" : "maximize"); QVERIFY(button);
+    QVERIFY(button->isVisible() && button->isEnabled()); QCOMPARE(button->size(), QSize(42, 32));
+    // The default first row is essential: a moved second-row fixture cannot
+    // reproduce the restored window's caption/resize-rim overlap.
+    QCOMPARE(window->strips()->stripArea("caption-controls"), CommandStripHost::Area::Top);
+    QVERIFY(window->strips()->stripOrder(CommandStripHost::Area::Top, 0).contains("caption-controls"));
+    QVERIFY(button->mapTo(window, QPoint()).y() < 5);
+    const int y = vertical == 0 ? 0 : vertical == 1 ? button->height() / 2 : button->height() - 1;
+    const auto earlyLocation = nativePoint(window, button, QPoint(button->width() / 2, y)); QVERIFY(earlyLocation);
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    QTest::mouseMove(window, window->rect().center());
+    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0); QVERIFY(!button->underMouse());
+    const auto quiet = button->grab().toImage();
+    const auto location = nativePoint(window, button, QPoint(button->width() / 2, y)); QVERIFY(location);
+    if (earlyLocation != location) qInfo() << "Caption layout settled after queued input:" << earlyLocation << location;
+    const auto beforeGeometry = window->geometry(); const auto beforeHandle = window->effectiveWinId();
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTMAXBUTTON));
+    CaptionHoverProbe hover(button);
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMAXBUTTON, location);
+    QVERIFY(button->underMouse()); QCOMPARE(hover.enters, 1);
+    QVERIFY(button->grab().toImage() != quiet);
+    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+    QVERIFY(!button->underMouse()); QCOMPARE(hover.leaves, 1);
+    QCOMPARE(button->grab().toImage(), quiet);
+    QCOMPARE(window->geometry(), beforeGeometry); QCOMPARE(window->effectiveWinId(), beforeHandle);
+    QCOMPARE(window->isMaximized(), maximized);
+}
+
+void CaptionStripTest::captionHitPriorityPreservesResizeEdgesAndCorners()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    RECT bounds{}; QVERIFY(GetWindowRect(handle, &bounds));
+    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), hit.second);
+    window->showMaximized(); QTRY_VERIFY(window->isMaximized()); QVERIFY(GetWindowRect(handle, &bounds));
+    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), LRESULT(HTCLIENT));
+    window->showNormal(); QTRY_VERIFY(!window->isMaximized()); QVERIFY(GetWindowRect(handle, &bounds));
+    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), hit.second);
+}
+
+void CaptionStripTest::disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    const auto tab = manager.addTab(id, new QLabel("Retained content"), {"Retained", {}, {}}); QVERIFY(!tab.isNull());
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* button = captionButton(window, "maximize"); QVERIFY(button);
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    button->setEnabled(false);
+    auto location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTCLIENT));
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMAXBUTTON, location); QVERIFY(!button->underMouse()); QVERIFY(!button->isDown());
+    button->setEnabled(true); button->hide();
+    location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
+    QVERIFY(SendMessageW(handle, WM_NCHITTEST, 0, location) != HTMAXBUTTON);
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMAXBUTTON, location); QVERIFY(!button->underMouse());
+    button->show();
+    QVERIFY(manager.setViewMode(id, ViewMode::WindowFullscreen)); QTRY_VERIFY(window->isFullScreen());
+    QVERIFY(button->isVisible());
+    location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTCLIENT));
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMAXBUTTON, location); QVERIFY(!button->underMouse());
+    RECT bounds{}; QVERIFY(GetWindowRect(handle, &bounds));
+    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), LRESULT(HTCLIENT));
+    QVERIFY(manager.setViewMode(id, ViewMode::Normal)); QTRY_VERIFY(!window->isFullScreen());
+    window->setDragPresentation(WorkspaceWindow::DragPresentation::Tab);
+    location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTCLIENT));
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMAXBUTTON, location); QVERIFY(!button->underMouse());
+    window->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+    location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTMAXBUTTON));
+}
+
+void CaptionStripTest::fixedResizeAxesRemainRespected()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    window->setFixedWidth(window->width()); QCoreApplication::processEvents();
+    RECT bounds{}; QVERIFY(GetWindowRect(handle, &bounds));
+    const int midY = (bounds.top + bounds.bottom) / 2;
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.left + 1, midY)), LRESULT(HTCLIENT));
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.right - 2, midY)), LRESULT(HTCLIENT));
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.left + 1, bounds.top + 1)), LRESULT(HTTOP));
+    window->setFixedHeight(window->height()); QCoreApplication::processEvents();
+    QVERIFY(GetWindowRect(handle, &bounds));
+    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), LRESULT(HTCLIENT));
+}
+#endif
 
 QTEST_MAIN(CaptionStripTest)
 #include "caption_strip_test.moc"

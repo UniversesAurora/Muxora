@@ -32,6 +32,7 @@ add_library(WindowSystemWidgets STATIC
     src/commands/command_menus.cpp
     src/commands/window_commands.cpp
     src/commands/toolbar_move_command.cpp
+    src/commands/peek_size_command.cpp
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp

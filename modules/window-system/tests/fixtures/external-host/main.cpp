@@ -56,6 +56,9 @@ int main(int argc, char** argv)
     if (!windows.moveTabToEdgeBar(tab, root, window_system::Edge::Right, 0)) return 7;
     if (windows.paneWidget(pane) != text || windows.model().autoHiddenTabs(root, window_system::Edge::Right)
         != QVector<window_system::TabId>{tab}) return 8;
+    if (windows.peekSize(tab) != QSize(250, 170) || !windows.setPeekSize(tab, QSize(360, 210))
+        || !windows.execute("tab.peek.setSize", {{"tab", tab}, {"width", 420}, {"height", 240}}, root)
+        || windows.peekSize(tab) != QSize(420, 240) || windows.setPeekSize(tab, QSize(0, 0))) return 95;
     const auto secondFloating = windows.createWindow(window_system::WindowKind::Floating, {}, root);
     auto* secondText = new QLabel("Whole-window side insertion");
     QPointer<QLabel> secondObserver(secondText);
@@ -95,6 +98,8 @@ int main(int argc, char** argv)
         return QJsonObject{};
     };
     if (toolbarLayout(windows.saveLayout(), root) != toolbarLayout(saved, root)) return 94;
+    if (windows.peekSize(tab) != QSize(420, 240) || !windows.resetPeekSize(tab)
+        || windows.peekSize(tab) != QSize(250, 170) || windows.paneWidget(pane) != restoredFirst.data()) return 96;
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     return observer.isNull() && secondObserver.isNull() && restoredFirst.isNull() && restoredSecond.isNull()

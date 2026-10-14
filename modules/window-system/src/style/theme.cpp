@@ -389,12 +389,14 @@ void applyTheme(QWidget* root, const Theme& theme)
     root->setPalette(palette);
     root->setAutoFillBackground(true);
     root->setStyleSheet(styleSheet(theme));
-    const auto updateGroupSplitter = [&](QSplitter* splitter) {
+    const auto updateSplitter = [&](QSplitter* splitter) {
         if (splitter && splitter->property("windowSystemGroupSplitter").toBool())
             splitter->setHandleWidth(std::max(1, theme.metrics.groupSplitterWidth));
+        else if (splitter && splitter->objectName() == "PaneSplitter")
+            splitter->setHandleWidth(std::max(1, theme.metrics.splitterWidth));
     };
-    updateGroupSplitter(qobject_cast<QSplitter*>(root));
-    for (auto* splitter : root->findChildren<QSplitter*>()) updateGroupSplitter(splitter);
+    updateSplitter(qobject_cast<QSplitter*>(root));
+    for (auto* splitter : root->findChildren<QSplitter*>()) updateSplitter(splitter);
     root->update();
 }
 

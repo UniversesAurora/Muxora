@@ -375,8 +375,8 @@ void CompactUiTest::groupSeparatorsRemainCompactAndResizable()
     };
     QCOMPARE(splitter->handleWidth(), 2);
     QCOMPARE(gap(splitter), 2);
-    QCOMPARE(paneSplitter->handleWidth(), 4);
-    QCOMPARE(paneSplitter->widget(1)->x() - paneSplitter->widget(0)->geometry().right() - 1, 4);
+    QCOMPARE(paneSplitter->handleWidth(), 1);
+    QCOMPARE(paneSplitter->widget(1)->x() - paneSplitter->widget(0)->geometry().right() - 1, 1);
     const auto node = manager.model().window(windowId)->central->id;
     const auto initialRatio = manager.model().window(windowId)->central->ratio;
     auto* handle = splitter->handle(1); QVERIFY(handle);
@@ -395,7 +395,24 @@ void CompactUiTest::groupSeparatorsRemainCompactAndResizable()
     window->resize(window->width() - 100, window->height() - 80);
     QCoreApplication::processEvents();
     QCOMPARE(gap(splitter), 2);
-    QCOMPARE(paneSplitter->handleWidth(), 4);
+    QCOMPARE(paneSplitter->handleWidth(), 1);
+    const auto paneNode = manager.model().tab(first)->panes->id;
+    const auto paneRatio = manager.model().tab(first)->panes->ratio;
+    auto* paneHandle = paneSplitter->handle(1); QVERIFY(paneHandle);
+    QSignalSpy paneMoves(paneSplitter, &QSplitter::splitterMoved);
+    const auto paneStart = paneHandle->rect().center();
+    QTest::mousePress(paneHandle, Qt::LeftButton, Qt::NoModifier, paneStart);
+    QTest::mouseMove(paneHandle, paneStart + QPoint(30, 0));
+    QTest::mouseRelease(paneHandle, Qt::LeftButton, Qt::NoModifier, paneStart + QPoint(30, 0));
+    QTRY_VERIFY(!paneMoves.isEmpty());
+    QCOMPARE(manager.model().tab(first)->panes->id, paneNode);
+    QVERIFY(manager.model().tab(first)->panes->ratio > paneRatio);
+    QCOMPARE(manager.paneWidget(firstPane), firstContent);
+    auto customTheme = manager.theme(); customTheme.metrics.splitterWidth = 3;
+    manager.setTheme(customTheme); QCoreApplication::processEvents();
+    QCOMPARE(paneSplitter->handleWidth(), 3);
+    QCOMPARE(paneSplitter->widget(1)->x() - paneSplitter->widget(0)->geometry().right() - 1, 3);
+    QCOMPARE(gap(splitter), 2);
     QVERIFY(manager.model().validate());
 }
 
@@ -420,6 +437,13 @@ void CompactUiTest::pinnedGroupSeparatorsUseIndependentThemeMetric()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     auto* splitter = window->findChild<QSplitter*>("PinnedRegion"); QVERIFY(splitter);
+    auto* outer = qobject_cast<QSplitter*>(splitter->parentWidget()); QVERIFY(outer);
+    QCOMPARE(outer->handleWidth(), 2);
+    const auto outerGap = [outer] {
+        const auto first = outer->widget(0)->geometry(), second = outer->widget(1)->geometry();
+        return outer->orientation() == Qt::Vertical ? second.top() - first.bottom() - 1 : second.left() - first.right() - 1;
+    };
+    QCOMPARE(outerGap(), 2);
     QCOMPARE(splitter->count(), 2);
     const auto gap = [splitter] {
         const auto firstRect = splitter->widget(0)->geometry();
@@ -435,6 +459,8 @@ void CompactUiTest::pinnedGroupSeparatorsUseIndependentThemeMetric()
         QCoreApplication::processEvents();
         QCOMPARE(splitter->handleWidth(), std::max(1, requestedWidth));
         QCOMPARE(gap(), std::max(1, requestedWidth));
+        QCOMPARE(outer->handleWidth(), std::max(1, requestedWidth));
+        QCOMPARE(outerGap(), std::max(1, requestedWidth));
     }
     QVERIFY(manager.model().validate());
 }

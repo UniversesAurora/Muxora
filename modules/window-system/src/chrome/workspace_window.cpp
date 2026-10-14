@@ -100,31 +100,44 @@ QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObjec
     return result;
 }
 
-QJsonObject floatingMenuLayout(QJsonObject layout)
+QJsonObject mergeToolbarEdit(QJsonObject latest, const QJsonObject& before, const QJsonObject& after)
 {
-    const QString menuId = QStringLiteral("floating-menu");
-    const char* targetArea = "rows";
-    qsizetype targetRow = 0;
-    bool foundTitle = false;
-    for (const auto* field : {"rows", "bottomRows"}) {
-        auto rows = layout.value(field).toArray();
-        for (qsizetype row = 0; row < rows.size(); ++row) {
-            auto entries = rows[row].toArray();
-            for (qsizetype index = entries.size(); index-- > 0;)
-                if (entries[index].toString() == menuId) entries.removeAt(index);
-            if (!foundTitle && entries.contains(QStringLiteral("title"))) {
-                targetArea = field; targetRow = row; foundTitle = true;
-            }
-            rows[row] = entries;
+    if (latest.isEmpty()) return after;
+    // A row transfer changes both areas as one operation. Unrelated edits in
+    // an older live window must retain the newer profile's ordering.
+    if (before.value("rows") != after.value("rows") || before.value("bottomRows") != after.value("bottomRows")) {
+        for (const auto* field : {"rows", "bottomRows"}) {
+            if (after.contains(field)) latest.insert(field, after.value(field));
+            else latest.remove(field);
         }
-        if (!rows.isEmpty() || layout.contains(field)) layout.insert(field, rows);
     }
-    auto rows = layout.value(targetArea).toArray();
-    while (rows.size() <= targetRow) rows.append(QJsonArray{});
-    auto entries = rows[targetRow].toArray();
-    entries.insert(0, menuId); rows[targetRow] = entries;
-    layout.insert(targetArea, rows);
-    return layout;
+    if (before.value("locked") != after.value("locked")) latest.insert("locked", after.value("locked"));
+    auto settings = latest.value("strips").toObject();
+    const auto oldSettings = before.value("strips").toObject();
+    const auto newSettings = after.value("strips").toObject();
+    for (auto strip = newSettings.begin(); strip != newSettings.end(); ++strip) {
+        const auto oldFields = oldSettings.value(strip.key()).toObject();
+        const auto newFields = strip->toObject();
+        auto merged = settings.value(strip.key()).toObject();
+        QSet<QString> fields;
+        for (auto field = oldFields.begin(); field != oldFields.end(); ++field) fields.insert(field.key());
+        for (auto field = newFields.begin(); field != newFields.end(); ++field) fields.insert(field.key());
+        for (const auto& field : fields) if (oldFields.value(field) != newFields.value(field)) {
+            if (field == "excluded") {
+                auto excluded = merged.value(field).toArray();
+                const auto oldExcluded = oldFields.value(field).toArray(), newExcluded = newFields.value(field).toArray();
+                for (const auto& id : oldExcluded) if (!newExcluded.contains(id))
+                    for (qsizetype index = excluded.size(); index-- > 0;) if (excluded[index] == id) excluded.removeAt(index);
+                for (const auto& id : newExcluded) if (!oldExcluded.contains(id) && !excluded.contains(id)) excluded.append(id);
+                merged.insert(field, excluded); continue;
+            }
+            if (newFields.contains(field)) merged.insert(field, newFields.value(field));
+            else merged.remove(field);
+        }
+        if (!merged.isEmpty()) settings.insert(strip.key(), merged);
+    }
+    latest.insert("strips", settings);
+    return latest;
 }
 
 } // namespace
@@ -155,6 +168,11 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
 {
     if (dragPresentation_ == presentation) return;
     const QPointer<WorkspaceWindow> retained(this);
+    const bool wasChangingPresentation = changingDragPresentation_;
+    changingDragPresentation_ = true;
+    const auto finishPresentation = qScopeGuard([retained, wasChangingPresentation] {
+        if (retained) retained->changingDragPresentation_ = wasChangingPresentation;
+    });
     const bool wasUpdating = updatesEnabled();
     setUpdatesEnabled(false);
     const auto restoreUpdates = qScopeGuard([retained, wasUpdating] {
@@ -193,7 +211,16 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
 #endif
     column_->activate();
     if (dragPresentationHost_) dragPresentationHost_->layout()->activate();
+    changingDragPresentation_ = false;
     updateDragMask();
+#ifdef Q_OS_WIN
+    if (!compact && windowHandle()) {
+        // Reassert the empty QWindow mask after layout/native frame updates.
+        // QWidget's empty cache alone does not prove the HWND region is clear.
+        windowHandle()->setMask({});
+        applyNativeFrame(this);
+    }
+#endif
     if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
 }
 QPoint WorkspaceWindow::dragLabelAnchor() const
@@ -208,6 +235,7 @@ QPoint WorkspaceWindow::dragLabelAnchor() const
 }
 void WorkspaceWindow::updateDragMask()
 {
+    if (changingDragPresentation_) return;
     if (dragPresentation_ == DragPresentation::Window) return;
     QRegion visible;
     if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data())) {
@@ -236,17 +264,36 @@ QJsonObject WorkspaceWindow::saveStripLayout() const
 {
     return strips_ ? mergeRenderedStripLayout(savedStripLayout_, strips_->saveLayout()) : savedStripLayout_;
 }
+QJsonObject WorkspaceWindow::saveInactiveStripLayouts() const
+{
+    QJsonObject result;
+    for (const auto kind : {WindowKind::Workbench, WindowKind::Floating})
+        if (kind != kind_ && savedStripLayouts_.contains(kind))
+            result.insert(kind == WindowKind::Workbench ? "workbench" : "floating", savedStripLayouts_.value(kind));
+    return result;
+}
 void WorkspaceWindow::restoreStripLayout(const QJsonObject& layout)
 {
     savedStripLayout_ = layout;
-    if (strips_) strips_->restoreLayout(kind_ == WindowKind::Floating ? floatingMenuLayout(layout) : layout);
+    savedStripLayouts_.insert(kind_, layout);
+    if (strips_) strips_->restoreLayout(layout);
+    committedStripLayout_ = saveStripLayout();
+}
+void WorkspaceWindow::restoreStripLayouts(const QJsonObject& inactive, const QJsonObject& current)
+{
+    savedStripLayouts_.clear();
+    for (const auto kind : {WindowKind::Workbench, WindowKind::Floating}) {
+        const auto key = kind == WindowKind::Workbench ? "workbench" : "floating";
+        if (inactive.contains(key)) savedStripLayouts_.insert(kind, inactive.value(key).toObject());
+    }
+    restoreStripLayout(current);
 }
 void WorkspaceWindow::syncKind()
 {
     const auto* record = manager_->model().window(id_);
     if (!record) return;
     if (chrome_ && kind_ == record->kind) { updateCaption(); return; }
-    if (strips_) savedStripLayout_ = saveStripLayout();
+    if (strips_) savedStripLayouts_.insert(kind_, saveStripLayout());
     if (chrome_) {
         // QWidget child teardown sends events before QObject clears QPointer.
         // Stop observing the old chrome before its internal state is destroyed.
@@ -261,9 +308,11 @@ void WorkspaceWindow::syncKind()
     bottomChrome_.clear();
     if (status_) { column_->removeWidget(status_); delete status_; }
     kind_ = record->kind;
+    savedStripLayout_ = savedStripLayouts_.value(kind_, manager_->d->toolbarProfiles.value(kind_));
     createChrome();
     if (strips_ && !savedStripLayout_.isEmpty()) restoreStripLayout(savedStripLayout_);
     updateCaption();
+    committedStripLayout_ = saveStripLayout();
 }
 void WorkspaceWindow::createChrome()
 {
@@ -273,14 +322,22 @@ void WorkspaceWindow::createChrome()
     chrome_->installEventFilter(this);
     strips_ = new CommandStripHost(chrome_);
     strips_->setLayoutChangedCallback([this] {
+        if (!manager_) return;
         for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
+        const auto committed = saveStripLayout();
+        savedStripLayouts_.insert(kind_, committed);
+        manager_->d->toolbarProfiles.insert(kind_, mergeToolbarEdit(
+            manager_->d->toolbarProfiles.value(kind_), committedStripLayout_, committed));
+        committedStripLayout_ = committed;
         emit manager_->layoutChanged();
     });
     strips_->setSizingChangeRequest([this](const QString& strip, CommandStripHost::StripSizing sizing) {
+        if (!manager_) return;
         manager_->execute("window.toolbar.setSizing", {{"strip", strip},
             {"sizing", sizing == CommandStripHost::StripSizing::Elastic ? "elastic" : "content"}}, id_);
     });
     strips_->setWidthResetRequest([this](const QString& strip) {
+        if (!manager_) return;
         manager_->execute("window.toolbar.resetSize", {{"strip", strip}}, id_);
     });
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
@@ -316,7 +373,7 @@ void WorkspaceWindow::createChrome()
     caption_->setProperty("windowDragArea", true);
     strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
     strips_->setStripOptionsEnabled("title", false);
-    strips_->setStripConstraints("title", {true, true, 96, true});
+    strips_->setStripConstraints("title", {true, true, titleMinimumWidth, true});
     auto* controls = new QWidget(strips_);
     controls->setObjectName("CaptionControls");
     controls->setMinimumHeight(32);
@@ -326,7 +383,7 @@ void WorkspaceWindow::createChrome()
     auto addCaption = [&](const QString& icon, const QString& title, auto callback) {
         auto* button = new QToolButton(controls); button->setObjectName("CaptionButton");
         button->setProperty("role", icon); button->setIcon(iconFor(icon, manager_->theme()));
-        button->setFixedSize(42, 32); button->setToolTip(title); button->setAccessibleName(title);
+        button->setFixedSize(captionButtonWidth, 32); button->setToolTip(title); button->setAccessibleName(title);
         // The strip itself is one 32-pixel row. Let its layout fill that row;
         // AlignTop would make Qt use the styled size hint (21 pixels) after
         // stylesheet polishing instead of the caption's full hit rectangle.
@@ -335,6 +392,7 @@ void WorkspaceWindow::createChrome()
     };
     addCaption("minimize", QStringLiteral("最小化"), [this] { showMinimized(); });
     maximizeButton_ = addCaption("maximize", QStringLiteral("最大化"), [this] {
+        if (!manager_) return;
         if (viewState_.mode != ViewMode::Normal) manager_->setViewMode(id_, ViewMode::Normal);
         else isMaximized() ? showNormal() : showMaximized();
     });
@@ -355,7 +413,7 @@ void WorkspaceWindow::createChrome()
 }
 void WorkspaceWindow::updateWindowControlState()
 {
-    if (!maximizeButton_) return;
+    if (!manager_ || !maximizeButton_) return;
     const bool expanded = isMaximized() || viewState_.mode != ViewMode::Normal;
     const auto role = expanded ? QStringLiteral("restore") : QStringLiteral("maximize");
     const auto title = expanded ? QStringLiteral("还原") : QStringLiteral("最大化");
@@ -386,13 +444,14 @@ void WorkspaceWindow::changeEvent(QEvent* event)
         queuePlacementNotification();
         if (!applyingViewState_ && viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
             QTimer::singleShot(0, this, [this] {
-                if (viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
+                if (manager_ && viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
                     manager_->setViewMode(id_, ViewMode::Normal);
             });
     }
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {
+    if (!manager_) return;
     populateContextMenu(menu, CommandMenuSurface::Window, manager_, manager_->context(id_));
     for (auto* action : menu->findChildren<QAction*>()) if (!action->property("windowSystemCommand").toString().isEmpty())
         connect(action, &QAction::triggered, manager_, [manager = manager_, window = id_, id = action->data().toString()] {
@@ -401,12 +460,14 @@ void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 }
 void WorkspaceWindow::updateCommandStates()
 {
+    if (!manager_) return;
     if (menus_) menus_->refresh();
     const auto context = manager_->context(id_);
     for (const auto& action : commandActions_) if (action) refreshCommandAction(manager_, action, context);
 }
 void WorkspaceWindow::updateCaption()
 {
+    if (!manager_) return;
     const auto ctx = manager_->context(id_);
     const auto* tab = manager_->model().tab(ctx.tab);
     const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + options_.title;
@@ -460,12 +521,14 @@ void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
 }
 void WorkspaceWindow::queuePlacementNotification()
 {
+    if (!manager_) return;
     if (!restoringPlacement_ && hasNormalPlacement()) normalPlacement_ = geometry();
     if (!isVisible() || restoringPlacement_ || manager_->d->destroying) return;
     if (!placementTimer_->isActive()) placementTimer_->start(0);
 }
 void WorkspaceWindow::notifyPlacementChanged()
 {
+    if (!manager_) return;
     if (!isVisible() || restoringPlacement_ || manager_->d->destroying ||
         !manager_->model().window(id_)) return;
     // Drag previews and native state changes may deliver several geometries in
@@ -496,6 +559,7 @@ void WorkspaceWindow::closeEvent(QCloseEvent* event)
 }
 bool WorkspaceWindow::eventFilter(QObject* watched, QEvent* event)
 {
+    if (!manager_) return QWidget::eventFilter(watched, event);
     if (strips_ && strips_->isDragging()) return QWidget::eventFilter(watched, event);
     if (strips_ && event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);

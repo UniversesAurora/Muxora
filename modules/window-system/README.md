@@ -71,6 +71,10 @@
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
 
+`setPeekSize(tab, QSize(width, height))` / `peekSize(tab)` 按标签保存临时展开的请求宽高，`resetPeekSize(tab)` 恢复默认 250 × 170 个逻辑像素。有效范围为宽度 140..16777215、高度 100..16777215；无效 ID 或尺寸返回失败。内容最小尺寸和窗口空间约束实际显示，不替换请求值。左右侧栏拖动面板内缘调整宽度，上下侧栏调整高度，另一维的请求保持；当前面板即时调整，内容对象和焦点保留。
+
+`TabRecord::peekSize` 可选值随布局保存，缺失兼容旧快照；显式值必须是包含整数 `width` / `height` 的对象。尺寸随标签跨组、换边和跨窗口移动，独立于固定分区的 `edgeExtent`。命令 `tab.peek.setSize` 接受可选 `tab` 和同时提供的 `width` / `height`；无宽高参数时显示键盘可编辑对话框，`tab.peek.resetSize` 清除显式值。两项命令均可绑定快捷键，自动隐藏标签的菜单入口位于“边栏 → 临时展开大小”。
+
 窗格上下栏分别使用 `PaneBarSharing::Shared` / `PerPane`，默认共享。创建标签时设置 `TabOptions.topBarSharing` / `bottomBarSharing`，运行中可调用 `setTabTopBarSharing` / `setTabBottomBarSharing`。各 Pane 栏继续由 `setPaneTopBar` / `setPaneBottomBar` 接入；显式 Tab 栏不会因逐窗格模式而复制。对应统一命令为 `tab.topBar.setSharing` / `tab.bottomBar.setSharing`，接受 `sharing: "shared"` 或 `"perPane"`，无参数时切换当前策略。
 
 共享策略进入布局快照；栏控件本身由宿主重建和接入，窗口模块不序列化任意 `QWidget`。

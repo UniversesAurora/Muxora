@@ -122,6 +122,11 @@ public:
     bool pinGroup(GroupId group, bool pinned);
     bool pinTab(TabId tab, bool pinned);
     bool pinEdge(WindowId window, Edge edge, bool pinned);
+    // Each auto-hide tab remembers its own requested width and height. A
+    // smaller viewport limits presentation without replacing this request.
+    bool setPeekSize(TabId tab, QSize size);
+    bool resetPeekSize(TabId tab);
+    [[nodiscard]] QSize peekSize(TabId tab) const;
     bool moveGroupToCenter(GroupId group);
     bool promoteWindow(WindowId window);
     bool demoteWindow(WindowId window, WindowId targetWorkbench);

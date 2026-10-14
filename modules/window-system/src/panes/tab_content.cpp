@@ -43,6 +43,7 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
     if (!node->isLeaf()) {
         auto* splitter = new QSplitter(node->orientation, this);
         splitter->setObjectName("PaneSplitter");
+        splitter->setHandleWidth(qMax(1, manager_->theme().metrics.splitterWidth));
         splitter->setProperty("splitNodeId", node->id);
         splitter->setChildrenCollapsible(false);
         splitter->addWidget(buildNode(node->first, record, contents));

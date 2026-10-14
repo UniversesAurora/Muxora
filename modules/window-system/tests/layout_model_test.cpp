@@ -36,6 +36,18 @@ private slots:
     void autoHideInsertionUsesTheWholeVisibleSide_data();
     void autoHideInsertionUsesTheWholeVisibleSide();
     void edgeBarTransfersAreAtomicAndKeepThePayloadOrder();
+    void peekSizesBelongToIndividualTabsAndResetIndependently();
+    void peekSizesSurvivePinningAndCrossWindowMoves_data();
+    void peekSizesSurvivePinningAndCrossWindowMoves();
+    void peekSizeBoundariesRoundTrip_data();
+    void peekSizeBoundariesRoundTrip();
+    void invalidPeekSizeOperationsAreAtomic_data();
+    void invalidPeekSizeOperationsAreAtomic();
+    void peekSizeOperationsRequireAnExistingTab();
+    void oldSnapshotsLeavePeekSizesAbsent();
+    void malformedPeekSizesAreRejectedAtomically_data();
+    void malformedPeekSizesAreRejectedAtomically();
+    void extractedPanesReceiveTheirOwnDefaultPeekSize();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -630,6 +642,238 @@ void LayoutModelTest::edgeBarTransfersAreAtomicAndKeepThePayloadOrder()
     QVERIFY(!model.window(soloWindow));
     QVERIFY(model.centralGroups(edgeOnly).isEmpty());
     QCOMPARE(model.autoHiddenTabs(edgeOnly, Edge::Bottom), (QVector<TabId>{c}));
+    QVERIFY(model.validate().ok);
+}
+
+void LayoutModelTest::peekSizesBelongToIndividualTabsAndResetIndependently()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto first = model.addTab(window, "First");
+    const auto second = model.addTab(window, "Second");
+    const auto group = model.groupForTab(first);
+    const auto paneTree = model.tab(first)->panes;
+    QVERIFY(!model.tab(first)->peekSize);
+    QVERIFY(!model.tab(second)->peekSize);
+    QVERIFY(model.setPeekSize(first, QSize(430, 210)).ok);
+    QCOMPARE(*model.tab(first)->peekSize, QSize(430, 210));
+    QVERIFY(!model.tab(second)->peekSize);
+    QVERIFY(model.moveGroupToEdge(group, Edge::Left).ok);
+    QVERIFY(model.setEdgeGroupExtent(group, 379).ok);
+    QVERIFY(model.setPeekSize(second, QSize(610, 360)).ok);
+    QCOMPARE(*model.tab(first)->peekSize, QSize(430, 210));
+    QCOMPARE(*model.tab(second)->peekSize, QSize(610, 360));
+    QCOMPARE(model.group(group)->tabs, (QVector<TabId>{first, second}));
+    QCOMPARE(model.group(group)->edgeExtent, 379);
+    QCOMPARE(model.tab(first)->panes, paneTree);
+    QVERIFY(model.setPeekSize(second, std::nullopt).ok);
+    QVERIFY(!model.tab(second)->peekSize);
+    QCOMPARE(*model.tab(first)->peekSize, QSize(430, 210));
+    QCOMPARE(model.group(group)->edgeExtent, 379);
+    const auto tabs = model.toJson().value("tabs").toArray();
+    QVERIFY(tabs[0].toObject().contains("peekSize"));
+    QVERIFY(!tabs[1].toObject().contains("peekSize"));
+    QVERIFY(model.validate().ok);
+}
+
+void LayoutModelTest::peekSizesSurvivePinningAndCrossWindowMoves_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+
+void LayoutModelTest::peekSizesSurvivePinningAndCrossWindowMoves()
+{
+    QFETCH(int, edge);
+    LayoutModel model;
+    const auto source = model.createWindow();
+    const auto tab = model.addTab(source, "Moved");
+    const auto pane = model.tab(tab)->activePane;
+    const auto paneTree = model.tab(tab)->panes;
+    QVERIFY(model.setPeekSize(tab, QSize(483, 297)).ok);
+    QVERIFY(model.moveTabToEdge(tab, Edge(edge), true).ok);
+    const auto pinnedGroup = model.groupForTab(tab);
+    QVERIFY(model.setEdgeGroupExtent(pinnedGroup, 387).ok);
+    QVERIFY(model.setTabPinned(tab, false).ok);
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(483, 297));
+    QVERIFY(model.setTabPinned(tab, true).ok);
+    QCOMPARE(model.groupForTab(tab), pinnedGroup);
+    QCOMPARE(model.group(pinnedGroup)->edgeExtent, 387);
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(483, 297));
+    const auto floating = model.detachTab(tab);
+    QVERIFY(!floating.isNull());
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(483, 297));
+    const auto destination = model.createWindow();
+    QVERIFY(model.moveTabToEdgeBar(tab, destination, Edge(edge), 0).ok);
+    QVERIFY(!model.window(floating));
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(483, 297));
+    QCOMPARE(model.tab(tab)->activePane, pane);
+    QCOMPARE(model.tab(tab)->panes, paneTree);
+    LayoutModel restored;
+    const auto snapshot = model.toJson();
+    QVERIFY(restored.fromJson(snapshot).ok);
+    QCOMPARE(restored.toJson(), snapshot);
+    QCOMPARE(*restored.tab(tab)->peekSize, QSize(483, 297));
+    QCOMPARE(restored.tab(tab)->activePane, pane);
+    QVERIFY(restored.validate().ok);
+}
+
+void LayoutModelTest::peekSizeBoundariesRoundTrip_data()
+{
+    QTest::addColumn<QSize>("size");
+    QTest::newRow("minimum") << QSize(140, 100);
+    QTest::newRow("ordinary") << QSize(613, 271);
+    QTest::newRow("maximum") << QSize(16777215, 16777215);
+}
+
+void LayoutModelTest::peekSizeBoundariesRoundTrip()
+{
+    QFETCH(QSize, size);
+    LayoutModel original;
+    const auto window = original.createWindow();
+    const auto tab = original.addTab(window, "Sized");
+    const auto revision = original.revision();
+    QVERIFY(original.setPeekSize(tab, size).ok);
+    QCOMPARE(original.revision(), revision + 1);
+    QCOMPARE(*original.tab(tab)->peekSize, size);
+    const auto snapshot = original.toJson();
+    const auto storedSize = snapshot.value("tabs").toArray()[0].toObject().value("peekSize").toObject();
+    QCOMPARE(storedSize, (QJsonObject{{"width", size.width()}, {"height", size.height()}}));
+    LayoutModel restored;
+    QVERIFY(restored.fromJson(QJsonDocument::fromJson(QJsonDocument(snapshot).toJson()).object()).ok);
+    QCOMPARE(*restored.tab(tab)->peekSize, size);
+    QCOMPARE(restored.toJson(), snapshot);
+    QVERIFY(restored.validate().ok);
+}
+
+void LayoutModelTest::invalidPeekSizeOperationsAreAtomic_data()
+{
+    QTest::addColumn<QSize>("size");
+    QTest::newRow("width-below-minimum") << QSize(139, 100);
+    QTest::newRow("height-below-minimum") << QSize(140, 99);
+    QTest::newRow("negative-width") << QSize(-1, 170);
+    QTest::newRow("negative-height") << QSize(250, -1);
+    QTest::newRow("zero") << QSize(0, 0);
+    QTest::newRow("width-above-maximum") << QSize(16777216, 170);
+    QTest::newRow("height-above-maximum") << QSize(250, 16777216);
+    QTest::newRow("integer-maximum") << QSize(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+}
+
+void LayoutModelTest::invalidPeekSizeOperationsAreAtomic()
+{
+    QFETCH(QSize, size);
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Retained");
+    QVERIFY(model.setPeekSize(tab, QSize(430, 280)).ok);
+    const auto snapshot = model.toJson();
+    const auto revision = model.revision();
+    const auto result = model.setPeekSize(tab, size);
+    QVERIFY(!result.ok);
+    QVERIFY(!result.error.isEmpty());
+    QCOMPARE(model.toJson(), snapshot);
+    QCOMPARE(model.revision(), revision);
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(430, 280));
+}
+
+void LayoutModelTest::peekSizeOperationsRequireAnExistingTab()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Retained");
+    QVERIFY(model.setPeekSize(tab, QSize(430, 280)).ok);
+    const auto snapshot = model.toJson();
+    const auto revision = model.revision();
+    QVERIFY(!model.setPeekSize(TabId{}, QSize(250, 170)).ok);
+    QVERIFY(!model.setPeekSize(QUuid::createUuid(), QSize(250, 170)).ok);
+    QVERIFY(!model.setPeekSize(QUuid::createUuid(), std::nullopt).ok);
+    QCOMPARE(model.toJson(), snapshot);
+    QCOMPARE(model.revision(), revision);
+}
+
+void LayoutModelTest::oldSnapshotsLeavePeekSizesAbsent()
+{
+    LayoutModel original;
+    const auto window = original.createWindow();
+    const auto central = original.addTab(window, "Central");
+    const auto hidden = original.addTab(window, "Hidden");
+    const auto pinned = original.addTab(window, "Pinned");
+    QVERIFY(original.moveTabToEdge(hidden, Edge::Left).ok);
+    QVERIFY(original.moveTabToEdge(pinned, Edge::Bottom, true).ok);
+    const auto snapshot = original.toJson();
+    for (const auto& tab : snapshot.value("tabs").toArray()) QVERIFY(!tab.toObject().contains("peekSize"));
+    LayoutModel restored;
+    QVERIFY(restored.fromJson(snapshot).ok);
+    for (const auto tab : {central, hidden, pinned}) QVERIFY(!restored.tab(tab)->peekSize);
+    QCOMPARE(restored.toJson(), snapshot);
+    QVERIFY(restored.validate().ok);
+}
+
+void LayoutModelTest::malformedPeekSizesAreRejectedAtomically_data()
+{
+    QTest::addColumn<QJsonValue>("payload");
+    QTest::newRow("null") << QJsonValue(QJsonValue::Null);
+    QTest::newRow("array") << QJsonValue(QJsonArray{250, 170});
+    QTest::newRow("string") << QJsonValue("250x170");
+    QTest::newRow("empty-object") << QJsonValue(QJsonObject{});
+    QTest::newRow("missing-width") << QJsonValue(QJsonObject{{"height", 170}});
+    QTest::newRow("missing-height") << QJsonValue(QJsonObject{{"width", 250}});
+    QTest::newRow("string-width") << QJsonValue(QJsonObject{{"width", "250"}, {"height", 170}});
+    QTest::newRow("string-height") << QJsonValue(QJsonObject{{"width", 250}, {"height", "170"}});
+    QTest::newRow("boolean-width") << QJsonValue(QJsonObject{{"width", true}, {"height", 170}});
+    QTest::newRow("boolean-height") << QJsonValue(QJsonObject{{"width", 250}, {"height", true}});
+    QTest::newRow("fractional-width") << QJsonValue(QJsonObject{{"width", 250.25}, {"height", 170}});
+    QTest::newRow("fractional-height") << QJsonValue(QJsonObject{{"width", 250}, {"height", 170.75}});
+    QTest::newRow("width-below-minimum") << QJsonValue(QJsonObject{{"width", 139}, {"height", 170}});
+    QTest::newRow("height-below-minimum") << QJsonValue(QJsonObject{{"width", 250}, {"height", 99}});
+    QTest::newRow("width-above-maximum") << QJsonValue(QJsonObject{{"width", 16777216}, {"height", 170}});
+    QTest::newRow("height-above-maximum") << QJsonValue(QJsonObject{{"width", 250}, {"height", 16777216}});
+    QTest::newRow("beyond-integer-range") << QJsonValue(QJsonObject{{"width", 4294967296.0}, {"height", 170}});
+    QTest::newRow("non-finite-width") << QJsonValue(QJsonObject{{"width", std::numeric_limits<double>::infinity()}, {"height", 170}});
+    QTest::newRow("non-finite-height") << QJsonValue(QJsonObject{{"width", 250}, {"height", std::numeric_limits<double>::quiet_NaN()}});
+}
+
+void LayoutModelTest::malformedPeekSizesAreRejectedAtomically()
+{
+    QFETCH(QJsonValue, payload);
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Retained");
+    QVERIFY(model.setPeekSize(tab, QSize(430, 280)).ok);
+    const auto before = model.toJson();
+    const auto revision = model.revision();
+    auto malformed = before;
+    auto tabs = malformed.value("tabs").toArray();
+    auto record = tabs[0].toObject();
+    record.insert("peekSize", payload);
+    tabs[0] = record;
+    malformed.insert("tabs", tabs);
+    const auto result = model.fromJson(malformed);
+    QVERIFY(!result.ok);
+    QVERIFY(!result.error.isEmpty());
+    QCOMPARE(model.toJson(), before);
+    QCOMPARE(model.revision(), revision);
+    QCOMPARE(*model.tab(tab)->peekSize, QSize(430, 280));
+}
+
+void LayoutModelTest::extractedPanesReceiveTheirOwnDefaultPeekSize()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto source = model.addTab(window, "Original");
+    const auto firstPane = model.tab(source)->activePane;
+    const auto extractedPane = model.splitPane(source, firstPane, Placement::Right);
+    QVERIFY(!extractedPane.isNull());
+    QVERIFY(model.setPeekSize(source, QSize(480, 310)).ok);
+    const auto extracted = model.extractPane(source, extractedPane, model.groupForTab(source));
+    QVERIFY(!extracted.isNull());
+    QCOMPARE(*model.tab(source)->peekSize, QSize(480, 310));
+    QVERIFY(!model.tab(extracted)->peekSize);
+    QCOMPARE(model.panes(source), (QVector<PaneId>{firstPane}));
+    QCOMPARE(model.panes(extracted), (QVector<PaneId>{extractedPane}));
     QVERIFY(model.validate().ok);
 }
 

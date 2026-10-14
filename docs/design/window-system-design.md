@@ -1,7 +1,7 @@
 # WindowSystem 通用窗口系统设计
 
 版本：0.5，讨论稿\
-日期：2026-10-13\
+日期：2026-10-14\
 状态：模块划分、窗口壳与视觉规范的设计基线；首个预览开始实现。实际范围与验证结果见 [预览说明](../development/window-system-preview.md)。
 
 ## 1. 项目内的独立模块
@@ -284,6 +284,8 @@ Qt `QToolBar` 提供可移动、区域和布局基础，但 `QMenuBar` 没有同
 Windows 的 `WindowFrameAdapter` 统一处理原生命中和窗口行为。Qt 6.9 起的 `ExpandedClientAreaHint`、`NoTitleBarBackgroundHint` 可作为一体化壳的候选基础，但不会自动完成条带重排、全部控件配色与原生交互。按实际 Qt 版本选择并验证方案。[Qt 扩展客户端说明](https://www.qt.io/blog/expanded-client-areas-and-safe-areas-in-qt-6.9)
 
 标题按钮和拖窗区域的几何由壳显式管理，不能只依赖 safe-area 边距猜完整区域。自定义最大化按钮按 Windows 要求处理命中与默认窗口过程，验收悬停 Snap 菜单；不靠不断设置窗口坐标模拟系统移动缩放。[Windows 自定义窗框](https://learn.microsoft.com/en-us/windows/win32/dwm/customframe)、[Snap 布局](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-snap-layout-menu)
+
+普通窗口和最大化窗口的最大化／恢复按钮使用相同命中规则。可见且启用的按钮矩形优先于顶部缩放区域，包括按钮的上沿；其他边缘和角仍保留原生缩放命中。全屏、紧凑拖拽预览及隐藏／禁用按钮不提供该命中。原生命中和 Qt 悬停回归可自动检查，Windows 11 实际 Snap 弹窗仍需在系统设置启用时验证。
 
 关闭按钮、Alt+F4、系统菜单和命令入口走同一关闭协调流程。标准控件保留键盘与可访问信息，完全自绘的按钮或区域补足名称、角色、动作和状态。[Qt 无障碍支持](https://doc.qt.io/qt-6/accessible-qwidget.html)
 

@@ -7,17 +7,22 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QBoxLayout>
 #include <QDir>
 #include <QImage>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
+#include <QWheelEvent>
 #include <algorithm>
 #include <memory>
 
@@ -133,6 +138,7 @@ struct Fixture {
             for (int index = 1; index < tabs.size(); ++index)
                 ready = ready && manager.moveTab(tabs[index], manager.model().groupForTab(tabs[0]));
         }
+        sourceGroup = manager.model().groupForTab(tabs[0]);
         window = static_cast<WorkspaceWindow*>(manager.windowWidget(id));
         window->setWindowFlag(Qt::WindowStaysOnTopHint, true);
         window->move(available.topLeft() + QPoint(12, 12));
@@ -141,14 +147,14 @@ struct Fixture {
     QRect stripRect() const
     {
         return kind == StripKind::AutoHide ? window->surface()->edgeBarRects().value(edge)
-            : window->surface()->tabBarRects().value(manager.model().groupForTab(tabs[0]));
+            : window->surface()->tabBarRects().value(sourceGroup);
     }
     QRect viewportRect() const
     {
         if (kind == StripKind::AutoHide) {
             auto* strip = edgeView(window, edge); return strip ? strip->viewportRectGlobal() : QRect{};
         }
-        auto* group = groupView(window, manager.model().groupForTab(tabs[0]));
+        auto* group = groupView(window, sourceGroup);
         return group ? group->viewportRectGlobal() : QRect{};
     }
     QRect labelRect(TabId tab) const
@@ -199,7 +205,7 @@ struct Fixture {
             auto* scroll = edgeView(window, edge)->findChild<QScrollArea*>("EdgeScrollViewport");
             return vertical(edge) ? scroll->verticalScrollBar() : scroll->horizontalScrollBar();
         }
-        auto* scroll = groupView(window, manager.model().groupForTab(tabs[0]))->findChild<QScrollArea*>("TabScrollViewport");
+        auto* scroll = groupView(window, sourceGroup)->findChild<QScrollArea*>("TabScrollViewport");
         return scroll->horizontalScrollBar();
     }
     QVector<TabId> order() const
@@ -211,6 +217,7 @@ struct Fixture {
     StripKind kind;
     Edge edge;
     WindowId id;
+    GroupId sourceGroup;
     QPointer<WorkspaceWindow> window;
     QVector<TabId> tabs;
     QVector<QPointer<QWidget>> contents;
@@ -240,7 +247,214 @@ private slots:
     void detachmentNotificationMayDestroyTheManager();
     void nestedTargetPickerMayLoseItsCarrierOrManager_data();
     void nestedTargetPickerMayLoseItsCarrierOrManager();
+    void tearOutPreservesSourceScroll_data();
+    void tearOutPreservesSourceScroll();
+    void capturedDragWheelScrollsTheHoveredStrip_data();
+    void capturedDragWheelScrollsTheHoveredStrip();
+    void leavingAnAutoScrolledStripKeepsItsViewport_data();
+    void leavingAnAutoScrolledStripKeepsItsViewport();
+    void queuedScrollRestoreYieldsToKeyboard_data();
+    void queuedScrollRestoreYieldsToKeyboard();
+    void wheelOnAPeekDoesNotScrollTheCoveredStrip();
+    void capturedWheelMayDestroyTheManager();
 };
+
+void StripDragTest::queuedScrollRestoreYieldsToKeyboard_data()
+{
+    QTest::addColumn<int>("edgeValue"); QTest::addColumn<int>("key");
+    for (int edge = -1; edge < 4; ++edge)
+        for (auto key : {Qt::Key_Home, Qt::Key_End, Qt::Key_Right})
+            QTest::newRow(qPrintable(QString("strip-%1-key-%2").arg(edge).arg(int(key)))) << edge << int(key);
+}
+void StripDragTest::queuedScrollRestoreYieldsToKeyboard()
+{
+    QFETCH(int, edgeValue); QFETCH(int, key);
+    QWidget root; auto* layout = new QVBoxLayout(&root);
+    GroupTabs* group = nullptr; EdgeStrip* edge = nullptr; QScrollBar* overlay = nullptr;
+    if (edgeValue < 0) {
+        group = new GroupTabs(defaultTheme(), &root); layout->addWidget(group);
+        for (int index = 0; index < 18; ++index) group->addTab(new QLabel("Content"), {}, QString("Long title %1").arg(index), QUuid::createUuid());
+        overlay = group->findChild<QScrollBar*>("TabScrollBar");
+    } else {
+        edge = new EdgeStrip(Edge(edgeValue), defaultTheme(), &root); layout->addWidget(edge);
+        for (int index = 0; index < 18; ++index) edge->addButton(new QPushButton(QString("Long edge title %1").arg(index)));
+        overlay = edge->findChild<QScrollBar*>("EdgeScrollBar");
+    }
+    root.resize(300, 180); root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
+    QVERIFY(overlay); QTRY_VERIFY(overlay->maximum() > 180);
+    const auto effectiveKey = edgeValue >= 0 && vertical(Edge(edgeValue)) && key == Qt::Key_Right ? Qt::Key_Down : Qt::Key(key);
+    QScrollBar reference(overlay->orientation());
+    reference.setRange(overlay->minimum(), overlay->maximum()); reference.setSingleStep(overlay->singleStep());
+    reference.setValue(120); QTest::keyClick(&reference, effectiveKey);
+    const int expected = reference.value();
+    QVERIFY(expected != 120);
+    QSignalSpy action(overlay, &QScrollBar::actionTriggered);
+    if (group) group->restoreScrollOffset(120); else edge->restoreScrollOffset(120);
+    // Do not let Qt Test's configurable key delay consume the queued restore
+    // before the keyboard action. Dispatch input now, then explicitly pump.
+    QKeyEvent press(QEvent::KeyPress, effectiveKey, Qt::NoModifier);
+    QKeyEvent release(QEvent::KeyRelease, effectiveKey, Qt::NoModifier);
+    QApplication::sendEvent(overlay, &press); QApplication::sendEvent(overlay, &release);
+    QCOMPARE(action.count(), 1);
+    QCOMPARE(overlay->value(), expected);
+    QCOMPARE(group ? group->scrollOffset() : edge->scrollOffset(), expected);
+    QApplication::processEvents(); QCOMPARE(overlay->value(), expected);
+    QCOMPARE(group ? group->scrollOffset() : edge->scrollOffset(), expected);
+}
+
+void StripDragTest::wheelOnAPeekDoesNotScrollTheCoveredStrip()
+{
+    Fixture fixture{StripKind::Central, Edge::Top, 18}; QVERIFY(fixture.ready);
+    QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
+    const auto hidden = fixture.manager.addTab(fixture.id, new QLabel("Peek content"), {"Peek", {}, {}});
+    QVERIFY(fixture.manager.moveTabToEdge(hidden, Edge::Left));
+    QVERIFY(fixture.manager.setPeekSize(hidden, {420, 200}));
+    QVERIFY(fixture.manager.activateTab(hidden));
+    auto* panel = fixture.window->findChild<QWidget*>("PeekPanel"); QVERIFY(panel); QVERIFY(panel->isVisible());
+    const auto viewport = fixture.viewportRect();
+    const auto global = QPoint(viewport.left() + 80, viewport.center().y());
+    QVERIFY(globalBounds(panel).contains(global));
+    const int before = fixture.scrollBar()->value();
+    QVERIFY(!fixture.window->surface()->scrollStripAt(global, {0, -40}));
+    QCOMPARE(fixture.scrollBar()->value(), before);
+    const auto other = fixture.manager.addTab(fixture.id, new QLabel("Other"), {"Other", {}, {}});
+    QVERIFY(fixture.manager.moveTab(other, fixture.sourceGroup, Placement::Right));
+    auto* original = groupView(fixture.window, fixture.sourceGroup); QVERIFY(original);
+    auto* sourceScroll = original->findChild<QScrollArea*>("TabScrollViewport")->horizontalScrollBar();
+    sourceScroll->setValue(120); const int hiddenOffset = sourceScroll->value();
+    QVERIFY(fixture.manager.activateTab(other));
+    QVERIFY(fixture.manager.setViewMode(fixture.id, ViewMode::GroupFullscreen));
+    QVERIFY(!original->isVisible());
+    fixture.window->surface()->scrollStripAt(original->viewportRectGlobal().center(), {0, -40});
+    QCOMPARE(sourceScroll->value(), hiddenOffset);
+}
+
+void StripDragTest::capturedWheelMayDestroyTheManager()
+{
+    auto manager = std::make_unique<WindowManager>(); const auto id = manager->createWindow();
+    QVector<TabId> tabs;
+    for (int index = 0; index < 18; ++index) tabs.append(manager->addTab(id, new QLabel("Content"), {QString("Long title %1").arg(index), {}, {}}));
+    QPointer<WorkspaceWindow> window = static_cast<WorkspaceWindow*>(manager->windowWidget(id));
+    manager->showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* group = groupView(window, manager->model().groupForTab(tabs.first())); QVERIFY(group);
+    auto* scroll = group->findChild<QScrollArea*>("TabScrollViewport")->horizontalScrollBar();
+    scroll->setValue(0);
+    QVERIFY(beginCentralLabelDrag(window, manager->model().groupForTab(tabs.first()), tabs.first()));
+    QPointer<QWidget> actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    const auto global = group->viewportRectGlobal().center();
+    QObject::connect(scroll, &QScrollBar::valueChanged, qApp, [&](int) { manager.reset(); });
+    QWheelEvent event(actor->mapFromGlobal(global), global, {}, {0, -120}, Qt::LeftButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(actor, &event);
+    QVERIFY(!manager); QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!labelPreview());
+}
+
+void StripDragTest::tearOutPreservesSourceScroll_data() { addStripRows(); }
+void StripDragTest::tearOutPreservesSourceScroll()
+{
+    QFETCH(int, kindValue); QFETCH(int, edgeValue);
+    Fixture fixture{StripKind(kindValue), Edge(edgeValue), 18}; QVERIFY(fixture.ready);
+    QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
+    auto* scroll = fixture.scrollBar(); QTRY_VERIFY(scroll->maximum() > 400);
+    scroll->setValue(std::min(360, scroll->maximum() / 2));
+    QApplication::processEvents();
+    const int offset = scroll->value(); QVERIFY(offset > 0);
+    TabId moving;
+    for (const auto tab : fixture.tabs) {
+        const auto label = fixture.labelRect(tab);
+        const auto delta = fixture.kind == StripKind::AutoHide && vertical(fixture.edge) ? QPoint(0, 20) : QPoint(20, 0);
+        if (fixture.viewportRect().contains(label.center() + delta) && fixture.viewportRect().contains(label.center())) {
+            moving = tab; break;
+        }
+    }
+    QVERIFY(!moving.isNull());
+    const auto pane = fixture.manager.model().tab(moving)->activePane;
+    const QPointer<QWidget> content = fixture.manager.paneWidget(pane);
+    auto* actor = fixture.begin(moving); QVERIFY(actor);
+    QCOMPARE(fixture.scrollBar()->value(), offset);
+    sendMouse(actor, QEvent::MouseMove, fixture.outside());
+    actor = QWidget::mouseGrabber(); QVERIFY(actor); QVERIFY(actor != fixture.window);
+    QTRY_COMPARE(fixture.scrollBar()->value(), std::min(offset, fixture.scrollBar()->maximum()));
+    const int detachedOffset = fixture.scrollBar()->value(); QVERIFY(detachedOffset > 0);
+    QCOMPARE(fixture.manager.paneWidget(pane), content.data());
+    QTest::keyClick(actor, Qt::Key_Escape);
+    QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
+    QTRY_COMPARE(fixture.scrollBar()->value(), detachedOffset);
+    QCOMPARE(fixture.manager.paneWidget(pane), content.data());
+    // View reconstruction preserves scrolling; explicit navigation still
+    // reveals the chosen tab rather than leaving keyboard selection offscreen.
+    if (fixture.kind != StripKind::AutoHide) {
+        QVERIFY(fixture.manager.activateTab(fixture.tabs.first()));
+        QTRY_COMPARE(fixture.scrollBar()->value(), 0);
+    }
+}
+
+void StripDragTest::capturedDragWheelScrollsTheHoveredStrip_data()
+{
+    QTest::addColumn<int>("kindValue"); QTest::addColumn<int>("edgeValue"); QTest::addColumn<bool>("detached");
+    for (bool detached : {false, true}) {
+        QTest::newRow(qPrintable(QString("central-detached-%1").arg(detached))) << int(StripKind::Central) << int(Edge::Top) << detached;
+        for (int edge = 0; edge < 4; ++edge) {
+            QTest::newRow(qPrintable(QString("pinned-%1-detached-%2").arg(edge).arg(detached))) << int(StripKind::Pinned) << edge << detached;
+            QTest::newRow(qPrintable(QString("auto-hide-%1-detached-%2").arg(edge).arg(detached))) << int(StripKind::AutoHide) << edge << detached;
+        }
+    }
+}
+void StripDragTest::capturedDragWheelScrollsTheHoveredStrip()
+{
+    QFETCH(int, kindValue); QFETCH(int, edgeValue); QFETCH(bool, detached);
+    Fixture fixture{StripKind(kindValue), Edge(edgeValue), 18}; QVERIFY(fixture.ready);
+    QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
+    QTRY_VERIFY(fixture.scrollBar()->maximum() > 400);
+    fixture.scrollBar()->setValue(0);
+    auto* actor = fixture.begin(fixture.tabs[0]); QVERIFY(actor);
+    if (detached) {
+        sendMouse(actor, QEvent::MouseMove, fixture.outside());
+        actor = QWidget::mouseGrabber(); QVERIFY(actor); QVERIFY(actor != fixture.window);
+    }
+    const auto global = fixture.viewportRect().center();
+    sendMouse(actor, QEvent::MouseMove, global);
+    const auto wheel = [&](QPoint pixel, QPoint angle) {
+        QWheelEvent event(actor->mapFromGlobal(global), global, pixel, angle, Qt::LeftButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        event.ignore(); QApplication::sendEvent(actor, &event);
+        QVERIFY(event.isAccepted()); QApplication::processEvents();
+        QCOMPARE(QWidget::mouseGrabber(), actor);
+    };
+    const auto active = fixture.manager.context(fixture.id).tab;
+    const int initial = fixture.scrollBar()->value();
+    wheel({}, {0, -120}); QCOMPARE(fixture.scrollBar()->value(), initial + 40);
+    const bool verticalStrip = fixture.kind == StripKind::AutoHide && vertical(fixture.edge);
+    wheel(verticalStrip ? QPoint(0, -17) : QPoint(-17, 0), {});
+    QCOMPARE(fixture.scrollBar()->value(), initial + 57);
+    wheel({}, {0, 120}); QCOMPARE(fixture.scrollBar()->value(), initial + 17);
+    QCOMPARE(fixture.manager.context(fixture.id).tab, active);
+    sendMouse(actor, QEvent::MouseMove, fixture.outside());
+    actor = QWidget::mouseGrabber(); QVERIFY(actor);
+    QTRY_COMPARE(fixture.scrollBar()->value(), initial + 17);
+    QTest::keyClick(actor, Qt::Key_Escape);
+    QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
+    QTRY_COMPARE(fixture.scrollBar()->value(), initial + 17);
+}
+
+void StripDragTest::leavingAnAutoScrolledStripKeepsItsViewport_data() { addStripRows(); }
+void StripDragTest::leavingAnAutoScrolledStripKeepsItsViewport()
+{
+    QFETCH(int, kindValue); QFETCH(int, edgeValue);
+    Fixture fixture{StripKind(kindValue), Edge(edgeValue), 18}; QVERIFY(fixture.ready);
+    QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
+    QTRY_VERIFY(fixture.scrollBar()->maximum() > 400);
+    fixture.scrollBar()->setValue(0);
+    auto* actor = fixture.begin(fixture.tabs[0]); QVERIFY(actor);
+    sendMouse(actor, QEvent::MouseMove, fixture.endpoint(true));
+    QTRY_VERIFY(fixture.scrollBar()->value() >= 80);
+    const int offset = fixture.scrollBar()->value();
+    sendMouse(actor, QEvent::MouseMove, fixture.outside());
+    actor = QWidget::mouseGrabber(); QVERIFY(actor); QVERIFY(actor != fixture.window);
+    QTRY_COMPARE(fixture.scrollBar()->value(), offset);
+    QTest::qWait(100); QCOMPARE(fixture.scrollBar()->value(), offset);
+    QTest::keyClick(actor, Qt::Key_Escape);
+    QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
+    QTRY_COMPARE(fixture.scrollBar()->value(), offset);
+}
 
 void StripDragTest::liveContentStaysInPlaceUntilFirstExit_data()
 {

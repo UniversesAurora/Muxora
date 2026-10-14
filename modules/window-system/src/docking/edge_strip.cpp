@@ -66,16 +66,19 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     observe(scroll_->viewport()); observe(track_); observe(scrollbar_);
     autoScroll_->setObjectName("EdgeAutoScrollTimer"); autoScroll_->setInterval(200);
     connect(autoScroll_, &QTimer::timeout, this, [this] {
+        pendingScrollOffset_.reset();
         auto* bar = axisScrollBar(); const int old = bar->value();
         bar->setValue(old + scrollDirection_ * 12);
         if (bar->value() == old) autoScroll_->stop();
         else autoScroll_->setInterval(35);
     });
-    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this] { synchronizeScrollBar(); });
+    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this] { applyPendingScrollOffset(); synchronizeScrollBar(); });
     connect(axisScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
         scrollbar_->setValue(value); queueHoverGeometryChanged();
     });
     connect(scrollbar_, &QScrollBar::valueChanged, axisScrollBar(), &QScrollBar::setValue);
+    connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { pendingScrollOffset_.reset(); });
+    connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { pendingScrollOffset_.reset(); });
     layoutTrack();
 }
 
@@ -124,6 +127,23 @@ QScrollBar* EdgeStrip::axisScrollBar() const
 QRect EdgeStrip::viewportRectGlobal() const
 {
     return isVisible() ? QRect(scroll_->viewport()->mapToGlobal(QPoint()), scroll_->viewport()->size()) : QRect();
+}
+int EdgeStrip::scrollOffset() const { return pendingScrollOffset_.value_or(axisScrollBar()->value()); }
+void EdgeStrip::applyPendingScrollOffset()
+{
+    if (pendingScrollOffset_) axisScrollBar()->setValue(*pendingScrollOffset_);
+}
+void EdgeStrip::restoreScrollOffset(int offset)
+{
+    pendingScrollOffset_ = qMax(0, offset);
+    applyPendingScrollOffset();
+    QTimer::singleShot(0, this, [this] { applyPendingScrollOffset(); pendingScrollOffset_.reset(); });
+}
+void EdgeStrip::scrollByWheel(QPoint delta)
+{
+    pendingScrollOffset_.reset();
+    const int distance = vertical_ ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
+    auto* bar = axisScrollBar(); bar->setValue(bar->value() - distance);
 }
 
 int EdgeStrip::insertionIndex(QPoint global) const
@@ -300,8 +320,7 @@ bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
     } else if (event->type() == QEvent::Wheel) {
         auto* wheel = static_cast<QWheelEvent*>(event);
         const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
-        const int distance = vertical_ ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
-        auto* bar = axisScrollBar(); bar->setValue(bar->value() - distance);
+        scrollByWheel(delta);
         wheel->accept(); return true;
     } else if (event->type() == QEvent::Enter) {
         hoveredSurfaces_.insert(watched); updateScrollBarVisibility();

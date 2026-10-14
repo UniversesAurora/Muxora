@@ -82,6 +82,7 @@ public:
     void setWidthResetRequest(std::function<void(const QString&)> request);
 
     [[nodiscard]] QJsonObject saveLayout() const;
+    [[nodiscard]] static int minimumSavedWidth(bool optionsEnabled, bool locked);
     void restoreLayout(const QJsonObject& json);
     [[nodiscard]] QSize sizeHint() const override;
     [[nodiscard]] QSize minimumSizeHint() const override;

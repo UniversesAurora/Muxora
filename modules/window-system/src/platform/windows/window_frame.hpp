@@ -42,6 +42,8 @@ struct NativeFrameConfiguration {
 struct NativePaintGuardActivity {
     quint64 paintsSuppressed = 0;
     quint64 activationsSuppressed = 0;
+    quint64 themedPaintsSuppressed = 0;
+    quint64 clientRecalculations = 0;
 };
 [[nodiscard]] NativePaintGuardActivity nativePaintGuardActivity(QWidget* window);
 

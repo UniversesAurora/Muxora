@@ -1027,6 +1027,10 @@ void CommandStripHost::arrange()
 
 void CommandStripHost::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); arrange(); }
 
+int CommandStripHost::minimumSavedWidth(bool optionsEnabled, bool locked)
+{
+    return (optionsEnabled ? tailWidth : 0) + (locked ? 0 : handleWidth) + 12;
+}
 QJsonObject CommandStripHost::saveLayout() const
 {
     QJsonArray rows;
@@ -1112,8 +1116,7 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         if (!settings.contains(id)) continue;
         const auto value = settings.value(id).toObject();
         const int requested = value.value("width").toInt(-1);
-        const int savedMinimumWidth = (d->strips.value(id)->optionsEnabled ? tailWidth : 0)
-            + (savedLocked ? 0 : handleWidth) + 12;
+        const int savedMinimumWidth = minimumSavedWidth(d->strips.value(id)->optionsEnabled, savedLocked);
         if (requested != -1 && requested < savedMinimumWidth) return;
         if (value.contains("sizing") && value.value("sizing") != "elastic" && value.value("sizing") != "content") return;
         if (value.contains("naturalWidthPriority") && !value.value("naturalWidthPriority").isBool()) return;

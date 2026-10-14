@@ -68,6 +68,7 @@ private:
     LayoutModel originalModel_;
     QHash<WindowId, WindowOptions> originalOptions_;
     QJsonObject originalSourceStrips_;
+    QJsonObject originalSourceInactiveStrips_;
     QJsonObject originalLayout_;
     QHash<WindowId, QRect> originalWindows_;
     QSet<WindowId> originalMaximizedWindows_;

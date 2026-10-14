@@ -142,6 +142,16 @@ QString locationText(GroupLocation location)
 // Persistence is untrusted input. Limits also prevent pathological recursion.
 constexpr int maximumTreeDepth = 64;
 constexpr int maximumRecords = 10000;
+constexpr int minimumPeekWidth = 140;
+constexpr int minimumPeekHeight = 100;
+// Keep the model independent of Qt Widgets while respecting QWIDGETSIZE_MAX.
+constexpr int maximumPeekDimension = 16777215;
+
+bool validPeekSize(QSize size)
+{
+    return size.width() >= minimumPeekWidth && size.height() >= minimumPeekHeight
+        && size.width() <= maximumPeekDimension && size.height() <= maximumPeekDimension;
+}
 
 class JsonReader {
 public:
@@ -362,7 +372,7 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup)
         }
         created = QUuid::createUuid();
         const auto paneId = QUuid::createUuid();
-        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt});
+        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt, std::nullopt});
         auto& record = model.groups_[target];
         record.tabs.append(created);
         record.activeTab = created;
@@ -770,6 +780,16 @@ OperationResult LayoutModel::setEdgeGroupExtent(GroupId groupId, int extent)
         return success();
     });
 }
+OperationResult LayoutModel::setPeekSize(TabId tabId, std::optional<QSize> size)
+{
+    return transact([&](LayoutModel& model) {
+        if (!model.tab(tabId)) return failure("The tab does not exist.");
+        if (size && !validPeekSize(*size))
+            return failure("Peek sizes require width 140..16777215 and height 100..16777215.");
+        model.tabs_[tabId].peekSize = size;
+        return success();
+    });
+}
 OperationResult LayoutModel::moveGroupToCenter(GroupId groupId, GroupId targetGroup, Placement placement)
 {
     return transact([&](LayoutModel& model) {
@@ -1106,7 +1126,7 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
         created = QUuid::createUuid();
         const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
         const auto title = model.tabs_[sourceTab].title;
-        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt});
+        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt, std::nullopt});
         model.groups_[sourceGroup].tabs.append(created);
         auto moved = model.moveTabUnchecked(created, targetGroup, placement, -1);
         if (!moved) return moved;
@@ -1175,6 +1195,8 @@ OperationResult LayoutModel::validate() const
     }
     for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
+        if (iterator->peekSize && !validPeekSize(*iterator->peekSize))
+            return failure("A peek size is outside the supported dimensions.");
         if (const auto& saved = iterator->pinnedPosition) {
             if (saved->window.isNull() || saved->group.isNull() || saved->groupIndex < 0
                 || saved->groupIndex > maximumRecords || saved->tabIndex < 0 || saved->tabIndex > maximumRecords
@@ -1272,6 +1294,8 @@ QJsonObject LayoutModel::toJson() const
                 const auto& tabRecord = tabs_[tabId];
                 QJsonObject tabObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
                     {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}};
+                if (const auto& size = tabRecord.peekSize)
+                    tabObject.insert("peekSize", QJsonObject{{"width", size->width()}, {"height", size->height()}});
                 if (const auto& saved = tabRecord.pinnedPosition) {
                     tabObject.insert("pinnedPosition", QJsonObject{{"window", uuidText(saved->window)},
                         {"group", uuidText(saved->group)}, {"edge", edgeText(saved->edge)},
@@ -1342,6 +1366,19 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.title = object.value("title").toString();
         record.panes = reader.tree(object.value("panes"));
         record.activePane = reader.id(object, "activePane");
+        if (object.contains("peekSize")) {
+            if (!object.value("peekSize").isObject()) return failure("A peek size must be an object.");
+            const auto size = object.value("peekSize").toObject();
+            for (const auto* key : {"width", "height"}) {
+                const auto dimension = size.value(QLatin1String(key));
+                const auto minimum = QLatin1String(key) == QLatin1String("width") ? minimumPeekWidth : minimumPeekHeight;
+                const auto number = dimension.toDouble();
+                if (!dimension.isDouble() || !std::isfinite(number) || number < minimum
+                    || number > maximumPeekDimension || std::floor(number) != number)
+                    return failure("Peek dimensions must be bounded integers.");
+            }
+            record.peekSize = QSize(size.value("width").toInt(), size.value("height").toInt());
+        }
         if (object.contains("pinnedPosition")) {
             if (!object.value("pinnedPosition").isObject()) return failure("A pinned position must be an object.");
             const auto savedObject = object.value("pinnedPosition").toObject();

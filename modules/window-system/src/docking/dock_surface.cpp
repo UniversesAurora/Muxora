@@ -2,6 +2,7 @@
 #include "edge_strip.hpp"
 #include "edge_tab_button.hpp"
 #include "peek_metrics.hpp"
+#include "peek_resize_handle.hpp"
 #include "tab_strip.hpp"
 #include "window_manager_p.hpp"
 #include "panes/tab_content.hpp"
@@ -45,7 +46,7 @@ protected:
 private:
     QPoint start_;
 };
-void configureSplitter(QSplitter* splitter, int width = 4) {
+void configureSplitter(QSplitter* splitter, int width) {
     splitter->setChildrenCollapsible(false);
     splitter->setHandleWidth(qMax(1, width));
 }
@@ -92,11 +93,11 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     if (bottomBar) outer->addWidget(bottomBar, 2, 0, 1, 3);
     auto* vertical = new QSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
-    configureSplitter(vertical);
+    configureGroupSplitter(vertical, manager_->theme());
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
     auto* horizontal = new QSplitter(Qt::Horizontal, vertical);
     horizontal_ = horizontal;
-    configureSplitter(horizontal);
+    configureGroupSplitter(horizontal, manager_->theme());
     if (auto* left = buildPinned(Edge::Left, contents)) horizontal->addWidget(left);
     const auto* window = manager_->model().window(window_);
     center_ = buildTree(window ? window->central : LayoutTree{}, contents);
@@ -135,6 +136,40 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     // against a hard-coded central-region size during each rebuild.
     QTimer::singleShot(0, this, [this] { restorePinnedExtents(); });
     applyFocusScope();
+    restoreStripScrollOffsets();
+}
+void DockSurface::captureStripScrollOffsets()
+{
+    // Capture before content reparenting changes the old viewport sizes.
+    // These caches contain only the currently mounted strips, not tab content
+    // or an unbounded history of removed groups.
+    groupScrollOffsets_.clear(); edgeScrollOffsets_.clear();
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value()) groupScrollOffsets_.insert(it.key(), it.value()->scrollOffset());
+    for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) edgeScrollOffsets_.insert(it.key(), strip->scrollOffset());
+}
+void DockSurface::restoreStripScrollOffsets()
+{
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value() && groupScrollOffsets_.contains(it.key())) it.value()->restoreScrollOffset(groupScrollOffsets_.value(it.key()));
+    for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data()); strip && edgeScrollOffsets_.contains(it.key()))
+            strip->restoreScrollOffset(edgeScrollOffsets_.value(it.key()));
+}
+bool DockSurface::scrollStripAt(QPoint global, QPoint delta)
+{
+    const auto* hit = childAt(mapFromGlobal(global));
+    for (const auto& group : groups_) if (group && group->isVisible() && hit && group->isAncestorOf(hit)
+        && group->viewportRectGlobal().contains(global)) {
+        group->scrollByWheel(delta); return true;
+    }
+    for (const auto& widget : edgeBars_)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data()); strip && strip->isVisible() && hit && strip->isAncestorOf(hit)
+            && strip->viewportRectGlobal().contains(global)) {
+            strip->scrollByWheel(delta); return true;
+        }
+    return false;
 }
 QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<TabContent>>& contents)
 {
@@ -170,27 +205,30 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         }
     }
     for (int i = 0; i < bar->count(); ++i)
-        if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i);
+        if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupScrollOffsets_.contains(id));
     groups_.insert(id, tabs);
-    tabs->hoverGeometryChanged = [this] { manager_->d->drag->refreshHover(); };
+    tabs->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
     if (group->location == GroupLocation::Pinned) {
         tabs->setPinnedActions([this, id] {
+            if (!manager_) return;
             const auto* current = manager_->model().group(id);
             if (current) manager_->pinTab(current->activeTab, false);
-        }, [this, edge = group->edge] { manager_->pinEdge(window_, edge, false); });
+        }, [this, edge = group->edge] { if (manager_) manager_->pinEdge(window_, edge, false); });
     }
     bar->drag = [this, bar](int index, QPoint point) {
-        manager_->beginTabDrag(bar->tabData(index).toUuid(), point);
+        if (manager_) manager_->beginTabDrag(bar->tabData(index).toUuid(), point);
     };
     bar->menu = [this, bar](int index, QPoint point) {
-        if (index >= 0) manager_->showTabMenu(bar->tabData(index).toUuid(), point);
+        if (manager_ && index >= 0) manager_->showTabMenu(bar->tabData(index).toUuid(), point);
     };
     tabs->currentChanged = [this, tabs, bar, id](int index) {
+        if (!manager_) return;
+        const QPointer<GroupTabs> retained(tabs);
         if (index >= 0) manager_->updateActive(window_, id, bar->tabData(index).toUuid());
-        tabs->update();
+        if (retained) retained->update();
     };
     tabs->closeRequested = [this, bar](int index) {
-        manager_->closeTab(bar->tabData(index).toUuid());
+        if (manager_) manager_->closeTab(bar->tabData(index).toUuid());
     };
     return tabs;
 }
@@ -206,7 +244,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     auto* bar = new EdgeStrip(edge, manager_->theme(), this);
-    bar->hoverGeometryChanged = [this] { manager_->d->drag->refreshHover(); };
+    bar->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
     if (!manager_->sideBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     for (const auto groupId : ids) {
@@ -214,8 +252,8 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
                 manager_->theme().metrics.edgeThickness, bar);
             button->setProperty("tabId", tabId);
-            button->drag = [this, tabId](QPoint point) { manager_->beginTabDrag(tabId, point); };
-            button->menu = [this, tabId](QPoint point) { manager_->showTabMenu(tabId, point); };
+            button->drag = [this, tabId](QPoint point) { if (manager_) manager_->beginTabDrag(tabId, point); };
+            button->menu = [this, tabId](QPoint point) { if (manager_) manager_->showTabMenu(tabId, point); };
             QObject::connect(button, &QAbstractButton::clicked, manager_, [this, groupId, tabId] {
                 if (peek_ && peekTab_ == tabId) closePeek();
                 else showEdgeGroup(groupId, tabId);
@@ -258,6 +296,7 @@ QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabCont
 }
 void DockSurface::savePinnedExtents()
 {
+    if (!manager_) return;
     if (hasContentFocusScope()) return;
     for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator) {
         const auto* record = manager_->model().group(iterator.key());
@@ -271,6 +310,7 @@ void DockSurface::savePinnedExtents()
 }
 void DockSurface::restorePinnedExtents()
 {
+    if (!manager_) return;
     if (hasContentFocusScope()) return;
     if (!horizontal_ || !vertical_) return;
     const auto requested = [](QWidget* widget) { return widget->property("preferredExtent").toInt(); };
@@ -456,8 +496,14 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     peekTab_ = tab;
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
+    switch (record->edge) {
+    case Edge::Left: layout->setContentsMargins(2, 2, 5, 2); break;
+    case Edge::Right: layout->setContentsMargins(5, 2, 2, 2); break;
+    case Edge::Top: layout->setContentsMargins(2, 2, 2, 5); break;
+    case Edge::Bottom: layout->setContentsMargins(2, 5, 2, 2); break;
+    }
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
-    header->drag = [this, tab](QPoint point) { manager_->beginTabDrag(tab, point); };
+    header->drag = [this, tab](QPoint point) { if (manager_) manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
     row->setSpacing(2);
     auto* title = new QLabel(manager_->model().tab(tab)->title, header);
@@ -477,7 +523,15 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
         // does not undo that flag, so restore the actual content visibility.
         content->show();
     }
-    placePeek(); peek_->show(); peek_->raise();
+    auto* handle = new PeekResizeHandle(record->edge, peek_);
+    peekResizeHandle_ = handle;
+    handle->requestedSize = [manager = QPointer<WindowManager>(manager_), tab] {
+        return manager ? manager->peekSize(tab) : QSize(250, 170);
+    };
+    handle->resizeRequested = [manager = QPointer<WindowManager>(manager_), tab](QSize size) {
+        if (manager) manager->setPeekSize(tab, size);
+    };
+    placePeek(); peek_->show(); peek_->raise(); handle->show(); handle->raise();
     layout->activate();
 }
 void DockSurface::setTabBarsVisible(bool visible)
@@ -619,11 +673,12 @@ void DockSurface::closePeek()
     if (!peek_) return;
     for (const auto& content : contents_)
         if (content && peek_->isAncestorOf(content)) { content->setParent(this); content->hide(); }
-    delete peek_; peek_.clear(); peekGroup_ = GroupId{}; peekTab_ = TabId{};
+    delete peek_; peek_.clear(); peekResizeHandle_.clear(); peekGroup_ = GroupId{}; peekTab_ = TabId{};
 }
+void DockSurface::updatePeekSize(TabId tab) { if (tab == peekTab_) placePeek(); }
 void DockSurface::placePeek()
 {
-    if (!peek_) return;
+    if (!manager_ || !peek_) return;
     const auto* group = manager_->model().group(peekGroup_);
     if (!group) return;
     QRect available = rect();
@@ -631,18 +686,33 @@ void DockSurface::placePeek()
     if (auto bar = edgeBars_.value(Edge::Right); bar && !bar->isHidden()) available.setRight(bar->mapTo(this, QPoint()).x() - 1);
     if (auto bar = edgeBars_.value(Edge::Top); bar && !bar->isHidden()) available.setTop(bar->mapTo(this, QPoint(0, bar->height())).y());
     if (auto bar = edgeBars_.value(Edge::Bottom); bar && !bar->isHidden()) available.setBottom(bar->mapTo(this, QPoint()).y() - 1);
-    const auto h = qMin(available.height(), qMax(140, available.height() / 2));
-    const auto w = qMin(available.width(), qMax(240, available.width() / 3));
+    const auto requested = manager_->peekSize(peekTab_);
+    const auto minimum = peek_->minimumSizeHint();
+    const auto h = qMin(available.height(), qMax(minimum.height(), requested.height()));
+    const auto w = qMin(available.width(), qMax(minimum.width(), requested.width()));
+    const QPointer<DockSurface> self(this);
     switch (group->edge) {
     case Edge::Left: peek_->setGeometry(available.x(), available.y(), w, available.height()); break;
     case Edge::Right: peek_->setGeometry(available.right() - w + 1, available.y(), w, available.height()); break;
     case Edge::Top: peek_->setGeometry(available.x(), available.y(), available.width(), h); break;
     case Edge::Bottom: peek_->setGeometry(available.x(), available.bottom() - h + 1, available.width(), h); break;
     }
+    if (!self || !manager_) return;
+    if (peekResizeHandle_) {
+        const int width = peek_->width(), height = peek_->height();
+        switch (group->edge) {
+        case Edge::Left: peekResizeHandle_->setGeometry(width - 5, 1, 4, height - 2); break;
+        case Edge::Right: peekResizeHandle_->setGeometry(1, 1, 4, height - 2); break;
+        case Edge::Top: peekResizeHandle_->setGeometry(1, height - 5, width - 2, 4); break;
+        case Edge::Bottom: peekResizeHandle_->setGeometry(1, 1, width - 2, 4); break;
+        }
+        peekResizeHandle_->raise();
+    }
 }
 void DockSurface::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); restorePinnedExtents(); placePeek(); }
 bool DockSurface::eventFilter(QObject* watched, QEvent* event)
 {
+    if (!manager_) return QFrame::eventFilter(watched, event);
     if (!peek_) return QFrame::eventFilter(watched, event);
     if (event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);

@@ -283,6 +283,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     stack_ = new QStackedWidget(this); layout->addWidget(stack_, 1);
     autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
     QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
+        pendingScrollOffset_.reset();
         auto* scroll = scroll_->horizontalScrollBar(); const int previous = scroll->value();
         scroll->setValue(previous + scrollDirection_ * 12);
         if (scroll->value() == previous) { autoScroll_->stop(); return; }
@@ -296,6 +297,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     QObject::connect(list_, &QToolButton::clicked, this, [this] { showTabList(); });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::rangeChanged, scrollbar_, [this](int low, int high) {
         scrollbar_->setRange(low, high); scrollbar_->setPageStep(scroll_->viewport()->width());
+        applyPendingScrollOffset();
         updateScrollBarVisibility();
     });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, scrollbar_, &QScrollBar::setValue);
@@ -303,6 +305,8 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         const auto callback = hoverGeometryChanged;
         if (callback) callback();
     });
+    QObject::connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { pendingScrollOffset_.reset(); });
+    QObject::connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { pendingScrollOffset_.reset(); });
     QObject::connect(scrollbar_, &QScrollBar::valueChanged, scroll_->horizontalScrollBar(), &QScrollBar::setValue);
 }
 DragTabBar* GroupTabs::tabBar() const { return bar_; }
@@ -342,14 +346,35 @@ void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
     stack_->addWidget(widget); const auto index = bar_->addTab(icon, title);
     bar_->setTabData(index, id); bar_->setTabToolTip(index, title); updateBarGeometry();
 }
-void GroupTabs::setCurrentIndex(int index) {
+void GroupTabs::setCurrentIndex(int index, bool reveal) {
     bar_->setCurrentIndex(index); stack_->setCurrentIndex(index);
-    if (index >= 0) {
+    if (reveal && index >= 0) {
+        pendingScrollOffset_.reset();
         const auto area = bar_->tabRect(index); auto* scroll = scroll_->horizontalScrollBar();
         if (area.left() < scroll->value()) scroll->setValue(area.left());
         else if (area.right() >= scroll->value() + scroll_->viewport()->width())
             scroll->setValue(area.right() - scroll_->viewport()->width() + 1);
     }
+}
+int GroupTabs::scrollOffset() const { return pendingScrollOffset_.value_or(scroll_->horizontalScrollBar()->value()); }
+void GroupTabs::applyPendingScrollOffset()
+{
+    if (pendingScrollOffset_) scroll_->horizontalScrollBar()->setValue(*pendingScrollOffset_);
+}
+void GroupTabs::restoreScrollOffset(int offset)
+{
+    pendingScrollOffset_ = qMax(0, offset);
+    applyPendingScrollOffset();
+    // The replacement viewport gets its real width from the owning layout.
+    // Restore again after that pass; explicit navigation or scrolling cancels
+    // the pending restore so it cannot overwrite newer input.
+    QTimer::singleShot(0, this, [this] { applyPendingScrollOffset(); pendingScrollOffset_.reset(); });
+}
+void GroupTabs::scrollByWheel(QPoint delta)
+{
+    pendingScrollOffset_.reset();
+    auto* scroll = scroll_->horizontalScrollBar();
+    scroll->setValue(scroll->value() - (delta.x() ? delta.x() : delta.y()));
 }
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
@@ -419,8 +444,7 @@ bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::Wheel) {
             auto* wheel = static_cast<QWheelEvent*>(event);
             const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
-            auto* scroll = scroll_->horizontalScrollBar();
-            scroll->setValue(scroll->value() - (delta.x() ? delta.x() : delta.y()));
+            scrollByWheel(delta);
             wheel->accept(); return true;
         }
         if (event->type() == QEvent::Enter) {

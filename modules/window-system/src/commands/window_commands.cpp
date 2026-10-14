@@ -5,6 +5,7 @@
 #include "commands/command_dialogs.hpp"
 #include "commands/command_menus.hpp"
 #include "commands/popup_menu.hpp"
+#include "commands/peek_size_command.hpp"
 #include "commands/toolbar_move_command.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
@@ -113,6 +114,7 @@ void WindowManager::registerWindowCommands()
     add("preferences.openKeyboardShortcuts", QStringLiteral("键盘快捷方式"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
     registerToolbarMoveCommand(this);
+    registerPeekSizeCommands(this);
     add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));

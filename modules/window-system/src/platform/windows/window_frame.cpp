@@ -27,6 +27,11 @@ namespace window_system {
 namespace {
 
 constexpr auto frameStateName = "_windowSystemNativeFrameState";
+// UxTheme's internal caption/frame paint notifications, also guarded by
+// FramelessHelper's Windows backend. These are not public Win32 API contracts:
+// https://github.com/wangwenx190/framelesshelper/blob/main/src/core/framelesshelper_win.cpp#L1247-L1285
+constexpr UINT wmNcUahDrawCaption = 0x00ae;
+constexpr UINT wmNcUahDrawFrame = 0x00af;
 
 bool fullScreenRequested(QWidget* window)
 {
@@ -36,12 +41,13 @@ bool fullScreenRequested(QWidget* window)
         && window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen));
 }
 
-DWORD normalFrameStyle(DWORD style)
+DWORD normalFrameStyle(DWORD style, bool compact = false)
 {
-    // Removing the painted caption is the responsibility of WM_NCCALCSIZE.
-    // Its native style must remain: DWM recognizes a normal overlapped window
-    // for show/hide and minimize/maximize transitions, including custom frames.
-    return (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP);
+    // Normal chrome retains the complete overlapped style for DWM and native
+    // transitions. Compact shapes remove only the caption: UxTheme otherwise
+    // rebuilds a basic caption region after its asynchronous position updates.
+    const auto framed = (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP);
+    return compact ? framed & ~DWORD(WS_CAPTION) : framed;
 }
 
 class NativeFrameState final : public QObject {
@@ -82,6 +88,8 @@ public:
     QPointer<QAbstractButton> pressed;
     bool trackingNonClient = false;
     HWND configuredHandle = nullptr;
+    HWND recalculatedHandle = nullptr;
+    bool recalculatedCompact = false;
     NativeTransitionConfiguration transitions;
     NativeFrameConfiguration configuration;
     NativePaintGuardActivity paintGuards;
@@ -97,6 +105,7 @@ protected:
             // numeric HWND after Qt changes flags, so identity alone is not a
             // sufficient cache key across a destroy/create pair.
             configuredHandle = nullptr;
+            recalculatedHandle = nullptr;
             attributesReady = false;
             // Window flag changes may replace the HWND. Do not wait for a
             // later showEvent to make the replacement eligible for transitions.
@@ -171,6 +180,7 @@ QPoint logicalClientPosition(QWidget* window, HWND handle, POINT point, bool fro
 
 QAbstractButton* maximizeButtonAt(QWidget* window, const QPoint& position)
 {
+    if (fullScreenRequested(window) || window->property("windowSystemDragPresentation").toBool()) return nullptr;
     for (auto* child = window->childAt(position); child && child != window; child = child->parentWidget()) {
         const auto role = child->property("role").toString();
         if (child->objectName() == QStringLiteral("CaptionButton") &&
@@ -189,12 +199,11 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     if (state->extending) return;
     if (!force && state->attributesReady && state->configuredHandle == handle && state->configuration.compact == compact) {
         BOOL enabled = FALSE;
-        // Windows renders a shaped HWND without DWM's non-client surface,
-        // regardless of the successful enabled-policy request. Its custom
-        // client is protected by the NC paint guards below; rewriting the same
-        // attributes on every activation cannot change this native region rule.
+        // A full-caption HWND with a region can lose its DWM NC surface. The
+        // captionless transition used for compact previews retains composition;
+        // do not treat a successful policy write alone as the actual NC state.
         if (SUCCEEDED(DwmGetWindowAttribute(handle, DWMWA_NCRENDERING_ENABLED, &enabled, sizeof(enabled)))
-            && (enabled || (compact && !window->mask().isEmpty()))) return;
+            && enabled) return;
     }
     const QPointer<NativeFrameState> retained(state);
     state->extending = true;
@@ -291,14 +300,25 @@ void applyNativeFrame(QWidget* window)
     extendFrame(window, handle);
     if (!observed) return;
     if (!fullScreenRequested(window)) {
+        const bool compact = window->property("windowSystemDragPresentation").toBool();
+        const bool presentationChanged = state->recalculatedHandle != handle || state->recalculatedCompact != compact;
         const LONG_PTR original = GetWindowLongPtrW(handle, GWL_STYLE);
-        const LONG_PTR desired = normalFrameStyle(DWORD(original));
+        const LONG_PTR desired = normalFrameStyle(DWORD(original), compact);
         if (desired != original) {
             SetWindowLongPtrW(handle, GWL_STYLE, desired);
             if (!observed) return;
-            SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+        }
+        if (desired != original || presentationChanged) {
+            // Region removal does not change WS_CAPTION. Recalculate the
+            // custom client when leaving a compact presentation as well, so
+            // Windows cannot retain the shaped HWND's previous NC geometry.
+            const BOOL recalculated = SetWindowPos(handle, nullptr, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW);
             if (!observed) return;
+            if (recalculated) {
+                state->recalculatedHandle = handle; state->recalculatedCompact = compact;
+                ++state->paintGuards.clientRecalculations;
+            } else state->recalculatedHandle = nullptr;
             window->update(); // Repaint the custom client, with no basic caption pass.
         }
     }
@@ -360,7 +380,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
     case WM_STYLECHANGING:
         if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam && !fullScreenRequested(window)) {
             auto* styles = reinterpret_cast<STYLESTRUCT*>(msg->lParam);
-            if (!(styles->styleNew & WS_CHILD)) styles->styleNew = normalFrameStyle(styles->styleNew);
+            if (!(styles->styleNew & WS_CHILD)) styles->styleNew = normalFrameStyle(styles->styleNew, window->property("windowSystemDragPresentation").toBool());
         }
         // Keep Qt's window flags, state bookkeeping and style-change dispatch.
         return false;
@@ -410,16 +430,28 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         // The complete frame is a Qt client. A native window region can make
         // DWM NC rendering ineligible even with DWMNCRP_ENABLED, so letting
         // DefWindowProc paint here would expose a basic caption while dragging.
-        if (!window->property("windowSystemDragPresentation").toBool()) return false;
+        if (!window->property("windowSystemDragPresentation").toBool()) {
+            BOOL enabled = FALSE;
+            if (SUCCEEDED(DwmGetWindowAttribute(msg->hwnd, DWMWA_NCRENDERING_ENABLED, &enabled, sizeof(enabled))) && enabled)
+                return false; // Preserve DWM's normal border, shadow and maximized frame.
+        }
         ++frameState(window)->paintGuards.paintsSuppressed;
         *result = 0;
         return true;
     case WM_NCACTIVATE:
         // Keep the native activation bookkeeping, without its NC repaint.
         // Minimized windows retain the documented default processing.
-        if (IsIconic(msg->hwnd) || !window->property("windowSystemDragPresentation").toBool()) return false;
+        if (IsIconic(msg->hwnd)) return false;
         ++frameState(window)->paintGuards.activationsSuppressed;
         *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, LPARAM(-1));
+        return true;
+    case wmNcUahDrawCaption:
+    case wmNcUahDrawFrame:
+        // Our caption/control strips may live anywhere in the client, so a
+        // theme's stock caption must never overwrite its upper-right pixels.
+        // Unlike blocking all WM_NCPAINT, this leaves DWM's border path intact.
+        ++frameState(window)->paintGuards.themedPaintsSuppressed;
+        *result = 0;
         return true;
     case WM_NCCALCSIZE: {
         if (!msg->lParam) return false;
@@ -445,7 +477,13 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         const POINT point = screenPosition(msg->lParam);
         RECT bounds{};
         if (!GetWindowRect(msg->hwnd, &bounds)) return false;
-        if (!IsZoomed(msg->hwnd) && !window->isFullScreen()) {
+        const QPoint position = logicalClientPosition(window, msg->hwnd, point, true);
+        // Caption controls sit against the top edge. Their visible rectangle
+        // owns the hit before the resize rim, so its upper pixels also expose
+        // the native Snap affordance in a restored window. The rest of every
+        // edge/corner retains its ordinary resize hit.
+        if (maximizeButtonAt(window, position)) { *result = HTMAXBUTTON; return true; }
+        if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) {
             const int border = resizeBorder(msg->hwnd, window);
             const bool resizeX = window->minimumWidth() < window->maximumWidth();
             const bool resizeY = window->minimumHeight() < window->maximumHeight();
@@ -460,8 +498,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 return true;
             }
         }
-        const QPoint position = logicalClientPosition(window, msg->hwnd, point, true);
-        *result = !window->isFullScreen() && maximizeButtonAt(window, position) ? HTMAXBUTTON : HTCLIENT;
+        *result = HTCLIENT;
         // Keep title movement in Qt: a floating title carries the whole-window
         // docking payload; returning HTCAPTION would start a separate OS drag.
         return true;
@@ -473,7 +510,9 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             return false;
         }
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), true);
-        state->setHovered(maximizeButtonAt(window, position), position);
+        auto* button = maximizeButtonAt(window, position);
+        state->setHovered(button, position);
+        if (!button) return false;
         if (!state->trackingNonClient) {
             TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_NONCLIENT | TME_LEAVE, msg->hwnd, 0};
             state->trackingNonClient = TrackMouseEvent(&tracking);

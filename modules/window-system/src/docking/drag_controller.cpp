@@ -13,6 +13,7 @@
 #include <QScopedValueRollback>
 #include <QScopeGuard>
 #include <QWindow>
+#include <QWheelEvent>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <dwmapi.h>
@@ -131,6 +132,7 @@ void DragController::beginTab(TabId tab, QPoint global)
     }
     auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
     originalSourceStrips_ = source ? source->saveStripLayout() : QJsonObject{};
+    originalSourceInactiveStrips_ = source ? source->saveInactiveStripLayouts() : QJsonObject{};
     if (!source) { originalLayout_ = {}; return; }
     const auto strip = sourceIsEdge_ ? source->surface()->edgeBarRects().value(sourceEdge_)
         : source->surface()->tabBarRects().value(sourceGroup_);
@@ -140,12 +142,14 @@ void DragController::beginTab(TabId tab, QPoint global)
         const auto pixmap = source->surface()->dragLabelPixmap(tab);
         if (pixmap.isNull()) { labelOnly_ = false; originalLayout_ = {}; return; }
         labelPreview_ = new DragLabelPreview(pixmap);
+        source->surface()->captureStripScrollOffsets();
         source->surface()->setDraggedTab(tab);
         const int extent = source->surface()->dragLabelExtent(tab, sourceIsEdge_);
         const int index = sourceIsEdge_ ? manager_->model().autoHiddenTabs(sourceWindow_, sourceEdge_).indexOf(tab)
             : manager_->model().group(sourceGroup_)->tabs.indexOf(tab);
         if (sourceIsEdge_) source->surface()->setEdgeInsertionPreview(sourceEdge_, index, extent);
         else source->surface()->setInsertionPreview(sourceGroup_, index, extent);
+        source->surface()->restoreStripScrollOffsets();
     } else if (!detach(global)) { if (self) originalLayout_ = {}; return; }
     if (self) start(global);
 }
@@ -155,7 +159,11 @@ bool DragController::detach(QPoint global)
     const bool wasActive = active_;
     transferringCapture_ = true;
     QPointer<WorkspaceWindow> source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_));
-    if (source) { source->surface()->setDraggedTab({}); source->surface()->clearInsertionPreviews(); }
+    if (source) {
+        source->surface()->captureStripScrollOffsets();
+        source->surface()->setDraggedTab({}); source->surface()->clearInsertionPreviews();
+        source->surface()->restoreStripScrollOffsets();
+    }
     if (capture_ && QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
     if (!self) return false;
     auto* preview = labelPreview_.data(); labelPreview_.clear();
@@ -462,6 +470,7 @@ void DragController::finish(QPoint global)
     // intact. No second tear-out is created when the button is released.
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
     originalSourceStrips_ = {};
+    originalSourceInactiveStrips_ = {};
     detached_ = false;
     completeLayoutTransaction();
 }
@@ -479,7 +488,7 @@ void DragController::cancel()
         manager_->refresh();
         if (!self) return;
         if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
-            source->restoreStripLayout(originalSourceStrips_);
+            source->restoreStripLayouts(originalSourceInactiveStrips_, originalSourceStrips_);
         if (!self) return;
         for (auto it = originalWindows_.cbegin(); it != originalWindows_.cend(); ++it) if (auto* widget = manager_->windowWidget(it.key())) {
             static_cast<WorkspaceWindow*>(widget)->restorePlacement(it.value(), originalMaximizedWindows_.contains(it.key()));
@@ -489,12 +498,15 @@ void DragController::cancel()
         if (!self) return;
         manager_->activateTab(tab_);
         if (!self) return;
+        if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
+            source->surface()->restoreStripScrollOffsets();
     } else if (auto* widget = manager_->windowWidget(window)) {
         static_cast<WorkspaceWindow*>(widget)->restorePlacement(geometry, maximized);
         if (!self) return;
     }
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
     originalSourceStrips_ = {};
+    originalSourceInactiveStrips_ = {};
     completeLayoutTransaction();
 }
 void DragController::completeLayoutTransaction()
@@ -513,6 +525,7 @@ void DragController::releaseForMutation()
     detached_ = false;
     originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
     originalSourceStrips_ = {};
+    originalSourceInactiveStrips_ = {};
 }
 void DragController::stop()
 {
@@ -537,8 +550,10 @@ void DragController::stop()
     for (const auto id : manager_->model().windowOrder()) {
         auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(id));
         if (window) {
+            window->surface()->captureStripScrollOffsets();
             window->surface()->setDraggedTab({});
             window->surface()->clearInsertionPreviews();
+            window->surface()->restoreStripScrollOffsets();
             window->surface()->setDragHover(QPoint(-100000, -100000));
         }
     }
@@ -580,6 +595,20 @@ bool DragController::eventFilter(QObject* watched, QEvent* event)
     // invalidation path. A stationary pointer must not leave old guides alive.
     if (affectsDockGeometry(event->type()) && belongsToDropWindow(watched)) refreshHover();
     if (event->type() == QEvent::MouseMove) { update(static_cast<QMouseEvent*>(event)->globalPosition().toPoint()); return true; }
+    if (event->type() == QEvent::Wheel) {
+        const QPointer<DragController> self(this);
+        const auto* wheel = static_cast<QWheelEvent*>(event);
+        const auto global = wheel->globalPosition().toPoint();
+        const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
+        // Mouse capture belongs to the source/carrier. Route scrolling to the
+        // actual strip under the pointer without dispatching another event.
+        const auto targetWindow = labelOnly_ ? sourceWindow_ : candidateAt(global);
+        auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(targetWindow));
+        if (window && window->surface()->scrollStripAt(global, delta)) {
+            event->accept(); if (self && active_) update(global); return true;
+        }
+        return false;
+    }
     if (event->type() == QEvent::MouseButtonRelease && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
         finish(static_cast<QMouseEvent*>(event)->globalPosition().toPoint()); return true;
     }

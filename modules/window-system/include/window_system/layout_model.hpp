@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QJsonObject>
+#include <QSize>
 #include <QString>
 #include <QUuid>
 #include <QVector>
@@ -74,6 +75,9 @@ struct TabRecord {
     // A dormant group ID is intentional: unpinning its final tab removes the
     // visible group, while repinning can reconstruct that same partition.
     std::optional<PinnedPosition> pinnedPosition;
+    // The preferred auto-hide panel size belongs to the tab and survives
+    // pinning and window moves. Absence uses the host's default size.
+    std::optional<QSize> peekSize;
 };
 
 struct OperationResult {
@@ -125,6 +129,10 @@ public:
     OperationResult setTabPinned(TabId tabId, bool pinned);
     OperationResult setEdgePinned(WindowId windowId, Edge edge, bool pinned);
     OperationResult setEdgeGroupExtent(GroupId groupId, int extent);
+    // nullopt restores the default. Explicit logical sizes require width >= 140
+    // and height >= 100, with each dimension at most 16777215 (Qt's limit).
+    // This does not resize pinned partitions or change tab placement.
+    OperationResult setPeekSize(TabId tabId, std::optional<QSize> size);
     OperationResult moveGroupToCenter(GroupId groupId, GroupId targetGroup = {},
                                       Placement placement = Placement::Right);
     WindowId detachTab(TabId tabId, WindowKind kind = WindowKind::Floating);

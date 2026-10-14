@@ -40,8 +40,13 @@ WindowManager::~WindowManager()
 {
     d->destroying = true; qApp->removeEventFilter(this); d->drag->releaseForMutation();
     delete d->drag; d->drag = nullptr;
-    for (auto window : d->windows) if (window) { window->allowClose = true; delete window; }
-    delete d->storage;
+    for (auto window : d->windows) if (window) {
+        window->allowClose = true;
+        // Qt must finish the current content-resize layout before its widgets
+        // can be released by a synchronous host callback.
+        if (d->geometryUpdateDepth) window->deleteLater(); else delete window;
+    }
+    if (d->geometryUpdateDepth) d->storage->deleteLater(); else delete d->storage;
 }
 WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& options, WindowId owner)
 {
@@ -317,6 +322,43 @@ bool WindowManager::moveAllTabsToEdge(WindowId source, WindowId target, Edge edg
 bool WindowManager::pinGroup(GroupId group, bool pinned) { return applyResult(d->model.setGroupPinned(group, pinned)); }
 bool WindowManager::pinTab(TabId tab, bool pinned) { return applyResult(d->model.setTabPinned(tab, pinned)); }
 bool WindowManager::pinEdge(WindowId window, Edge edge, bool pinned) { return applyResult(d->model.setEdgePinned(window, edge, pinned)); }
+QSize WindowManager::peekSize(TabId tab) const
+{
+    const auto* record = d->model.tab(tab);
+    return record ? record->peekSize.value_or(QSize(250, 170)) : QSize{};
+}
+bool WindowManager::setPeekSize(TabId tab, QSize size)
+{
+    const auto* record = d->model.tab(tab);
+    if (!record) return false;
+    if (record->peekSize == size) return true;
+    const auto result = d->model.setPeekSize(tab, size);
+    if (!result) return false;
+    const QPointer<WindowManager> self(this);
+    const auto* group = d->model.group(d->model.groupForTab(tab));
+    ++d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([self] { if (self) --self->d->geometryUpdateDepth; });
+    if (group) if (auto window = d->windows.value(group->windowId)) window->surface()->updatePeekSize(tab);
+    if (!self) return false;
+    emit layoutChanged();
+    return true;
+}
+bool WindowManager::resetPeekSize(TabId tab)
+{
+    const auto* record = d->model.tab(tab);
+    if (!record) return false;
+    if (!record->peekSize) return true;
+    const auto result = d->model.setPeekSize(tab, std::nullopt);
+    if (!result) return false;
+    const QPointer<WindowManager> self(this);
+    const auto* group = d->model.group(d->model.groupForTab(tab));
+    ++d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([self] { if (self) --self->d->geometryUpdateDepth; });
+    if (group) if (auto window = d->windows.value(group->windowId)) window->surface()->updatePeekSize(tab);
+    if (!self) return false;
+    emit layoutChanged();
+    return true;
+}
 bool WindowManager::moveGroupToCenter(GroupId group) { return applyResult(d->model.moveGroupToCenter(group)); }
 bool WindowManager::promoteWindow(WindowId window) { d->drag->releaseForMutation(); return applyResult(d->model.promoteWindow(window)); }
 bool WindowManager::demoteWindow(WindowId window, WindowId target) { d->drag->releaseForMutation(); return applyResult(d->model.demoteWindow(window, target)); }
@@ -442,6 +484,7 @@ void WindowManager::refresh(bool preserveDrag)
     if (d->refreshing || d->destroying) return;
     d->refreshing = true;
     if (!preserveDrag) d->drag->releaseForMutation();
+    for (auto window : d->windows) if (window) window->surface()->captureStripScrollOffsets();
     for (auto window : d->windows) if (window) window->surface()->closePeek();
     for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); }
     for (const auto& bars : {d->paneTopBars, d->paneBottomBars})

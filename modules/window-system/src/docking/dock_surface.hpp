@@ -14,6 +14,9 @@ class DockSurface final : public QFrame {
 public:
     DockSurface(WindowManager* manager, WindowId window, QWidget* parent);
     void rebuild(const QHash<TabId, QPointer<TabContent>>& contents);
+    void captureStripScrollOffsets();
+    void restoreStripScrollOffsets();
+    bool scrollStripAt(QPoint global, QPoint delta);
     [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
     [[nodiscard]] GroupId groupAt(QPoint global) const;
     [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const;
@@ -35,6 +38,7 @@ public:
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
     void closePeek();
+    void updatePeekSize(TabId tab);
     void setTabBarsVisible(bool visible);
     void setSideBarsVisible(bool visible);
     void setFocusScope(const WindowViewState& state);
@@ -54,15 +58,18 @@ private:
     void applyFocusScope();
     [[nodiscard]] bool hasContentFocusScope() const;
     [[nodiscard]] bool ownsTab(TabId tab) const;
-    WindowManager* manager_;
+    QPointer<WindowManager> manager_;
     WindowId window_;
     QPointer<QWidget> root_;
     QPointer<QWidget> center_;
     QPointer<QFrame> peek_;
+    QPointer<QWidget> peekResizeHandle_;
     GroupId peekGroup_;
     TabId peekTab_;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
     QHash<Edge, QPointer<QWidget>> edgeBars_;
+    QHash<GroupId, int> groupScrollOffsets_;
+    QHash<Edge, int> edgeScrollOffsets_;
     QHash<Edge, QPointer<QSplitter>> pinnedRegions_;
     QPointer<QSplitter> horizontal_;
     QPointer<QSplitter> vertical_;

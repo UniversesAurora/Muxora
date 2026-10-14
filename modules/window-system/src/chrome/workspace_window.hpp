@@ -26,7 +26,9 @@ public:
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
     [[nodiscard]] QJsonObject saveStripLayout() const;
+    [[nodiscard]] QJsonObject saveInactiveStripLayouts() const;
     void restoreStripLayout(const QJsonObject& layout);
+    void restoreStripLayouts(const QJsonObject& inactive, const QJsonObject& current);
     void syncKind();
     void setOptions(const WindowOptions& options);
     void updateCaption();
@@ -48,6 +50,8 @@ protected:
     void moveEvent(QMoveEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 private:
+    static constexpr int titleMinimumWidth = 96;
+    static constexpr int captionButtonWidth = 42;
     void createChrome();
     void addWindowMenuActions(QMenu* menu);
     void updateCommandStates();
@@ -56,7 +60,7 @@ private:
     void notifyPlacementChanged();
     void updateDragMask();
     [[nodiscard]] bool hasNormalPlacement() const;
-    WindowManager* manager_;
+    QPointer<WindowManager> manager_;
     WindowId id_;
     WindowKind kind_ = WindowKind::Floating;
     WindowOptions options_;
@@ -68,6 +72,8 @@ private:
     QPointer<QLabel> status_;
     QPointer<QToolButton> maximizeButton_;
     QJsonObject savedStripLayout_;
+    QJsonObject committedStripLayout_;
+    QHash<WindowKind, QJsonObject> savedStripLayouts_;
     QList<QPointer<QAction>> commandActions_;
     QPointer<ApplicationCommandMenus> menus_;
     DockSurface* surface_;
@@ -80,6 +86,7 @@ private:
     bool restoringPlacement_ = false;
     QTimer* placementTimer_;
     DragPresentation dragPresentation_ = DragPresentation::Window;
+    bool changingDragPresentation_ = false;
     WindowViewState viewState_;
     QRect viewNormalPlacement_;
     bool viewNormalMaximized_ = false;

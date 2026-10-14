@@ -1237,26 +1237,20 @@ void ChromeInteractionTest::stripCustomizationsSurviveWindowKindConversions()
     const auto snapshot = strips->saveLayout();
     QVERIFY(manager.demoteWindow(windowId, otherId));
     QVERIFY(window->strips());
-    QCOMPARE(window->strips()->stripIds(), QStringList({"caption-controls", "floating-menu", "title"}));
-    // The new local menu adds exactly one record; every pre-existing toolbar
-    // placement and customization still has to match the complete-window cache.
-    auto floating = window->saveStripLayout();
-    auto cachedStrips = floating.value("strips").toObject();
-    QVERIFY(cachedStrips.contains("floating-menu")); cachedStrips.remove("floating-menu");
-    floating.insert("strips", cachedStrips);
-    for (const auto* field : {"rows", "bottomRows"}) if (floating.contains(field)) {
-        auto rows = floating.value(field).toArray();
-        for (qsizetype i = 0; i < rows.size(); ++i) {
-            auto row = rows[i].toArray();
-            for (qsizetype j = row.size(); j-- > 0;) if (row[j].toString() == "floating-menu") row.removeAt(j);
-            rows[i] = row;
-        }
-        floating.insert(field, rows);
-    }
-    QCOMPARE(floating, snapshot);
+    QCOMPARE(window->strips()->stripIds(), QStringList({"floating-menu", "title", "caption-controls"}));
+    // Each shell keeps its own toolbar layout. Editing the lightweight shell
+    // cannot erase the dormant Workbench button choices or row positions.
+    QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), snapshot);
+    QVERIFY(window->strips()->moveStrip("caption-controls", CommandStripHost::Area::Bottom, 0, 0));
+    const auto floating = window->saveStripLayout();
+    QVERIFY(!floating.value("strips").toObject().contains("menu"));
+    QVERIFY(!floating.value("strips").toObject().contains("workspace"));
     QVERIFY(manager.promoteWindow(windowId));
     QVERIFY(window->strips());
     QCOMPARE(window->strips()->saveLayout(), snapshot);
+    QVERIFY(manager.demoteWindow(windowId, otherId));
+    QCOMPARE(window->saveStripLayout(), floating);
+    QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), snapshot);
 }
 
 QTEST_MAIN(ChromeInteractionTest)
