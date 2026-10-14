@@ -4,6 +4,7 @@
 #include "docking/edge_strip.hpp"
 #include "docking/dock_guides.hpp"
 #include "docking/tab_strip.hpp"
+#include "fixtures/authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 #include <QApplication>
 #include <QDir>
@@ -26,9 +27,12 @@ void saveRequestedScreenshot(QWidget* widget, const QString& name)
 }
 void moveMouse(QWidget* capture, QPoint global)
 {
+    test::authoredMouseInput().takePriority();
     QMouseEvent event(QEvent::MouseMove, capture->mapFromGlobal(global), global,
         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(capture, &event); QApplication::processEvents();
+    QApplication::sendEvent(capture, &event);
+    test::authoredMouseInput().takePriority();
+    QApplication::processEvents();
 }
 void showFixture(WorkspaceWindow* window, QPoint position)
 {
@@ -57,6 +61,7 @@ class DragPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void cleanup() { test::authoredMouseInput().finish(); }
     void gapDisplacesOnlyTheVisualTabs();
     void guidesAvoidVisibleStripsAndShortGroupHeaders_data();
     void guidesAvoidVisibleStripsAndShortGroupHeaders();

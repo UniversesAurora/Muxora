@@ -126,6 +126,8 @@ private slots:
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void perTabPreferencesUpdateTheLivePanelWithoutRebuilding_data() { edgeRows(); }
     void perTabPreferencesUpdateTheLivePanelWithoutRebuilding();
+    void resizeCallbacksCanReplaceModelRecords_data() { edgeRows(); }
+    void resizeCallbacksCanReplaceModelRecords();
     void innerEdgeDraggingSavesOnlyTheActiveAxis_data() { edgeRows(); }
     void innerEdgeDraggingSavesOnlyTheActiveAxis();
     void pinnedPartitionsUseIndependentExtents_data() { edgeRows(); }
@@ -181,6 +183,49 @@ void PeekSizeTest::perTabPreferencesUpdateTheLivePanelWithoutRebuilding()
     QCOMPARE(peek(manager, window), panel.data()); QCOMPARE(manager.peekSize(first), QSize(250, 170));
     QVERIFY(!manager.model().tab(first)->peekSize); QCOMPARE(manager.peekSize(second), QSize(305, 190));
     QTRY_COMPARE(extent(panel, direction), requestedExtent(QSize(250, 170), direction));
+}
+
+void PeekSizeTest::resizeCallbacksCanReplaceModelRecords()
+{
+    QFETCH(int, edge); const auto direction = Edge(edge);
+    WindowManager manager; const auto window = manager.createWindow();
+    manager.addTab(window, new QLabel("Central"), {"Central", "label", {}});
+    auto* content = new ResizeCallbackLabel;
+    const auto tab = manager.addTab(window, content, {"Reentrant resize", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    QVERIFY(manager.moveTabToEdge(tab, direction));
+    QVERIFY(manager.setPeekSize(tab, QSize(300, 190)));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(manager.activateTab(tab));
+    QPointer<QWidget> panel = peek(manager, window); QVERIFY(panel);
+    auto* handle = panel->findChild<QWidget*>("PeekResizeHandle"); QVERIFY(handle);
+    bool callbackRan = false;
+    bool activated = false;
+    content->resized = [&] {
+        if (callbackRan) return;
+        callbackRan = true;
+        // placePeek is still inside setGeometry. Activating this same pane is
+        // a transaction too: it replaces groups_ even without moving content.
+        activated = manager.focusPane(tab, pane);
+    };
+    const auto revision = manager.model().revision();
+    QVERIFY(manager.setPeekSize(tab, QSize(345, 235)));
+    QVERIFY(callbackRan); QVERIFY(activated);
+    QVERIFY(manager.model().revision() >= revision + 2);
+    QCOMPARE(peek(manager, window), panel.data()); QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(manager.peekSize(tab), QSize(345, 235)); QVERIFY(content->isVisible());
+    QTRY_COMPARE(extent(panel, direction), requestedExtent(QSize(345, 235), direction));
+    QCOMPARE(handle->property("edge").toInt(), edge);
+    QVERIFY(panel->rect().contains(handle->geometry()));
+    switch (direction) {
+    case Edge::Left: QCOMPARE(handle->geometry(), QRect(panel->width() - 5, 1, 4, panel->height() - 2)); break;
+    case Edge::Right: QCOMPARE(handle->geometry(), QRect(1, 1, 4, panel->height() - 2)); break;
+    case Edge::Top: QCOMPARE(handle->geometry(), QRect(1, panel->height() - 5, panel->width() - 2, 4)); break;
+    case Edge::Bottom: QCOMPARE(handle->geometry(), QRect(1, 1, panel->width() - 2, 4)); break;
+    }
+    QVERIFY(manager.model().validate());
+    content->resized = {};
 }
 
 void PeekSizeTest::innerEdgeDraggingSavesOnlyTheActiveAxis()

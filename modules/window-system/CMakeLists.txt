@@ -55,7 +55,7 @@ target_include_directories(WindowSystemWidgets PUBLIC
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets)
 if(WIN32)
-    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp)
+    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32)
 endif()
 foreach(target WindowSystemModel WindowSystemWidgets)

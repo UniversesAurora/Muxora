@@ -3,6 +3,7 @@
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "docking/dock_surface.hpp"
+#include "fixtures/authored_mouse_input.hpp"
 
 #include <window_system/window_manager.hpp>
 
@@ -15,12 +16,15 @@
 #include <QMouseEvent>
 #include <QScreen>
 #include <QScopeGuard>
+#include <QSet>
 #include <QVector>
 #include <QCursor>
 #include <QToolTip>
 #include <QTimer>
 #include <QTest>
+#include <QWindow>
 #include <cmath>
+#include <iterator>
 
 #include <qt_windows.h>
 #include <dwmapi.h>
@@ -92,10 +96,22 @@ void verifyNativeStyle(QWidget* window)
 {
     const auto handle = reinterpret_cast<HWND>(window->winId());
     QVERIFY(IsWindow(handle));
+    QVERIFY(window->windowHandle());
+    for (const auto flag : {Qt::WindowMinimizeButtonHint, Qt::WindowMaximizeButtonHint,
+                            Qt::WindowSystemMenuHint, Qt::WindowCloseButtonHint}) {
+        QVERIFY(window->windowFlags().testFlag(flag));
+        QVERIFY(window->windowHandle()->flags().testFlag(flag));
+    }
+    QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
     const auto style = DWORD(GetWindowLongPtrW(handle, GWL_STYLE));
     const bool compact = window->property("windowSystemDragPresentation").toBool();
-    const auto expectedStyle = compact ? DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_CAPTION) : DWORD(WS_OVERLAPPEDWINDOW);
+    // The restored-window Snap flyout was independently reproduced with real
+    // mouse input only after removing WS_SYSMENU. Keep every other overlapped
+    // capability exact; a custom-owned menu preserves the system commands.
+    const auto framedStyle = DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_SYSMENU);
+    const auto expectedStyle = compact ? framedStyle & ~DWORD(WS_CAPTION) : framedStyle;
     QCOMPARE(style & DWORD(WS_OVERLAPPEDWINDOW), expectedStyle);
+    QCOMPARE(style & DWORD(WS_SYSMENU), DWORD(0));
     QCOMPARE(style & DWORD(WS_POPUP), DWORD(0));
     const auto extendedStyle = DWORD(GetWindowLongPtrW(handle, GWL_EXSTYLE));
     QCOMPARE(extendedStyle & DWORD(WS_EX_LAYERED), DWORD(0));
@@ -198,9 +214,11 @@ QVector<COLORREF> renderedPixels(QWidget* window, const QVector<QPoint>& positio
 
 void sendDragMouse(QWidget* receiver, QEvent::Type type, QPoint global, Qt::MouseButton button = Qt::NoButton)
 {
+    test::authoredMouseInput().takePriority();
     QMouseEvent event(type, receiver->mapFromGlobal(global), global, button,
                       type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(receiver, &event);
+    test::authoredMouseInput().takePriority();
     QApplication::processEvents();
 }
 
@@ -213,11 +231,22 @@ class NativeFrameTest final : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase();
+    void cleanup() { test::authoredMouseInput().finish(); }
     void nativeRegionsDisableNcRenderingDespiteTheEnabledPolicy();
+    void removingSysMenuMakesTheNativeMenuUnavailable_data();
+    void removingSysMenuMakesTheNativeMenuUnavailable();
     void captionlessRegionKeepsCompositingAfterNativeShowAndRecalculation_data();
     void captionlessRegionKeepsCompositingAfterNativeShowAndRecalculation();
     void frameIsPreparedBeforeTheFirstShow_data();
     void frameIsPreparedBeforeTheFirstShow();
+    void customSystemMenuPreservesStandardCommandsAndStates_data();
+    void customSystemMenuPreservesStandardCommandsAndStates();
+    void customSystemMenuHonorsFixedResizeAxes_data();
+    void customSystemMenuHonorsFixedResizeAxes();
+    void nativeSystemCommandsKeepWindowTransitionsAndCloseGuard_data() { addWindowKinds(); }
+    void nativeSystemCommandsKeepWindowTransitionsAndCloseGuard();
+    void customSystemMenuFollowsWindowLifetime_data() { addWindowKinds(); }
+    void customSystemMenuFollowsWindowLifetime();
     void preparationIsIdempotentAndDoesNotShowOrMoveTheWindow();
     void nativeCaptionDoesNotConsumeClientSpace_data();
     void nativeCaptionDoesNotConsumeClientSpace();
@@ -246,6 +275,62 @@ private slots:
 void NativeFrameTest::initTestCase()
 {
     qApp->setQuitOnLastWindowClosed(false);
+}
+
+void NativeFrameTest::removingSysMenuMakesTheNativeMenuUnavailable_data()
+{
+    QTest::addColumn<bool>("absentAtCreation");
+    QTest::addColumn<bool>("cachedBeforeRemoval");
+    QTest::newRow("removed-after-creation") << false << true;
+    QTest::newRow("removed-before-first-menu-read") << false << false;
+    QTest::newRow("absent-at-creation") << true << false;
+}
+
+void NativeFrameTest::removingSysMenuMakesTheNativeMenuUnavailable()
+{
+    // This fixture calls only Win32. A system-menu copy obtained before removing
+    // the style survives; a window without that copy cannot rely on the API to
+    // supply a menu after removal. Neither case uses our separately owned popup.
+    QFETCH(bool, absentAtCreation);
+    QFETCH(bool, cachedBeforeRemoval);
+    const auto instance = GetModuleHandleW(nullptr);
+    WNDCLASSW type{}; type.lpfnWndProc = DefWindowProcW; type.hInstance = instance;
+    type.lpszClassName = L"MuxoraIndependentSystemMenuFixture";
+    QVERIFY(RegisterClassW(&type));
+    const auto unregister = qScopeGuard([instance] { UnregisterClassW(L"MuxoraIndependentSystemMenuFixture", instance); });
+    const DWORD normalStyle = DWORD(WS_OVERLAPPEDWINDOW);
+    const DWORD customStyle = normalStyle & ~DWORD(WS_SYSMENU);
+    const auto handle = CreateWindowExW(0, type.lpszClassName, L"Independent menu",
+                                      absentAtCreation ? customStyle : normalStyle,
+                                      100, 100, 600, 400, nullptr, nullptr, instance, nullptr);
+    QVERIFY(handle);
+    const auto destroy = qScopeGuard([handle] { DestroyWindow(handle); });
+    HMENU originalMenu = nullptr;
+    if (!absentAtCreation) {
+        if (cachedBeforeRemoval) {
+            originalMenu = GetSystemMenu(handle, FALSE); QVERIFY(originalMenu);
+            QCOMPARE(GetMenuItemCount(originalMenu), 7);
+            for (const auto command : {SC_RESTORE, SC_MOVE, SC_SIZE, SC_MINIMIZE, SC_MAXIMIZE, SC_CLOSE})
+                QVERIFY(GetMenuState(originalMenu, UINT(command), MF_BYCOMMAND) != UINT(-1));
+        }
+        SetWindowLongPtrW(handle, GWL_STYLE, customStyle);
+        QVERIFY(SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED));
+    }
+    QCOMPARE(DWORD(GetWindowLongPtrW(handle, GWL_STYLE)) & normalStyle, customStyle);
+    const auto removedMenu = GetSystemMenu(handle, FALSE);
+    if (cachedBeforeRemoval) {
+        QCOMPARE(removedMenu, originalMenu); QVERIFY(IsMenu(removedMenu));
+        QCOMPARE(GetMenuItemCount(removedMenu), 7);
+        for (const auto command : {SC_RESTORE, SC_MOVE, SC_SIZE, SC_MINIMIZE, SC_MAXIMIZE, SC_CLOSE})
+            QVERIFY(GetMenuState(removedMenu, UINT(command), MF_BYCOMMAND) != UINT(-1));
+    } else QVERIFY(!removedMenu);
+    SetWindowLongPtrW(handle, GWL_STYLE, normalStyle);
+    QVERIFY(SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED));
+    const auto restoredMenu = GetSystemMenu(handle, FALSE); QVERIFY(restoredMenu);
+    QCOMPARE(GetMenuItemCount(restoredMenu), 7);
+    if (cachedBeforeRemoval) QCOMPARE(restoredMenu, originalMenu);
 }
 
 void NativeFrameTest::nativeRegionsDisableNcRenderingDespiteTheEnabledPolicy()
@@ -293,8 +378,11 @@ void NativeFrameTest::nativeRegionsDisableNcRenderingDespiteTheEnabledPolicy()
 void NativeFrameTest::captionlessRegionKeepsCompositingAfterNativeShowAndRecalculation_data()
 {
     QTest::addColumn<bool>("marginsBeforeStyle");
-    QTest::newRow("margins-after-style") << false;
-    QTest::newRow("production-margins-before-style") << true;
+    QTest::addColumn<bool>("hasSystemMenu");
+    QTest::newRow("margins-after-style") << false << true;
+    QTest::newRow("production-margins-before-style") << true << true;
+    QTest::newRow("no-system-menu-margins-after-style") << false << false;
+    QTest::newRow("production-no-system-menu-margins-before-style") << true << false;
 }
 void NativeFrameTest::captionlessRegionKeepsCompositingAfterNativeShowAndRecalculation()
 {
@@ -302,6 +390,7 @@ void NativeFrameTest::captionlessRegionKeepsCompositingAfterNativeShowAndRecalcu
     // composition, followed by the captionless/full-client transition, matters:
     // creating a captionless HWND directly does not establish the same state.
     QFETCH(bool, marginsBeforeStyle);
+    QFETCH(bool, hasSystemMenu);
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSW type{};
     type.lpfnWndProc = [](HWND handle, UINT message, WPARAM wParam, LPARAM lParam) -> LRESULT {
@@ -312,8 +401,10 @@ void NativeFrameTest::captionlessRegionKeepsCompositingAfterNativeShowAndRecalcu
     type.lpszClassName = L"MuxoraIndependentCaptionlessRegionFixture";
     QVERIFY(RegisterClassW(&type));
     const auto unregister = qScopeGuard([instance] { UnregisterClassW(L"MuxoraIndependentCaptionlessRegionFixture", instance); });
-    const DWORD style = DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_CAPTION);
-    const auto handle = CreateWindowExW(0, type.lpszClassName, L"Captionless", WS_OVERLAPPEDWINDOW, 100, 100, 600, 400, nullptr, nullptr, instance, nullptr);
+    const DWORD initialStyle = hasSystemMenu ? DWORD(WS_OVERLAPPEDWINDOW)
+                                            : DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_SYSMENU);
+    const DWORD style = initialStyle & ~DWORD(WS_CAPTION);
+    const auto handle = CreateWindowExW(0, type.lpszClassName, L"Captionless", initialStyle, 100, 100, 600, 400, nullptr, nullptr, instance, nullptr);
     QVERIFY(handle); const auto destroy = qScopeGuard([handle] { DestroyWindow(handle); });
     const DWMNCRENDERINGPOLICY initialPolicy = DWMNCRP_ENABLED;
     QCOMPARE(DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &initialPolicy, sizeof(initialPolicy)), S_OK);
@@ -361,6 +452,167 @@ void NativeFrameTest::frameIsPreparedBeforeTheFirstShow()
     QVERIFY(window->effectiveWinId());
     QVERIFY(!IsWindowVisible(reinterpret_cast<HWND>(window->effectiveWinId())));
     verifyNativeStyle(window);
+}
+
+void NativeFrameTest::customSystemMenuPreservesStandardCommandsAndStates_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<int>("state");
+    for (const bool floating : {false, true}) for (const int state : {0, 1, 2})
+        QTest::newRow(qPrintable(QString("%1-%2").arg(floating ? "floating" : "workbench")
+            .arg(state == 0 ? "restored" : state == 1 ? "maximized" : "minimized"))) << floating << state;
+}
+
+void NativeFrameTest::customSystemMenuPreservesStandardCommandsAndStates()
+{
+    QFETCH(bool, floating); QFETCH(int, state);
+    WindowManager manager; const auto id = createWindow(manager, floating);
+    auto* window = manager.windowWidget(id); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    if (state == 1) { window->showMaximized(); QTRY_VERIFY(window->isMaximized()); }
+    if (state == 2) { window->showMinimized(); QTRY_VERIFY(window->isMinimized()); }
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto geometry = window->geometry();
+    verifyNativeStyle(window);
+    QVERIFY(!GetSystemMenu(handle, FALSE));
+    const auto menu = reinterpret_cast<HMENU>(nativeSystemMenuHandle(window));
+    QVERIFY(menu && IsMenu(menu));
+    QCOMPARE(GetMenuItemCount(menu), 7);
+    QSet<UINT> actualCommands;
+    int separators = 0;
+    const UINT expectedCommands[]{SC_RESTORE, SC_MOVE, SC_SIZE, SC_MINIMIZE, SC_MAXIMIZE, SC_CLOSE};
+    size_t nextCommand = 0;
+    for (int position = 0; position < GetMenuItemCount(menu); ++position) {
+        MENUITEMINFOW item{}; item.cbSize = sizeof(item); item.fMask = MIIM_FTYPE | MIIM_ID | MIIM_SUBMENU;
+        QVERIFY(GetMenuItemInfoW(menu, UINT(position), TRUE, &item));
+        QVERIFY(!item.hSubMenu);
+        if (item.fType & MFT_SEPARATOR) {
+            QCOMPARE(position, 5); QCOMPARE(item.fType, UINT(MFT_SEPARATOR)); ++separators;
+        } else {
+            QCOMPARE(item.fType, UINT(MFT_STRING));
+            QVERIFY(nextCommand < std::size(expectedCommands));
+            QCOMPARE(item.wID, expectedCommands[nextCommand++]);
+            actualCommands.insert(item.wID);
+        }
+    }
+    QCOMPARE(separators, 1);
+    QCOMPARE(nextCommand, std::size(expectedCommands));
+    QCOMPARE(actualCommands, (QSet<UINT>{SC_RESTORE, SC_MOVE, SC_SIZE, SC_MINIMIZE, SC_MAXIMIZE, SC_CLOSE}));
+    const auto enabled = [menu](UINT command) {
+        return !(GetMenuState(menu, command, MF_BYCOMMAND) & (MF_DISABLED | MF_GRAYED));
+    };
+    for (const auto command : actualCommands) {
+        QVERIFY(GetMenuState(menu, command, MF_BYCOMMAND) != UINT(-1));
+        wchar_t label[128]{};
+        QVERIFY(GetMenuStringW(menu, command, label, int(std::size(label)), MF_BYCOMMAND) > 0);
+    }
+    QCOMPARE(enabled(SC_RESTORE), state != 0);
+    QCOMPARE(enabled(SC_MOVE), state == 0);
+    QCOMPARE(enabled(SC_SIZE), state == 0);
+    QCOMPARE(enabled(SC_MINIMIZE), state != 2);
+    QCOMPARE(enabled(SC_MAXIMIZE), state != 1);
+    QVERIFY(enabled(SC_CLOSE));
+    // Reading/updating the menu must not restore the removed style, replace the
+    // HWND, move the window or change its current native placement.
+    QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
+    QCOMPARE(window->geometry(), geometry);
+    QCOMPARE(window->isMaximized(), state == 1); QCOMPARE(window->isMinimized(), state == 2);
+    QCOMPARE(DWORD(GetWindowLongPtrW(handle, GWL_STYLE)) & DWORD(WS_SYSMENU), DWORD(0));
+}
+
+void NativeFrameTest::nativeSystemCommandsKeepWindowTransitionsAndCloseGuard()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createWindow(manager, floating);
+    const auto tab = manager.addTab(id, new QLabel("Guarded live content"), {"Guarded", "test.label", {}});
+    QVERIFY(!tab.isNull());
+    QPointer<QWidget> window = manager.windowWidget(id); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto normalGeometry = window->geometry();
+    const auto menu = reinterpret_cast<HMENU>(nativeSystemMenuHandle(window)); QVERIFY(menu && IsMenu(menu));
+    SendMessageW(handle, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+    QTRY_VERIFY(window->isMaximized()); QVERIFY(IsZoomed(handle));
+    verifyNativeStyle(window); verifyMaximizedWorkArea(window);
+    SendMessageW(handle, WM_SYSCOMMAND, SC_RESTORE, 0);
+    QTRY_VERIFY(!window->isMaximized()); QTRY_COMPARE(window->geometry(), normalGeometry);
+    SendMessageW(handle, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+    QTRY_VERIFY(window->isMinimized()); QVERIFY(IsIconic(handle));
+    SendMessageW(handle, WM_SYSCOMMAND, SC_RESTORE, 0);
+    QTRY_VERIFY(!window->isMinimized()); QTRY_COMPARE(window->geometry(), normalGeometry);
+    QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle); verifyNativeStyle(window);
+    QVector<TabId> requested;
+    manager.setCloseGuard([&requested](const QVector<TabId>& tabs) { requested = tabs; return false; });
+    SendMessageW(handle, WM_SYSCOMMAND, SC_CLOSE, 0);
+    // WM_CLOSE enters Qt's asynchronous QWindowSystemInterface queue. Returning
+    // from the native SendMessage does not mean QWidget's close guard ran yet.
+    QTRY_COMPARE(requested, QVector<TabId>{tab});
+    QVERIFY(manager.model().window(id)); QVERIFY(manager.model().tab(tab)); QVERIFY(window->isVisible());
+    QVERIFY(IsWindow(handle)); QVERIFY(IsMenu(menu));
+    manager.setCloseGuard([](const QVector<TabId>&) { return true; });
+    SendMessageW(handle, WM_SYSCOMMAND, SC_CLOSE, 0);
+    QTRY_VERIFY(!manager.model().window(id)); QVERIFY(!manager.model().tab(tab));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(!window); QVERIFY(!IsWindow(handle)); QVERIFY(!IsMenu(menu));
+}
+
+void NativeFrameTest::customSystemMenuHonorsFixedResizeAxes_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<int>("fixedAxes");
+    for (const bool floating : {false, true}) for (const int axes : {1, 2, 3})
+        QTest::newRow(qPrintable(QString("%1-fixed-%2").arg(floating ? "floating" : "workbench")
+            .arg(axes == 1 ? "width" : axes == 2 ? "height" : "both"))) << floating << axes;
+}
+
+void NativeFrameTest::customSystemMenuHonorsFixedResizeAxes()
+{
+    QFETCH(bool, floating); QFETCH(int, fixedAxes);
+    WindowManager manager; const auto id = createWindow(manager, floating);
+    auto* window = manager.windowWidget(id); QVERIFY(window);
+    if (fixedAxes & 1) window->setFixedWidth(window->width());
+    if (fixedAxes & 2) window->setFixedHeight(window->height());
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto menu = reinterpret_cast<HMENU>(nativeSystemMenuHandle(window)); QVERIFY(menu && IsMenu(menu));
+    const auto sizeState = GetMenuState(menu, SC_SIZE, MF_BYCOMMAND);
+    QVERIFY(sizeState != UINT(-1));
+    QCOMPARE(bool(sizeState & (MF_DISABLED | MF_GRAYED)), fixedAxes == 3);
+    const auto moveState = GetMenuState(menu, SC_MOVE, MF_BYCOMMAND);
+    QVERIFY(moveState != UINT(-1)); QVERIFY(!(moveState & (MF_DISABLED | MF_GRAYED)));
+    QCOMPARE(DWORD(GetWindowLongPtrW(handle, GWL_STYLE)) & DWORD(WS_SYSMENU), DWORD(0));
+    QVERIFY(!window->isVisible());
+}
+
+void NativeFrameTest::customSystemMenuFollowsWindowLifetime()
+{
+    QFETCH(bool, floating);
+    HMENU menu = nullptr;
+    HWND handle = nullptr;
+    {
+        WindowManager manager; const auto id = createWindow(manager, floating);
+        auto* window = manager.windowWidget(id); QVERIFY(window);
+        handle = reinterpret_cast<HWND>(window->effectiveWinId());
+        menu = reinterpret_cast<HMENU>(nativeSystemMenuHandle(window)); QVERIFY(menu && IsMenu(menu));
+        const auto initialGeometry = window->geometry();
+        for (int index = 0; index < 4; ++index) {
+            applyNativeFrame(window);
+            QCOMPARE(reinterpret_cast<HMENU>(nativeSystemMenuHandle(window)), menu);
+            QCOMPARE(window->geometry(), initialGeometry); QVERIFY(!window->isVisible());
+            verifyNativeStyle(window);
+        }
+        window->setWindowFlag(Qt::WindowStaysOnTopHint, true);
+        // Changing Qt flags may destroy the native window and defer creating
+        // its replacement. Explicitly request it, as the existing flag-change
+        // fixture does, before checking that the replacement was prepared.
+        handle = reinterpret_cast<HWND>(window->winId());
+        QVERIFY(IsWindow(handle));
+        QVERIFY(!window->isVisible()); QVERIFY(!IsWindowVisible(handle));
+        QVERIFY(!GetSystemMenu(handle, FALSE));
+        const auto currentMenu = reinterpret_cast<HMENU>(nativeSystemMenuHandle(window));
+        QVERIFY(currentMenu && IsMenu(currentMenu));
+        menu = currentMenu;
+        QCOMPARE(GetMenuItemCount(menu), 7);
+        verifyNativeStyle(window);
+    }
+    QVERIFY(!IsWindow(handle)); QVERIFY(!IsMenu(menu));
 }
 
 void NativeFrameTest::preparationIsIdempotentAndDoesNotShowOrMoveTheWindow()
@@ -589,7 +841,7 @@ void NativeFrameTest::compactFirstShowAlreadyHasThePreparedNativeFrame()
     QVERIFY(!probe.samples.isEmpty());
     for (const auto& sample : probe.samples) {
         QCOMPARE(sample.result, S_OK); QVERIFY(sample.enabled);
-        QCOMPARE(sample.style & DWORD(WS_OVERLAPPEDWINDOW), DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_CAPTION));
+        QCOMPARE(sample.style & DWORD(WS_OVERLAPPEDWINDOW), DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_CAPTION | WS_SYSMENU));
     }
     QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
 }
@@ -712,6 +964,10 @@ void NativeFrameTest::nativePaintMessagesCannotReplaceTheCustomClient()
         }
     QCOMPARE(samples.size() >= (compact ? 4 : 3), true);
     QVector<COLORREF> beforePixels, afterPixels;
+    // A screen-pixel oracle includes the OS cursor and any pointer highlight.
+    // Keep those away from every original sample without changing the oracle.
+    QCursor::setPos(available.bottomRight() - QPoint(16, 16));
+    QApplication::processEvents();
     const auto rendered = window->grab().toImage();
     QVector<COLORREF> expectedPixels;
     for (const auto sample : samples) {
@@ -837,7 +1093,19 @@ void NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption()
     const auto originalModel = manager.model().toJson();
     const auto handle = reinterpret_cast<HWND>(carrier->effectiveWinId());
     auto* title = carrier->findChild<QLabel*>("CaptionTitle"); QVERIFY(title && title->isVisible());
-    const auto press = title->mapToGlobal(title->rect().center());
+    const QPoint titlePress(qMin(10, title->width() / 2), title->rect().center().y());
+    QVERIFY(title->rect().contains(titlePress));
+    const auto press = title->mapToGlobal(titlePress);
+    // Keep the desktop pointer away from all screen samples. The component
+    // fixture provides its authored drag stream independently of that pointer.
+    test::authoredMouseInput().takePriority();
+    QCursor::setPos(available.bottomRight() - QPoint(16, 16));
+    QApplication::processEvents();
+    const auto anchor = title->mapTo(carrier, titlePress);
+    for (const int y : {6, 16, 26}) for (const int x : {carrier->width() - 110, carrier->width() - 70, carrier->width() - 25}) {
+        const auto distance = anchor - QPoint(x, y);
+        QVERIFY(distance.x() * distance.x() + distance.y() * distance.y() >= 64 * 64);
+    }
     const auto offset = press - carrier->pos();
     sendDragMouse(title, QEvent::MouseButtonPress, press, Qt::LeftButton);
     sendDragMouse(title, QEvent::MouseMove, press + QPoint(24, 0));

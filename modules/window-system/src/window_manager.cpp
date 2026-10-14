@@ -398,8 +398,14 @@ bool WindowManager::activateTab(TabId tab)
     if (!self) return false;
     const auto result = d->model.activateTab(tab); if (!result) return false;
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
-    if (auto widget = d->windows.value(window)) { widget->surface()->selectTab(tab); widget->updateCaption(); }
-    return focusPane(tab, d->model.tab(tab)->activePane);
+    if (QPointer<WorkspaceWindow> widget = d->windows.value(window)) {
+        widget->surface()->selectTab(tab);
+        if (!self) return false;
+        if (widget) widget->updateCaption();
+        if (!self) return false;
+    }
+    const auto* active = d->model.tab(tab);
+    return active && focusPane(tab, active->activePane);
 }
 bool WindowManager::focusPane(TabId tab, PaneId pane)
 {

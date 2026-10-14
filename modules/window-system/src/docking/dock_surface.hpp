@@ -66,6 +66,7 @@ private:
     QPointer<QWidget> peekResizeHandle_;
     GroupId peekGroup_;
     TabId peekTab_;
+    quint64 peekGeneration_ = 0;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
     QHash<Edge, QPointer<QWidget>> edgeBars_;
     QHash<GroupId, int> groupScrollOffsets_;

@@ -43,10 +43,12 @@ bool fullScreenRequested(QWidget* window)
 
 DWORD normalFrameStyle(DWORD style, bool compact = false)
 {
-    // Normal chrome retains the complete overlapped style for DWM and native
-    // transitions. Compact shapes remove only the caption: UxTheme otherwise
-    // rebuilds a basic caption region after its asynchronous position updates.
-    const auto framed = (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP);
+    // Keep caption/resize/state styles for DWM, but omit the stock system-menu
+    // caption buttons. Removing WS_SYSMENU restores the Win11 HTMAXBUTTON Snap
+    // flyout in normal windows with a completely custom client frame.
+    // Our separately owned popup still dispatches the normal system commands.
+    // Compact shapes also remove the caption to avoid a stock Basic frame.
+    const auto framed = (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP | WS_SYSMENU);
     return compact ? framed & ~DWORD(WS_CAPTION) : framed;
 }
 
@@ -238,30 +240,6 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
     state->configuration = {true, compact, true, qint32(policyResult), qint32(marginsResult), revision};
     state->attributesReady = SUCCEEDED(policyResult) && SUCCEEDED(transitionResult) && SUCCEEDED(marginsResult);
-}
-
-void showSystemMenu(QWidget* window, HWND handle)
-{
-    const HMENU menu = GetSystemMenu(handle, FALSE);
-    if (!menu) return;
-    const bool maximized = IsZoomed(handle);
-    const bool minimized = IsIconic(handle);
-    const LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
-    const auto enable = [menu](UINT command, bool allowed) {
-        EnableMenuItem(menu, command, MF_BYCOMMAND | (allowed ? MF_ENABLED : MF_GRAYED));
-    };
-    enable(SC_RESTORE, maximized || minimized);
-    enable(SC_MOVE, !maximized && !minimized);
-    enable(SC_SIZE, !maximized && !minimized && (style & WS_THICKFRAME));
-    enable(SC_MINIMIZE, !minimized && (style & WS_MINIMIZEBOX));
-    enable(SC_MAXIMIZE, !maximized && (style & WS_MAXIMIZEBOX));
-    RECT bounds{};
-    if (!GetWindowRect(handle, &bounds)) return;
-    const int inset = std::max(1, qRound(8 * window->devicePixelRatioF()));
-    const int titleHeight = std::max(1, qRound(32 * window->devicePixelRatioF()));
-    const UINT command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_RIGHTBUTTON,
-                                         bounds.left + inset, bounds.top + titleHeight, handle, nullptr);
-    if (command && IsWindow(handle)) PostMessageW(handle, WM_SYSCOMMAND, command, 0);
 }
 
 bool finishMaximizeClick(QWidget* window, MSG* message, NativeFrameState* state, qintptr* result, bool fromScreen)
@@ -563,7 +541,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return false;
     case WM_SYSKEYDOWN:
         if (msg->wParam == VK_SPACE) {
-            showSystemMenu(window, msg->hwnd);
+            showNativeSystemMenu(window, quintptr(msg->hwnd));
             *result = 0;
             return true;
         }

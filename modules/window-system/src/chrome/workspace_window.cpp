@@ -143,7 +143,8 @@ QJsonObject mergeToolbarEdit(QJsonObject latest, const QJsonObject& before, cons
 } // namespace
 
 WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const WindowOptions& options)
-    : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint), manager_(manager), id_(id),
+    : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint | Qt::WindowMinMaxButtonsHint
+        | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint), manager_(manager), id_(id),
       options_(options), column_(new QVBoxLayout(this)), surface_(new DockSurface(manager, id, this)),
       placementTimer_(new QTimer(this))
 {

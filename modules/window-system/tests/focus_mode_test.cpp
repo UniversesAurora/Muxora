@@ -16,10 +16,26 @@
 #include <QTest>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <functional>
+#include <memory>
 
 using namespace window_system;
 
 namespace {
+
+class ParentChangeCallback final : public QObject {
+public:
+    std::function<void()> changed;
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() == QEvent::ParentChange) {
+            const auto callback = changed;
+            if (callback) callback();
+        }
+        return false;
+    }
+};
 
 WorkspaceWindow* workspace(WindowManager& manager, WindowId id)
 {
@@ -87,6 +103,9 @@ private slots:
     void hidingFocusedBarsPreservesTheActiveContent_data();
     void hidingFocusedBarsPreservesTheActiveContent();
     void inactiveWindowKeepsItsContentFocusWithoutStealingTheOtherWindow();
+    void autoHideActivationRevalidatesAfterHostNotification_data();
+    void autoHideActivationRevalidatesAfterHostNotification();
+    void closingAnExistingPeekPreservesTheNewerRequest();
 };
 
 void FocusModeTest::groupScopeProjectsTheSameWidgets_data()
@@ -493,6 +512,131 @@ void FocusModeTest::inactiveWindowKeepsItsContentFocusWithoutStealingTheOtherWin
     QTRY_COMPARE(QApplication::focusWidget(), editor);
     QCOMPARE(manager.model().toJson(), before);
     QCOMPARE(manager.context(first).tab, tab);
+}
+
+void FocusModeTest::autoHideActivationRevalidatesAfterHostNotification_data()
+{
+    QTest::addColumn<QString>("mutation");
+    for (const auto* mutation : {"move-target", "pin-target", "close-target", "destroy-manager",
+                                 "open-other-tab", "cancel-peek"})
+        QTest::newRow(mutation) << QString::fromLatin1(mutation);
+}
+
+void FocusModeTest::autoHideActivationRevalidatesAfterHostNotification()
+{
+    QFETCH(QString, mutation);
+    auto manager = std::make_unique<WindowManager>();
+    const auto id = manager->createWindow();
+    const auto keeper = manager->addTab(id, new QPlainTextEdit("Keeper"), {"Keeper", "test.editor", {}});
+    QPointer<QPlainTextEdit> content = new QPlainTextEdit("Target retains its widget");
+    const auto tab = manager->addTab(id, content, {"Target", "test.editor", {}});
+    QVERIFY(manager->moveTabToEdge(tab, Edge::Left));
+    const auto group = manager->model().groupForTab(tab);
+    const auto pane = manager->model().tab(tab)->activePane;
+    auto* otherContent = new QPlainTextEdit("The newer peek owns this content");
+    const auto other = manager->addTab(id, otherContent, {"Other", "test.editor", {}});
+    QVERIFY(manager->moveTabToEdge(other, Edge::Right));
+    const auto otherGroup = manager->model().groupForTab(other);
+    manager->showWindow(id);
+    QVERIFY(QTest::qWaitForWindowExposed(workspace(*manager, id)));
+    QVERIFY(manager->activateTab(keeper)); settle();
+    QPointer<WindowManager> owner(manager.get());
+    QPointer<WorkspaceWindow> window(workspace(*manager, id));
+    QPointer<DockSurface> surface(window->surface());
+    bool notified = false;
+    bool mutationSucceeded = false;
+    connect(manager.get(), &WindowManager::layoutChanged, this, [&] {
+        if (notified) return;
+        notified = true;
+        if (mutation == "move-target") mutationSucceeded = manager->moveTabToEdge(tab, Edge::Top);
+        else if (mutation == "pin-target") mutationSucceeded = manager->pinTab(tab, true);
+        else if (mutation == "close-target") mutationSucceeded = manager->closeTab(tab);
+        else if (mutation == "destroy-manager") { manager.reset(); mutationSucceeded = true; }
+        else if (mutation == "open-other-tab") { surface->showEdgeGroup(otherGroup, other); mutationSucceeded = true; }
+        else { surface->closePeek(); mutationSucceeded = true; }
+    });
+    // Activating an auto-hide tab calls updateActive, whose model transaction
+    // replaces the borrowed GroupRecord before notifying this host. Every
+    // mutation below must take effect before the original peek can continue.
+    bool activated = false;
+    if (mutation == "open-other-tab" || mutation == "cancel-peek") surface->showEdgeGroup(group, tab);
+    else activated = manager->activateTab(tab);
+    QVERIFY(notified); QVERIFY(mutationSucceeded);
+    if (mutation == "destroy-manager") {
+        QVERIFY(!activated); QVERIFY(!owner); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!content);
+        settle();
+        return;
+    }
+    QVERIFY(owner); QVERIFY(window); QVERIFY(surface);
+    if (mutation == "close-target") {
+        QVERIFY(!activated); QVERIFY(!manager->model().tab(tab));
+        QVERIFY(!surface->findChild<QWidget*>("PeekPanel"));
+        settle(); QVERIFY(!content);
+    } else if (mutation == "open-other-tab") {
+        auto* panel = surface->findChild<QWidget*>("PeekPanel"); QVERIFY(panel);
+        QVERIFY(panel->isAncestorOf(otherContent)); QVERIFY(otherContent->isVisible());
+        QVERIFY(!panel->isAncestorOf(content)); QCOMPARE(manager->context(id).tab, other);
+        QCOMPARE(manager->paneWidget(pane), content.data());
+    } else {
+        QVERIFY(!surface->findChild<QWidget*>("PeekPanel"));
+        QCOMPARE(manager->paneWidget(pane), content.data());
+        if (mutation == "pin-target") {
+            QVERIFY(activated);
+            QCOMPARE(manager->model().group(manager->model().groupForTab(tab))->location, GroupLocation::Pinned);
+            QVERIFY(content->isVisible());
+        } else if (mutation == "move-target") {
+            QVERIFY(activated);
+            QCOMPARE(manager->model().group(manager->model().groupForTab(tab))->edge, Edge::Top);
+            // The obsolete left-edge request was canceled by the rebuild. A
+            // subsequent activation must create the newly located top peek.
+            QVERIFY(manager->activateTab(tab));
+            auto* panel = surface->findChild<QWidget*>("PeekPanel"); QVERIFY(panel);
+            QVERIFY(panel->isAncestorOf(content)); QVERIFY(content->isVisible());
+            auto* handle = panel->findChild<QWidget*>("PeekResizeHandle"); QVERIFY(handle);
+            QCOMPARE(handle->property("edge").toInt(), int(Edge::Top));
+        }
+    }
+    QVERIFY(manager->model().validate());
+}
+
+void FocusModeTest::closingAnExistingPeekPreservesTheNewerRequest()
+{
+    WindowManager manager;
+    const auto id = manager.createWindow();
+    manager.addTab(id, new QPlainTextEdit("Keeper"), {"Keeper", "test.editor", {}});
+    auto* first = new QPlainTextEdit("The old peek must return this content safely");
+    const auto firstTab = manager.addTab(id, first, {"First peek", "test.editor", {}});
+    QVERIFY(manager.moveTabToEdge(firstTab, Edge::Left));
+    auto* newer = new QPlainTextEdit("The newer peek must remain open");
+    const auto newerTab = manager.addTab(id, newer, {"Newer peek", "test.editor", {}});
+    QVERIFY(manager.moveTabToEdge(newerTab, Edge::Right));
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(workspace(manager, id)));
+    QVERIFY(manager.activateTab(firstTab));
+    auto* surface = workspace(manager, id)->surface();
+    QPointer<QWidget> oldPanel = surface->findChild<QWidget*>("PeekPanel"); QVERIFY(oldPanel);
+    QPointer<TabContent> firstPage = tabView(first); QVERIFY(firstPage);
+    const auto firstGroup = manager.model().groupForTab(firstTab);
+    const auto newerGroup = manager.model().groupForTab(newerTab);
+    ParentChangeCallback callback;
+    bool reopened = false;
+    callback.changed = [&] {
+        if (reopened || firstPage->parentWidget() != surface) return;
+        reopened = true;
+        surface->showEdgeGroup(newerGroup, newerTab);
+    };
+    firstPage->installEventFilter(&callback);
+    // Parking the old page emits ParentChange synchronously inside closePeek.
+    // A newly opened panel there must invalidate the outer replacement request.
+    surface->showEdgeGroup(firstGroup, firstTab);
+    QVERIFY(reopened); QVERIFY(!oldPanel); QVERIFY(firstPage);
+    auto* panel = surface->findChild<QWidget*>("PeekPanel"); QVERIFY(panel);
+    QCOMPARE(surface->findChildren<QWidget*>("PeekPanel").size(), 1);
+    QVERIFY(panel->isAncestorOf(newer)); QVERIFY(newer->isVisible());
+    QVERIFY(!panel->isAncestorOf(first)); QVERIFY(!first->isVisible());
+    QCOMPARE(manager.context(id).tab, newerTab);
+    QCOMPARE(manager.paneWidget(manager.model().tab(firstTab)->activePane), first);
+    QCOMPARE(manager.paneWidget(manager.model().tab(newerTab)->activePane), newer);
+    QVERIFY(manager.model().validate());
 }
 
 QTEST_MAIN(FocusModeTest)

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include "fixtures/authored_mouse_input.hpp"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QCursor>
 #include <QDialog>
 #include <QFocusEvent>
 #include <QImage>
@@ -20,6 +20,7 @@
 #include <QSpinBox>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QScopeGuard>
 #include <QSet>
 #include <QTest>
 #include <QTreeWidget>
@@ -395,9 +396,19 @@ void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
     const QPoint center(row.left() - categories->indentation() / 2, row.center().y());
     MouseMoveProbe movement;
     categories->viewport()->installEventFilter(&movement);
-    auto away = categories->viewport()->rect().bottomRight() - QPoint(8, 8);
-    if (away == categories->viewport()->mapFromGlobal(QCursor::pos())) away -= QPoint(20, 20);
-    QTest::mouseMove(categories->viewport(), away);
+    const auto away = categories->viewport()->rect().bottomRight() - QPoint(8, 8);
+    test::authoredMouseInput().takePriority();
+    const auto releaseInput = qScopeGuard([] { test::authoredMouseInput().finish(); });
+    const auto move = [&](QPoint local) {
+        test::authoredMouseInput().takePriority();
+        QMouseEvent event(QEvent::MouseMove, QPointF(local), QPointF(categories->viewport()->mapToGlobal(local)),
+            Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(categories->viewport(), &event);
+        QCOMPARE(movement.lastPosition, local); // Delivery is synchronous.
+        test::authoredMouseInput().takePriority();
+        QApplication::processEvents();
+    };
+    move(away);
     QTRY_COMPARE(movement.lastPosition, away);
     const QImage normal = categories->viewport()->grab().toImage();
     const qreal ratio = normal.devicePixelRatio();
@@ -408,9 +419,8 @@ void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
     for (int y = plainGutter.top(); y <= plainGutter.bottom(); ++y)
         for (int x = plainGutter.left(); x <= plainGutter.right(); ++x)
             if (!glyphPixels.contains(x, y)) QCOMPARE(normal.pixelColor(x, y), theme.surface);
-    QTest::mouseMove(categories->viewport(), center);
-    // QWidget mouseMove only repositions the native cursor in this Qt version.
-    // Wait for dispatch before testing the same exact pixel colors and bounds.
+    move(center);
+    // Exercise the real navigation widget with the authored component stream.
     QTRY_COMPARE(movement.lastPosition, center);
     QTRY_VERIFY(!colorBounds(categories->viewport()->grab().toImage(), pixels, theme.text).isEmpty());
     const QImage hovered = categories->viewport()->grab().toImage();
@@ -428,7 +438,7 @@ void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
         }
     }
     QVERIFY(changed > 0);
-    QTest::mouseMove(categories->viewport(), away);
+    move(away);
     QTRY_COMPARE(movement.lastPosition, away);
     QTRY_COMPARE(categories->viewport()->grab().toImage().copy(pixels), normal.copy(pixels));
 }

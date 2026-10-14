@@ -3,6 +3,7 @@
 #include "docking/dock_surface.hpp"
 #include "docking/edge_strip.hpp"
 #include "docking/tab_strip.hpp"
+#include "fixtures/authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAbstractButton>
@@ -23,6 +24,7 @@
 #include <QTest>
 #include <QTimer>
 #include <QWheelEvent>
+#include <QWindow>
 #include <algorithm>
 #include <memory>
 
@@ -34,8 +36,11 @@ enum class StripKind { Central, Pinned, AutoHide };
 void sendMouse(QWidget* receiver, QEvent::Type type, QPoint global,
                Qt::MouseButton button = Qt::NoButton, Qt::MouseButtons buttons = Qt::LeftButton)
 {
+    test::authoredMouseInput().takePriority();
     QMouseEvent event(type, receiver->mapFromGlobal(global), global, button, buttons, Qt::NoModifier);
     QApplication::sendEvent(receiver, &event);
+    // Starting a drag installs another filter; keep the authored stream first.
+    test::authoredMouseInput().takePriority();
     QApplication::processEvents();
 }
 
@@ -229,7 +234,11 @@ class StripDragTest final : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
-    void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
+    void cleanup() {
+        test::authoredMouseInput().finish();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void authoredMouseStreamPreservesInputButtonsKeyboardAndTimers();
     void liveContentStaysInPlaceUntilFirstExit_data();
     void liveContentStaysInPlaceUntilFirstExit();
     void releasingWithinTheOriginalLabelKeepsItsOrderAndNeighbours_data();
@@ -258,6 +267,47 @@ private slots:
     void wheelOnAPeekDoesNotScrollTheCoveredStrip();
     void capturedWheelMayDestroyTheManager();
 };
+
+void StripDragTest::authoredMouseStreamPreservesInputButtonsKeyboardAndTimers()
+{
+    class Recorder final : public QObject {
+    public:
+        int moves = 0, presses = 0, releases = 0, keys = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::MouseMove) ++moves;
+            if (event->type() == QEvent::MouseButtonPress) ++presses;
+            if (event->type() == QEvent::MouseButtonRelease) ++releases;
+            if (event->type() == QEvent::KeyPress) ++keys;
+            return false;
+        }
+    } recorder;
+    QWidget widget;
+    widget.setMouseTracking(true);
+    widget.resize(180, 100);
+    widget.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&widget));
+    widget.installEventFilter(&recorder);
+    test::authoredMouseInput().takePriority();
+    QTest::mouseMove(widget.windowHandle(), QPoint(30, 30));
+    QCOMPARE(recorder.moves, 0);
+    QMouseEvent authored(QEvent::MouseMove, QPointF(40, 40), QPointF(widget.mapToGlobal(QPoint(40, 40))),
+        Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&widget, &authored);
+    QCOMPARE(recorder.moves, 1); // Synchronous, before processing any queue.
+    QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(40, 40));
+    QCOMPARE(recorder.presses, 1);
+    QTest::mouseRelease(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(40, 40));
+    QCOMPARE(recorder.releases, 1);
+    QTest::keyClick(&widget, Qt::Key_A);
+    QCOMPARE(recorder.keys, 1);
+    bool timerRan = false;
+    QTimer::singleShot(0, &widget, [&] { timerRan = true; });
+    QTRY_VERIFY(timerRan);
+    QCOMPARE(recorder.moves, 1);
+    test::authoredMouseInput().finish();
+    QTest::mouseMove(widget.windowHandle(), QPoint(50, 50));
+    QCOMPARE(recorder.moves, 2); // Cleanup restores ordinary QPA delivery.
+}
 
 void StripDragTest::queuedScrollRestoreYieldsToKeyboard_data()
 {

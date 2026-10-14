@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QtGlobal>
+#include "window_menu.hpp"
 
 class QWidget;
 
