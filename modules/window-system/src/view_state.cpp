@@ -98,11 +98,34 @@ bool WindowManager::setBarVisible(WindowId window, WindowBar bar, bool visible)
     auto& options = d->options[window];
     options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
     options.tabBarsVisible = bars.tabBars; options.sideBarsVisible = bars.sideBars;
+    const auto kind = d->model.window(window)->kind;
+    d->windowVisibility[window].insert(kind, bars);
+    // Only an explicit edit updates the shared default. Merely saving an
+    // older window must never roll it back to that window's stale values.
+    auto profile = d->visibilityProfiles.value(kind);
+    changed = changed || visibleFlag(profile, bar) != visible;
+    visibleFlag(profile, bar) = visible;
+    d->visibilityProfiles.insert(kind, profile);
     if (!changed) return true;
     QPointer<WindowManager> self(this);
     applyWindowViewState(window);
     if (self) emit layoutChanged();
     return true;
+}
+
+void WindowManager::syncVisibilityKind(WindowId window)
+{
+    const auto* record = d->model.window(window);
+    if (!record) return;
+    const auto kind = record->kind;
+    if (d->visibilityKinds.value(window, kind) == kind) { d->visibilityKinds.insert(window, kind); return; }
+    const auto previous = d->visibilityKinds.value(window);
+    d->windowVisibility[window].insert(previous, preferredBarVisibility(window));
+    const auto bars = d->windowVisibility.value(window).value(kind, d->visibilityProfiles.value(kind));
+    auto& options = d->options[window];
+    options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
+    options.tabBarsVisible = bars.tabBars; options.sideBarsVisible = bars.sideBars;
+    d->windowVisibility[window].insert(kind, bars); d->visibilityKinds.insert(window, kind);
 }
 
 bool WindowManager::setViewMode(WindowId window, ViewMode mode)

@@ -233,12 +233,12 @@ QDialog { background: @surface; }
 QWidget#WorkspaceWindow { background: @background; border: 1px solid @border; }
 QWidget#WindowHeader, QWidget#CommandStripHost, QWidget#CommandStrip, QLabel#StripDragPreview { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }
-QWidget#TabGroup { background: @background; }
-QScrollArea#TabScrollViewport { background: @background; }
+QWidget#TabGroup, QWidget#TabGroupHeader, QWidget#TabStripCanvas, QWidget#TabCreateButtons { background: @header; }
+QScrollArea#TabScrollViewport { background: @header; }
 QWidget#TabPage, QWidget#PaneHost { background: @surface; }
 QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }
-QWidget#EdgeBar { background: @background; }
+QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
 QWidget#PeekPanel { background: @surface; border: 1px solid @accent; }
 QWidget#DragEdgeContent { background: @surface; border: 1px solid @border; }
 QWidget#DragPeekTitle { background: @header; color: @headerText; }
@@ -248,27 +248,32 @@ QWidget#DockOverlay { background: transparent; }
 QWidget#CommandPalette { background: @surface; border: 1px solid @accent; }
 QLabel[role="hint"] { color: @muted; }
 QLabel[role="heading"] { color: @accent; font-weight: 600; }
-QPushButton, QToolButton { background: @raised; border: 1px solid @border; border-radius: @radiuspx; padding: 2px 7px; min-height: @controlInnerpx; }
+QPushButton, QToolButton { background: @raised; border: 1px solid @border; border-radius: 0; padding: 2px 7px; min-height: @controlInnerpx; }
 QToolButton { background: transparent; border-color: transparent; padding: 2px 4px; }
 QToolButton#TabListButton, QToolButton#UnpinCurrentButton, QToolButton#UnpinAllButton,
 QToolButton#PinPeekTabButton, QToolButton#ClosePeekTabButton, QToolButton#PinEdgeButton {
     padding: 0; min-height: 0; min-width: 0;
 }
-QPushButton:hover, QToolButton:hover { background: @soft; border-color: @accent; }
+QPushButton:hover, QToolButton:hover { background: @buttonHover; border-color: @accent; }
 QPushButton:pressed, QToolButton:pressed, QToolButton:checked { background: @selection; border-color: @accent; }
 QPushButton:focus, QToolButton:focus { border-color: @focus; }
 QPushButton:default { border-color: @accent; }
 QPushButton:disabled, QToolButton:disabled { color: @muted; border-color: @border; background: @raised; }
 QToolButton#CaptionButton { color: @headerText; background: transparent; border: none; border-radius: 0; padding: 0; }
-QToolButton#CaptionButton:hover { background: @soft; }
+QToolButton#CaptionButton:hover { background: @buttonHover; }
 QToolButton#CaptionButton[role="close"]:hover { background: @danger; color: white; }
 QToolButton#EdgeButton { color: @statusText; border: none; border-radius: 0; padding: 3px 6px; }
-QToolButton#EdgeButton:hover, QToolButton#EdgeButton:checked { background: @accent; color: white; }
+QToolButton#EdgeButton:hover, QToolButton#EdgeButton:checked { background: @buttonHover; color: @text; }
+QWidget#TabCreateButtons QToolButton { background: @header; border: none; padding: 0; min-height: 0; min-width: 0; }
+QWidget#TabCreateButtons[emphasized="true"] QToolButton { background: @soft; }
+QWidget#TabCreateButtons QToolButton:pressed { background: @selection; }
+QWidget#TabCreateButtons[popupOpen="true"] QToolButton#NewTabButton { background: @header; }
+QWidget#TabCreateButtons[popupOpen="true"] QToolButton#NewTabTypeButton { background: @selection; }
 QMenuBar, QMenuBar#MenuStrip { background: transparent; border: none; padding: 0; color: @headerText; }
 QMenuBar::item { background: transparent; padding: 5px 8px; }
 QMenuBar::item:selected { background: @soft; }
 QMenuBar::item:pressed { background: @selection; }
-QMenu { background: @surface; color: @text; border: 1px solid @border; padding: 3px; }
+QMenu { background: @surface; color: @text; border: 1px solid @border; border-radius: 0; padding: 3px; }
 QMenu::item { padding: 5px 24px 5px 22px; }
 QMenu::item:selected { background: @selection; color: @selectionText; }
 QMenu::item:disabled { color: @muted; }
@@ -280,7 +285,7 @@ QTreeView#SettingsCategories::item, QTreeView#SettingsCategories::item:hover, QT
 QFrame#SettingsCategoryDivider { background: @border; border: none; }
 QToolBar { background: @header; border: none; spacing: 3px; padding: 2px; }
 QToolBar::separator { width: 1px; background: @border; margin: 3px 4px; }
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit { background: @surface; color: @text; border: 1px solid @border; border-radius: @radiuspx; padding: 2px 5px; selection-background-color: @selection; selection-color: @selectionText; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit { background: @surface; color: @text; border: 1px solid @border; border-radius: 0; padding: 2px 5px; selection-background-color: @selection; selection-color: @selectionText; }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { min-height: @controlInnerpx; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus { border-color: @focus; }
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { background: @raised; color: @muted; }
@@ -289,7 +294,7 @@ QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top righ
 QSpinBox, QDoubleSpinBox { padding-right: 20px; }
 QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: 1px solid transparent; background: transparent; }
 QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: padding; subcontrol-position: bottom right; width: 18px; border: 1px solid transparent; background: transparent; }
-QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { border-color: @accent; background: @soft; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { border-color: @accent; background: @buttonHover; }
 QComboBox QAbstractItemView { background: @surface; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; }
 QAbstractItemView { background: @surface; alternate-background-color: @raised; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; outline: 0; }
 QAbstractItemView::item { padding: 3px 4px; min-height: 18px; }
@@ -297,9 +302,9 @@ QAbstractItemView::item:hover { background: @soft; }
 QAbstractItemView::item:selected { background: @selection; color: @selectionText; }
 QAbstractItemView:focus { border-color: @focus; }
 QHeaderView::section { background: @raised; color: @text; padding: 4px 6px; border: none; border-right: 1px solid @border; border-bottom: 1px solid @border; }
-QTabBar, QTabBar#TabBar { background: @background; }
-QTabBar::tab { background: @inactive; color: @text; border: 1px solid @border; border-bottom: 2px solid @border; padding: 3px 6px; min-height: @tabInnerpx; margin-right: 1px; }
-QTabBar::tab:hover { background: @soft; }
+QTabBar, QTabBar#TabBar { background: @header; }
+QTabBar::tab { background: @inactive; color: @text; border: none; border-bottom: 2px solid @border; border-radius: 0; padding: 3px 6px; min-height: @tabInnerpx; margin-right: 0; }
+QTabBar::tab:hover { background: @buttonHover; }
 QTabBar::tab:selected { background: @active; border-bottom: 2px solid @accent; }
 QTabBar::tab:disabled { color: @muted; background: @raised; }
 QTabBar::close-button { subcontrol-position: right; }
@@ -321,10 +326,10 @@ QStatusBar, QWidget#StatusBar { background: @status; color: @statusText; border:
 QStatusBar QLabel, QWidget#StatusBar QLabel { color: @statusText; }
 QStatusBar::item { border: none; }
 QStatusBar QToolButton, QWidget#StatusBar QToolButton { color: @statusText; }
-QToolTip { background: @surface; color: @text; border: 1px solid @border; padding: 4px 6px; }
+QToolTip { background: @surface; color: @text; border: 1px solid @border; border-radius: @radiuspx; padding: 4px 6px; }
 QCheckBox, QRadioButton { spacing: 5px; }
 QCheckBox::indicator, QRadioButton::indicator { width: 14px; height: 14px; }
-QCheckBox::indicator { background: @surface; border: 1px solid @border; border-radius: @radiuspx; }
+QCheckBox::indicator { background: @surface; border: 1px solid @border; border-radius: 0; }
 QCheckBox::indicator:hover { border-color: @accent; }
 QCheckBox::indicator:checked, QCheckBox::indicator:indeterminate { background: @accent; border-color: @accent; }
 QCheckBox::indicator:disabled { background: @raised; border-color: @border; }
@@ -339,7 +344,7 @@ QProgressBar::chunk { background: @accent; }
         {"@raised", theme.raisedSurface}, {"@headerText", theme.headerText},
         {"@header", theme.headerBackground}, {"@text", theme.text},
         {"@muted", theme.mutedText}, {"@border", theme.border},
-        {"@accent", theme.accent}, {"@soft", theme.accentSoft},
+        {"@accent", theme.accent}, {"@buttonHover", theme.buttonHover}, {"@soft", theme.accentSoft},
         {"@active", theme.activeTab}, {"@inactive", theme.inactiveTab},
         {"@statusText", theme.statusText}, {"@status", theme.statusBackground},
         {"@selectionText", theme.selectionText}, {"@selection", theme.selection},
@@ -349,7 +354,7 @@ QProgressBar::chunk { background: @accent; }
     for (const auto& [token, value] : colors) rules.replace(QString::fromLatin1(token), color(value));
     rules.replace(QStringLiteral("@radius"), QString::number(std::max(0, theme.metrics.cornerRadius)));
     rules.replace(QStringLiteral("@controlInner"), QString::number(std::max(14, theme.metrics.controlHeight - 6)));
-    rules.replace(QStringLiteral("@tabInner"), QString::number(std::max(14, theme.metrics.tabHeight - 9)));
+    rules.replace(QStringLiteral("@tabInner"), QString::number(std::max(14, theme.metrics.tabHeight - 8)));
     rules.replace(QStringLiteral("@splitter"), QString::number(std::max(1, theme.metrics.splitterWidth)));
     rules.replace(QStringLiteral("@groupSplitter"), QString::number(std::max(1, theme.metrics.groupSplitterWidth)));
     return rules;
@@ -364,7 +369,8 @@ void applyTheme(QWidget* root, const Theme& theme)
     // pointer or stale colors from its previous window.
     root->setProperty("windowSystemThemeColors", QVariantMap{
         {"text", theme.text}, {"mutedText", theme.mutedText}, {"accent", theme.accent},
-        {"surface", theme.surface}, {"accentSoft", theme.accentSoft},
+        {"surface", theme.surface}, {"accentSoft", theme.accentSoft}, {"buttonHover", theme.buttonHover},
+        {"headerBackground", theme.headerBackground}, {"inactiveTab", theme.inactiveTab},
         {"selection", theme.selection}, {"selectionText", theme.selectionText},
         {"checkedIndicatorText", theme.checkedIndicatorText}});
     QPalette palette = root->palette();

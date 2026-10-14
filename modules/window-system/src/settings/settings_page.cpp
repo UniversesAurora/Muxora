@@ -229,6 +229,16 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     rows->setSpacing(18);
 
     addCategory(contents, rows, QStringLiteral("window"), QStringLiteral("窗口"));
+    newTabPosition_ = new ThemedComboBox(contents);
+    newTabPosition_->setObjectName(QStringLiteral("NewTabPosition"));
+    newTabPosition_->setAccessibleName(QStringLiteral("新建标签的位置"));
+    for (const auto& entry : {std::pair{QStringLiteral("当前标签之后（默认）"), NewTabPosition::AfterActive},
+                             std::pair{QStringLiteral("当前标签之前"), NewTabPosition::BeforeActive},
+                             std::pair{QStringLiteral("标签组开头"), NewTabPosition::Beginning},
+                             std::pair{QStringLiteral("标签组末尾"), NewTabPosition::End}})
+        newTabPosition_->addItem(entry.first, int(entry.second));
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("新建标签的位置"),
+        QStringLiteral("window.newTabPosition"), QStringLiteral("适用于加号、类型菜单和命令创建的标签。"), newTabPosition_));
     detachKind_ = new ThemedComboBox(contents);
     detachKind_->setObjectName(QStringLiteral("DetachWindowKind"));
     detachKind_->setAccessibleName(QStringLiteral("拖出标签的窗口形态"));
@@ -277,10 +287,15 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         next.closeEmptyWorkbench = emptyPolicy_->currentData().toBool();
         next.revealDuringDrag = reveal_->isChecked();
         next.revealDelayMs = delay_->value();
+        next.newTabPosition = NewTabPosition(newTabPosition_->currentData().toInt());
+        const QPointer<SettingsPage> self(this);
         manager_->setBehavior(next);
-        syncControls();
+        // Saving the change may synchronously close this page or destroy its
+        // manager. The notification is the last unguarded use of this widget.
+        if (self) self->syncControls();
     };
     QObject::connect(detachKind_, &QComboBox::currentIndexChanged, this, change);
+    QObject::connect(newTabPosition_, &QComboBox::currentIndexChanged, this, change);
     QObject::connect(emptyPolicy_, &QComboBox::currentIndexChanged, this, change);
     QObject::connect(reveal_, &QCheckBox::toggled, this, change);
     QObject::connect(delay_, &QSpinBox::valueChanged, this, change);
@@ -401,10 +416,12 @@ void SettingsPage::syncControls()
     if (!manager_) return;
     const auto behavior = manager_->behavior();
     const QSignalBlocker detachBlock(detachKind_);
+    const QSignalBlocker positionBlock(newTabPosition_);
     const QSignalBlocker emptyBlock(emptyPolicy_);
     const QSignalBlocker revealBlock(reveal_);
     const QSignalBlocker delayBlock(delay_);
     detachKind_->setCurrentIndex(behavior.dragOutsideKind == WindowKind::Floating ? 0 : 1);
+    newTabPosition_->setCurrentIndex(newTabPosition_->findData(int(behavior.newTabPosition)));
     emptyPolicy_->setCurrentIndex(behavior.closeEmptyWorkbench ? 1 : 0);
     reveal_->setChecked(behavior.revealDuringDrag);
     delay_->setValue(behavior.revealDelayMs);

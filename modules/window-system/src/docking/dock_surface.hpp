@@ -2,6 +2,7 @@
 #include <window_system/window_manager.hpp>
 #include <window_system/view_state.hpp>
 #include "panes/focus_projection.hpp"
+#include "tab_viewport_state.hpp"
 #include <QFrame>
 #include <QHash>
 #include <QPointer>
@@ -52,6 +53,7 @@ private:
     QWidget* buildEdge(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     void placePeek();
+    [[nodiscard]] bool centralTabBarVisible(bool requested) const;
     void savePinnedExtents();
     void restorePinnedExtents();
     void restoreFocusScope();
@@ -64,12 +66,14 @@ private:
     QPointer<QWidget> center_;
     QPointer<QFrame> peek_;
     QPointer<QWidget> peekResizeHandle_;
+    QPointer<QWidget> peekSecondaryResizeHandle_;
+    QPointer<QWidget> peekCornerResizeHandle_;
     GroupId peekGroup_;
     TabId peekTab_;
     quint64 peekGeneration_ = 0;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
     QHash<Edge, QPointer<QWidget>> edgeBars_;
-    QHash<GroupId, int> groupScrollOffsets_;
+    QHash<GroupId, TabViewportState> groupViewportStates_;
     QHash<Edge, int> edgeScrollOffsets_;
     QHash<Edge, QPointer<QSplitter>> pinnedRegions_;
     QPointer<QSplitter> horizontal_;

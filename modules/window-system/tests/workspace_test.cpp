@@ -67,6 +67,9 @@ private slots:
     void aBoundCommandExecutesFromContentKeyboardInput();
     void invalidRestorePreservesTheCurrentModelAndWidgets();
     void failedRestoreReleasesPreparedContentsAndPreservesCurrentContents();
+    void restoreFactoriesMayDestroyTheirManager_data();
+    void restoreFactoriesMayDestroyTheirManager();
+    void restoreFactoryMayReplaceItselfWithoutDestroyingItsCaptures();
     void validRestoreCreatesContentsForExistingStableIds();
     void restoredWindowTitlesSurviveFreshAndExistingHosts();
     void emptyRootWithFloatingContentSurvivesAutomaticClosePolicy();
@@ -522,6 +525,88 @@ void WorkspaceTest::failedRestoreReleasesPreparedContentsAndPreservesCurrentCont
     QCOMPARE(manager.model().toJson(), before);
     deliverDeferredDeletes();
     QVERIFY(originalA && originalB);
+}
+
+void WorkspaceTest::restoreFactoriesMayDestroyTheirManager_data()
+{
+    QTest::addColumn<int>("destroyOnCall");
+    QTest::newRow("first-factory-return") << 1;
+    QTest::newRow("after-one-prepared-pane") << 2;
+}
+
+void WorkspaceTest::restoreFactoriesMayDestroyTheirManager()
+{
+    QFETCH(int, destroyOnCall);
+    auto manager = std::make_unique<WindowManager>(); const auto window = manager->createWindow();
+    const QPointer<QWidget> originalA = editor("Original A"), originalB = editor("Original B");
+    manager->addTab(window, originalA, editorOptions("A", "Original A"));
+    manager->addTab(window, originalB, editorOptions("B", "Original B"));
+    const auto snapshot = manager->saveLayout();
+    int calls = 0, originalDestroyed = 0, preparedDestroyed = 0;
+    connect(originalA, &QObject::destroyed, this, [&] { ++originalDestroyed; });
+    connect(originalB, &QObject::destroyed, this, [&] { ++originalDestroyed; });
+    QVector<QPointer<QWidget>> prepared;
+    manager->setContentFactory([&](const TabOptions& options, PaneId) -> QWidget* {
+        // Factory replacement/destruction is a plain host callback, not a
+        // QWidget show/hide event. Copy all observers before deleting owner.
+        auto* owner = &manager; auto* count = &calls; auto* widgets = &prepared;
+        auto* destroyed = &preparedDestroyed; auto* receiver = this;
+        const auto text = options.state.value("text").toString();
+        const bool removeManager = ++*count == destroyOnCall;
+        if (removeManager) owner->reset();
+        auto* content = editor(text);
+        widgets->append(content);
+        QObject::connect(content, &QObject::destroyed, receiver, [destroyed] { ++*destroyed; });
+        return content;
+    });
+    const auto result = manager->restoreLayout(snapshot);
+    QVERIFY(!result); QVERIFY(!result.error.isEmpty()); QVERIFY(!manager);
+    QCOMPARE(calls, destroyOnCall); QCOMPARE(prepared.size(), destroyOnCall);
+    QCOMPARE(preparedDestroyed, destroyOnCall); QCOMPARE(originalDestroyed, 2);
+    QVERIFY(!originalA); QVERIFY(!originalB);
+    for (const auto& content : prepared) QVERIFY(!content);
+    deliverDeferredDeletes(); QCOMPARE(preparedDestroyed, destroyOnCall); QCOMPARE(originalDestroyed, 2);
+}
+
+void WorkspaceTest::restoreFactoryMayReplaceItselfWithoutDestroyingItsCaptures()
+{
+    struct Capture { QString text = QStringLiteral("Original factory return"); };
+    WindowManager manager; const auto window = manager.createWindow();
+    const QPointer<QWidget> originalA = editor("Original A"), originalB = editor("Original B");
+    const auto tabA = manager.addTab(window, originalA, editorOptions("A", "Original A"));
+    const auto tabB = manager.addTab(window, originalB, editorOptions("B", "Original B"));
+    const auto paneA = manager.model().tab(tabA)->activePane, paneB = manager.model().tab(tabB)->activePane;
+    const auto snapshot = manager.saveLayout(); const auto modelBefore = manager.model().toJson();
+    int firstCalls = 0, replacementCalls = 0; bool capturesSurvivedReplacement = false;
+    QHash<PaneId, QString> generated;
+    auto capture = std::make_shared<Capture>(); const std::weak_ptr<Capture> weakCapture = capture;
+    manager.setContentFactory([&, capture](const TabOptions&, PaneId pane) -> QWidget* {
+        const auto text = capture->text;
+        const auto observer = weakCapture;
+        auto* captureState = &capturesSurvivedReplacement; auto* produced = &generated;
+        ++firstCalls;
+        manager.setContentFactory([&](const TabOptions&, PaneId next) -> QWidget* {
+            ++replacementCalls;
+            const auto replacement = QStringLiteral("Replacement factory return");
+            generated.insert(next, replacement);
+            return editor(replacement);
+        });
+        *captureState = !observer.expired();
+        produced->insert(pane, text);
+        return editor(text);
+    });
+    capture.reset(); QVERIFY(!weakCapture.expired());
+    const auto result = manager.restoreLayout(snapshot);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(capturesSurvivedReplacement); QVERIFY(weakCapture.expired());
+    QCOMPARE(firstCalls, 1); QCOMPARE(replacementCalls, 1);
+    QCOMPARE(QSet<PaneId>(generated.keyBegin(), generated.keyEnd()), (QSet<PaneId>{paneA, paneB}));
+    QCOMPARE(manager.model().toJson(), modelBefore);
+    for (const auto id : {paneA, paneB}) {
+        auto* restored = qobject_cast<QPlainTextEdit*>(manager.paneWidget(id)); QVERIFY(restored);
+        QCOMPARE(restored->toPlainText(), generated.value(id));
+    }
+    deliverDeferredDeletes(); QVERIFY(!originalA); QVERIFY(!originalB); QVERIFY(manager.model().validate());
 }
 
 void WorkspaceTest::validRestoreCreatesContentsForExistingStableIds()

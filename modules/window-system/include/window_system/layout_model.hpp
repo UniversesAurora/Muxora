@@ -24,6 +24,14 @@ enum class Placement { Center, Left, Right, Top, Bottom };
 enum class Edge { Left, Right, Top, Bottom };
 enum class GroupLocation { Central, Pinned, AutoHide };
 
+// Missing dimensions use the default cross-edge extent or stretch along the
+// edge. Left/right share one policy; top/bottom share a separate policy.
+struct PeekSizePolicy {
+    std::optional<int> width;
+    std::optional<int> height;
+    bool operator==(const PeekSizePolicy&) const = default;
+};
+
 // Immutable nodes allow snapshots to share unchanged trees safely. An item is a
 // GroupId in a central tree and a PaneId in a tab's pane tree.
 struct LayoutNode;
@@ -75,9 +83,13 @@ struct TabRecord {
     // A dormant group ID is intentional: unpinning its final tab removes the
     // visible group, while repinning can reconstruct that same partition.
     std::optional<PinnedPosition> pinnedPosition;
-    // The preferred auto-hide panel size belongs to the tab and survives
-    // pinning and window moves. Absence uses the host's default size.
+    // Compatibility cross-edge defaults from older snapshots/API calls. An
+    // unspecified along-edge dimension continues to stretch the available area.
     std::optional<QSize> peekSize;
+    // Explicit per-orientation policies override the legacy defaults and
+    // survive pinning or window moves without resizing pinned partitions.
+    std::optional<PeekSizePolicy> verticalPeekSize;
+    std::optional<PeekSizePolicy> horizontalPeekSize;
 };
 
 struct OperationResult {
@@ -108,7 +120,7 @@ public:
     // Failed identifier-returning operations return a null UUID without changes.
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           WindowId ownerWorkbench = {});
-    TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {});
+    TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1);
     OperationResult renameTab(TabId tabId, QString title);
     OperationResult activateTab(TabId tabId);
     OperationResult activatePane(TabId tabId, PaneId paneId);
@@ -133,6 +145,8 @@ public:
     // and height >= 100, with each dimension at most 16777215 (Qt's limit).
     // This does not resize pinned partitions or change tab placement.
     OperationResult setPeekSize(TabId tabId, std::optional<QSize> size);
+    [[nodiscard]] PeekSizePolicy peekSizePolicy(TabId tabId, Edge edge) const;
+    OperationResult setPeekSizePolicy(TabId tabId, Edge edge, PeekSizePolicy size);
     OperationResult moveGroupToCenter(GroupId groupId, GroupId targetGroup = {},
                                       Placement placement = Placement::Right);
     WindowId detachTab(TabId tabId, WindowKind kind = WindowKind::Floating);

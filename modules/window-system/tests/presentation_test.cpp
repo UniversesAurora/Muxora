@@ -199,6 +199,9 @@ void PresentationTest::tabScrollCanvasUsesTheThemeAfterWindowCreation()
     darkPalette.setColor(QPalette::Window, QColor("#1f1f1f"));
     qApp->setPalette(darkPalette);
     WindowManager manager;
+    // This fixture tests the visible strip's theme, independently of the
+    // single-tab auto-hide policy covered by tab-bar-presentation.
+    auto behavior = manager.behavior(); behavior.hideSingleTabFloating = false; manager.setBehavior(behavior);
     const auto root = manager.createWindow();
     const auto tab = manager.addTab(root, new QLabel("Content"), {"One", "test.label", {}});
     QVERIFY(!tab.isNull());
@@ -210,12 +213,12 @@ void PresentationTest::tabScrollCanvasUsesTheThemeAfterWindowCreation()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* tabs = static_cast<GroupTabs*>(window->findChild<QWidget*>("TabGroup")); QVERIFY(tabs);
     auto* scroll = tabs->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    const int firstEmptyPixel = tabs->tabBar()->width() + 12;
+    const int firstEmptyPixel = scroll->widget()->width() + 12;
     const QRect emptyArea(firstEmptyPixel, 4, scroll->viewport()->width() - firstEmptyPixel - 12,
                           scroll->viewport()->height() - 8);
     QVERIFY(emptyArea.width() > 20); QVERIFY(emptyArea.height() > 4);
     const auto image = logicalImage(scroll->viewport());
-    QCOMPARE(matchingPixels(image, emptyArea, defaultTheme().background),
+    QCOMPARE(matchingPixels(image, emptyArea, defaultTheme().headerBackground),
              emptyArea.width() * emptyArea.height());
 }
 

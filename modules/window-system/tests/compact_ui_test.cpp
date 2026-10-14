@@ -209,8 +209,11 @@ void CompactUiTest::groupButtonsStaySmallerThanTheTabs()
     auto* header = tabs.findChild<QWidget*>("TabGroupHeader"); QVERIFY(header);
     for (const auto& name : {"TabListButton", "UnpinCurrentButton", "UnpinAllButton"}) {
         auto* button = tabs.findChild<QToolButton*>(name); QVERIFY(button);
-        QCOMPARE(button->size(), QSize(20, 20)); QCOMPARE(button->iconSize(), QSize(14, 14));
-        QVERIFY(button->height() < tabs.tabBar()->height());
+        const bool list = button->objectName() == "TabListButton";
+        QCOMPARE(button->size(), list ? QSize(12, tabs.tabBar()->height()) : QSize(20, 20));
+        QCOMPARE(button->iconSize(), list ? QSize(10, 14) : QSize(14, 14));
+        if (list) QCOMPARE(button->height(), tabs.tabBar()->height());
+        else QVERIFY(button->height() < tabs.tabBar()->height());
         QVERIFY(header->rect().contains(button->geometry()));
         QVERIFY(!button->icon().isNull()); QVERIFY(!button->accessibleName().isEmpty());
         QCOMPARE(button->grab().devicePixelRatio(), tabs.devicePixelRatioF());
@@ -338,7 +341,9 @@ void CompactUiTest::compactPeekAndEdgeBarsKeepRealContent()
     QCOMPARE(pinned->tabBar()->height(), originalTabHeight);
     for (const auto& name : {"UnpinCurrentButton", "UnpinAllButton", "TabListButton"}) {
         auto* button = pinned->findChild<QToolButton*>(name); QVERIFY(button);
-        QCOMPARE(button->size(), QSize(20, 20)); QCOMPARE(button->iconSize(), QSize(14, 14));
+        const bool list = button->objectName() == "TabListButton";
+        QCOMPARE(button->size(), list ? QSize(12, pinned->tabBar()->height()) : QSize(20, 20));
+        QCOMPARE(button->iconSize(), list ? QSize(10, 14) : QSize(14, 14));
     }
 }
 

@@ -16,6 +16,7 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QTreeWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -48,14 +49,14 @@ bool canExecute(const Command& command, const CommandContext& context)
     return command.execute && (!command.enabled || command.enabled(context));
 }
 
-QDialog* createDialog(WindowManager* manager, QWidget* parent,
-                      const QString& name, const QString& title, QSize size, bool palette = false)
+FloatingPanel* createDialog(WindowManager* manager, QWidget* parent,
+                             const QString& name, const QString& title, QSize size,
+                             const FloatingPanelOptions& options)
 {
-    auto* dialog = new QDialog(parent);
+    auto* dialog = new FloatingPanel(parent, options);
     dialog->setObjectName(name);
     dialog->setWindowTitle(title);
-    dialog->setWindowModality(Qt::WindowModal);
-    if (palette) dialog->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->resize(size);
     dialog->setMinimumSize(420, 240);
     applyTheme(dialog, manager->theme());
@@ -77,17 +78,6 @@ void positionDialog(QDialog* dialog, QWidget* parent)
     position.setX(std::clamp(position.x(), available.left(), available.right() - size.width() + 1));
     position.setY(std::clamp(position.y(), available.top(), available.bottom() - size.height() + 1));
     dialog->move(position);
-}
-
-int runDialog(QDialog* dialog, QWidget* parent)
-{
-    // A root window may be removed while a modal loop is active. Heap ownership
-    // plus QPointer handles parent deletion without deleting a stack QObject.
-    const QPointer<QDialog> alive(dialog);
-    positionDialog(dialog, parent);
-    const int result = dialog->exec();
-    if (alive) delete alive.data();
-    return result;
 }
 
 QLabel* hintLabel(const QString& text, QWidget* parent)
@@ -153,7 +143,7 @@ protected:
         }
         if (selected >= 0) {
             tree_->setCurrentItem(tree_->topLevelItem(selected));
-            tree_->scrollToItem(tree_->currentItem());
+            if (tree_) tree_->scrollToItem(tree_->currentItem());
         }
         return true;
     }
@@ -175,14 +165,14 @@ void selectFirstEnabled(QTreeWidget* tree)
 
 } // namespace
 
-void openCommandPalette(WindowManager* manager, const CommandContext& context, QWidget* parent)
+void openCommandPalette(WindowManager* manager, const CommandContext& context, QWidget* parent,
+                        const FloatingPanelOptions& options)
 {
     if (!manager) return;
     const QPointer<WindowManager> alive(manager);
     const CommandContext target = context;
-    QString selectedCommand;
     auto* dialog = createDialog(manager, parent, QStringLiteral("CommandPalette"),
-                                QStringLiteral("命令面板"), QSize(780, 450), true);
+                                QStringLiteral("命令面板"), QSize(780, 450), options);
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
@@ -202,14 +192,25 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
     layout->addWidget(buttons);
     new SearchListNavigation(search, tree);
 
-    const auto updateSelected = [alive, tree, buttons, details, target] {
+    const QPointer<QTreeWidget> retainedTree(tree);
+    const QPointer<QDialogButtonBox> retainedButtons(buttons);
+    const QPointer<QLabel> retainedDetails(details);
+    const QPointer<QLineEdit> retainedSearch(search);
+    const QPointer<FloatingPanel> retainedDialog(dialog);
+    const auto updateSelected = [alive, tree = retainedTree, buttons = retainedButtons,
+                                 details = retainedDetails, target] {
+        if (!tree || !buttons || !details) return;
         const auto* item = tree->currentItem();
         const QString id = item ? item->data(0, Qt::UserRole).toString() : QString();
-        const auto* command = alive ? alive->commands().find(id) : nullptr;
-        buttons->button(QDialogButtonBox::Ok)->setEnabled(command && canExecute(*command, target));
-        details->setText(command ? command->id : QStringLiteral("没有匹配的可执行命令。"));
+        const auto* found = alive ? alive->commands().find(id) : nullptr;
+        const Command command = found ? *found : Command{};
+        const bool enabled = found && canExecute(command, target);
+        if (!alive || !tree || !buttons || !details) return;
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(enabled);
+        details->setText(found ? command.id : QStringLiteral("没有匹配的可执行命令。"));
     };
-    const auto rebuild = [alive, tree, search, target, updateSelected] {
+    const auto rebuild = [alive, tree = retainedTree, search = retainedSearch, target, updateSelected] {
+        if (!tree || !search) return;
         tree->clear();
         if (!alive) return;
         const QString query = search->text();
@@ -217,10 +218,12 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         for (const auto& command : commands) {
             const QString searchable = displayTitle(command) + QLatin1Char(' ') + command.category + QLatin1Char(' ') + command.id;
             if (!matchesSearch(searchable, query)) continue;
+            const bool enabled = canExecute(command, target);
+            if (!alive || !tree || !search) return;
             auto* item = new QTreeWidgetItem(tree, {displayTitle(command), command.category, shortcutText(command.shortcut)});
             item->setData(0, Qt::UserRole, command.id);
             item->setToolTip(0, command.id);
-            if (!canExecute(command, target)) {
+            if (!enabled) {
                 item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
                 item->setToolTip(0, command.id + QStringLiteral("\n当前窗口或内容不满足执行条件。"));
             }
@@ -228,13 +231,17 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         selectFirstEnabled(tree);
         updateSelected();
     };
-    const auto accept = [alive, tree, target, dialog, &selectedCommand] {
+    const auto accept = [alive, tree = retainedTree, target, dialog = retainedDialog] {
+        if (!tree || !dialog) return;
         const auto* item = tree->currentItem();
         if (!alive || !item) return;
         const QString id = item->data(0, Qt::UserRole).toString();
-        const auto* command = alive->commands().find(id);
-        if (command && canExecute(*command, target)) {
-            selectedCommand = id;
+        const auto* found = alive->commands().find(id);
+        if (!found) return;
+        const Command command = *found;
+        const bool enabled = canExecute(command, target);
+        if (enabled && alive && tree && dialog) {
+            dialog->setProperty("selectedCommand", id);
             dialog->accept();
         }
     };
@@ -244,24 +251,32 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
     QObject::connect(tree, &QTreeWidget::itemActivated, dialog, accept);
     QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    QObject::connect(dialog, &QDialog::finished, dialog, [alive, target, dialog](int result) {
+        const auto id = dialog->property("selectedCommand").toString();
+        if (result != QDialog::Accepted || !alive || id.isEmpty()) return;
+        // Resolve after hiding the panel, while retaining the IDs captured
+        // before its search field obtained focus. Commands may close the owner.
+        QTimer::singleShot(0, alive, [alive, target, id] {
+            if (!alive) return;
+            const bool executed = alive->executeInContext(id, target);
+            if (!executed && alive && alive->model().window(target.window))
+                alive->setStatus(target.window, QStringLiteral("命令未执行：%1").arg(id));
+        });
+    });
     rebuild();
+    if (!retainedDialog || !alive) return;
+    positionDialog(dialog, parent);
+    dialog->show();
     search->setFocus();
-    if (runDialog(dialog, parent) != QDialog::Accepted || !alive || selectedCommand.isEmpty()) return;
-    // The dialog no longer owns focus; execution nevertheless targets the IDs
-    // captured before opening it, rather than whichever widget Qt just focused.
-    const bool executed = alive->commands().execute(selectedCommand, target);
-    if (!executed && alive && alive->model().window(target.window)) {
-        alive->setStatus(target.window, QStringLiteral("命令未执行：%1").arg(selectedCommand));
-    }
 }
 
-void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent)
+void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent,
+                        const FloatingPanelOptions& options)
 {
     if (!manager) return;
     const QPointer<WindowManager> alive(manager);
-    WindowId selected;
     auto* dialog = createDialog(manager, parent, QStringLiteral("WindowSelector"),
-                                QStringLiteral("切换窗口"), QSize(780, 410), true);
+                                QStringLiteral("切换窗口"), QSize(780, 410), options);
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(12, 12, 12, 12);
     auto* search = new QLineEdit(dialog);
@@ -303,11 +318,11 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
         if (!tree->currentItem()) selectFirstEnabled(tree);
         buttons->button(QDialogButtonBox::Ok)->setEnabled(tree->currentItem() != nullptr);
     };
-    const auto accept = [alive, tree, dialog, &selected] {
+    const auto accept = [alive, tree, dialog] {
         if (!alive || !tree->currentItem()) return;
         const WindowId id = tree->currentItem()->data(0, Qt::UserRole).toUuid();
         if (alive->model().window(id)) {
-            selected = id;
+            dialog->setProperty("selectedWindow", id);
             dialog->accept();
         }
     };
@@ -317,25 +332,15 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
     QObject::connect(search, &QLineEdit::returnPressed, dialog, accept);
     QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    QObject::connect(dialog, &QDialog::finished, dialog, [alive, dialog](int result) {
+        const auto target = dialog->property("selectedWindow").toUuid();
+        if (result != QDialog::Accepted || !alive || target.isNull()) return;
+        QTimer::singleShot(0, alive, [alive, target] { if (alive) alive->activateWindow(target); });
+    });
     rebuild();
+    positionDialog(dialog, parent);
+    dialog->show();
     search->setFocus();
-    if (runDialog(dialog, parent) != QDialog::Accepted || !alive) return;
-    const auto* record = alive->model().window(selected);
-    if (!record) return;
-    TabId activeTab;
-    if (const auto* group = alive->model().group(record->activeGroup)) activeTab = group->activeTab;
-    if (activeTab.isNull()) {
-        const auto tabs = alive->model().orderedTabs(selected);
-        if (!tabs.isEmpty()) activeTab = tabs.front();
-    }
-    alive->showWindow(selected);
-    const QPointer<QWidget> widget = alive->windowWidget(selected);
-    if (!widget) return;
-    if (widget->isMinimized()) widget->showNormal();
-    widget->raise();
-    widget->activateWindow();
-    if (!activeTab.isNull()) alive->activateTab(activeTab);
-    else widget->setFocus(Qt::ActiveWindowFocusReason);
 }
 
 namespace {

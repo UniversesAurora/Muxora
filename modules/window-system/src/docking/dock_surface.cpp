@@ -143,16 +143,16 @@ void DockSurface::captureStripScrollOffsets()
     // Capture before content reparenting changes the old viewport sizes.
     // These caches contain only the currently mounted strips, not tab content
     // or an unbounded history of removed groups.
-    groupScrollOffsets_.clear(); edgeScrollOffsets_.clear();
+    groupViewportStates_.clear(); edgeScrollOffsets_.clear();
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value()) groupScrollOffsets_.insert(it.key(), it.value()->scrollOffset());
+        if (it.value()) groupViewportStates_.insert(it.key(), it.value()->captureViewportState());
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
         if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) edgeScrollOffsets_.insert(it.key(), strip->scrollOffset());
 }
 void DockSurface::restoreStripScrollOffsets()
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value() && groupScrollOffsets_.contains(it.key())) it.value()->restoreScrollOffset(groupScrollOffsets_.value(it.key()));
+        if (it.value() && groupViewportStates_.contains(it.key())) it.value()->restoreViewportState(groupViewportStates_.value(it.key()));
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
         if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data()); strip && edgeScrollOffsets_.contains(it.key()))
             strip->restoreScrollOffset(edgeScrollOffsets_.value(it.key()));
@@ -195,7 +195,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     if (!group) return nullptr;
     auto* tabs = new GroupTabs(manager_->theme(), this);
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
-    tabs->setTabBarVisible(group->location != GroupLocation::Central || manager_->tabBarsVisible(window_));
+    tabs->setTabBarVisible(group->location != GroupLocation::Central || centralTabBarVisible(manager_->tabBarsVisible(window_)));
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
         if (auto content = contents.value(tabId)) {
@@ -205,8 +205,14 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         }
     }
     for (int i = 0; i < bar->count(); ++i)
-        if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupScrollOffsets_.contains(id));
+        if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupViewportStates_.contains(id));
     groups_.insert(id, tabs);
+    tabs->newTabRequested = [manager = QPointer<WindowManager>(manager_), window = window_, id] {
+        if (manager) manager->requestNewTab(window, id);
+    };
+    tabs->newTabMenuRequested = [manager = QPointer<WindowManager>(manager_), window = window_, id](QWidget* parent) {
+        return manager ? manager->createTabCreationMenu(window, id, parent) : nullptr;
+    };
     tabs->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
     if (group->location == GroupLocation::Pinned) {
         tabs->setPinnedActions([this, id] {
@@ -454,7 +460,8 @@ void DockSurface::setDragPresentation(bool compact, bool edge)
         it.value()->setDragPresentation(compact, edge);
         if (!compact) {
             const auto* group = manager_->model().group(it.key());
-            it.value()->setTabBarVisible(group && (group->location != GroupLocation::Central || manager_->tabBarsVisible(window_)));
+            it.value()->setTabBarVisible(group && (group->location != GroupLocation::Central
+                || centralTabBarVisible(manager_->tabBarsVisible(window_))));
         }
     }
 }
@@ -514,13 +521,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     const auto currentRequest = [self, owner, panel, generation] {
         return self && owner && panel && self->peek_ == panel && self->peekGeneration_ == generation;
     };
-    auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(2, 2, 2, 2); layout->setSpacing(0);
-    switch (edge) {
-    case Edge::Left: layout->setContentsMargins(2, 2, 5, 2); break;
-    case Edge::Right: layout->setContentsMargins(5, 2, 2, 2); break;
-    case Edge::Top: layout->setContentsMargins(2, 2, 2, 5); break;
-    case Edge::Bottom: layout->setContentsMargins(2, 5, 2, 2); break;
-    }
+    auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(1, 1, 1, 1); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
     header->drag = [this, tab](QPoint point) { if (manager_) manager_->beginTabDrag(tab, point); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
@@ -544,32 +545,54 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
         content->show();
         if (!currentRequest()) return;
     }
-    const QPointer<PeekResizeHandle> handle = new PeekResizeHandle(edge, peek_);
-    peekResizeHandle_ = handle;
-    handle->requestedSize = [manager = QPointer<WindowManager>(manager_), tab] {
-        return manager ? manager->peekSize(tab) : QSize(250, 170);
+    const auto createHandle = [this, edge, tab](Qt::Edges axes, const char* name) {
+        auto* handle = new PeekResizeHandle(edge, peek_, axes);
+        handle->setObjectName(QLatin1String(name));
+        handle->requestedSize = [manager = QPointer<WindowManager>(manager_), tab, edge] {
+            return manager ? manager->peekSizePolicy(tab, edge) : PeekSizePolicy{};
+        };
+        handle->resizeRequested = [manager = QPointer<WindowManager>(manager_), tab, edge](PeekSizePolicy size) {
+            if (manager) manager->setPeekSizePolicy(tab, edge, size);
+        };
+        return QPointer<QWidget>(handle);
     };
-    handle->resizeRequested = [manager = QPointer<WindowManager>(manager_), tab](QSize size) {
-        if (manager) manager->setPeekSize(tab, size);
-    };
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    const Qt::Edges inner = edge == Edge::Left ? Qt::RightEdge : edge == Edge::Right ? Qt::LeftEdge
+        : edge == Edge::Top ? Qt::BottomEdge : Qt::TopEdge;
+    const Qt::Edges secondary = vertical ? Qt::BottomEdge : Qt::RightEdge;
+    peekResizeHandle_ = createHandle(inner, "PeekResizeHandle");
+    peekSecondaryResizeHandle_ = createHandle(secondary, vertical ? "PeekHeightResizeHandle" : "PeekWidthResizeHandle");
+    peekCornerResizeHandle_ = createHandle(inner | secondary, "PeekCornerResizeHandle");
     placePeek();
     if (!currentRequest()) return;
     panel->show();
     if (!currentRequest()) return;
     panel->raise();
-    if (!currentRequest() || !handle) return;
-    handle->show();
-    if (!currentRequest() || !handle) return;
-    handle->raise();
+    for (const auto& handle : {peekResizeHandle_, peekSecondaryResizeHandle_, peekCornerResizeHandle_}) {
+        if (!currentRequest() || !handle) return;
+        handle->show();
+        if (!currentRequest() || !handle) return;
+        handle->raise();
+    }
     if (!currentRequest()) return;
     layout->activate();
+}
+bool DockSurface::centralTabBarVisible(bool requested) const
+{
+    if (!requested || !manager_) return false;
+    const auto* window = manager_->model().window(window_);
+    if (!window) return false;
+    const auto behavior = manager_->behavior();
+    const bool hideSingle = window->kind == WindowKind::Floating
+        ? behavior.hideSingleTabFloating : behavior.hideSingleTabWorkbench;
+    return !hideSingle || manager_->model().orderedTabs(window_).size() != 1;
 }
 void DockSurface::setTabBarsVisible(bool visible)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
         const auto* record = manager_->model().group(it.key());
         if (it.value() && record)
-            it.value()->setTabBarVisible(!focusState_.zen && (record->location != GroupLocation::Central || visible));
+            it.value()->setTabBarVisible(!focusState_.zen && (record->location != GroupLocation::Central || centralTabBarVisible(visible)));
     }
     if (root_) root_->layout()->activate();
     placePeek();
@@ -704,7 +727,8 @@ void DockSurface::closePeek()
     if (!peek_) return;
     const QPointer<DockSurface> self(this);
     const QPointer<QFrame> closing(peek_);
-    peek_.clear(); peekResizeHandle_.clear(); peekGroup_ = GroupId{}; peekTab_ = TabId{};
+    peek_.clear(); peekResizeHandle_.clear(); peekSecondaryResizeHandle_.clear(); peekCornerResizeHandle_.clear();
+    peekGroup_ = GroupId{}; peekTab_ = TabId{};
     const auto contents = contents_.values();
     for (const auto& content : contents) {
         if (!closing) break;
@@ -730,16 +754,17 @@ void DockSurface::placePeek()
     if (auto bar = edgeBars_.value(Edge::Right); bar && !bar->isHidden()) available.setRight(bar->mapTo(this, QPoint()).x() - 1);
     if (auto bar = edgeBars_.value(Edge::Top); bar && !bar->isHidden()) available.setTop(bar->mapTo(this, QPoint(0, bar->height())).y());
     if (auto bar = edgeBars_.value(Edge::Bottom); bar && !bar->isHidden()) available.setBottom(bar->mapTo(this, QPoint()).y() - 1);
-    const auto requested = manager_->peekSize(peekTab_);
+    const auto requested = manager_->peekSizePolicy(peekTab_, edge);
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
     const auto minimum = peek_->minimumSizeHint();
-    const auto h = qMin(available.height(), qMax(minimum.height(), requested.height()));
-    const auto w = qMin(available.width(), qMax(minimum.width(), requested.width()));
+    const auto h = qMin(available.height(), qMax(minimum.height(), requested.height.value_or(vertical ? available.height() : 170)));
+    const auto w = qMin(available.width(), qMax(minimum.width(), requested.width.value_or(vertical ? 250 : available.width())));
     const QPointer<DockSurface> self(this);
     switch (edge) {
-    case Edge::Left: peek_->setGeometry(available.x(), available.y(), w, available.height()); break;
-    case Edge::Right: peek_->setGeometry(available.right() - w + 1, available.y(), w, available.height()); break;
-    case Edge::Top: peek_->setGeometry(available.x(), available.y(), available.width(), h); break;
-    case Edge::Bottom: peek_->setGeometry(available.x(), available.bottom() - h + 1, available.width(), h); break;
+    case Edge::Left: peek_->setGeometry(available.x(), available.y(), w, h); break;
+    case Edge::Right: peek_->setGeometry(available.right() - w + 1, available.y(), w, h); break;
+    case Edge::Top: peek_->setGeometry(available.x(), available.y(), w, h); break;
+    case Edge::Bottom: peek_->setGeometry(available.x(), available.bottom() - h + 1, w, h); break;
     }
     if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation) return;
     if (QPointer<QWidget> handle = peekResizeHandle_) {
@@ -750,6 +775,20 @@ void DockSurface::placePeek()
         case Edge::Top: handle->setGeometry(1, height - 5, width - 2, 4); break;
         case Edge::Bottom: handle->setGeometry(1, 1, width - 2, 4); break;
         }
+        if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation || !handle) return;
+        handle->raise();
+    }
+    if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation) return;
+    const auto width = panel->width(), height = panel->height();
+    if (QPointer<QWidget> handle = peekSecondaryResizeHandle_) {
+        handle->setGeometry(vertical ? QRect(1, height - 5, width - 2, 4) : QRect(width - 5, 1, 4, height - 2));
+        if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation || !handle) return;
+        handle->raise();
+    }
+    if (QPointer<QWidget> handle = peekCornerResizeHandle_) {
+        const int x = edge == Edge::Right ? 1 : width - 5;
+        const int y = edge == Edge::Bottom ? 1 : height - 5;
+        handle->setGeometry(x, y, 4, 4);
         if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation || !handle) return;
         handle->raise();
     }

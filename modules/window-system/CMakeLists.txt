@@ -25,6 +25,7 @@ add_library(WindowSystemWidgets STATIC
     src/navigation/workspace_navigation.cpp
     src/layout_persistence.cpp
     src/chrome/workspace_window.cpp
+    src/chrome/status_bar.cpp
     src/chrome/workspace_view.cpp
     src/chrome/command_strip.cpp
     src/chrome/toolbar_api.cpp
@@ -34,6 +35,7 @@ add_library(WindowSystemWidgets STATIC
     src/commands/toolbar_move_command.cpp
     src/commands/peek_size_command.cpp
     src/commands/command_dialogs.cpp
+    src/commands/floating_panel.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
     src/docking/edge_strip.cpp
@@ -45,7 +47,8 @@ add_library(WindowSystemWidgets STATIC
     src/style/themed_controls.cpp
     src/settings/settings_page.cpp
     src/settings/settings_view_options.cpp
-    include/window_system/window_manager.hpp)
+    include/window_system/window_manager.hpp
+    include/window_system/floating_panel.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)
 set_target_properties(WindowSystemWidgets PROPERTIES EXPORT_NAME Widgets AUTOMOC ON)
 target_compile_features(WindowSystemWidgets PUBLIC cxx_std_20)

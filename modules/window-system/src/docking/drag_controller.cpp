@@ -125,6 +125,7 @@ void DragController::beginTab(TabId tab, QPoint global)
     sourceIsEdge_ = sourceGroup->location == GroupLocation::AutoHide;
     sourceEdge_ = sourceGroup->edge;
     originalModel_ = manager_->d->model; originalOptions_ = manager_->d->options;
+    originalWindowVisibility_ = manager_->d->windowVisibility; originalVisibilityKinds_ = manager_->d->visibilityKinds;
     originalWindows_.clear(); originalMaximizedWindows_.clear();
     for (const auto id : manager_->model().windowOrder()) if (auto* window = manager_->windowWidget(id)) {
         originalWindows_.insert(id, static_cast<WorkspaceWindow*>(window)->normalPlacementGeometry());
@@ -468,7 +469,8 @@ void DragController::finish(QPoint global)
     if (!self) return;
     // A failed or absent target leaves the real floating window and live content
     // intact. No second tear-out is created when the button is released.
-    originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
+    originalModel_ = {}; originalOptions_.clear(); originalWindowVisibility_.clear(); originalVisibilityKinds_.clear();
+    originalWindows_.clear(); originalMaximizedWindows_.clear();
     originalSourceStrips_ = {};
     originalSourceInactiveStrips_ = {};
     detached_ = false;
@@ -485,6 +487,7 @@ void DragController::cancel()
     if (!self) return;
     if (detached) {
         manager_->d->model = originalModel_; manager_->d->options = originalOptions_;
+        manager_->d->windowVisibility = originalWindowVisibility_; manager_->d->visibilityKinds = originalVisibilityKinds_;
         manager_->refresh();
         if (!self) return;
         if (auto* source = static_cast<WorkspaceWindow*>(manager_->windowWidget(sourceWindow_)))
@@ -504,7 +507,8 @@ void DragController::cancel()
         static_cast<WorkspaceWindow*>(widget)->restorePlacement(geometry, maximized);
         if (!self) return;
     }
-    originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
+    originalModel_ = {}; originalOptions_.clear(); originalWindowVisibility_.clear(); originalVisibilityKinds_.clear();
+    originalWindows_.clear(); originalMaximizedWindows_.clear(); detached_ = false;
     originalSourceStrips_ = {};
     originalSourceInactiveStrips_ = {};
     completeLayoutTransaction();
@@ -523,7 +527,8 @@ void DragController::releaseForMutation()
     stop();
     if (!self) return;
     detached_ = false;
-    originalModel_ = {}; originalOptions_.clear(); originalWindows_.clear(); originalMaximizedWindows_.clear();
+    originalModel_ = {}; originalOptions_.clear(); originalWindowVisibility_.clear(); originalVisibilityKinds_.clear();
+    originalWindows_.clear(); originalMaximizedWindows_.clear();
     originalSourceStrips_ = {};
     originalSourceInactiveStrips_ = {};
 }

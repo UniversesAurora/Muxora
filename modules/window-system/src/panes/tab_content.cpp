@@ -65,7 +65,7 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
     frame->setProperty("active", node->itemId == record.activePane);
     frame->setMinimumSize(140, 85);
     auto* column = new QVBoxLayout(frame);
-    column->setContentsMargins(1, 1, 1, 1);
+    column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
     if (auto content = contents.value(node->itemId)) {
         column->addWidget(content, 1);
@@ -148,72 +148,104 @@ void TabContent::setBarSharing(PaneBarSharing top, PaneBarSharing bottom)
 void TabContent::setActivePane(PaneId pane)
 {
     if (activePane_ == pane) return;
+    const QPointer<TabContent> retained(this);
     activePane_ = pane;
-    for (auto* frame : frames_) {
+    QVector<QPointer<QWidget>> frames;
+    frames.reserve(frames_.size());
+    for (auto* frame : frames_) frames.append(frame);
+    for (const auto& frame : frames) {
+        if (!frame) continue;
         frame->setProperty("active", frame->property("paneId").toUuid() == pane);
+        if (!retained) return;
+        if (!frame) continue;
         frame->style()->unpolish(frame);
+        if (!retained) return;
+        if (!frame) continue;
         frame->style()->polish(frame);
-        frame->update();
+        if (!retained) return;
+        if (frame) frame->update();
     }
     updateBars();
 }
 
 void TabContent::replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool top)
 {
+    const QPointer<TabContent> retained(this);
+    const QPointer<QWidget> requested(next);
+    const QPointer<QWidget> previous(slot);
     // A manager refresh parks the same widget before rebuilding. Checking only
     // pointer equality would leave it hidden and detached from this layout.
-    if (slot && slot != next) {
-        if (slot->parentWidget() == this) {
-            layout_->removeWidget(slot);
-            slot->hide();
+    if (previous && previous != requested) {
+        if (previous->parentWidget() == this) {
+            layout_->removeWidget(previous);
+            if (!retained) return;
+            if (previous) previous->hide();
+            if (!retained) return;
         }
     }
-    slot = next;
-    if (!slot) return;
-    slot->setParent(this);
-    layout_->removeWidget(slot);
-    if (top) layout_->insertWidget(0, slot);
-    else layout_->addWidget(slot);
-    slot->setVisible(barsVisible_);
+    slot = requested;
+    if (!requested) return;
+    requested->setParent(this);
+    if (!retained || !requested || slot != requested) return;
+    layout_->removeWidget(requested);
+    if (!retained || !requested || slot != requested) return;
+    if (top) layout_->insertWidget(0, requested);
+    else layout_->addWidget(requested);
+    if (!retained || !requested || slot != requested) return;
+    requested->setVisible(barsVisible_);
 }
 
 void TabContent::updateBars()
 {
+    const QPointer<TabContent> retained(this);
     QPointer<QWidget> focus = QApplication::focusWidget();
     if (focus && !isAncestorOf(focus)) focus.clear();
-    auto* top = topSharing_ == PaneBarSharing::Shared ? paneTopBars_.value(activePane_).data() : nullptr;
-    auto* bottom = bottomSharing_ == PaneBarSharing::Shared ? paneBottomBars_.value(activePane_).data() : nullptr;
-    replaceVisibleBar(visibleTop_, top ? top : top_.data(), true);
-    replaceVisibleBar(visibleBottom_, bottom ? bottom : bottom_.data(), false);
+    const QPointer<QWidget> top = topSharing_ == PaneBarSharing::Shared ? paneTopBars_.value(activePane_) : QPointer<QWidget>{};
+    const QPointer<QWidget> bottom = bottomSharing_ == PaneBarSharing::Shared ? paneBottomBars_.value(activePane_) : QPointer<QWidget>{};
+    replaceVisibleBar(visibleTop_, top ? top.data() : top_.data(), true);
+    if (!retained) return;
+    replaceVisibleBar(visibleBottom_, bottom ? bottom.data() : bottom_.data(), false);
+    if (!retained) return;
     placePaneBars(paneTopBars_, topSharing_, top, true);
+    if (!retained) return;
     placePaneBars(paneBottomBars_, bottomSharing_, bottom, false);
+    if (!retained) return;
     if (focus && focus->isVisible() && !focus->hasFocus()) focus->setFocus(Qt::OtherFocusReason);
 }
 
 void TabContent::placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
                                PaneBarSharing sharing, QWidget* shared, bool top)
 {
-    for (auto it = bars.cbegin(); it != bars.cend(); ++it) {
-        auto* bar = it.value().data();
+    const QPointer<TabContent> retained(this);
+    const auto requested = bars;
+    for (auto it = requested.cbegin(); it != requested.cend(); ++it) {
+        if (!retained) return;
+        const QPointer<QWidget> bar = it.value();
         if (!bar || bar == shared) continue;
-        auto* frame = sharing == PaneBarSharing::PerPane ? frames_.value(it.key()) : nullptr;
-        auto* target = frame ? frame : this;
+        const QPointer<QWidget> frame = sharing == PaneBarSharing::PerPane ? frames_.value(it.key()) : nullptr;
+        const QPointer<QWidget> target = frame ? frame.data() : static_cast<QWidget*>(this);
         if (bar->parentWidget() != target) {
             if (auto* previous = bar->parentWidget(); previous && previous->layout())
                 previous->layout()->removeWidget(bar);
+            if (!retained || !bar || !target) return;
             bar->setParent(target);
+            if (!retained || !bar || !target) return;
         }
         if (!frame) {
             layout_->removeWidget(bar);
+            if (!retained || !bar) return;
             bar->hide();
             continue;
         }
-        auto* column = static_cast<QVBoxLayout*>(frame->layout());
+        const QPointer<QVBoxLayout> column = static_cast<QVBoxLayout*>(frame->layout());
+        if (!column) continue;
         const int index = top ? 0 : column->count() - 1;
         if (column->indexOf(bar) != index) {
             column->removeWidget(bar);
+            if (!retained || !bar || !column) return;
             if (top) column->insertWidget(0, bar);
             else column->addWidget(bar);
+            if (!retained || !bar) return;
         }
         bar->setVisible(barsVisible_);
     }

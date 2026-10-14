@@ -277,7 +277,7 @@ void FocusModeTest::zenHidesAndRestoresEveryContentBar()
     for (auto* widget : bars) QVERIFY(!widget->isVisible());
     auto* page = tabView(first); QVERIFY(page);
     const auto visibleFrame = page->paneFrames().value(firstPane); QVERIFY(visibleFrame);
-    QCOMPARE(first->height(), visibleFrame->height() - 2);
+    QCOMPARE(first->geometry(), visibleFrame->rect());
     QVERIFY(manager.setZenMode(id, false)); settle();
     for (int index = 0; index < bars.size(); ++index) {
         QCOMPARE(bars[index]->isVisible(), visibility[index]); QCOMPARE(bars[index]->parentWidget(), parents[index]);

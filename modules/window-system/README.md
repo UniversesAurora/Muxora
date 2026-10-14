@@ -21,11 +21,13 @@
 
 `setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制。
 
-拖拽使用真实轻量窗口，达到阈值即移走内容并清理空组；Esc 通过模型快照恢复，保留控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互修订](../../docs/design/window-interaction-design.md)。
+达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互修订](../../docs/design/window-interaction-design.md)。
 
 侧栏同样按释放位置插入。`moveTabToEdgeBar(tab, targetWindow, edge, index)` 和 `moveAllTabsToEdgeBar(sourceWindow, targetWindow, edge, index)` 操作该侧可见的自动隐藏标签序列，内部标签组边界不影响视觉顺序。`index` 为排除待移动内容后的最终索引，`-1` 追加到末尾；整窗移动保留载荷顺序。模型可通过 `autoHiddenTabs()` 查询这一序列，普通组与侧栏都可使用 `workspace.reorderTab.previous` / `workspace.reorderTab.next` 命令和默认 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown` 调整顺序。
 
 菜单、命令面板和快捷键共用 [CommandRegistry](include/window_system/command_registry.hpp)。宿主可以注册自己的操作；主题使用 [Theme](include/window_system/theme.hpp) 令牌，默认不添加应用 logo。布局快照由宿主选择保存位置，模块不写 Muxora 用户文件。
+
+默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
 
 `Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
 
@@ -71,15 +73,31 @@
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
 
-`setPeekSize(tab, QSize(width, height))` / `peekSize(tab)` 按标签保存临时展开的请求宽高，`resetPeekSize(tab)` 恢复默认 250 × 170 个逻辑像素。有效范围为宽度 140..16777215、高度 100..16777215；无效 ID 或尺寸返回失败。内容最小尺寸和窗口空间约束实际显示，不替换请求值。左右侧栏拖动面板内缘调整宽度，上下侧栏调整高度，另一维的请求保持；当前面板即时调整，内容对象和焦点保留。
+临时展开面板可从边缘或角调整宽高。`setPeekSize(tab, edge, QSize(width, height))` 按标签分别保存左右侧和上下侧的请求；同方向两边共享，两个方向互不影响。默认左右宽 250 并填满可用高度，上下高 170 并填满可用宽度。`setPeekSizePolicy(tab, edge, PeekSizePolicy{width, height})` 的两个维度均可省略，省略时使用对应默认行为；`resetPeekSize(tab, edge)` 重置该方向。宽度有效范围 140..16777215，高度 100..16777215；实际可用区域限制显示尺寸，不改写请求，也不影响固定分区尺寸。
 
-`TabRecord::peekSize` 可选值随布局保存，缺失兼容旧快照；显式值必须是包含整数 `width` / `height` 的对象。尺寸随标签跨组、换边和跨窗口移动，独立于固定分区的 `edgeExtent`。命令 `tab.peek.setSize` 接受可选 `tab` 和同时提供的 `width` / `height`；无宽高参数时显示键盘可编辑对话框，`tab.peek.resetSize` 清除显式值。两项命令均可绑定快捷键，自动隐藏标签的菜单入口位于“边栏 → 临时展开大小”。
+方向策略随标签跨组、换边和跨窗口移动并保存到布局。旧 `setPeekSize(tab, QSize)` / `peekSize(tab)` 及 `TabRecord::peekSize` 保持兼容；旧设置清除两套方向覆盖，左右面板只采用其中的宽度、上下只采用高度，另一轴继续填满。旧重置清除全部请求。命令 `tab.peek.setSize` 接受可选 `tab` 和同时提供的 `width` / `height`，其中 0 表示该维度默认值；无参数时显示可键盘编辑的对话框。`tab.peek.resetSize` 只重置标签当前所在方向。两项命令均可绑定快捷键，自动隐藏标签的菜单入口位于“边栏 → 临时展开大小”。
+
+新建标签默认插在本组当前标签之后。`WindowBehavior.newTabPosition` 可选择 `Beginning`、`BeforeActive`、`AfterActive`、`End`；图形设置同步该值并随布局保存。`WindowManager::addTab` 的末尾参数 `insertionIndex` 为非负数时使用显式位置，-1 跟随行为设置；独立 `LayoutModel::addTab` 的 -1 仍表示追加，避免模型依赖宿主偏好。
+
+每组最后一个标签后是组合的新建按钮与类型下拉。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
+
+条带因分组、固定边栏或窗口左右缩放而变窄时，保留未移动侧的显示位置；原本完全可见的活动标签被截断时优先贴左。必要的尾部滚动空间有界，不增加标签或内容。用户随后滚动或明确导航会取消旧定位，单纯移动窗口不滚动，隐藏视图的初始几何也不作为显示锚点。
+
+`FloatingPanel` 是可独立使用的临时面板 API。`FloatingPanelOptions.dismissOnOutsidePress` 与 `modal` 分别控制外点关闭和模态，默认自动关闭、非模态；`show()` 立即返回。命令面板和窗口选择器采用这一默认值，宿主也可通过 `showCommandPalette` / `showWindowSelector` 的选项参数修改。非模态外点关闭不会吞掉或合成原点击，面板内打开的菜单仍视为其内部。
+
+窗口菜单末尾按完整窗口与其轻量浮窗列出窗口，可通过 `activateWindow(window)` 或 `window.activate`（`targetWindow`）切换。状态栏右键独立切换 `message`、`workspace` 控件；`setStatusItemVisible` / `statusItemVisible` 和 `window.statusItem.setVisible`（`item`、`visible`）共用偏好。单个控件显隐与整个状态栏显隐独立，保存在各窗口的 `hiddenStatusItems`，不互相覆盖。
 
 窗格上下栏分别使用 `PaneBarSharing::Shared` / `PerPane`，默认共享。创建标签时设置 `TabOptions.topBarSharing` / `bottomBarSharing`，运行中可调用 `setTabTopBarSharing` / `setTabBottomBarSharing`。各 Pane 栏继续由 `setPaneTopBar` / `setPaneBottomBar` 接入；显式 Tab 栏不会因逐窗格模式而复制。对应统一命令为 `tab.topBar.setSharing` / `tab.bottomBar.setSharing`，接受 `sharing: "shared"` 或 `"perPane"`，无参数时切换当前策略。
 
 共享策略进入布局快照；栏控件本身由宿主重建和接入，窗口模块不序列化任意 `QWidget`。
 
 窗口位置、正常尺寸和最大化状态随布局保存，最小化不覆盖正常位置。恢复时按全部屏幕的逻辑可用区域调整越界位置，保留有效的负坐标和跨屏位置。宿主收到 `lastWindowAboutToClose` 时可同步保存仍有效的快照，避免立即关闭最后一个窗口而错过异步保存；该通知中不得修改布局。
+
+完整窗口和轻量浮窗分别使用 `WindowBehavior.hideSingleTabWorkbench`（默认 false）和 `hideSingleTabFloating`（默认 true）。按整个窗口的标签数恰好为 1 判断，只自动收起中央标签栏；固定面板和侧边收纳条不受影响。用户显式隐藏优先，增加标签、关闭标签、窗口升降级或修改策略立即重新计算。拖入条带时的临时标签预览仍显示。
+
+各窗口保存自己的四栏显隐；`visibilityProfiles` 保存两种窗口最后明确编辑的默认值，新建、拖出和提取窗口使用目标类型的默认值。现有窗口不强制同步；保存或关闭旧窗口不覆盖较新的默认值。转换类型时，每个窗口通过 `barLayouts` 记录并恢复自身两种类型的偏好。布局恢复严格验证字段，禅模式的临时隐藏不会写进偏好。嵌入宿主可设置 `WindowOptions.inheritVisibilityProfile = false`，让创建参数中的四项显隐直接生效。
+
+`executeInContext(commandId, context)` 使用已经捕获的窗口、组、标签和窗格 ID；执行前及宿主的可用性回调后再次核验目标。已关闭或移到其他窗口的目标不会被替换成当前焦点。命令面板采用此入口；`execute()` 仍按指定窗口解析当前上下文。
 
 ## 规范与验证
 

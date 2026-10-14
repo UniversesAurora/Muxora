@@ -48,6 +48,14 @@ private slots:
     void malformedPeekSizesAreRejectedAtomically_data();
     void malformedPeekSizesAreRejectedAtomically();
     void extractedPanesReceiveTheirOwnDefaultPeekSize();
+    void directionalPeekPoliciesShareOppositeSidesAndKeepOtherTabsIndependent();
+    void directionalPeekPoliciesKeepLegacyStretchAndResetCompatibility();
+    void invalidDirectionalPeekPoliciesAreAtomic_data();
+    void invalidDirectionalPeekPoliciesAreAtomic();
+    void malformedDirectionalPeekPoliciesAreAtomic_data();
+    void malformedDirectionalPeekPoliciesAreAtomic();
+    void directionalPeekPolicyBoundariesRoundTrip_data();
+    void directionalPeekPolicyBoundariesRoundTrip();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -875,6 +883,153 @@ void LayoutModelTest::extractedPanesReceiveTheirOwnDefaultPeekSize()
     QCOMPARE(model.panes(source), (QVector<PaneId>{firstPane}));
     QCOMPARE(model.panes(extracted), (QVector<PaneId>{extractedPane}));
     QVERIFY(model.validate().ok);
+}
+
+void LayoutModelTest::directionalPeekPoliciesShareOppositeSidesAndKeepOtherTabsIndependent()
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    const auto first = model.addTab(window, "First");
+    const auto second = model.addTab(window, "Second");
+    const auto pane = model.tab(first)->activePane;
+    const auto tree = model.tab(first)->panes;
+    const PeekSizePolicy vertical{410, 275}, horizontal{720, 155};
+    QVERIFY(model.setPeekSizePolicy(first, Edge::Left, vertical));
+    QVERIFY(model.setPeekSizePolicy(first, Edge::Bottom, horizontal));
+    QCOMPARE(model.peekSizePolicy(first, Edge::Right), vertical);
+    QCOMPARE(model.peekSizePolicy(first, Edge::Top), horizontal);
+    QCOMPARE(model.peekSizePolicy(second, Edge::Left), PeekSizePolicy{});
+    QCOMPARE(model.peekSizePolicy(second, Edge::Top), PeekSizePolicy{});
+    QVERIFY(model.moveTabToEdge(first, Edge::Right, true));
+    const auto pinned = model.groupForTab(first);
+    QVERIFY(model.setEdgeGroupExtent(pinned, 365));
+    QVERIFY(model.setTabPinned(first, false));
+    QCOMPARE(model.peekSizePolicy(first, Edge::Left), vertical);
+    const auto floating = model.detachTab(first);
+    QVERIFY(!floating.isNull());
+    QVERIFY(model.moveTabToEdgeBar(first, window, Edge::Top));
+    QCOMPARE(model.peekSizePolicy(first, Edge::Bottom), horizontal);
+    QCOMPARE(model.tab(first)->activePane, pane);
+    QCOMPARE(model.tab(first)->panes, tree);
+    const auto snapshot = model.toJson();
+    LayoutModel restored; QVERIFY(restored.fromJson(snapshot));
+    QCOMPARE(restored.toJson(), snapshot);
+    QCOMPARE(restored.peekSizePolicy(first, Edge::Right), vertical);
+    QCOMPARE(restored.peekSizePolicy(first, Edge::Top), horizontal);
+    QVERIFY(restored.setPeekSizePolicy(first, Edge::Top, {}));
+    QCOMPARE(restored.peekSizePolicy(first, Edge::Bottom), PeekSizePolicy{});
+    QCOMPARE(restored.peekSizePolicy(first, Edge::Left), vertical);
+    QCOMPARE(restored.tab(first)->activePane, pane);
+    QVERIFY(restored.validate());
+}
+
+void LayoutModelTest::directionalPeekPoliciesKeepLegacyStretchAndResetCompatibility()
+{
+    LayoutModel model; const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Legacy");
+    QVERIFY(model.setPeekSize(tab, QSize(340, 205)));
+    QCOMPARE(model.peekSizePolicy(tab, Edge::Left), (PeekSizePolicy{340, std::nullopt}));
+    QCOMPARE(model.peekSizePolicy(tab, Edge::Bottom), (PeekSizePolicy{std::nullopt, 205}));
+    LayoutModel restored; QVERIFY(restored.fromJson(model.toJson()));
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), (PeekSizePolicy{340, std::nullopt}));
+    QVERIFY(restored.setPeekSizePolicy(tab, Edge::Left, {430, 285}));
+    QVERIFY(restored.setPeekSizePolicy(tab, Edge::Top, {730, 190}));
+    QVERIFY(restored.setPeekSize(tab, QSize(350, 215)));
+    QVERIFY(!restored.tab(tab)->verticalPeekSize); QVERIFY(!restored.tab(tab)->horizontalPeekSize);
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), (PeekSizePolicy{350, std::nullopt}));
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Top), (PeekSizePolicy{std::nullopt, 215}));
+    QVERIFY(restored.setPeekSizePolicy(tab, Edge::Left, {}));
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), PeekSizePolicy{});
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Top), (PeekSizePolicy{std::nullopt, 215}));
+    QVERIFY(restored.setPeekSize(tab, std::nullopt));
+    const auto record = restored.toJson().value("tabs").toArray().first().toObject();
+    QVERIFY(!record.contains("peekSize")); QVERIFY(!record.contains("verticalPeekSize"));
+    QVERIFY(!record.contains("horizontalPeekSize"));
+}
+
+void LayoutModelTest::invalidDirectionalPeekPoliciesAreAtomic_data()
+{
+    QTest::addColumn<int>("edge"); QTest::addColumn<int>("width"); QTest::addColumn<int>("height");
+    QTest::newRow("small-width") << int(Edge::Left) << 139 << 170;
+    QTest::newRow("small-height") << int(Edge::Right) << 250 << 99;
+    QTest::newRow("negative") << int(Edge::Top) << -1 << 170;
+    QTest::newRow("zero-is-not-an-explicit-size") << int(Edge::Top) << 0 << 170;
+    QTest::newRow("too-large") << int(Edge::Bottom) << 250 << 16777216;
+    QTest::newRow("invalid-edge") << -1 << 250 << 170;
+}
+
+void LayoutModelTest::invalidDirectionalPeekPoliciesAreAtomic()
+{
+    QFETCH(int, edge); QFETCH(int, width); QFETCH(int, height);
+    LayoutModel model; const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Retained");
+    QVERIFY(model.setPeekSizePolicy(tab, Edge::Left, {430, std::nullopt}));
+    const auto snapshot = model.toJson(); const auto revision = model.revision();
+    QVERIFY(!model.setPeekSizePolicy(tab, Edge(edge), {width, height}));
+    QVERIFY(!model.setPeekSizePolicy(QUuid::createUuid(), Edge::Left, {}));
+    QCOMPARE(model.toJson(), snapshot); QCOMPARE(model.revision(), revision);
+}
+
+void LayoutModelTest::malformedDirectionalPeekPoliciesAreAtomic_data()
+{
+    QTest::addColumn<QString>("key"); QTest::addColumn<QJsonValue>("payload");
+    for (const auto* key : {"verticalPeekSize", "horizontalPeekSize"}) {
+        const auto row = [key](const char* name) { return QByteArray(key) + '-' + name; };
+        QTest::newRow(row("null").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonValue::Null);
+        QTest::newRow(row("array").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonArray{250, 170});
+        QTest::newRow(row("text").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"width", "250"}});
+        QTest::newRow(row("boolean").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"height", true}});
+        QTest::newRow(row("fraction").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"height", 170.25}});
+        QTest::newRow(row("small").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"width", 139}});
+        QTest::newRow(row("large").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"height", 16777216}});
+        QTest::newRow(row("unknown-axis").constData()) << QString::fromLatin1(key) << QJsonValue(QJsonObject{{"depth", 20}});
+    }
+}
+
+void LayoutModelTest::malformedDirectionalPeekPoliciesAreAtomic()
+{
+    QFETCH(QString, key); QFETCH(QJsonValue, payload);
+    LayoutModel model; const auto window = model.createWindow();
+    const auto tab = model.addTab(window, "Retained");
+    QVERIFY(model.setPeekSizePolicy(tab, Edge::Left, {430, 280}));
+    const auto snapshot = model.toJson(); const auto revision = model.revision();
+    auto malformed = snapshot; auto tabs = malformed.value("tabs").toArray();
+    auto record = tabs.first().toObject(); record.insert(key, payload); tabs[0] = record;
+    malformed.insert("tabs", tabs);
+    QVERIFY(!model.fromJson(malformed));
+    QCOMPARE(model.toJson(), snapshot); QCOMPARE(model.revision(), revision);
+    QCOMPARE(model.peekSizePolicy(tab, Edge::Right), (PeekSizePolicy{430, 280}));
+}
+
+void LayoutModelTest::directionalPeekPolicyBoundariesRoundTrip_data()
+{
+    QTest::addColumn<int>("width"); QTest::addColumn<int>("height");
+    QTest::newRow("automatic") << 0 << 0;
+    QTest::newRow("minimum-width-only") << 140 << 0;
+    QTest::newRow("minimum-height-only") << 0 << 100;
+    QTest::newRow("maximum-width-only") << 16777215 << 0;
+    QTest::newRow("maximum-height-only") << 0 << 16777215;
+    QTest::newRow("minimum-both") << 140 << 100;
+    QTest::newRow("maximum-both") << 16777215 << 16777215;
+}
+
+void LayoutModelTest::directionalPeekPolicyBoundariesRoundTrip()
+{
+    QFETCH(int, width); QFETCH(int, height);
+    LayoutModel model; const auto window = model.createWindow(); const auto tab = model.addTab(window, "Boundary");
+    const PeekSizePolicy policy{width == 0 ? std::optional<int>{} : std::optional<int>{width},
+        height == 0 ? std::optional<int>{} : std::optional<int>{height}};
+    QVERIFY(model.setPeekSizePolicy(tab, Edge::Left, policy));
+    QVERIFY(model.setPeekSizePolicy(tab, Edge::Top, policy));
+    const auto snapshot = model.toJson(); const auto record = snapshot.value("tabs").toArray().first().toObject();
+    const auto expected = [&] {
+        QJsonObject object; if (width) object.insert("width", width); if (height) object.insert("height", height); return object;
+    }();
+    QCOMPARE(record.value("verticalPeekSize").toObject(), expected);
+    QCOMPARE(record.value("horizontalPeekSize").toObject(), expected);
+    LayoutModel restored; QVERIFY(restored.fromJson(snapshot));
+    QCOMPARE(restored.toJson(), snapshot); QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), policy);
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Bottom), policy); QVERIFY(restored.validate());
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

@@ -73,7 +73,7 @@ void ThemedSpinBox::paintEvent(QPaintEvent*)
         const bool enabled = isEnabled() && option.stepEnabled.testFlag(up ? StepUpEnabled : StepDownEnabled);
         if (enabled && area.contains(pointer)) {
             const bool pressed = option.state.testFlag(QStyle::State_Sunken) && option.activeSubControls.testFlag(control);
-            painter.fillRect(area.adjusted(1, 1, -1, -1), controlColor(this, pressed ? "selection" : "accentSoft", QPalette::Midlight));
+            painter.fillRect(area.adjusted(1, 1, -1, -1), controlColor(this, pressed ? "selection" : "buttonHover", QPalette::Midlight));
             painter.setPen(controlColor(this, "accent", QPalette::Link));
             painter.drawRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5));
         }

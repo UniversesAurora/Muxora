@@ -38,7 +38,8 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     track_->setObjectName("EdgeTabTrack");
-    track_->setStyleSheet(QStringLiteral("QWidget#EdgeTabTrack { background: %1; }").arg(theme_.background.name()));
+    auto trackPalette = track_->palette(); trackPalette.setColor(QPalette::Window, theme_.headerBackground);
+    track_->setPalette(trackPalette); track_->setAutoFillBackground(true);
     trackLayout_->setContentsMargins(0, 0, 0, 0); trackLayout_->setSpacing(spacing);
     trackLayout_->setSizeConstraint(QLayout::SetNoConstraint); trackLayout_->addStretch();
     gap_->setObjectName("EdgeInsertionPreview");

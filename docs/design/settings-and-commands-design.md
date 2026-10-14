@@ -1,8 +1,14 @@
 # Muxora 设置、会话存储与命令设计
 
-版本：0.3，讨论稿\
-日期：2026-10-13\
+版本：0.4，讨论稿\
+日期：2026-10-15\
 状态：V0 设计要求；首个预览的命令、设置和快捷键实现范围见 [预览说明](../development/window-system-preview.md)。完整配置服务及编辑能力按本规范继续实现。
+
+新增标签的位置可选组开头、组末尾、当前标签之前或之后，默认在当前标签之后。完整窗口和轻量浮窗各有独立的“只有一个标签时隐藏标签栏”设置，默认分别关闭和开启，按整个窗口的标签数量判断。固定面板标题与侧边收纳条不受该自动策略影响。
+
+隐藏标签栏、工具栏、状态栏和侧边栏等偏好是布局的一部分。两种窗口分别保存新窗口使用的默认值，现有窗口继续保存自身的布局；旧窗口保存不能覆盖之后明确修改的默认值。升降级窗口时，恢复这个窗口在对应类型下的栏显隐历史。禅模式只投影有效显示，不写入这两套偏好。
+
+命令面板默认非模态，点击其外部后关闭，原点击继续交付。通用浮动面板 API 分别控制自动关闭和模态。标签末尾新建按钮、类型下拉、菜单和快捷键调用同一套宿主命令。窗口菜单末尾按完整窗口及其轻量窗口列出可切换目标；状态栏右键可选择显示的状态控件。
 
 关联：[V0 设计](v0-design.md)、[工作区设计](workspace-design.md)、[终端 Normal 与选择模式](terminal-mark-mode-design.md)、[测试规范](../development/testing-design.md)。
 
@@ -56,6 +62,7 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
   "window.emptyWorkbenchAction": "keep",
   "window.dragReveal.enabled": true,
   "window.dragReveal.delayMs": 500,
+  "window.newTabPosition": "afterActive",
   "terminal.markMode.defaultKeymap": "vim",
 }
 ```
@@ -63,6 +70,8 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 `window.restoreLayout` 控制是否恢复，实际窗口尺寸、标签和分割树写入状态文件。设置项不包含运行时句柄、当前鼠标位置、选区正文或当前终端 Normal 模式状态。
 
 窗口行为设置必须有同等的图形入口：拖出类型 floating／workbench、完整空窗口 keep／close、拖拽悬停唤起开关及 200–2000 ms 延迟。搜索、修改状态、说明、恢复默认及 JSON 编辑共用 schema。判空包含整个窗口族，仍有从属浮窗不能自动关根；具体默认及生效时机见 [双窗口设计](floating-window-design.md)。
+
+新建标签的位置同样提供图形设置与 `window.newTabPosition`。用户可选标签组开头、末尾、当前活动标签前或后，默认 `afterActive`。对应 `WindowBehavior::newTabPosition` 的四个枚举值为 `Beginning`、`End`、`BeforeActive`、`AfterActive`。加号、类型菜单、主菜单和命令创建共用这项策略；显式 API 插入索引优先，拖拽顺序不受影响。
 
 JSONC 支持 `//`、`/* ... */` 和尾逗号，不扩大为任意 JSON5 或可执行脚本。解析采用支持这些语法的成熟原生组件；Qt 严格 JSON 解析器不能单独承担此入口。Boost.JSON 的相应解析选项可作为候选，但其语义解析不自动解决注释保留编辑，必须分别验证。[Boost.JSON 解析选项](https://www.boost.org/doc/libs/latest/libs/json/doc/html/ref/parse_options.html)
 
@@ -102,6 +111,8 @@ SSH 别名附加设置先集中在 `ssh-alias-overrides.json`，以“来源 ID 
 
 工具栏、全局状态栏、中央标签栏和四边收纳条的显示偏好分别按窗口保存，图形设置、菜单、命令和 API 使用同一值。进入任一全屏范围都沿用这四项偏好，不另设“全屏时隐藏某栏”的第二套设置。隐藏中央标签栏仍保留固定组标签栏和收纳面板标题；隐藏侧栏仍保留固定内容。
 
+状态栏内部控件另按稳定 ID 保存显示选择；右键菜单列出可选控件和勾选状态，API 与统一命令修改同一份值。隐藏某个控件不改变整条状态栏的显示偏好，隐藏整条状态栏也不清除控件选择。临时侧栏面板按 Tab ID 保存左／右与上／下两套可选宽高；这些请求尺寸独立于固定分区大小，窗口变小只限制实际呈现，不改写请求值。
+
 全屏范围、禅模式及内容目标使用独立的 `viewState` 状态。`mode` 区分 `normal`、`windowFullscreen`、`groupFullscreen`、`paneFullscreen`，标签组／窗格目标引用有效的稳定 ID。禅模式仅限全屏，使四项有效开关关闭，但不改写原偏好；显示任一栏先退出禅模式并恢复其他偏好。恢复校验模式和目标归属，保存的几何仍是进入全屏前的正常矩形及最大化状态，不是显示器的全屏尺寸。
 
 两种窗口及族归属进入同一完整快照；旧版窗口迁移为一窗口一族，缺根浮窗按恢复规则补根，不丢内容。不保存 OS 层叠顺序、前台权限、悬停计时或半次拖拽。浮窗与完整窗口的升降级、合并都只更新布局状态，不改用户设置。
@@ -131,6 +142,10 @@ SSH 别名附加设置先集中在 `ssh-alias-overrides.json`，以“来源 ID 
 
 同系列命令使用语义明确的子菜单，方向按左、右、上、下排序，成对操作按前一个、后一个排序。菜单声明与执行处理者分开，启用、可见、勾选和快捷键展示共用状态解析；需要参数但没有交互选择器的内部投放命令不进入主菜单。宿主可用 `Command.menuPath` 和 `menuOrder` 声明路径与顺序，后注册命令及运行时键位修改在菜单展开时更新；菜单展示快捷键不另注册 QAction 快捷键。
 
+“窗口”菜单末尾列出全部窗口，以完整工作窗口为顶层，其所属轻量浮窗缩进列在下面。标题、归属、创建和关闭变化在菜单展开时更新，当前窗口有选中标记。点击条目调用统一窗口激活命令，最小化目标先恢复；命令执行前核验 Window ID，不依赖过期标题或已销毁控件。
+
+每个标签组的末尾加号与类型下拉调用宿主注册的新建命令。`setTabCreationCommands(defaultCommand, choices)` 声明默认项和类型选项，`requestNewTab(window, group, command)` 使用来源窗口和标签组上下文执行。窗口模块不解释宿主的业务类型，命令标题、可执行状态及处理者由统一命令目录提供。
+
 退出通过一次完整工作区关闭许可处理所有窗口和浮窗；拒绝时保留全部内容。最后关闭通知发生在完整模型仍可保存时，不逐窗关闭后只保存最后一个窗口；保存失败时应用不执行退出。
 
 | 覆盖领域 | 命令范围 |
@@ -150,6 +165,8 @@ WindowSystem 提供通用命令注册、上下文及路由 API 和自己的窗�
 命令执行器统一校验参数、目标与前提。`when` 控制某个入口是否显示／匹配，命令前提决定实际能否执行；修改快捷键不能绕过前提。错误与取消有明确结果，菜单和快捷键调用同一处理者。[VS Code 命令及菜单定义](https://code.visualstudio.com/api/references/contribution-points)
 
 命令面板默认 `Ctrl+Shift+P`，按标题、分类、别名和 ID 搜索，显示快捷键及有界最近使用。键盘可完成参数选择和执行。打开时捕获来源 Window／Group／Tab／Pane ID；面板获得焦点后仍操作原目标，执行前重新验证目标存活，不能误操作另一终端。[Windows Terminal 命令面板](https://learn.microsoft.com/en-us/windows/terminal/command-palette)
+
+命令面板默认为非模态，点击外部区域自动关闭。通用 `FloatingPanel` API 的 `FloatingPanelOptions.dismissOnOutsidePress` 与 `modal` 独立，宿主可以分别配置自动关闭和窗口模态。非模态外部点击在关闭面板后交给原目标处理，不额外回放或合成一次点击；相关子菜单和下拉交互属于面板内部，不因临时获得焦点而关闭。模态面板限制所属窗口，显示方法返回，不启动额外嵌套事件循环。
 
 窗口命令通过参数表达 `scope: family / all / workbenches`、新建 `kind: floating / workbench` 和中心／方向／边缘落点；缺参显示键盘选择器。`window.promote/demote`、`window.reassignFamily`、`window.moveAllTabs`、`window.redock` 和 `window.drag.selectTarget` 等均在命令目录中。具体 ID、默认键和焦点规则见双窗口设计；标题栏与鼠标拖拽复用其布局事务。
 

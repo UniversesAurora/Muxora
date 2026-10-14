@@ -4,8 +4,21 @@
 #include <QContextMenuEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QVariantMap>
 
 namespace window_system {
+namespace {
+QColor edgeTabColor(const QWidget* widget, const char* token, QPalette::ColorRole fallback)
+{
+    for (auto* root = widget; root; root = root->parentWidget()) {
+        const auto tokens = root->property("windowSystemThemeColors");
+        if (!tokens.isValid()) continue;
+        const auto value = tokens.toMap().value(QString::fromLatin1(token));
+        if (value.canConvert<QColor>()) return value.value<QColor>();
+    }
+    return widget->palette().color(fallback);
+}
+}
 EdgeTabButton::EdgeTabButton(QString title, bool vertical, int thickness, QWidget* parent)
     : QAbstractButton(parent), vertical_(vertical), thickness_(thickness)
 {
@@ -41,8 +54,8 @@ void EdgeTabButton::contextMenuEvent(QContextMenuEvent* event)
 void EdgeTabButton::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
-    painter.fillRect(rect(), underMouse() || hasFocus() ? QColor("#8970AF") : QColor("#6A568C"));
-    painter.setPen(Qt::white);
+    painter.fillRect(rect(), edgeTabColor(this, underMouse() || hasFocus() ? "buttonHover" : "inactiveTab", QPalette::Button));
+    painter.setPen(edgeTabColor(this, "text", QPalette::ButtonText));
     if (vertical_) {
         painter.translate(width(), 0); painter.rotate(90);
         painter.drawText(QRect(0, 0, height(), width()), Qt::AlignCenter, text());

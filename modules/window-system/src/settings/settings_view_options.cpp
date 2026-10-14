@@ -45,6 +45,24 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     connect(viewMode_, &QComboBox::currentIndexChanged, this, [this] {
         if (manager_) manager_->setViewMode(settingsWindow(), ViewMode(viewMode_->currentData().toInt()));
     });
+    hideSingleWorkbench_ = new ThemedCheckBox(QStringLiteral("完整窗口只有一个标签时隐藏标签栏"), parent);
+    hideSingleWorkbench_->setObjectName("HideSingleTabWorkbench");
+    rows->addWidget(addRow(parent, "window/display", QStringLiteral("完整窗口的单标签栏"), "window.hideSingleTabWorkbench",
+        QStringLiteral("按整个窗口的标签数量判断；固定面板和侧边收纳条保持显示。"), hideSingleWorkbench_));
+    hideSingleFloating_ = new ThemedCheckBox(QStringLiteral("轻量浮窗只有一个标签时隐藏标签栏"), parent);
+    hideSingleFloating_->setObjectName("HideSingleTabFloating");
+    rows->addWidget(addRow(parent, "window/display", QStringLiteral("轻量浮窗的单标签栏"), "window.hideSingleTabFloating",
+        QStringLiteral("默认开启；出现第二个标签时恢复标签栏。"), hideSingleFloating_));
+    const auto changeSingleTabPolicy = [this](bool floating, bool enabled) {
+        if (!manager_) return;
+        auto next = manager_->behavior();
+        (floating ? next.hideSingleTabFloating : next.hideSingleTabWorkbench) = enabled;
+        manager_->setBehavior(next);
+    };
+    connect(hideSingleWorkbench_, &QCheckBox::toggled, this,
+        [changeSingleTabPolicy](bool enabled) { changeSingleTabPolicy(false, enabled); });
+    connect(hideSingleFloating_, &QCheckBox::toggled, this,
+        [changeSingleTabPolicy](bool enabled) { changeSingleTabPolicy(true, enabled); });
     zen_ = new ThemedCheckBox(QStringLiteral("隐藏所有栏，专注当前内容"), parent);
     zen_->setObjectName("WindowZenMode");
     rows->addWidget(addRow(parent, "window/display", QStringLiteral("禅模式"), "window.zenMode",
@@ -75,6 +93,10 @@ void SettingsPage::syncViewOptions()
     if (!manager_ || !viewMode_) return;
     const auto window = settingsWindow();
     const QSignalBlocker modeBlock(viewMode_), zenBlock(zen_);
+    const QSignalBlocker workbenchBlock(hideSingleWorkbench_), floatingBlock(hideSingleFloating_);
+    const auto behavior = manager_->behavior();
+    hideSingleWorkbench_->setChecked(behavior.hideSingleTabWorkbench);
+    hideSingleFloating_->setChecked(behavior.hideSingleTabFloating);
     viewMode_->setCurrentIndex(int(manager_->viewMode(window)));
     zen_->setChecked(manager_->zenMode(window));
     zen_->setEnabled(manager_->viewMode(window) != ViewMode::Normal);

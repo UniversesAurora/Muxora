@@ -2,6 +2,7 @@
 
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
+#include "tab_viewport_state.hpp"
 #include <QFrame>
 #include <QPointer>
 #include <QSet>
@@ -61,10 +62,14 @@ public:
     std::function<void(int)> currentChanged;
     std::function<void(int)> closeRequested;
     std::function<void()> hoverGeometryChanged;
+    std::function<void()> newTabRequested;
+    std::function<QMenu*(QWidget*)> newTabMenuRequested;
     DragTabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
     void setCurrentIndex(int index, bool reveal = true);
     [[nodiscard]] int scrollOffset() const;
+    [[nodiscard]] TabViewportState captureViewportState() const;
+    void restoreViewportState(TabViewportState state);
     void restoreScrollOffset(int offset);
     void scrollByWheel(QPoint delta);
     int currentIndex() const;
@@ -81,14 +86,23 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
 private:
     void updateBarGeometry();
     void showTabList();
+    void showNewTabMenu();
     void updateScrollBarVisibility();
     void updateScrollBarGeometry();
     void applyPendingScrollOffset();
+    void queueViewportReflow();
+    bool applyPendingViewportState();
+    void cancelViewportReflow();
+    [[nodiscard]] TabViewportState currentViewportState() const;
+    void updateCanvasGeometry();
     QWidget* header_ = nullptr;
     DragTabBar* bar_ = nullptr;
+    QWidget* canvas_ = nullptr;
+    QWidget* createButtons_ = nullptr;
     QScrollArea* scroll_ = nullptr;
     QScrollBar* scrollbar_ = nullptr;
     QStackedWidget* stack_ = nullptr;
@@ -96,10 +110,17 @@ private:
     Theme theme_;
     QPointer<QTimer> autoScroll_;
     QPointer<QMenu> tabListMenu_;
+    QPointer<QMenu> newTabMenu_;
+    QPointer<QWidget> viewportWindow_;
     int scrollDirection_ = 0;
     QSet<QObject*> hoveredSurfaces_;
     bool dragHovered_ = false;
     std::optional<int> pendingScrollOffset_;
+    std::optional<TabViewportState> settledViewport_;
+    std::optional<TabViewportState> pendingViewportState_;
+    bool viewportReflowQueued_ = false;
+    bool applyingViewportState_ = false;
+    int trailingAlignmentOffset_ = 0;
 };
 
 } // namespace window_system

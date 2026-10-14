@@ -18,6 +18,9 @@ struct WindowManager::Private {
     // Updated only by committed chrome edits. Saving an older window must not
     // replace the most recently edited default for its window kind.
     QHash<WindowKind, QJsonObject> toolbarProfiles;
+    QHash<WindowKind, BarVisibility> visibilityProfiles;
+    QHash<WindowId, QHash<WindowKind, BarVisibility>> windowVisibility;
+    QHash<WindowId, WindowKind> visibilityKinds;
     QSet<WindowId> projectingViews;
     QHash<TabId, QPointer<TabContent>> tabs;
     QHash<TabId, LayoutTree> renderedTrees;
@@ -31,6 +34,8 @@ struct WindowManager::Private {
     ContentFactory factory;
     CloseGuard closeGuard;
     WindowBehavior behavior;
+    QString defaultTabCommand;
+    QStringList tabCreationCommands;
     Theme theme = defaultTheme();
     WindowId activeWindow;
     bool refreshing = false;

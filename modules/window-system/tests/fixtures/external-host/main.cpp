@@ -16,6 +16,31 @@ int main(int argc, char** argv)
     app.setQuitOnLastWindowClosed(false);
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
+    {
+        window_system::FloatingPanel panel(windows.windowWidget(root), {false, false});
+        if (panel.options().dismissOnOutsidePress || panel.isModal()) return 101;
+        panel.setOptions({true, true});
+        if (!panel.options().dismissOnOutsidePress || !panel.isModal()) return 102;
+    }
+    if (!windows.setStatusItemVisible(root, "workspace", false)
+        || windows.statusItemVisible(root, "workspace")
+        || !windows.setStatusItemVisible(root, "workspace", true)) return 103;
+    if (!windows.commands().add({"external.new", "External new content", "Host", {}, {},
+        [&windows](const window_system::CommandContext& context) {
+            auto* content = new QLabel("Created through installed API");
+            if (!windows.addTab(context.window, content, {"New", "contract.text", {}}, context.group).isNull()) return true;
+            delete content; return false;
+        }}) || !windows.setTabCreationCommands("external.new", {"external.new"})) return 104;
+    auto behavior = windows.behavior(); behavior.newTabPosition = window_system::NewTabPosition::Beginning;
+    windows.setBehavior(behavior);
+    if (!windows.requestNewTab(root)) return 105;
+    const auto firstCreated = windows.context(root).tab;
+    if (!windows.requestNewTab(root)) return 106;
+    const auto nextCreated = windows.context(root).tab;
+    if (windows.model().group(windows.context(root).group)->tabs != QVector<window_system::TabId>{nextCreated, firstCreated}
+        || !windows.closeTabs({firstCreated, nextCreated})) return 107;
+    behavior.newTabPosition = window_system::NewTabPosition::AfterActive; windows.setBehavior(behavior);
+    if (!windows.setTabCreationCommands({}, {})) return 108;
     auto findToolbar = [&windows](window_system::WindowId id) -> QWidget* {
         for (auto* widget : windows.windowWidget(id)->findChildren<QWidget*>("CommandStrip"))
             if (widget->property("stripId").toString() == "workspace") return widget;
@@ -59,6 +84,11 @@ int main(int argc, char** argv)
     if (windows.peekSize(tab) != QSize(250, 170) || !windows.setPeekSize(tab, QSize(360, 210))
         || !windows.execute("tab.peek.setSize", {{"tab", tab}, {"width", 420}, {"height", 240}}, root)
         || windows.peekSize(tab) != QSize(420, 240) || windows.setPeekSize(tab, QSize(0, 0))) return 95;
+    if (!windows.setPeekSize(tab, window_system::Edge::Left, QSize(430, 260))
+        || windows.peekSize(tab, window_system::Edge::Right) != QSize(430, 260)
+        || !windows.setPeekSizePolicy(tab, window_system::Edge::Top, {510, std::nullopt})
+        || windows.peekSizePolicy(tab, window_system::Edge::Bottom).width != std::optional<int>(510)
+        || windows.peekSizePolicy(tab, window_system::Edge::Bottom).height.has_value()) return 109;
     const auto secondFloating = windows.createWindow(window_system::WindowKind::Floating, {}, root);
     auto* secondText = new QLabel("Whole-window side insertion");
     QPointer<QLabel> secondObserver(secondText);
@@ -98,7 +128,9 @@ int main(int argc, char** argv)
         return QJsonObject{};
     };
     if (toolbarLayout(windows.saveLayout(), root) != toolbarLayout(saved, root)) return 94;
-    if (windows.peekSize(tab) != QSize(420, 240) || !windows.resetPeekSize(tab)
+    if (windows.peekSize(tab, window_system::Edge::Right) != QSize(430, 260)
+        || windows.peekSizePolicy(tab, window_system::Edge::Bottom).width != std::optional<int>(510)
+        || !windows.resetPeekSize(tab)
         || windows.peekSize(tab) != QSize(250, 170) || windows.paneWidget(pane) != restoredFirst.data()) return 96;
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

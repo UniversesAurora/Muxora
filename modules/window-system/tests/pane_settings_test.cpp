@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
 #include "fixtures/authored_mouse_input.hpp"
+#include "chrome/workspace_window.hpp"
+#include "docking/dock_surface.hpp"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -9,6 +11,7 @@
 #include <QDialog>
 #include <QFocusEvent>
 #include <QImage>
+#include <QJsonArray>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
@@ -17,6 +20,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -25,6 +29,7 @@
 #include <QTest>
 #include <QTreeWidget>
 #include <QtMath>
+#include <memory>
 
 using namespace window_system;
 
@@ -82,9 +87,9 @@ QSet<QString> settingKeys(QWidget* page)
 
 QSet<QString> allSettingKeys()
 {
-    return {"window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
+    return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.viewMode", "window.zenMode", "window.visibility.toolbars", "window.visibility.statusBar",
-            "window.visibility.tabBars", "window.visibility.sideBars"};
+            "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -123,6 +128,13 @@ private slots:
     void settingsCategoryIndicatorUsesItsOwnSpacedGutter();
     void settingsSearchKeepsMatchingCategoriesAndTheirAncestors();
     void settingControlsUpdateImmediatelyAndReflectExternalChanges();
+    void newTabPositionComboSupportsKeyboardAndExternalSynchronization_data();
+    void newTabPositionComboSupportsKeyboardAndExternalSynchronization();
+    void newTabPositionSearchPreservesTheExistingSettingsAndNavigation();
+    void legacySettingsSnapshotsUseTheDefaultNewTabPosition();
+    void settingNotificationsAllowSynchronousHostDestruction_data();
+    void settingNotificationsAllowSynchronousHostDestruction();
+    void singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWindows();
     void internalSettingsRestoreWithoutHostContentFactory();
     void internalSettingsSplitAndExtractWithoutHostContentFactory();
     void shortcutsUseOneTabAndEditTheCommandRegistry();
@@ -284,10 +296,10 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     QCOMPARE(windowCategory->child(0)->data(0, Qt::UserRole).toString(), QStringLiteral("window/drag"));
     QCOMPARE(windowCategory->child(1)->data(0, Qt::UserRole).toString(), QStringLiteral("window/display"));
     QCOMPARE(settingKeys(page), allSettingKeys());
-    QCOMPARE(page->findChildren<QWidget*>(QStringLiteral("SettingRow")).size(), 10);
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(page->findChildren<QWidget*>(QStringLiteral("SettingRow")).size(), 13);
+    QCOMPARE(visibleSettingRows(page), 13);
     categories->setCurrentItem(windowCategory->child(0));
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
     search->setText(QStringLiteral("window.revealDelayMs"));
     QCOMPARE(visibleSettingRows(page), 1);
     categories->setCurrentItem(windowCategory);
@@ -297,9 +309,9 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     categories->setCurrentItem(windowCategory);
     QCOMPARE(visibleSettingRows(page), 2);
     search->setText(QStringLiteral("窗口"));
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
 }
 
 void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
@@ -322,7 +334,7 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QTest::mouseClick(categories->viewport(), Qt::LeftButton, Qt::NoModifier,
                      categories->visualItemRect(drag).center());
     QVERIFY(scroll->verticalScrollBar()->value() > 0);
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
     QVERIFY(drag->font(0).bold());
     QVERIFY(!root->font(0).bold());
     scroll->verticalScrollBar()->setValue(0);
@@ -358,13 +370,13 @@ void PaneSettingsTest::settingsCategoryTreeSupportsKeyboardExpansion()
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Left);
     QVERIFY(!root->isExpanded());
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
     QTest::keyClick(categories, Qt::Key_Right);
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Down);
     QCOMPARE(categories->currentItem(), drag);
     QVERIFY(drag->font(0).bold());
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
 }
 
 void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
@@ -533,7 +545,7 @@ void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()
     QVERIFY(display->isHidden());
     for (auto* heading : headings) QVERIFY(heading->isHidden());
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 10);
+    QCOMPARE(visibleSettingRows(page), 13);
     QVERIFY(!root->isHidden());
     QVERIFY(!drag->isHidden());
     QVERIFY(!display->isHidden());
@@ -552,29 +564,34 @@ void PaneSettingsTest::settingControlsUpdateImmediatelyAndReflectExternalChanges
     auto* empty = page->findChild<QComboBox*>(QStringLiteral("EmptyWorkbenchPolicy"));
     auto* reveal = page->findChild<QCheckBox*>(QStringLiteral("RevealDuringDrag"));
     auto* delay = page->findChild<QSpinBox*>(QStringLiteral("RevealDelayMs"));
-    QVERIFY(kind && empty && reveal && delay);
+    auto* position = page->findChild<QComboBox*>(QStringLiteral("NewTabPosition"));
+    QVERIFY(kind && empty && reveal && delay && position);
     QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     kind->setCurrentIndex(1);
     empty->setCurrentIndex(1);
     delay->setValue(900);
     reveal->setChecked(false);
+    position->setCurrentIndex(position->findData(int(NewTabPosition::BeforeActive)));
     QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
     QVERIFY(manager.behavior().closeEmptyWorkbench);
     QCOMPARE(manager.behavior().revealDelayMs, 900);
     QVERIFY(!manager.behavior().revealDuringDrag);
     QVERIFY(!delay->isEnabled());
+    QCOMPARE(manager.behavior().newTabPosition, NewTabPosition::BeforeActive);
     QVERIFY(changes.count() >= 4);
     auto behavior = manager.behavior();
     behavior.dragOutsideKind = WindowKind::Floating;
     behavior.closeEmptyWorkbench = false;
     behavior.revealDuringDrag = true;
     behavior.revealDelayMs = 700;
+    behavior.newTabPosition = NewTabPosition::End;
     manager.setBehavior(behavior);
     QCOMPARE(kind->currentIndex(), 0);
     QCOMPARE(empty->currentIndex(), 0);
     QVERIFY(reveal->isChecked());
     QCOMPARE(delay->value(), 700);
     QVERIFY(delay->isEnabled());
+    QCOMPARE(position->currentData().toInt(), int(NewTabPosition::End));
 }
 
 void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()
@@ -584,6 +601,7 @@ void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()
     original.showSettings(window);
     auto behavior = original.behavior();
     behavior.revealDelayMs = 1100;
+    behavior.newTabPosition = NewTabPosition::Beginning;
     original.setBehavior(behavior);
     const auto snapshot = original.saveLayout();
     WindowManager restored;
@@ -595,6 +613,9 @@ void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()
     auto* delay = page->findChild<QSpinBox*>(QStringLiteral("RevealDelayMs"));
     QVERIFY(delay);
     QCOMPARE(delay->value(), 1100);
+    auto* position = page->findChild<QComboBox*>(QStringLiteral("NewTabPosition")); QVERIFY(position);
+    QCOMPARE(restored.behavior().newTabPosition, NewTabPosition::Beginning);
+    QCOMPARE(position->currentData().toInt(), int(NewTabPosition::Beginning));
     restored.showSettings(window);
     QCOMPARE(restored.model().tabs().size(), 1);
     QCOMPARE(pageFor(restored, QStringLiteral("window_system.settings")), page);
@@ -664,6 +685,210 @@ void PaneSettingsTest::settingsRowsUseTheWorkspaceSurfaceInsteadOfTheSystemPalet
     auto changed = manager.theme(); changed.surface = QColor("#DDE5EA");
     manager.setTheme(changed);
     QCOMPARE(contents->grab().toImage().pixelColor(0, 0), changed.surface);
+}
+
+void PaneSettingsTest::newTabPositionComboSupportsKeyboardAndExternalSynchronization_data()
+{
+    QTest::addColumn<int>("choice"); QTest::addColumn<int>("policy");
+    QTest::newRow("after-active-default") << 0 << int(NewTabPosition::AfterActive);
+    QTest::newRow("before-active") << 1 << int(NewTabPosition::BeforeActive);
+    QTest::newRow("beginning") << 2 << int(NewTabPosition::Beginning);
+    QTest::newRow("end") << 3 << int(NewTabPosition::End);
+}
+
+void PaneSettingsTest::newTabPositionComboSupportsKeyboardAndExternalSynchronization()
+{
+    QFETCH(int, choice); QFETCH(int, policy);
+    WindowManager manager; const auto window = manager.createWindow();
+    QCOMPARE(manager.behavior().newTabPosition, NewTabPosition::AfterActive);
+    auto behavior = manager.behavior();
+    behavior.dragOutsideKind = WindowKind::Workbench; behavior.closeEmptyWorkbench = true;
+    behavior.revealDuringDrag = false; behavior.revealDelayMs = 1100;
+    manager.setBehavior(behavior); manager.showSettings(window); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    auto* combo = page->findChild<QComboBox*>(QStringLiteral("NewTabPosition")); QVERIFY(combo);
+    QCOMPARE(combo->count(), 4); QCOMPARE(combo->currentData().toInt(), int(NewTabPosition::AfterActive));
+    QCOMPARE(combo->accessibleName(), QStringLiteral("新建标签的位置"));
+    const QVector<int> ordered{int(NewTabPosition::AfterActive), int(NewTabPosition::BeforeActive),
+                               int(NewTabPosition::Beginning), int(NewTabPosition::End)};
+    for (int index = 0; index < ordered.size(); ++index) {
+        QCOMPARE(combo->itemData(index).toInt(), ordered[index]); QVERIFY(!combo->itemText(index).isEmpty());
+    }
+    QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    combo->setFocus(); QTRY_VERIFY(combo->hasFocus());
+    // Exercise QComboBox's actual keyboard handling, including a transition
+    // away from the default, rather than assigning the selected index.
+    QTest::keyClick(combo, Qt::Key_End); QTest::keyClick(combo, Qt::Key_Home);
+    for (int index = 0; index < choice; ++index) QTest::keyClick(combo, Qt::Key_Down);
+    QTest::keyClick(combo, Qt::Key_Return);
+    QTRY_COMPARE(combo->currentData().toInt(), policy);
+    QCOMPARE(manager.behavior().newTabPosition, NewTabPosition(policy)); QVERIFY(changes.size() >= 2);
+    QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
+    QVERIFY(manager.behavior().closeEmptyWorkbench); QVERIFY(!manager.behavior().revealDuringDrag);
+    QCOMPARE(manager.behavior().revealDelayMs, 1100);
+    const auto snapshot = manager.saveLayout();
+    QCOMPARE(snapshot.value("behavior").toObject().value("newTabPosition").toInt(), policy);
+    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot));
+    auto* restoredPage = pageFor(restored, QStringLiteral("window_system.settings")); QVERIFY(restoredPage);
+    auto* restoredCombo = restoredPage->findChild<QComboBox*>(QStringLiteral("NewTabPosition")); QVERIFY(restoredCombo);
+    QCOMPARE(restored.behavior().newTabPosition, NewTabPosition(policy)); QCOMPARE(restoredCombo->currentData().toInt(), policy);
+    QSignalSpy echoed(combo, &QComboBox::currentIndexChanged); changes.clear();
+    const auto next = policy == int(NewTabPosition::Beginning) ? NewTabPosition::End : NewTabPosition::Beginning;
+    behavior = manager.behavior(); behavior.newTabPosition = next; manager.setBehavior(behavior);
+    QCOMPARE(combo->currentData().toInt(), int(next)); QCOMPARE(manager.behavior().newTabPosition, next);
+    QCOMPARE(echoed.size(), 0); QCOMPARE(changes.size(), 1);
+    QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
+    QVERIFY(manager.behavior().closeEmptyWorkbench); QVERIFY(!manager.behavior().revealDuringDrag);
+    QCOMPARE(manager.behavior().revealDelayMs, 1100);
+}
+
+void PaneSettingsTest::newTabPositionSearchPreservesTheExistingSettingsAndNavigation()
+{
+    WindowManager manager; const auto window = manager.createWindow(); manager.showSettings(window); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    auto* search = page->findChild<QLineEdit*>(QStringLiteral("SettingsSearch"));
+    auto* categories = page->findChild<QTreeWidget*>(QStringLiteral("SettingsCategories"));
+    auto* combo = page->findChild<QComboBox*>(QStringLiteral("NewTabPosition"));
+    QVERIFY(search && categories && combo); QCOMPARE(settingKeys(page), allSettingKeys());
+    const auto tab = tabFor(manager, page); const auto originalCount = manager.model().tabs().size();
+    search->setFocus(); QTest::keyClicks(search, "window.newTabPosition");
+    QTRY_COMPARE(visibleSettingRows(page), 1);
+    for (auto* row : page->findChildren<QWidget*>(QStringLiteral("SettingRow")))
+        QCOMPARE(row->isHidden(), row->property("settingId").toString() != QStringLiteral("window.newTabPosition"));
+    QVERIFY(combo->isVisible()); QVERIFY(!categories->topLevelItem(0)->isHidden());
+    QVERIFY(categories->topLevelItem(0)->child(0)->isHidden()); QVERIFY(categories->topLevelItem(0)->child(1)->isHidden());
+    QTest::keyClick(search, Qt::Key_A, Qt::ControlModifier); QTest::keyClick(search, Qt::Key_Backspace);
+    QTRY_COMPARE(visibleSettingRows(page), 13); QCOMPARE(settingKeys(page), allSettingKeys());
+    QCOMPARE(manager.model().tabs().size(), originalCount); QCOMPARE(tabFor(manager, page), tab);
+    QVERIFY(!categories->topLevelItem(0)->child(0)->isHidden()); QVERIFY(!categories->topLevelItem(0)->child(1)->isHidden());
+}
+
+void PaneSettingsTest::legacySettingsSnapshotsUseTheDefaultNewTabPosition()
+{
+    WindowManager original; const auto window = original.createWindow(); original.showSettings(window);
+    auto behavior = original.behavior(); behavior.newTabPosition = NewTabPosition::End;
+    behavior.revealDelayMs = 1100; original.setBehavior(behavior);
+    auto snapshot = original.saveLayout(); auto settings = snapshot.value("behavior").toObject();
+    settings.remove("newTabPosition"); snapshot.insert("behavior", settings);
+    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot));
+    auto* page = pageFor(restored, QStringLiteral("window_system.settings")); QVERIFY(page);
+    auto* combo = page->findChild<QComboBox*>(QStringLiteral("NewTabPosition")); QVERIFY(combo);
+    QCOMPARE(restored.behavior().newTabPosition, NewTabPosition::AfterActive);
+    QCOMPARE(combo->currentData().toInt(), int(NewTabPosition::AfterActive));
+    QCOMPARE(restored.behavior().revealDelayMs, 1100);
+    QCOMPARE(settingKeys(page), allSettingKeys());
+}
+
+void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data()
+{
+    QTest::addColumn<QString>("control"); QTest::addColumn<bool>("deleteManager");
+    for (const auto* control : {"NewTabPosition", "DetachWindowKind", "EmptyWorkbenchPolicy", "RevealDuringDrag", "RevealDelayMs",
+                                "HideSingleTabWorkbench", "HideSingleTabFloating",
+                                "WindowViewMode", "WindowZenMode", "window.visibility.toolbars", "window.visibility.statusBar",
+                                "window.visibility.tabBars", "window.visibility.sideBars"}) {
+        for (const bool deleteManager : {false, true}) {
+            const auto row = QByteArray(control) + (deleteManager ? "-manager" : "-page");
+            QTest::newRow(row.constData()) << QString::fromLatin1(control) << deleteManager;
+        }
+    }
+}
+
+void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
+{
+    QFETCH(QString, control); QFETCH(bool, deleteManager);
+    auto manager = std::make_unique<WindowManager>(); const QPointer<WindowManager> owner(manager.get());
+    const auto window = manager->createWindow(); manager->showSettings(window);
+    QPointer<QWidget> page = pageFor(*manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    const auto tab = tabFor(*manager, page); const auto pane = manager->model().tab(tab)->activePane;
+    if (control == "WindowZenMode") QVERIFY(manager->setViewMode(window, ViewMode::WindowFullscreen));
+    auto* target = page->findChild<QWidget*>(control); QVERIFY(target);
+    QPointer<QWidget> windowObserver(manager->windowWidget(window)), targetObserver(target);
+    int callbacks = 0; QJsonObject saved;
+    connect(manager.get(), &WindowManager::layoutChanged, this, [&] {
+        ++callbacks; saved = manager->saveLayout();
+        if (deleteManager) manager.reset();
+        else delete page.data();
+    });
+    // Qt setters can update accessibility after emitting their change signal;
+    // deleting that same control inside the setter is outside this callback's
+    // lifetime contract. Finish the real setter first, then emit the same real
+    // signal directly so destruction still happens inside the production slot.
+    // End each blocker before emission: its destructor must not touch a deleted
+    // control. Keyboard-driven selection is covered separately above.
+    if (auto* combo = qobject_cast<QComboBox*>(target)) {
+        const int selected = control == "WindowViewMode" ? combo->findData(int(ViewMode::WindowFullscreen)) : combo->count() - 1;
+        { const QSignalBlocker block(combo); combo->setCurrentIndex(selected); }
+        QCOMPARE(combo->currentIndex(), selected);
+        QVERIFY(QMetaObject::invokeMethod(combo, "currentIndexChanged", Qt::DirectConnection, Q_ARG(int, selected)));
+    } else if (auto* check = qobject_cast<QCheckBox*>(target)) {
+        const bool checked = !check->isChecked();
+        { const QSignalBlocker block(check); check->setChecked(checked); }
+        QCOMPARE(check->isChecked(), checked);
+        QVERIFY(QMetaObject::invokeMethod(check, "toggled", Qt::DirectConnection, Q_ARG(bool, checked)));
+    } else if (auto* spin = qobject_cast<QSpinBox*>(target)) {
+        { const QSignalBlocker block(spin); spin->setValue(900); }
+        QCOMPARE(spin->value(), 900);
+        QVERIFY(QMetaObject::invokeMethod(spin, "valueChanged", Qt::DirectConnection, Q_ARG(int, 900)));
+    } else QFAIL("Unknown setting control in lifetime fixture");
+    QCOMPARE(callbacks, 1); QVERIFY(!saved.isEmpty());
+    const auto settings = saved.value("behavior").toObject();
+    if (control == "NewTabPosition") QCOMPARE(settings.value("newTabPosition").toInt(), int(NewTabPosition::End));
+    else if (control == "DetachWindowKind") QCOMPARE(settings.value("dragOutsideFloating").toBool(), false);
+    else if (control == "EmptyWorkbenchPolicy") QCOMPARE(settings.value("closeEmptyWorkbench").toBool(), true);
+    else if (control == "RevealDuringDrag") QCOMPARE(settings.value("revealDuringDrag").toBool(), false);
+    else if (control == "RevealDelayMs") QCOMPARE(settings.value("revealDelayMs").toInt(), 900);
+    else if (control == "HideSingleTabWorkbench") QVERIFY(settings.value("hideSingleTabWorkbench").toBool());
+    else if (control == "HideSingleTabFloating") QVERIFY(!settings.value("hideSingleTabFloating").toBool(true));
+    const auto savedWindow = saved.value("windows").toArray().first().toObject();
+    const auto view = savedWindow.value("viewState").toObject();
+    if (control == "WindowViewMode") QCOMPARE(view.value("mode").toString(), QStringLiteral("windowFullscreen"));
+    else if (control == "WindowZenMode") QVERIFY(view.value("zen").toBool());
+    else if (control.startsWith("window.visibility.")) {
+        const auto field = control.mid(QStringLiteral("window.visibility.").size()) + QStringLiteral("Visible");
+        QVERIFY(savedWindow.contains(field)); QCOMPARE(savedWindow.value(field).toBool(), false);
+    }
+    if (deleteManager) {
+        QVERIFY(!owner); QVERIFY(!manager);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(!page); QVERIFY(!targetObserver); QVERIFY(!windowObserver);
+    } else {
+        QVERIFY(owner); QVERIFY(manager); QVERIFY(!page); QVERIFY(!targetObserver); QVERIFY(windowObserver);
+        QCOMPARE(manager->paneWidget(pane), nullptr); QVERIFY(manager->model().tab(tab));
+    }
+}
+
+void PaneSettingsTest::singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWindows()
+{
+    WindowManager manager; const auto workbench = manager.createWindow();
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, workbench);
+    const auto tab = manager.addTab(floating, new QLabel("Floating"), {"Floating", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane; auto* content = manager.paneWidget(pane);
+    manager.showSettings(workbench); manager.showWindow(workbench); manager.showWindow(floating);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(workbench)));
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(floating)));
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    auto* mainPolicy = page->findChild<QCheckBox*>(QStringLiteral("HideSingleTabWorkbench"));
+    auto* floatPolicy = page->findChild<QCheckBox*>(QStringLiteral("HideSingleTabFloating"));
+    QVERIFY(mainPolicy && floatPolicy); QVERIFY(!mainPolicy->isChecked()); QVERIFY(floatPolicy->isChecked());
+    auto* mainSurface = static_cast<WorkspaceWindow*>(manager.windowWidget(workbench))->surface();
+    auto* floatSurface = static_cast<WorkspaceWindow*>(manager.windowWidget(floating))->surface();
+    QCOMPARE(mainSurface->tabBarRects().size(), 1); QCOMPARE(floatSurface->tabBarRects().size(), 0);
+    mainPolicy->click();
+    QVERIFY(manager.behavior().hideSingleTabWorkbench); QVERIFY(manager.behavior().hideSingleTabFloating);
+    QTRY_COMPARE(mainSurface->tabBarRects().size(), 0); QCOMPARE(floatSurface->tabBarRects().size(), 0);
+    floatPolicy->click();
+    QVERIFY(manager.behavior().hideSingleTabWorkbench); QVERIFY(!manager.behavior().hideSingleTabFloating);
+    QTRY_COMPARE(floatSurface->tabBarRects().size(), 1); QCOMPARE(mainSurface->tabBarRects().size(), 0);
+    QSignalSpy echoedMain(mainPolicy, &QCheckBox::toggled), echoedFloat(floatPolicy, &QCheckBox::toggled);
+    auto behavior = manager.behavior(); behavior.hideSingleTabWorkbench = false; behavior.hideSingleTabFloating = true;
+    manager.setBehavior(behavior);
+    QVERIFY(!mainPolicy->isChecked()); QVERIFY(floatPolicy->isChecked());
+    QCOMPARE(echoedMain.size(), 0); QCOMPARE(echoedFloat.size(), 0);
+    QTRY_COMPARE(mainSurface->tabBarRects().size(), 1); QCOMPARE(floatSurface->tabBarRects().size(), 0);
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
+    QCOMPARE(settingKeys(page), allSettingKeys()); QCOMPARE(visibleSettingRows(page), 13);
 }
 
 QTEST_MAIN(PaneSettingsTest)

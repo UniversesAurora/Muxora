@@ -32,7 +32,7 @@ struct Theme {
 
     QString name = QStringLiteral("Violet Light");
     QColor background = QColor(QStringLiteral("#756487"));
-    QColor surface = QColor(QStringLiteral("#fbfaff"));
+    QColor surface = QColor(QStringLiteral("#ffffff"));
     QColor raisedSurface = QColor(QStringLiteral("#f0ebf7"));
     QColor headerBackground = QColor(QStringLiteral("#ddd5ed"));
     QColor headerText = QColor(QStringLiteral("#2c2338"));
@@ -42,6 +42,7 @@ struct Theme {
     QColor accent = QColor(QStringLiteral("#7545a7"));
     QColor accentHover = QColor(QStringLiteral("#653693"));
     QColor accentSoft = QColor(QStringLiteral("#e8dcf6"));
+    QColor buttonHover = QColor(QStringLiteral("#f1e8fb"));
     QColor activeTab = QColor(QStringLiteral("#ead9fa"));
     QColor inactiveTab = QColor(QStringLiteral("#c8bad8"));
     QColor statusBackground = QColor(QStringLiteral("#51366b"));

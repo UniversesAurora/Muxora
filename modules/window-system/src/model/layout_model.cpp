@@ -153,6 +153,40 @@ bool validPeekSize(QSize size)
         && size.width() <= maximumPeekDimension && size.height() <= maximumPeekDimension;
 }
 
+bool validPeekPolicy(const PeekSizePolicy& size)
+{
+    return (!size.width || (*size.width >= minimumPeekWidth && *size.width <= maximumPeekDimension))
+        && (!size.height || (*size.height >= minimumPeekHeight && *size.height <= maximumPeekDimension));
+}
+
+QJsonObject peekPolicyJson(const PeekSizePolicy& size)
+{
+    QJsonObject object;
+    if (size.width) object.insert("width", *size.width);
+    if (size.height) object.insert("height", *size.height);
+    return object;
+}
+
+OperationResult readPeekPolicy(const QJsonValue& value, PeekSizePolicy& policy)
+{
+    if (!value.isObject()) return failure("A directional peek size must be an object.");
+    const auto object = value.toObject();
+    for (const auto& key : object.keys())
+        if (key != "width" && key != "height") return failure("A directional peek size has an unknown axis.");
+    for (const auto* key : {"width", "height"}) {
+        if (!object.contains(QLatin1String(key))) continue;
+        const auto dimension = object.value(QLatin1String(key));
+        const auto number = dimension.toDouble();
+        const auto minimum = QLatin1String(key) == QLatin1String("width") ? minimumPeekWidth : minimumPeekHeight;
+        if (!dimension.isDouble() || !std::isfinite(number) || number < minimum
+            || number > maximumPeekDimension || std::floor(number) != number)
+            return failure("Directional peek dimensions must be bounded integers.");
+        if (QLatin1String(key) == QLatin1String("width")) policy.width = int(number);
+        else policy.height = int(number);
+    }
+    return success();
+}
+
 class JsonReader {
 public:
     QString error;
@@ -356,7 +390,7 @@ GroupId LayoutModel::createGroupUnchecked(WindowId windowId)
     record.activeGroup = id;
     return id;
 }
-TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup)
+TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup, int insertionIndex)
 {
     TabId created;
     const auto result = transact([&](LayoutModel& model) {
@@ -372,9 +406,10 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup)
         }
         created = QUuid::createUuid();
         const auto paneId = QUuid::createUuid();
-        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt, std::nullopt});
+        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
         auto& record = model.groups_[target];
-        record.tabs.append(created);
+        if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure("The insertion index is invalid.");
+        record.tabs.insert(insertionIndex < 0 ? record.tabs.size() : insertionIndex, created);
         record.activeTab = created;
         model.windows_[windowId].activeGroup = target;
         return success();
@@ -787,6 +822,32 @@ OperationResult LayoutModel::setPeekSize(TabId tabId, std::optional<QSize> size)
         if (size && !validPeekSize(*size))
             return failure("Peek sizes require width 140..16777215 and height 100..16777215.");
         model.tabs_[tabId].peekSize = size;
+        model.tabs_[tabId].verticalPeekSize.reset();
+        model.tabs_[tabId].horizontalPeekSize.reset();
+        return success();
+    });
+}
+PeekSizePolicy LayoutModel::peekSizePolicy(TabId tabId, Edge edge) const
+{
+    const auto* record = tab(tabId);
+    if (!record) return {};
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    const auto& policy = vertical ? record->verticalPeekSize : record->horizontalPeekSize;
+    if (policy) return *policy;
+    if (!record->peekSize) return {};
+    // Older snapshots remember both cross-edge defaults, while stretching the
+    // other axis. Do not turn their formerly ignored dimension into a new size.
+    return vertical ? PeekSizePolicy{record->peekSize->width(), std::nullopt}
+                    : PeekSizePolicy{std::nullopt, record->peekSize->height()};
+}
+OperationResult LayoutModel::setPeekSizePolicy(TabId tabId, Edge edge, PeekSizePolicy size)
+{
+    return transact([&](LayoutModel& model) {
+        if (!model.tab(tabId)) return failure("The tab does not exist.");
+        if (edgeText(edge).isEmpty()) return failure("The peek edge is invalid.");
+        if (!validPeekPolicy(size)) return failure("Directional peek dimensions are outside the supported range.");
+        auto& record = model.tabs_[tabId];
+        (edge == Edge::Left || edge == Edge::Right ? record.verticalPeekSize : record.horizontalPeekSize) = size;
         return success();
     });
 }
@@ -1126,7 +1187,7 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
         created = QUuid::createUuid();
         const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
         const auto title = model.tabs_[sourceTab].title;
-        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt, std::nullopt});
+        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
         model.groups_[sourceGroup].tabs.append(created);
         auto moved = model.moveTabUnchecked(created, targetGroup, placement, -1);
         if (!moved) return moved;
@@ -1197,6 +1258,9 @@ OperationResult LayoutModel::validate() const
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
         if (iterator->peekSize && !validPeekSize(*iterator->peekSize))
             return failure("A peek size is outside the supported dimensions.");
+        if ((iterator->verticalPeekSize && !validPeekPolicy(*iterator->verticalPeekSize))
+            || (iterator->horizontalPeekSize && !validPeekPolicy(*iterator->horizontalPeekSize)))
+            return failure("A directional peek size is outside the supported dimensions.");
         if (const auto& saved = iterator->pinnedPosition) {
             if (saved->window.isNull() || saved->group.isNull() || saved->groupIndex < 0
                 || saved->groupIndex > maximumRecords || saved->tabIndex < 0 || saved->tabIndex > maximumRecords
@@ -1296,6 +1360,10 @@ QJsonObject LayoutModel::toJson() const
                     {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}};
                 if (const auto& size = tabRecord.peekSize)
                     tabObject.insert("peekSize", QJsonObject{{"width", size->width()}, {"height", size->height()}});
+                if (const auto& size = tabRecord.verticalPeekSize)
+                    tabObject.insert("verticalPeekSize", peekPolicyJson(*size));
+                if (const auto& size = tabRecord.horizontalPeekSize)
+                    tabObject.insert("horizontalPeekSize", peekPolicyJson(*size));
                 if (const auto& saved = tabRecord.pinnedPosition) {
                     tabObject.insert("pinnedPosition", QJsonObject{{"window", uuidText(saved->window)},
                         {"group", uuidText(saved->group)}, {"edge", edgeText(saved->edge)},
@@ -1378,6 +1446,13 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
                     return failure("Peek dimensions must be bounded integers.");
             }
             record.peekSize = QSize(size.value("width").toInt(), size.value("height").toInt());
+        }
+        for (const auto* key : {"verticalPeekSize", "horizontalPeekSize"}) {
+            if (!object.contains(QLatin1String(key))) continue;
+            PeekSizePolicy policy;
+            const auto result = readPeekPolicy(object.value(QLatin1String(key)), policy);
+            if (!result) return result;
+            (QLatin1String(key) == QLatin1String("verticalPeekSize") ? record.verticalPeekSize : record.horizontalPeekSize) = policy;
         }
         if (object.contains("pinnedPosition")) {
             if (!object.value("pinnedPosition").isObject()) return failure("A pinned position must be an object.");

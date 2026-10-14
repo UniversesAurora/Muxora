@@ -561,7 +561,7 @@ void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting(
     nativeMouse(host, blank); QTest::qWait(30);
     QTRY_VERIFY(!button->underMouse());
     QVERIFY(!button->isDown()); QVERIFY(!QApplication::activePopupWidget());
-    const int baseline = pixelsOfColor(button->grab().toImage(), theme.accentSoft);
+    const int baseline = pixelsOfColor(button->grab().toImage(), theme.buttonHover);
     QSignalSpy buttonTriggered(button->defaultAction(), &QAction::triggered);
     QSignalSpy menuTriggered(tail->menu(), &QMenu::triggered);
     bool visibleBeforeClose = false;
@@ -600,10 +600,10 @@ void ChromeInteractionTest::outsidePopupDismissalRestoresNativeHoverAndPainting(
     QTRY_COMPARE(QApplication::mouseButtons(), Qt::MouseButtons(Qt::NoButton));
     nativeMouse(button, button->rect().center());
     QTRY_VERIFY(button->underMouse());
-    QTRY_VERIFY(pixelsOfColor(button->grab().toImage(), theme.accentSoft) > baseline + 15);
+    QTRY_VERIFY(pixelsOfColor(button->grab().toImage(), theme.buttonHover) > baseline + 15);
     nativeMouse(host, blank); QTest::qWait(30);
     QTRY_VERIFY(!button->underMouse());
-    QCOMPARE(pixelsOfColor(button->grab().toImage(), theme.accentSoft), baseline);
+    QCOMPARE(pixelsOfColor(button->grab().toImage(), theme.buttonHover), baseline);
 }
 
 void ChromeInteractionTest::optionsPolicyDoesNotReserveSpaceOrChangeSavedLayout()

@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMouseEvent>
@@ -589,6 +590,9 @@ void DragInteractionTest::pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops
 void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences()
 {
     WindowManager manager;
+    // Exercise tab drag cancellation with a visible source strip. The new
+    // single-tab defaults are covered independently by presentation tests.
+    auto behavior = manager.behavior(); behavior.hideSingleTabFloating = false; manager.setBehavior(behavior);
     const auto owner = manager.createWindow(WindowKind::Workbench, {"Owner", QSize(600, 500)});
     const auto source = manager.createWindow(WindowKind::Workbench, {"Customized", QSize(740, 600)});
     const auto tab = manager.addTab(source, new QLabel("Live content"), {"Live", "label", {}});
@@ -599,8 +603,18 @@ void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPre
     strips->setLocked(false); QVERIFY(strips->moveStrip("title", 1, 0));
     QVERIFY(strips->setStripVisible("workspace", false));
     const auto before = strips->saveLayout();
+    QVERIFY(manager.setSideBarsVisible(source, false));
     QVERIFY(manager.demoteWindow(source, owner));
+    QVERIFY(manager.setStatusBarVisible(source, false));
     const auto floatingBefore = window->saveStripLayout();
+    const auto savedBars = [&manager, source] {
+        for (const auto& item : manager.saveLayout().value("windows").toArray()) {
+            const auto record = item.toObject();
+            if (record.value("id").toString() == source.toString(QUuid::WithoutBraces)) return record.value("barLayouts").toObject();
+        }
+        return QJsonObject{};
+    };
+    const auto barsBefore = savedBars(); QCOMPARE(barsBefore.size(), 2);
     prepareDesktopFixture(window); manager.showWindow(source);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* bar = tabBar(window, tab); QVERIFY(bar); startTabDrag(window, bar, tab);
@@ -608,6 +622,7 @@ void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPre
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor); QTest::keyClick(actor, Qt::Key_Escape);
     auto* restored = static_cast<WorkspaceWindow*>(manager.windowWidget(source)); QVERIFY(restored);
     QCOMPARE(restored->saveStripLayout(), floatingBefore);
+    QCOMPARE(savedBars(), barsBefore);
     QCOMPARE(manager.paneWidget(pane), live.data());
     QVERIFY(manager.promoteWindow(source));
     QCOMPARE(restored->strips()->saveLayout(), before);

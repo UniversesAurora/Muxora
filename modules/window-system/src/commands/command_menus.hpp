@@ -3,6 +3,7 @@
 
 #include <window_system/command_registry.hpp>
 #include <QList>
+#include <QHash>
 #include <QPointer>
 #include <QObject>
 #include <functional>
@@ -40,8 +41,11 @@ private:
     CommandMenuSurface surface_;
     QList<QPointer<QAction>> actions_;
     QList<QPointer<QMenu>> menus_;
+    QPointer<QAction> windowListSeparator_;
+    QHash<WindowId, QPointer<QAction>> windowActions_;
     QMenu* menuAtPath(const QStringList& path);
     void addContributions();
+    void refreshWindowList();
 };
 
 } // namespace window_system

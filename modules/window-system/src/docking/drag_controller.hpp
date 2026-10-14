@@ -67,6 +67,8 @@ private:
     bool transferringCapture_ = false;
     LayoutModel originalModel_;
     QHash<WindowId, WindowOptions> originalOptions_;
+    QHash<WindowId, QHash<WindowKind, BarVisibility>> originalWindowVisibility_;
+    QHash<WindowId, WindowKind> originalVisibilityKinds_;
     QJsonObject originalSourceStrips_;
     QJsonObject originalSourceInactiveStrips_;
     QJsonObject originalLayout_;

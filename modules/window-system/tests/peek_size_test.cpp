@@ -13,6 +13,7 @@
 #include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
@@ -145,6 +146,13 @@ private slots:
     void aSynchronousSaverCanDeleteTheManager();
     void resizingContentCanDeleteTheManager();
     void queuedInputIsHarmlessUntilDeferredDeletion();
+    void defaultPanelsStretchOneAxisAndUseUniformCompactMargins_data() { edgeRows(); }
+    void defaultPanelsStretchOneAxisAndUseUniformCompactMargins();
+    void bothDimensionsAndCornerResizingWorkOnEverySide_data() { edgeRows(); }
+    void bothDimensionsAndCornerResizingWorkOnEverySide();
+    void oppositeSidesShareSizesWithoutChangingTheOtherOrientation();
+    void autoAxisCommandsPreserveViewportStretch();
+    void directionalPoliciesRejectInvalidSizesWithoutReplacingContent();
 };
 
 void PeekSizeTest::perTabPreferencesUpdateTheLivePanelWithoutRebuilding()
@@ -451,7 +459,9 @@ void PeekSizeTest::shortcutOpensAKeyboardEditableSizeDialog()
         auto* width = dialog->findChild<QSpinBox*>("PeekWidthInput");
         auto* height = dialog->findChild<QSpinBox*>("PeekHeightInput");
         auto* buttons = dialog->findChild<QDialogButtonBox*>("PeekSizeButtons");
-        QVERIFY(width && height && buttons); QCOMPARE(width->value(), 250); QCOMPARE(height->value(), 170);
+        QVERIFY(width && height && buttons); QCOMPARE(width->value(), 0); QCOMPARE(height->value(), 0);
+        QCOMPARE(width->specialValueText(), QStringLiteral("默认宽度"));
+        QCOMPARE(height->specialValueText(), QStringLiteral("填满高度"));
         QTest::keyClick(width, Qt::Key_A, Qt::ControlModifier); QTest::keyClicks(width, "369");
         QTest::keyClick(width, Qt::Key_Tab); QVERIFY(height->hasFocus());
         QTest::keyClick(height, Qt::Key_A, Qt::ControlModifier); QTest::keyClicks(height, "217");
@@ -607,6 +617,149 @@ void PeekSizeTest::queuedInputIsHarmlessUntilDeferredDeletion()
     QVERIFY(queuedInputDelivered); QCOMPARE(savedSize, QSize(330, 195));
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QVERIFY(!contentObserver); QVERIFY(!windowObserver); QVERIFY(!centralObserver); QVERIFY(!pinnedObserver);
+}
+
+void PeekSizeTest::defaultPanelsStretchOneAxisAndUseUniformCompactMargins()
+{
+    QFETCH(int, edge); const auto direction = Edge(edge);
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QLabel("Side"), {"Side", "label", {}});
+    manager.addTab(window, new QLabel("Central"), {"Central", "label", {}});
+    QVERIFY(manager.moveTabToEdge(tab, direction));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); QVERIFY(manager.activateTab(tab));
+    auto* panel = peek(manager, window); QVERIFY(panel);
+    const auto area = peekAvailable(surface(manager, window));
+    const QSize expected = horizontal(direction) ? QSize(250, area.height()) : QSize(area.width(), 170);
+    QTRY_COMPARE(panel->size(), expected);
+    QCOMPARE(panel->layout()->contentsMargins(), QMargins(1, 1, 1, 1));
+    auto* primary = panel->findChild<QWidget*>("PeekResizeHandle");
+    auto* secondary = panel->findChild<QWidget*>(horizontal(direction) ? "PeekHeightResizeHandle" : "PeekWidthResizeHandle");
+    auto* corner = panel->findChild<QWidget*>("PeekCornerResizeHandle");
+    QVERIFY(primary && secondary && corner);
+    for (auto* handle : {primary, secondary, corner}) {
+        QVERIFY(handle->isVisible()); QVERIFY(panel->rect().contains(handle->geometry()));
+        QCOMPARE(qMin(handle->width(), handle->height()), 4);
+    }
+    QCOMPARE(secondary->cursor().shape(), horizontal(direction) ? Qt::SizeVerCursor : Qt::SizeHorCursor);
+    QVERIFY(corner->cursor().shape() == Qt::SizeFDiagCursor || corner->cursor().shape() == Qt::SizeBDiagCursor);
+    const auto before = panel->size();
+    const auto start = secondary->rect().center();
+    const auto delta = horizontal(direction) ? QPoint(0, -40) : QPoint(-40, 0);
+    QTest::mousePress(secondary, Qt::LeftButton, Qt::NoModifier, start);
+    QTest::mouseMove(secondary, start + delta);
+    const QSize resized = horizontal(direction) ? QSize(before.width(), before.height() - 40)
+                                                : QSize(before.width() - 40, before.height());
+    QTRY_COMPARE(panel->size(), resized);
+    QTest::mouseRelease(secondary, Qt::LeftButton, Qt::NoModifier, secondary->rect().center());
+    const auto policy = manager.peekSizePolicy(tab, direction);
+    if (horizontal(direction)) { QVERIFY(!policy.width); QCOMPARE(policy.height, std::optional<int>(resized.height())); }
+    else { QCOMPARE(policy.width, std::optional<int>(resized.width())); QVERIFY(!policy.height); }
+    surface(manager, window)->closePeek(); QVERIFY(manager.activateTab(tab));
+    QTRY_COMPARE(peek(manager, window)->size(), resized);
+}
+
+void PeekSizeTest::bothDimensionsAndCornerResizingWorkOnEverySide()
+{
+    QFETCH(int, edge); const auto direction = Edge(edge);
+    WindowManager manager; const auto window = manager.createWindow();
+    auto* content = new QPlainTextEdit("Both axes keep the same editor");
+    const auto tab = manager.addTab(window, content, {"Side", "editor", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    manager.addTab(window, new QLabel("Central"), {"Central", "label", {}});
+    QVERIFY(manager.moveTabToEdge(tab, direction));
+    QVERIFY(manager.setPeekSize(tab, direction, QSize(340, 230)));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); QVERIFY(manager.activateTab(tab));
+    QPointer<QWidget> panel = peek(manager, window); QVERIFY(panel); QTRY_COMPARE(panel->size(), QSize(340, 230));
+    const auto pinnedExtent = manager.model().group(manager.model().groupForTab(tab))->edgeExtent;
+    auto* corner = panel->findChild<QWidget*>("PeekCornerResizeHandle"); QVERIFY(corner);
+    const auto start = corner->rect().center();
+    const QPoint delta(direction == Edge::Right ? -24 : 24, direction == Edge::Bottom ? -18 : 18);
+    QTest::mousePress(corner, Qt::LeftButton, Qt::NoModifier, start);
+    QTest::mouseMove(corner, start + delta);
+    QTRY_COMPARE(panel->size(), QSize(364, 248));
+    QTest::mouseRelease(corner, Qt::LeftButton, Qt::NoModifier, corner->rect().center());
+    QCOMPARE(peek(manager, window), panel.data()); QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(manager.peekSize(tab, direction), QSize(364, 248));
+    QCOMPARE(manager.model().group(manager.model().groupForTab(tab))->edgeExtent, pinnedExtent);
+    const auto saved = manager.saveLayout();
+    WindowManager restored; restored.setContentFactory([](const TabOptions& options, PaneId) { return new QLabel(options.title); });
+    QVERIFY(restored.restoreLayout(saved)); QCOMPARE(restored.peekSize(tab, direction), QSize(364, 248));
+    QCOMPARE(restored.peekSizePolicy(tab, direction), (PeekSizePolicy{364, 248}));
+    sizeWindow(restored.windowWidget(window)); restored.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(restored.windowWidget(window))); QVERIFY(restored.activateTab(tab));
+    QTRY_COMPARE(peek(restored, window)->size(), QSize(364, 248));
+}
+
+void PeekSizeTest::oppositeSidesShareSizesWithoutChangingTheOtherOrientation()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QLabel("Side"), {"Side", "label", {}});
+    manager.addTab(window, new QLabel("Central"), {"Central", "label", {}});
+    QVERIFY(manager.setPeekSize(tab, Edge::Left, QSize(340, 245)));
+    QVERIFY(manager.setPeekSize(tab, Edge::Top, QSize(730, 185)));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    for (const auto direction : {Edge::Left, Edge::Top, Edge::Right, Edge::Bottom, Edge::Left}) {
+        QVERIFY(manager.moveTabToEdge(tab, direction)); QVERIFY(manager.activateTab(tab));
+        const QSize expected = horizontal(direction) ? QSize(340, 245) : QSize(730, 185);
+        QTRY_COMPARE(peek(manager, window)->size(), expected);
+        QCOMPARE(manager.peekSize(tab), expected);
+    }
+    QVERIFY(manager.resetPeekSize(tab, Edge::Right));
+    QCOMPARE(manager.peekSize(tab, Edge::Left), QSize(250, 170));
+    QCOMPARE(manager.peekSize(tab, Edge::Bottom), QSize(730, 185));
+    const auto area = peekAvailable(surface(manager, window));
+    QTRY_COMPARE(peek(manager, window)->size(), QSize(250, area.height()));
+    const auto saved = manager.saveLayout();
+    WindowManager restored; restored.setContentFactory([](const TabOptions& options, PaneId) { return new QLabel(options.title); });
+    QVERIFY(restored.restoreLayout(saved));
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), PeekSizePolicy{});
+    QCOMPARE(restored.peekSize(tab, Edge::Top), QSize(730, 185));
+    QVERIFY(restored.resetPeekSize(tab));
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Left), PeekSizePolicy{});
+    QCOMPARE(restored.peekSizePolicy(tab, Edge::Bottom), PeekSizePolicy{});
+}
+
+void PeekSizeTest::autoAxisCommandsPreserveViewportStretch()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QLabel("Side"), {"Side", "label", {}});
+    manager.addTab(window, new QLabel("Central"), {"Central", "label", {}});
+    QVERIFY(manager.moveTabToEdge(tab, Edge::Left));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); QVERIFY(manager.activateTab(tab));
+    QVERIFY(manager.execute("tab.peek.setSize", {{"width", 375}, {"height", 0}}, window));
+    QCOMPARE(manager.peekSizePolicy(tab, Edge::Right), (PeekSizePolicy{375, std::nullopt}));
+    QTRY_COMPARE(peek(manager, window)->size(), QSize(375, peekAvailable(surface(manager, window)).height()));
+    QVERIFY(manager.moveTabToEdge(tab, Edge::Bottom)); QVERIFY(manager.activateTab(tab));
+    QVERIFY(manager.execute("tab.peek.setSize", {{"width", 0}, {"height", 195}}, window));
+    QCOMPARE(manager.peekSizePolicy(tab, Edge::Top), (PeekSizePolicy{std::nullopt, 195}));
+    QCOMPARE(manager.peekSizePolicy(tab, Edge::Left), (PeekSizePolicy{375, std::nullopt}));
+    QTRY_COMPARE(peek(manager, window)->size(), QSize(peekAvailable(surface(manager, window)).width(), 195));
+    QVERIFY(manager.execute("tab.peek.resetSize", {}, window));
+    QCOMPARE(manager.peekSizePolicy(tab, Edge::Bottom), PeekSizePolicy{});
+    QCOMPARE(manager.peekSizePolicy(tab, Edge::Left), (PeekSizePolicy{375, std::nullopt}));
+}
+
+void PeekSizeTest::directionalPoliciesRejectInvalidSizesWithoutReplacingContent()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    auto* content = new QLabel("Retained"); const auto tab = manager.addTab(window, content, {"Side", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    QVERIFY(manager.moveTabToEdge(tab, Edge::Left)); QVERIFY(manager.setPeekSize(tab, Edge::Left, QSize(345, 235)));
+    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); QVERIFY(manager.activateTab(tab));
+    auto* panel = peek(manager, window); QVERIFY(panel); const auto geometry = panel->geometry();
+    const auto saved = manager.saveLayout(); QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    QVERIFY(!manager.setPeekSize(tab, Edge::Right, QSize(139, 170)));
+    QVERIFY(!manager.setPeekSizePolicy(tab, Edge::Left, {250, 99}));
+    QVERIFY(!manager.setPeekSizePolicy(tab, Edge(-1), {}));
+    QVERIFY(!manager.resetPeekSize(QUuid::createUuid(), Edge::Left));
+    QCOMPARE(manager.saveLayout(), saved); QCOMPARE(changes.size(), 0);
+    QCOMPARE(peek(manager, window), panel); QCOMPARE(panel->geometry(), geometry); QCOMPARE(manager.paneWidget(pane), content);
+    QVERIFY(manager.setPeekSizePolicy(tab, Edge::Left, {345, 235})); QCOMPARE(changes.size(), 0);
 }
 
 QTEST_MAIN(PeekSizeTest)

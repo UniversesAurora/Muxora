@@ -29,6 +29,35 @@
 namespace window_system {
 namespace {
 
+QJsonObject visibilityToJson(const BarVisibility& bars)
+{
+    return {{"toolbars", bars.toolbars}, {"statusBar", bars.statusBar}, {"tabBars", bars.tabBars}, {"sideBars", bars.sideBars}};
+}
+QJsonObject visibilityProfilesToJson(const QHash<WindowKind, BarVisibility>& profiles)
+{
+    QJsonObject object;
+    for (const auto kind : {WindowKind::Workbench, WindowKind::Floating})
+        if (profiles.contains(kind)) object.insert(kind == WindowKind::Workbench ? "workbench" : "floating", visibilityToJson(profiles.value(kind)));
+    return object;
+}
+OperationResult parseVisibilityProfiles(const QJsonValue& value, QHash<WindowKind, BarVisibility>& result)
+{
+    if (value.isUndefined()) return {true, {}};
+    if (!value.isObject()) return {false, QStringLiteral("栏显示配置无效")};
+    const auto object = value.toObject();
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        if ((it.key() != "workbench" && it.key() != "floating") || !it.value().isObject())
+            return {false, QStringLiteral("栏显示窗口类型无效")};
+        const auto bars = it.value().toObject();
+        if (bars.size() != 4) return {false, QStringLiteral("栏显示字段不完整")};
+        for (const auto key : {"toolbars", "statusBar", "tabBars", "sideBars"})
+            if (!bars.value(key).isBool()) return {false, QStringLiteral("栏显示字段类型无效")};
+        result.insert(it.key() == "workbench" ? WindowKind::Workbench : WindowKind::Floating,
+            {bars.value("toolbars").toBool(), bars.value("statusBar").toBool(), bars.value("tabBars").toBool(), bars.value("sideBars").toBool()});
+    }
+    return {true, {}};
+}
+
 QRect savedWindowGeometry(const QJsonObject& object)
 {
     // Bound untrusted JSON before QRect arithmetic. Qt's widget size limit is
@@ -197,8 +226,10 @@ QJsonObject WindowManager::saveLayout() const
             {"sideBarsVisible", d->options.value(id).sideBarsVisible},
             {"toolbarsVisible", d->options.value(id).toolbarsVisible},
             {"statusBarVisible", d->options.value(id).statusBarVisible},
+            {"hiddenStatusItems", QJsonArray::fromStringList(d->options.value(id).hiddenStatusItems)},
             {"viewState", windowViewStateToJson(windowViewState(id))}};
         record.insert("strips", widget->saveStripLayout());
+        record.insert("barLayouts", visibilityProfilesToJson(d->windowVisibility.value(id)));
         const auto inactive = widget->saveInactiveStripLayouts();
         if (!inactive.isEmpty()) record.insert("stripLayouts", inactive);
         windows.append(record);
@@ -213,15 +244,22 @@ QJsonObject WindowManager::saveLayout() const
         if (d->toolbarProfiles.contains(kind)) profiles.insert(toolbarKindKey(kind), d->toolbarProfiles.value(kind));
     return {{"schemaVersion", 1}, {"model", d->model.toJson()}, {"windows", windows}, {"panes", panes},
         {"toolbarProfiles", profiles},
+        {"visibilityProfiles", visibilityProfilesToJson(d->visibilityProfiles)},
         {"behavior", QJsonObject{{"dragOutsideFloating", d->behavior.dragOutsideKind == WindowKind::Floating},
             {"closeEmptyWorkbench", d->behavior.closeEmptyWorkbench}, {"revealDuringDrag", d->behavior.revealDuringDrag},
-            {"revealDelayMs", d->behavior.revealDelayMs}}}};
+            {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
+            {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating}}}};
 }
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
 {
+    const QPointer<WindowManager> self(this);
     if (snapshot.value("schemaVersion").toInt() != 1) return {false, QStringLiteral("布局版本无效")};
     LayoutModel candidate;
     const auto parsed = candidate.fromJson(snapshot.value("model").toObject()); if (!parsed) return parsed;
+    QHash<WindowKind, BarVisibility> restoredVisibilityProfiles;
+    QHash<WindowId, QHash<WindowKind, BarVisibility>> restoredWindowVisibility;
+    const auto visibilityParsed = parseVisibilityProfiles(snapshot.value("visibilityProfiles"), restoredVisibilityProfiles);
+    if (!visibilityParsed) return visibilityParsed;
     const auto parsedProfiles = validateToolbarKinds(snapshot.value("toolbarProfiles"));
     if (!parsedProfiles) return parsedProfiles;
     QHash<WindowKind, QJsonObject> restoredProfiles;
@@ -232,6 +270,15 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     QHash<WindowId, QJsonObject> restoredInactiveStrips;
     WindowBehavior restoredBehavior;
     const auto settings = snapshot.value("behavior").toObject();
+    for (const auto key : {"hideSingleTabWorkbench", "hideSingleTabFloating"})
+        if (settings.contains(key) && !settings.value(key).isBool()) return {false, QStringLiteral("单标签隐藏设置无效")};
+    restoredBehavior.hideSingleTabWorkbench = settings.value("hideSingleTabWorkbench").toBool(false);
+    restoredBehavior.hideSingleTabFloating = settings.value("hideSingleTabFloating").toBool(true);
+    const auto position = settings.value("newTabPosition");
+    if (!position.isUndefined() && (!position.isDouble() || position.toDouble() != position.toInt(-1)
+        || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))
+        return {false, QStringLiteral("新建标签位置无效")};
+    restoredBehavior.newTabPosition = NewTabPosition(position.toInt(int(NewTabPosition::AfterActive)));
     restoredBehavior.dragOutsideKind = settings.value("dragOutsideFloating").toBool(true) ? WindowKind::Floating : WindowKind::Workbench;
     restoredBehavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
     restoredBehavior.revealDuringDrag = settings.value("revealDuringDrag").toBool(true);
@@ -249,6 +296,20 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
             return {false, QStringLiteral("工具栏显示设置无效")};
         if (object.contains("statusBarVisible") && !object.value("statusBarVisible").isBool())
             return {false, QStringLiteral("状态栏显示设置无效")};
+        const auto hiddenItems = object.value("hiddenStatusItems");
+        QHash<WindowKind, BarVisibility> windowBars;
+        const auto windowBarsParsed = parseVisibilityProfiles(object.value("barLayouts"), windowBars);
+        if (!windowBarsParsed) return windowBarsParsed;
+        restoredWindowVisibility.insert(id, windowBars);
+        if (!hiddenItems.isUndefined()) {
+            if (!hiddenItems.isArray()) return {false, QStringLiteral("状态控件显示设置无效")};
+            QSet<QString> seen;
+            for (const auto& item : hiddenItems.toArray()) {
+                if (!item.isString() || !WorkspaceWindow::statusItemIds().contains(item.toString()) || seen.contains(item.toString()))
+                    return {false, QStringLiteral("状态控件 ID 无效")};
+                seen.insert(item.toString());
+            }
+        }
         WindowViewState state;
         const auto parsedState = parseWindowViewState(object.value("viewState"), candidate, id, state);
         if (!parsedState) return parsedState;
@@ -308,12 +369,24 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     auto cleanup = [&] { for (auto widget : created) delete widget; };
     for (const auto& tab : candidate.tabs()) for (const auto id : candidate.panes(tab.id)) {
         if (!descriptors.contains(id)) { cleanup(); return {false, QStringLiteral("缺少内容恢复描述")}; }
-        auto* content = createContent(descriptors.value(id), id);
+        const QPointer<QWidget> content(createContent(descriptors.value(id), id));
+        if (!self) {
+            // Previously prepared content has not entered the manager's pane
+            // map yet. The final factory return is also caller-owned unless
+            // it is a widget the host already registered with another manager.
+            if (content && !content->property("windowSystemManaged").toBool()) delete content.data();
+            cleanup();
+            return {false, QStringLiteral("窗口管理器在准备恢复内容时被销毁")};
+        }
         if (!content || content->property("windowSystemManaged").toBool()) { cleanup(); return {false, QStringLiteral("内容恢复失败")}; }
-        content->setProperty("windowSystemManaged", true); content->setProperty("paneId", id); created.insert(id, content);
+        created.insert(id, content);
+        content->setProperty("windowSystemManaged", true);
+        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
+        content->setProperty("paneId", id);
+        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
         if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
+        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
     }
-    const QPointer<WindowManager> self(this);
     const bool previouslyBlocked = blockSignals(true);
     auto unblock = qScopeGuard([self, previouslyBlocked] { if (self) self->blockSignals(previouslyBlocked); });
     d->drag->releaseForMutation();
@@ -327,6 +400,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
     d->options.clear(); d->viewStates.clear(); d->behavior = restoredBehavior;
     d->toolbarProfiles = std::move(restoredProfiles);
+    d->visibilityProfiles = std::move(restoredVisibilityProfiles);
+    d->windowVisibility = std::move(restoredWindowVisibility); d->visibilityKinds.clear();
     const auto available = availableScreenGeometries();
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
@@ -338,7 +413,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         options.sideBarsVisible = object.value("sideBarsVisible").toBool(true);
         options.toolbarsVisible = object.value("toolbarsVisible").toBool(true);
         options.statusBarVisible = object.value("statusBarVisible").toBool(true);
+        options.inheritVisibilityProfile = false;
+        for (const auto& item : object.value("hiddenStatusItems").toArray()) options.hiddenStatusItems.append(item.toString());
         d->options.insert(id, options);
+        const auto kind = d->model.window(id)->kind;
+        const auto bars = preferredBarVisibility(id);
+        d->windowVisibility[id].insert(kind, bars); d->visibilityKinds.insert(id, kind);
+        if (!snapshot.contains("visibilityProfiles") && !d->visibilityProfiles.contains(kind)) d->visibilityProfiles.insert(kind, bars);
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
     refresh();

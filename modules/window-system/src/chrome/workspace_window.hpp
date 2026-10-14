@@ -33,6 +33,8 @@ public:
     void setOptions(const WindowOptions& options);
     void updateCaption();
     void setStatus(const QString& text);
+    [[nodiscard]] static QStringList statusItemIds();
+    [[nodiscard]] bool statusItemVisible(const QString& id) const;
     void applyViewState(const WindowViewState& state);
     [[nodiscard]] QRect normalPlacementGeometry() const;
     [[nodiscard]] bool placementMaximized() const;

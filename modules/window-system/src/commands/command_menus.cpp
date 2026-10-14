@@ -237,6 +237,8 @@ QStringList declaredMenuCommands(CommandMenuSurface surface)
 }
 QString applicationMenuExclusion(const QString& id)
 {
+    if (id == "window.activate") return QStringLiteral("窗口菜单的窗口族列表及选择面板提供入口");
+    if (id == "window.statusItem.setVisible") return QStringLiteral("状态栏右键提供逐控件显隐入口");
     if (id == "layout.setRatio" || id == "layout.setEdgeExtent") return QStringLiteral("内部布局提交，需要明确节点或分区参数");
     if (id == "window.moveAllToEdge" || id == "window.moveAllToEdgeBar") return QStringLiteral("内部整窗投放，需要目标窗口和落点参数");
     if (id == "workspace.moveTabToEdge" || id == "workspace.moveTabToEdgeBar") return QStringLiteral("内部标签投放；用户入口为四方向收纳及拖拽");
@@ -384,11 +386,76 @@ void ApplicationCommandMenus::addContributions()
         insertOrdered(menu, actions_.last());
     }
 }
+void ApplicationCommandMenus::refreshWindowList()
+{
+    if (!manager_ || !bar_) return;
+    auto* menu = menuAtPath({QStringLiteral("窗口")});
+    if (!menu) return;
+    const auto order = manager_->model().windowOrder();
+    const QSet<WindowId> present(order.cbegin(), order.cend());
+    for (auto iterator = windowActions_.begin(); iterator != windowActions_.end();) {
+        if (!present.contains(iterator.key()) || !iterator.value()) {
+            if (iterator.value()) delete iterator.value().data();
+            iterator = windowActions_.erase(iterator);
+        } else ++iterator;
+    }
+    if (!windowListSeparator_) {
+        windowListSeparator_ = menu->addSeparator();
+        windowListSeparator_->setObjectName(QStringLiteral("WindowListSeparator"));
+        windowListSeparator_->setProperty("menuOrder", 1000000);
+    }
+    menu->removeAction(windowListSeparator_); menu->addAction(windowListSeparator_);
+    const auto append = [this, menu](WindowId id, const QString& prefix, bool floating) {
+        const auto* widget = manager_->windowWidget(id);
+        if (!widget) return;
+        auto retained = windowActions_.value(id);
+        if (!retained) {
+            auto* action = new QAction(menu);
+            action->setObjectName(QStringLiteral("WindowListItem"));
+            action->setProperty("windowSystemWindow", id);
+            action->setProperty("menuOrder", 1000000);
+            action->setCheckable(true);
+            connect(action, &QAction::triggered, this,
+                [manager = manager_, source = window_, target = id] {
+                    if (!manager || !manager->model().window(target)) return;
+                    QTimer::singleShot(0, manager, [manager, source, target] {
+                        if (manager) manager->execute(QStringLiteral("window.activate"),
+                            {{QStringLiteral("targetWindow"), target}}, source);
+                    });
+                });
+            retained = action; windowActions_.insert(id, action);
+        }
+        retained->setText(prefix + widget->windowTitle());
+        retained->setToolTip(widget->windowTitle());
+        retained->setIcon(iconFor(floating ? QStringLiteral("detach") : QStringLiteral("window"), manager_->theme()));
+        retained->setChecked(manager_->context().window == id);
+        retained->setProperty("windowSystemWindowDepth", floating ? 1 : 0);
+        menu->removeAction(retained); menu->addAction(retained);
+    };
+    QHash<FamilyId, QVector<WindowId>> children;
+    for (const auto id : order) {
+        const auto* record = manager_->model().window(id);
+        if (record && record->kind == WindowKind::Floating) children[record->familyId].append(id);
+    }
+    int familyIndex = 0;
+    for (const auto id : order) {
+        const auto* record = manager_->model().window(id);
+        if (!record || record->kind != WindowKind::Workbench) continue;
+        const auto family = record->familyId;
+        ++familyIndex;
+        append(id, QStringLiteral("%1  ").arg(familyIndex), false);
+        int childIndex = 0;
+        for (const auto child : children.value(family))
+            append(child, QStringLiteral("    %1.%2  ").arg(familyIndex).arg(++childIndex), true);
+    }
+}
 void ApplicationCommandMenus::refresh()
 {
     if (!bar_) return;
     if (!manager_) {
         for (const auto& action : actions_) if (action) refreshCommandAction(nullptr, action, {});
+        for (const auto& action : windowActions_) if (action) { action->setEnabled(false); action->setVisible(false); }
+        if (windowListSeparator_) windowListSeparator_->setVisible(false);
         return;
     }
     const QPointer<ApplicationCommandMenus> retained(this);
@@ -401,6 +468,7 @@ void ApplicationCommandMenus::refresh()
         if (action) refreshCommandAction(manager_, action, context);
         if (!retained || !manager_ || !bar_) return;
     }
+    refreshWindowList();
     for (auto* rootAction : bar_->actions()) if (auto* menu = rootAction->menu()) {
         tidy(menu); const auto rootActions = menu->actions();
         const bool available = std::any_of(rootActions.cbegin(), rootActions.cend(),

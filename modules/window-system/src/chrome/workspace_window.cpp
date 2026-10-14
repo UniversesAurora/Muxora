@@ -2,6 +2,7 @@
 #include "workspace_window.hpp"
 #include "command_strip.hpp"
 #include "window_title_label.hpp"
+#include "status_bar.hpp"
 #include "commands/command_menus.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_presentation.hpp"
@@ -367,8 +368,9 @@ void WorkspaceWindow::createChrome()
             });
         }
         strips_->addActionStrip("workspace", QStringLiteral("工作区"), toolActions, 1);
-        status_ = new QLabel(QStringLiteral("就绪  ·  窗口系统预览"), this); status_->setObjectName("StatusBar");
-        status_->setContentsMargins(10, 3, 10, 3); column_->addWidget(status_);
+        auto* status = new WorkspaceStatusBar(manager_, id_, this);
+        status->setHiddenItems(options_.hiddenStatusItems);
+        status_ = status; column_->addWidget(status_);
     }
     caption_ = new WindowTitleLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
     caption_->setProperty("windowDragArea", true);
@@ -473,6 +475,8 @@ void WorkspaceWindow::updateCaption()
     const auto* tab = manager_->model().tab(ctx.tab);
     const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + options_.title;
     setWindowTitle(title + (kind_ == WindowKind::Floating ? QStringLiteral(" · 浮动窗口") : QString()));
+    if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setWorkspace(
+        tab ? tab->title : QString(), manager_->model().orderedTabs(id_).size());
     if (caption_) {
         const auto caption = kind_ == WindowKind::Floating ? windowTitle() : options_.title;
         caption_->setText(caption);
@@ -482,8 +486,20 @@ void WorkspaceWindow::updateCaption()
     updateCommandStates();
     if (strips_) strips_->refreshLayout();
 }
-void WorkspaceWindow::setOptions(const WindowOptions& options) { options_ = options; }
-void WorkspaceWindow::setStatus(const QString& text) { if (status_) status_->setText(text); }
+void WorkspaceWindow::setOptions(const WindowOptions& options)
+{
+    options_ = options;
+    if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setHiddenItems(options.hiddenStatusItems);
+}
+void WorkspaceWindow::setStatus(const QString& text)
+{
+    if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setMessage(text);
+}
+QStringList WorkspaceWindow::statusItemIds() { return WorkspaceStatusBar::itemIds(); }
+bool WorkspaceWindow::statusItemVisible(const QString& id) const
+{
+    return statusItemIds().contains(id) && !options_.hiddenStatusItems.contains(id);
+}
 QRect WorkspaceWindow::normalPlacementGeometry() const
 {
     // Qt's normalGeometry subtracts the current maximized frame margins from

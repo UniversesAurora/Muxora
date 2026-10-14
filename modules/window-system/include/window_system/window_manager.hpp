@@ -4,12 +4,14 @@
 #include <window_system/theme.hpp>
 #include <window_system/toolbar_layout.hpp>
 #include <window_system/view_state.hpp>
+#include <window_system/floating_panel.hpp>
 #include <QJsonObject>
 #include <QObject>
 #include <QSize>
 #include <memory>
 
 class QWidget;
+class QMenu;
 
 namespace window_system {
 
@@ -20,6 +22,9 @@ struct WindowOptions {
     bool sideBarsVisible = true; // Auto-hide rails only; pinned groups stay visible.
     bool toolbarsVisible = true;
     bool statusBarVisible = true;
+    QStringList hiddenStatusItems;
+    // False lets an embedding host opt out of the last edited kind defaults.
+    bool inheritVisibilityProfile = true;
 };
 
 enum class PaneBarSharing { Shared, PerPane };
@@ -33,11 +38,16 @@ struct TabOptions {
     PaneBarSharing bottomBarSharing = PaneBarSharing::Shared;
 };
 
+enum class NewTabPosition { Beginning, BeforeActive, AfterActive, End };
+
 struct WindowBehavior {
     WindowKind dragOutsideKind = WindowKind::Floating;
     bool closeEmptyWorkbench = false;
     bool revealDuringDrag = true;
     int revealDelayMs = 500;
+    NewTabPosition newTabPosition = NewTabPosition::AfterActive;
+    bool hideSingleTabWorkbench = false;
+    bool hideSingleTabFloating = true;
 };
 
 class WorkspaceWindow;
@@ -60,7 +70,11 @@ public:
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           const WindowOptions& options = {}, WindowId owner = {});
     TabId addTab(WindowId window, QWidget* content, const TabOptions& options,
-                 GroupId group = {});
+                 GroupId group = {}, int insertionIndex = -1);
+    // Host command IDs define available content types. Creation always uses
+    // the same command handlers as menus, keyboard and the command palette.
+    bool setTabCreationCommands(QString defaultCommand, QStringList choices);
+    bool requestNewTab(WindowId window, GroupId group = {}, QString command = {});
     void setContentFactory(ContentFactory factory);
     void setCloseGuard(CloseGuard guard);
     bool setTabTopBar(TabId tab, QWidget* bar);
@@ -127,6 +141,11 @@ public:
     bool setPeekSize(TabId tab, QSize size);
     bool resetPeekSize(TabId tab);
     [[nodiscard]] QSize peekSize(TabId tab) const;
+    bool setPeekSize(TabId tab, Edge edge, QSize size);
+    bool setPeekSizePolicy(TabId tab, Edge edge, const PeekSizePolicy& policy);
+    bool resetPeekSize(TabId tab, Edge edge);
+    [[nodiscard]] QSize peekSize(TabId tab, Edge edge) const;
+    [[nodiscard]] PeekSizePolicy peekSizePolicy(TabId tab, Edge edge) const;
     bool moveGroupToCenter(GroupId group);
     bool promoteWindow(WindowId window);
     bool demoteWindow(WindowId window, WindowId targetWorkbench);
@@ -134,6 +153,7 @@ public:
     TabId extractPane(TabId tab, PaneId pane, WindowKind kind = WindowKind::Floating);
 
     void showWindow(WindowId window);
+    bool activateWindow(WindowId window);
     bool activateTab(TabId tab);
     bool focusPane(TabId tab, PaneId pane);
     [[nodiscard]] QWidget* windowWidget(WindowId window) const;
@@ -146,8 +166,9 @@ public:
     [[nodiscard]] Theme theme() const;
     CommandRegistry& commands();
     bool execute(const QString& commandId, const QVariantMap& args = {}, WindowId window = {});
-    void showCommandPalette(WindowId window = {});
-    void showWindowSelector(WindowId window = {});
+    bool executeInContext(const QString& commandId, const CommandContext& context);
+    void showCommandPalette(WindowId window = {}, const FloatingPanelOptions& options = {});
+    void showWindowSelector(WindowId window = {}, const FloatingPanelOptions& options = {});
     void showSettings(WindowId window = {});
     // Restore a chrome strip's natural width, preserving its position and the
     // width preferences of other strips. Sizing policy is unchanged.
@@ -159,6 +180,8 @@ public:
     [[nodiscard]] QJsonObject saveLayout() const;
     OperationResult restoreLayout(const QJsonObject& snapshot);
     void setStatus(WindowId window, const QString& text);
+    bool setStatusItemVisible(WindowId window, const QString& item, bool visible);
+    [[nodiscard]] bool statusItemVisible(WindowId window, const QString& item) const;
 
 signals:
     void layoutChanged();
@@ -202,8 +225,12 @@ private:
     bool setBarVisible(WindowId window, WindowBar bar, bool visible);
     void applyWindowViewState(WindowId window);
     void applyWindowViewStates();
+    void syncVisibilityKind(WindowId window);
     void reconcileWindowViewState(WindowId window);
     void leaveFocusScopeFor(TabId tab, PaneId pane);
+    bool executeResolved(const QString& commandId, CommandContext context, bool requireGroup = false);
+    bool validCommandContext(const CommandContext& context) const;
+    QMenu* createTabCreationMenu(WindowId window, GroupId group, QWidget* parent);
 };
 
 } // namespace window_system

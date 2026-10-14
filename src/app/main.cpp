@@ -47,7 +47,28 @@ int main(int argc, char* argv[])
             auto* content = muxora::createPlaceholder(options, &windows);
             const auto id = windows.addTab(ctx.window, content, options, ctx.group);
             if (id.isNull()) { delete content; return false; } return true;
-        }, {"文件"}, 10});
+        }, {"文件", "新建标签"}, 10});
+    struct TabKind { const char* command; const char* type; const char* title; };
+    const TabKind previewKinds[] = {
+        {"host.newFilesTab", "files", "文件浏览"},
+        {"host.newSessionsTab", "sessions", "会话"},
+        {"host.newTransfersTab", "transfers", "传输队列"},
+    };
+    int creationOrder = 20;
+    for (const auto& kind : previewKinds) {
+        const auto title = QString::fromUtf8(kind.title);
+        const auto type = QString::fromLatin1(kind.type);
+        windows.commands().add({kind.command, QStringLiteral("新建%1标签").arg(title), "文件", {}, {},
+            [&windows, title, type](const window_system::CommandContext& ctx) {
+                const window_system::TabOptions options{title, type, {}};
+                auto* content = muxora::createPlaceholder(options, &windows);
+                if (!windows.addTab(ctx.window, content, options, ctx.group).isNull()) return true;
+                delete content;
+                return false;
+            }, {"文件", "新建标签"}, creationOrder++});
+    }
+    windows.setTabCreationCommands("host.newTab",
+        {"host.newTab", "host.newFilesTab", "host.newSessionsTab", "host.newTransfersTab"});
     windows.commands().add({"layout.save", QStringLiteral("保存工作区布局"), "文件", QKeySequence("Ctrl+S"), {},
         [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QStringLiteral("布局已保存") : QStringLiteral("布局保存失败")); return ok; }, {"文件"}, 40});
     windows.commands().add({"application.exit", QStringLiteral("退出"), "文件", QKeySequence(QKeySequence::Quit),

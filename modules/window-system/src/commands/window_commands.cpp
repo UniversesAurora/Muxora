@@ -73,6 +73,14 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { return setToolbarsVisible(c.window, !toolbarsVisible(c.window)); }, hasWindow);
     add("window.statusBar.toggle", QStringLiteral("显示状态栏"), "视图", QKeySequence("Ctrl+Alt+S"),
         [this](const CommandContext& c) { return setStatusBarVisible(c.window, !statusBarVisible(c.window)); }, hasWindow);
+    add("window.statusItem.setVisible", QStringLiteral("切换状态栏控件"), "视图", {},
+        [this](const CommandContext& c) {
+            const auto id = c.args.value("item").toString();
+            if (!WorkspaceWindow::statusItemIds().contains(id)) return false;
+            if (c.args.contains("visible") && c.args.value("visible").metaType().id() != QMetaType::Bool) return false;
+            return setStatusItemVisible(c.window, id,
+                c.args.value("visible", !statusItemVisible(c.window, id)).toBool());
+        }, hasWindow);
     for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen}) {
         const bool group = mode == ViewMode::GroupFullscreen;
         const bool pane = mode == ViewMode::PaneFullscreen;
@@ -109,6 +117,9 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { showCommandPalette(c.window); return true; });
     add("window.select", QStringLiteral("选择窗口…"), "窗口", QKeySequence("Ctrl+Alt+W"),
         [this](const CommandContext& c) { showWindowSelector(c.window); return true; });
+    add("window.activate", QStringLiteral("激活窗口"), "窗口", {},
+        [this](const CommandContext& c) { return activateWindow(c.args.value("targetWindow").toUuid()); },
+        [this](const CommandContext& c) { return d->model.window(c.args.value("targetWindow").toUuid()) != nullptr; });
     add("window.settings", QStringLiteral("设置"), "工具", QKeySequence("Ctrl+,"),
         [this](const CommandContext& c) { showSettings(c.window); return true; });
     add("preferences.openKeyboardShortcuts", QStringLiteral("键盘快捷方式"), "工具", QKeySequence("Ctrl+K, Ctrl+S"),
@@ -180,7 +191,17 @@ void WindowManager::registerWindowCommands()
     add("window.close", QStringLiteral("关闭当前窗口"), "窗口", QKeySequence("Alt+F4"),
         [this](const CommandContext& c) { return requestCloseWindow(c.window); }, hasWindow);
     add("window.new", QStringLiteral("新建完整工作窗口"), "文件", QKeySequence("Ctrl+Shift+N"),
-        [this](const CommandContext& c) { auto options = d->options.value(c.window); const auto id = createWindow(WindowKind::Workbench, options); showWindow(id); return !id.isNull(); });
+        [this](const CommandContext& c) {
+            auto options = d->options.value(c.window);
+            // Keep the caption/size, but use the latest kind defaults rather
+            // than a restored source window's older visibility overrides.
+            options.toolbarsVisible = options.statusBarVisible = options.tabBarsVisible = options.sideBarsVisible = true;
+            options.inheritVisibilityProfile = true;
+            const QPointer<WindowManager> self(this);
+            const auto id = createWindow(WindowKind::Workbench, options);
+            if (!self || id.isNull()) return false;
+            showWindow(id); return self && d->model.window(id);
+        });
     add("workspace.detachFloating", QStringLiteral("当前标签移到轻量浮窗"), "窗口", QKeySequence("Ctrl+Shift+D"),
         [this](const CommandContext& c) { return !detachTab(c.tab, WindowKind::Floating).isNull(); }, hasTab);
     add("workspace.detachWorkbench", QStringLiteral("当前标签移到完整工作窗口"), "窗口", {},

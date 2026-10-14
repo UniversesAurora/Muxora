@@ -56,11 +56,14 @@ private:
     QScrollArea* scroll_ = nullptr;
     QLabel* results_ = nullptr;
     QComboBox* detachKind_ = nullptr;
+    QComboBox* newTabPosition_ = nullptr;
     QComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
     QComboBox* viewMode_ = nullptr;
     QCheckBox* zen_ = nullptr;
+    QCheckBox* hideSingleWorkbench_ = nullptr;
+    QCheckBox* hideSingleFloating_ = nullptr;
     WindowId initialWindow_;
     struct VisibilityControl { WindowBar bar; QCheckBox* control; };
     QVector<VisibilityControl> visibilityControls_;

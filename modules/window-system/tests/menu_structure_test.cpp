@@ -85,6 +85,8 @@ private slots:
     void floatingMenusAreLocalAndExcludeWholeApplicationOperations();
     void floatingMenuExecutionKeepsItsTabAndPaneContext();
     void floatingMenuContributionsStayIncrementalAndClassified();
+    void windowListGroupsFamiliesAtTheEndAndRefreshesStableItems();
+    void windowListActivatesAndRestoresTheChosenWindow();
 };
 
 void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
@@ -438,6 +440,64 @@ void MenuStructureTest::floatingMenuContributionsStayIncrementalAndClassified()
     QCOMPARE(ids(menuAt(bar, {"工具", "检查"})), (QStringList{"host.localLate"}));
     QCOMPARE(ids(file), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
     QMetaObject::invokeMethod(file, "aboutToShow"); QCOMPARE(bar->findChildren<QAction*>("host.localLate").size(), 1);
+}
+
+void MenuStructureTest::windowListGroupsFamiliesAtTheEndAndRefreshesStableItems()
+{
+    WindowManager manager; WindowOptions firstOptions; firstOptions.title = "First family";
+    WindowOptions secondOptions; secondOptions.title = "Second family";
+    const auto first = manager.createWindow(WindowKind::Workbench, firstOptions);
+    const auto second = manager.createWindow(WindowKind::Workbench, secondOptions);
+    manager.addTab(first, new QLabel("First"), {"First", {}, {}});
+    manager.addTab(second, new QLabel("Second"), {"Second", {}, {}});
+    const auto firstChild = manager.createWindow(WindowKind::Floating, {}, first);
+    const auto secondChild = manager.createWindow(WindowKind::Floating, {}, second);
+    const auto anotherFirstChild = manager.createWindow(WindowKind::Floating, {}, first);
+    manager.addTab(firstChild, new QLabel("Child one"), {"Child one", {}, {}});
+    manager.addTab(secondChild, new QLabel("Child two"), {"Child two", {}, {}});
+    manager.addTab(anotherFirstChild, new QLabel("Child three"), {"Child three", {}, {}});
+    auto* menu = menuAt(menuBar(manager, first), {"窗口"}); QVERIFY(menu);
+    QMetaObject::invokeMethod(menu, "aboutToShow");
+    QVector<WindowId> listed; QHash<WindowId, QPointer<QAction>> retained;
+    for (auto* action : menu->actions()) if (const auto id = action->property("windowSystemWindow").toUuid(); !id.isNull()) {
+        listed.append(id); retained.insert(id, action);
+        QVERIFY(action->data().isNull()); QVERIFY(action->isCheckable());
+        QCOMPARE(action->property("windowSystemWindowDepth").toInt(), manager.model().window(id)->kind == WindowKind::Floating ? 1 : 0);
+    }
+    QCOMPARE(listed, (QVector<WindowId>{first, firstChild, anotherFirstChild, second, secondChild}));
+    QCOMPARE(menu->actions().last(), retained.value(secondChild).data());
+    QVERIFY(manager.reassignFamily(firstChild, second));
+    QVERIFY(manager.requestCloseWindow(anotherFirstChild));
+    QMetaObject::invokeMethod(menu, "aboutToShow");
+    QVERIFY(!retained.value(anotherFirstChild));
+    listed.clear();
+    for (auto* action : menu->actions()) if (const auto id = action->property("windowSystemWindow").toUuid(); !id.isNull()) {
+        listed.append(id); QCOMPARE(action, retained.value(id).data());
+        QVERIFY(action->text().contains(manager.windowWidget(id)->windowTitle()));
+    }
+    QCOMPARE(listed, (QVector<WindowId>{first, second, firstChild, secondChild}));
+    QCOMPARE(menu->findChildren<QAction*>("WindowListSeparator").size(), 1);
+    verifySeparators(menu);
+}
+
+void MenuStructureTest::windowListActivatesAndRestoresTheChosenWindow()
+{
+    WindowManager manager; const auto owner = manager.createWindow();
+    manager.addTab(owner, new QLabel("Owner"), {"Owner", {}, {}});
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
+    const auto tab = manager.addTab(floating, new QLabel("Target"), {"Target", {}, {}});
+    manager.showWindow(owner); manager.showWindow(floating);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(floating)));
+    manager.windowWidget(floating)->showMinimized();
+    QVERIFY(manager.activateWindow(owner));
+    auto* menu = menuAt(menuBar(manager, owner), {"窗口"}); QVERIFY(menu);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QAction* target = nullptr;
+    for (auto* action : menu->actions()) if (action->property("windowSystemWindow").toUuid() == floating) target = action;
+    QVERIFY(target); target->trigger();
+    QTRY_COMPARE(manager.context().window, floating);
+    QVERIFY(!manager.windowWidget(floating)->isMinimized()); QCOMPARE(manager.context(floating).tab, tab);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(target->isChecked());
+    QVERIFY(!manager.execute("window.activate", {{"targetWindow", QUuid::createUuid()}}, owner));
 }
 
 QTEST_MAIN(MenuStructureTest)

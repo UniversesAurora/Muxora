@@ -3,6 +3,7 @@
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "commands/command_dialogs.hpp"
+#include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
 #include "panes/tab_content.hpp"
@@ -50,20 +51,47 @@ WindowManager::~WindowManager()
 }
 WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& options, WindowId owner)
 {
+    QSet<QString> hidden;
+    for (const auto& item : options.hiddenStatusItems) {
+        if (!WorkspaceWindow::statusItemIds().contains(item) || hidden.contains(item)) return {};
+        hidden.insert(item);
+    }
     if (kind == WindowKind::Floating && owner.isNull()) {
         const auto ctx = context(); const auto* record = d->model.window(ctx.window);
         if (record) owner = d->model.familyRoot(record->familyId);
     }
     const auto id = d->model.createWindow(kind, owner);
     if (id.isNull()) return {};
-    d->options.insert(id, options); refresh(); return id;
+    auto resolved = options;
+    if (options.inheritVisibilityProfile) {
+        const auto bars = d->visibilityProfiles.value(kind);
+        resolved.toolbarsVisible &= bars.toolbars; resolved.statusBarVisible &= bars.statusBar;
+        resolved.tabBarsVisible &= bars.tabBars; resolved.sideBarsVisible &= bars.sideBars;
+    }
+    d->options.insert(id, resolved); d->visibilityKinds.insert(id, kind);
+    d->windowVisibility[id].insert(kind, preferredBarVisibility(id));
+    refresh(); return id;
 }
-TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions& options, GroupId group)
+TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions& options, GroupId group, int insertionIndex)
 {
     if (!content || content->property("windowSystemManaged").toBool()
         || (options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
         || (options.bottomBarSharing != PaneBarSharing::Shared && options.bottomBarSharing != PaneBarSharing::PerPane)) return {};
-    const auto id = d->model.addTab(window, options.title, group);
+    const auto* owner = d->model.window(window);
+    if (!owner || insertionIndex < -1) return {};
+    const auto target = group.isNull() ? owner->activeGroup : group;
+    const auto* record = d->model.group(target);
+    if (insertionIndex < 0) {
+        const int count = record ? int(record->tabs.size()) : 0;
+        const int active = record ? int(record->tabs.indexOf(record->activeTab)) : -1;
+        switch (d->behavior.newTabPosition) {
+        case NewTabPosition::Beginning: insertionIndex = 0; break;
+        case NewTabPosition::BeforeActive: insertionIndex = active < 0 ? count : active; break;
+        case NewTabPosition::AfterActive: insertionIndex = active < 0 ? count : active + 1; break;
+        case NewTabPosition::End: insertionIndex = count; break;
+        }
+    }
+    const auto id = d->model.addTab(window, options.title, group, insertionIndex);
     if (id.isNull()) return {};
     const auto pane = d->model.tab(id)->activePane;
     content->setProperty("windowSystemManaged", true); content->setProperty("paneId", pane);
@@ -72,10 +100,70 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
     refresh(); activateTab(id); return id;
 }
 void WindowManager::setContentFactory(ContentFactory factory) { d->factory = std::move(factory); }
+bool WindowManager::setTabCreationCommands(QString defaultCommand, QStringList choices)
+{
+    if (!defaultCommand.isEmpty() && !d->commands.find(defaultCommand)) return false;
+    QSet<QString> seen;
+    for (const auto& id : choices) {
+        if (id.isEmpty() || seen.contains(id) || !d->commands.find(id)) return false;
+        seen.insert(id);
+    }
+    if (!defaultCommand.isEmpty() && !seen.contains(defaultCommand)) choices.prepend(defaultCommand);
+    d->defaultTabCommand = std::move(defaultCommand);
+    d->tabCreationCommands = std::move(choices);
+    return true;
+}
+bool WindowManager::requestNewTab(WindowId window, GroupId group, QString command)
+{
+    if (!d->model.window(window)) return false;
+    auto ctx = context(window);
+    if (group.isNull()) group = ctx.group;
+    const auto* target = d->model.group(group);
+    if (!group.isNull() && (!target || target->windowId != window)) return false;
+    if (command.isEmpty()) command = d->defaultTabCommand;
+    if (command.isEmpty() || !d->tabCreationCommands.contains(command)) return false;
+    ctx.group = group; ctx.tab = target ? target->activeTab : TabId{};
+    const auto* tab = d->model.tab(ctx.tab);
+    ctx.pane = tab ? tab->activePane : PaneId{};
+    return executeResolved(command, std::move(ctx), true);
+}
+QMenu* WindowManager::createTabCreationMenu(WindowId window, GroupId group, QWidget* parent)
+{
+    const auto* target = d->model.group(group);
+    if (!target || target->windowId != window) return nullptr;
+    auto ctx = context(window); ctx.group = group; ctx.tab = target->activeTab;
+    const auto* tab = d->model.tab(ctx.tab); ctx.pane = tab ? tab->activePane : PaneId{};
+    const QPointer<WindowManager> self(this);
+    QPointer<QMenu> menu = new DismissOnlyMenu(parent);
+    menu->setObjectName("TabCreationMenu");
+    menu->setStyleSheet("QMenu{menu-scrollable:1;}");
+    applyTheme(menu, d->theme);
+    const auto choices = d->tabCreationCommands;
+    for (const auto& id : choices) {
+        const auto* found = d->commands.find(id);
+        if (!found) continue;
+        const Command retained = *found;
+        const bool enabled = !retained.enabled || retained.enabled(ctx);
+        if (!self || !menu) { if (menu) delete menu.data(); return nullptr; }
+        const auto* currentGroup = d->model.group(group);
+        if (!currentGroup || currentGroup->windowId != window) { delete menu.data(); return nullptr; }
+        auto* action = menu->addAction(retained.title);
+        action->setObjectName(id); action->setEnabled(enabled);
+        action->setProperty("windowSystemCommand", id);
+        QObject::connect(action, &QAction::triggered, this, [self, window, group, id] {
+            if (self) self->requestNewTab(window, group, id);
+        });
+    }
+    if (menu->isEmpty()) { delete menu.data(); return nullptr; }
+    return menu;
+}
 QWidget* WindowManager::createContent(const TabOptions& options, PaneId pane)
 {
     if (isInternalSettingsContentType(options.contentType)) return createInternalSettingsContent(this, options);
-    return d->factory ? d->factory(options, pane) : nullptr;
+    // A host factory may replace itself or destroy the manager synchronously.
+    // Keep its callable and captures alive until this invocation has returned.
+    const ContentFactory retained = d->factory;
+    return retained ? retained(options, pane) : nullptr;
 }
 void WindowManager::setCloseGuard(CloseGuard guard) { d->closeGuard = std::move(guard); }
 bool WindowManager::setTabTopBar(TabId tab, QWidget* bar)
@@ -297,7 +385,11 @@ WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::fun
     const QPointer<WindowManager> self(this);
     const auto source = context(d->model.group(d->model.groupForTab(tab)) ? d->model.group(d->model.groupForTab(tab))->windowId : WindowId{});
     const auto id = d->model.detachTab(tab, kind); if (id.isNull()) return {};
-    auto options = d->options.value(source.window); options.size = QSize(880, 560); d->options.insert(id, options);
+    auto options = d->options.value(source.window); options.size = QSize(880, 560);
+    const auto bars = d->visibilityProfiles.value(kind);
+    options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
+    options.tabBarsVisible = bars.tabBars; options.sideBarsVisible = bars.sideBars;
+    d->options.insert(id, options); d->visibilityKinds.insert(id, kind); d->windowVisibility[id].insert(kind, bars);
     refresh(preserveDrag);
     if (!self) return {};
     if (beforeShow) if (auto* window = windowWidget(id)) beforeShow(window);
@@ -325,14 +417,55 @@ bool WindowManager::pinEdge(WindowId window, Edge edge, bool pinned) { return ap
 QSize WindowManager::peekSize(TabId tab) const
 {
     const auto* record = d->model.tab(tab);
-    return record ? record->peekSize.value_or(QSize(250, 170)) : QSize{};
+    if (!record) return {};
+    const auto* group = d->model.group(d->model.groupForTab(tab));
+    return peekSize(tab, group ? group->edge : Edge::Left);
+}
+QSize WindowManager::peekSize(TabId tab, Edge edge) const
+{
+    const auto* record = d->model.tab(tab);
+    if (!record) return {};
+    const auto& directional = edge == Edge::Left || edge == Edge::Right
+        ? record->verticalPeekSize : record->horizontalPeekSize;
+    if (!directional) return record->peekSize.value_or(QSize(250, 170));
+    if (!directional->width && !directional->height) return QSize(250, 170);
+    const auto legacy = record->peekSize.value_or(QSize(250, 170));
+    // The QSize query remains useful for numeric editors, even when the actual
+    // panel stretches an axis. PeekSizePolicy exposes that distinction.
+    return QSize(directional->width.value_or(legacy.width()), directional->height.value_or(legacy.height()));
+}
+PeekSizePolicy WindowManager::peekSizePolicy(TabId tab, Edge edge) const
+{
+    return d->model.peekSizePolicy(tab, edge);
 }
 bool WindowManager::setPeekSize(TabId tab, QSize size)
 {
     const auto* record = d->model.tab(tab);
     if (!record) return false;
-    if (record->peekSize == size) return true;
+    if (record->peekSize == size && !record->verticalPeekSize && !record->horizontalPeekSize) return true;
     const auto result = d->model.setPeekSize(tab, size);
+    if (!result) return false;
+    const QPointer<WindowManager> self(this);
+    const auto* group = d->model.group(d->model.groupForTab(tab));
+    ++d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([self] { if (self) --self->d->geometryUpdateDepth; });
+    if (group) if (auto window = d->windows.value(group->windowId)) window->surface()->updatePeekSize(tab);
+    if (!self) return false;
+    emit layoutChanged();
+    return true;
+}
+bool WindowManager::setPeekSize(TabId tab, Edge edge, QSize size)
+{
+    return setPeekSizePolicy(tab, edge, {size.width(), size.height()});
+}
+bool WindowManager::setPeekSizePolicy(TabId tab, Edge edge, const PeekSizePolicy& size)
+{
+    const auto* record = d->model.tab(tab);
+    if (!record || (edge != Edge::Left && edge != Edge::Right && edge != Edge::Top && edge != Edge::Bottom)) return false;
+    const auto& existing = edge == Edge::Left || edge == Edge::Right
+        ? record->verticalPeekSize : record->horizontalPeekSize;
+    if (existing == size) return true;
+    const auto result = d->model.setPeekSizePolicy(tab, edge, size);
     if (!result) return false;
     const QPointer<WindowManager> self(this);
     const auto* group = d->model.group(d->model.groupForTab(tab));
@@ -347,7 +480,7 @@ bool WindowManager::resetPeekSize(TabId tab)
 {
     const auto* record = d->model.tab(tab);
     if (!record) return false;
-    if (!record->peekSize) return true;
+    if (!record->peekSize && !record->verticalPeekSize && !record->horizontalPeekSize) return true;
     const auto result = d->model.setPeekSize(tab, std::nullopt);
     if (!result) return false;
     const QPointer<WindowManager> self(this);
@@ -358,6 +491,10 @@ bool WindowManager::resetPeekSize(TabId tab)
     if (!self) return false;
     emit layoutChanged();
     return true;
+}
+bool WindowManager::resetPeekSize(TabId tab, Edge edge)
+{
+    return setPeekSizePolicy(tab, edge, {});
 }
 bool WindowManager::moveGroupToCenter(GroupId group) { return applyResult(d->model.moveGroupToCenter(group)); }
 bool WindowManager::promoteWindow(WindowId window) { d->drag->releaseForMutation(); return applyResult(d->model.promoteWindow(window)); }
@@ -377,18 +514,47 @@ TabId WindowManager::extractPane(TabId tab, PaneId pane, WindowKind kind)
     if (extracted.isNull()) return {};
     candidate.removeTab(placeholder);
     if (kind == WindowKind::Floating && !candidate.demoteWindow(newWindow, root)) return {};
-    d->model = std::move(candidate); d->options.insert(newWindow, d->options.value(sourceWindow));
+    d->model = std::move(candidate);
+    auto options = d->options.value(sourceWindow);
+    const auto bars = d->visibilityProfiles.value(kind);
+    options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
+    options.tabBarsVisible = bars.tabBars; options.sideBarsVisible = bars.sideBars;
+    d->options.insert(newWindow, options); d->visibilityKinds.insert(newWindow, kind); d->windowVisibility[newWindow].insert(kind, bars);
     refresh(); showWindow(newWindow); activateTab(extracted); return extracted;
 }
 void WindowManager::showWindow(WindowId window)
 {
-    if (auto widget = d->windows.value(window)) {
+    const QPointer<WindowManager> self(this);
+    if (QPointer<WorkspaceWindow> widget = d->windows.value(window)) {
         if (widget->isMinimized()) {
             if (viewMode(window) == ViewMode::Normal) widget->showNormal();
             else widget->showFullScreen();
         } else widget->show();
-        widget->raise(); widget->activateWindow(); d->activeWindow = window;
+        if (!self || !widget || !d->model.window(window)) return;
+        widget->raise();
+        if (!self || !widget || !d->model.window(window)) return;
+        widget->activateWindow();
+        if (!self || !widget || !d->model.window(window)) return;
+        d->activeWindow = window;
     }
+}
+bool WindowManager::activateWindow(WindowId window)
+{
+    if (!d->model.window(window)) return false;
+    const QPointer<WindowManager> self(this);
+    QPointer<WorkspaceWindow> view = d->windows.value(window);
+    if (!view) return false;
+    showWindow(window);
+    if (!self || !view || !d->model.window(window)) return false;
+    if (view->isMinimized()) view->showNormal();
+    if (!self || !view || !d->model.window(window)) return false;
+    view->raise();
+    if (!self || !view || !d->model.window(window)) return false;
+    view->activateWindow();
+    if (!self || !view || !d->model.window(window)) return false;
+    const auto ctx = context(window);
+    if (!ctx.tab.isNull() && !ctx.pane.isNull()) return focusPane(ctx.tab, ctx.pane);
+    return true;
 }
 bool WindowManager::activateTab(TabId tab)
 {
@@ -415,15 +581,36 @@ bool WindowManager::focusPane(TabId tab, PaneId pane)
     if (!self) return false;
     if (!d->model.activatePane(tab, pane)) return false;
     if (!d->directionalNavigation) d->navigationAnchor.reset();
-    if (auto widget = d->panes.value(pane)) {
-        if (auto view = d->tabs.value(tab)) for (auto* frame : view->paneFrames()) {
-            frame->setProperty("active", frame->property("paneId").toUuid() == pane);
-            frame->style()->unpolish(frame); frame->style()->polish(frame); frame->update();
-        }
-        if (auto view = d->tabs.value(tab)) view->setActivePane(pane);
-        widget->setFocus(Qt::OtherFocusReason); return true;
+    const QPointer<QWidget> widget = d->panes.value(pane);
+    if (!widget) return false;
+    const auto targetAlive = [self, widget, tab, pane] {
+        return self && widget && self->d->panes.value(pane) == widget
+            && self->d->model.panes(tab).contains(pane);
+    };
+    QVector<QPointer<QWidget>> frames;
+    if (auto view = d->tabs.value(tab)) {
+        const auto renderedFrames = view->paneFrames();
+        frames.reserve(renderedFrames.size());
+        for (auto* frame : renderedFrames) frames.append(frame);
     }
-    return false;
+    for (const auto& frame : frames) {
+        if (!targetAlive()) return false;
+        if (!frame) continue;
+        frame->setProperty("active", frame->property("paneId").toUuid() == pane);
+        if (!targetAlive()) return false;
+        if (!frame) continue;
+        frame->style()->unpolish(frame);
+        if (!targetAlive()) return false;
+        if (!frame) continue;
+        frame->style()->polish(frame);
+        if (!targetAlive()) return false;
+        if (frame) frame->update();
+    }
+    if (!targetAlive()) return false;
+    if (auto view = d->tabs.value(tab)) view->setActivePane(pane);
+    if (!targetAlive()) return false;
+    widget->setFocus(Qt::OtherFocusReason);
+    return targetAlive();
 }
 QWidget* WindowManager::windowWidget(WindowId window) const { return d->windows.value(window); }
 QWidget* WindowManager::paneWidget(PaneId pane) const { return d->panes.value(pane); }
@@ -445,7 +632,13 @@ CommandContext WindowManager::context(WindowId window) const
 WindowBehavior WindowManager::behavior() const { return d->behavior; }
 void WindowManager::setBehavior(const WindowBehavior& behavior)
 {
+    if (behavior.newTabPosition < NewTabPosition::Beginning || behavior.newTabPosition > NewTabPosition::End) return;
+    const bool updateTabBars = behavior.hideSingleTabWorkbench != d->behavior.hideSingleTabWorkbench
+        || behavior.hideSingleTabFloating != d->behavior.hideSingleTabFloating;
     d->behavior = behavior; d->behavior.revealDelayMs = qBound(200, behavior.revealDelayMs, 2000);
+    const QPointer<WindowManager> self(this);
+    if (updateTabBars) applyWindowViewStates();
+    if (!self) return;
     emit layoutChanged();
 }
 void WindowManager::setTheme(const Theme& theme)
@@ -457,21 +650,44 @@ Theme WindowManager::theme() const { return d->theme; }
 CommandRegistry& WindowManager::commands() { return d->commands; }
 bool WindowManager::execute(const QString& command, const QVariantMap& args, WindowId window)
 {
-    const QPointer<WindowManager> self(this);
     auto ctx = context(window); ctx.args = args;
+    return executeResolved(command, std::move(ctx));
+}
+bool WindowManager::validCommandContext(const CommandContext& ctx) const
+{
+    if (!ctx.window.isNull() && !d->model.window(ctx.window)) return false;
+    if (!ctx.group.isNull()) {
+        const auto* group = d->model.group(ctx.group);
+        if (!group || group->windowId != ctx.window) return false;
+        if (!ctx.tab.isNull() && !group->tabs.contains(ctx.tab)) return false;
+    }
+    if (!ctx.tab.isNull()) {
+        const auto* group = d->model.group(d->model.groupForTab(ctx.tab));
+        if (!group || group->windowId != ctx.window) return false;
+    }
+    return ctx.pane.isNull() || d->model.panes(ctx.tab).contains(ctx.pane);
+}
+bool WindowManager::executeInContext(const QString& command, const CommandContext& ctx)
+{
+    return validCommandContext(ctx) && executeResolved(command, ctx, true);
+}
+bool WindowManager::executeResolved(const QString& command, CommandContext ctx, bool requireGroup)
+{
+    const QPointer<WindowManager> self(this);
     bool executed = false;
     if (const auto* registered = d->commands.find(command)) {
         const Command retained = *registered;
         const bool enabled = !retained.enabled || retained.enabled(ctx);
         if (!self) return false;
-        if (enabled) executed = retained.execute(ctx);
+        const bool targetValid = !requireGroup || validCommandContext(ctx);
+        if (enabled && targetValid) executed = retained.execute(ctx);
     }
     if (!self) return false;
     if (executed) return true;
     emit commandFailed(QStringLiteral("命令不可执行：%1").arg(command)); return false;
 }
-void WindowManager::showCommandPalette(WindowId window) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window)); }
-void WindowManager::showWindowSelector(WindowId window) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window)); }
+void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
+void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
 void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
 bool WindowManager::resetToolbarWidth(WindowId window, const QString& stripId)
 {
@@ -479,6 +695,24 @@ bool WindowManager::resetToolbarWidth(WindowId window, const QString& stripId)
     return view && view->strips() && view->strips()->resetStripWidth(stripId);
 }
 void WindowManager::setStatus(WindowId window, const QString& text) { if (auto widget = d->windows.value(window)) widget->setStatus(text); }
+bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, bool visible)
+{
+    if (!d->model.window(window) || !WorkspaceWindow::statusItemIds().contains(item)) return false;
+    auto options = d->options.value(window);
+    if (visible) options.hiddenStatusItems.removeAll(item);
+    else if (!options.hiddenStatusItems.contains(item)) options.hiddenStatusItems.append(item);
+    if (options.hiddenStatusItems == d->options.value(window).hiddenStatusItems) return true;
+    const QPointer<WindowManager> self(this);
+    d->options.insert(window, options);
+    if (auto view = d->windows.value(window)) view->setOptions(options);
+    if (!self) return false;
+    emit layoutChanged(); return true;
+}
+bool WindowManager::statusItemVisible(WindowId window, const QString& item) const
+{
+    return d->model.window(window) && WorkspaceWindow::statusItemIds().contains(item)
+        && !d->options.value(window).hiddenStatusItems.contains(item);
+}
 bool WindowManager::applyResult(const OperationResult& result)
 {
     if (!result) { emit commandFailed(result.error); return false; }
@@ -527,10 +761,12 @@ void WindowManager::refresh(bool preserveDrag)
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (!d->model.window(it.key())) {
             if (it.value()) { it.value()->allowClose = true; it.value()->hide(); it.value()->deleteLater(); }
-            d->options.remove(it.key()); d->viewStates.remove(it.key()); it = d->windows.erase(it);
+            d->options.remove(it.key()); d->viewStates.remove(it.key());
+            d->windowVisibility.remove(it.key()); d->visibilityKinds.remove(it.key()); it = d->windows.erase(it);
         } else ++it;
     }
     for (const auto id : d->model.windowOrder()) {
+        syncVisibilityKind(id);
         auto& window = d->windows[id];
         if (!window) window = new WorkspaceWindow(this, id, d->options.value(id));
         window->setOptions(d->options.value(id));
