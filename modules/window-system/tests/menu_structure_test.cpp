@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QSet>
+#include <QSignalSpy>
 #include <QStyle>
 #include <QTabBar>
 #include <QTest>
@@ -87,6 +88,10 @@ private slots:
     void floatingMenuContributionsStayIncrementalAndClassified();
     void windowListGroupsFamiliesAtTheEndAndRefreshesStableItems();
     void windowListActivatesAndRestoresTheChosenWindow();
+    void tabAppearanceCommandsUseOneClassifiedCheckedAction_data();
+    void tabAppearanceCommandsUseOneClassifiedCheckedAction();
+    void wheelRowsRequireMultilineAndResetWithIt_data();
+    void wheelRowsRequireMultilineAndResetWithIt();
 };
 
 void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
@@ -498,6 +503,98 @@ void MenuStructureTest::windowListActivatesAndRestoresTheChosenWindow()
     QVERIFY(!manager.windowWidget(floating)->isMinimized()); QCOMPARE(manager.context(floating).tab, tab);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(target->isChecked());
     QVERIFY(!manager.execute("window.activate", {{"targetWindow", QUuid::createUuid()}}, owner));
+}
+
+void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<QString>("id");
+    for (const bool floating : {false, true})
+        for (const auto* id : {"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
+                               "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(floating ? "floating" : "workbench", QString::fromLatin1(id))))
+                << floating << QString::fromLatin1(id);
+}
+
+void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
+{
+    QFETCH(bool, floating); QFETCH(QString, id);
+    WindowManager manager;
+    if (id == "presentation.toggleWheelExpandRows") {
+        auto appearance = manager.tabAppearance(); appearance.multiline = true;
+        QVERIFY(manager.setTabAppearance(appearance));
+    }
+    const auto owner = manager.createWindow();
+    const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, owner) : owner;
+    auto* content = new QLabel("Retained content");
+    const auto tab = manager.addTab(window, content, {"Retained", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* bar = menuBar(manager, window); QVERIFY(bar);
+    auto* menu = menuAt(bar, {"视图", "标签栏"}); QVERIFY(menu);
+    QCOMPARE(ids(menu), (QStringList{"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
+        "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"}));
+    QHash<QString, int> occurrences;
+    for (auto* root : bar->actions()) if (root->menu()) walk(root->menu(), occurrences);
+    for (const auto& command : ids(menu)) {
+        QCOMPARE(occurrences.value(command), 1);
+        auto* action = menu->findChild<QAction*>(command); QVERIFY(action && action->isCheckable());
+        QVERIFY(applicationMenuExclusion(command).isEmpty()); QVERIFY(floatingMenuExclusion(command).isEmpty());
+    }
+    for (const auto* placement : {"presentation.setCentralPlacement", "presentation.setPinnedPlacement"}) {
+        QVERIFY(!applicationMenuExclusion(QString::fromLatin1(placement)).isEmpty());
+        QVERIFY(!floatingMenuExclusion(QString::fromLatin1(placement)).isEmpty());
+        QVERIFY(!bar->findChild<QAction*>(QString::fromLatin1(placement)));
+    }
+    const auto value = [&id](const TabAppearance& appearance) {
+        if (id == "presentation.toggleIcons") return appearance.showIcons;
+        if (id == "presentation.toggleNewTabButton") return appearance.showNewTabButton;
+        if (id == "presentation.toggleNumbers") return appearance.showNumbers;
+        if (id == "presentation.toggleMultiline") return appearance.multiline;
+        return appearance.wheelExpandRows;
+    };
+    auto* action = menu->findChild<QAction*>(id); QVERIFY(action && action->isEnabled());
+    const bool initial = value(manager.tabAppearance()); QCOMPARE(action->isChecked(), initial);
+    QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    action->trigger(); QTRY_COMPARE(value(manager.tabAppearance()), !initial);
+    QCoreApplication::processEvents(); QCOMPARE(changes.count(), 1);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QCOMPARE(action->isChecked(), !initial);
+    QCOMPARE(bar->findChildren<QAction*>(id).size(), 1);
+    changes.clear();
+    QVERIFY(manager.executeInContext(id, manager.context(window)));
+    QCOMPARE(value(manager.tabAppearance()), initial); QCOMPARE(changes.count(), 1);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QCOMPARE(action->isChecked(), initial);
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(manager.model().validate().ok);
+}
+
+void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt_data()
+{
+    QTest::addColumn<bool>("floating");
+    QTest::newRow("workbench") << false; QTest::newRow("floating") << true;
+}
+
+void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto owner = manager.createWindow();
+    const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, owner) : owner;
+    const auto tab = manager.addTab(window, new QLabel("Retained"), {"Retained", "label", {}});
+    auto* menu = menuAt(menuBar(manager, window), {"视图", "标签栏"}); QVERIFY(menu);
+    auto* multiline = menu->findChild<QAction*>("presentation.toggleMultiline");
+    auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
+    QVERIFY(multiline && wheel); QVERIFY(multiline->isCheckable() && wheel->isCheckable());
+    QVERIFY(!multiline->isChecked() && !wheel->isChecked()); QVERIFY(wheel->isVisible() && !wheel->isEnabled());
+    QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    wheel->trigger(); QCoreApplication::processEvents(); QCOMPARE(changes.count(), 0);
+    QVERIFY(!manager.executeInContext("presentation.toggleWheelExpandRows", manager.context(window)));
+    QCOMPARE(changes.count(), 0); QVERIFY(!manager.tabAppearance().multiline && !manager.tabAppearance().wheelExpandRows);
+    multiline->trigger(); QTRY_VERIFY(manager.tabAppearance().multiline);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(multiline->isChecked()); QVERIFY(wheel->isEnabled());
+    wheel->trigger(); QTRY_VERIFY(manager.tabAppearance().wheelExpandRows);
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isChecked());
+    multiline->trigger(); QTRY_VERIFY(!manager.tabAppearance().multiline);
+    QMetaObject::invokeMethod(menu, "aboutToShow");
+    QVERIFY(!manager.tabAppearance().wheelExpandRows && !wheel->isChecked()); QVERIFY(wheel->isVisible() && !wheel->isEnabled());
+    QCoreApplication::processEvents(); QCOMPARE(changes.count(), 3);
+    QVERIFY(manager.model().tab(tab)); QVERIFY(manager.model().validate().ok);
 }
 
 QTEST_MAIN(MenuStructureTest)

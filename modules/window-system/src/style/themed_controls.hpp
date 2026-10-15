@@ -4,6 +4,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QPointer>
 
 namespace window_system {
 
@@ -12,8 +13,13 @@ namespace window_system {
 class ThemedComboBox final : public QComboBox {
 public:
     using QComboBox::QComboBox;
+    void showPopup() override;
 protected:
     void paintEvent(QPaintEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+private:
+    void alignPopup();
+    QPointer<QWidget> popup_;
 };
 
 class ThemedSpinBox final : public QSpinBox {

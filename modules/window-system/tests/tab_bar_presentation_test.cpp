@@ -205,7 +205,7 @@ void TabBarPresentationTest::newTabControlsFollowTheLastTabAndShareEmphasis()
     QCOMPARE(add->size(), QSize(26, tabs.tabBar()->height()));
     QCOMPARE(types->size(), QSize(12, tabs.tabBar()->height()));
     QCOMPARE(list->size(), QSize(12, tabs.tabBar()->height()));
-    QCOMPARE(types->x(), add->width());
+    QCOMPARE(types->x(), add->width() + 1);
     QCOMPARE(scroll->widget()->width(), tabs.tabBar()->width() + controls->width());
     int created = 0; tabs.newTabRequested = [&] { ++created; };
     QTest::mouseClick(add, Qt::LeftButton); QCOMPARE(created, 1);

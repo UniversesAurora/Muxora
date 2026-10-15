@@ -3,6 +3,7 @@
 #include "window_manager_p.hpp"
 #include "dock_guides.hpp"
 #include "drag_presentation.hpp"
+#include "commands/popup_menu.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
@@ -570,7 +571,7 @@ void DragController::selectTarget()
     if (labelOnly_ && !detach(lastPosition_)) { if (self) cancel(); return; }
     if (!self || !active_) return;
     choosing_ = true;
-    QPointer<QMenu> menu = new QMenu(capture_); applyTheme(menu, manager_->theme());
+    QPointer<QMenu> menu = new DismissOnlyMenu(capture_); applyTheme(menu, manager_->theme());
     for (const auto id : manager_->model().windowOrder()) {
         if (id == movingWindow_) continue;
         if (auto* window = manager_->windowWidget(id)) {

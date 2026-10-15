@@ -11,7 +11,9 @@
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QVariant>
 #include <algorithm>
+#include <optional>
 
 namespace window_system {
 namespace {
@@ -44,6 +46,18 @@ Items tabMovement()
         group("tab.move.window", "到已有窗口", {command("workspace.moveTabToWindow.previous"),
             command("workspace.moveTabToWindow.next"), separator(), command("workspace.moveTabToWindow")}),
         group("tab.move.newWindow", "到新窗口", {command("workspace.detachFloating"), command("workspace.detachWorkbench")})};
+}
+Items sorting()
+{
+    return {command("group.sort.alphabeticalAscending"), command("group.sort.alphabeticalDescending"), separator(),
+        command("group.sort.openedAscending"), command("group.sort.openedDescending"), separator(),
+        command("group.sort.visitedAscending"), command("group.sort.visitedDescending")};
+}
+Items groupMovement()
+{
+    return {group("group.move.direction", "到相邻位置", directions("group.move.")),
+        group("group.move.window", "到已有窗口", {command("group.moveWindow.previous"), command("group.moveWindow.next"),
+            separator(), command("group.moveWindow")})};
 }
 Items paneMovement()
 {
@@ -89,6 +103,9 @@ const Items& layout(CommandMenuSurface surface)
         group("视图", "视图(&V)", {command("workbench.showCommandPalette"), separator(),
             group("view.visibility", "显示", {command("window.toolbars.toggle"), command("window.statusBar.toggle"),
                 command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
+            group("view.tabAppearance", "标签栏", {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
+                command("presentation.toggleNumbers"), separator(), command("presentation.toggleMultiline"),
+                command("presentation.toggleWheelExpandRows")}),
             group("view.fullscreen", "全屏", {command("window.fullscreen.toggle"), command("window.fullscreen.group"),
                 command("window.fullscreen.pane"), separator(), command("window.zen.toggle"), command("window.fullscreen.exit")}),
             group("view.tabs", "切换标签", {command("workspace.previousTab"), command("workspace.nextTab")}),
@@ -97,11 +114,14 @@ const Items& layout(CommandMenuSurface surface)
             group("view.toolbars", "工具条", {command("window.toggleStripsLock"), command("window.toolbar.move")})}, 20),
         group("布局", "布局(&L)", {
             group("layout.groups", "标签组", {group("group.create", "新建标签组", directions("workspace.splitGroup.")),
-                group("group.resize", "调整边界", directions("workspace.resizeGroup."))}),
+                group("group.resize", "调整边界", directions("workspace.resizeGroup.")), separator(), command("group.close")}),
+            group("layout.tabAppearance", "标签外观", {command("tab.color.set")}),
             group("layout.panes", "窗格", {group("pane.split", "拆分", directions("pane.split.")),
                 group("pane.resize", "调整边界", directions("pane.resize.")),
                 group("pane.swap", "交换位置", directions("pane.swap."))}),
-            group("layout.tabOrder", "排列标签", {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
+            group("layout.tabOrder", "排列标签", {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
+                group("group.sort", "重新排序", sorting())}),
+            group("layout.moveGroup", "移动标签组", groupMovement()),
             group("layout.moveTab", "移动标签", tabMovement()), group("layout.movePane", "移动窗格", paneMovement()),
             group("layout.edge", "边栏", edgeOperations()), separator(), command("pane.close"), separator(900)}, 30),
         group("窗口", "窗口(&W)", {command("window.select"), command("window.focusOwner"), separator(),
@@ -117,11 +137,13 @@ const Items& layout(CommandMenuSurface surface)
     static const Items tab = {command("workspace.closeTab"), command("workspace.pinTab"), command("workspace.unpinTab"),
         group("tab.closeRange", "批量关闭标签", {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
-        group("tab.order", "排列标签", {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
+        group("tab.order", "排列标签", {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
+            group("group.sort", "重新排序", sorting())}),
         group("tab.move", "移动标签", tabMovement()),
         group("tab.group", "标签组", {group("tab.group.create", "新建标签组", directions("workspace.splitGroup.")),
             group("tab.group.resize", "调整边界", directions("workspace.resizeGroup."))}),
-        group("tab.edge", "边栏", edgeOperations(false))};
+        group("tab.edge", "边栏", edgeOperations(false)), separator(), command("tab.color.set"),
+        group("tab.group.move", "移动标签组", groupMovement()), command("group.close")};
     static const Items pane = {command("pane.close"), separator(),
         group("pane.split", "拆分窗格", directions("pane.split.")),
         group("pane.move", "移动窗格", paneMovement()),
@@ -151,6 +173,7 @@ QString plainTitle(QString title) { return title.remove(QRegularExpression(QStri
 void tidy(QMenu* menu)
 {
     bool previous = false; QAction* pending = nullptr;
+    QSet<QAction*> visibleSeparators;
     for (auto* action : menu->actions()) {
         if (auto* child = action->menu()) {
             tidy(child);
@@ -158,12 +181,17 @@ void tidy(QMenu* menu)
             action->setVisible(std::any_of(childActions.cbegin(), childActions.cend(),
                 [](QAction* item) { return !item->isSeparator() && item->isVisible(); }));
         }
-        if (action->isSeparator()) { action->setVisible(false); pending = action; }
+        if (action->isSeparator()) pending = action;
         else if (action->isVisible()) {
-            if (previous && pending) pending->setVisible(true);
+            if (previous && pending) visibleSeparators.insert(pending);
             pending = nullptr; previous = true;
         }
     }
+    // Submenu opening refreshes the command tree while ancestors are visible.
+    // Decide final separator visibility before mutation: hide-then-show makes
+    // QMenu resize/reposition twice and flashes the parent under the cursor.
+    for (auto* action : menu->actions()) if (action->isSeparator())
+        action->setVisible(visibleSeparators.contains(action));
 }
 bool orderedBefore(const QAction* left, const QAction* right)
 {
@@ -237,6 +265,8 @@ QStringList declaredMenuCommands(CommandMenuSurface surface)
 }
 QString applicationMenuExclusion(const QString& id)
 {
+    if (id == "presentation.setCentralPlacement" || id == "presentation.setPinnedPlacement")
+        return QStringLiteral("标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整");
     if (id == "window.activate") return QStringLiteral("窗口菜单的窗口族列表及选择面板提供入口");
     if (id == "window.statusItem.setVisible") return QStringLiteral("状态栏右键提供逐控件显隐入口");
     if (id == "layout.setRatio" || id == "layout.setEdgeExtent") return QStringLiteral("内部布局提交，需要明确节点或分区参数");
@@ -281,11 +311,18 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     if (id == "workspace.unpinTab" || id == "workspace.unpinGroup") visible = group && group->location == GroupLocation::Pinned;
     if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")
         visible = group && group->location != GroupLocation::Central;
-    const bool checkedCommand = id == "window.tabBars.toggle" || id == "window.sideBars.toggle"
+    std::optional<bool> appearanceChecked;
+    if (id == "presentation.toggleIcons") appearanceChecked = manager->tabAppearance().showIcons;
+    else if (id == "presentation.toggleNewTabButton") appearanceChecked = manager->tabAppearance().showNewTabButton;
+    else if (id == "presentation.toggleNumbers") appearanceChecked = manager->tabAppearance().showNumbers;
+    else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;
+    else if (id == "presentation.toggleWheelExpandRows") appearanceChecked = manager->tabAppearance().wheelExpandRows;
+    const bool checkedCommand = appearanceChecked.has_value() || id == "window.tabBars.toggle" || id == "window.sideBars.toggle"
         || id == "window.toolbars.toggle" || id == "window.statusBar.toggle" || id == "window.zen.toggle"
         || (id.startsWith("window.fullscreen.") && id != "window.fullscreen.exit")
         || id == "window.toggleStripsLock" || id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing";
     const QSignalBlocker blocker(action); action->setCheckable(checkedCommand);
+    if (appearanceChecked) action->setChecked(*appearanceChecked);
     if (id == "window.tabBars.toggle") action->setChecked(manager->tabBarsVisible(context.window));
     if (id == "window.sideBars.toggle") action->setChecked(manager->sideBarsVisible(context.window));
     if (id == "window.toolbars.toggle") action->setChecked(manager->toolbarsVisible(context.window));
@@ -314,6 +351,24 @@ void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager*
     if (!menu->actions().isEmpty()) menu->addSeparator();
     QList<QPointer<QAction>> actions;
     addItems(menu, layout(surface), manager, [captured] { return captured; }, actions, nullptr, nullptr);
+    if (surface == CommandMenuSurface::Tab) {
+        for (auto* action : menu->actions()) if (action->objectName() == "tab.color.set") {
+            auto* colors = new DismissOnlyMenu(QStringLiteral("设置标签颜色"), menu);
+            colors->setObjectName(QStringLiteral("TabColorChoices"));
+            const auto addColor = [colors, owner = QPointer<WindowManager>(manager), captured](QString name, QString id) {
+                auto* choice = colors->addAction(name); choice->setData(id); choice->setCheckable(true);
+                if (owner && owner->model().tab(captured.tab)) choice->setChecked(owner->model().tab(captured.tab)->colorId == id);
+                QObject::connect(choice, &QAction::triggered, colors, [owner, captured, id] {
+                    if (!owner) return;
+                    auto context = captured; context.args.insert("color", id);
+                    owner->executeInContext(QStringLiteral("tab.color.set"), context);
+                });
+            };
+            addColor(QStringLiteral("默认颜色"), {});
+            for (const auto& preset : manager->tabAppearance().colors) addColor(preset.name, preset.id);
+            action->setMenu(colors);
+        }
+    }
     tidy(menu);
     for (auto* child : menu->findChildren<QMenu*>()) QObject::connect(child, &QMenu::aboutToShow, menu,
         [manager = QPointer<WindowManager>(manager), actions, captured, menu] {
@@ -404,8 +459,8 @@ void ApplicationCommandMenus::refreshWindowList()
         windowListSeparator_->setObjectName(QStringLiteral("WindowListSeparator"));
         windowListSeparator_->setProperty("menuOrder", 1000000);
     }
-    menu->removeAction(windowListSeparator_); menu->addAction(windowListSeparator_);
-    const auto append = [this, menu](WindowId id, const QString& prefix, bool floating) {
+    QList<QAction*> desiredTail{windowListSeparator_};
+    const auto append = [this, menu, &desiredTail](WindowId id, const QString& prefix, bool floating) {
         const auto* widget = manager_->windowWidget(id);
         if (!widget) return;
         auto retained = windowActions_.value(id);
@@ -427,10 +482,15 @@ void ApplicationCommandMenus::refreshWindowList()
         }
         retained->setText(prefix + widget->windowTitle());
         retained->setToolTip(widget->windowTitle());
-        retained->setIcon(iconFor(floating ? QStringLiteral("detach") : QStringLiteral("window"), manager_->theme()));
+        const auto theme = manager_->theme();
+        const QVariantList iconTokens{floating, theme.text, theme.mutedText, theme.selectionText, theme.accent};
+        if (retained->property("windowListIconTokens").toList() != iconTokens) {
+            retained->setIcon(iconFor(floating ? QStringLiteral("detach") : QStringLiteral("window"), theme));
+            retained->setProperty("windowListIconTokens", iconTokens);
+        }
         retained->setChecked(manager_->context().window == id);
         retained->setProperty("windowSystemWindowDepth", floating ? 1 : 0);
-        menu->removeAction(retained); menu->addAction(retained);
+        desiredTail.append(retained);
     };
     QHash<FamilyId, QVector<WindowId>> children;
     for (const auto id : order) {
@@ -447,6 +507,16 @@ void ApplicationCommandMenus::refreshWindowList()
         int childIndex = 0;
         for (const auto child : children.value(family))
             append(child, QStringLiteral("    %1.%2  ").arg(familyIndex).arg(++childIndex), true);
+    }
+    QList<QAction*> currentTail;
+    const auto existing = menu->actions();
+    for (auto* action : existing)
+        if (action == windowListSeparator_ || action->objectName() == QStringLiteral("WindowListItem")) currentTail.append(action);
+    // Moving the same actions on every nested aboutToShow invalidates native
+    // parent-menu geometry. Only actual window/order changes touch the list.
+    if (currentTail != desiredTail || existing.mid(existing.size() - desiredTail.size()) != desiredTail) {
+        for (auto* action : currentTail) menu->removeAction(action);
+        for (auto* action : desiredTail) menu->addAction(action);
     }
 }
 void ApplicationCommandMenus::refresh()

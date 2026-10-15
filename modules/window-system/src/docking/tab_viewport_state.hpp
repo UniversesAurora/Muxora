@@ -3,6 +3,7 @@
 
 #include <window_system/layout_model.hpp>
 #include <QRect>
+#include <optional>
 
 namespace window_system {
 
@@ -14,6 +15,7 @@ struct TabViewportState {
     int offset = 0;
     TabId activeTab;
     bool activeFullyVisible = false;
+    std::optional<bool> rowsExpanded;
 };
 
 } // namespace window_system

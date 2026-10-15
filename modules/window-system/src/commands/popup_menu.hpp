@@ -4,16 +4,27 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QRect>
 
 namespace window_system {
+
+// Anchor geometry is global and uses the trigger's screen, including monitors
+// left of the primary screen. Prefer matching left edges below the trigger;
+// fall back to matching right edges above it before clamping to the work area.
+[[nodiscard]] QPoint popupMenuPosition(const QRect& anchor, QSize menuSize, const QRect& available);
+void setPopupAnchor(QMenu* menu, const QRect& globalTriggerRect);
+// Menu and combo-popup clients share the same square native frame policy.
+void preparePopupFrame(QWidget* popup);
 
 // A click outside closes the menu without also activating a control beneath it.
 // Works for persistent root menus and their nested customization menus.
 class DismissOnlyMenu final : public QMenu {
 public:
-    using QMenu::QMenu;
+    explicit DismissOnlyMenu(QWidget* parent = nullptr);
+    DismissOnlyMenu(const QString& title, QWidget* parent = nullptr);
 
 protected:
+    void showEvent(QShowEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override
     {
         // QMenu's Home/End support depends on the platform style. Keep these
@@ -38,7 +49,10 @@ protected:
         // after every event as well, so keyboard or programmatic dismissal
         // cannot leave a pending replay for a later popup's closing click.
         setAttribute(Qt::WA_NoMouseReplay);
-        return QMenu::event(event);
+        const bool handled = QMenu::event(event);
+        if (event->type() == QEvent::WinIdChange && testAttribute(Qt::WA_WState_Created) && effectiveWinId())
+            configureNativePopup();
+        return handled;
     }
     void mousePressEvent(QMouseEvent* event) override
     {
@@ -53,6 +67,8 @@ protected:
         }
         QMenu::mousePressEvent(event);
     }
+private:
+    void configureNativePopup();
 };
 
 } // namespace window_system

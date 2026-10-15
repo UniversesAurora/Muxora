@@ -195,6 +195,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     if (!group) return nullptr;
     auto* tabs = new GroupTabs(manager_->theme(), this);
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
+    tabs->setAppearance(manager_->tabAppearance(), group->location == GroupLocation::Pinned);
     tabs->setTabBarVisible(group->location != GroupLocation::Central || centralTabBarVisible(manager_->tabBarsVisible(window_)));
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
@@ -202,6 +203,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
             const auto* record = manager_->model().tab(tabId);
             tabs->addTab(content, manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->theme()) : QIcon{},
                          record->title, tabId);
+            tabs->setTabMetadata(tabs->tabBar()->count() - 1, *record);
         }
     }
     for (int i = 0; i < bar->count(); ++i)
@@ -224,8 +226,12 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     bar->drag = [this, bar](int index, QPoint point) {
         if (manager_) manager_->beginTabDrag(bar->tabData(index).toUuid(), point);
     };
-    bar->menu = [this, bar](int index, QPoint point) {
+    tabs->groupMenuRequested = [manager = QPointer<WindowManager>(manager_),id](QPoint point) {
+        if(manager) manager->showGroupMenu(id,point);
+    };
+    bar->menu = [this, bar, id](int index, QPoint point) {
         if (manager_ && index >= 0) manager_->showTabMenu(bar->tabData(index).toUuid(), point);
+        else if(manager_) manager_->showGroupMenu(id,point);
     };
     tabs->currentChanged = [this, tabs, bar, id](int index) {
         if (!manager_) return;
@@ -257,6 +263,13 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
             auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
                 manager_->theme().metrics.edgeThickness, bar);
+            button->setPreset(manager_->tabColorPreset(manager_->model().tab(tabId)->colorId));
+            const auto appearance=manager_->tabAppearance();
+            const auto options=manager_->tabOptions(tabId);
+            button->setPresentation(appearance.showIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
+                appearance.showNumbers ? manager_->model().group(groupId)->tabs.indexOf(tabId)+1 : 0);
+            button->setCheckable(true);
+            button->setChecked(manager_->context(window_).tab == tabId);
             button->setProperty("tabId", tabId);
             button->drag = [this, tabId](QPoint point) { if (manager_) manager_->beginTabDrag(tabId, point); };
             button->menu = [this, tabId](QPoint point) { if (manager_) manager_->showTabMenu(tabId, point); };
@@ -379,10 +392,25 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
 {
     const auto* record = manager_->model().tab(tab);
     if (!record) return 0;
-    if (edge) return qBound(64, fontMetrics().horizontalAdvance(record->title) + 24, 180);
+    if (edge) {
+        const auto appearance=manager_->tabAppearance();
+        const auto* group=manager_->model().group(manager_->model().groupForTab(tab));
+        return edgeTabExtent(fontMetrics(),record->title,appearance.showIcons && manager_->tabOptions(tab).showIcon,
+            appearance.showNumbers && group ? group->tabs.indexOf(tab)+1 : 0);
+    }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         const auto* bar = group->tabBar();
-        for (int i = 0; i < bar->count(); ++i) if (bar->tabData(i).toUuid() == tab) return bar->tabRect(i).width();
+        for (int i = 0; i < bar->count(); ++i) {
+            if (bar->tabData(i).toUuid() != tab) continue;
+            if (manager_->tabAppearance().multiline) {
+                const int viewportWidth = group->viewportRectGlobal().width();
+                // Single-tab floating windows can hide their strip. A hidden
+                // hit region has zero width, but its carried label still has
+                // a real extent before entering the target presentation.
+                return std::min(bar->tabRect(i).width(), std::max(1, viewportWidth > 0 ? viewportWidth : group->width()));
+            }
+            return bar->tabRect(i).width();
+        }
     }
     const int icon = manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
     return qBound(1, fontMetrics().horizontalAdvance(record->title) + icon + 35, QWIDGETSIZE_MAX);
@@ -399,7 +427,10 @@ QPixmap DockSurface::dragLabelPixmap(TabId tab) const
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         auto* bar = group->tabBar();
         for (int i = 0; i < bar->count(); ++i)
-            if (bar->tabData(i).toUuid() == tab) return bar->grab(bar->tabRect(i));
+            if (bar->tabData(i).toUuid() == tab) {
+                const auto area=bar->displayTabRect(i);
+                return area.isEmpty() ? QPixmap{} : bar->grab(area);
+            }
     }
     for (const auto& strip : edgeBars_) if (strip)
         for (auto* button : strip->findChildren<QAbstractButton*>())
@@ -472,8 +503,16 @@ QRect DockSurface::centralRectGlobal() const
             return QRect(group->mapToGlobal(QPoint()), group->size());
     return center_ ? QRect(center_->mapToGlobal(QPoint()), center_->size()) : QRect();
 }
+void DockSurface::updateEdgeTabSelection(TabId tab)
+{
+    for (const auto& strip : edgeBars_) if (strip)
+        for (auto* control : strip->findChildren<QAbstractButton*>())
+            if (auto* button = dynamic_cast<EdgeTabButton*>(control))
+                button->setChecked(button->property("tabId").toUuid() == tab);
+}
 void DockSurface::selectTab(TabId tab)
 {
+    updateEdgeTabSelection(tab);
     const auto group = manager_->model().groupForTab(tab);
     const auto* record = manager_->model().group(group);
     if (record && record->location == GroupLocation::AutoHide && !focusedAutoHideGroup_) {
@@ -514,6 +553,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
         || !record->tabs.contains(tab) || record->activeTab != tab || !currentTab) return;
     const auto edge = record->edge;
     const auto titleText = currentTab->title;
+    updateEdgeTabSelection(tab);
     peekGroup_ = group;
     peekTab_ = tab;
     peek_ = new QFrame(this); peek_->setObjectName("PeekPanel");

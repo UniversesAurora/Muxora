@@ -157,6 +157,8 @@ private slots:
     void captionHitPriorityPreservesResizeEdgesAndCorners();
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap_data() { addWindowKinds(); }
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap();
+    void maximizedCaptionControlsOwnTheActualScreenEdge_data();
+    void maximizedCaptionControlsOwnTheActualScreenEdge();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
     void fixedResizeAxesRemainRespected();
 #endif
@@ -584,6 +586,80 @@ void CaptionStripTest::disabledHiddenCompactAndFullscreenCaptionsRejectNativeSna
     window->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
     location = nativePoint(window, button, button->rect().center()); QVERIFY(location);
     QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location), LRESULT(HTMAXBUTTON));
+}
+
+void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<QString>("role");
+    for (const bool floating : {false, true})
+        for (const auto& role : {QStringLiteral("minimize"), QStringLiteral("restore"), QStringLiteral("close")})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(floating ? "floating" : "workbench", role)))
+                << floating << role;
+}
+
+void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
+{
+    QFETCH(bool, floating); QFETCH(QString, role);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    const auto tab = manager.addTab(id, new QLabel("Retained body"), {"Retained", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    const QPointer<QWidget> body(manager.paneWidget(pane));
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->showMaximized(); QTRY_VERIFY(window->isMaximized());
+    auto* button = captionButton(window, role); QVERIFY(button && button->isVisible() && button->isEnabled());
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
+    // Sample the actual last physical pixel, not a logical point inset from
+    // the button. The top row is the screen's work-area edge for all controls;
+    // close additionally owns its upper-right corner.
+    const int indexFromRight = role == "close" ? 0 : role == "restore" ? 1 : 2;
+    const int nativeWidth = qRound(42 * window->devicePixelRatioF());
+    const POINT edge{monitor.rcWork.right - 1 - indexFromRight * nativeWidth, monitor.rcWork.top};
+    const auto nativeClientFillsWorkArea = [handle, monitor] {
+        POINT origin{}; RECT client{};
+        return ClientToScreen(handle, &origin) && GetClientRect(handle, &client)
+            && origin.x == monitor.rcWork.left && origin.y == monitor.rcWork.top
+            && client.right - client.left == monitor.rcWork.right - monitor.rcWork.left
+            && client.bottom - client.top == monitor.rcWork.bottom - monitor.rcWork.top;
+    };
+    // Qt updates its state before the asynchronous native maximize/layout
+    // finishes. Wait for the independently observed client rectangle, then
+    // convert the same absolute screen-edge point on every geometry sample.
+    QTRY_VERIFY(nativeClientFillsWorkArea());
+    const auto containsScreenEdge = [window, button, handle, edge] {
+        POINT client = edge;
+        if (!ScreenToClient(handle, &client)) return false;
+        const qreal ratio = window->devicePixelRatioF();
+        const QPoint logical(qFloor(client.x / ratio), qFloor(client.y / ratio));
+        return button->rect().contains(button->mapFrom(window, logical));
+    };
+    QTRY_VERIFY(containsScreenEdge());
+    QCOMPARE(button->mapTo(window, QPoint()).y(), 0);
+    auto* close = captionButton(window, "close"); QVERIFY(close);
+    QCOMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());
+    const LPARAM position = MAKELPARAM(edge.x, edge.y);
+    const LRESULT expectedHit = role == "close" ? HTCLOSE : role == "minimize" ? HTMINBUTTON : HTMAXBUTTON;
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), expectedHit);
+    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+    CaptionHoverProbe hover(button);
+    SendMessageW(handle, WM_NCMOUSEMOVE, WPARAM(expectedHit), position);
+    QVERIFY(button->underMouse()); QCOMPARE(hover.enters, 1);
+    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+    QVERIFY(!button->underMouse()); QCOMPARE(hover.leaves, 1);
+    int clicks = 0; QVector<TabId> closeRequests;
+    QObject::connect(button, &QToolButton::clicked, window, [&clicks] { ++clicks; });
+    manager.setCloseGuard([&closeRequests](const QVector<TabId>& tabs) { closeRequests = tabs; return false; });
+    SendMessageW(handle, WM_NCLBUTTONDOWN, WPARAM(expectedHit), position);
+    QVERIFY(button->isDown()); QCOMPARE(GetCapture(), handle);
+    SendMessageW(handle, WM_NCLBUTTONUP, WPARAM(expectedHit), position);
+    QCOMPARE(clicks, 1); QVERIFY(!button->isDown()); QVERIFY(GetCapture() != handle);
+    if (role == "minimize") QTRY_VERIFY(window->isMinimized());
+    else if (role == "restore") QTRY_VERIFY(!window->isMaximized());
+    else { QCOMPARE(closeRequests, QVector<TabId>{tab}); QVERIFY(window->isMaximized() && window->isVisible()); }
+    QCOMPARE(window->effectiveWinId(), WId(handle)); QCOMPARE(manager.paneWidget(pane), body.data());
+    QVERIFY(manager.model().validate().ok);
 }
 
 void CaptionStripTest::fixedResizeAxesRemainRespected()

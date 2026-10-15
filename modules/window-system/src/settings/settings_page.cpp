@@ -274,6 +274,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         QStringLiteral("window.revealDelayMs"),
         QStringLiteral("显示被遮挡窗口前的等待时间。"), delay_));
     addViewOptions(contents, rows);
+    addTabAppearanceOptions(contents, rows);
     rows->addStretch();
     scroll_->setWidget(contents);
     right->addWidget(scroll_, 1);
@@ -427,6 +428,7 @@ void SettingsPage::syncControls()
     delay_->setValue(behavior.revealDelayMs);
     delay_->setEnabled(behavior.revealDuringDrag);
     syncViewOptions();
+    syncTabAppearanceOptions();
 }
 
 void SettingsPage::filterRows()

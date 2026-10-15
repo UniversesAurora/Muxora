@@ -180,26 +180,45 @@ QPoint logicalClientPosition(QWidget* window, HWND handle, POINT point, bool fro
     return {qFloor(point.x / ratio), qFloor(point.y / ratio)};
 }
 
-QAbstractButton* maximizeButtonAt(QWidget* window, const QPoint& position)
+QAbstractButton* nativeCaptionButtonAt(QWidget* window, const QPoint& position)
 {
     if (fullScreenRequested(window) || window->property("windowSystemDragPresentation").toBool()) return nullptr;
     for (auto* child = window->childAt(position); child && child != window; child = child->parentWidget()) {
+        if (child->objectName() != QStringLiteral("CaptionButton")) continue;
         const auto role = child->property("role").toString();
-        if (child->objectName() == QStringLiteral("CaptionButton") &&
-            (role == QStringLiteral("maximize") || role == QStringLiteral("restore"))) {
-            auto* button = qobject_cast<QAbstractButton*>(child);
-            return button && button->isVisible() && button->isEnabled() ? button : nullptr;
-        }
+        const bool maximize = role == QStringLiteral("maximize") || role == QStringLiteral("restore");
+        const bool otherCaption = role == QStringLiteral("minimize") || role == QStringLiteral("close");
+        // A restored window retains its resize rim around the ordinary Qt
+        // minimize/close buttons. Maximized chrome has no resize rim: all
+        // three controls own their complete screen-edge rectangle.
+        if (!maximize && !(otherCaption && window->isMaximized())) return nullptr;
+        auto* button = qobject_cast<QAbstractButton*>(child);
+        return button && button->isVisible() && button->isEnabled() ? button : nullptr;
     }
     return nullptr;
+}
+
+LRESULT captionHit(const QAbstractButton* button)
+{
+    const auto role = button->property("role").toString();
+    return role == QStringLiteral("close") ? HTCLOSE : role == QStringLiteral("minimize") ? HTMINBUTTON : HTMAXBUTTON;
+}
+
+bool isCaptionHit(WPARAM hit)
+{
+    return hit == HTMAXBUTTON || hit == HTMINBUTTON || hit == HTCLOSE;
 }
 
 void extendFrame(QWidget* window, HWND handle, bool force = false)
 {
     auto* state = frameState(window);
     const bool compact = window->property("windowSystemDragPresentation").toBool();
+    const bool fullscreen = fullScreenRequested(window);
+    const bool expanded = fullscreen || IsZoomed(handle) || window->isMaximized()
+        || (window->windowHandle() && window->windowHandle()->windowStates().testFlag(Qt::WindowMaximized));
     if (state->extending) return;
-    if (!force && state->attributesReady && state->configuredHandle == handle && state->configuration.compact == compact) {
+    if (!force && state->attributesReady && state->configuredHandle == handle && state->configuration.compact == compact
+        && state->configuration.expanded == expanded && state->configuration.fullscreen == fullscreen) {
         BOOL enabled = FALSE;
         // A full-caption HWND with a region can lose its DWM NC surface. The
         // captionless transition used for compact previews retains composition;
@@ -224,31 +243,33 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     const HRESULT transitionResult = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED,
         &forceDisableTransitions, sizeof(forceDisableTransitions));
     if (!retained) return;
-    const MARGINS margins{compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1};
+    const int clientMargin = compact || expanded ? 0 : 1;
+    const MARGINS margins{clientMargin, clientMargin, clientMargin, clientMargin};
     const HRESULT marginsResult = DwmExtendFrameIntoClientArea(handle, &margins);
     if (!retained) return;
     // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND. Older Windows returns
     // E_INVALIDARG; its normal square corners and resize behavior remain valid.
     constexpr DWORD cornerPreferenceAttribute = 33;
-    const DWORD cornerPreference = compact ? 1 : 2;
-    DwmSetWindowAttribute(handle, cornerPreferenceAttribute, &cornerPreference, sizeof(cornerPreference));
+    const DWORD cornerPreference = compact || expanded ? 1 : 2;
+    const HRESULT cornerResult = DwmSetWindowAttribute(handle, cornerPreferenceAttribute, &cornerPreference, sizeof(cornerPreference));
     constexpr DWORD borderColorAttribute = 34;
-    const COLORREF borderColor = compact ? COLORREF(0xfffffffe) : COLORREF(0xffffffff);
-    DwmSetWindowAttribute(handle, borderColorAttribute, &borderColor, sizeof(borderColor));
+    const COLORREF borderColor = compact || expanded ? COLORREF(0xfffffffe) : COLORREF(0xffffffff);
+    const HRESULT borderResult = DwmSetWindowAttribute(handle, borderColorAttribute, &borderColor, sizeof(borderColor));
     if (!retained) return;
     state->configuredHandle = handle;
     state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
-    state->configuration = {true, compact, true, qint32(policyResult), qint32(marginsResult), revision};
+    state->configuration = {true, compact, true, qint32(policyResult), qint32(marginsResult), revision,
+        expanded, fullscreen, clientMargin, quint32(cornerPreference), qint32(cornerResult), quint32(borderColor), qint32(borderResult)};
     state->attributesReady = SUCCEEDED(policyResult) && SUCCEEDED(transitionResult) && SUCCEEDED(marginsResult);
 }
 
-bool finishMaximizeClick(QWidget* window, MSG* message, NativeFrameState* state, qintptr* result, bool fromScreen)
+bool finishCaptionClick(QWidget* window, MSG* message, NativeFrameState* state, qintptr* result, bool fromScreen)
 {
     if (!state->pressed) return false;
     const QPointer<QAbstractButton> button = state->pressed;
     const POINT nativePoint = screenPosition(message->lParam);
     const QPoint position = logicalClientPosition(window, message->hwnd, nativePoint, fromScreen);
-    const bool activate = maximizeButtonAt(window, position) == button;
+    const bool activate = nativeCaptionButtonAt(window, position) == button;
     state->cancelPress();
     if (GetCapture() == message->hwnd) ReleaseCapture();
     *result = 0;
@@ -460,7 +481,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         // owns the hit before the resize rim, so its upper pixels also expose
         // the native Snap affordance in a restored window. The rest of every
         // edge/corner retains its ordinary resize hit.
-        if (maximizeButtonAt(window, position)) { *result = HTMAXBUTTON; return true; }
+        if (const auto* button = nativeCaptionButtonAt(window, position)) { *result = captionHit(button); return true; }
         if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) {
             const int border = resizeBorder(msg->hwnd, window);
             const bool resizeX = window->minimumWidth() < window->maximumWidth();
@@ -483,21 +504,22 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
     }
     case WM_NCMOUSEMOVE: {
         auto* state = frameState(window);
-        if (msg->wParam != HTMAXBUTTON) {
+        if (!isCaptionHit(msg->wParam)) {
             state->setHovered(nullptr);
             return false;
         }
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), true);
-        auto* button = maximizeButtonAt(window, position);
+        auto* button = nativeCaptionButtonAt(window, position);
         state->setHovered(button, position);
         if (!button) return false;
         if (!state->trackingNonClient) {
             TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_NONCLIENT | TME_LEAVE, msg->hwnd, 0};
             state->trackingNonClient = TrackMouseEvent(&tracking);
         }
-        // HTMAXBUTTON plus native non-client processing makes this custom
-        // caption eligible for the Windows 11 snap-layout hover menu.
-        *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+        // Only maximize forwards native hover processing for the Win11 Snap
+        // flyout. Minimize/close are painted by the actual accessible Qt button.
+        *result = msg->wParam == HTMAXBUTTON
+            ? DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam) : 0;
         return true;
     }
     case WM_NCMOUSELEAVE: {
@@ -508,10 +530,10 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
     }
     case WM_NCLBUTTONDOWN:
     case WM_NCLBUTTONDBLCLK: {
-        if (msg->wParam != HTMAXBUTTON) return false;
+        if (!isCaptionHit(msg->wParam)) return false;
         auto* state = frameState(window);
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), true);
-        if (auto* button = maximizeButtonAt(window, position)) {
+        if (auto* button = nativeCaptionButtonAt(window, position)) {
             state->pressed = button;
             button->setDown(true);
             SetCapture(msg->hwnd);
@@ -521,9 +543,9 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return false;
     }
     case WM_NCLBUTTONUP:
-        return finishMaximizeClick(window, msg, frameState(window), result, true);
+        return finishCaptionClick(window, msg, frameState(window), result, true);
     case WM_LBUTTONUP:
-        return finishMaximizeClick(window, msg, frameState(window), result, false);
+        return finishCaptionClick(window, msg, frameState(window), result, false);
     case WM_MOUSEMOVE: {
         auto* state = frameState(window);
         if (!state->pressed) {
@@ -531,7 +553,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             return false;
         }
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), false);
-        state->pressed->setDown(maximizeButtonAt(window, position) == state->pressed);
+        state->pressed->setDown(nativeCaptionButtonAt(window, position) == state->pressed);
         *result = 0;
         return true;
     }

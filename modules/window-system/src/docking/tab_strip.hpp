@@ -2,6 +2,7 @@
 
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
+#include <window_system/tab_appearance.hpp>
 #include "tab_viewport_state.hpp"
 #include <QFrame>
 #include <QPointer>
@@ -32,6 +33,12 @@ public:
     [[nodiscard]] QRect displayTabRect(int index) const;
     [[nodiscard]] int insertionIndexAt(QPoint local) const;
     [[nodiscard]] int insertionExtent() const { return insertionExtent_; }
+    void setAppearance(const TabAppearance& appearance);
+    void setTabMetadata(int index, const TabRecord& tab);
+    void layoutTabs(int availableWidth, bool expanded);
+    [[nodiscard]] QSize displayedSize() const;
+    [[nodiscard]] QPoint creationPosition() const;
+    [[nodiscard]] int rowCount() const;
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -42,6 +49,8 @@ protected:
     QSize tabSizeHint(int index) const override;
 private:
     QRect closeRect(int index) const;
+    int displayedTabAt(QPoint local) const;
+    bool isDragged(int index) const;
     QPoint start_;
     int pressed_ = -1;
     int closePressed_ = -1;
@@ -51,6 +60,16 @@ private:
     int insertionExtent_ = 0;
     QColor insertionColor_;
     int draggedIndex_ = -1;
+    TabAppearance appearance_;
+    struct Decoration { QString colorId; };
+    QHash<int, Decoration> decorations_;
+    QHash<int, QRect> displayedRects_;
+    QRect previewRect_;
+    QSize displayedSize_;
+    QPoint creationPosition_;
+    int rowCount_ = 1;
+    int activeLogicalRow_ = 0;
+    bool customLayout_ = false;
 };
 
 // The bar keeps natural tab widths inside a scroll viewport. Native QTabBar
@@ -64,6 +83,7 @@ public:
     std::function<void()> hoverGeometryChanged;
     std::function<void()> newTabRequested;
     std::function<QMenu*(QWidget*)> newTabMenuRequested;
+    std::function<void(QPoint)> groupMenuRequested;
     DragTabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
     void setCurrentIndex(int index, bool reveal = true);
@@ -83,6 +103,8 @@ public:
     void setDragPresentation(bool compact, bool edge);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
     void setTabBarVisible(bool visible);
+    void setAppearance(const TabAppearance& appearance, bool pinned = false);
+    void setTabMetadata(int index, const TabRecord& tab);
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
@@ -120,7 +142,9 @@ private:
     std::optional<TabViewportState> pendingViewportState_;
     bool viewportReflowQueued_ = false;
     bool applyingViewportState_ = false;
-    int trailingAlignmentOffset_ = 0;
+    TabAppearance appearance_;
+    bool pinned_ = false;
+    bool rowsExpanded_ = true;
 };
 
 } // namespace window_system

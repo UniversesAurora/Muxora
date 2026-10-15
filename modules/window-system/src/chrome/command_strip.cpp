@@ -70,6 +70,9 @@ public:
     void setPopupMenu(QMenu* popup)
     {
         setMenu(popup);
+        connect(popup, &QMenu::aboutToShow, this, [this, popup] {
+            setPopupAnchor(popup, QRect(mapToGlobal(QPoint()), size()));
+        });
         connect(popup, &QMenu::aboutToHide, this, [this] {
             setDown(false);
             update();
@@ -791,7 +794,7 @@ QList<QWidget*> CommandStripHost::windowDragAreas() const
 
 QMenu* CommandStripHost::createContextMenu(QWidget* parent)
 {
-    auto* menu = new QMenu(parent);
+    auto* menu = new DismissOnlyMenu(parent);
     auto* lock = menu->addAction(QStringLiteral("锁定工具条"));
     lock->setObjectName("LockStripsAction"); lock->setCheckable(true); lock->setChecked(d->locked);
     connect(lock, &QAction::toggled, this, [this](bool value) { setLocked(value); });
@@ -989,7 +992,13 @@ void CommandStripHost::arrange()
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
-        const int available = std::max(0, host->width() - rowMargin * 2 - std::max(0, int(visible.size()) - 1) * stripSpacing);
+        // Expanded windows have no resize rim. When the caption controls are
+        // the last strip, their final pixel must reach the actual screen edge
+        // instead of leaving the ordinary toolbar's two-pixel outer gutter.
+        const int rightMargin = !visible.isEmpty() && visible.last() == QStringLiteral("caption-controls")
+            && window()->property("windowSystemExpanded").toBool() ? 0 : rowMargin;
+        const int available = std::max(0, host->width() - rowMargin - rightMargin
+            - std::max(0, int(visible.size()) - 1) * stripSpacing);
         const auto sizes = rowWidths(visible, available);
         const auto elasticId = std::find_if(visible.begin(), visible.end(), [this](const QString& id) {
             return d->strips.value(id)->sizing == StripSizing::Elastic;
@@ -1001,7 +1010,7 @@ void CommandStripHost::arrange()
             positions[index] = x;
             x += sizes[index] + stripSpacing;
         }
-        int right = host->width() - rowMargin;
+        int right = host->width() - rightMargin;
         for (int index = int(visible.size()) - 1; elasticIndex >= 0 && index > elasticIndex; --index) {
             positions[index] = right - sizes[index];
             right = positions[index] - stripSpacing;

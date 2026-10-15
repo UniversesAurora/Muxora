@@ -10,7 +10,7 @@ option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TE
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets)
 
-add_library(WindowSystemModel STATIC src/model/layout_model.cpp)
+add_library(WindowSystemModel STATIC src/model/layout_model.cpp src/model/tab_ordering.cpp)
 add_library(WindowSystem::Model ALIAS WindowSystemModel)
 set_target_properties(WindowSystemModel PROPERTIES EXPORT_NAME Model)
 target_compile_features(WindowSystemModel PUBLIC cxx_std_20)
@@ -31,7 +31,11 @@ add_library(WindowSystemWidgets STATIC
     src/chrome/toolbar_api.cpp
     src/commands/command_registry.cpp
     src/commands/command_menus.cpp
+    src/commands/popup_menu.cpp
+    src/commands/tab_group_commands.cpp
+    src/tab_group_api.cpp
     src/commands/window_commands.cpp
+    src/commands/tab_presentation_commands.cpp
     src/commands/toolbar_move_command.cpp
     src/commands/peek_size_command.cpp
     src/commands/command_dialogs.cpp
@@ -44,9 +48,11 @@ add_library(WindowSystemWidgets STATIC
     src/docking/drag_controller.cpp
     src/panes/tab_content.cpp
     src/style/theme.cpp
+    src/style/tab_appearance.cpp
     src/style/themed_controls.cpp
     src/settings/settings_page.cpp
     src/settings/settings_view_options.cpp
+    src/settings/settings_tab_appearance.cpp
     include/window_system/window_manager.hpp
     include/window_system/floating_panel.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)

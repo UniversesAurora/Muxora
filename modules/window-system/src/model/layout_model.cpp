@@ -406,7 +406,11 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
         }
         created = QUuid::createUuid();
         const auto paneId = QUuid::createUuid();
-        model.tabs_.insert(created, TabRecord{created, std::move(title), leaf(paneId), paneId, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+        TabRecord tabRecord;
+        tabRecord.id = created; tabRecord.title = std::move(title);
+        tabRecord.panes = leaf(paneId); tabRecord.activePane = paneId;
+        tabRecord.openedOrder = tabRecord.visitedOrder = model.nextTabOrder();
+        model.tabs_.insert(created, std::move(tabRecord));
         auto& record = model.groups_[target];
         if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure("The insertion index is invalid.");
         record.tabs.insert(insertionIndex < 0 ? record.tabs.size() : insertionIndex, created);
@@ -430,6 +434,7 @@ OperationResult LayoutModel::activateTab(TabId id)
         const auto groupId = model.groupForTab(id);
         if (groupId.isNull()) return failure("The tab does not exist.");
         auto& record = model.groups_[groupId];
+        if (record.activeTab != id) model.tabs_[id].visitedOrder = model.nextTabOrder();
         record.activeTab = id;
         model.windows_[record.windowId].activeGroup = groupId;
         return success();
@@ -441,6 +446,7 @@ OperationResult LayoutModel::activatePane(TabId tabId, PaneId paneId)
         if (!model.panes(tabId).contains(paneId)) return failure("The pane does not belong to the tab.");
         model.tabs_[tabId].activePane = paneId;
         const auto groupId = model.groupForTab(tabId);
+        if (model.groups_[groupId].activeTab != tabId) model.tabs_[tabId].visitedOrder = model.nextTabOrder();
         model.groups_[groupId].activeTab = tabId;
         model.windows_[model.groups_[groupId].windowId].activeGroup = groupId;
         return success();
@@ -501,7 +507,7 @@ OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
     if (source.activeTab == tabId)
         source.activeTab = source.tabs.isEmpty() ? TabId{} : source.tabs[std::min(oldIndex, source.tabs.size() - 1)];
     auto& target = groups_[destinationId];
-    const auto index = insertionIndex < 0 ? int(target.tabs.size())
+    auto index = insertionIndex < 0 ? int(target.tabs.size())
         : std::clamp(insertionIndex, 0, int(target.tabs.size()));
     target.tabs.insert(index, tabId);
     target.activeTab = tabId;
@@ -994,7 +1000,7 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
         for (auto tabId : ordered) {
             auto moved = moveTabUnchecked(tabId, targetGroup, Placement::Center, index);
             if (!moved) return moved;
-            if (index >= 0) ++index;
+            if (index >= 0) index = groups_[targetGroup].tabs.indexOf(tabId) + 1;
         }
         groups_[targetGroup].activeTab = activeTab;
         windows_[targetWindow].activeGroup = targetGroup;
@@ -1187,7 +1193,10 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
         created = QUuid::createUuid();
         const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
         const auto title = model.tabs_[sourceTab].title;
-        model.tabs_.insert(created, TabRecord{created, title, carried, paneId, std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+        TabRecord added;
+        added.id = created; added.title = title; added.panes = carried; added.activePane = paneId;
+        added.openedOrder = added.visitedOrder = model.nextTabOrder();
+        model.tabs_.insert(created, std::move(added));
         model.groups_[sourceGroup].tabs.append(created);
         auto moved = model.moveTabUnchecked(created, targetGroup, placement, -1);
         if (!moved) return moved;
@@ -1214,6 +1223,7 @@ OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
 
 OperationResult LayoutModel::validate() const
 {
+    if (orderCounter_ > maximumTabOrder) return failure("The ordering counter exceeds the exact JSON integer range.");
     if (windows_.size() > maximumRecords || groups_.size() > maximumRecords || tabs_.size() > maximumRecords)
         return failure("The layout exceeds the record limit.");
     if (windowOrder_.size() != windows_.size()) return failure("Window ordering is incomplete.");
@@ -1256,6 +1266,8 @@ OperationResult LayoutModel::validate() const
     }
     for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
+        if (iterator->colorId.size() > 128 || iterator->openedOrder > orderCounter_ || iterator->visitedOrder > orderCounter_)
+            return failure("Tab appearance or ordering metadata is invalid.");
         if (iterator->peekSize && !validPeekSize(*iterator->peekSize))
             return failure("A peek size is outside the supported dimensions.");
         if ((iterator->verticalPeekSize && !validPeekPolicy(*iterator->verticalPeekSize))
@@ -1358,6 +1370,9 @@ QJsonObject LayoutModel::toJson() const
                 const auto& tabRecord = tabs_[tabId];
                 QJsonObject tabObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
                     {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}};
+                tabObject.insert("colorId", tabRecord.colorId);
+                tabObject.insert("openedOrder", double(tabRecord.openedOrder));
+                tabObject.insert("visitedOrder", double(tabRecord.visitedOrder));
                 if (const auto& size = tabRecord.peekSize)
                     tabObject.insert("peekSize", QJsonObject{{"width", size->width()}, {"height", size->height()}});
                 if (const auto& size = tabRecord.verticalPeekSize)
@@ -1373,7 +1388,8 @@ QJsonObject LayoutModel::toJson() const
             }
         }
     }
-    return QJsonObject{{"schemaVersion", 1}, {"windows", windows}, {"groups", groups}, {"tabs", tabs}};
+    return QJsonObject{{"schemaVersion", 1}, {"windows", windows}, {"groups", groups}, {"tabs", tabs},
+        {"orderCounter", double(orderCounter_)}};
 }
 OperationResult LayoutModel::fromJson(const QJsonObject& json)
 {
@@ -1384,6 +1400,12 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             return failure("Layout records must be bounded arrays.");
     LayoutModel candidate;
     JsonReader reader;
+    if (json.contains("orderCounter")) {
+        const auto value = json.value("orderCounter");
+        if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > double(maximumTabOrder)
+            || std::floor(value.toDouble()) != value.toDouble()) return failure("Invalid ordering counter.");
+        candidate.orderCounter_ = quint64(value.toDouble());
+    }
     for (const auto& value : json.value("windows").toArray()) {
         if (!value.isObject()) return failure("A window record must be an object.");
         const auto object = value.toObject();
@@ -1425,6 +1447,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         if (candidate.groups_.contains(record.id)) reader.fail("Duplicate group identity.");
         candidate.groups_.insert(record.id, record);
     }
+    QVector<TabId> legacyOrdering;
     for (const auto& value : json.value("tabs").toArray()) {
         if (!value.isObject()) return failure("A tab record must be an object.");
         const auto object = value.toObject();
@@ -1434,6 +1457,20 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.title = object.value("title").toString();
         record.panes = reader.tree(object.value("panes"));
         record.activePane = reader.id(object, "activePane");
+        if (object.contains("colorId") && (!object.value("colorId").isString() || object.value("colorId").toString().size() > 128))
+            return failure("Invalid tab color identity.");
+        record.colorId = object.value("colorId").toString();
+        if (object.contains("openedOrder") != object.contains("visitedOrder"))
+            return failure("Tab ordering values must be provided together.");
+        for (auto key : {"openedOrder", "visitedOrder"}) {
+            if (!object.contains(key)) continue;
+            const auto value = object.value(key);
+            if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > double(maximumTabOrder)
+                || std::floor(value.toDouble()) != value.toDouble()) return failure("Invalid tab ordering value.");
+            (QLatin1String(key) == QLatin1String("openedOrder") ? record.openedOrder : record.visitedOrder) = quint64(value.toDouble());
+            candidate.orderCounter_ = std::max(candidate.orderCounter_, quint64(value.toDouble()));
+        }
+        if (!object.contains("openedOrder")) legacyOrdering.append(record.id);
         if (object.contains("peekSize")) {
             if (!object.value("peekSize").isObject()) return failure("A peek size must be an object.");
             const auto size = object.value("peekSize").toObject();
@@ -1484,6 +1521,10 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         candidate.tabs_.insert(record.id, record);
     }
     if (!reader.error.isEmpty()) return failure(reader.error);
+    for (const auto tab : legacyOrdering) {
+        const auto order = candidate.nextTabOrder();
+        candidate.tabs_[tab].openedOrder = candidate.tabs_[tab].visitedOrder = order;
+    }
     auto result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;

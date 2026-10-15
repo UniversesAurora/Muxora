@@ -1,6 +1,6 @@
 # Muxora 设置、会话存储与命令设计
 
-版本：0.4，讨论稿\
+版本：0.5，讨论稿\
 日期：2026-10-15\
 状态：V0 设计要求；首个预览的命令、设置和快捷键实现范围见 [预览说明](../development/window-system-preview.md)。完整配置服务及编辑能力按本规范继续实现。
 
@@ -73,6 +73,45 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 
 新建标签的位置同样提供图形设置与 `window.newTabPosition`。用户可选标签组开头、末尾、当前活动标签前或后，默认 `afterActive`。对应 `WindowBehavior::newTabPosition` 的四个枚举值为 `Beginning`、`End`、`BeforeActive`、`AfterActive`。加号、类型菜单、主菜单和命令创建共用这项策略；显式 API 插入索引优先，拖拽顺序不受影响。
 
+### 3.1 标签外观与颜色
+
+标签外观提供以下设置，图形界面和统一命令使用同一份值。当前预览把它们存入严格 JSON 布局快照的 `tabAppearance`，设置页中的 `tabs.*` 是对应编辑项；完整 `settings.json`／JSONC 服务仍属于后续配置工作，不能把布局保存当作已实现注释保留编辑。
+
+| 图形设置键 | 值与默认值 |
+| --- | --- |
+| `tabs.centralPlacement` | 普通标签栏位置：`top`（默认）或 `bottom`。 |
+| `tabs.pinnedPlacement` | 固定侧栏标签栏位置：`top`（默认）或 `bottom`，独立于普通栏。 |
+| `tabs.multiline` | 多行排列，默认 `false`；开启后排满换行，取消横向滚动条。 |
+| `tabs.wheelExpandRows` | 默认 `false`，仅多行时允许开启；滚轮向下展开全部行，向上仅显示活动行。 |
+| `tabs.showIcons` | 默认 `true`；关闭时统一隐藏，开启时仍尊重单标签的宿主设置。 |
+| `tabs.showNewTabButton` | 默认 `true`，同时控制末尾加号与类型下拉，隐藏不移除新建命令。 |
+| `tabs.showNumbers` | 默认 `false`；编号位于图标左侧，使用本栏当前顺序，从 1 开始。 |
+| `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
+
+图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时清除滚轮展开开关，不能留下不适用的组合。
+
+颜色预设包含 `id`、`name` 和四种完整状态：`groupActive`、`groupInactive` 用于普通或固定标签栏，`autoHideActive`、`autoHideInactive` 用于非固定侧栏。每种状态必须包含 `background`、`text`、`line`、`icon` 四个颜色；颜色格式为 `#RRGGBB` 或 `#AARRGGBB`。默认提供灰、蓝、红、金、绿、粉、紫、青、橙九项；未指定单标签颜色时继续使用主题默认值，非固定侧栏保留原紫色配色。
+
+设置页的颜色编辑器接收严格 JSON 数组，点击“应用颜色列表”后校验并整体替换。列表最多 128 项；ID 非空、最多 128 个字符且不能重复，名称非空、最多 256 个字符。每个预设恰好有上述六个字段，四种状态分别恰好有上述四个颜色字段。错误类型、颜色、重复 ID 或不完整定义都拒绝应用，保留此前有效列表；空数组表示不提供可选预设。例：
+
+```json
+[
+  {
+    "id": "blue", "name": "蓝色",
+    "groupActive": {"background": "#e8f0fe", "text": "#202124", "line": "#1967d2", "icon": "#1967d2"},
+    "groupInactive": {"background": "#f7f7f8", "text": "#3c4043", "line": "#1967d2", "icon": "#5f6368"},
+    "autoHideActive": {"background": "#1967d2", "text": "#ffffff", "line": "#1967d2", "icon": "#ffffff"},
+    "autoHideInactive": {"background": "#6A568C", "text": "#ffffff", "line": "#1967d2", "icon": "#ffffff"}
+  }
+]
+```
+
+单标签只保存 `colorId`，不复制整套预设。`tab.color.set` 的 `color` 参数为空时恢复默认；未知 ID 拒绝设置。颜色列表更换后不能按数组位置误关联到其他颜色，找不到原 ID 时使用主题默认显示。颜色列表和标签选择随布局快照恢复，校验失败须在替换现有内容前返回错误。
+
+用户已取消 Chrome 式命名标签集合。现有分割标签组继续以 `GroupId` 管理，支持六种排序、整组方向移动、移到已有窗口和关闭组；不增加集合预设、集合工具条或关闭集合的恢复文件。排序使用名称、打开次序和访问次序，不通过重建标签或业务内容完成重排。
+
+### 3.2 JSONC 用户文件
+
 JSONC 支持 `//`、`/* ... */` 和尾逗号，不扩大为任意 JSON5 或可执行脚本。解析采用支持这些语法的成熟原生组件；Qt 严格 JSON 解析器不能单独承担此入口。Boost.JSON 的相应解析选项可作为候选，但其语义解析不自动解决注释保留编辑，必须分别验证。[Boost.JSON 解析选项](https://www.boost.org/doc/libs/latest/libs/json/doc/html/ref/parse_options.html)
 
 配置文本与有效值分开处理。图形设置编辑采用针对目标字段的源码范围修改，保留已有注释、无关字段、顺序和格式，不解析后全量序列化覆盖用户文件；不能用正则剥注释。JSON 编辑提供语法、类型、未知键、重复键和范围诊断，以及从 schema 生成的键／值提示，不要求嵌入完整代码编辑器。
@@ -107,7 +146,7 @@ SSH 别名附加设置先集中在 `ssh-alias-overrides.json`，以“来源 ID 
 
 ## 6. 窗口与运行状态
 
-`window-layout.json` 保存 schema 版本、WindowId、kind、FamilyId 与完整根映射、窗口正常几何及最大化状态、屏幕信息、四边栏、中央标签组、PaneTree、活动标签／窗格、顶部／底部条带区域、行与顺序及锁定状态。引用稳定内容 ID 及必要恢复描述，宿主业务状态与通用布局分开，网络句柄和终端历史不序列化。
+`window-layout.json` 保存 schema 版本、WindowId、kind、FamilyId 与完整根映射、窗口正常几何及最大化状态、屏幕信息、四边栏、中央标签组、PaneTree、活动标签／窗格、标签颜色 ID 与打开／访问次序、顶部／底部条带区域、行与顺序及锁定状态。引用稳定内容 ID 及必要恢复描述，宿主业务状态与通用布局分开，网络句柄和终端历史不序列化。
 
 工具栏、全局状态栏、中央标签栏和四边收纳条的显示偏好分别按窗口保存，图形设置、菜单、命令和 API 使用同一值。进入任一全屏范围都沿用这四项偏好，不另设“全屏时隐藏某栏”的第二套设置。隐藏中央标签栏仍保留固定组标签栏和收纳面板标题；隐藏侧栏仍保留固定内容。
 
@@ -224,7 +263,11 @@ Normal 和三个 Visual 状态中的数字计数是这些模式限定的有界�
 
 ## 9. 自动化验收
 
+用例由程序检查结果，不依赖人工或模型读取截图，也不以 computer use 执行测试。新增外观和排序检查与完整 JSONC 配置服务的后续验收分别记录，具体执行结果见预览说明。
+
 - JSONC 注释、尾逗号、未知项保留和精确编辑；重复键、语法／类型错误、首次启动和最近有效快照。
+- 标签外观严格 JSON 的类型、完整颜色状态、重复 ID、无效颜色和替换失败保留；多行与滚轮展开前提、两种位置、图标／编号／新建入口和跨窗口恢复一致。
+- 六种排序保持活动标签、内容身份和稳定次序；整组移动、关闭许可及取消的命名集合层不残留命令或存储。
 - GUI 与直接编辑一致，作用域来源正确；会话外观可覆盖，全局设置不能覆盖 SSH config 连接身份。
 - 原子替换监听、并发窗口、外部编辑冲突、只读文件、写入失败和损坏恢复；不丢失用户注释或悄悄写旧版本。
 - 自建会话 UUID、改名、目录重建、单文件损坏与删除；SSH 别名删除／同名重建不复活旧设置。

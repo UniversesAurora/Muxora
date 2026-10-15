@@ -5,6 +5,7 @@
 #include <window_system/toolbar_layout.hpp>
 #include <window_system/view_state.hpp>
 #include <window_system/floating_panel.hpp>
+#include <window_system/tab_appearance.hpp>
 #include <QJsonObject>
 #include <QObject>
 #include <QSize>
@@ -101,6 +102,14 @@ public:
     [[nodiscard]] bool zenMode(WindowId window) const;
     [[nodiscard]] WindowViewState windowViewState(WindowId window) const;
     bool setTabIconVisible(TabId tab, bool visible);
+    bool setTabColor(TabId tab, QString colorId);
+    bool sortTabs(GroupId group, TabSortOrder order);
+    bool moveGroup(GroupId group, GroupId target, Placement placement);
+    bool moveGroupToAdjacentGroup(GroupId group, Placement direction);
+    bool moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
+    bool moveGroupToWindowCycle(GroupId group, bool forward);
+    bool closeGroup(GroupId group);
+    void showGroupMenu(GroupId group, QPoint globalPosition);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
     bool closeTab(TabId tab);
@@ -164,6 +173,9 @@ public:
     void setBehavior(const WindowBehavior& behavior);
     void setTheme(const Theme& theme);
     [[nodiscard]] Theme theme() const;
+    [[nodiscard]] TabAppearance tabAppearance() const;
+    bool setTabAppearance(const TabAppearance& appearance);
+    [[nodiscard]] std::optional<TabColorPreset> tabColorPreset(const QString& id) const;
     CommandRegistry& commands();
     bool execute(const QString& commandId, const QVariantMap& args = {}, WindowId window = {});
     bool executeInContext(const QString& commandId, const CommandContext& context);
@@ -203,6 +215,7 @@ private:
     std::unique_ptr<Private> d;
     void refresh(bool preserveDrag = false);
     void registerWindowCommands();
+    void registerTabGroupCommands();
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
     bool setPaneBar(PaneId pane, QWidget* bar, bool top);
@@ -211,6 +224,7 @@ private:
     bool focusGroup(GroupId group);
     bool navigate(Placement direction, bool panes, const CommandContext& source);
     GroupId adjacentGroup(TabId tab, Placement direction, std::optional<int> anchor = {}) const;
+    GroupId adjacentCentralGroup(GroupId group, Placement direction) const;
     PaneId adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor = {}) const;
     WindowId adjacentWindow(WindowId window, bool forward) const;
     void resizeActive(Placement direction, bool panes);

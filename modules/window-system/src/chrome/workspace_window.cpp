@@ -4,6 +4,7 @@
 #include "window_title_label.hpp"
 #include "status_bar.hpp"
 #include "commands/command_menus.hpp"
+#include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_presentation.hpp"
 #include "docking/tab_strip.hpp"
@@ -24,6 +25,7 @@
 #include <QResizeEvent>
 #include <QSet>
 #include <QScopeGuard>
+#include <QStyle>
 #include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -193,7 +195,7 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
     const bool compact = presentation != DragPresentation::Window;
     const bool edge = presentation >= DragPresentation::Left;
     setProperty("windowSystemDragPresentation", compact);
-    column_->setContentsMargins(compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1, compact ? 0 : 1);
+    updateFrameMargins();
     if (chrome_) chrome_->setVisible(!compact && viewState_.effective.toolbars);
     if (bottomChrome_) bottomChrome_->setVisible(!compact && viewState_.effective.toolbars);
     if (status_) status_->setVisible(!compact && viewState_.effective.statusBar);
@@ -204,6 +206,13 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
         const auto* tab = manager_->model().tab(context.tab);
         auto* host = new EdgeDragPresentation(tab ? tab->title : windowTitle(),
             Edge(int(presentation) - int(DragPresentation::Left)), manager_->theme(), surface_, this);
+        if(tab) {
+            const auto appearance=manager_->tabAppearance();
+            const auto* group=manager_->model().group(context.group);
+            host->configureLabel(manager_->tabColorPreset(tab->colorId),
+                appearance.showIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->theme()) : QIcon{},
+                appearance.showNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0);
+        }
         dragPresentationHost_ = host;
         column_->addWidget(host, 1); host->show(); surface_->show();
     }
@@ -344,6 +353,7 @@ void WorkspaceWindow::createChrome()
     });
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
     auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
+    menu->installEventFilter(this);
     const bool floating = kind_ == WindowKind::Floating;
     menus_ = new ApplicationCommandMenus(menu, manager_, id_, floating
         ? CommandMenuSurface::FloatingApplication : CommandMenuSurface::Application);
@@ -438,6 +448,10 @@ void WorkspaceWindow::changeEvent(QEvent* event)
     }
     QWidget::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange) {
+        updateFrameMargins();
+#ifdef Q_OS_WIN
+        applyNativeFrame(this);
+#endif
         if (!isMinimized()) maximizedPlacement_ = isMaximized();
         else {
             const auto* stateEvent = static_cast<QWindowStateChangeEvent*>(event);
@@ -451,6 +465,50 @@ void WorkspaceWindow::changeEvent(QEvent* event)
                     manager_->setViewMode(id_, ViewMode::Normal);
             });
     }
+}
+void WorkspaceWindow::updateFrameMargins()
+{
+    const bool expanded = isMaximized() || isFullScreen() || viewState_.mode != ViewMode::Normal;
+    const bool frameless = expanded || dragPresentation_ != DragPresentation::Window;
+    const int margin = frameless ? 0 : 1;
+    column_->setContentsMargins(margin, margin, margin, margin);
+    if (property("windowSystemExpanded").toBool() != expanded) {
+        setProperty("windowSystemExpanded", expanded);
+        style()->unpolish(this); style()->polish(this); update();
+    }
+}
+void WorkspaceWindow::showTabPresentationMenu(const QPoint& global)
+{
+    if (!manager_) return;
+    const auto captured = manager_->context(id_);
+    const auto appearance = manager_->tabAppearance();
+    auto* menu = new DismissOnlyMenu(this);
+    menu->setObjectName(QStringLiteral("TabPresentationMenu"));
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QPointer<QMenu> retained(menu);
+    const auto add = [retained, owner = manager_, captured](const QString& id, const QString& title,
+                                                      bool checked, bool toggle) {
+        if (!retained || !owner) return false;
+        const auto* definition = owner->commands().find(id);
+        const auto enabled = definition ? definition->enabled : std::function<bool(const CommandContext&)>{};
+        const bool available = definition && (!enabled || enabled(captured));
+        if (!retained || !owner) return false;
+        auto* action = retained->addAction(title); action->setObjectName(id); action->setData(id);
+        action->setCheckable(toggle); if (toggle) action->setChecked(checked);
+        action->setEnabled(available);
+        QObject::connect(action, &QAction::triggered, owner, [owner, id, captured] {
+            if (owner) QTimer::singleShot(0, owner, [owner, id, captured] {
+                if (owner) owner->executeInContext(id, captured);
+            });
+        });
+        return true;
+    };
+    if (!add(QStringLiteral("presentation.toggleIcons"), QStringLiteral("显示标签图标"), appearance.showIcons, true)) return;
+    if (!add(QStringLiteral("presentation.toggleNewTabButton"), QStringLiteral("显示新建标签按钮"), appearance.showNewTabButton, true)) return;
+    if (!add(QStringLiteral("presentation.toggleNumbers"), QStringLiteral("显示标签编号"), appearance.showNumbers, true)) return;
+    menu->addSeparator();
+    if (!add(QStringLiteral("group.close"), QStringLiteral("关闭此标签组"), false, false)) return;
+    menu->popup(global);
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {
@@ -577,6 +635,13 @@ void WorkspaceWindow::closeEvent(QCloseEvent* event)
 bool WorkspaceWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (!manager_) return QWidget::eventFilter(watched, event);
+    if (qobject_cast<QMenuBar*>(watched)) {
+        if (event->type() == QEvent::ContextMenu) {
+            auto* context = static_cast<QContextMenuEvent*>(event);
+            showTabPresentationMenu(context->globalPos()); context->accept(); return true;
+        }
+        return QWidget::eventFilter(watched, event);
+    }
     if (strips_ && strips_->isDragging()) return QWidget::eventFilter(watched, event);
     if (strips_ && event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);
@@ -613,6 +678,7 @@ bool WorkspaceWindow::eventFilter(QObject* watched, QEvent* event)
 void WorkspaceWindow::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
+    updateFrameMargins();
 #ifdef Q_OS_WIN
     applyNativeFrame(this);
 #endif

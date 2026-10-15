@@ -53,6 +53,7 @@ private:
     QWidget* buildEdge(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     void placePeek();
+    void updateEdgeTabSelection(TabId tab);
     [[nodiscard]] bool centralTabBarVisible(bool requested) const;
     void savePinnedExtents();
     void restorePinnedExtents();

@@ -68,6 +68,18 @@ int main(int argc, char** argv)
     QPointer<QLabel> observer(text);
     const auto tab = windows.addTab(root, text, {"External content", "contract.text", {}});
     if (tab.isNull()) { delete text; return 1; }
+    if (!windows.setTabColor(tab, "red") || windows.setTabColor(tab, "missing")) return 110;
+    const auto alpha = windows.addTab(root, new QLabel("Alpha"), {"Alpha", "contract.text", {}});
+    const auto omega = windows.addTab(root, new QLabel("Omega"), {"Omega", "contract.text", {}});
+    const auto originalGroup = windows.model().groupForTab(tab);
+    if (alpha.isNull() || omega.isNull() || !windows.sortTabs(originalGroup, window_system::TabSortOrder::AlphabeticalAscending)
+        || windows.model().group(originalGroup)->tabs != QVector<window_system::TabId>{alpha, tab, omega}) return 111;
+    const auto staging = windows.createWindow();
+    if (!windows.moveGroupToWindow(originalGroup, staging) || windows.paneWidget(windows.model().tab(tab)->activePane) != text
+        || windows.model().group(originalGroup)->windowId != staging
+        || !windows.moveGroupToWindow(originalGroup, root) || windows.model().groupForTab(tab) != originalGroup
+        || !windows.requestCloseWindow(staging) || !windows.closeTabs({alpha, omega})) return 112;
+    if (windows.model().tab(tab)->colorId != "red" || !windows.setTabColor(tab, {})) return 113;
     if (!windows.setTabTopBarSharing(tab, window_system::PaneBarSharing::PerPane)
         || !windows.setTabBottomBarSharing(tab, window_system::PaneBarSharing::Shared)
         || !windows.setTabBarsVisible(root, false) || windows.tabBarsVisible(root)

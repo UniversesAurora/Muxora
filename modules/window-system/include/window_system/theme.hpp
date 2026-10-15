@@ -45,6 +45,9 @@ struct Theme {
     QColor buttonHover = QColor(QStringLiteral("#f1e8fb"));
     QColor activeTab = QColor(QStringLiteral("#ead9fa"));
     QColor inactiveTab = QColor(QStringLiteral("#c8bad8"));
+    QColor edgeTabBackground = QColor(QStringLiteral("#6A568C"));
+    QColor edgeTabHover = QColor(QStringLiteral("#8970AF"));
+    QColor edgeTabText = QColor(QStringLiteral("#ffffff"));
     QColor statusBackground = QColor(QStringLiteral("#51366b"));
     QColor statusText = QColor(QStringLiteral("#ffffff"));
     QColor selection = QColor(QStringLiteral("#e0cbf2"));

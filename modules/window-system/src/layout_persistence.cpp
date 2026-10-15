@@ -8,6 +8,7 @@
 #include "panes/tab_content.hpp"
 #include "platform/window_placement.hpp"
 #include "view_state_p.hpp"
+#include "style/tab_appearance_p.hpp"
 #include <QApplication>
 #include <QEvent>
 #include <QCursor>
@@ -245,6 +246,7 @@ QJsonObject WindowManager::saveLayout() const
     return {{"schemaVersion", 1}, {"model", d->model.toJson()}, {"windows", windows}, {"panes", panes},
         {"toolbarProfiles", profiles},
         {"visibilityProfiles", visibilityProfilesToJson(d->visibilityProfiles)},
+        {"tabAppearance", tabAppearanceToJson(d->appearance)},
         {"behavior", QJsonObject{{"dragOutsideFloating", d->behavior.dragOutsideKind == WindowKind::Floating},
             {"closeEmptyWorkbench", d->behavior.closeEmptyWorkbench}, {"revealDuringDrag", d->behavior.revealDuringDrag},
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
@@ -256,6 +258,9 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     if (snapshot.value("schemaVersion").toInt() != 1) return {false, QStringLiteral("布局版本无效")};
     LayoutModel candidate;
     const auto parsed = candidate.fromJson(snapshot.value("model").toObject()); if (!parsed) return parsed;
+    TabAppearance restoredAppearance;
+    const auto parsedAppearance = parseTabAppearance(snapshot.value("tabAppearance"), restoredAppearance);
+    if (!parsedAppearance) return parsedAppearance;
     QHash<WindowKind, BarVisibility> restoredVisibilityProfiles;
     QHash<WindowId, QHash<WindowKind, BarVisibility>> restoredWindowVisibility;
     const auto visibilityParsed = parseVisibilityProfiles(snapshot.value("visibilityProfiles"), restoredVisibilityProfiles);
@@ -399,6 +404,7 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->deleteLater(); }
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
     d->options.clear(); d->viewStates.clear(); d->behavior = restoredBehavior;
+    d->appearance = std::move(restoredAppearance);
     d->toolbarProfiles = std::move(restoredProfiles);
     d->visibilityProfiles = std::move(restoredVisibilityProfiles);
     d->windowVisibility = std::move(restoredWindowVisibility); d->visibilityKinds.clear();

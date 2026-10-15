@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QSet>
+#include <QJsonArray>
 
 namespace window_system {
 struct WindowManager::Private {
@@ -37,6 +38,7 @@ struct WindowManager::Private {
     QString defaultTabCommand;
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();
+    TabAppearance appearance;
     WindowId activeWindow;
     bool refreshing = false;
     bool destroying = false;

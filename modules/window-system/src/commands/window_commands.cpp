@@ -1,4 +1,5 @@
 #include "window_manager_p.hpp"
+#include "tab_presentation_commands.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
@@ -36,6 +37,7 @@ namespace window_system {
 using StripSizing = CommandStripHost::StripSizing;
 void WindowManager::registerWindowCommands()
 {
+    registerTabPresentationCommands(this);
     auto add = [this](QString id, QString title, QString category, QKeySequence shortcut,
                       std::function<bool(const CommandContext&)> handler,
                       std::function<bool(const CommandContext&)> enabled = {}) {
@@ -126,6 +128,7 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
     registerToolbarMoveCommand(this);
     registerPeekSizeCommands(this);
+    registerTabGroupCommands();
     add("window.toolbar.setSizing", QStringLiteral("切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
@@ -200,7 +203,15 @@ void WindowManager::registerWindowCommands()
             const QPointer<WindowManager> self(this);
             const auto id = createWindow(WindowKind::Workbench, options);
             if (!self || id.isNull()) return false;
-            showWindow(id); return self && d->model.window(id);
+            // An explicitly opened window starts with the host's usual tab.
+            // Otherwise close-empty policy can delete it on the next turn.
+            if (!d->defaultTabCommand.isEmpty() && !requestNewTab(id)) {
+                if (self) requestCloseWindow(id);
+                return false;
+            }
+            if (!self || !d->model.window(id)) return false;
+            showWindow(id);
+            return self && activateWindow(id);
         });
     add("workspace.detachFloating", QStringLiteral("当前标签移到轻量浮窗"), "窗口", QKeySequence("Ctrl+Shift+D"),
         [this](const CommandContext& c) { return !detachTab(c.tab, WindowKind::Floating).isNull(); }, hasTab);
@@ -211,7 +222,7 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Floating; });
     auto chooseWorkbench = [this](const CommandContext& c) -> WindowId {
         if (const auto target = c.args.value("targetWindow").toUuid(); !target.isNull()) return target;
-        QMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
+        DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
         for (const auto id : d->model.windowOrder()) {
             if (id == c.window || d->model.window(id)->kind != WindowKind::Workbench) continue;
             auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id);
@@ -250,7 +261,7 @@ void WindowManager::registerWindowCommands()
             const auto source = c.args.value("source", c.window).toUuid();
             auto target = c.args.value("targetWindow").toUuid();
             if (target.isNull()) {
-                QMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
+                DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
                 for (const auto id : d->model.windowOrder()) if (id != source) { auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id); }
                 if (auto* action = menu.exec(QCursor::pos())) target = action->data().toUuid();
             }
@@ -496,7 +507,7 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
     activateTab(tab);
     const auto captured = context(window);
-    QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
+    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     populateContextMenu(&menu, CommandMenuSurface::Tab, this, captured);
     if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
@@ -504,7 +515,7 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
     const auto* record = d->model.window(window); if (!record) return;
     const auto captured = context(window);
-    QMenu menu(windowWidget(window)); applyTheme(&menu, theme());
+    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
     if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
 }
@@ -521,7 +532,7 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
         if (auto* input = qobject_cast<QLineEdit*>(editor)) { menu = input->createStandardContextMenu(); break; }
         if (editor->property("paneId").toUuid() == pane) break;
     }
-    if (!menu) menu = new QMenu(windowWidget(window));
+    if (!menu) menu = new DismissOnlyMenu(windowWidget(window));
     QPointer<QMenu> retained(menu); applyTheme(menu, theme());
     populateContextMenu(menu, CommandMenuSurface::Pane, this, captured);
     QString chosen;

@@ -23,6 +23,7 @@ enum class WindowKind { Workbench, Floating };
 enum class Placement { Center, Left, Right, Top, Bottom };
 enum class Edge { Left, Right, Top, Bottom };
 enum class GroupLocation { Central, Pinned, AutoHide };
+enum class TabSortOrder { AlphabeticalAscending, AlphabeticalDescending, OpenedAscending, OpenedDescending, VisitedAscending, VisitedDescending };
 
 // Missing dimensions use the default cross-edge extent or stretch along the
 // edge. Left/right share one policy; top/bottom share a separate policy.
@@ -90,6 +91,9 @@ struct TabRecord {
     // survive pinning or window moves without resizing pinned partitions.
     std::optional<PeekSizePolicy> verticalPeekSize;
     std::optional<PeekSizePolicy> horizontalPeekSize;
+    QString colorId;
+    quint64 openedOrder = 0;
+    quint64 visitedOrder = 0;
 };
 
 struct OperationResult {
@@ -122,6 +126,10 @@ public:
                           WindowId ownerWorkbench = {});
     TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1);
     OperationResult renameTab(TabId tabId, QString title);
+    OperationResult setTabColor(TabId tabId, QString colorId);
+    OperationResult sortTabs(GroupId group, TabSortOrder order);
+    OperationResult moveGroup(GroupId group, GroupId target, Placement placement);
+    OperationResult moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
     OperationResult activateTab(TabId tabId);
     OperationResult activatePane(TabId tabId, PaneId paneId);
     OperationResult moveTab(TabId tabId, GroupId targetGroup,
@@ -182,6 +190,9 @@ public:
 
 private:
     OperationResult transact(const std::function<OperationResult(LayoutModel&)>& operation);
+    // JSON stores exact integers through 2^53 - 1. Rare rollover compacts ranks.
+    static constexpr quint64 maximumTabOrder = (quint64(1) << 53) - 1;
+    quint64 nextTabOrder();
     void eraseEmptyGroup(GroupId id);
     void eraseEmptyFloatingWindows();
     WindowId createWindowUnchecked(WindowKind kind, WindowId ownerWorkbench);
@@ -202,6 +213,7 @@ private:
     QHash<WindowId, WindowRecord> windows_;
     QHash<GroupId, GroupRecord> groups_;
     QHash<TabId, TabRecord> tabs_;
+    quint64 orderCounter_ = 0;
     QVector<WindowId> windowOrder_;
     quint64 revision_ = 0;
 };

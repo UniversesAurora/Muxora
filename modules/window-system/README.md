@@ -2,7 +2,7 @@
 
 可独立构建的 Qt Widgets 工作区模块。Muxora 通过公开 API 使用它；其他项目也可通过 CMake package 接入，模块不依赖 SSH、终端、文件业务或 Muxora 配置。
 
-当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签与整窗移动、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
+当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-15。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
 
 ## 构建边界
 
@@ -19,7 +19,7 @@
 
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
-`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制。
+`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；`TabAppearance::showIcons` 为统一开关，开启时仍尊重单标签设置。
 
 达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互修订](../../docs/design/window-interaction-design.md)。
 
@@ -27,7 +27,7 @@
 
 菜单、命令面板和快捷键共用 [CommandRegistry](include/window_system/command_registry.hpp)。宿主可以注册自己的操作；主题使用 [Theme](include/window_system/theme.hpp) 令牌，默认不添加应用 logo。布局快照由宿主选择保存位置，模块不写 Muxora 用户文件。
 
-默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
+默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。非固定侧栏标签保留原紫色背景和浅色文字。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
 
 `Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
 
@@ -79,9 +79,33 @@
 
 新建标签默认插在本组当前标签之后。`WindowBehavior.newTabPosition` 可选择 `Beginning`、`BeforeActive`、`AfterActive`、`End`；图形设置同步该值并随布局保存。`WindowManager::addTab` 的末尾参数 `insertionIndex` 为非负数时使用显式位置，-1 跟随行为设置；独立 `LayoutModel::addTab` 的 -1 仍表示追加，避免模型依赖宿主偏好。
 
-每组最后一个标签后是组合的新建按钮与类型下拉。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
+每组最后一个标签后是组合的新建按钮与类型下拉，中间保留 1 个逻辑像素细缝；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
 
-条带因分组、固定边栏或窗口左右缩放而变窄时，保留未移动侧的显示位置；原本完全可见的活动标签被截断时优先贴左。必要的尾部滚动空间有界，不增加标签或内容。用户随后滚动或明确导航会取消旧定位，单纯移动窗口不滚动，隐藏视图的初始几何也不作为显示锚点。
+标签条缩小或扩大时尽量保留已有内容的屏幕位置，再以最小滚动量保护此前完全可见的活动标签。边界尚未碰到活动标签时不动，开始遮挡时才跟随边界移动；不强制跳到左端。滚动只限于真实内容范围，能够放下全部内容时偏移为 0，也不显示滚动条。窗口两边缩放、分隔线来回调整和固定边栏共用此规则；单纯平移窗口不滚动。隐藏控件的初始几何不作为显示锚点，用户新输入优先于待执行的布局定位。
+
+### 标签外观、排序与整组移动
+
+[TabAppearance](include/window_system/tab_appearance.hpp) 通过 `tabAppearance()` / `setTabAppearance()` 读取和完整校验后应用，随布局快照保存。`centralPlacement` 与 `pinnedPlacement` 分别选择普通和固定侧栏标签位于 `Top` 或 `Bottom`；`showIcons`、`showNewTabButton`、`showNumbers` 控制统一图标、末尾新建入口和标签编号。编号按本栏当前顺序显示在图标左侧，默认关闭。
+
+`multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 仅允许在多行时开启：向下滚动展开全部行，向上仅显示活动行。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。关闭多行时应同时关闭滚轮展开。
+
+`setTabColor(tab, colorId)` 选择稳定颜色 ID，空 ID 恢复主题默认，未知 ID 返回 `false`。`tabColorPreset(id)` 查询当前预设。`TabAppearance::colors` 可整体替换默认列表，每项 `TabColorPreset` 分别含普通栏、非固定收纳条的活动／非活动状态；每个 `TabVisualColors` 明确指定 `background`、`text`、`line`、`icon`。当前设置页提供严格 JSON 数组编辑，完整字段、格式和范围见 [设置设计](../../docs/design/settings-and-commands-design.md)。这不代表完整 JSONC 用户设置服务已完成。
+
+`sortTabs(group, TabSortOrder)` 按名称升／降序、打开时间最早／最近优先或访问时间最早／最近优先排序。名称比较忽略大小写，同值保持已有顺序；活动标签、原内容、Pane ID 和 Group ID 保持。标签的 `openedOrder`、`visitedOrder` 随模型保存，切换活动标签时更新访问次序。
+
+`moveGroup(group, targetGroup, placement)` 将整个中央分区放到另一中央分区的 `Left`、`Right`、`Top` 或 `Bottom`，保留该组与其全部标签、窗格和内容实例。`moveGroupToAdjacentGroup()` 按实际方向选择目标，`moveGroupToWindow()` 指定已有完整或轻量窗口，`moveGroupToWindowCycle()` 前后选择窗口。目标没有中央组时直接建立中央区域；有固定侧栏时保留侧栏，不把活动侧栏当作中央落点。`closeGroup()` 一次申请该组全部标签的关闭许可，拒绝时保留内容。
+
+| 操作 | 统一命令 |
+| --- | --- |
+| 设置单标签颜色 | `tab.color.set`，参数 `color` |
+| 名称升／降序 | `group.sort.alphabeticalAscending` / `group.sort.alphabeticalDescending` |
+| 打开次序最早／最近优先 | `group.sort.openedAscending` / `group.sort.openedDescending` |
+| 访问次序最早／最近优先 | `group.sort.visitedAscending` / `group.sort.visitedDescending` |
+| 整组方向移动 | `group.move.left/right/up/down` |
+| 整组移到已有窗口 | `group.moveWindow`，参数 `targetWindow`；或 `group.moveWindow.previous` / `group.moveWindow.next` |
+| 关闭本组 | `group.close` |
+
+这些操作可以从菜单、命令面板或绑定的快捷键调用。用户已取消 Chrome 式命名、着色、折叠标签集合；模块保留现有分割 `GroupId` 层级，不提供集合 API、集合工具条或关闭集合的归档存储。
 
 `FloatingPanel` 是可独立使用的临时面板 API。`FloatingPanelOptions.dismissOnOutsidePress` 与 `modal` 分别控制外点关闭和模态，默认自动关闭、非模态；`show()` 立即返回。命令面板和窗口选择器采用这一默认值，宿主也可通过 `showCommandPalette` / `showWindowSelector` 的选项参数修改。非模态外点关闭不会吞掉或合成原点击，面板内打开的菜单仍视为其内部。
 
@@ -106,4 +130,4 @@
 - [双窗口与拖拽](../../docs/design/floating-window-design.md)
 - [测试要求](../../docs/development/testing-design.md)
 
-运行 `pwsh tools/verify.ps1` 验证 Muxora、独立模块、安装后的外部接入及部署启动。测试失效须修复实现；不自行降低标准。
+运行 `pwsh tools/verify.ps1` 验证 Muxora、独立模块、安装后的外部接入及部署启动。用例由程序断言模型、几何、颜色、输入结果与内容身份，结果可自行运行复现；不依赖人工或模型阅读截图，不使用 computer use 执行测试。安装后的外部夹具还检查颜色、排序和整组跨窗移动。具体执行状态以预览说明及实际日志为准；失败须修复实现，不自行降低标准。

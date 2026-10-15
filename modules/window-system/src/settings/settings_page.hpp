@@ -11,6 +11,7 @@ class QComboBox;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
 class QSpinBox;
@@ -40,6 +41,8 @@ private:
     void syncControls();
     void addViewOptions(QWidget* parent, QVBoxLayout* rows);
     void syncViewOptions();
+    void addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows);
+    void syncTabAppearanceOptions();
     [[nodiscard]] WindowId settingsWindow() const;
     void filterRows();
     void addCategory(QWidget* parent, QVBoxLayout* rows, const QString& id,
@@ -64,6 +67,16 @@ private:
     QCheckBox* zen_ = nullptr;
     QCheckBox* hideSingleWorkbench_ = nullptr;
     QCheckBox* hideSingleFloating_ = nullptr;
+    QComboBox* centralPlacement_ = nullptr;
+    QComboBox* pinnedPlacement_ = nullptr;
+    QCheckBox* multiline_ = nullptr;
+    QCheckBox* wheelExpandRows_ = nullptr;
+    QCheckBox* showIcons_ = nullptr;
+    QCheckBox* showNewTabButton_ = nullptr;
+    QCheckBox* showNumbers_ = nullptr;
+    QPlainTextEdit* tabColors_ = nullptr;
+    QLabel* tabColorDiagnostic_ = nullptr;
+    bool tabColorsDirty_ = false;
     WindowId initialWindow_;
     struct VisibilityControl { WindowBar bar; QCheckBox* control; };
     QVector<VisibilityControl> visibilityControls_;

@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "themed_controls.hpp"
+#include "commands/popup_menu.hpp"
+
+#include <QAbstractItemView>
+#include <QEvent>
+#include <QGuiApplication>
+#include <QScreen>
 
 #include <QCursor>
 #include <QPainter>
@@ -40,6 +46,47 @@ void drawChevron(QPainter& painter, const QRect& rect, const QColor& color, bool
 }
 
 } // namespace
+
+void ThemedComboBox::showPopup()
+{
+    auto* popup = view()->window();
+    if (popup != window() && popup_ != popup) {
+        if (popup_) popup_->removeEventFilter(this);
+        popup_ = popup;
+        popup_->installEventFilter(this);
+    }
+    if (popup_) preparePopupFrame(popup_);
+    const QPointer<ThemedComboBox> self(this);
+    QComboBox::showPopup();
+    // QComboBox may set its container geometry again after Show when the
+    // final item-view scrollbar requirement becomes known. Its native-style
+    // position uses the inclusive bottom pixel. Popup animation can defer Show,
+    // so anchor the completed geometry even while its container is still hidden.
+    if (self && popup_) alignPopup();
+}
+
+void ThemedComboBox::alignPopup()
+{
+    if (!popup_) return;
+    preparePopupFrame(popup_);
+    const QRect anchor(mapToGlobal(QPoint()), size());
+    auto* target = QGuiApplication::screenAt(anchor.center());
+    if (!target) target = screen();
+    if (target) {
+        const auto desired = popupMenuPosition(anchor, popup_->size(), target->availableGeometry());
+        popup_->move(desired);
+    }
+}
+
+bool ThemedComboBox::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == popup_) {
+        if (event->type() == QEvent::WinIdChange && popup_->testAttribute(Qt::WA_WState_Created)
+            && popup_->effectiveWinId()) preparePopupFrame(popup_);
+        if (event->type() == QEvent::Show) alignPopup();
+    }
+    return QComboBox::eventFilter(watched, event);
+}
 
 void ThemedComboBox::paintEvent(QPaintEvent*)
 {

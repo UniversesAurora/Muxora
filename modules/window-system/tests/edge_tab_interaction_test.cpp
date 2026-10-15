@@ -1,6 +1,7 @@
 #include <window_system/window_manager.hpp>
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
+#include "docking/edge_tab_button.hpp"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -8,6 +9,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QMenu>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QStyle>
@@ -48,7 +50,48 @@ private slots:
     void sideBarInsertionUsesTheAppropriateAxis_data();
     void sideBarInsertionUsesTheAppropriateAxis();
     void sideBarReorderCommandsKeepLiveContent();
+    void autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets_data();
+    void autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets();
+    void autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides_data();
+    void autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides();
+    void edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data();
+    void edgePresentationKeepsBoundedSizeAndRendersPresetIcon();
 };
+
+void EdgeTabInteractionTest::autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets_data()
+{
+    QTest::addColumn<bool>("vertical");
+    QTest::newRow("vertical") << true;
+    QTest::newRow("horizontal") << false;
+}
+
+void EdgeTabInteractionTest::autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets()
+{
+    QFETCH(bool, vertical);
+    QWidget root; applyTheme(&root); root.resize(260, 180);
+    EdgeTabButton button("Sidebar", vertical, defaultTheme().metrics.edgeThickness, &root);
+    button.resize(button.sizeHint()); button.move(40, 40); button.setCheckable(true);
+    root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
+    const auto pixel = [&button] {
+        const auto image = button.grab().toImage();
+        return image.pixelColor(qRound(3 * image.devicePixelRatio()), qRound(3 * image.devicePixelRatio()));
+    };
+    button.clearFocus(); button.setAttribute(Qt::WA_UnderMouse, false);
+    QCOMPARE(pixel(), QColor("#6A568C"));
+    button.setAttribute(Qt::WA_UnderMouse, true); QCOMPARE(pixel(), QColor("#8970AF"));
+    button.setAttribute(Qt::WA_UnderMouse, false);
+    auto theme = defaultTheme(); theme.edgeTabBackground = QColor("#123456");
+    theme.edgeTabHover = QColor("#345678"); theme.edgeTabText = QColor("#ffffff");
+    applyTheme(&root, theme); QCOMPARE(pixel(), theme.edgeTabBackground);
+    button.setAttribute(Qt::WA_UnderMouse, true); QCOMPARE(pixel(), theme.edgeTabHover);
+    button.setAttribute(Qt::WA_UnderMouse, false);
+    TabColorPreset preset;
+    preset.autoHideInactive = {QColor("#305040"), QColor("#ffffff"), QColor("#208030"), QColor("#ffffff")};
+    preset.autoHideActive = {QColor("#406050"), QColor("#ffffff"), QColor("#309040"), QColor("#ffffff")};
+    button.setPreset(preset); QCOMPARE(pixel(), preset.autoHideInactive.background);
+    button.setChecked(true); QCOMPARE(pixel(), preset.autoHideActive.background);
+    button.setPreset(std::nullopt); button.setChecked(false); QCOMPARE(pixel(), theme.edgeTabBackground);
+}
 
 void EdgeTabInteractionTest::peekShowsOnlyTheChosenTabAndPinsOnlyThatTab()
 {
@@ -401,6 +444,125 @@ void EdgeTabInteractionTest::sideBarReorderCommandsKeepLiveContent()
     QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
     QCOMPARE(manager.paneWidget(pane), aContent);
     QVERIFY(manager.model().validate().ok);
+}
+
+void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides_data()
+{
+    QTest::addColumn<int>("edge");
+    QTest::newRow("left") << int(Edge::Left);
+    QTest::newRow("right") << int(Edge::Right);
+    QTest::newRow("top") << int(Edge::Top);
+    QTest::newRow("bottom") << int(Edge::Bottom);
+}
+
+void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides()
+{
+    QFETCH(int, edge);
+    WindowManager manager; const auto window = manager.createWindow();
+    manager.addTab(window, content("Central"), options("Central"));
+    const QVector<QString> titles{"Side A", "Side B", "Separate group"};
+    QVector<TabId> ids; QVector<PaneId> panes; QVector<QWidget*> contents;
+    for (const auto& title : titles) {
+        auto* widget = content(title); contents.append(widget);
+        const auto id = manager.addTab(window, widget, options(title)); ids.append(id);
+        panes.append(manager.model().tab(id)->activePane);
+    }
+    QVERIFY(manager.moveTabToEdge(ids[0], Edge(edge)));
+    const auto firstGroup = manager.model().groupForTab(ids[0]);
+    QVERIFY(manager.moveTab(ids[1], firstGroup));
+    QVERIFY(manager.moveTabToEdge(ids[2], Edge(edge)));
+    const auto otherGroup = manager.model().groupForTab(ids[2]); QVERIFY(otherGroup != firstGroup);
+    QVERIFY(manager.setTabIconVisible(ids[1], false));
+    auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
+    for (int index = 0; index < ids.size(); ++index) {
+        auto* button = edgeButton(host, ids[index]); QVERIFY(button);
+        QCOMPARE(button->text(), titles[index]); QCOMPARE(button->toolTip(), titles[index]);
+        QCOMPARE(button->accessibleName(), titles[index]); QCOMPARE(button->property("tabNumber").toInt(), 0);
+        QCOMPARE(button->icon().isNull(), index == 1);
+    }
+    auto appearance = manager.tabAppearance(); appearance.showNumbers = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const QVector<int> expectedNumbers{1, 2, 1};
+    for (int index = 0; index < ids.size(); ++index) {
+        auto* button = edgeButton(host, ids[index]); QVERIFY(button);
+        QCOMPARE(button->property("tabNumber").toInt(), expectedNumbers[index]); QCOMPARE(button->text(), titles[index]);
+    }
+    // Suppression by the global preference cannot change the host's own
+    // per-tab flag. Re-enabling it must respect that original exception.
+    appearance.showIcons = false; QVERIFY(manager.setTabAppearance(appearance));
+    for (const auto id : ids) { auto* button = edgeButton(host, id); QVERIFY(button); QVERIFY(button->icon().isNull()); }
+    QVERIFY(manager.tabOptions(ids[0]).showIcon); QVERIFY(!manager.tabOptions(ids[1]).showIcon);
+    appearance.showIcons = true; QVERIFY(manager.setTabAppearance(appearance));
+    for (int index = 0; index < ids.size(); ++index) {
+        auto* button = edgeButton(host, ids[index]); QVERIFY(button);
+        QCOMPARE(button->icon().isNull(), index == 1);
+        QCOMPARE(button->property("tabNumber").toInt(), expectedNumbers[index]);
+    }
+    QVERIFY(manager.setTabIconVisible(ids[1], true));
+    QVERIFY(edgeButton(host, ids[1])); QVERIFY(!edgeButton(host, ids[1])->icon().isNull());
+    QVERIFY(manager.setTabIconVisible(ids[1], false));
+    QVERIFY(edgeButton(host, ids[1])); QVERIFY(edgeButton(host, ids[1])->icon().isNull());
+    // The number belongs to this model group, not to the entire same-edge
+    // rail, and follows an explicit reordering without altering the title.
+    QVERIFY(manager.moveTab(ids[1], firstGroup, Placement::Center, 0));
+    QCOMPARE(manager.model().group(firstGroup)->tabs, (QVector<TabId>{ids[1], ids[0]}));
+    for (int index = 0; index < ids.size(); ++index) {
+        auto* button = edgeButton(host, ids[index]); QVERIFY(button);
+        QCOMPARE(button->property("tabNumber").toInt(), index == 0 ? 2 : 1);
+        QCOMPARE(button->text(), titles[index]); QCOMPARE(button->toolTip(), titles[index]);
+    }
+    appearance.showNumbers = false; QVERIFY(manager.setTabAppearance(appearance));
+    for (int index = 0; index < ids.size(); ++index) {
+        auto* button = edgeButton(host, ids[index]); QVERIFY(button); QCOMPARE(button->property("tabNumber").toInt(), 0);
+        QCOMPARE(manager.model().tab(ids[index])->activePane, panes[index]);
+        QCOMPARE(manager.paneWidget(panes[index]), contents[index]);
+        QCOMPARE(manager.model().tab(ids[index])->title, titles[index]);
+    }
+    QCOMPARE(manager.model().groupForTab(ids[2]), otherGroup); QVERIFY(manager.model().validate());
+}
+
+void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data()
+{
+    QTest::addColumn<bool>("vertical");
+    QTest::newRow("horizontal") << false;
+    QTest::newRow("vertical") << true;
+}
+
+void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIcon()
+{
+    QFETCH(bool, vertical);
+    QWidget root; applyTheme(&root); root.resize(280, 240);
+    const int thickness = defaultTheme().metrics.edgeThickness;
+    EdgeTabButton button("Side label", vertical, thickness, &root); button.setCheckable(true);
+    const auto major = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
+    const int plainExtent = qBound(64, button.fontMetrics().horizontalAdvance(button.text()) + 24, 180);
+    QCOMPARE(major(button.sizeHint()), plainExtent);
+    QPixmap pixels(16, 16); pixels.fill(Qt::white); const QIcon icon(pixels);
+    button.setPresentation(icon, 12);
+    const int numberWidth = button.fontMetrics().horizontalAdvance("12") + 5;
+    const int textWidth = button.fontMetrics().horizontalAdvance(button.text());
+    const int extent = qBound(64, textWidth + 24 + 20 + numberWidth, 180);
+    QCOMPARE(major(button.sizeHint()), extent); QCOMPARE(button.property("tabNumber").toInt(), 12);
+    QCOMPARE(vertical ? button.sizeHint().width() : button.sizeHint().height(), thickness);
+    button.resize(button.sizeHint()); button.move(30, 30);
+    auto preset = defaultTabColorPresets().front();
+    preset.autoHideInactive = {QColor("#314159"), QColor("#ffffff"), QColor("#c04020"), QColor("#35a9ce")};
+    preset.autoHideActive = {QColor("#426270"), QColor("#ffffff"), QColor("#e06040"), QColor("#e36aac")};
+    button.setPreset(preset); root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
+    button.clearFocus();
+    const int span = qMin(extent - 12, textWidth + numberWidth + 20);
+    const int iconCenter = qMax(6, (extent - span) / 2) + numberWidth + 8;
+    const QPoint logical = vertical ? QPoint(thickness / 2, iconCenter) : QPoint(iconCenter, thickness / 2);
+    const auto iconPixel = [&] {
+        const auto image = button.grab().toImage(); const auto ratio = image.devicePixelRatio();
+        return image.pixelColor(qRound(logical.x() * ratio), qRound(logical.y() * ratio));
+    };
+    QCOMPARE(iconPixel(), preset.autoHideInactive.icon);
+    button.setChecked(true); QCOMPARE(iconPixel(), preset.autoHideActive.icon);
+    button.setText(QString(100, QLatin1Char('W')));
+    QCOMPARE(major(button.sizeHint()), 180);
+    button.setPresentation({}, 0); QCOMPARE(button.property("tabNumber").toInt(), 0); QVERIFY(button.icon().isNull());
+    QCOMPARE(major(button.sizeHint()), 180); // Decorations never remove the extent bound.
 }
 
 QTEST_MAIN(EdgeTabInteractionTest)

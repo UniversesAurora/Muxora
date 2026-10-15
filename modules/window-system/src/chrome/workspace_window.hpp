@@ -58,6 +58,8 @@ private:
     void addWindowMenuActions(QMenu* menu);
     void updateCommandStates();
     void updateWindowControlState();
+    void updateFrameMargins();
+    void showTabPresentationMenu(const QPoint& global);
     void queuePlacementNotification();
     void notifyPlacementChanged();
     void updateDragMask();

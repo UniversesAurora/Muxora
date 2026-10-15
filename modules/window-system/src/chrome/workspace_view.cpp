@@ -35,8 +35,7 @@ void WorkspaceWindow::applyViewState(const WindowViewState& state)
     if (chrome_) chrome_->setVisible(ordinary && state.effective.toolbars);
     if (bottomChrome_) bottomChrome_->setVisible(ordinary && state.effective.toolbars);
     if (status_) status_->setVisible(ordinary && state.effective.statusBar);
-    column_->setContentsMargins(fullscreen || !ordinary ? 0 : 1, fullscreen || !ordinary ? 0 : 1,
-        fullscreen || !ordinary ? 0 : 1, fullscreen || !ordinary ? 0 : 1);
+    updateFrameMargins();
     column_->activate();
     if (fullscreen) {
         if (!isFullScreen()) showFullScreen();

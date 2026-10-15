@@ -27,7 +27,7 @@ if(WIN32)
 endif()
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile)
+foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile tab-strip-layout tab-appearance popup-menu tab-group)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -37,6 +37,11 @@ foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentatio
         -o ${CMAKE_CURRENT_BINARY_DIR}/${suite}-results.txt,txt)
     set_tests_properties(window-system.${suite} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endforeach()
+qt_add_executable(window-system-tab-ordering-model-test tab_ordering_model_test.cpp)
+target_link_libraries(window-system-tab-ordering-model-test PRIVATE WindowSystem::Model Qt6::Test)
+set_target_properties(window-system-tab-ordering-model-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-ordering-model COMMAND window-system-tab-ordering-model-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-ordering-model-results.txt,txt)
 
 qt_add_executable(window-system-movement-model-test movement_model_test.cpp)
 target_link_libraries(window-system-movement-model-test PRIVATE WindowSystem::Model Qt6::Test)

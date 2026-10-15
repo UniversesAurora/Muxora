@@ -89,6 +89,14 @@ GroupId WindowManager::adjacentGroup(TabId tab, Placement direction, std::option
     order += d->model.window(group->windowId)->edgeGroups;
     return spatialNeighbor(window->surface()->groupRects(), order, source, direction, anchor);
 }
+GroupId WindowManager::adjacentCentralGroup(GroupId source, Placement direction) const
+{
+    const auto* group = d->model.group(source);
+    if (!group || group->location != GroupLocation::Central) return {};
+    const auto window = d->windows.value(group->windowId);
+    if (!window) return {};
+    return spatialNeighbor(window->surface()->groupRects(), d->model.centralGroups(group->windowId), source, direction);
+}
 PaneId WindowManager::adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor) const
 {
     QHash<QUuid, QRect> rectangles;

@@ -231,6 +231,7 @@ QWidget { color: @text; }
 QWidget:disabled { color: @muted; }
 QDialog { background: @surface; }
 QWidget#WorkspaceWindow { background: @background; border: 1px solid @border; }
+QWidget#WorkspaceWindow[windowSystemExpanded="true"] { border: 0; }
 QWidget#WindowHeader, QWidget#CommandStripHost, QWidget#CommandStrip, QLabel#StripDragPreview { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }
 QWidget#TabGroup, QWidget#TabGroupHeader, QWidget#TabStripCanvas, QWidget#TabCreateButtons { background: @header; }
@@ -371,6 +372,7 @@ void applyTheme(QWidget* root, const Theme& theme)
         {"text", theme.text}, {"mutedText", theme.mutedText}, {"accent", theme.accent},
         {"surface", theme.surface}, {"accentSoft", theme.accentSoft}, {"buttonHover", theme.buttonHover},
         {"headerBackground", theme.headerBackground}, {"inactiveTab", theme.inactiveTab},
+        {"edgeTabBackground", theme.edgeTabBackground}, {"edgeTabHover", theme.edgeTabHover}, {"edgeTabText", theme.edgeTabText},
         {"selection", theme.selection}, {"selectionText", theme.selectionText},
         {"checkedIndicatorText", theme.checkedIndicatorText}});
     QPalette palette = root->palette();

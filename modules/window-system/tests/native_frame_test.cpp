@@ -10,6 +10,8 @@
 #include <QApplication>
 #include <QAbstractNativeEventFilter>
 #include <QLabel>
+#include <QLayout>
+#include <QOperatingSystemVersion>
 #include <QImage>
 #include <QPalette>
 #include <QPointer>
@@ -254,6 +256,8 @@ private slots:
     void qtFlagChangesKeepTheNativeFrame();
     void qtStateChangesKeepNativeStylesAndRestoreGeometry_data();
     void qtStateChangesKeepNativeStylesAndRestoreGeometry();
+    void expandedModesFillNativeClientWithoutFrameOrRoundCorners_data();
+    void expandedModesFillNativeClientWithoutFrameOrRoundCorners();
     void initiallyMaximizedWindowPreservesNormalGeometry_data();
     void initiallyMaximizedWindowPreservesNormalGeometry();
     void preparationLeavesSystemAnimationPreferencesUntouched();
@@ -705,6 +709,72 @@ void NativeFrameTest::qtStateChangesKeepNativeStylesAndRestoreGeometry()
     QVERIFY(manager.requestCloseWindow(id));
     QVERIFY(!manager.model().window(id));
     QVERIFY(!IsWindowVisible(handle));
+}
+
+void NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<int>("mode");
+    for (const bool floating : {false, true})
+        for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen})
+            QTest::newRow(qPrintable(QStringLiteral("%1-mode-%2").arg(floating ? "floating" : "workbench").arg(int(mode))))
+                << floating << int(mode);
+}
+
+void NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners()
+{
+    QFETCH(bool, floating); QFETCH(int, mode);
+    WindowManager manager; const auto id = createWindow(manager, floating);
+    const auto tab = manager.addTab(id, new QLabel("Live content"), {"Live", "test.label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    const QPointer<QWidget> content(manager.paneWidget(pane));
+    auto* window = manager.windowWidget(id); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto normal = window->geometry();
+    const auto verifyExpandedFrame = [window] {
+        const auto configuration = nativeFrameConfiguration(window);
+        QVERIFY(configuration.attempted); QVERIFY(configuration.expanded);
+        QCOMPARE(configuration.clientMargin, 0);
+        QCOMPARE(configuration.cornerPreference, quint32(1));
+        QCOMPARE(configuration.borderColor, quint32(0xfffffffe));
+        QCOMPARE(window->layout()->contentsMargins(), QMargins(0, 0, 0, 0));
+        QVERIFY(window->property("windowSystemExpanded").toBool());
+        // Microsoft documents these attributes for Set, not Get. Some DWM
+        // versions accept a corner query but reject a border-color query;
+        // neither getter is an acceptance contract. Check the actual writes
+        // against the independent documented Windows build requirement.
+        const bool supported = QOperatingSystemVersion::current().microVersion() >= 22000;
+        QCOMPARE(configuration.cornerResult, qint32(supported ? S_OK : E_INVALIDARG));
+        QCOMPARE(configuration.borderResult, qint32(supported ? S_OK : E_INVALIDARG));
+    };
+    window->showMaximized(); QTRY_VERIFY(window->isMaximized());
+    verifyExpandedFrame(); verifyMaximizedWorkArea(window);
+    if (auto* status = window->findChild<QLabel*>("StatusBar")) {
+        QTRY_COMPARE(status->mapTo(window, QPoint()).x(), 0);
+        QCOMPARE(status->width(), window->width());
+        QCOMPARE(status->mapTo(window, status->rect().bottomRight()).y(), window->height() - 1);
+    }
+    window->showNormal(); QTRY_COMPARE(window->geometry(), normal);
+    QVERIFY(manager.setViewMode(id, ViewMode(mode)));
+    QTRY_VERIFY(window->isFullScreen());
+    QVERIFY(window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen));
+    QVERIFY(!IsZoomed(handle));
+    verifyExpandedFrame(); QVERIFY(nativeFrameConfiguration(window).fullscreen);
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
+    RECT native{}, client{}; QVERIFY(GetWindowRect(handle, &native)); QVERIFY(GetClientRect(handle, &client));
+    QCOMPARE(native.left, monitor.rcMonitor.left); QCOMPARE(native.top, monitor.rcMonitor.top);
+    QCOMPARE(native.right, monitor.rcMonitor.right); QCOMPARE(native.bottom, monitor.rcMonitor.bottom);
+    QCOMPARE(client.right - client.left, monitor.rcMonitor.right - monitor.rcMonitor.left);
+    QCOMPARE(client.bottom - client.top, monitor.rcMonitor.bottom - monitor.rcMonitor.top);
+    QCOMPARE(window->effectiveWinId(), WId(handle)); QCOMPARE(manager.paneWidget(pane), content.data());
+    QVERIFY(manager.setViewMode(id, ViewMode::Normal)); QTRY_COMPARE(window->geometry(), normal);
+    const auto restored = nativeFrameConfiguration(window);
+    QVERIFY(!restored.expanded); QVERIFY(!restored.fullscreen);
+    QCOMPARE(restored.clientMargin, 1); QCOMPARE(restored.cornerPreference, quint32(2));
+    QCOMPARE(restored.borderColor, quint32(0xffffffff));
+    QCOMPARE(window->layout()->contentsMargins(), QMargins(1, 1, 1, 1));
+    QCOMPARE(manager.paneWidget(pane), content.data()); QVERIFY(manager.model().validate().ok);
 }
 
 void NativeFrameTest::preparationLeavesSystemAnimationPreferencesUntouched()
