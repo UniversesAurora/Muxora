@@ -89,13 +89,22 @@ GroupId WindowManager::adjacentGroup(TabId tab, Placement direction, std::option
     order += d->model.window(group->windowId)->edgeGroups;
     return spatialNeighbor(window->surface()->groupRects(), order, source, direction, anchor);
 }
-GroupId WindowManager::adjacentCentralGroup(GroupId source, Placement direction) const
+GroupId WindowManager::adjacentVisibleGroup(GroupId source, Placement direction, bool forMove) const
 {
     const auto* group = d->model.group(source);
-    if (!group || group->location != GroupLocation::Central) return {};
+    if (!group || group->location == GroupLocation::AutoHide || !isDirection(direction)) return {};
     const auto window = d->windows.value(group->windowId);
     if (!window) return {};
-    return spatialNeighbor(window->surface()->groupRects(), d->model.centralGroups(group->windowId), source, direction);
+    auto order = d->model.centralGroups(group->windowId);
+    const auto* record = d->model.window(group->windowId);
+    for (const auto id : record->edgeGroups) {
+        const auto* candidate = d->model.group(id);
+        if (!candidate || candidate->location != GroupLocation::Pinned) continue;
+        const bool horizontal = direction == Placement::Left || direction == Placement::Right;
+        const bool verticalEdge = candidate->edge == Edge::Left || candidate->edge == Edge::Right;
+        if (!forMove || horizontal == verticalEdge) order.append(id);
+    }
+    return spatialNeighbor(window->surface()->groupRects(), order, source, direction);
 }
 PaneId WindowManager::adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor) const
 {

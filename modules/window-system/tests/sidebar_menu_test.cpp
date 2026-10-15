@@ -161,14 +161,18 @@ void SidebarMenuTest::sidebarContextMenuUsesTheExistingTabCommands()
     WindowManager manager;
     const auto window = manager.createWindow();
     const auto tab = manager.addTab(window, new QLabel(QStringLiteral("side")), {QStringLiteral("side"), {}, {}});
+    const auto active = manager.addTab(window, new QLabel(QStringLiteral("central")), {QStringLiteral("central"), {}, {}});
     QVERIFY(manager.moveTabToEdge(tab, Edge(edge)));
     manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(manager.activateTab(active));
+    const auto original = manager.model().toJson();
     auto* button = edgeButton(manager.windowWidget(window), tab);
     QVERIFY(button);
     bool observed = false;
     bool timedOut = false;
     QStringList commandIds;
+    bool selectionKept = false;
     QTimer watchdog;
     watchdog.setSingleShot(true);
     QObject::connect(&watchdog, &QTimer::timeout, [&] {
@@ -179,15 +183,20 @@ void SidebarMenuTest::sidebarContextMenuUsesTheExistingTabCommands()
     QTimer::singleShot(30, &manager, [&] {
         if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
             observed = true;
+            selectionKept = manager.context(window).tab == active
+                && manager.model().toJson() == original
+                && !manager.windowWidget(window)->findChild<QWidget*>(QStringLiteral("PeekPanel"));
             for (auto* action : menu->findChildren<QAction*>())
                 if (action->isVisible()) commandIds.append(action->data().toString());
             QTest::keyClick(menu, Qt::Key_Escape);
         }
     });
+    QTest::mousePress(button, Qt::RightButton); QTest::mouseRelease(button, Qt::RightButton);
     QContextMenuEvent event(QContextMenuEvent::Mouse, button->rect().center(), button->mapToGlobal(button->rect().center()));
     QApplication::sendEvent(button, &event);
     watchdog.stop();
     QVERIFY(observed);
+    QVERIFY(selectionKept);
     QVERIFY(!timedOut);
     QVERIFY(commandIds.contains(QStringLiteral("workspace.closeTab")));
     QVERIFY(commandIds.contains(QStringLiteral("workspace.closeTabs.left")));
@@ -198,9 +207,9 @@ void SidebarMenuTest::sidebarContextMenuUsesTheExistingTabCommands()
     QVERIFY(commandIds.contains(QStringLiteral("workspace.pinTab")));
     QVERIFY(!commandIds.contains(QStringLiteral("workspace.unpinTab")));
     QVERIFY(manager.model().tab(tab));
-    QCOMPARE(manager.context(window).tab, tab);
+    QCOMPARE(manager.context(window).tab, active); QCOMPARE(manager.model().toJson(), original);
     auto* peek = manager.windowWidget(window)->findChild<QWidget*>(QStringLiteral("PeekPanel"));
-    QVERIFY(peek && peek->isVisible());
+    QVERIFY(!peek);
 }
 
 void SidebarMenuTest::sidebarContextMenuCanPinTheClickedInactiveTab()
@@ -218,6 +227,7 @@ void SidebarMenuTest::sidebarContextMenuCanPinTheClickedInactiveTab()
     auto* button = edgeButton(manager.windowWidget(window), clicked);
     QVERIFY(button);
     bool observed = false;
+    bool inactiveDuringMenu = false;
     bool timedOut = false;
     QTimer watchdog;
     watchdog.setSingleShot(true);
@@ -230,6 +240,7 @@ void SidebarMenuTest::sidebarContextMenuCanPinTheClickedInactiveTab()
         if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget()))
             for (auto* action : menu->actions()) if (action->data().toString() == QStringLiteral("workspace.pinTab")) {
                 observed = true;
+                inactiveDuringMenu = manager.context(window).tab == other && !clickedContent->isVisible();
                 menu->setActiveAction(action);
                 QTest::keyClick(menu, Qt::Key_Return);
                 break;
@@ -239,6 +250,7 @@ void SidebarMenuTest::sidebarContextMenuCanPinTheClickedInactiveTab()
     QApplication::sendEvent(button, &event);
     watchdog.stop();
     QVERIFY(observed);
+    QVERIFY(inactiveDuringMenu);
     QVERIFY(!timedOut);
     QTRY_COMPARE(manager.model().group(manager.model().groupForTab(clicked))->location, GroupLocation::Pinned);
     QCOMPARE(manager.model().group(manager.model().groupForTab(other))->location, GroupLocation::AutoHide);

@@ -35,6 +35,7 @@ public:
     [[nodiscard]] int insertionExtent() const { return insertionExtent_; }
     void setAppearance(const TabAppearance& appearance);
     void setTabMetadata(int index, const TabRecord& tab);
+    [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
     void layoutTabs(int availableWidth, bool expanded);
     [[nodiscard]] QSize displayedSize() const;
     [[nodiscard]] QPoint creationPosition() const;

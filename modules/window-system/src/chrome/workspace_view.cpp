@@ -25,6 +25,10 @@ void WorkspaceWindow::applyViewState(const WindowViewState& state)
     const bool wasFullscreen = viewState_.mode != ViewMode::Normal;
     const bool fullscreen = state.mode != ViewMode::Normal;
     if (fullscreen && !wasFullscreen) {
+        // A newly created hidden window can enter fullscreen before its first
+        // normal Show. Capture a reachable restore rectangle in that case too.
+        fitInitialPlacement();
+        if (!self) return;
         viewNormalPlacement_ = normalPlacementGeometry();
         viewNormalMaximized_ = placementMaximized();
     }

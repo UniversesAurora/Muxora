@@ -14,6 +14,7 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <memory>
+#include <cmath>
 
 using namespace window_system;
 
@@ -21,6 +22,8 @@ class TabAppearanceTest final : public QObject {
     Q_OBJECT
 private slots:
     void defaultsHaveSeparatePlacementAndConservativeFlags();
+    void defaultPaletteKeepsColorIdentityAndReadableForegrounds();
+    void legacyBuiltinPaletteUpgradesWithoutChangingCustomColors();
     void appearanceAndEveryPaletteStateRoundTrip();
     void invalidPublicAppearanceDoesNotEmitOrMutate_data();
     void invalidPublicAppearanceDoesNotEmitOrMutate();
@@ -31,6 +34,7 @@ private slots:
     void settingsPaletteEditorValidatesBeforeApplyingAndKeepsDraft();
     void paletteApplyAllowsSynchronousHostDestruction_data();
     void paletteApplyAllowsSynchronousHostDestruction();
+    void sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAndControls();
 };
 
 void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
@@ -45,10 +49,54 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
     for (const auto& preset : appearance.colors) {
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
         QCOMPARE(*manager.tabColorPreset(preset.id), preset);
-        QCOMPARE(preset.autoHideInactive.background, QColor("#6A568C"));
-        QCOMPARE(preset.autoHideInactive.text, QColor(Qt::white));
+        QVERIFY(preset.autoHideInactive.background != preset.autoHideActive.background);
+        QCOMPARE(preset.autoHideInactive, preset.groupInactive);
     }
     QVERIFY(!manager.tabColorPreset("missing")); QVERIFY(!manager.tabColorPreset({}));
+}
+
+void TabAppearanceTest::defaultPaletteKeepsColorIdentityAndReadableForegrounds()
+{
+    const auto luminance = [](const QColor& color) {
+        const auto linear = [](double value) { return value <= .04045 ? value / 12.92 : std::pow((value + .055) / 1.055, 2.4); };
+        return .2126 * linear(color.redF()) + .7152 * linear(color.greenF()) + .0722 * linear(color.blueF());
+    };
+    for (const auto& preset : defaultTabColorPresets()) {
+        const auto& active = preset.groupActive;
+        const auto& inactive = preset.groupInactive;
+        QVERIFY2(inactive.background.saturationF() > active.background.saturationF(), qPrintable(preset.id));
+        QVERIFY(luminance(active.background) > luminance(inactive.background));
+        QCOMPARE(preset.autoHideActive, active); QCOMPARE(preset.autoHideInactive, inactive);
+        for (const auto& colors : {active, inactive}) {
+            QVERIFY(colors.background != colors.line); QVERIFY(colors.background != colors.icon);
+            QVERIFY(colors.text != colors.icon); QVERIFY(colors.line != colors.icon);
+            const double background = luminance(colors.background), text = luminance(colors.text);
+            const auto contrast = (std::max(background, text) + .05) / (std::min(background, text) + .05);
+            QVERIFY2(contrast >= 4.5, qPrintable(preset.id + QStringLiteral(" foreground contrast %1").arg(contrast)));
+        }
+    }
+}
+
+void TabAppearanceTest::legacyBuiltinPaletteUpgradesWithoutChangingCustomColors()
+{
+    auto saved = TabAppearance{};
+    for (auto& preset : saved.colors) {
+        const auto accent = preset.groupActive.line;
+        preset.groupActive.icon = accent;
+        preset.groupInactive = {QColor("#f7f7f8"), QColor("#3c4043"), accent, QColor("#5f6368")};
+        preset.autoHideActive = {accent, QColor(Qt::white), accent, QColor(Qt::white)};
+        preset.autoHideInactive = {QColor("#6A568C"), QColor(Qt::white), accent, QColor(Qt::white)};
+    }
+    auto customized = saved.colors[1]; customized.groupInactive.text = QColor("#123456");
+    saved.colors[1] = customized;
+    TabAppearance restored;
+    QVERIFY(parseTabAppearance(tabAppearanceToJson(saved), restored));
+    const auto expected = defaultTabColorPresets();
+    QCOMPARE(restored.colors.size(), expected.size());
+    for (int index = 0; index < expected.size(); ++index)
+        QCOMPARE(restored.colors[index], index == 1 ? customized : expected[index]);
+    TabAppearance again;
+    QVERIFY(parseTabAppearance(tabAppearanceToJson(restored), again)); QCOMPARE(again, restored);
 }
 
 void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
@@ -266,6 +314,45 @@ void TabAppearanceTest::paletteApplyAllowsSynchronousHostDestruction()
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QVERIFY(!page); QVERIFY(!apply);
     QCOMPARE(bool(owner), !deleteManager);
+}
+
+void TabAppearanceTest::sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAndControls()
+{
+    WindowManager manager;
+    QVERIFY(manager.tabAppearance().showIcons);
+    QVERIFY(!manager.tabAppearance().showSidebarIcons);
+    QVERIFY(!manager.tabAppearance().showSidebarNumbers);
+    SettingsPage page(&manager);
+    auto* icons = page.findChild<QCheckBox*>("ShowSidebarTabIcons");
+    auto* numbers = page.findChild<QCheckBox*>("ShowSidebarTabNumbers");
+    QVERIFY(icons && numbers); QVERIFY(!icons->isChecked()); QVERIFY(!numbers->isChecked());
+    QVERIFY(manager.execute("presentation.toggleIcons", {{"visible", false}}));
+    QVERIFY(manager.execute("presentation.toggleNumbers", {{"visible", true}}));
+    QVERIFY(!manager.tabAppearance().showSidebarIcons); QVERIFY(!manager.tabAppearance().showSidebarNumbers);
+    icons->setChecked(true); numbers->setChecked(true);
+    QVERIFY(manager.tabAppearance().showSidebarIcons); QVERIFY(manager.tabAppearance().showSidebarNumbers);
+    QVERIFY(!manager.tabAppearance().showIcons); QVERIFY(manager.tabAppearance().showNumbers);
+    const auto snapshot = manager.saveLayout();
+    const auto saved = snapshot.value("tabAppearance").toObject();
+    QCOMPARE(saved.value("showSidebarIcons"), QJsonValue(true));
+    QCOMPARE(saved.value("showSidebarNumbers"), QJsonValue(true));
+    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot));
+    QCOMPARE(restored.tabAppearance(), manager.tabAppearance());
+    auto legacy = snapshot; auto old = saved; old.remove("showSidebarIcons"); old.remove("showSidebarNumbers");
+    legacy.insert("tabAppearance", old); QVERIFY(restored.restoreLayout(legacy));
+    QVERIFY(!restored.tabAppearance().showSidebarIcons); QVERIFY(!restored.tabAppearance().showSidebarNumbers);
+    QVERIFY(!restored.tabAppearance().showIcons); QVERIFY(restored.tabAppearance().showNumbers);
+    for (const auto& item : {std::pair{"presentation.toggleSidebarIcons", &TabAppearance::showSidebarIcons},
+        std::pair{"presentation.toggleSidebarNumbers", &TabAppearance::showSidebarNumbers}}) {
+        const auto before = manager.tabAppearance();
+        QVERIFY(!manager.execute(item.first, {{"visible", "false"}})); QCOMPARE(manager.tabAppearance(), before);
+        QVERIFY(manager.execute(item.first, {{"visible", false}})); QVERIFY(!(manager.tabAppearance().*item.second));
+        QVERIFY(manager.execute(item.first)); QVERIFY(manager.tabAppearance().*item.second);
+    }
+    for (const auto* field : {"showSidebarIcons", "showSidebarNumbers"}) {
+        auto invalid = snapshot; auto flags = saved; flags.insert(field, "true"); invalid.insert("tabAppearance", flags);
+        const auto before = restored.saveLayout(); QVERIFY(!restored.restoreLayout(invalid)); QCOMPARE(restored.saveLayout(), before);
+    }
 }
 
 QTEST_MAIN(TabAppearanceTest)

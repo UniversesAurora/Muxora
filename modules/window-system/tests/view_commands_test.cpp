@@ -210,6 +210,10 @@ private slots:
     void closingTheWindowSafelyDismissesEitherToolbarMovePicker();
     void registryEnabledCanRegisterCommandsWithoutInvalidatingItsHandler();
     void commandAndToolbarPickerCanDestroyTheirManagerSafely();
+    void zenChordStartsTheConfiguredScopeFromNormal_data() { modeRows(); }
+    void zenChordStartsTheConfiguredScopeFromNormal();
+    void settingsChooseTheZenDefaultAndEnableItFromNormal_data() { modeRows(); }
+    void settingsChooseTheZenDefaultAndEnableItFromNormal();
 };
 
 void ViewCommandsTest::functionKeysToggleTheirActualFullscreenScope()
@@ -308,7 +312,7 @@ void ViewCommandsTest::viewMenuReflectsFullscreenZenAndAllFourVisibilityPreferen
         QVERIFY(action->shortcut().isEmpty());
     }
     auto* zen = actionFor(window, "window.zen.toggle"); auto* exit = actionFor(window, "window.fullscreen.exit");
-    QVERIFY(zen && exit); QVERIFY(!zen->isEnabled()); QVERIFY(!zen->isChecked()); QVERIFY(!exit->isEnabled());
+    QVERIFY(zen && exit); QVERIFY(zen->isEnabled()); QVERIFY(!zen->isChecked()); QVERIFY(!exit->isEnabled());
     setPreferences(manager, fixture.window, {false, true, false, true});
     for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen}) {
         QVERIFY(manager.setViewMode(fixture.window, mode));
@@ -345,7 +349,7 @@ void ViewCommandsTest::settingsShowRestoresZenPreferences()
     manager.showSettings(fixture.window);
     auto* page = settingsPage(manager); QVERIFY(page);
     auto* zen = page->findChild<QCheckBox*>("WindowZenMode"); auto* mode = page->findChild<QComboBox*>("WindowViewMode");
-    QVERIFY(zen && mode); QVERIFY(!zen->isEnabled()); QCOMPARE(mode->currentData().toInt(), int(ViewMode::Normal));
+    QVERIFY(zen && mode); QVERIFY(zen->isEnabled()); QCOMPARE(mode->currentData().toInt(), int(ViewMode::Normal));
     QSet<QString> visibilityIds;
     for (auto* box : page->findChildren<QCheckBox*>()) if (box->objectName().startsWith("window.visibility.")) visibilityIds.insert(box->objectName());
     QCOMPARE(visibilityIds, (QSet<QString>{"window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars"}));
@@ -588,6 +592,52 @@ void ViewCommandsTest::commandAndToolbarPickerCanDestroyTheirManagerSafely()
         QVERIFY(!result.executed && result.interacted && result.aborted && !result.timedOut);
         QVERIFY(!observer); QVERIFY(!QApplication::activePopupWidget());
     }
+}
+
+void ViewCommandsTest::zenChordStartsTheConfiguredScopeFromNormal()
+{
+    QFETCH(ViewMode, mode);
+    WindowManager manager; const auto fixture = createFixture(manager);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = mode; manager.setBehavior(behavior);
+    manager.showWindow(fixture.window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(fixture.window)));
+    QVERIFY(manager.focusPane(fixture.tab, fixture.pane));
+    setPreferences(manager, fixture.window, {false, true, false, true});
+    const auto preferred = manager.preferredBarVisibility(fixture.window);
+    const auto text = fixture.editor->toPlainText(); const auto model = manager.model().toJson();
+    const auto* command = manager.commands().find("window.zen.toggle"); QVERIFY(command && command->enabled(manager.context(fixture.window)));
+    auto* menuAction = actionFor(manager.windowWidget(fixture.window), "window.zen.toggle"); QVERIFY(menuAction && menuAction->isEnabled());
+    QTest::keyClick(fixture.editor, Qt::Key_K, Qt::ControlModifier); QVERIFY(!manager.zenMode(fixture.window));
+    QTest::keyClick(fixture.editor, Qt::Key_Z);
+    QTRY_VERIFY(manager.zenMode(fixture.window)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    QTRY_VERIFY(manager.windowWidget(fixture.window)->isFullScreen());
+    QCOMPARE(manager.barVisibility(fixture.window), (BarVisibility{false, false, false, false}));
+    QCOMPARE(manager.preferredBarVisibility(fixture.window), preferred);
+    QCOMPARE(manager.model().toJson(), model); QCOMPARE(fixture.editor->toPlainText(), text);
+    QTest::keyClick(fixture.editor, Qt::Key_K, Qt::ControlModifier); QTest::keyClick(fixture.editor, Qt::Key_Z);
+    QTRY_VERIFY(!manager.zenMode(fixture.window)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    QCOMPARE(manager.barVisibility(fixture.window), preferred);
+    QTest::keyClick(fixture.editor, Qt::Key_Escape); QTRY_COMPARE(manager.viewMode(fixture.window), ViewMode::Normal);
+    QCOMPARE(fixture.editor->toPlainText(), text);
+}
+
+void ViewCommandsTest::settingsChooseTheZenDefaultAndEnableItFromNormal()
+{
+    QFETCH(ViewMode, mode);
+    WindowManager manager; const auto fixture = createFixture(manager); manager.showSettings(fixture.window);
+    auto* page = settingsPage(manager); QVERIFY(page);
+    auto* choice = page->findChild<QComboBox*>("ZenFullscreenMode");
+    auto* zen = page->findChild<QCheckBox*>("WindowZenMode"); QVERIFY(choice && zen);
+    QCOMPARE(choice->count(), 3); QVERIFY(choice->findData(int(ViewMode::Normal)) < 0);
+    QCOMPARE(choice->currentData().toInt(), int(ViewMode::WindowFullscreen));
+    choice->setCurrentIndex(choice->findData(int(mode))); QCOMPARE(manager.behavior().zenFullscreenMode, mode);
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::Normal); QVERIFY(zen->isEnabled());
+    const auto preferred = manager.preferredBarVisibility(fixture.window);
+    zen->setChecked(true); QTRY_VERIFY(manager.zenMode(fixture.window)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    QCOMPARE(manager.barVisibility(fixture.window), (BarVisibility{false, false, false, false}));
+    zen->setChecked(false); QTRY_VERIFY(!manager.zenMode(fixture.window));
+    QCOMPARE(manager.viewMode(fixture.window), mode); QCOMPARE(manager.barVisibility(fixture.window), preferred);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::WindowFullscreen; manager.setBehavior(behavior);
+    QCOMPARE(choice->currentData().toInt(), int(ViewMode::WindowFullscreen));
 }
 
 QTEST_MAIN(ViewCommandsTest)

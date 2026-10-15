@@ -7,6 +7,11 @@
 #include <QPointer>
 
 namespace window_system {
+struct Theme;
+
+// A narrow overlay keeps the label's color and active underline visible through
+// the handle. Both orientations use the same restrained hover emphasis.
+[[nodiscard]] QString overlayScrollbarStyle(const Theme& theme);
 
 // Native input, focus and accessibility behavior are retained. Only the small
 // indicators are painted here, resolving colors from the nearest Theme root.

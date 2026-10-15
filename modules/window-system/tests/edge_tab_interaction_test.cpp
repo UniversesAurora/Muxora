@@ -52,8 +52,10 @@ private slots:
     void sideBarReorderCommandsKeepLiveContent();
     void autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets_data();
     void autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets();
-    void autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides_data();
-    void autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides();
+    void autoHidePresentationUsesIndependentFlagsAndPerTabIconOverrides_data();
+    void autoHidePresentationUsesIndependentFlagsAndPerTabIconOverrides();
+    void autoHideColorsSurviveActivationChanges_data();
+    void autoHideColorsSurviveActivationChanges();
     void edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data();
     void edgePresentationKeepsBoundedSizeAndRendersPresetIcon();
 };
@@ -446,7 +448,7 @@ void EdgeTabInteractionTest::sideBarReorderCommandsKeepLiveContent()
     QVERIFY(manager.model().validate().ok);
 }
 
-void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides_data()
+void EdgeTabInteractionTest::autoHidePresentationUsesIndependentFlagsAndPerTabIconOverrides_data()
 {
     QTest::addColumn<int>("edge");
     QTest::newRow("left") << int(Edge::Left);
@@ -455,7 +457,7 @@ void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOve
     QTest::newRow("bottom") << int(Edge::Bottom);
 }
 
-void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOverrides()
+void EdgeTabInteractionTest::autoHidePresentationUsesIndependentFlagsAndPerTabIconOverrides()
 {
     QFETCH(int, edge);
     WindowManager manager; const auto window = manager.createWindow();
@@ -478,21 +480,27 @@ void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOve
         auto* button = edgeButton(host, ids[index]); QVERIFY(button);
         QCOMPARE(button->text(), titles[index]); QCOMPARE(button->toolTip(), titles[index]);
         QCOMPARE(button->accessibleName(), titles[index]); QCOMPARE(button->property("tabNumber").toInt(), 0);
-        QCOMPARE(button->icon().isNull(), index == 1);
+        QVERIFY(button->icon().isNull());
     }
-    auto appearance = manager.tabAppearance(); appearance.showNumbers = true;
+    auto appearance = manager.tabAppearance(); appearance.showNumbers = true; appearance.showIcons = false;
     QVERIFY(manager.setTabAppearance(appearance));
-    const QVector<int> expectedNumbers{1, 2, 1};
+    for (const auto id : ids) {
+        auto* button = edgeButton(host, id); QVERIFY(button);
+        QVERIFY(button->icon().isNull()); QCOMPARE(button->property("tabNumber").toInt(), 0);
+    }
+    appearance.showSidebarNumbers = true; appearance.showSidebarIcons = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const QVector<int> expectedNumbers{1, 2, 3};
     for (int index = 0; index < ids.size(); ++index) {
         auto* button = edgeButton(host, ids[index]); QVERIFY(button);
         QCOMPARE(button->property("tabNumber").toInt(), expectedNumbers[index]); QCOMPARE(button->text(), titles[index]);
     }
-    // Suppression by the global preference cannot change the host's own
+    // Suppression by the sidebar preference cannot change the host's own
     // per-tab flag. Re-enabling it must respect that original exception.
-    appearance.showIcons = false; QVERIFY(manager.setTabAppearance(appearance));
+    appearance.showSidebarIcons = false; QVERIFY(manager.setTabAppearance(appearance));
     for (const auto id : ids) { auto* button = edgeButton(host, id); QVERIFY(button); QVERIFY(button->icon().isNull()); }
     QVERIFY(manager.tabOptions(ids[0]).showIcon); QVERIFY(!manager.tabOptions(ids[1]).showIcon);
-    appearance.showIcons = true; QVERIFY(manager.setTabAppearance(appearance));
+    appearance.showSidebarIcons = true; QVERIFY(manager.setTabAppearance(appearance));
     for (int index = 0; index < ids.size(); ++index) {
         auto* button = edgeButton(host, ids[index]); QVERIFY(button);
         QCOMPARE(button->icon().isNull(), index == 1);
@@ -502,16 +510,16 @@ void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOve
     QVERIFY(edgeButton(host, ids[1])); QVERIFY(!edgeButton(host, ids[1])->icon().isNull());
     QVERIFY(manager.setTabIconVisible(ids[1], false));
     QVERIFY(edgeButton(host, ids[1])); QVERIFY(edgeButton(host, ids[1])->icon().isNull());
-    // The number belongs to this model group, not to the entire same-edge
-    // rail, and follows an explicit reordering without altering the title.
+    // The number follows the entire same-edge rail across model groups,
+    // including reordering inside one of those groups.
     QVERIFY(manager.moveTab(ids[1], firstGroup, Placement::Center, 0));
     QCOMPARE(manager.model().group(firstGroup)->tabs, (QVector<TabId>{ids[1], ids[0]}));
     for (int index = 0; index < ids.size(); ++index) {
         auto* button = edgeButton(host, ids[index]); QVERIFY(button);
-        QCOMPARE(button->property("tabNumber").toInt(), index == 0 ? 2 : 1);
+        QCOMPARE(button->property("tabNumber").toInt(), index == 0 ? 2 : index == 1 ? 1 : 3);
         QCOMPARE(button->text(), titles[index]); QCOMPARE(button->toolTip(), titles[index]);
     }
-    appearance.showNumbers = false; QVERIFY(manager.setTabAppearance(appearance));
+    appearance.showSidebarNumbers = false; QVERIFY(manager.setTabAppearance(appearance));
     for (int index = 0; index < ids.size(); ++index) {
         auto* button = edgeButton(host, ids[index]); QVERIFY(button); QCOMPARE(button->property("tabNumber").toInt(), 0);
         QCOMPARE(manager.model().tab(ids[index])->activePane, panes[index]);
@@ -519,6 +527,39 @@ void EdgeTabInteractionTest::autoHidePresentationUsesGlobalFlagsAndPerTabIconOve
         QCOMPARE(manager.model().tab(ids[index])->title, titles[index]);
     }
     QCOMPARE(manager.model().groupForTab(ids[2]), otherGroup); QVERIFY(manager.model().validate());
+}
+
+void EdgeTabInteractionTest::autoHideColorsSurviveActivationChanges_data()
+{
+    QTest::addColumn<int>("edge");
+    for (int edge = 0; edge < 4; ++edge) QTest::newRow(qPrintable(QString::number(edge))) << edge;
+}
+
+void EdgeTabInteractionTest::autoHideColorsSurviveActivationChanges()
+{
+    QFETCH(int, edge);
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto first = manager.addTab(window, content("red"), options("red"));
+    const auto second = manager.addTab(window, content("green"), options("green"));
+    QVERIFY(manager.moveTabToEdge(first, Edge(edge))); QVERIFY(manager.moveTabToEdge(second, Edge(edge)));
+    QVERIFY(manager.setTabColor(first, "red")); QVERIFY(manager.setTabColor(second, "green"));
+    const auto red = manager.tabColorPreset("red"); const auto green = manager.tabColorPreset("green");
+    QVERIFY(red && green); QVERIFY(red->autoHideActive.background != red->autoHideInactive.background);
+    auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
+    const auto background = [host](TabId id) {
+        auto* button = edgeButton(host, id);
+        if (!button) return QColor{};
+        const auto image = button->grab().toImage(); const auto dpr = image.devicePixelRatio();
+        return image.pixelColor(qRound(3 * dpr), qRound(3 * dpr));
+    };
+    QVERIFY(manager.activateTab(first));
+    QCOMPARE(background(first), red->autoHideActive.background); QCOMPARE(background(second), green->autoHideInactive.background);
+    QVERIFY(manager.activateTab(second));
+    QCOMPARE(background(first), red->autoHideInactive.background); QCOMPARE(background(second), green->autoHideActive.background);
+    QVERIFY(manager.activateTab(first));
+    QCOMPARE(background(first), red->autoHideActive.background); QCOMPARE(background(second), green->autoHideInactive.background);
+    QCOMPARE(manager.model().tab(first)->colorId, QStringLiteral("red"));
+    QCOMPARE(manager.model().tab(second)->colorId, QStringLiteral("green"));
 }
 
 void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data()

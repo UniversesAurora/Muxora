@@ -7,6 +7,46 @@ using namespace window_system;
 class TabOrderingModelTest final : public QObject {
     Q_OBJECT
 private slots:
+    void adjacentGroupCreationKeepsSourceFocusOrderAndVisitHistory_data()
+    {
+        QTest::addColumn<int>("direction"); QTest::addColumn<int>("activeIndex");
+        for (int direction = 1; direction < 5; ++direction) for (int active = 0; active < 3; ++active)
+            QTest::newRow(qPrintable(QString("direction-%1-active-%2").arg(direction).arg(active))) << direction << active;
+    }
+    void adjacentGroupCreationKeepsSourceFocusOrderAndVisitHistory()
+    {
+        QFETCH(int,direction); QFETCH(int,activeIndex); LayoutModel model; const auto window = model.createWindow();
+        const QVector<TabId> original{model.addTab(window,"a"),model.addTab(window,"b"),model.addTab(window,"c")};
+        const auto source = model.groupForTab(original.first()); QVERIFY(model.activateTab(original[activeIndex]));
+        QHash<TabId,TabRecord> previous; for (const auto tab : original) previous.insert(tab,*model.tab(tab));
+        const auto revision = model.revision();
+        const auto created = model.addTabToNewGroup(window,"new",source,Placement(direction)); QVERIFY(!created.isNull());
+        const auto destination = model.groupForTab(created); QVERIFY(destination != source);
+        QCOMPARE(model.revision(),revision + 1); QCOMPARE(model.group(source)->tabs,original); QCOMPARE(model.group(source)->activeTab,original[activeIndex]);
+        for (const auto tab : original) {
+            QCOMPARE(model.tab(tab)->openedOrder,previous[tab].openedOrder); QCOMPARE(model.tab(tab)->visitedOrder,previous[tab].visitedOrder);
+            QCOMPARE(model.tab(tab)->panes,previous[tab].panes); QCOMPARE(model.tab(tab)->activePane,previous[tab].activePane);
+        }
+        QCOMPARE(model.group(destination)->tabs,QVector<TabId>({created})); QCOMPARE(model.group(destination)->activeTab,created);
+        QCOMPARE(model.window(window)->activeGroup,destination);
+        QCOMPARE(model.centralGroups(window),direction == int(Placement::Left) || direction == int(Placement::Top)
+            ? QVector<GroupId>({destination,source}) : QVector<GroupId>({source,destination}));
+        QVERIFY(model.validate());
+    }
+    void invalidAdjacentGroupCreationIsAtomic()
+    {
+        LayoutModel model; const auto window = model.createWindow(), other = model.createWindow();
+        const auto tab = model.addTab(window,"a"), group = model.groupForTab(tab); const auto before = model.toJson();
+        QVERIFY(model.addTabToNewGroup({},"new",group,Placement::Left).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.addTabToNewGroup(other,"new",group,Placement::Left).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.addTabToNewGroup(window,"new",{},Placement::Left).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Center).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement(99)).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.moveGroupToEdge(group,Edge::Left,true)); const auto pinned = model.toJson();
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Right).isNull()); QCOMPARE(model.toJson(),pinned);
+        QVERIFY(model.setGroupPinned(group,false)); const auto hidden = model.toJson();
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Right).isNull()); QCOMPARE(model.toJson(),hidden); QVERIFY(model.validate());
+    }
     void sortUsesRecordedEventsWithoutChangingContent_data()
     {
         QTest::addColumn<int>("sorting");
@@ -195,6 +235,181 @@ private slots:
         QVERIFY(!model.moveGroup(group, group, Placement::Left)); QCOMPARE(model.toJson(), original);
         QVERIFY(!model.moveGroupToWindow(group, window)); QCOMPARE(model.toJson(), original);
         QVERIFY(!model.sortTabs(group, TabSortOrder(99))); QCOMPARE(model.toJson(), original);
+    }
+    void exchangePreservesVisibleSlotsAndContents_data()
+    {
+        QTest::addColumn<int>("sourcePlacement"); QTest::addColumn<int>("targetPlacement"); QTest::addColumn<bool>("crossWindow");
+        for (int source = 0; source < 5; ++source) for (int target = 0; target < 5; ++target) for (bool cross : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2-cross-%3").arg(source).arg(target).arg(cross))) << source << target << cross;
+    }
+    void exchangeKeepsSplitIdentitiesAndRatios()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto a = model.addTab(window,"a"), b = model.addTab(window,"b"), c = model.addTab(window,"c");
+        const auto first = model.groupForTab(a);
+        QVERIFY(model.moveTab(b,first,Placement::Right)); const auto second = model.groupForTab(b);
+        QVERIFY(model.moveTab(c,second,Placement::Bottom)); const auto third = model.groupForTab(c);
+        const auto tree = model.window(window)->central;
+        QVERIFY(model.setSplitRatio(tree->id,0.31)); QVERIFY(model.setSplitRatio(tree->second->id,0.67));
+        const auto previous = model.toJson().value("windows").toArray().first().toObject().value("central").toObject();
+        std::function<QJsonObject(QJsonObject)> exchange = [&](QJsonObject node) {
+            if (node.contains("itemId")) {
+                const auto id = QUuid(node.value("itemId").toString());
+                if (id == first || id == third) node.insert("itemId",(id == first ? third : first).toString(QUuid::WithoutBraces));
+            } else {
+                node.insert("first",exchange(node.value("first").toObject())); node.insert("second",exchange(node.value("second").toObject()));
+            }
+            return node;
+        };
+        QVERIFY(model.swapGroups(first,third));
+        QCOMPARE(model.toJson().value("windows").toArray().first().toObject().value("central").toObject(),exchange(previous));
+        QVERIFY(model.validate());
+    }
+    void exchangePreservesVisibleSlotsAndContents()
+    {
+        QFETCH(int, sourcePlacement); QFETCH(int, targetPlacement); QFETCH(bool, crossWindow);
+        LayoutModel model; const auto root = model.createWindow();
+        const auto destination = crossWindow ? model.createWindow(WindowKind::Floating, root) : root;
+        const auto a = model.addTab(root,"a"), b = model.addTab(root,"b");
+        const auto source = model.groupForTab(a);
+        const auto t = model.addTab(destination,"target");
+        if (!crossWindow) QVERIFY(model.moveTab(t,source,Placement::Right));
+        const auto target = model.groupForTab(t);
+        if (sourcePlacement) QVERIFY(model.moveGroupToEdge(source,Edge(sourcePlacement-1),true));
+        if (targetPlacement) QVERIFY(model.moveGroupToEdge(target,Edge(targetPlacement-1),true));
+        if (sourcePlacement) QVERIFY(model.setEdgeGroupExtent(source,191));
+        if (targetPlacement) QVERIFY(model.setEdgeGroupExtent(target,237));
+        QVERIFY(model.setTabColor(a,"red")); const auto panes = model.panes(a);
+        const auto first = *model.group(source), second = *model.group(target);
+        const auto beforeSourceOrder = model.centralGroups(root), beforeTargetOrder = model.centralGroups(destination);
+        const auto beforeSourceEdges = model.window(root)->edgeGroups, beforeTargetEdges = model.window(destination)->edgeGroups;
+        QVERIFY(model.swapGroups(source,target));
+        const auto* moved = model.group(source); const auto* displaced = model.group(target);
+        QCOMPARE(moved->windowId,second.windowId); QCOMPARE(moved->location,second.location); QCOMPARE(moved->edge,second.edge);
+        QCOMPARE(moved->edgeExtent,second.edgeExtent); QCOMPARE(moved->tabs,QVector<TabId>({a,b})); QCOMPARE(moved->activeTab,b);
+        QCOMPARE(displaced->windowId,first.windowId); QCOMPARE(displaced->location,first.location); QCOMPARE(displaced->edge,first.edge);
+        QCOMPARE(displaced->edgeExtent,first.edgeExtent); QCOMPARE(model.panes(a),panes); QCOMPARE(model.tab(a)->colorId,QString("red"));
+        const auto exchanged = [source,target](QVector<GroupId> ids) {
+            for (auto& id : ids) { if (id == source) id = target; else if (id == target) id = source; }
+            return ids;
+        };
+        QCOMPARE(model.centralGroups(root),exchanged(beforeSourceOrder)); QCOMPARE(model.window(root)->edgeGroups,exchanged(beforeSourceEdges));
+        QCOMPARE(model.centralGroups(destination),exchanged(beforeTargetOrder)); QCOMPARE(model.window(destination)->edgeGroups,exchanged(beforeTargetEdges));
+        QVERIFY(model.validate()); LayoutModel restored; QVERIFY(restored.fromJson(model.toJson())); QCOMPARE(restored.toJson(),model.toJson());
+        QVERIFY(model.swapGroups(source,target)); QCOMPARE(model.centralGroups(root),beforeSourceOrder); QCOMPARE(model.window(root)->edgeGroups,beforeSourceEdges);
+        QCOMPARE(model.group(source)->tabs,first.tabs); QCOMPARE(model.group(target)->tabs,second.tabs); QVERIFY(model.validate());
+    }
+    void mergePreservesTargetSlotStableOrderAndTabState_data()
+    {
+        QTest::addColumn<int>("sourcePlacement"); QTest::addColumn<int>("targetPlacement"); QTest::addColumn<bool>("crossWindow");
+        for (int source = 0; source < 5; ++source) for (int target = 0; target < 5; ++target) for (bool cross : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2-cross-%3").arg(source).arg(target).arg(cross))) << source << target << cross;
+    }
+    void mergePreservesTargetSlotStableOrderAndTabState()
+    {
+        QFETCH(int, sourcePlacement); QFETCH(int, targetPlacement); QFETCH(bool, crossWindow);
+        LayoutModel model; const auto root = model.createWindow();
+        const auto origin = crossWindow ? model.createWindow(WindowKind::Floating,root) : root;
+        const auto a = model.addTab(origin,"a"), b = model.addTab(origin,"b"), source = model.groupForTab(a);
+        const auto t = model.addTab(root,"t"); if (!crossWindow) QVERIFY(model.moveTab(t,source,Placement::Right));
+        const auto target = model.groupForTab(t), u = model.addTab(root,"u",target);
+        if (sourcePlacement) QVERIFY(model.moveGroupToEdge(source,Edge(sourcePlacement-1),true));
+        if (targetPlacement) { QVERIFY(model.moveGroupToEdge(target,Edge(targetPlacement-1),true)); QVERIFY(model.setEdgeGroupExtent(target,223)); }
+        QVERIFY(model.setTabColor(a,"red")); QVERIFY(model.setPeekSizePolicy(a,Edge::Left,{311,417}));
+        const auto previous = *model.tab(a);
+        const auto targetSlot = *model.group(target);
+        const auto panes = model.panes(a);
+        QVERIFY(model.mergeGroups(source,target,1));
+        QVERIFY(!model.group(source)); QCOMPARE(model.group(target)->tabs,QVector<TabId>({t,a,b,u})); QCOMPARE(model.group(target)->activeTab,b);
+        QCOMPARE(model.group(target)->location,targetSlot.location); QCOMPARE(model.group(target)->edge,targetSlot.edge);
+        QCOMPARE(model.group(target)->edgeExtent,targetSlot.edgeExtent); QCOMPARE(model.groupForTab(a),target);
+        QCOMPARE(model.panes(a),panes); QCOMPARE(model.tab(a)->colorId,previous.colorId);
+        QCOMPARE(model.tab(a)->openedOrder,previous.openedOrder); QCOMPARE(model.tab(a)->visitedOrder,previous.visitedOrder);
+        QCOMPARE(model.peekSizePolicy(a,Edge::Left),PeekSizePolicy({311,417}));
+        if (crossWindow) QVERIFY(!model.window(origin));
+        QVERIFY(model.validate()); LayoutModel restored; QVERIFY(restored.fromJson(model.toJson())); QCOMPARE(restored.toJson(),model.toJson());
+    }
+    void directionalMovesAcceptFixedGroupsOnTheirPartitionAxis_data()
+    {
+        QTest::addColumn<int>("edge"); QTest::addColumn<bool>("outward"); QTest::addColumn<bool>("sourcePinned");
+        for (int edge = 0; edge < 4; ++edge) for (bool outward : {false,true}) for (bool pinned : {false,true})
+            QTest::newRow(qPrintable(QString("edge-%1-outward-%2-pinned-%3").arg(edge).arg(outward).arg(pinned))) << edge << outward << pinned;
+    }
+    void mergeEstablishesNewPinnedOrderWhileAnotherPartitionIsDormant()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto a = model.addTab(window,"a"), b = model.addTab(window,"b"), source = model.groupForTab(a);
+        const auto t = model.addTab(window,"t"); QVERIFY(model.moveTab(t,source,Placement::Right)); const auto target = model.groupForTab(t);
+        const auto u = model.addTab(window,"u",target), hidden = model.addTab(window,"hidden",target);
+        QVERIFY(model.moveTabToEdge(hidden,Edge::Left,true)); QVERIFY(model.moveGroupToEdge(source,Edge::Left,true));
+        QVERIFY(model.moveGroupToEdge(target,Edge::Left,true)); QVERIFY(model.setTabPinned(hidden,false));
+        QVERIFY(model.mergeGroups(source,target,0)); QCOMPARE(model.group(target)->tabs,QVector<TabId>({a,b,t,u}));
+        QVERIFY(model.setTabPinned(u,false)); QVERIFY(model.setTabPinned(u,true));
+        QCOMPARE(model.group(target)->tabs,QVector<TabId>({a,b,t,u})); QCOMPARE(model.groupForTab(u),target); QVERIFY(model.validate());
+    }
+    void directionalMovesAcceptFixedGroupsOnTheirPartitionAxis()
+    {
+        QFETCH(int,edge); QFETCH(bool,outward); QFETCH(bool,sourcePinned);
+        LayoutModel model; const auto root = model.createWindow(); const auto sourceWindow = model.createWindow(WindowKind::Floating,root);
+        const auto a = model.addTab(sourceWindow,"a"), b = model.addTab(sourceWindow,"b"), source = model.groupForTab(a);
+        const auto t = model.addTab(root,"t"), target = model.groupForTab(t);
+        if (sourcePinned) QVERIFY(model.moveGroupToEdge(source,Edge((edge+1)%4),true));
+        QVERIFY(model.moveGroupToEdge(target,Edge(edge),true));
+        const auto panes = model.panes(a);
+        const auto outside = edge == int(Edge::Left) ? Placement::Left : edge == int(Edge::Right) ? Placement::Right
+            : edge == int(Edge::Top) ? Placement::Top : Placement::Bottom;
+        const auto inside = edge == int(Edge::Left) ? Placement::Right : edge == int(Edge::Right) ? Placement::Left
+            : edge == int(Edge::Top) ? Placement::Bottom : Placement::Top;
+        QVERIFY(model.moveGroup(source,target,outward ? outside : inside));
+        QCOMPARE(model.window(root)->edgeGroups,outward ? QVector<GroupId>({source,target}) : QVector<GroupId>({target,source}));
+        QCOMPARE(model.group(source)->location,GroupLocation::Pinned); QCOMPARE(model.group(source)->edge,Edge(edge));
+        QCOMPARE(model.group(source)->windowId,root); QCOMPARE(model.group(source)->tabs,QVector<TabId>({a,b}));
+        QCOMPARE(model.panes(a),panes); QVERIFY(!model.window(sourceWindow)); QVERIFY(model.validate());
+    }
+    void explicitGroupParentChangesAndDetachAreAtomic_data()
+    {
+        QTest::addColumn<int>("edge"); QTest::addColumn<bool>("pinned");
+        for (int edge = 0; edge < 4; ++edge) for (bool pinned : {false,true})
+            QTest::newRow(qPrintable(QString("edge-%1-pinned-%2").arg(edge).arg(pinned))) << edge << pinned;
+    }
+    void explicitGroupParentChangesAndDetachAreAtomic()
+    {
+        QFETCH(int,edge); QFETCH(bool,pinned); LayoutModel model;
+        const auto root = model.createWindow(), target = model.createWindow();
+        const auto a = model.addTab(root,"a"), b = model.addTab(root,"b"), source = model.groupForTab(a);
+        const auto panes = model.panes(a);
+        QVERIFY(model.moveGroupToEdge(source,target,Edge(edge),pinned));
+        QCOMPARE(model.group(source)->windowId,target); QCOMPARE(model.group(source)->location,pinned ? GroupLocation::Pinned : GroupLocation::AutoHide);
+        QCOMPARE(model.group(source)->tabs,QVector<TabId>({a,b})); QCOMPARE(model.panes(a),panes);
+        if (!pinned) QVERIFY(model.setGroupPinned(source,true));
+        const auto floating = model.detachGroup(source); QVERIFY(!floating.isNull());
+        QCOMPARE(model.group(source)->location,GroupLocation::Central); QCOMPARE(model.group(source)->windowId,floating);
+        QCOMPARE(model.window(floating)->familyId,model.window(target)->familyId); QCOMPARE(model.window(floating)->kind,WindowKind::Floating);
+        QVERIFY(model.moveGroupToWindow(source,target)); QVERIFY(!model.window(floating));
+        const auto complete = model.detachGroup(source,WindowKind::Workbench); QVERIFY(!complete.isNull());
+        QCOMPARE(model.window(complete)->kind,WindowKind::Workbench); QVERIFY(model.window(complete)->familyId != model.window(target)->familyId);
+        QCOMPARE(model.panes(a),panes); QCOMPARE(model.group(source)->tabs,QVector<TabId>({a,b})); QVERIFY(model.validate());
+    }
+    void invalidGroupRelationshipsNeverPartiallyMutate()
+    {
+        LayoutModel model; const auto root = model.createWindow(); const auto a = model.addTab(root,"a"), b = model.addTab(root,"b");
+        const auto first = model.groupForTab(a); QVERIFY(model.moveTab(b,first,Placement::Right)); const auto second = model.groupForTab(b);
+        QVERIFY(model.moveGroupToEdge(second,Edge::Left,true)); const auto before = model.toJson();
+        QVERIFY(!model.swapGroups(first,first)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.swapGroups(first,{})); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.mergeGroups(first,first)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.mergeGroups(first,second,2)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.mergeGroups(first,second,-2)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.moveGroup(first,second,Placement::Top)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.moveGroupToEdge(first,{},Edge::Left,true)); QCOMPARE(model.toJson(),before);
+        QVERIFY(!model.moveGroupToEdge(first,root,Edge(99),true)); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.detachGroup(first,WindowKind(99)).isNull()); QCOMPARE(model.toJson(),before);
+        QVERIFY(model.setGroupPinned(second,false)); const auto hidden = model.toJson();
+        QVERIFY(!model.swapGroups(first,second)); QCOMPARE(model.toJson(),hidden);
+        QVERIFY(!model.mergeGroups(second,first)); QCOMPARE(model.toJson(),hidden);
+        const auto other = model.createWindow(); const auto final = model.toJson();
+        QVERIFY(!model.moveGroupToWindow(second,other)); QCOMPARE(model.toJson(),final);
+        QVERIFY(model.detachGroup(second).isNull()); QCOMPARE(model.toJson(),final); QVERIFY(model.validate());
     }
 };
 QTEST_GUILESS_MAIN(TabOrderingModelTest)

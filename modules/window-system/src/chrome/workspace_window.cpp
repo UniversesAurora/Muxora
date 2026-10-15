@@ -9,6 +9,7 @@
 #include "docking/drag_presentation.hpp"
 #include "docking/tab_strip.hpp"
 #include "platform/windows/window_frame.hpp"
+#include "platform/window_placement.hpp"
 #include "window_manager_p.hpp"
 #include <QApplication>
 #include <QAction>
@@ -23,6 +24,7 @@
 #include <QMouseEvent>
 #include <QMoveEvent>
 #include <QResizeEvent>
+#include <QScreen>
 #include <QSet>
 #include <QScopeGuard>
 #include <QStyle>
@@ -210,8 +212,8 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
             const auto appearance=manager_->tabAppearance();
             const auto* group=manager_->model().group(context.group);
             host->configureLabel(manager_->tabColorPreset(tab->colorId),
-                appearance.showIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->theme()) : QIcon{},
-                appearance.showNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0);
+                appearance.showSidebarIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->theme()) : QIcon{},
+                appearance.showSidebarNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0);
         }
         dragPresentationHost_ = host;
         column_->addWidget(host, 1); host->show(); surface_->show();
@@ -224,11 +226,13 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
     if (dragPresentationHost_) dragPresentationHost_->layout()->activate();
     changingDragPresentation_ = false;
     updateDragMask();
+    if (!retained) return;
 #ifdef Q_OS_WIN
     if (!compact && windowHandle()) {
         // Reassert the empty QWindow mask after layout/native frame updates.
         // QWidget's empty cache alone does not prove the HWND region is clear.
         windowHandle()->setMask({});
+        if (!retained) return;
         applyNativeFrame(this);
     }
 #endif
@@ -264,8 +268,16 @@ void WorkspaceWindow::updateDragMask()
     }
     if (visible.isEmpty()) return;
     visible &= QRegion(rect());
+    const QPointer<WorkspaceWindow> retained(this);
     if (mask() != visible) setMask(visible);
+    if (!retained) return;
 #ifdef Q_OS_WIN
+    // QWidget caches the shape before calling the platform, whereas QWindow
+    // publishes its cache after SetWindowRgn's synchronous placement messages.
+    // Commit the final shape through QWindow as well: a callback replaying its
+    // old mask must not leave only the QWidget cache shaped at transaction end.
+    if (windowHandle()) windowHandle()->setMask(visible);
+    if (!retained) return;
     // Qt's native mask update can disable DWM non-client composition. Restore
     // the custom frame only after that update, including compact resizes.
     applyNativeFrame(this);
@@ -385,6 +397,8 @@ void WorkspaceWindow::createChrome()
     caption_ = new WindowTitleLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
     caption_->setProperty("windowDragArea", true);
     strips_->addStrip("title", QStringLiteral("窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
+    if (auto* strip = strips_->stripWidget("title"))
+        if (auto* handle = strip->findChild<QWidget*>("StripHandle")) handle->setToolTip({});
     strips_->setStripOptionsEnabled("title", false);
     strips_->setStripConstraints("title", {true, true, titleMinimumWidth, true});
     auto* controls = new QWidget(strips_);
@@ -539,7 +553,7 @@ void WorkspaceWindow::updateCaption()
         const auto caption = kind_ == WindowKind::Floating ? windowTitle() : options_.title;
         caption_->setText(caption);
         caption_->setAccessibleName(caption);
-        caption_->setToolTip(caption);
+        caption_->setToolTip({});
     }
     updateCommandStates();
     if (strips_) strips_->refreshLayout();
@@ -583,6 +597,7 @@ bool WorkspaceWindow::placementMaximized() const
 }
 void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
 {
+    initialPlacementChecked_ = true;
     restoringPlacement_ = true;
     placementTimer_->stop();
     if (isMaximized() || isMinimized() || isFullScreen()) showNormal();
@@ -674,6 +689,25 @@ bool WorkspaceWindow::eventFilter(QObject* watched, QEvent* event)
     }
     if (event->type() == QEvent::MouseButtonRelease) pendingTitleDrag_ = false;
     return QWidget::eventFilter(watched, event);
+}
+void WorkspaceWindow::fitInitialPlacement()
+{
+    if (initialPlacementChecked_) return;
+    // Restored layouts have already been normalized against the complete
+    // desktop. Drag carriers deliberately follow the pointer across screens.
+    if (kind_ != WindowKind::Workbench || restoringPlacement_
+        || dragPresentation_ != DragPresentation::Window) { initialPlacementChecked_ = true; return; }
+    if (!hasNormalPlacement() || !screen()) return;
+    initialPlacementChecked_ = true;
+    const auto available = screen()->availableGeometry();
+    // The custom frame's NCCALCSIZE makes the entire native window a client
+    // area, so its complete logical rectangle is the client rectangle.
+    const auto original = geometry();
+    const QSize fittingMinimum(std::min(minimumWidth(), available.width()),
+                               std::min(minimumHeight(), available.height()));
+    if (minimumSize() != fittingMinimum) setMinimumSize(fittingMinimum.expandedTo(QSize(1, 1)));
+    const auto fitted = normalizeWindowPlacement(original, {available}, minimumSize());
+    if (fitted != original) setGeometry(fitted);
 }
 void WorkspaceWindow::showEvent(QShowEvent* event)
 {

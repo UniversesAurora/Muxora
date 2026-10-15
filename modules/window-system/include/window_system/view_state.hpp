@@ -19,7 +19,8 @@ struct BarVisibility {
 // Stable IDs select a projection of the existing layout; entering a focused
 // scope neither moves nor duplicates its content. Effective visibility is
 // derived from the window's visibility preferences and Zen mode, not persisted
-// as a second set of fullscreen preferences.
+// as a second set of fullscreen preferences. Enabling Zen from Normal enters
+// the host's configured fullscreen scope in the same state transition.
 struct WindowViewState {
     ViewMode mode = ViewMode::Normal;
     bool zen = false;

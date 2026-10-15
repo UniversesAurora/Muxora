@@ -46,6 +46,8 @@ private slots:
     void localResizePreservesTheVisibleAnchor();
     void reconstructedGroupsPreserveTheirAnchor_data();
     void reconstructedGroupsPreserveTheirAnchor();
+    void splittingKeepsTheOriginalGroupsVisibleActiveTab_data();
+    void splittingKeepsTheOriginalGroupsVisibleActiveTab();
     void pinnedEdgesPreserveTheCentralAnchor_data();
     void pinnedEdgesPreserveTheCentralAnchor();
     void lastActiveTabNeverManufacturesTrailingSpace();
@@ -167,6 +169,58 @@ void TabViewportTest::reconstructedGroupsPreserveTheirAnchor()
     QCOMPARE(current.bounds.left() - current.offset, old.bounds.left() - old.offset);
     QCOMPARE(manager.paneWidget(manager.model().tab(ids.first())->activePane), content);
     const int offset = currentView->scrollOffset(); settle(); QCOMPARE(currentView->scrollOffset(), offset);
+    QVERIFY(manager.model().validate());
+}
+
+void TabViewportTest::splittingKeepsTheOriginalGroupsVisibleActiveTab_data()
+{
+    QTest::addColumn<int>("side");
+    QTest::addColumn<int>("active");
+    QTest::addColumn<bool>("showBeforeSplit");
+    QTest::addColumn<bool>("viaCommand");
+    for (const auto side : {Placement::Left, Placement::Right})
+        for (const int active : {2, 8, 17})
+            for (bool showBeforeSplit : {false, true}) for (bool viaCommand : {false, true})
+                QTest::newRow(qPrintable(QString("side-%1-active-%2-shown-%3-command-%4")
+                    .arg(int(side)).arg(active).arg(showBeforeSplit).arg(viaCommand)))
+                    << int(side) << active << showBeforeSplit << viaCommand;
+}
+
+void TabViewportTest::splittingKeepsTheOriginalGroupsVisibleActiveTab()
+{
+    QFETCH(int, side); QFETCH(int, active); QFETCH(bool, showBeforeSplit);
+    QFETCH(bool, viaCommand);
+    WindowManager manager;
+    manager.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("Split content"); });
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Active split", {1100, 680}});
+    QVector<TabId> ids;
+    for (int i = 0; i < 22; ++i)
+        ids.append(manager.addTab(window, new QLabel(QString::number(i)),
+            {QString("Workspace tab %1").arg(i), "label", {}}));
+    QVERIFY(manager.activateTab(ids[active]));
+    const auto group = manager.model().groupForTab(ids[active]);
+    if (showBeforeSplit) {
+        manager.showWindow(window);
+        QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); settle();
+        auto* view = groupView(manager, window, group); QVERIFY(view);
+        QVERIFY(view->captureViewportState().activeFullyVisible);
+    }
+    auto* content = manager.paneWidget(manager.model().tab(ids[active])->activePane);
+    if (viaCommand)
+        QVERIFY(manager.execute(side == int(Placement::Left) ? "workspace.splitGroup.left" : "workspace.splitGroup.right", {}, window));
+    else QVERIFY(manager.moveTab(ids.last(), group, Placement(side)));
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); settle();
+    auto* view = groupView(manager, window, group); QVERIFY(view);
+    QCOMPARE(manager.model().group(group)->activeTab, ids[active]);
+    QCOMPARE(view->tabBar()->tabData(view->currentIndex()).toUuid(), ids[active]);
+    const auto state = view->captureViewportState();
+    QVERIFY2(state.activeFullyVisible,
+        qPrintable(QString("active=%1 offset=%2 viewport=%3 tab=[%4,%5]")
+            .arg(active).arg(state.offset).arg(state.bounds.width())
+            .arg(view->tabBar()->displayTabRect(view->currentIndex()).left())
+            .arg(view->tabBar()->displayTabRect(view->currentIndex()).right())));
+    QCOMPARE(manager.paneWidget(manager.model().tab(ids[active])->activePane), content);
     QVERIFY(manager.model().validate());
 }
 

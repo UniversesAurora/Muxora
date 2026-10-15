@@ -48,6 +48,11 @@ bool validViewMode(ViewMode mode)
         || mode == ViewMode::GroupFullscreen || mode == ViewMode::PaneFullscreen;
 }
 
+bool validZenFullscreenMode(ViewMode mode)
+{
+    return mode == ViewMode::WindowFullscreen || mode == ViewMode::GroupFullscreen || mode == ViewMode::PaneFullscreen;
+}
+
 BarVisibility WindowManager::preferredBarVisibility(WindowId window) const
 {
     if (!d->model.window(window)) return {false, false, false, false};
@@ -153,10 +158,24 @@ bool WindowManager::setViewMode(WindowId window, ViewMode mode)
 bool WindowManager::setZenMode(WindowId window, bool enabled)
 {
     if (!d->model.window(window) || !d->windows.value(window)) return false;
-    auto& state = d->viewStates[window];
-    if (enabled && state.mode == ViewMode::Normal) return false;
+    auto state = d->viewStates.value(window);
     if (state.zen == enabled) return true;
+    if (enabled && state.mode == ViewMode::Normal) {
+        if (!validZenFullscreenMode(d->behavior.zenFullscreenMode) || (d->drag && d->drag->isActive())) return false;
+        state.mode = d->behavior.zenFullscreenMode;
+        state.group = GroupId{}; state.tab = TabId{}; state.pane = PaneId{};
+        if (state.mode != ViewMode::WindowFullscreen) {
+            const auto active = context(window);
+            const auto* group = d->model.group(active.group);
+            const auto* tab = d->model.tab(active.tab);
+            if (!group || group->windowId != window || !tab || !d->model.panes(active.tab).contains(active.pane)) return false;
+            state.group = active.group; state.tab = active.tab; state.pane = active.pane;
+        }
+    }
     state.zen = enabled;
+    // Enter the requested fullscreen scope and Zen together: observers never
+    // see an intermediate fullscreen frame with the bars still visible.
+    d->viewStates.insert(window, state);
     QPointer<WindowManager> self(this);
     applyWindowViewState(window);
     if (self) emit layoutChanged();

@@ -2,6 +2,7 @@
 #include "commands/popup_menu.hpp"
 #include "commands/command_menus.hpp"
 #include "style/themed_controls.hpp"
+#include "docking/tab_strip.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
@@ -9,11 +10,16 @@
 #include <QAction>
 #include <QContextMenuEvent>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QTimer>
 #include <QMenuBar>
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
 #include <QWindow>
+#include <QToolButton>
+#include <QWidgetAction>
+#include <QImage>
 #include <memory>
 #include <vector>
 
@@ -52,7 +58,58 @@ private slots:
     void comboDropdownUsesTheSameSquareAnchoredPopupPolicy();
     void cascadingMenusDoNotRemoveItemsOrToggleParentSeparators();
     void menuBarContextUsesCapturedGroupAndGlobalAppearanceCommands();
+    void popupHasOneSquareClientBorderAndNoNativeRim();
+    void tabListShowsEachAssignedColorBeforeItsContent();
+    void tabBarContextExposesMultilineAndItsOwnPlacement_data();
+    void tabBarContextExposesMultilineAndItsOwnPlacement();
+    void rightClickUsesItsTargetWithoutActivatingIt_data();
+    void rightClickUsesItsTargetWithoutActivatingIt();
 };
+
+void PopupMenuTest::rightClickUsesItsTargetWithoutActivatingIt_data()
+{
+    QTest::addColumn<bool>("pinned");
+    QTest::newRow("central") << false; QTest::newRow("pinned-sidebar") << true;
+}
+void PopupMenuTest::rightClickUsesItsTargetWithoutActivatingIt()
+{
+    QFETCH(bool, pinned);
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto a = manager.addTab(window, new QLabel("Active"), {"Active", "label", {}});
+    const auto b = manager.addTab(window, new QLabel("Context target"), {"Context target", "label", {}});
+    if (pinned) {
+        QVERIFY(manager.moveTabToEdge(a, Edge::Left, true));
+        QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
+    }
+    QVERIFY(manager.activateTab(a)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    GroupTabs* view = nullptr;
+    for (auto* widget : manager.windowWidget(window)->findChildren<QWidget*>())
+        if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()
+            && group->property("groupId").toUuid() == manager.model().groupForTab(a)) view = group;
+    QVERIFY(view); auto* bar = view->tabBar();
+    const auto point = bar->displayTabRect(1).center(); const auto global = bar->mapToGlobal(point);
+    QMouseEvent press(QEvent::MouseButtonPress, point, global, Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &press);
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->activeTab, a);
+    QCOMPARE(view->currentIndex(), 0);
+    bool sawMenu = false; QVector<TabId> closed;
+    manager.setCloseGuard([&](const QVector<TabId>& ids) { closed = ids; return true; });
+    QTimer::singleShot(0, &manager, [&] {
+        auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+        if (!menu) return;
+        sawMenu = true;
+        QCOMPARE(manager.model().group(manager.model().groupForTab(a))->activeTab, a);
+        auto* action = menu->findChild<QAction*>("workspace.closeTab");
+        if (!action) { menu->close(); return; }
+        menu->setActiveAction(action); QTest::keyClick(menu, Qt::Key_Return);
+    });
+    QContextMenuEvent context(QContextMenuEvent::Mouse, point, global);
+    QApplication::sendEvent(bar, &context);
+    QVERIFY(sawMenu); QTRY_VERIFY(!manager.model().tab(b));
+    QCOMPARE(closed, QVector<TabId>{b});
+    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->activeTab, a);
+}
 
 void PopupMenuTest::positionPrefersLeftBelowAndFallsBackRightAbove_data()
 {
@@ -183,6 +240,121 @@ void PopupMenuTest::menuBarContextUsesCapturedGroupAndGlobalAppearanceCommands()
     icons->trigger(); QTRY_VERIFY(!manager.tabAppearance().showIcons);
     QVERIFY(manager.model().group(group)); QCOMPARE(manager.model().groupForTab(tab), group);
     menu->close(); QVERIFY(manager.model().validate().ok);
+}
+
+void PopupMenuTest::popupHasOneSquareClientBorderAndNoNativeRim()
+{
+    DismissOnlyMenu menu;
+    auto theme = defaultTheme(); theme.surface = QColor("#eef3e4"); theme.border = QColor("#514465");
+    applyTheme(&menu, theme); menu.addAction("First"); menu.addAction("Second");
+    menu.popup(QPoint(100, 100)); QVERIFY(QTest::qWaitForWindowExposed(&menu));
+    const auto image = menu.grab().toImage(); const auto ratio = image.devicePixelRatio();
+    const auto sample = [&](QPoint point) { return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio)); };
+    QCOMPARE(sample(QPoint(0, menu.height() / 2)), theme.border);
+    QCOMPARE(sample(QPoint(menu.width() - 1, menu.height() / 2)), theme.border);
+    QCOMPARE(sample(QPoint(menu.width() / 2, 0)), theme.border);
+    QCOMPARE(sample(QPoint(menu.width() / 2, menu.height() - 1)), theme.border);
+    QCOMPARE(sample(QPoint(1, menu.height() / 2)), theme.surface);
+    QCOMPARE(sample(QPoint(menu.width() - 2, menu.height() / 2)), theme.surface);
+    QCOMPARE(sample(QPoint(menu.width() / 2, 1)), theme.surface);
+    QCOMPARE(sample(QPoint(menu.width() / 2, menu.height() - 2)), theme.surface);
+#ifdef Q_OS_WIN
+    const auto handle = reinterpret_cast<HWND>(menu.effectiveWinId());
+    QVERIFY(!(GetWindowLongPtrW(handle, GWL_STYLE) & (WS_BORDER | WS_DLGFRAME | WS_THICKFRAME)));
+    QVERIFY(!(GetWindowLongPtrW(handle, GWL_EXSTYLE) & (WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE)));
+    RECT outer{}, client{}; QVERIFY(GetWindowRect(handle, &outer)); QVERIFY(GetClientRect(handle, &client));
+    POINT origin{}; QVERIFY(ClientToScreen(handle, &origin));
+    QCOMPARE(origin.x, outer.left); QCOMPARE(origin.y, outer.top);
+    QCOMPARE(client.right, outer.right - outer.left); QCOMPARE(client.bottom, outer.bottom - outer.top);
+    COLORREF border = 0;
+    const auto result = DwmGetWindowAttribute(handle, DWORD(34), &border, sizeof(border));
+    if (result == S_OK) QCOMPARE(border, COLORREF(0xfffffffe));
+    else QCOMPARE(result, E_INVALIDARG);
+#endif
+    menu.close();
+}
+
+void PopupMenuTest::tabListShowsEachAssignedColorBeforeItsContent()
+{
+    GroupTabs tabs(defaultTheme(), nullptr);
+    auto appearance = TabAppearance{};
+    auto custom = appearance.colors[0]; custom.id = "custom"; custom.name = "Custom";
+    custom.groupInactive.line = QColor("#14a083"); appearance.colors.append(custom);
+    tabs.setAppearance(appearance);
+    const QStringList colors{"red", {}, "custom"};
+    for (int index = 0; index < colors.size(); ++index) {
+        const auto id = QUuid::createUuid();
+        tabs.addTab(new QLabel("Content"), {}, QStringLiteral("Entry %1").arg(index), id);
+        TabRecord record; record.id = id; record.colorId = colors[index]; tabs.setTabMetadata(index, record);
+    }
+    auto theme = defaultTheme(); theme.surface = QColor("#edf2f7"); theme.selection = QColor("#bdd7ef");
+    applyTheme(&tabs, theme); tabs.resize(620, 240); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* button = tabs.findChild<QToolButton*>("TabListButton"); QVERIFY(button);
+    QTest::mouseClick(button, Qt::LeftButton);
+    auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu);
+    QVERIFY(QTest::qWaitForWindowExposed(menu));
+    int index = 0;
+    for (auto* action : menu->actions()) {
+        auto* item = qobject_cast<QWidgetAction*>(action); QVERIFY(item);
+        auto* row = item->defaultWidget(); QVERIFY(row);
+        QColor expected;
+        for (const auto& preset : appearance.colors) if (preset.id == colors[index]) expected = preset.groupInactive.line;
+        QCOMPARE(row->property("tabColorMarker").value<QColor>(), expected);
+        auto checkMarker = [&] {
+            const auto pixels = row->grab().toImage(); const auto scale = pixels.devicePixelRatio();
+            QCOMPARE(pixels.pixelColor(qRound(3 * scale), qRound((row->height() / 2) * scale)),
+                expected.isValid() ? expected : row->property("emphasized").toBool() ? theme.selection : theme.surface);
+        };
+        checkMarker();
+        menu->setActiveAction(action); QCoreApplication::processEvents(); checkMarker();
+        ++index;
+    }
+    QCOMPARE(index, 3); QCOMPARE(tabs.currentIndex(), 0); menu->close();
+}
+
+void PopupMenuTest::tabBarContextExposesMultilineAndItsOwnPlacement_data()
+{
+    QTest::addColumn<bool>("pinned");
+    QTest::newRow("ordinary") << false; QTest::newRow("pinned") << true;
+}
+
+void PopupMenuTest::tabBarContextExposesMultilineAndItsOwnPlacement()
+{
+    QFETCH(bool, pinned);
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QLabel("Target"), {"Target", "label", {}});
+    if (pinned) QVERIFY(manager.moveTabToEdge(tab, Edge::Left, true));
+    const auto group = manager.model().groupForTab(tab);
+    manager.showWindow(window); auto* view = manager.windowWidget(window);
+    QVERIFY(QTest::qWaitForWindowExposed(view));
+    const auto open = [&] {
+        manager.showGroupMenu(group, view->mapToGlobal(QPoint(100, 100)));
+        return view->findChild<QMenu*>("TabBarContextMenu");
+    };
+    QPointer<QMenu> menu = open(); QVERIFY(menu && menu->isVisible());
+    const auto iconCommand = pinned ? QStringLiteral("presentation.toggleSidebarIcons") : QStringLiteral("presentation.toggleIcons");
+    const auto numberCommand = pinned ? QStringLiteral("presentation.toggleSidebarNumbers") : QStringLiteral("presentation.toggleNumbers");
+    auto* icons = menu->findChild<QAction*>(iconCommand);
+    auto* numbers = menu->findChild<QAction*>(numberCommand);
+    QVERIFY(icons && numbers); QCOMPARE(icons->isChecked(), !pinned); QVERIFY(!numbers->isChecked());
+    QVERIFY(!menu->findChild<QAction*>(pinned ? QStringLiteral("presentation.toggleIcons") : QStringLiteral("presentation.toggleSidebarIcons")));
+    auto* multiline = menu->findChild<QAction*>("presentation.toggleMultiline");
+    auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
+    QVERIFY(multiline && wheel); QVERIFY(!multiline->isChecked()); QVERIFY(!wheel->isEnabled());
+    multiline->trigger(); QTRY_VERIFY(manager.tabAppearance().multiline); menu->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    menu = open(); QVERIFY(menu && menu->isVisible());
+    wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
+    QVERIFY(wheel && wheel->isEnabled()); wheel->trigger(); QTRY_VERIFY(manager.tabAppearance().wheelExpandRows);
+    const auto prefix = pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement");
+    auto* top = menu->findChild<QAction*>(prefix + ".top");
+    auto* bottom = menu->findChild<QAction*>(prefix + ".bottom");
+    QVERIFY(top && bottom); QVERIFY(top->isChecked()); QVERIFY(!bottom->isChecked());
+    bottom->trigger();
+    QTRY_COMPARE(pinned ? manager.tabAppearance().pinnedPlacement : manager.tabAppearance().centralPlacement, TabBarPlacement::Bottom);
+    QCOMPARE(pinned ? manager.tabAppearance().centralPlacement : manager.tabAppearance().pinnedPlacement, TabBarPlacement::Top);
+    QCOMPARE(manager.model().groupForTab(tab), group); QVERIFY(manager.model().validate());
+    menu->close();
 }
 
 QTEST_MAIN(PopupMenuTest)

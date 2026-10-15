@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "edge_strip.hpp"
+#include "style/themed_controls.hpp"
 
 #include <QAbstractButton>
 #include <QBoxLayout>
@@ -53,16 +54,7 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     // The overlay is not managed by QScrollArea. A new QScrollBar otherwise
     // keeps its default 0..99 range when the real range never changes from 0.
     scrollbar_->setRange(0, 0);
-    scrollbar_->setStyleSheet(QStringLiteral(
-        "QScrollBar { background: transparent; border: none; margin: 0; }"
-        "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
-        "QScrollBar::handle { background: %1; border-radius: 2px; margin: 0; }"
-        "QScrollBar::handle:vertical { min-height: 18px; }"
-        "QScrollBar::handle:horizontal { min-width: 18px; }"
-        "QScrollBar::handle:hover { background: %2; }"
-        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
-        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
-        .arg(theme_.border.name(), theme_.accent.name()));
+    scrollbar_->setStyleSheet(overlayScrollbarStyle(theme_));
     scrollbar_->hide();
     observe(scroll_->viewport()); observe(track_); observe(scrollbar_);
     autoScroll_->setObjectName("EdgeAutoScrollTimer"); autoScroll_->setInterval(200);

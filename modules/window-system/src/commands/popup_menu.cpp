@@ -62,9 +62,25 @@ void preparePopupFrame(QWidget* popup)
     // the native popup HWND. Apply the policy before first exposure and when
     // Qt replaces a handle. Earlier Windows keeps its ordinary square popup.
     const auto handle = reinterpret_cast<HWND>(popup->winId());
+    // QSS supplies the single client border. A native edge or Win11's DWM
+    // outline would otherwise add a second rim (often white under a different
+    // system palette). Keep the compositor's shadow while removing only rims.
+    const auto style = GetWindowLongPtrW(handle, GWL_STYLE);
+    const auto squareStyle = style & ~(WS_BORDER | WS_DLGFRAME | WS_THICKFRAME);
+    const auto extended = GetWindowLongPtrW(handle, GWL_EXSTYLE);
+    const auto squareExtended = extended & ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
+    if (style != squareStyle || extended != squareExtended) {
+        SetWindowLongPtrW(handle, GWL_STYLE, squareStyle);
+        SetWindowLongPtrW(handle, GWL_EXSTYLE, squareExtended);
+        SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
     constexpr DWORD cornerPreferenceAttribute = 33;
     const DWORD squareCorners = 1; // DWMWCP_DONOTROUND
     DwmSetWindowAttribute(handle, cornerPreferenceAttribute, &squareCorners, sizeof(squareCorners));
+    constexpr DWORD borderColorAttribute = 34;
+    const COLORREF noBorder = 0xfffffffe; // DWMWA_COLOR_NONE
+    DwmSetWindowAttribute(handle, borderColorAttribute, &noBorder, sizeof(noBorder));
 #endif
 }
 

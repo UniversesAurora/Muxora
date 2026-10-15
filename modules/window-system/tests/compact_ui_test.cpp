@@ -8,12 +8,14 @@
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
+#include <QCursor>
 #include <QDir>
 #include <QEnterEvent>
 #include <QImage>
 #include <QLabel>
 #include <QMenu>
 #include <QPalette>
+#include <QPainter>
 #include <QPointer>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -143,8 +145,11 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     QWidget root;
     auto* column = new QVBoxLayout(&root); column->setContentsMargins(0, 0, 0, 0);
     auto* tabs = new GroupTabs(defaultTheme(), &root); column->addWidget(tabs);
-    for (int index = 0; index < 12; ++index)
-        tabs->addTab(new QLabel("Content"), {}, QString("Long tab %1").arg(index), QUuid::createUuid());
+    for (int index = 0; index < 12; ++index) {
+        const auto id = QUuid::createUuid();
+        tabs->addTab(new QLabel("Content"), {}, QString("Long tab %1").arg(index), id);
+        TabRecord record; record.id = id; record.colorId = "red"; tabs->setTabMetadata(index, record);
+    }
     applyTheme(&root); root.resize(380, 240); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root));
     auto* header = tabs->findChild<QWidget*>("TabGroupHeader"); QVERIFY(header);
@@ -159,6 +164,7 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     QCOMPARE(headerBefore.height(), tabs->tabBar()->height());
     QCOMPARE(contentBefore.top(), headerBefore.bottom() + 1);
     QCOMPARE(boundsIn(scroll->viewport(), tabs).bottom(), headerBefore.bottom());
+    const auto unoccluded = tabs->grab().toImage();
     sendEnter(scroll->viewport());
     QVERIFY(scrollbar->isVisible());
     QCOMPARE(scrollbar->parentWidget(), scroll->viewport());
@@ -175,9 +181,25 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
         QStyle::SC_ScrollBarSlider, scrollbar);
     QVERIFY(!handle.isEmpty());
     const auto image = tabs->grab().toImage();
-    const auto point = scrollbar->mapTo(tabs, handle.center());
+    const auto point = scrollbar->mapTo(tabs, QPoint(handle.center().x(), scrollbar->height() - 1));
     const auto ratio = image.devicePixelRatio();
-    QCOMPARE(image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio)).rgb(), QColor("#9C8FB0").rgb());
+    const auto under = unoccluded.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
+    const auto composite = [&](QColor handleColor, int alpha) {
+        QImage pixel(1, 1, QImage::Format_ARGB32_Premultiplied); pixel.fill(under);
+        QPainter painter(&pixel); handleColor.setAlpha(alpha); painter.fillRect(pixel.rect(), handleColor); painter.end();
+        return pixel.pixelColor(0, 0);
+    };
+    const auto normal = image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
+    QCOMPARE(normal, composite(defaultTheme().border, 112));
+    QVERIFY(normal != defaultTheme().border); QVERIFY(normal != under);
+    // Moving the native cursor queues Enter on Windows. Wait for that input
+    // precondition before checking pixels; a QPA move alone does not establish
+    // the widget's native underMouse state.
+    QCursor::setPos(scrollbar->mapToGlobal(handle.center()));
+    QTRY_VERIFY(scrollbar->underMouse());
+    const auto hovered = tabs->grab().toImage().pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
+    QCOMPARE(hovered, composite(defaultTheme().accent, 176));
+    QVERIFY(hovered != defaultTheme().accent); QVERIFY(hovered != normal);
     const auto selected = tabs->currentIndex();
     scrollbar->setValue(scrollbar->maximum() / 2);
     QCOMPARE(scroll->horizontalScrollBar()->value(), scrollbar->value()); QCOMPARE(tabs->currentIndex(), selected);

@@ -56,8 +56,20 @@ Items sorting()
 Items groupMovement()
 {
     return {group("group.move.direction", "到相邻位置", directions("group.move.")),
+        command("group.moveToGroup"),
         group("group.move.window", "到已有窗口", {command("group.moveWindow.previous"), command("group.moveWindow.next"),
-            separator(), command("group.moveWindow")})};
+            separator(), command("group.moveWindow")}),
+        group("group.move.newWindow", "到新窗口", {command("group.detachFloating"), command("group.detachWorkbench")}),
+        group("group.move.edge", "固定到侧边栏", directions("group.moveEdge.")),
+        group("group.move.hide", "收纳到侧边栏", directions("group.hideEdge."))};
+}
+Items groupExchange()
+{
+    auto result = directions("group.swap."); result += {separator(), command("group.swap")}; return result;
+}
+Items groupMerge()
+{
+    auto result = directions("group.merge."); result += {separator(), command("group.merge")}; return result;
 }
 Items paneMovement()
 {
@@ -106,6 +118,7 @@ const Items& layout(CommandMenuSurface surface)
             group("view.tabAppearance", "标签栏", {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
                 command("presentation.toggleNumbers"), separator(), command("presentation.toggleMultiline"),
                 command("presentation.toggleWheelExpandRows")}),
+            group("view.sidebarAppearance", "侧边栏标签", {command("presentation.toggleSidebarIcons"), command("presentation.toggleSidebarNumbers")}),
             group("view.fullscreen", "全屏", {command("window.fullscreen.toggle"), command("window.fullscreen.group"),
                 command("window.fullscreen.pane"), separator(), command("window.zen.toggle"), command("window.fullscreen.exit")}),
             group("view.tabs", "切换标签", {command("workspace.previousTab"), command("workspace.nextTab")}),
@@ -122,6 +135,8 @@ const Items& layout(CommandMenuSurface surface)
             group("layout.tabOrder", "排列标签", {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
                 group("group.sort", "重新排序", sorting())}),
             group("layout.moveGroup", "移动标签组", groupMovement()),
+            group("layout.swapGroup", "交换标签组", groupExchange()),
+            group("layout.mergeGroup", "合并标签组", groupMerge()),
             group("layout.moveTab", "移动标签", tabMovement()), group("layout.movePane", "移动窗格", paneMovement()),
             group("layout.edge", "边栏", edgeOperations()), separator(), command("pane.close"), separator(900)}, 30),
         group("窗口", "窗口(&W)", {command("window.select"), command("window.focusOwner"), separator(),
@@ -143,7 +158,9 @@ const Items& layout(CommandMenuSurface surface)
         group("tab.group", "标签组", {group("tab.group.create", "新建标签组", directions("workspace.splitGroup.")),
             group("tab.group.resize", "调整边界", directions("workspace.resizeGroup."))}),
         group("tab.edge", "边栏", edgeOperations(false)), separator(), command("tab.color.set"),
-        group("tab.group.move", "移动标签组", groupMovement()), command("group.close")};
+        group("tab.group.move", "移动标签组", groupMovement()),
+        group("tab.group.swap", "交换标签组", groupExchange()),
+        group("tab.group.merge", "合并标签组", groupMerge()), command("group.close")};
     static const Items pane = {command("pane.close"), separator(),
         group("pane.split", "拆分窗格", directions("pane.split.")),
         group("pane.move", "移动窗格", paneMovement()),
@@ -313,6 +330,8 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
         visible = group && group->location != GroupLocation::Central;
     std::optional<bool> appearanceChecked;
     if (id == "presentation.toggleIcons") appearanceChecked = manager->tabAppearance().showIcons;
+    else if (id == "presentation.toggleSidebarIcons") appearanceChecked = manager->tabAppearance().showSidebarIcons;
+    else if (id == "presentation.toggleSidebarNumbers") appearanceChecked = manager->tabAppearance().showSidebarNumbers;
     else if (id == "presentation.toggleNewTabButton") appearanceChecked = manager->tabAppearance().showNewTabButton;
     else if (id == "presentation.toggleNumbers") appearanceChecked = manager->tabAppearance().showNumbers;
     else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;

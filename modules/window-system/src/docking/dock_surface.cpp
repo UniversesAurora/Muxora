@@ -259,15 +259,17 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     bar->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
     if (!manager_->sideBarsVisible(window_)) bar->hide();
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
+    int ordinal = 0;
     for (const auto groupId : ids) {
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
+            ++ordinal;
             auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
                 manager_->theme().metrics.edgeThickness, bar);
             button->setPreset(manager_->tabColorPreset(manager_->model().tab(tabId)->colorId));
             const auto appearance=manager_->tabAppearance();
             const auto options=manager_->tabOptions(tabId);
-            button->setPresentation(appearance.showIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
-                appearance.showNumbers ? manager_->model().group(groupId)->tabs.indexOf(tabId)+1 : 0);
+            button->setPresentation(appearance.showSidebarIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
+                appearance.showSidebarNumbers ? ordinal : 0);
             button->setCheckable(true);
             button->setChecked(manager_->context(window_).tab == tabId);
             button->setProperty("tabId", tabId);
@@ -395,8 +397,17 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
     if (edge) {
         const auto appearance=manager_->tabAppearance();
         const auto* group=manager_->model().group(manager_->model().groupForTab(tab));
-        return edgeTabExtent(fontMetrics(),record->title,appearance.showIcons && manager_->tabOptions(tab).showIcon,
-            appearance.showNumbers && group ? group->tabs.indexOf(tab)+1 : 0);
+        int ordinal = 0;
+        const auto* window = manager_->model().window(window_);
+        if (window && group) for (const auto id : window->edgeGroups) {
+            const auto* candidate = manager_->model().group(id);
+            if (!candidate || candidate->location != GroupLocation::AutoHide || candidate->edge != group->edge) continue;
+            const int index = candidate->tabs.indexOf(tab);
+            if (index >= 0) { ordinal += index + 1; break; }
+            ordinal += candidate->tabs.size();
+        }
+        return edgeTabExtent(fontMetrics(),record->title,appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
+            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         const auto* bar = group->tabBar();

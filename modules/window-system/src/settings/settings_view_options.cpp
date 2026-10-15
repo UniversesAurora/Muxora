@@ -66,9 +66,18 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     zen_ = new ThemedCheckBox(QStringLiteral("隐藏所有栏，专注当前内容"), parent);
     zen_->setObjectName("WindowZenMode");
     rows->addWidget(addRow(parent, "window/display", QStringLiteral("禅模式"), "window.zenMode",
-        QStringLiteral("在全屏中临时隐藏各类栏。显示任意栏时退出禅模式，恢复此前设置。"), zen_));
+        QStringLiteral("临时隐藏各类栏；普通窗口会按下方设置先进入全屏。显示任意栏时退出禅模式，恢复此前设置。"), zen_));
     connect(zen_, &QCheckBox::toggled, this, [this](bool enabled) {
-        if (manager_) manager_->setZenMode(settingsWindow(), enabled);
+        if (manager_ && !manager_->setZenMode(settingsWindow(), enabled)) syncViewOptions();
+    });
+    zenFullscreenMode_ = new ThemedComboBox(parent); zenFullscreenMode_->setObjectName("ZenFullscreenMode");
+    for (const auto& mode : modes) zenFullscreenMode_->addItem(QString::fromUtf8(mode.name), int(mode.mode));
+    rows->addWidget(addRow(parent, "window/display", QStringLiteral("禅模式默认全屏范围"), "window.zenFullscreenMode",
+        QStringLiteral("在普通窗口启用禅模式时使用。已经全屏时保留当前范围；退出禅模式恢复各栏，但保留全屏。"), zenFullscreenMode_));
+    connect(zenFullscreenMode_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!manager_) return;
+        auto behavior = manager_->behavior(); behavior.zenFullscreenMode = ViewMode(zenFullscreenMode_->currentData().toInt());
+        manager_->setBehavior(behavior);
     });
     for (const auto& bar : bars) {
         auto* control = new ThemedCheckBox(QStringLiteral("显示") + QString::fromUtf8(bar.name), parent);
@@ -93,13 +102,18 @@ void SettingsPage::syncViewOptions()
     if (!manager_ || !viewMode_) return;
     const auto window = settingsWindow();
     const QSignalBlocker modeBlock(viewMode_), zenBlock(zen_);
+    const QSignalBlocker zenModeBlock(zenFullscreenMode_);
     const QSignalBlocker workbenchBlock(hideSingleWorkbench_), floatingBlock(hideSingleFloating_);
     const auto behavior = manager_->behavior();
     hideSingleWorkbench_->setChecked(behavior.hideSingleTabWorkbench);
     hideSingleFloating_->setChecked(behavior.hideSingleTabFloating);
+    zenFullscreenMode_->setCurrentIndex(zenFullscreenMode_->findData(int(behavior.zenFullscreenMode)));
     viewMode_->setCurrentIndex(int(manager_->viewMode(window)));
     zen_->setChecked(manager_->zenMode(window));
-    zen_->setEnabled(manager_->viewMode(window) != ViewMode::Normal);
+    const auto context = manager_->context(window);
+    zen_->setEnabled(manager_->model().window(window) && (manager_->viewMode(window) != ViewMode::Normal
+        || behavior.zenFullscreenMode == ViewMode::WindowFullscreen
+        || (!context.group.isNull() && !context.tab.isNull() && !context.pane.isNull())));
     const auto effective = manager_->barVisibility(window);
     for (const auto& item : visibilityControls_) {
         const QSignalBlocker block(item.control); item.control->setChecked(shown(effective, item.bar));

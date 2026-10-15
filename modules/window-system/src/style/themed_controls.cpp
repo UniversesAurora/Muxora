@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "themed_controls.hpp"
 #include "commands/popup_menu.hpp"
+#include <window_system/theme.hpp>
 
 #include <QAbstractItemView>
 #include <QEvent>
@@ -46,6 +47,24 @@ void drawChevron(QPainter& painter, const QRect& rect, const QColor& color, bool
 }
 
 } // namespace
+
+QString overlayScrollbarStyle(const Theme& theme)
+{
+    const auto rgba = [](QColor color, int alpha) {
+        color.setAlpha(alpha);
+        return QStringLiteral("rgba(%1,%2,%3,%4)").arg(color.red()).arg(color.green()).arg(color.blue()).arg(color.alpha());
+    };
+    return QStringLiteral(
+        "QScrollBar { background: transparent; border: none; margin: 0; }"
+        "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
+        "QScrollBar::handle { background: %1; border-radius: 0; margin: 0; }"
+        "QScrollBar::handle:vertical { min-height: 18px; }"
+        "QScrollBar::handle:horizontal { min-width: 18px; }"
+        "QScrollBar::handle:hover, QScrollBar::handle:pressed { background: %2; }"
+        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
+        .arg(rgba(theme.border, 112), rgba(theme.accent, 176));
+}
 
 void ThemedComboBox::showPopup()
 {

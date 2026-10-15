@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QLabel>
+#include <QEvent>
 #include <QFontMetrics>
 #include <QStylePainter>
 
@@ -21,6 +22,11 @@ public:
     }
 
 protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::ToolTip) { event->accept(); return true; }
+        return QLabel::event(event);
+    }
     void paintEvent(QPaintEvent*) override
     {
         const QRect area = contentsRect();

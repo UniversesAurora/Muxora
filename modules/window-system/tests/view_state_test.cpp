@@ -146,6 +146,11 @@ private slots:
     void malformedDisplaySnapshotsFailBeforeCreatingContent();
     void arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail();
     void viewNotificationAllowsManagerDestruction();
+    void zenFromNormalEntersTheConfiguredScopeAtomically_data() { modeRows(); }
+    void zenFromNormalEntersTheConfiguredScopeAtomically();
+    void zenKeepsAnExistingScopeAndRequiresValidContent();
+    void zenDefaultScopePersistsAndRejectsInvalidValues();
+    void zenEntryNotificationAllowsManagerDestruction();
 };
 
 void ViewStateTest::fullscreenScopesPreserveWindowVisibility()
@@ -320,7 +325,7 @@ void ViewStateTest::invalidOperationsLeaveStateUnchanged()
     const auto before = manager.saveLayout();
     QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     QVERIFY(!manager.setViewMode(fixture.window, ViewMode(99))); QVERIFY(!manager.setViewMode({}, ViewMode::WindowFullscreen));
-    QVERIFY(!manager.setZenMode(fixture.window, true)); QVERIFY(!manager.setToolbarsVisible({}, false));
+    QVERIFY(!manager.setZenMode({}, true)); QVERIFY(!manager.setToolbarsVisible({}, false));
     QVERIFY(!manager.setStatusBarVisible(QUuid::createUuid(), false));
     QCOMPARE(manager.saveLayout(), before); QVERIFY(changes.isEmpty());
 }
@@ -532,6 +537,79 @@ void ViewStateTest::viewNotificationAllowsManagerDestruction()
     auto* raw = manager.get();
     QVERIFY(raw->setViewMode(fixture.window, ViewMode::WindowFullscreen));
     QVERIFY(!observer);
+}
+
+void ViewStateTest::zenFromNormalEntersTheConfiguredScopeAtomically()
+{
+    QFETCH(ViewMode, mode);
+    WindowManager manager; const auto fixture = createFixture(manager);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = mode; manager.setBehavior(behavior);
+    QVERIFY(manager.setToolbarsVisible(fixture.window, false));
+    const auto preferred = manager.preferredBarVisibility(fixture.window); const auto model = manager.model().toJson();
+    QPointer<QWidget> content(manager.paneWidget(fixture.pane));
+    QSignalSpy changed(&manager, &WindowManager::layoutChanged);
+    QVector<WindowViewState> observed;
+    connect(&manager, &WindowManager::layoutChanged, this, [&] { observed.append(manager.windowViewState(fixture.window)); });
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::Normal); QVERIFY(manager.setZenMode(fixture.window, true));
+    QCOMPARE(changed.size(), 1); QCOMPARE(observed.size(), 1);
+    QCOMPARE(observed[0].mode, mode); QVERIFY(observed[0].zen);
+    QCOMPARE(observed[0].effective, (BarVisibility{false, false, false, false}));
+    if (mode != ViewMode::WindowFullscreen) {
+        QCOMPARE(observed[0].group, manager.model().groupForTab(fixture.tab));
+        QCOMPARE(observed[0].tab, fixture.tab); QCOMPARE(observed[0].pane, fixture.pane);
+    }
+    QCOMPARE(manager.model().toJson(), model); QCOMPARE(manager.paneWidget(fixture.pane), content.data()); QVERIFY(content);
+    QCOMPARE(manager.preferredBarVisibility(fixture.window), preferred);
+    QVERIFY(manager.setZenMode(fixture.window, false)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    QCOMPARE(manager.barVisibility(fixture.window), preferred);
+    QVERIFY(manager.setViewMode(fixture.window, ViewMode::Normal)); QCOMPARE(manager.barVisibility(fixture.window), preferred);
+}
+
+void ViewStateTest::zenKeepsAnExistingScopeAndRequiresValidContent()
+{
+    WindowManager manager; const auto fixture = createFixture(manager);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen; manager.setBehavior(behavior);
+    QVERIFY(manager.setViewMode(fixture.window, ViewMode::GroupFullscreen));
+    QVERIFY(manager.setZenMode(fixture.window, true)); QCOMPARE(manager.viewMode(fixture.window), ViewMode::GroupFullscreen);
+    QVERIFY(manager.setZenMode(fixture.window, false));
+    const auto empty = manager.createWindow(); const auto before = manager.saveLayout();
+    QSignalSpy changed(&manager, &WindowManager::layoutChanged);
+    QVERIFY(!manager.setZenMode(empty, true)); QCOMPARE(manager.saveLayout(), before); QCOMPARE(changed.size(), 0);
+    behavior.zenFullscreenMode = ViewMode::WindowFullscreen; manager.setBehavior(behavior);
+    QVERIFY(manager.setZenMode(empty, true)); QCOMPARE(manager.viewMode(empty), ViewMode::WindowFullscreen);
+    QVERIFY(manager.zenMode(empty));
+}
+
+void ViewStateTest::zenDefaultScopePersistsAndRejectsInvalidValues()
+{
+    WindowManager manager; const auto fixture = createFixture(manager);
+    QCOMPARE(manager.behavior().zenFullscreenMode, ViewMode::WindowFullscreen);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen; manager.setBehavior(behavior);
+    auto snapshot = manager.saveLayout();
+    QCOMPARE(snapshot.value("behavior").toObject().value("zenFullscreenMode"), QJsonValue(int(ViewMode::PaneFullscreen)));
+    WindowManager restored; int created = 0; factory(restored, &created);
+    QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::PaneFullscreen);
+    const auto valid = restored.saveLayout(); created = 0;
+    for (const auto& value : {QJsonValue(0), QJsonValue(99), QJsonValue(-1), QJsonValue(1.5), QJsonValue(true), QJsonValue("paneFullscreen"), QJsonValue(QJsonValue::Null)}) {
+        auto invalid = snapshot; auto settings = invalid.value("behavior").toObject();
+        settings.insert("zenFullscreenMode", value); invalid.insert("behavior", settings);
+        QVERIFY(!restored.restoreLayout(invalid)); QCOMPARE(restored.saveLayout(), valid); QCOMPARE(created, 0);
+    }
+    for (const auto mode : {ViewMode::Normal, ViewMode(99)}) {
+        auto invalid = manager.behavior(); invalid.zenFullscreenMode = mode; const auto before = manager.saveLayout();
+        manager.setBehavior(invalid); QCOMPARE(manager.saveLayout(), before);
+    }
+    auto settings = snapshot.value("behavior").toObject(); settings.remove("zenFullscreenMode"); snapshot.insert("behavior", settings);
+    QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::WindowFullscreen);
+    QVERIFY(restored.model().tab(fixture.tab));
+}
+
+void ViewStateTest::zenEntryNotificationAllowsManagerDestruction()
+{
+    auto manager = std::make_unique<WindowManager>(); const auto fixture = createFixture(*manager);
+    QPointer<WindowManager> retained(manager.get());
+    connect(manager.get(), &WindowManager::layoutChanged, qApp, [&] { manager.reset(); });
+    auto* raw = manager.get(); QVERIFY(raw->setZenMode(fixture.window, true)); QVERIFY(!retained);
 }
 
 QTEST_MAIN(ViewStateTest)

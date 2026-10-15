@@ -1,6 +1,7 @@
 #include "tab_strip.hpp"
 #include "commands/popup_menu.hpp"
 #include "style/compact_tool_button.hpp"
+#include "style/themed_controls.hpp"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -116,8 +117,9 @@ protected:
 
 class TabListRow final : public QWidget {
 public:
-    TabListRow(QString text, QIcon icon, QWidget* parent) : QWidget(parent) {
+    TabListRow(QString text, QIcon icon, QColor marker, QWidget* parent) : QWidget(parent), marker_(marker) {
         setObjectName("TabListRow");
+        setProperty("tabColorMarker", marker_);
         setMouseTracking(true);
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(8, 2, 5, 2); layout->setSpacing(8);
@@ -160,6 +162,7 @@ protected:
         const bool emphasized = property("emphasized").toBool();
         painter.fillRect(rect(), tabListColor(this, emphasized ? "selection" : "surface",
             emphasized ? QPalette::Highlight : QPalette::Base));
+        if (marker_.isValid()) painter.fillRect(QRect(2, 2, 3, height() - 4), marker_);
     }
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) { const auto callback = activate; if (callback) callback(); }
@@ -175,6 +178,7 @@ private:
         update(); title_->update();
     }
     QLabel* title_ = nullptr;
+    QColor marker_;
 };
 } // namespace
 
@@ -194,6 +198,12 @@ void DragTabBar::setAppearance(const TabAppearance& appearance)
 void DragTabBar::setTabMetadata(int index, const TabRecord& tab)
 {
     decorations_[index] = {tab.colorId};
+}
+const TabColorPreset* DragTabBar::tabPreset(int index) const
+{
+    const auto id = decorations_.value(index).colorId;
+    for (const auto& preset : appearance_.colors) if (preset.id == id) return &preset;
+    return nullptr;
 }
 int DragTabBar::displayedTabAt(QPoint local) const
 {
@@ -331,7 +341,10 @@ QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
     const int iconWidth = !appearance_.showIcons || tabIcon(index).isNull() ? 0 : iconSize().width() + 4;
     const int numberWidth = appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) + 5 : 0;
-    size.setWidth(fontMetrics().size(Qt::TextShowMnemonic, tabText(index)).width() + iconWidth + numberWidth + 35);
+    // Without an icon a one-character label can put its center inside the
+    // trailing close hitbox. Keep a small independent drag/click area even for
+    // the shortest labels; the close target retains its full 16 pixels.
+    size.setWidth(std::max(46, fontMetrics().size(Qt::TextShowMnemonic, tabText(index)).width() + iconWidth + numberWidth + 35));
     return size;
 }
 QRect DragTabBar::closeRect(int index) const {
@@ -340,6 +353,7 @@ QRect DragTabBar::closeRect(int index) const {
                  area.center().y() - 8, 16, 16);
 }
 void DragTabBar::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::RightButton) { pressed_ = -1; closePressed_ = -1; event->accept(); return; }
     start_ = event->position().toPoint(); pressed_ = displayedTabAt(start_);
     if (event->button() == Qt::LeftButton && pressed_ >= 0 && closeRect(pressed_).contains(start_)) {
         closePressed_ = pressed_; pressed_ = -1; event->accept(); return;
@@ -373,17 +387,12 @@ void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
 void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; update(); QTabBar::leaveEvent(event); }
 void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
-    const auto presetFor = [this](const QString& id) -> const TabColorPreset* {
-        for (const auto& preset : appearance_.colors) if (preset.id == id) return &preset;
-        return nullptr;
-    };
     const auto draw = [&](int index) {
         if (isDragged(index)) return;
         QStyleOptionTab option; initStyleOption(&option, index);
         option.rect = displayTabRect(index);
         if (!option.rect.intersects(event->rect())) return;
-        const auto decoration = decorations_.value(index);
-        const auto* preset = presetFor(decoration.colorId);
+        const auto* preset = tabPreset(index);
         const auto* colors = preset ? (index == currentIndex() ? &preset->groupActive : &preset->groupInactive) : nullptr;
         if (colors) {
             painter.fillRect(option.rect, colors->background);
@@ -403,7 +412,7 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             const QRect iconArea(rtl ? textArea.right() - side + 1 : textArea.left(),
                                  textArea.center().y() - iconSize().height() / 2,
                                  side, iconSize().height());
-            if (colors && index == currentIndex()) {
+            if (colors) {
                 auto pixmap = option.icon.pixmap(iconArea.size());
                 QPainter iconPainter(&pixmap); iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
                 iconPainter.fillRect(pixmap.rect(), colors->icon); iconPainter.end(); painter.drawPixmap(iconArea,pixmap);
@@ -461,10 +470,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     scrollbar_ = new QScrollBar(Qt::Horizontal, scroll_->viewport()); scrollbar_->setObjectName("TabScrollBar");
     scrollbar_->setFixedHeight(4); scrollbar_->setSingleStep(28);
     scrollbar_->installEventFilter(this);
-    scrollbar_->setStyleSheet("QScrollBar:horizontal{background:transparent;height:4px;border:0;}"
-        "QScrollBar::handle:horizontal{background:#9C8FB0;min-width:18px;border-radius:2px;margin:0;}"
-        "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}"
-        "QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent;}");
+    scrollbar_->setStyleSheet(overlayScrollbarStyle(theme));
     scrollbar_->hide();
     stripLayout->addWidget(scroll_, 1);
     list_ = new CompactToolButton(header, QSize(listButtonWidth, theme.metrics.tabHeight)); list_->setObjectName("TabListButton");
@@ -712,6 +718,10 @@ void GroupTabs::updateCanvasGeometry()
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
 {
     appearance_ = appearance; pinned_ = pinned;
+    if (pinned_) {
+        appearance_.showIcons = appearance.showSidebarIcons;
+        appearance_.showNumbers = appearance.showSidebarNumbers;
+    }
     rowsExpanded_ = !appearance_.wheelExpandRows;
     bar_->setAppearance(appearance_);
     createButtons_->setVisible(appearance_.showNewTabButton);
@@ -827,7 +837,9 @@ void GroupTabs::showTabList() {
     menu->setStyleSheet("QMenu{menu-scrollable:1;}");
     for (int index = 0; index < bar_->count(); ++index) {
         auto* action = new QWidgetAction(menu);
-        auto* row = new TabListRow(bar_->tabText(index), bar_->tabIcon(index), menu);
+        const auto* preset = bar_->tabPreset(index);
+        auto* row = new TabListRow(bar_->tabText(index), appearance_.showIcons ? bar_->tabIcon(index) : QIcon{},
+            preset ? preset->groupInactive.line : QColor{}, menu);
         row->setProperty("tabId", bar_->tabData(index));
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QStringLiteral("关闭标签"));
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);

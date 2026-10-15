@@ -8,6 +8,8 @@
 #include <QAction>
 #include <QApplication>
 #include <QCursor>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QImage>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -45,6 +47,66 @@ public:
     }
 private:
     std::function<void()> onShow_;
+};
+
+// Optional, bounded diagnostics for the real popup routing. This does not add
+// waits or replace any timing/visibility assertions in the interaction test.
+class PopupEventTrace final : public QObject {
+public:
+    PopupEventTrace(QWidget* host, QToolButton* button)
+        : host_(host), button_(button), menu_(button->menu()), path_(qEnvironmentVariable("MUXORA_CHROME_TRACE_PATH"))
+    {
+        timer_.start();
+        if (path_.isEmpty()) return;
+        qApp->installEventFilter(this);
+        connect(menu_, &QMenu::aboutToShow, this, [this] { note("signal-aboutToShow"); });
+        connect(menu_, &QMenu::aboutToHide, this, [this] { note("signal-aboutToHide"); });
+        note("trace-start");
+    }
+    ~PopupEventTrace() override
+    {
+        if (path_.isEmpty()) return;
+        qApp->removeEventFilter(this); note("trace-end");
+        QFile output(path_);
+        if (output.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+            output.write(lines_.join('\n').toUtf8());
+    }
+    void note(const QString& event)
+    {
+        if (path_.isEmpty() || lines_.size() >= 256) return;
+        lines_.append(QStringLiteral("%1ms %2 visible=%3 hidden=%4 popup=%5 down=%6 buttons=%7 cursor=%8,%9")
+            .arg(timer_.elapsed()).arg(event).arg(menu_ && menu_->isVisible()).arg(menu_ && menu_->isHidden())
+            .arg(QApplication::activePopupWidget() == menu_).arg(button_ && button_->isDown())
+            .arg(int(QApplication::mouseButtons())).arg(QCursor::pos().x()).arg(QCursor::pos().y()));
+    }
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        QString target;
+        if (watched == host_) target = "host";
+        else if (watched == button_) target = "button";
+        else if (watched == menu_) target = "menu";
+        else if (menu_ && watched == menu_->windowHandle()) target = "menu-window";
+        else if (host_ && watched == host_->windowHandle()) target = "host-window";
+        else return false;
+        switch (event->type()) {
+        case QEvent::Show: case QEvent::Hide: case QEvent::ShowToParent: case QEvent::HideToParent:
+        case QEvent::WinIdChange: case QEvent::WindowActivate: case QEvent::WindowDeactivate:
+        case QEvent::MouseButtonPress: case QEvent::MouseButtonRelease: case QEvent::FocusIn: case QEvent::FocusOut:
+        case QEvent::PlatformSurface: case QEvent::WindowStateChange: case QEvent::Move: case QEvent::Resize:
+        case QEvent::Expose:
+            note(target + QStringLiteral("-event-%1").arg(int(event->type()))); break;
+        default: break;
+        }
+        return false;
+    }
+private:
+    QPointer<QWidget> host_;
+    QPointer<QToolButton> button_;
+    QPointer<QMenu> menu_;
+    QString path_;
+    QElapsedTimer timer_;
+    QStringList lines_;
 };
 
 QList<QAction*> actions(QWidget* owner, int count)
@@ -466,6 +528,7 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     QVERIFY(QTest::qWaitForWindowActive(&host));
     auto* tail = host.stripWidget("tools")->findChild<QToolButton*>("StripOverflowButton");
     QVERIFY(tail); QVERIFY(tail->menu());
+    PopupEventTrace trace(&host, tail);
     bool visibleBeforeSecondClick = false;
     bool watchdogFired = false;
     QSignalSpy shown(tail->menu(), &QMenu::aboutToShow);
@@ -473,7 +536,9 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     // closing click requires an already visible menu; keep the original delay
     // after that event and the original overall watchdog below.
     MenuShowObserver observer([&] {
+        trace.note("show-observer");
         QTimer::singleShot(30, &host, [&] {
+            trace.note("second-click-timer");
             visibleBeforeSecondClick = tail->menu()->isVisible();
             nativeMouse(tail, tail->rect().center(), true);
         });
@@ -481,12 +546,14 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     tail->menu()->installEventFilter(&observer);
     // Watchdog closes only after recording the expected toggle; it prevents a
     // broken nested popup from hanging the test runner.
-    QTimer::singleShot(300, &host, [tail, &watchdogFired] {
+    QTimer::singleShot(300, &host, [tail, &watchdogFired, &trace] {
+        trace.note("watchdog-timer");
         if (tail->menu() && tail->menu()->isVisible()) { watchdogFired = true; tail->menu()->close(); }
     });
     // A native popup needs QWidgetWindow's complete input routing. Direct
     // QWidget notify injection bypasses replay cleanup and poisons later input.
     nativeMouse(tail, tail->rect().center(), true);
+    trace.note("first-input-queued");
     QTRY_VERIFY(visibleBeforeSecondClick);
     // SendInput queues the closing click as well. Observe its result before
     // checking the watchdog, so forced dismissal can never count as success.

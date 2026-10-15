@@ -236,8 +236,11 @@ void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
     const auto handle = overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, overlay);
     QVERIFY(!handle.isEmpty());
     const auto image = fixture.strip->grab().toImage(); const auto point = overlay->mapTo(fixture.strip, handle.center());
-    QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())).rgb(),
-        defaultTheme().border.rgb());
+    QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied); expected.fill(QColor("#6a568c"));
+    QPainter painter(&expected); auto translucentBorder = defaultTheme().border;
+    translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
+    QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())),
+        expected.pixelColor(0, 0));
     QVERIFY(overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarAddLine, overlay).isEmpty());
     QVERIFY(overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSubLine, overlay).isEmpty());
     bar->setValue(bar->maximum());

@@ -250,7 +250,8 @@ QJsonObject WindowManager::saveLayout() const
         {"behavior", QJsonObject{{"dragOutsideFloating", d->behavior.dragOutsideKind == WindowKind::Floating},
             {"closeEmptyWorkbench", d->behavior.closeEmptyWorkbench}, {"revealDuringDrag", d->behavior.revealDuringDrag},
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
-            {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating}}}};
+            {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating},
+            {"zenFullscreenMode", int(d->behavior.zenFullscreenMode)}}}};
 }
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
 {
@@ -284,6 +285,11 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))
         return {false, QStringLiteral("新建标签位置无效")};
     restoredBehavior.newTabPosition = NewTabPosition(position.toInt(int(NewTabPosition::AfterActive)));
+    const auto zenMode = settings.value("zenFullscreenMode");
+    if (!zenMode.isUndefined() && (!zenMode.isDouble() || zenMode.toDouble() != zenMode.toInt(-1)
+        || !validZenFullscreenMode(ViewMode(zenMode.toInt(-1)))))
+        return {false, QStringLiteral("禅模式全屏类型无效")};
+    restoredBehavior.zenFullscreenMode = ViewMode(zenMode.toInt(int(ViewMode::WindowFullscreen)));
     restoredBehavior.dragOutsideKind = settings.value("dragOutsideFloating").toBool(true) ? WindowKind::Floating : WindowKind::Workbench;
     restoredBehavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
     restoredBehavior.revealDuringDrag = settings.value("revealDuringDrag").toBool(true);

@@ -179,6 +179,34 @@ private:
     HWND handle_;
 };
 
+// QWindow publishes its mask cache after the native SetWindowRgn call. A
+// synchronous placement callback can therefore replay its previous empty mask
+// while QWidget has already published the compact shape. Inject that ordering
+// once; do not fail a GDI call or retry the operation under test.
+class PreviousMaskReplay final : public QAbstractNativeEventFilter {
+public:
+    explicit PreviousMaskReplay(QWidget* window) : window_(window), handle_(reinterpret_cast<HWND>(window->effectiveWinId()))
+    { qApp->installNativeEventFilter(this); }
+    ~PreviousMaskReplay() override { qApp->removeNativeEventFilter(this); }
+    int replays = 0;
+    bool shapedBeforeReplay = false;
+    bool cleared = false;
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override
+    {
+        const auto* event = static_cast<const MSG*>(message);
+        if (replays || !window_ || !event || event->hwnd != handle_ || event->message != WM_WINDOWPOSCHANGED
+            || window_->mask().isEmpty() || !window_->windowHandle() || !window_->windowHandle()->mask().isEmpty()) return false;
+        ++replays;
+        shapedBeforeReplay = hasNativeRegion(handle_);
+        window_->windowHandle()->setMask(window_->windowHandle()->mask());
+        cleared = !hasNativeRegion(handle_);
+        return false;
+    }
+private:
+    QPointer<QWidget> window_;
+    HWND handle_;
+};
+
 bool readScreenPixels(QWidget* window, const QVector<QPoint>& positions, QVector<COLORREF>& pixels, QString* reason = nullptr)
 {
     const auto dc = GetDC(nullptr);
@@ -264,10 +292,14 @@ private slots:
     void detachedWindowRemainsOpaqueAndKeepsItsContentWhileMoving();
     void publicSizeLimitsRemainEffective_data() { addWindowKinds(); }
     void publicSizeLimitsRemainEffective();
+    void nativeCorrectionPreservesOtherPlacementRequests_data();
+    void nativeCorrectionPreservesOtherPlacementRequests();
     void compactFirstShowAlreadyHasThePreparedNativeFrame_data() { addWindowKinds(); }
     void compactFirstShowAlreadyHasThePreparedNativeFrame();
     void presentationChangesRetainHandleCaptureAndCompositing_data();
     void presentationChangesRetainHandleCaptureAndCompositing();
+    void compactMaskCommitSurvivesPreviousCacheReplay_data() { presentationChangesRetainHandleCaptureAndCompositing_data(); }
+    void compactMaskCommitSurvivesPreviousCacheReplay();
     void cachedPreparationAndCompositionRefreshKeepTheNativeFrame_data() { addWindowKinds(); }
     void cachedPreparationAndCompositionRefreshKeepTheNativeFrame();
     void nativePaintMessagesCannotReplaceTheCustomClient_data();
@@ -880,7 +912,14 @@ void NativeFrameTest::publicSizeLimitsRemainEffective()
     // the public size limit. Tracking limits remain independent and exact.
     const LONG maximumWidth = std::min(LONG(std::floor(900 * ratio)), monitor.rcWork.right - monitor.rcWork.left);
     const LONG maximumHeight = std::min(LONG(std::floor(680 * ratio)), monitor.rcWork.bottom - monitor.rcWork.top);
-    QCOMPARE(hints.ptMaxSize.x, maximumWidth); QCOMPARE(hints.ptMaxSize.y, maximumHeight);
+    const UINT dpi = GetDpiForWindow(handle); QVERIFY(dpi != 0);
+    RECT maximumOuter{0, 0, maximumWidth, maximumHeight};
+    // Derive the invisible outer frame independently from Win32. WS_BORDER
+    // retains the ordinary border pixel; without WS_DLGFRAME this style has
+    // no caption, so all four insets describe only the maximized resize frame.
+    QVERIFY(AdjustWindowRectExForDpi(&maximumOuter, WS_THICKFRAME | WS_BORDER, FALSE, 0, dpi));
+    QCOMPARE(hints.ptMaxSize.x, maximumOuter.right - maximumOuter.left);
+    QCOMPARE(hints.ptMaxSize.y, maximumOuter.bottom - maximumOuter.top);
     const auto normal = window->geometry();
     window->showMaximized(); QTRY_VERIFY(window->isMaximized());
     RECT client{}; QVERIFY(GetClientRect(handle, &client));
@@ -888,6 +927,93 @@ void NativeFrameTest::publicSizeLimitsRemainEffective()
     QCOMPARE(client.bottom - client.top, maximumHeight);
     QCOMPARE(static_cast<WorkspaceWindow*>(window)->normalPlacementGeometry(), normal);
     window->showNormal(); QTRY_COMPARE(window->geometry(), normal);
+    MINMAXINFO restoredHints{};
+    SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&restoredHints));
+    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)));
+    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)));
+    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)));
+    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)));
+
+    // The native system-menu path starts before Qt requests a maximized state.
+    // It must preserve the same exact client limits and restore geometry.
+    SendMessageW(handle, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+    QTRY_VERIFY(window->isMaximized()); QVERIFY(IsZoomed(handle));
+    QVERIFY(GetClientRect(handle, &client));
+    QCOMPARE(client.right - client.left, maximumWidth);
+    QCOMPARE(client.bottom - client.top, maximumHeight);
+    QCOMPARE(static_cast<WorkspaceWindow*>(window)->normalPlacementGeometry(), normal);
+    QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
+    SendMessageW(handle, WM_SYSCOMMAND, SC_RESTORE, 0);
+    QTRY_VERIFY(!window->isMaximized()); QVERIFY(!IsZoomed(handle));
+    QTRY_COMPARE(window->geometry(), normal);
+    restoredHints = {};
+    SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&restoredHints));
+    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)));
+    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)));
+    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)));
+    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)));
+    QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
+}
+
+void NativeFrameTest::nativeCorrectionPreservesOtherPlacementRequests_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<bool>("maximized");
+    for (const bool floating : {false, true})
+        for (const bool maximized : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(floating ? "floating" : "workbench")
+                .arg(maximized ? "maximized" : "normal"))) << floating << maximized;
+}
+
+void NativeFrameTest::nativeCorrectionPreservesOtherPlacementRequests()
+{
+    QFETCH(bool, floating); QFETCH(bool, maximized);
+    WindowManager manager; const auto id = createWindow(manager, floating);
+    auto* window = manager.windowWidget(id); QVERIFY(window);
+    window->setMinimumSize(650, 480); window->setMaximumSize(900, 680);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    if (maximized) { window->showMaximized(); QTRY_VERIFY(window->isMaximized()); }
+    QCOMPARE(bool(IsZoomed(handle)), maximized);
+    const auto geometry = window->geometry();
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
+    WINDOWPOS workRequest{};
+    workRequest.hwnd = handle; workRequest.hwndInsertAfter = HWND_BOTTOM;
+    workRequest.x = int(monitor.rcMonitor.left); workRequest.y = int(monitor.rcMonitor.top);
+    workRequest.cx = int(monitor.rcWork.right - monitor.rcWork.left);
+    workRequest.cy = int(monitor.rcWork.bottom - monitor.rcWork.top);
+    workRequest.flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    QVector<WINDOWPOS> requests;
+    auto rightScreen = workRequest;
+    rightScreen.x += int(monitor.rcMonitor.right - monitor.rcMonitor.left);
+    requests.push_back(rightScreen);
+    auto lowerScreen = workRequest;
+    lowerScreen.y += int(monitor.rcMonitor.bottom - monitor.rcMonitor.top);
+    requests.push_back(lowerScreen);
+    auto otherWidth = workRequest; --otherWidth.cx; requests.push_back(otherWidth);
+    auto otherHeight = workRequest; --otherHeight.cy; requests.push_back(otherHeight);
+    auto noMove = workRequest; noMove.flags |= SWP_NOMOVE; requests.push_back(noMove);
+    auto noSize = workRequest; noSize.flags |= SWP_NOSIZE; requests.push_back(noSize);
+    auto neither = workRequest; neither.flags |= SWP_NOMOVE | SWP_NOSIZE; requests.push_back(neither);
+    if (!maximized) requests.push_back(workRequest);
+    // These direct dispatches verify preservation of proposed message fields.
+    // They do not move the HWND or claim real mixed-DPI/multi-monitor coverage.
+    for (auto position : requests) {
+        const auto expected = position;
+        MSG message{}; message.hwnd = handle; message.message = WM_WINDOWPOSCHANGING;
+        message.lParam = reinterpret_cast<LPARAM>(&position);
+        qintptr result = 123;
+        QVERIFY(!handleNativeFrame(window, &message, &result));
+        QCOMPARE(result, qintptr(123));
+        QCOMPARE(position.hwnd, expected.hwnd);
+        QCOMPARE(position.hwndInsertAfter, expected.hwndInsertAfter);
+        QCOMPARE(position.x, expected.x); QCOMPARE(position.y, expected.y);
+        QCOMPARE(position.cx, expected.cx); QCOMPARE(position.cy, expected.cy);
+        QCOMPARE(position.flags, expected.flags);
+    }
+    QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
+    QCOMPARE(window->geometry(), geometry);
+    QCOMPARE(bool(IsZoomed(handle)), maximized);
 }
 
 void NativeFrameTest::compactFirstShowAlreadyHasThePreparedNativeFrame()
@@ -958,6 +1084,33 @@ void NativeFrameTest::presentationChangesRetainHandleCaptureAndCompositing()
     }
     window->releaseMouse();
     QVERIFY(!QWidget::mouseGrabber());
+}
+
+void NativeFrameTest::compactMaskCommitSurvivesPreviousCacheReplay()
+{
+    QFETCH(bool, floating); QFETCH(int, presentation);
+    WindowManager manager;
+    const auto id = createWindow(manager, floating);
+    QPointer<QWidget> content = new QLabel("Same content after native mask replay");
+    const auto tab = manager.addTab(id, content, {"Same live tab", "test.label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    auto* window = dynamic_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto geometry = window->geometry();
+    window->grabMouse(Qt::ClosedHandCursor);
+    const auto release = qScopeGuard([window] { window->releaseMouse(); });
+    PreviousMaskReplay replay(window);
+    window->setDragPresentation(WorkspaceWindow::DragPresentation(presentation));
+    QCOMPARE(replay.replays, 1); QVERIFY(replay.shapedBeforeReplay); QVERIFY(replay.cleared);
+    QVERIFY(window->isVisible()); QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
+    QCOMPARE(GetCapture(), handle); QCOMPARE(QWidget::mouseGrabber(), window);
+    QCOMPARE(window->geometry(), geometry); QCOMPARE(manager.paneWidget(pane), content.data());
+    QVERIFY(!window->mask().isEmpty()); QCOMPARE(window->windowHandle()->mask(), window->mask());
+    QVERIFY(hasNativeRegion(handle)); verifyNativeMask(window); verifyNativeStyle(window);
+    window->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+    QVERIFY(window->mask().isEmpty()); QVERIFY(window->windowHandle()->mask().isEmpty());
+    QVERIFY(!hasNativeRegion(handle)); verifyNativeStyle(window);
 }
 
 void NativeFrameTest::cachedPreparationAndCompositionRefreshKeepTheNativeFrame()

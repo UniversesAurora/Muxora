@@ -64,6 +64,7 @@ private:
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
     QComboBox* viewMode_ = nullptr;
+    QComboBox* zenFullscreenMode_ = nullptr;
     QCheckBox* zen_ = nullptr;
     QCheckBox* hideSingleWorkbench_ = nullptr;
     QCheckBox* hideSingleFloating_ = nullptr;
@@ -74,6 +75,8 @@ private:
     QCheckBox* showIcons_ = nullptr;
     QCheckBox* showNewTabButton_ = nullptr;
     QCheckBox* showNumbers_ = nullptr;
+    QCheckBox* showSidebarIcons_ = nullptr;
+    QCheckBox* showSidebarNumbers_ = nullptr;
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;

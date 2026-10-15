@@ -43,6 +43,27 @@ bool validColors(const TabVisualColors& colors)
     return colors.background.isValid() && colors.text.isValid() && colors.line.isValid() && colors.icon.isValid();
 }
 
+void upgradeUnmodifiedBuiltinPalette(QVector<TabColorPreset>& colors)
+{
+    // Layouts include the entire palette. Upgrade only byte-for-byte original
+    // built-ins so existing layouts receive the corrected states, while an
+    // edited channel or a host-defined preset remains authoritative.
+    const auto defaults = defaultTabColorPresets();
+    for (auto& preset : colors) {
+        const auto current = std::find_if(defaults.cbegin(), defaults.cend(), [&preset](const auto& value) {
+            return value.id == preset.id && value.name == preset.name;
+        });
+        if (current == defaults.cend()) continue;
+        const auto accent = current->groupActive.line;
+        const TabColorPreset legacy{current->id, current->name,
+            {current->groupActive.background, QColor("#202124"), accent, accent},
+            {QColor("#f7f7f8"), QColor("#3c4043"), accent, QColor("#5f6368")},
+            {accent, QColor(Qt::white), accent, QColor(Qt::white)},
+            {QColor("#6A568C"), QColor(Qt::white), accent, QColor(Qt::white)}};
+        if (preset == legacy) preset = *current;
+    }
+}
+
 QString placementName(TabBarPlacement placement)
 {
     return placement == TabBarPlacement::Top ? QStringLiteral("top") : QStringLiteral("bottom");
@@ -61,22 +82,24 @@ bool parsePlacement(const QJsonValue& value, TabBarPlacement& placement)
 
 QVector<TabColorPreset> defaultTabColorPresets()
 {
-    struct Seed { const char* id; const char* name; const char* accent; const char* soft; };
+    struct Seed { const char* id; const char* name; const char* accent; const char* soft; const char* vivid; };
     constexpr Seed seeds[] = {
-        {"gray", "灰色", "#5f6368", "#edf0f2"}, {"blue", "蓝色", "#1967d2", "#e8f0fe"},
-        {"red", "红色", "#c5221f", "#fce8e6"}, {"yellow", "金色", "#8b6500", "#fff4ce"},
-        {"green", "绿色", "#137333", "#e6f4ea"}, {"pink", "粉色", "#b3267d", "#fce7f3"},
-        {"purple", "紫色", "#7b2abf", "#f1e7fc"}, {"cyan", "青色", "#007b83", "#e0f4f5"},
-        {"orange", "橙色", "#b05a00", "#fff0df"}};
+        {"gray", "灰色", "#5f6368", "#edf0f2", "#a9afb5"}, {"blue", "蓝色", "#1967d2", "#e8f0fe", "#78a4eb"},
+        {"red", "红色", "#c5221f", "#fce8e6", "#eb817e"}, {"yellow", "金色", "#8b6500", "#fff4ce", "#dfbc45"},
+        {"green", "绿色", "#137333", "#e6f4ea", "#78be91"}, {"pink", "粉色", "#b3267d", "#fce7f3", "#dc8abd"},
+        {"purple", "紫色", "#7b2abf", "#f1e7fc", "#b18ade"}, {"cyan", "青色", "#007b83", "#e0f4f5", "#63bcc4"},
+        {"orange", "橙色", "#b05a00", "#fff0df", "#e6a65f"}};
     QVector<TabColorPreset> colors;
     colors.reserve(std::size(seeds));
     for (const auto& seed : seeds) {
-        const QColor accent(seed.accent), soft(seed.soft);
+        const QColor accent(seed.accent), soft(seed.soft), vivid(seed.vivid);
+        // The persisted palette is an 8-bit #AARRGGBB contract. QColor's HSV
+        // transforms retain 16-bit channels, which would otherwise change on
+        // every save/restore comparison even though the displayed RGB matches.
+        const TabVisualColors active{soft, QColor("#202124"), accent, QColor(accent.darker(110).name(QColor::HexArgb))};
+        const TabVisualColors inactive{vivid, QColor("#202124"), accent, QColor(accent.darker(130).name(QColor::HexArgb))};
         colors.append({QString::fromLatin1(seed.id), QString::fromUtf8(seed.name),
-            {soft, QColor("#202124"), accent, accent},
-            {QColor("#f7f7f8"), QColor("#3c4043"), accent, QColor("#5f6368")},
-            {accent, QColor(Qt::white), accent, QColor(Qt::white)},
-            {QColor("#6A568C"), QColor("#ffffff"), accent, QColor(Qt::white)}});
+            active, inactive, active, inactive});
     }
     return colors;
 }
@@ -106,7 +129,8 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
     return {{"centralPlacement", placementName(appearance.centralPlacement)},
         {"pinnedPlacement", placementName(appearance.pinnedPlacement)}, {"multiline", appearance.multiline},
         {"wheelExpandRows", appearance.wheelExpandRows}, {"showIcons", appearance.showIcons},
-        {"showNewTabButton", appearance.showNewTabButton}, {"showNumbers", appearance.showNumbers}, {"colors", colors}};
+        {"showNewTabButton", appearance.showNewTabButton}, {"showNumbers", appearance.showNumbers},
+        {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers}, {"colors", colors}};
 }
 
 OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance)
@@ -120,7 +144,8 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
         return {false, QStringLiteral("标签栏仅支持顶部或底部")};
     for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
-        std::pair{"showNumbers", &candidate.showNumbers}}) {
+        std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
+        std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}}) {
         const auto field = object.value(entry.first);
         if (!field.isUndefined() && !field.isBool()) return {false, QStringLiteral("标签显示设置类型无效")};
         if (field.isBool()) *entry.second = field.toBool();
@@ -143,6 +168,7 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
             candidate.colors.append(std::move(preset));
         }
     }
+    upgradeUnmodifiedBuiltinPalette(candidate.colors);
     if (!validTabAppearance(candidate)) return {false, QStringLiteral("标签外观包含无效颜色、重复 ID 或不适用的滚轮设置")};
     appearance = std::move(candidate);
     return {true, {}};

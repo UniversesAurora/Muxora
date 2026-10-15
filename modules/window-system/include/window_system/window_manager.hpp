@@ -49,6 +49,7 @@ struct WindowBehavior {
     NewTabPosition newTabPosition = NewTabPosition::AfterActive;
     bool hideSingleTabWorkbench = false;
     bool hideSingleTabFloating = true;
+    ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
 };
 
 class WorkspaceWindow;
@@ -72,6 +73,12 @@ public:
                           const WindowOptions& options = {}, WindowId owner = {});
     TabId addTab(WindowId window, QWidget* content, const TabOptions& options,
                  GroupId group = {}, int insertionIndex = -1);
+    // Creates the sibling group without activating a temporary tab in the
+    // original group. Preparation failure returns null without adopting any
+    // surviving content or changing the model. Once committed, the stable ID
+    // is returned even if a synchronous callback closes it or destroys us.
+    TabId addTabToNewGroup(WindowId window, QWidget* content, const TabOptions& options,
+                          GroupId reference, Placement placement);
     // Host command IDs define available content types. Creation always uses
     // the same command handlers as menus, keyboard and the command palette.
     bool setTabCreationCommands(QString defaultCommand, QStringList choices);
@@ -104,10 +111,16 @@ public:
     bool setTabIconVisible(TabId tab, bool visible);
     bool setTabColor(TabId tab, QString colorId);
     bool sortTabs(GroupId group, TabSortOrder order);
+    bool swapGroups(GroupId first, GroupId second);
+    bool swapGroupDirection(GroupId group, Placement direction);
+    bool mergeGroups(GroupId source, GroupId target, int insertionIndex = -1);
+    bool mergeGroupDirection(GroupId group, Placement direction);
     bool moveGroup(GroupId group, GroupId target, Placement placement);
     bool moveGroupToAdjacentGroup(GroupId group, Placement direction);
     bool moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
     bool moveGroupToWindowCycle(GroupId group, bool forward);
+    bool moveGroupToEdge(GroupId group, WindowId target, Edge edge, bool pinned);
+    WindowId detachGroup(GroupId group, WindowKind kind = WindowKind::Floating);
     bool closeGroup(GroupId group);
     void showGroupMenu(GroupId group, QPoint globalPosition);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
@@ -224,7 +237,7 @@ private:
     bool focusGroup(GroupId group);
     bool navigate(Placement direction, bool panes, const CommandContext& source);
     GroupId adjacentGroup(TabId tab, Placement direction, std::optional<int> anchor = {}) const;
-    GroupId adjacentCentralGroup(GroupId group, Placement direction) const;
+    GroupId adjacentVisibleGroup(GroupId group, Placement direction, bool forMove = false) const;
     PaneId adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor = {}) const;
     WindowId adjacentWindow(WindowId window, bool forward) const;
     void resizeActive(Placement direction, bool panes);

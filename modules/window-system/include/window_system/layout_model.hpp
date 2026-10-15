@@ -125,11 +125,24 @@ public:
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           WindowId ownerWorkbench = {});
     TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1);
+    // Create the tab directly in an adjacent central group in one revision.
+    // The existing group's active tab, order and visit history stay intact.
+    TabId addTabToNewGroup(WindowId windowId, QString title, GroupId targetGroup, Placement placement);
     OperationResult renameTab(TabId tabId, QString title);
     OperationResult setTabColor(TabId tabId, QString colorId);
     OperationResult sortTabs(GroupId group, TabSortOrder order);
+    // Exchange complete visible-group slots (tree position or pinned edge),
+    // preserving both group identities, contents and each slot's extent.
+    OperationResult swapGroups(GroupId first, GroupId second);
+    // Keep the target slot and append/insert the source tabs in stable order.
+    // Auto-hide records are an implementation detail, not visible tab groups.
+    OperationResult mergeGroups(GroupId source, GroupId target, int insertionIndex = -1);
+    // Relocate the source beside the target; this never means exchange/merge.
+    // Pinned targets accept directions on their edge's partition axis only.
     OperationResult moveGroup(GroupId group, GroupId target, Placement placement);
     OperationResult moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
+    OperationResult moveGroupToEdge(GroupId group, WindowId target, Edge edge, bool pinned);
+    WindowId detachGroup(GroupId group, WindowKind kind = WindowKind::Floating);
     OperationResult activateTab(TabId tabId);
     OperationResult activatePane(TabId tabId, PaneId paneId);
     OperationResult moveTab(TabId tabId, GroupId targetGroup,

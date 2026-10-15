@@ -84,6 +84,10 @@ private slots:
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void normalizationUsesAllLogicalScreenAreas_data();
     void normalizationUsesAllLogicalScreenAreas();
+    void newWorkbenchesFitTheirInitialScreen_data();
+    void newWorkbenchesFitTheirInitialScreen();
+    void firstFullscreenHasAVisibleRestorePlacement_data();
+    void firstFullscreenHasAVisibleRestorePlacement();
     void movingAndResizingNotifyTheHost_data() { addWindowKinds(); }
     void movingAndResizingNotifyTheHost();
     void freshManagerRestoresNormalPlacement_data() { addWindowKinds(); }
@@ -135,6 +139,63 @@ void WindowPlacementTest::normalizationUsesAllLogicalScreenAreas()
 {
     QFETCH(QRect, desired); QFETCH(QList<QRect>, screens); QFETCH(QSize, minimum); QFETCH(QRect, expected);
     QCOMPARE(normalizeWindowPlacement(desired, screens, minimum), expected);
+}
+
+void WindowPlacementTest::newWorkbenchesFitTheirInitialScreen_data()
+{
+    QTest::addColumn<bool>("oversized");
+    QTest::newRow("offscreen-cascade") << false;
+    QTest::newRow("larger-than-work-area") << true;
+}
+
+void WindowPlacementTest::newWorkbenchesFitTheirInitialScreen()
+{
+    QFETCH(bool, oversized);
+    WindowManager manager;
+    const auto first = manager.createWindow();
+    manager.showWindow(first); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(first)));
+    const auto area = manager.windowWidget(first)->screen()->availableGeometry();
+    const auto id = manager.createWindow(WindowKind::Workbench,
+        {"New workbench", oversized ? area.size() * 2 : QSize(700, 420)});
+    auto* window = manager.windowWidget(id); QVERIFY(window);
+    window->move(area.bottomRight() - QPoint(10, 10));
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QTRY_VERIFY(area.contains(window->frameGeometry()));
+    QVERIFY(window->width() <= area.width()); QVERIFY(window->height() <= area.height());
+    const auto initial = window->geometry();
+    // Visibility repair is an initial-placement policy. Subsequent intentional
+    // moves and hide/show must not continuously drag the user's window back.
+    window->move(initial.topLeft() - QPoint(40, 40));
+    const auto moved = window->geometry(); window->hide(); manager.showWindow(id);
+    QTRY_COMPARE(window->geometry(), moved);
+}
+
+void WindowPlacementTest::firstFullscreenHasAVisibleRestorePlacement_data()
+{
+    QTest::addColumn<int>("modeValue"); QTest::addColumn<bool>("zen"); QTest::addColumn<bool>("oversized");
+    for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen})
+        for (const bool zen : {false, true}) for (const bool oversized : {false, true})
+            QTest::newRow(qPrintable(QString("scope-%1-%2-%3").arg(int(mode)).arg(zen ? "zen" : "fullscreen")
+                .arg(oversized ? "oversized" : "offscreen"))) << int(mode) << zen << oversized;
+}
+
+void WindowPlacementTest::firstFullscreenHasAVisibleRestorePlacement()
+{
+    QFETCH(int, modeValue); QFETCH(bool, zen); QFETCH(bool, oversized);
+    WindowManager manager;
+    const auto id = manager.createWindow();
+    manager.addTab(id, new QLabel("Content"), {"Placement", "test.label", {}});
+    auto* window = manager.windowWidget(id); QVERIFY(window); QVERIFY(!window->isVisible());
+    const auto area = window->screen()->availableGeometry();
+    window->setGeometry(QRect(area.bottomRight() - QPoint(10, 10), oversized ? area.size() * 2 : QSize(700, 420)));
+    const auto mode = ViewMode(modeValue);
+    auto behavior = manager.behavior(); behavior.zenFullscreenMode = mode; manager.setBehavior(behavior);
+    QVERIFY(zen ? manager.setZenMode(id, true) : manager.setViewMode(id, mode));
+    QVERIFY(QTest::qWaitForWindowExposed(window)); QTRY_VERIFY(window->isFullScreen());
+    QCOMPARE(manager.viewMode(id), mode); QCOMPARE(manager.zenMode(id), zen);
+    QVERIFY(manager.setViewMode(id, ViewMode::Normal));
+    QTRY_VERIFY(!window->isFullScreen()); QTRY_VERIFY(area.contains(window->frameGeometry()));
+    QVERIFY(area.contains(recordGeometry(windowRecord(manager.saveLayout(), id))));
 }
 
 void WindowPlacementTest::movingAndResizingNotifyTheHost()

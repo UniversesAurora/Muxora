@@ -80,6 +80,18 @@ int main(int argc, char** argv)
         || !windows.moveGroupToWindow(originalGroup, root) || windows.model().groupForTab(tab) != originalGroup
         || !windows.requestCloseWindow(staging) || !windows.closeTabs({alpha, omega})) return 112;
     if (windows.model().tab(tab)->colorId != "red" || !windows.setTabColor(tab, {})) return 113;
+    const auto splitTab = windows.addTabToNewGroup(root, new QLabel("Atomic group"),
+        {"Atomic group", "contract.text", {}}, originalGroup, window_system::Placement::Right);
+    if (splitTab.isNull() || windows.model().group(originalGroup)->activeTab != tab) return 150;
+    const auto splitGroup = windows.model().groupForTab(splitTab);
+    if (!windows.moveGroupToEdge(splitGroup, root, window_system::Edge::Left, true)
+        || !windows.swapGroups(splitGroup, originalGroup)
+        || windows.model().group(originalGroup)->location != window_system::GroupLocation::Pinned
+        || windows.paneWidget(windows.model().tab(tab)->activePane) != text) return 151;
+    if (!windows.swapGroups(splitGroup, originalGroup) || !windows.mergeGroups(splitGroup, originalGroup)
+        || windows.model().group(splitGroup) || windows.model().groupForTab(splitTab) != originalGroup
+        || !windows.closeTab(splitTab) || windows.paneWidget(windows.model().tab(tab)->activePane) != text) return 152;
+    if (windows.tabAppearance().showSidebarIcons || windows.tabAppearance().showSidebarNumbers) return 153;
     if (!windows.setTabTopBarSharing(tab, window_system::PaneBarSharing::PerPane)
         || !windows.setTabBottomBarSharing(tab, window_system::PaneBarSharing::Shared)
         || !windows.setTabBarsVisible(root, false) || windows.tabBarsVisible(root)

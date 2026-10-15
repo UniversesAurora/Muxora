@@ -39,6 +39,8 @@ struct TabAppearance {
     bool showIcons = true;
     bool showNewTabButton = true;
     bool showNumbers = false;
+    bool showSidebarIcons = false;
+    bool showSidebarNumbers = false;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

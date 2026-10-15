@@ -43,6 +43,9 @@ void EdgeTabButton::setPreset(std::optional<TabColorPreset> preset)
 }
 void EdgeTabButton::mousePressEvent(QMouseEvent* event)
 {
+    if (event->button() != Qt::LeftButton) {
+        event->accept(); return;
+    }
     start_ = event->position().toPoint(); QAbstractButton::mousePressEvent(event);
 }
 void EdgeTabButton::mouseMoveEvent(QMouseEvent* event)
@@ -64,7 +67,9 @@ void EdgeTabButton::contextMenuEvent(QContextMenuEvent* event)
 void EdgeTabButton::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
-    const bool active = isChecked() || hasFocus();
+    // Keyboard focus can remain on the old rail button after programmatic
+    // activation. Selection alone owns the active color state.
+    const bool active = isChecked();
     const auto colors = preset_ ? std::optional(active ? preset_->autoHideActive : preset_->autoHideInactive) : std::nullopt;
     painter.fillRect(rect(), colors ? colors->background
         : edgeTabColor(this, underMouse() || hasFocus() ? "edgeTabHover" : "edgeTabBackground", QPalette::Button));

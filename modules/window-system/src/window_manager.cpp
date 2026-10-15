@@ -1,4 +1,5 @@
 #include "window_manager_p.hpp"
+#include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
@@ -100,6 +101,59 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
     refresh(); activateTab(id); return id;
 }
 void WindowManager::setContentFactory(ContentFactory factory) { d->factory = std::move(factory); }
+TabId WindowManager::addTabToNewGroup(WindowId window, QWidget* content, const TabOptions& options,
+                                    GroupId reference, Placement placement)
+{
+    const QPointer<WindowManager> self(this);
+    const QPointer<QWidget> observed(content);
+    if (!observed) return {};
+    const auto previousManaged = content->property("windowSystemManaged");
+    if (!self || !observed || previousManaged.toBool()
+        || (options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
+        || (options.bottomBarSharing != PaneBarSharing::Shared && options.bottomBarSharing != PaneBarSharing::PerPane)) return {};
+    const auto previousPane = content->property("paneId");
+    if (!self || !observed) return {};
+    const auto previousFocus = content->focusPolicy();
+    const auto revision = d->model.revision();
+    const auto originalModel = d->model.toJson();
+    auto candidate = d->model;
+    const auto id = candidate.addTabToNewGroup(window, options.title, reference, placement);
+    if (id.isNull()) return {};
+    const auto pane = candidate.tab(id)->activePane;
+    bool adopted = false;
+    const auto restorePreparation = qScopeGuard([observed, previousManaged, previousPane, previousFocus, &adopted] {
+        if (adopted) return;
+        if (observed) observed->setFocusPolicy(previousFocus);
+        if (observed) observed->setProperty("paneId", previousPane);
+        if (observed) observed->setProperty("windowSystemManaged", previousManaged);
+    });
+    // Attribute callbacks still observe the old model and caller ownership.
+    // Discard the candidate if a callback destroys either participant or
+    // changes the model; never overwrite a host's reentrant layout mutation.
+    content->setProperty("windowSystemManaged", true);
+    if (!self || !observed) return {};
+    content->setProperty("paneId", pane);
+    if (!self || !observed) return {};
+    if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
+    if (!self || !observed || d->model.revision() != revision || d->model.toJson() != originalModel) return {};
+    // Commit the model and ownership together before parent/refresh callbacks.
+    d->model = std::move(candidate);
+    d->panes.insert(pane, observed); d->descriptors.insert(pane, options);
+    adopted = true;
+    content->setParent(d->storage);
+    if (!self) { if (observed) delete observed.data(); return id; }
+    if (!observed) {
+        d->panes.remove(pane); d->descriptors.remove(pane);
+        if (d->model.tab(id)) d->model.removeTab(id);
+        refresh(); return id;
+    }
+    if (!d->model.tab(id)) return id;
+    refresh();
+    if (self) activateTab(id);
+    // Ownership transferred before notifying the host, even if a synchronous
+    // listener closes the tab or destroys its manager during refresh.
+    return id;
+}
 bool WindowManager::setTabCreationCommands(QString defaultCommand, QStringList choices)
 {
     if (!defaultCommand.isEmpty() && !d->commands.find(defaultCommand)) return false;
@@ -526,6 +580,9 @@ void WindowManager::showWindow(WindowId window)
 {
     const QPointer<WindowManager> self(this);
     if (QPointer<WorkspaceWindow> widget = d->windows.value(window)) {
+        // Resolve a new window's normal rectangle before starting ShowWindow.
+        widget->fitInitialPlacement();
+        if (!self || !widget || !d->model.window(window)) return;
         if (widget->isMinimized()) {
             if (viewMode(window) == ViewMode::Normal) widget->showNormal();
             else widget->showFullScreen();
@@ -632,7 +689,8 @@ CommandContext WindowManager::context(WindowId window) const
 WindowBehavior WindowManager::behavior() const { return d->behavior; }
 void WindowManager::setBehavior(const WindowBehavior& behavior)
 {
-    if (behavior.newTabPosition < NewTabPosition::Beginning || behavior.newTabPosition > NewTabPosition::End) return;
+    if (behavior.newTabPosition < NewTabPosition::Beginning || behavior.newTabPosition > NewTabPosition::End
+        || !validZenFullscreenMode(behavior.zenFullscreenMode)) return;
     const bool updateTabBars = behavior.hideSingleTabWorkbench != d->behavior.hideSingleTabWorkbench
         || behavior.hideSingleTabFloating != d->behavior.hideSingleTabFloating;
     d->behavior = behavior; d->behavior.revealDelayMs = qBound(200, behavior.revealDelayMs, 2000);

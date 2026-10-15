@@ -2,7 +2,7 @@
 
 可独立构建的 Qt Widgets 工作区模块。Muxora 通过公开 API 使用它；其他项目也可通过 CMake package 接入，模块不依赖 SSH、终端、文件业务或 Muxora 配置。
 
-当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-15。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
+当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-16。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
 
 ## 构建边界
 
@@ -19,7 +19,7 @@
 
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
-`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；`TabAppearance::showIcons` 为统一开关，开启时仍尊重单标签设置。
+`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
 达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互修订](../../docs/design/window-interaction-design.md)。
 
@@ -59,7 +59,7 @@
 
 `setViewMode(window, ViewMode::Normal/WindowFullscreen/GroupFullscreen/PaneFullscreen)` 选择全屏范围。窗口范围保留整个工作区；组与窗格范围投影当前目标的原控件，不复制内容、不改布局树。组范围仍可切换本组标签，窗格范围按 Pane ID 跟随同窗口移动；激活范围外内容会退回窗口全屏，目标关闭或跨窗口移走后安全退出。退出恢复原分割尺寸和进入前的正常位置／最大化状态。中央标签栏开关在这些模式中继续只影响中央组，固定／收纳标题保持原规则。
 
-`setZenMode(window, enabled)` 仅允许在全屏范围开启。禅模式临时关闭四栏的有效显示，另隐藏固定标题及所有 Tab／Pane 上下附加栏，保留原控件和四项偏好。显示任一栏会退出禅模式，恢复其他偏好并应用本次显示；关闭禅模式或退出全屏同样恢复。`preferredBarVisibility()` 返回保存的偏好，`barVisibility()` 返回有效显示值，`windowViewState()` 另包含模式、禅状态与稳定目标 ID。
+`setZenMode(window, enabled)` 可从普通窗口开启，按 `WindowBehavior::zenFullscreenMode` 一次进入指定全屏范围和禅模式，默认 `WindowFullscreen`，也可选择 `GroupFullscreen` 或 `PaneFullscreen`。已经全屏时保留当前范围。禅模式临时关闭四栏的有效显示，另隐藏固定标题及所有 Tab／Pane 上下附加栏，保留原控件和四项偏好。显示任一栏会退出禅模式，恢复其他偏好并应用本次显示；关闭禅模式保留全屏，退出全屏则一并关闭禅模式。`preferredBarVisibility()` 返回保存的偏好，`barVisibility()` 返回有效显示值，`windowViewState()` 另包含模式、禅状态与稳定目标 ID。
 
 | 命令 | 默认键位 |
 | --- | --- |
@@ -69,7 +69,7 @@
 | `window.zen.toggle` | 依次按 `Ctrl+K`、`Z` |
 | `window.fullscreen.exit` | `Esc` |
 
-全屏状态和目标通过 `viewState` 随窗口快照保存；正常矩形仍独立保存，不使用全屏尺寸替代。恢复先检查目标属于该窗口。普通窗口没有禅模式，旧快照缺失的新显示字段采用默认值；无效字段拒绝恢复并保留当前工作区。
+全屏状态和目标通过 `viewState` 随窗口快照保存；正常矩形仍独立保存，不使用全屏尺寸替代。恢复先检查目标属于该窗口。保存的禅模式必须对应实际全屏范围；旧快照缺失的新显示字段采用默认值，无效字段拒绝恢复并保留当前工作区。
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
 
@@ -85,7 +85,7 @@
 
 ### 标签外观、排序与整组移动
 
-[TabAppearance](include/window_system/tab_appearance.hpp) 通过 `tabAppearance()` / `setTabAppearance()` 读取和完整校验后应用，随布局快照保存。`centralPlacement` 与 `pinnedPlacement` 分别选择普通和固定侧栏标签位于 `Top` 或 `Bottom`；`showIcons`、`showNewTabButton`、`showNumbers` 控制统一图标、末尾新建入口和标签编号。编号按本栏当前顺序显示在图标左侧，默认关闭。
+[TabAppearance](include/window_system/tab_appearance.hpp) 通过 `tabAppearance()` / `setTabAppearance()` 读取和完整校验后应用，随布局快照保存。`centralPlacement` 与 `pinnedPlacement` 分别选择中央和固定侧栏标签位于 `Top` 或 `Bottom`。中央栏使用 `showIcons`、`showNumbers`；固定和非固定侧栏使用独立的 `showSidebarIcons`、`showSidebarNumbers`，默认均关闭。编号从 1 开始：中央与固定栏按本组顺序，非固定收纳条按整侧顺序，跨内部组继续递增。`showNewTabButton` 控制各标签栏末尾的新建入口。右键打开目标菜单，不切换标签；菜单含本栏适用的显隐、多行和上下位置设置。
 
 `multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 仅允许在多行时开启：向下滚动展开全部行，向上仅显示活动行。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。关闭多行时应同时关闭滚轮展开。
 
@@ -93,7 +93,9 @@
 
 `sortTabs(group, TabSortOrder)` 按名称升／降序、打开时间最早／最近优先或访问时间最早／最近优先排序。名称比较忽略大小写，同值保持已有顺序；活动标签、原内容、Pane ID 和 Group ID 保持。标签的 `openedOrder`、`visitedOrder` 随模型保存，切换活动标签时更新访问次序。
 
-`moveGroup(group, targetGroup, placement)` 将整个中央分区放到另一中央分区的 `Left`、`Right`、`Top` 或 `Bottom`，保留该组与其全部标签、窗格和内容实例。`moveGroupToAdjacentGroup()` 按实际方向选择目标，`moveGroupToWindow()` 指定已有完整或轻量窗口，`moveGroupToWindowCycle()` 前后选择窗口。目标没有中央组时直接建立中央区域；有固定侧栏时保留侧栏，不把活动侧栏当作中央落点。`closeGroup()` 一次申请该组全部标签的关闭许可，拒绝时保留内容。
+`swapGroups(source, target)` 交换两个中央或固定组的槽位，保留分割节点、比例和槽位尺寸；`mergeGroups(source, target, insertionIndex)` 把源标签按原顺序插入目标，保留目标组 ID，清理空源组。`moveGroup(source, target, placement)` 把源组插到目标旁；中央目标允许四方向，固定目标只允许其分区轴。对应方向、指定目标、已有窗口、新窗口与边栏命令分别使用 `group.swap.*`、`group.merge.*`、`group.moveToGroup`、`group.moveWindow*`、`group.detachFloating` / `group.detachWorkbench`、`group.moveEdge.*` / `group.hideEdge.*`。窗口和边栏移动也有公开 API，均保留组、标签、窗格与原内容。`closeGroup()` 一次申请该组全部标签的关闭许可，拒绝时保留内容。
+
+`addTabToNewGroup(window, content, options, reference, placement)` 原子创建相邻中央组，不在原组发布或激活临时标签；原组的活动标签、顺序和滚动锚点保持。提交前准备失败时返回空 ID，仍存活的内容由调用者持有；属性与焦点恢复原值，同步宿主回调对布局的修改继续保留。提交后模块接管内容，即使刷新通知关闭了新标签或销毁了管理器，仍返回本次提交的稳定 ID。相邻组与窗格拆分命令在工厂销毁管理器后终止，不再检查可能已随管理器销毁的返回指针；工厂须自行安排仍存活拆分结果的清理。新建完整窗口首次显示前按所在屏幕工作区调整整个外框的位置和大小，恢复布局仍使用独立的桌面归一化规则。标题区域不显示悬停气泡，完整标题继续用于窗口标题和可访问名称。
 
 | 操作 | 统一命令 |
 | --- | --- |
@@ -102,7 +104,11 @@
 | 打开次序最早／最近优先 | `group.sort.openedAscending` / `group.sort.openedDescending` |
 | 访问次序最早／最近优先 | `group.sort.visitedAscending` / `group.sort.visitedDescending` |
 | 整组方向移动 | `group.move.left/right/up/down` |
+| 整组移到指定组旁 | `group.moveToGroup`，参数 `targetGroup`、`placement` |
+| 整组交换槽位 | `group.swap.left/right/up/down` 或 `group.swap`，参数 `targetGroup` |
+| 整组合并标签 | `group.merge.left/right/up/down` 或 `group.merge`，参数 `targetGroup`、可选 `insertionIndex` |
 | 整组移到已有窗口 | `group.moveWindow`，参数 `targetWindow`；或 `group.moveWindow.previous` / `group.moveWindow.next` |
+| 整组新建窗口或移到边栏 | `group.detachFloating` / `group.detachWorkbench`，`group.moveEdge.*` / `group.hideEdge.*` |
 | 关闭本组 | `group.close` |
 
 这些操作可以从菜单、命令面板或绑定的快捷键调用。用户已取消 Chrome 式命名、着色、折叠标签集合；模块保留现有分割 `GroupId` 层级，不提供集合 API、集合工具条或关闭集合的归档存储。

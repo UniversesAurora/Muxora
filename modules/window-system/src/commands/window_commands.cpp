@@ -100,7 +100,10 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { return viewMode(c.window) != ViewMode::Normal; });
     add("window.zen.toggle", QStringLiteral("禅模式"), "视图", QKeySequence("Ctrl+K, Z"),
         [this](const CommandContext& c) { return setZenMode(c.window, !zenMode(c.window)); },
-        [this](const CommandContext& c) { return viewMode(c.window) != ViewMode::Normal; });
+        [this, hasWindow, hasTab](const CommandContext& c) {
+            return hasWindow(c) && (viewMode(c.window) != ViewMode::Normal
+                || behavior().zenFullscreenMode == ViewMode::WindowFullscreen || hasTab(c));
+        });
     for (const bool top : {true, false}) {
         add(top ? "tab.topBar.setSharing" : "tab.bottomBar.setSharing",
             top ? QStringLiteral("切换上方窗格栏共享") : QStringLiteral("切换下方窗格栏共享"), "布局", {},
@@ -400,18 +403,25 @@ void WindowManager::registerWindowCommands()
                 const auto* target = d->model.group(c.group);
                 if (!target || target->location != GroupLocation::Central) return false;
                 auto options = d->descriptors.value(c.pane); options.title += QStringLiteral(" · 新组");
-                auto* content = createContent(options, {}); if (!content) return false;
-                const auto tab = addTab(c.window, content, options, c.group);
-                if (tab.isNull()) { delete content; return false; }
-                return moveTab(tab, c.group, direction.second);
+                const QPointer<WindowManager> self(this);
+                auto* created = createContent(options, {});
+                // A factory that destroys its manager may return a child that
+                // was already deleted with it. Do not inspect that raw result.
+                if (!self) return false;
+                const QPointer<QWidget> content(created); if (!content) return false;
+                const auto tab = addTabToNewGroup(c.window, content.data(), options, c.group, direction.second);
+                if (tab.isNull()) { delete content.data(); return false; }
+                return !self.isNull();
             }, [this](const CommandContext& c) { const auto* group = d->model.group(c.group); return d->model.tab(c.tab) && group && group->location == GroupLocation::Central; });
         add("pane.split." + direction.first, QStringLiteral("向%1拆分窗格").arg(label), "布局",
             direction.second == Placement::Right ? QKeySequence("Ctrl+Shift+E") : direction.second == Placement::Bottom ? QKeySequence("Ctrl+Shift+O") : QKeySequence{},
             [this, direction](const CommandContext& c) {
-                auto* content = createContent(d->descriptors.value(c.pane), {});
-                if (!content) return false;
-                const auto pane = splitPane(c.tab, c.pane, content, direction.second);
-                if (pane.isNull()) { delete content; return false; } return true;
+                const QPointer<WindowManager> self(this);
+                auto* created = createContent(d->descriptors.value(c.pane), {});
+                if (!self) return false;
+                const QPointer<QWidget> content(created); if (!content) return false;
+                const auto pane = splitPane(c.tab, c.pane, content.data(), direction.second);
+                if (pane.isNull()) { delete content.data(); return false; } return !self.isNull();
             }, hasTab);
         const auto edge = direction.second == Placement::Left ? Edge::Left : direction.second == Placement::Right ? Edge::Right : direction.second == Placement::Top ? Edge::Top : Edge::Bottom;
         add("workspace.hideToEdge." + direction.first, QStringLiteral("当前标签收纳到%1边栏").arg(label), "布局", {},
@@ -505,11 +515,18 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
 {
     if (!d->model.tab(tab)) return;
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
-    activateTab(tab);
-    const auto captured = context(window);
+    auto captured = context(window);
+    // A context menu targets the clicked label without navigating away from
+    // the content the user is currently reading (including an open peek).
+    captured.group = group; captured.tab = tab; captured.pane = d->model.tab(tab)->activePane;
+    const QPointer<WindowManager> self(this);
     DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
+    appendTabPresentationActions(&menu, this, captured);
     populateContextMenu(&menu, CommandMenuSurface::Tab, this, captured);
-    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
+    if (auto* action = menu.exec(global); self && action && !action->property("windowSystemHandledAction").toBool()) {
+        const auto id = action->data().toString();
+        QTimer::singleShot(0, self.data(), [self, id, captured] { if (self) self->d->commands.execute(id, captured); });
+    }
 }
 void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {

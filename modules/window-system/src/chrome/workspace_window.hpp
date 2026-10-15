@@ -36,6 +36,7 @@ public:
     [[nodiscard]] static QStringList statusItemIds();
     [[nodiscard]] bool statusItemVisible(const QString& id) const;
     void applyViewState(const WindowViewState& state);
+    void fitInitialPlacement();
     [[nodiscard]] QRect normalPlacementGeometry() const;
     [[nodiscard]] bool placementMaximized() const;
     void restorePlacement(const QRect& geometry, bool maximized);
@@ -88,6 +89,7 @@ private:
     bool maximizedPlacement_ = false;
     bool notifiedMaximized_ = false;
     bool restoringPlacement_ = false;
+    bool initialPlacementChecked_ = false;
     QTimer* placementTimer_;
     DragPresentation dragPresentation_ = DragPresentation::Window;
     bool changingDragPresentation_ = false;

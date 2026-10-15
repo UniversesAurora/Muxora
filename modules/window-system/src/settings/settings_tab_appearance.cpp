@@ -53,11 +53,15 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     wheelExpandRows_ = flagControl("WheelExpandTabRows", "tabs.wheelExpandRows", QStringLiteral("滚轮展开标签行"),
         QStringLiteral("多行模式下向下滚动展开全部行，向上滚动只显示当前标签所在行。"), &TabAppearance::wheelExpandRows);
     showIcons_ = flagControl("ShowTabIcons", "tabs.showIcons", QStringLiteral("显示标签图标"),
-        QStringLiteral("宿主为单个标签隐藏图标时，仍遵循该标签的设置。"), &TabAppearance::showIcons);
+        QStringLiteral("控制普通中央标签栏，不影响侧边栏；仍遵循宿主为单个标签隐藏图标的设置。"), &TabAppearance::showIcons);
     showNewTabButton_ = flagControl("ShowNewTabButton", "tabs.showNewTabButton", QStringLiteral("显示新建标签按钮"),
         QStringLiteral("显示标签尾部的加号和类型下拉。隐藏后仍可使用菜单、命令或快捷键新建。"), &TabAppearance::showNewTabButton);
     showNumbers_ = flagControl("ShowTabNumbers", "tabs.showNumbers", QStringLiteral("显示标签编号"),
-        QStringLiteral("编号显示在图标左侧，按当前标签栏内的顺序重新编号。"), &TabAppearance::showNumbers);
+        QStringLiteral("普通中央标签栏的编号显示在图标左侧，按本栏顺序从 1 开始。"), &TabAppearance::showNumbers);
+    showSidebarIcons_ = flagControl("ShowSidebarTabIcons", "tabs.showSidebarIcons", QStringLiteral("显示侧边栏标签图标"),
+        QStringLiteral("独立控制固定侧栏标签栏和非固定收纳条的图标，默认隐藏；仍遵循单个标签的图标设置。"), &TabAppearance::showSidebarIcons);
+    showSidebarNumbers_ = flagControl("ShowSidebarTabNumbers", "tabs.showSidebarNumbers", QStringLiteral("显示侧边栏标签编号"),
+        QStringLiteral("独立控制固定侧栏标签栏和非固定收纳条的编号，默认隐藏；固定组按本栏、非固定收纳条按同一侧全部标签顺序从 1 开始。"), &TabAppearance::showSidebarNumbers);
 
     auto* editor = new QWidget(parent);
     auto* layout = new QVBoxLayout(editor); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(4);
@@ -100,7 +104,8 @@ void SettingsPage::syncTabAppearanceOptions()
     pinnedPlacement_->setCurrentIndex(pinnedPlacement_->findData(int(appearance.pinnedPlacement)));
     for (const auto& value : {std::pair{multiline_, appearance.multiline}, std::pair{wheelExpandRows_, appearance.wheelExpandRows},
         std::pair{showIcons_, appearance.showIcons}, std::pair{showNewTabButton_, appearance.showNewTabButton},
-        std::pair{showNumbers_, appearance.showNumbers}}) {
+        std::pair{showNumbers_, appearance.showNumbers}, std::pair{showSidebarIcons_, appearance.showSidebarIcons},
+        std::pair{showSidebarNumbers_, appearance.showSidebarNumbers}}) {
         const QSignalBlocker block(value.first); value.first->setChecked(value.second);
     }
     wheelExpandRows_->setEnabled(appearance.multiline);

@@ -10,6 +10,7 @@
 #include <QEnterEvent>
 #include <QJsonArray>
 #include <QMenuBar>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
@@ -141,6 +142,9 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     auto* scroll = tabs->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
     auto* scrollbar = tabs->findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar);
     QTRY_VERIFY(scrollbar->maximum() > 0);
+    QTest::mouseMove(&root, QPoint(1, root.height() - 1));
+    QTRY_VERIFY(scrollbar->isHidden());
+    const auto unoccluded = tabs->grab().toImage();
     QTest::mouseMove(tabs->tabBar(), QPoint(30, 10));
     QTRY_VERIFY(scrollbar->isVisible());
     QVERIFY(scrollbar->height() <= 4);
@@ -149,9 +153,14 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     option.pageStep = scrollbar->pageStep(); option.sliderPosition = scrollbar->value();
     const auto handle = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, scrollbar);
     QVERIFY(!handle.isEmpty()); QVERIFY(handle.height() >= 2);
-    const auto image = scrollbar->grab().toImage();
-    const auto center = QPoint(qRound(handle.center().x() * image.devicePixelRatio()), qRound(handle.center().y() * image.devicePixelRatio()));
-    QCOMPARE(image.pixelColor(center).rgb(), QColor("#9C8FB0").rgb());
+    const auto image = tabs->grab().toImage();
+    const auto centerInTabs = scrollbar->mapTo(tabs, handle.center());
+    const auto center = QPoint(qRound(centerInTabs.x() * image.devicePixelRatio()), qRound(centerInTabs.y() * image.devicePixelRatio()));
+    QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied);
+    expected.fill(unoccluded.pixelColor(center));
+    QPainter painter(&expected); auto translucentBorder = defaultTheme().border;
+    translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
+    QCOMPARE(image.pixelColor(center), expected.pixelColor(0, 0));
     const auto backward = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSubLine, scrollbar);
     const auto forward = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarAddLine, scrollbar);
     QVERIFY(backward.isEmpty()); QVERIFY(forward.isEmpty());

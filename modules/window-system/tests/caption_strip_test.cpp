@@ -13,6 +13,7 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QPointer>
+#include <QScreen>
 #include <QTest>
 #include <QToolButton>
 
@@ -425,7 +426,7 @@ void CaptionStripTest::titleCentersAndElidesWithoutLosingItsFullCaption()
     const auto full = floating ? window->windowTitle() : title;
     QCOMPARE(caption->text(), full);
     QCOMPARE(caption->accessibleName(), full);
-    QCOMPARE(caption->toolTip(), full);
+    QVERIFY(caption->toolTip().isEmpty());
     const auto expectedText = QFontMetrics(caption->font()).elidedText(full, Qt::ElideRight, caption->contentsRect().width());
     QVERIFY(expectedText != full);
     QVERIFY(expectedText.endsWith(QChar(0x2026)));
@@ -591,20 +592,23 @@ void CaptionStripTest::disabledHiddenCompactAndFullscreenCaptionsRejectNativeSna
 void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge_data()
 {
     QTest::addColumn<bool>("floating"); QTest::addColumn<QString>("role");
-    for (const bool floating : {false, true})
+    QTest::addColumn<bool>("startsAtWorkArea");
+    for (const bool startsAtWorkArea : {false, true}) for (const bool floating : {false, true})
         for (const auto& role : {QStringLiteral("minimize"), QStringLiteral("restore"), QStringLiteral("close")})
-            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(floating ? "floating" : "workbench", role)))
-                << floating << role;
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2%3").arg(floating ? "floating" : "workbench", role,
+                startsAtWorkArea ? QStringLiteral("-already-fills-work-area") : QString{})))
+                << floating << role << startsAtWorkArea;
 }
 
 void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
 {
-    QFETCH(bool, floating); QFETCH(QString, role);
+    QFETCH(bool, floating); QFETCH(QString, role); QFETCH(bool, startsAtWorkArea);
     WindowManager manager; const auto id = createFixture(manager, floating);
     const auto tab = manager.addTab(id, new QLabel("Retained body"), {"Retained", "label", {}});
     const auto pane = manager.model().tab(tab)->activePane;
     const QPointer<QWidget> body(manager.paneWidget(pane));
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    if (startsAtWorkArea) window->setGeometry(window->screen()->availableGeometry());
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     window->showMaximized(); QTRY_VERIFY(window->isMaximized());
     auto* button = captionButton(window, role); QVERIFY(button && button->isVisible() && button->isEnabled());
@@ -628,14 +632,20 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     // finishes. Wait for the independently observed client rectangle, then
     // convert the same absolute screen-edge point on every geometry sample.
     QTRY_VERIFY(nativeClientFillsWorkArea());
-    const auto containsScreenEdge = [window, button, handle, edge] {
+    QString edgeDiagnostic;
+    const auto containsScreenEdge = [window, button, handle, edge, nativeWidth, &edgeDiagnostic] {
         POINT client = edge;
         if (!ScreenToClient(handle, &client)) return false;
         const qreal ratio = window->devicePixelRatioF();
         const QPoint logical(qFloor(client.x / ratio), qFloor(client.y / ratio));
+        const auto area = QRect(button->mapTo(window, QPoint()), button->size());
+        edgeDiagnostic = QStringLiteral("edge=(%1,%2) nativeWidth=%3 DPR=%4 client=(%5,%6) logical=(%7,%8) button=(%9,%10,%11,%12) window=(%13,%14)")
+            .arg(edge.x).arg(edge.y).arg(nativeWidth).arg(ratio).arg(client.x).arg(client.y)
+            .arg(logical.x()).arg(logical.y()).arg(area.x()).arg(area.y()).arg(area.width()).arg(area.height())
+            .arg(window->width()).arg(window->height());
         return button->rect().contains(button->mapFrom(window, logical));
     };
-    QTRY_VERIFY(containsScreenEdge());
+    QTRY_VERIFY2(containsScreenEdge(), qPrintable(edgeDiagnostic));
     QCOMPARE(button->mapTo(window, QPoint()).y(), 0);
     auto* close = captionButton(window, "close"); QVERIFY(close);
     QCOMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());

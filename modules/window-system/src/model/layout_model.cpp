@@ -420,6 +420,30 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
     });
     return result ? created : TabId{};
 }
+TabId LayoutModel::addTabToNewGroup(WindowId windowId, QString title, GroupId targetGroup, Placement placement)
+{
+    TabId created;
+    const auto result = transact([&](LayoutModel& model) {
+        const auto* target = model.group(targetGroup);
+        if (!model.window(windowId) || !target || target->windowId != windowId
+            || target->location != GroupLocation::Central
+            || placement < Placement::Left || placement > Placement::Bottom)
+            return failure("An adjacent group needs a central target in its window and a split direction.");
+        created = QUuid::createUuid();
+        const auto pane = QUuid::createUuid();
+        TabRecord record;
+        record.id = created; record.title = std::move(title);
+        record.panes = leaf(pane); record.activePane = pane;
+        record.openedOrder = record.visitedOrder = model.nextTabOrder();
+        model.tabs_.insert(created, std::move(record));
+        // Append only inside the unpublished candidate. Never activate the
+        // temporary membership: removing it must not choose a neighboring tab
+        // or alter the source group's viewport anchor and visit history.
+        model.groups_[targetGroup].tabs.append(created);
+        return model.moveTabUnchecked(created, targetGroup, placement, -1);
+    });
+    return result ? created : TabId{};
+}
 OperationResult LayoutModel::renameTab(TabId id, QString title)
 {
     return transact([&](LayoutModel& model) {

@@ -393,11 +393,13 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             monitor.cbSize = sizeof(MONITORINFO);
             if (GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
                 auto* sizes = reinterpret_cast<MINMAXINFO*>(msg->lParam);
-                // Supply work-area limits and public Qt track hints. Windows
-                // may add its normal invisible maximized borders; NCCALCSIZE
-                // constrains the complete custom client to this visible area.
-                sizes->ptMaxPosition = {monitor.rcWork.left - monitor.rcMonitor.left,
-                                        monitor.rcWork.top - monitor.rcMonitor.top};
+                // Retain the standard invisible maximized resize borders:
+                // Qt computes logical client geometry by subtracting them
+                // from the outer rectangle. NCCALCSIZE clips the real client
+                // to the exact work area, so the chrome reaches screen edges.
+                const int border = resizeBorder(msg->hwnd, window);
+                sizes->ptMaxPosition = {monitor.rcWork.left - monitor.rcMonitor.left - border,
+                                        monitor.rcWork.top - monitor.rcMonitor.top - border};
                 const qreal ratio = window->devicePixelRatioF();
                 const auto nativeSize = [ratio](int logical, bool minimum) {
                     const double scaled = logical * ratio;
@@ -411,12 +413,21 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                     maximum = maximum.boundedTo(qtWindow->maximumSize());
                 }
                 sizes->ptMinTrackSize = {nativeSize(minimum.width(), true), nativeSize(minimum.height(), true)};
-                sizes->ptMaxTrackSize = {
-                    std::max(sizes->ptMinTrackSize.x, nativeSize(maximum.width(), false)),
-                    std::max(sizes->ptMinTrackSize.y, nativeSize(maximum.height(), false))};
+                const LONG maximumClientWidth = std::max(sizes->ptMinTrackSize.x, nativeSize(maximum.width(), false));
+                const LONG maximumClientHeight = std::max(sizes->ptMinTrackSize.y, nativeSize(maximum.height(), false));
+                const bool maximized = IsZoomed(msg->hwnd) || window->isMaximized()
+                    || (window->windowHandle() && window->windowHandle()->windowStates().testFlag(Qt::WindowMaximized));
+                // In normal state the custom client owns the whole rectangle.
+                // A maximized HWND has invisible resize borders; its native
+                // tracking cap must include them without relaxing normal drag.
+                const int trackingFrame = maximized ? 2 * border : 0;
+                const auto framed = [](LONG extent, int extra) {
+                    return LONG(std::min<qint64>(std::numeric_limits<LONG>::max(), qint64(extent) + extra));
+                };
+                sizes->ptMaxTrackSize = {framed(maximumClientWidth, trackingFrame), framed(maximumClientHeight, trackingFrame)};
                 sizes->ptMaxSize = {
-                    std::min(monitor.rcWork.right - monitor.rcWork.left, sizes->ptMaxTrackSize.x),
-                    std::min(monitor.rcWork.bottom - monitor.rcWork.top, sizes->ptMaxTrackSize.y)};
+                    framed(std::min(monitor.rcWork.right - monitor.rcWork.left, maximumClientWidth), 2 * border),
+                    framed(std::min(monitor.rcWork.bottom - monitor.rcWork.top, maximumClientHeight), 2 * border)};
                 *result = 0;
                 return true;
             }
@@ -424,6 +435,32 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         // Unavailable monitors and full-screen transitions keep Qt's handler.
         // Normal cases use Qt's public size limits, scaled for this HWND's
         // associated Qt window; WM_DPICHANGED remains entirely with Qt.
+        return false;
+    case WM_WINDOWPOSCHANGING:
+        if (msg->lParam && IsZoomed(msg->hwnd) && !IsIconic(msg->hwnd) && !fullScreenRequested(window)) {
+            // Qt's frameless WM_SIZE handler tries to replace a bounded
+            // maximized outer rectangle with the whole work area. Reapply
+            // this HWND's size hints before that correction changes the real
+            // client size. An unchanged rectangle produces no resize loop.
+            auto* position = reinterpret_cast<WINDOWPOS*>(msg->lParam);
+            MONITORINFO monitor{}; monitor.cbSize = sizeof(monitor);
+            if (!(position->flags & (SWP_NOSIZE | SWP_NOMOVE))
+                && GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitor)
+                && position->x == monitor.rcMonitor.left && position->y == monitor.rcMonitor.top
+                && position->cx == monitor.rcWork.right - monitor.rcWork.left
+                && position->cy == monitor.rcWork.bottom - monitor.rcWork.top) {
+                // Only recognize Qt's exact corrective work-area request.
+                // Preserve proposed moves to another monitor or DPI rectangle.
+                const QPointer<QWidget> observed(window);
+                MINMAXINFO hints{};
+                SendMessageW(msg->hwnd, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&hints));
+                if (!observed || !IsWindow(msg->hwnd)) { *result = 0; return true; }
+                if (hints.ptMaxSize.x <= 0 || hints.ptMaxSize.y <= 0) return false;
+                position->cx = hints.ptMaxSize.x; position->cy = hints.ptMaxSize.y;
+                position->x = monitor.rcMonitor.left + hints.ptMaxPosition.x;
+                position->y = monitor.rcMonitor.top + hints.ptMaxPosition.y;
+            }
+        }
         return false;
     case WM_NCPAINT:
         // The complete frame is a Qt client. A native window region can make
@@ -462,10 +499,11 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 // Windows retains invisible resize borders around a maximized
                 // overlapped window. Its client area must exclude that frame,
                 // so custom chrome is fully visible inside the work area.
-                bounds->left = std::max(bounds->left, monitor.rcWork.left);
-                bounds->top = std::max(bounds->top, monitor.rcWork.top);
-                bounds->right = std::min(bounds->right, monitor.rcWork.right);
-                bounds->bottom = std::min(bounds->bottom, monitor.rcWork.bottom);
+                const int border = resizeBorder(msg->hwnd, window);
+                bounds->left = std::max(bounds->left + border, monitor.rcWork.left);
+                bounds->top = std::max(bounds->top + border, monitor.rcWork.top);
+                bounds->right = std::min(bounds->right - border, monitor.rcWork.right);
+                bounds->bottom = std::min(bounds->bottom - border, monitor.rcWork.bottom);
             }
         }
         *result = 0; // Keep the full client area; do not add a native caption.
