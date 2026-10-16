@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Preserve upstream license bytes, including their original line endings and spaces.
+third_party/licenses/qtbase-6.12.0/*.txt -text -whitespace

@@ -4,6 +4,12 @@ Muxora 是一款面向远程工作的原生桌面应用，计划整合 SSH 终�
 
 当前交付的是 **Muxora 应用的首个窗口系统预览**，后续功能继续在这套应用代码上开发。已接入标签组与窗格分割、四边停靠、轻量和完整窗口、跨窗口拖拽、顶部／底部工具区、独立栏显隐、三种全屏与禅模式、命令面板和布局保存。标签中的占位内容用于试用布局，SSH、SFTP 和终端协议尚未实现。
 
+## 下载试用
+
+Windows x64 便携版见 [GitHub 预发布](https://github.com/UniversesAurora/Muxora/releases/tag/v0.1.0-preview.1)。下载 `Muxora-preview-windows-x64.7z`，完整解压后运行 `Muxora/muxora.exe`，无需安装 Qt。布局和行为设置保存在相邻的 `data/` 目录；编辑区文字和修改后的快捷键暂不随退出保存。
+
+同页的 `.sha256` 文件用于核验下载。Qt 源码 ZIP 是可选的依赖源码，运行程序无需下载；自有代码与各项依赖的许可证见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## 构建与运行
 
 需要 PowerShell 7、Git、CMake、Ninja，以及包含匹配 C++ 编译器的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MinGW 工具链。Qt 安装在仓库外，不提交 SDK 或构建产物。
@@ -34,4 +40,4 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 
 请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。自动化代理还需遵守 [AGENTS.md](AGENTS.md)。
 
-项目自有代码采用 [MIT 许可证](LICENSE)。Qt 与未来接入的第三方组件保留各自许可证；详见 [依赖与许可约束](docs/development/engineering-design.md#62-自有代码与第三方许可)。
+项目自有代码采用 [MIT 许可证](LICENSE)。第三方组件保留各自许可证；当前 Windows 预览的清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，选型约束见 [依赖与许可约束](docs/development/engineering-design.md#62-自有代码与第三方许可)。

@@ -36,7 +36,7 @@ pwsh ./tools/build.ps1 -Configuration Release -Test -Package
 ./out/package/muxora-preview/muxora.exe
 ```
 
-应用构建目标为 `muxora`。部署目录中的 Qt 运行文件保留其许可证；该目录是本机试用产物，正式分发仍需完成依赖清单与许可证检查。
+应用构建目标为 `muxora`。当前 Windows 预览的运行依赖、版本及源码来源见 [第三方声明](../../THIRD_PARTY_NOTICES.md)；部署目录保留各项许可证和 Qt 的组件清单。
 
 日常 Release 固定覆盖 `out/package/muxora-preview/`。替换前清除旧程序、运行库、Qt 插件和许可证目录，保留相邻 `data/` 与未知用户文件；如果该目录的程序仍在运行，脚本停止替换并说明占用。Debug、Release、独立模块和外部宿主分别复用固定构建缓存，不按每轮创建新部署目录。
 
@@ -46,11 +46,11 @@ pwsh ./tools/build.ps1 -Configuration Release -Test -Package
 pwsh ./tools/package-portable.ps1
 ```
 
-当前不主动生成便携包，现有固定 7Z 属于上一轮，不包含本轮修改。需要打包时，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
+按交付需要生成便携包时，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
 
 压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，SHA-256 校验文件使用相同文件名加 `.sha256`，再次生成时覆盖旧文件。解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
 
-脚本检查 7-Zip 压缩包完整性，再解压到 `out/portable-checks/current/便携包 解压检查/`。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。现有记录属于上一轮，不能用来证明本轮便携包通过。
+脚本检查 7-Zip 压缩包完整性，再解压到 `out/portable-checks/current/便携包 解压检查/`。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。本次与历史包的实际验证结果在下文分别记录。
 
 完整验证入口：
 
@@ -174,6 +174,16 @@ Windows 完整和轻量窗口在首次显示前准备原生帧，保留原生窗
 
 ## 已取得的验证记录
 
+### 首次 GitHub 预发布包（2026-10-16）
+
+源码仓库为 [UniversesAurora/Muxora](https://github.com/UniversesAurora/Muxora)，保留现有提交历史，自有代码采用 MIT。Windows x64 便携预览使用版本 `v0.1.0-preview.1`，下载见 [预发布页面](https://github.com/UniversesAurora/Muxora/releases/tag/v0.1.0-preview.1)。
+
+本次运行 `tools/package-portable.ps1`，Release 的 42 个套件、1641 个实际测试行通过，无失败或跳过。固定 7Z 大小为 17,784,478 字节，SHA-256 为 `76B6C2F8CB5E0DC2FD60A23BDA3A244D01C06E8EB2DC8A01F678FEE362859BC2`；程序哈希与下方最终源码验证记录一致。压缩完整性、含空格和中文路径解压、移除 SDK 后首次启动、便携状态保存与布局重启恢复均通过。包内没有私人布局文件，打包与解压检查目录均已清理。
+
+发布包保留 Qt、MinGW、Mesa 和 Microsoft 运行文件的来源与许可说明。另附未修改的 Qt Base 6.12.0 对应源码 ZIP 及校验文件，其 SHA-256 与 Qt 官方记录一致；它不参与应用运行，无需为试用下载。记录为 `out/test-results/github-release-validation.json`、`portable-package.json`，打包日志为 `out/diagnostics/github-release-package-traced.log`。
+
+首次打包复测中，工具条菜单套件的 `overflowToggleRestoresHoverAndPressState` 曾因第二次点击前菜单不可见而失败。原失败保留为 `out/diagnostics/github-release-chrome-failure.txt`；随后单函数、完整菜单套件与带事件日志的完整打包检查通过，未更改断言、30 ms 点击间隔或 300 ms watchdog。事件日志未捕获失败过程，原因仍待定位，不能将后续通过视为已修复。下面列出的其他平台与桌面行为验收范围保持。
+
 ### 侧栏、整组操作与禅模式修订（2026-10-16）
 
 当前修改包含以下行为：
@@ -212,7 +222,7 @@ Windows 完整和轻量窗口在首次显示前准备原生帧，保留原生窗
 
 2 倍附加缩放时，一次预览切换检查发现 Qt 的 mask 缓存非空、原生 region 却为空。原即时断言和失败记录保留；新增十项真实同步消息回放回归，在 QWidget 已提交 mask、QWindow 尚未更新缓存时重放旧空 mask，旧实现全部失败。预览事务现在通过 QWindow 明确发布最终区域，并检查原生形状、HWND、内容实例、鼠标捕获及 DWM 状态。该回归证明缓存与原生区域分离后可以正确完成事务，原单次偶发失败的触发来源仍未确定。
 
-本轮不生成 7Z；下方历史压缩包与验证记录对应各自版本。
+这次源码验证未生成 7Z；便携包检查单独记录，下方历史压缩包与验证记录对应各自版本。
 
 ### 上一轮：标签行、菜单与屏幕边缘修订（2026-10-15）
 
@@ -341,7 +351,7 @@ Qt Test 逐用例日志位于各构建目录的 `*-results.txt`；窗口模块�
 
 - 完整 VS Code 风格 JSONC 设置、用户注释保留、用户快捷键文件持久化、完整 `when` 条件以及多层规则和续键优先级仍待实现。当前快捷键编辑器与运行时续键能力不能等同于完整设计契约。
 - 窗框已接入边缘缩放、最大化及 Snap 相关处理。本机问题分析已确认普通与最大化窗口能显示系统 Snap 弹窗；各布局投放、移动后的三控件、混合 DPI、多屏变更与其他原生行为仍须分别验证。截图不替代程序自动判定。
-- ASan、长期资源压力、完整分发许可清单及 macOS / Linux 尚未完成验收。
+- ASan、长期资源压力及 macOS / Linux 尚未完成验收。当前 Windows 预览的依赖和许可文件已按实际运行文件核对；其他平台与后续新增依赖需随交付单独核对。
 - SSH、SFTP、Ghostty、X11 和终端 Normal / Visual 模式未接入，当前标签内容为占位控件。
 
 构建、自动化测试与桌面试用分开记录。没有在本机复现的功能不得写为已通过；长期资源、完整安装包和其他系统仍须完成各自验收。
