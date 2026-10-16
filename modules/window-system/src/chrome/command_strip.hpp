@@ -37,6 +37,7 @@ public:
                   StripSizing sizing = StripSizing::Content);
     void addActionStrip(QString id, QString title, const QList<QAction*>& actions, int row,
                         StripSizing sizing = StripSizing::Content);
+    bool removeStrip(const QString& id);
     bool setStripSizing(const QString& id, StripSizing sizing);
     [[nodiscard]] StripSizing stripSizing(const QString& id) const;
     [[nodiscard]] bool isStripSizingEditable(const QString& id) const;

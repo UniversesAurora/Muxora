@@ -55,6 +55,20 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
         owner->d->keyTimer->stop();
         emit owner->commandsChanged();
     });
+    d->commands.setCatalogChangedHandler([owner] {
+        if (!owner) return;
+        ++owner->d->bindingsRevision;
+        owner->d->pendingKeys = {}; owner->d->keyWindow = WindowId{};
+        owner->d->keyFocus.clear(); owner->d->keyContext = {};
+        owner->d->keyTimer->stop();
+        if (owner->d->catalogRefreshPending) return;
+        owner->d->catalogRefreshPending = true;
+        QTimer::singleShot(0, owner, [owner] {
+            if (!owner) return;
+            owner->d->catalogRefreshPending = false;
+            emit owner->commandsChanged();
+        });
+    });
     qApp->installEventFilter(this); registerWindowCommands();
 }
 WindowManager::~WindowManager()
@@ -73,7 +87,7 @@ WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& optio
 {
     QSet<QString> hidden;
     for (const auto& item : options.hiddenStatusItems) {
-        if (!WorkspaceWindow::statusItemIds().contains(item) || hidden.contains(item)) return {};
+        if (!statusItemIds().contains(item) || hidden.contains(item)) return {};
         hidden.insert(item);
     }
     if (kind == WindowKind::Floating && owner.isNull()) {
@@ -768,7 +782,7 @@ bool WindowManager::resetToolbarWidth(WindowId window, const QString& stripId)
 void WindowManager::setStatus(WindowId window, const QString& text) { if (auto widget = d->windows.value(window)) widget->setStatus(text); }
 bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, bool visible)
 {
-    if (!d->model.window(window) || !WorkspaceWindow::statusItemIds().contains(item)) return false;
+    if (!d->model.window(window) || !statusItemIds().contains(item)) return false;
     auto options = d->options.value(window);
     if (visible) options.hiddenStatusItems.removeAll(item);
     else if (!options.hiddenStatusItems.contains(item)) options.hiddenStatusItems.append(item);
@@ -781,7 +795,7 @@ bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, b
 }
 bool WindowManager::statusItemVisible(WindowId window, const QString& item) const
 {
-    return d->model.window(window) && WorkspaceWindow::statusItemIds().contains(item)
+    return d->model.window(window) && statusItemIds().contains(item)
         && !d->options.value(window).hiddenStatusItems.contains(item);
 }
 bool WindowManager::applyResult(const OperationResult& result)
@@ -814,7 +828,7 @@ void WindowManager::refresh(bool preserveDrag)
             else ++it;
         }
     for (auto it = d->tabs.begin(); it != d->tabs.end();) {
-        if (!d->model.tab(it.key())) { if (it.value()) it.value()->deleteLater(); d->renderedTrees.remove(it.key()); it = d->tabs.erase(it); }
+        if (!d->model.tab(it.key())) { if (it.value()) it.value()->deleteLater(); it = d->tabs.erase(it); }
         else ++it;
     }
     // A focused pane can retain its ID while moving into a different tab in
@@ -826,7 +840,7 @@ void WindowManager::refresh(bool preserveDrag)
         auto& view = d->tabs[it.key()];
         if (!view) view = new TabContent(this, it.key(), d->storage);
         const auto options = d->descriptors.value(it.value().activePane);
-        view->rebuild(it.value(), d->panes, d->paneTopBars, d->paneBottomBars); d->renderedTrees.insert(it.key(), it.value().panes);
+        view->rebuild(it.value(), d->panes, d->paneTopBars, d->paneBottomBars);
         view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
     }
     for (auto it = d->windows.begin(); it != d->windows.end();) {

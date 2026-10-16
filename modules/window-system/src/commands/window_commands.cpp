@@ -79,7 +79,7 @@ void WindowManager::registerWindowCommands()
     add("window.statusItem.setVisible", QCoreApplication::translate("WindowSystem", "切换状态栏控件"), "视图", {},
         [this](const CommandContext& c) {
             const auto id = c.args.value("item").toString();
-            if (!WorkspaceWindow::statusItemIds().contains(id)) return false;
+            if (!statusItemIds().contains(id)) return false;
             if (c.args.contains("visible") && c.args.value("visible").metaType().id() != QMetaType::Bool) return false;
             return setStatusItemVisible(c.window, id,
                 c.args.value("visible", !statusItemVisible(c.window, id)).toBool());
@@ -133,6 +133,7 @@ void WindowManager::registerWindowCommands()
     registerToolbarMoveCommand(this);
     registerPeekSizeCommands(this);
     registerTabGroupCommands();
+    registerCustomChromeCommands();
     add("window.toolbar.setSizing", QCoreApplication::translate("WindowSystem", "切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
@@ -478,7 +479,12 @@ void WindowManager::registerWindowCommands()
     add("pane.close", QCoreApplication::translate("WindowSystem", "关闭当前窗格"), "布局", QKeySequence("Ctrl+Shift+W"),
         [this](const CommandContext& c) { return closePane(c.tab, c.pane); }, hasTab);
     add("window.toggleStripsLock", QCoreApplication::translate("WindowSystem", "锁定／解锁菜单与工具条"), "工具", {},
-        [this](const CommandContext& c) { auto* window = d->windows.value(c.window).data(); if (!window || !window->strips()) return false; window->strips()->setLocked(!window->strips()->isLocked()); return true; },
+        [this](const CommandContext& c) {
+            const auto* window = d->windows.value(c.window).data();
+            if (!window || !window->strips()) return false;
+            if (c.args.contains("locked") && c.args.value("locked").metaType().id() != QMetaType::Bool) return false;
+            return setToolbarsLocked(c.window, c.args.value("locked", !window->strips()->isLocked()).toBool());
+        },
         [this](const CommandContext& c) { const auto* window = d->windows.value(c.window).data(); return window && window->strips(); });
     add("window.drag.selectTarget", QCoreApplication::translate("WindowSystem", "拖拽中选择目标窗口"), "窗口", {},
         [this](const CommandContext&) { d->drag->selectTarget(); return true; }, [this](const CommandContext&) { return d->drag->isActive(); });
@@ -524,10 +530,7 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
     DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     appendTabPresentationActions(&menu, this, captured);
     populateContextMenu(&menu, CommandMenuSurface::Tab, this, captured);
-    if (auto* action = menu.exec(global); self && action && !action->property("windowSystemHandledAction").toBool()) {
-        const auto id = action->data().toString();
-        QTimer::singleShot(0, self.data(), [self, id, captured] { if (self) self->d->commands.execute(id, captured); });
-    }
+    menu.exec(global);
 }
 void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
@@ -535,7 +538,7 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
     const auto captured = context(window);
     DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
     populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
-    if (auto* action = menu.exec(global)) { const auto id = action->data().toString(); QTimer::singleShot(0, this, [this, id, captured] { d->commands.execute(id, captured); }); }
+    menu.exec(global);
 }
 void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget* content)
 {
@@ -553,9 +556,7 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
     if (!menu) menu = new DismissOnlyMenu(windowWidget(window));
     QPointer<QMenu> retained(menu); applyTheme(menu, theme());
     populateContextMenu(menu, CommandMenuSurface::Pane, this, captured);
-    QString chosen;
-    if (auto* action = menu->exec(global)) chosen = action->property("windowSystemCommand").toString();
+    menu->exec(global);
     delete retained.data();
-    if (!chosen.isEmpty()) QTimer::singleShot(0, this, [this, chosen, captured] { d->commands.execute(chosen, captured); });
 }
 } // namespace window_system

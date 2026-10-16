@@ -4,6 +4,7 @@
 #include "workspace_host/placeholder_content.hpp"
 #include "state_paths.hpp"
 #include "user_preferences.hpp"
+#include "scripting_setup.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDebug>
@@ -112,14 +113,9 @@ int main(int argc, char* argv[])
             QMessageBox::about(windows.windowWidget(ctx.window), QStringLiteral("Muxora"),
                 QCoreApplication::translate("Muxora", "Muxora 0.1.0\n窗口系统首个预览\n\nQt / 原生 C++，MIT 开源。\n远程连接与文件功能将在窗口系统确定后接入。")); return true;
         }, {"帮助"}, 10});
-    if (!preferences.loadKeybindings(windows.commands()))
-        qWarning().noquote() << preferences.diagnostic();
-    QObject::connect(&windows, &window_system::WindowManager::commandsChanged, &app, [&] {
-        if (!preferences.saveKeybindings(windows.commands())) {
-            qWarning().noquote() << preferences.diagnostic();
-            windows.setStatus(windows.context().window, preferences.diagnostic());
-        }
-    });
+    // Persist provider layouts before script owners unregister their chrome.
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [&] { if (!parser.isSet("smoke")) save(); });
+    muxora::AppScriptingSetup scripting(&windows, preferences);
     QObject::connect(&translations, &window_system::TranslationManager::requestedLanguageChanged, &app,
         [&](window_system::UiLanguage language) {
             const auto previous = window_system::uiLanguageFromId(preferences.language());
@@ -155,15 +151,15 @@ int main(int argc, char* argv[])
         const auto window = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
         muxora::populateInitialWorkspace(windows, window); windows.showWindow(window);
     }
-    if (parser.isSet("command")) QTimer::singleShot(0, &app, [&] {
-        if (!windows.execute(parser.value("command"))) app.exit(4);
+    QObject::connect(&scripting, &muxora::AppScriptingSetup::initialized, &app, [&](bool ok, const QString&) {
+        if (parser.isSet("command") && (!ok || !windows.execute(parser.value("command")))) app.exit(4);
     });
+    scripting.start();
     QObject::connect(&windows, &window_system::WindowManager::lastWindowAboutToClose, &app, [&] { save(); });
     QTimer persistTimer; persistTimer.setSingleShot(true); persistTimer.setInterval(700);
     QObject::connect(&windows, &window_system::WindowManager::layoutChanged, &persistTimer, [&persistTimer] { persistTimer.start(); });
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);
     persistTimer.start();
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [&] { if (!parser.isSet("smoke")) save(); });
     if (parser.isSet("screenshot")) QTimer::singleShot(700, &app, [&] {
         auto* widget = windows.windowWidget(windows.context().window);
         if (widget && !widget->grab().save(parser.value("screenshot"))) app.exit(2);

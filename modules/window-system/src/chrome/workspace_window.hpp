@@ -25,6 +25,8 @@ public:
     [[nodiscard]] WindowId id() const;
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
+    void syncCustomChrome();
+    void forgetCustomToolbarLayout(const QString& id);
     [[nodiscard]] QJsonObject saveStripLayout() const;
     [[nodiscard]] QJsonObject saveInactiveStripLayouts() const;
     void restoreStripLayout(const QJsonObject& layout);
@@ -80,6 +82,9 @@ private:
     QJsonObject committedStripLayout_;
     QHash<WindowKind, QJsonObject> savedStripLayouts_;
     QList<QPointer<QAction>> commandActions_;
+    QHash<QString, QList<QPointer<QAction>>> customActions_;
+    bool syncingCustomChrome_ = false;
+    bool customChromePending_ = false;
     QPointer<ApplicationCommandMenus> menus_;
     DockSurface* surface_;
     QPoint press_;

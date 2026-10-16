@@ -30,6 +30,7 @@ add_library(WindowSystemWidgets STATIC
     src/chrome/workspace_view.cpp
     src/chrome/command_strip.cpp
     src/chrome/toolbar_api.cpp
+    src/custom_chrome.cpp
     src/commands/command_registry.cpp
     src/commands/command_menus.cpp
     src/commands/popup_menu.cpp

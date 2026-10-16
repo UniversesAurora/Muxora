@@ -314,10 +314,15 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         if (!windowBarsParsed) return windowBarsParsed;
         restoredWindowVisibility.insert(id, windowBars);
         if (!hiddenItems.isUndefined()) {
-            if (!hiddenItems.isArray()) return {false, QCoreApplication::translate("WindowSystem", "状态控件显示设置无效")};
+            if (!hiddenItems.isArray() || hiddenItems.toArray().size() > 130)
+                return {false, QCoreApplication::translate("WindowSystem", "状态控件显示设置无效")};
             QSet<QString> seen;
             for (const auto& item : hiddenItems.toArray()) {
-                if (!item.isString() || !WorkspaceWindow::statusItemIds().contains(item.toString()) || seen.contains(item.toString()))
+                // Script/provider definitions can be absent during startup.
+                // Keep bounded dormant preferences without rejecting the
+                // entire workspace or manufacturing a live status control.
+                if (!item.isString() || item.toString().isEmpty() || item.toString().size() > 256
+                    || item.toString().trimmed() != item.toString() || seen.contains(item.toString()))
                     return {false, QCoreApplication::translate("WindowSystem", "状态控件 ID 无效")};
                 seen.insert(item.toString());
             }

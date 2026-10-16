@@ -159,6 +159,9 @@ WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const Wind
     normalPlacement_ = geometry();
     placementTimer_->setSingleShot(true);
     connect(placementTimer_, &QTimer::timeout, this, [this] { notifyPlacementChanged(); });
+    // This window survives chrome reconstruction when its kind changes. Keep
+    // the subscription on that lifetime rather than adding one per chrome.
+    connect(manager_, &WindowManager::commandsChanged, this, &WorkspaceWindow::updateCommandStates);
     column_->setContentsMargins(1, 1, 1, 1); column_->setSpacing(0);
     column_->addWidget(surface_, 1); syncKind();
     applyTheme(this, manager_->theme());
@@ -341,6 +344,7 @@ void WorkspaceWindow::syncKind()
 void WorkspaceWindow::createChrome()
 {
     commandActions_.clear();
+    customActions_.clear();
     chrome_ = new QFrame(this); chrome_->setObjectName("WindowHeader");
     auto* row = new QHBoxLayout(chrome_); row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
     chrome_->installEventFilter(this);
@@ -370,7 +374,6 @@ void WorkspaceWindow::createChrome()
     const bool floating = kind_ == WindowKind::Floating;
     menus_ = new ApplicationCommandMenus(menu, manager_, id_, floating
         ? CommandMenuSurface::FloatingApplication : CommandMenuSurface::Application);
-    connect(manager_, &WindowManager::commandsChanged, this, &WorkspaceWindow::updateCommandStates);
     menus_->structureChanged = [this] { if (strips_) strips_->refreshLayout(); };
     strips_->addStrip(floating ? "floating-menu" : "menu", QCoreApplication::translate("WindowSystem", "菜单"), menu, 0);
     if (kind_ == WindowKind::Workbench) {
@@ -440,6 +443,7 @@ void WorkspaceWindow::createChrome()
     column_->insertWidget(column_->indexOf(surface_) + 1, bottomChrome_);
     bottomChrome_->installEventFilter(this);
     bottomChrome_->show();
+    syncCustomChrome();
     updateWindowControlState();
     updateCommandStates();
 }
@@ -533,17 +537,27 @@ void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
 {
     if (!manager_) return;
     populateContextMenu(menu, CommandMenuSurface::Window, manager_, manager_->context(id_));
-    for (auto* action : menu->findChildren<QAction*>()) if (!action->property("windowSystemCommand").toString().isEmpty())
-        connect(action, &QAction::triggered, manager_, [manager = manager_, window = id_, id = action->data().toString()] {
-            QTimer::singleShot(0, manager, [manager, window, id] { manager->execute(id, {}, window); });
-        });
 }
 void WorkspaceWindow::updateCommandStates()
 {
     if (!manager_) return;
+    const QPointer<WorkspaceWindow> retained(this);
     if (menus_) menus_->refresh();
+    if (!retained || !manager_) return;
     const auto context = manager_->context(id_);
-    for (const auto& action : commandActions_) if (action) refreshCommandAction(manager_, action, context);
+    const auto ordinary = commandActions_;
+    for (const auto& action : ordinary) {
+        if (!retained || !manager_) return;
+        if (action) refreshCommandAction(manager_, action, context);
+    }
+    if (!retained || !manager_) return;
+    // Enabled callbacks are host code and may unregister their own toolbar.
+    // Observe a copied presentation list instead of iterating mutable storage.
+    const auto custom = customActions_;
+    for (const auto& actions : custom) for (const auto& action : actions) {
+        if (!retained || !manager_) return;
+        if (action) refreshCommandAction(manager_, action, context);
+    }
 }
 void WorkspaceWindow::updateCaption()
 {

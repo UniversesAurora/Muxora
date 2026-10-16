@@ -2191,5 +2191,33 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>等待续键：%1</source>
             <translation>等待续键：%1</translation>
         </message>
+        <message>
+            <source>设置工具条可见性</source>
+            <translation>设置工具条可见性</translation>
+        </message>
+        <message>
+            <source>设置工具条宽度</source>
+            <translation>设置工具条宽度</translation>
+        </message>
+        <message>
+            <source>设置工具条按钮可见性</source>
+            <translation>设置工具条按钮可见性</translation>
+        </message>
+        <message>
+            <source>设置状态栏控件文本</source>
+            <translation>设置状态栏控件文本</translation>
+        </message>
+        <message>
+            <source>重命名标签…</source>
+            <translation>重命名标签…</translation>
+        </message>
+        <message>
+            <source>标签名称</source>
+            <translation>标签名称</translation>
+        </message>
+        <message>
+            <source>设置窗口标题</source>
+            <translation>设置窗口标题</translation>
+        </message>
     </context>
 </TS>

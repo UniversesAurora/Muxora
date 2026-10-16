@@ -28,6 +28,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot E:/develop/sdk/Qt/6.12.0/min
 | `-Test` | 构建后运行自动化测试 |
 | `-Run` | 构建后启动 Muxora |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
+| `-IncludeHashes` | 显式记录部署程序的 SHA-256；默认不计算 |
 
 需要单独试用 Release 部署目录时：
 
@@ -48,7 +49,9 @@ pwsh ./tools/package-portable.ps1
 
 按交付需要生成便携包时，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
 
-压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，SHA-256 校验文件使用相同文件名加 `.sha256`，再次生成时覆盖旧文件。解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
+压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，再次生成时覆盖旧包。默认不计算或复核文件校验值，也不生成 `.sha256`；该固定路径上遗留的旧校验文件会删除。确需校验值时使用 `pwsh ./tools/package-portable.ps1 -IncludeHashes`：开关同时传给构建脚本，记录程序校验值、核验解压后的程序，并生成同名 `.7z.sha256` 文件。未启用时，`build-info.json` 和便携检查记录省略校验值字段。
+
+解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
 
 脚本检查 7-Zip 压缩包完整性，再解压到 `out/portable-checks/current/便携包 解压检查/`。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。本次与历史包的实际验证结果在下文分别记录。
 
@@ -75,6 +78,7 @@ pwsh ./tools/verify.ps1
 | 显隐与全屏 | 四栏独立显隐；窗口、标签组、窗格全屏共用原偏好，禅模式临时隐藏所有栏 |
 | 命令与键盘 | 命令面板、窗口选择、标签组与窗格导航；支持续键、多绑定、逐绑定参数与顺序组合命令，用户绑定独立保存 |
 | 界面语言 | 跟随系统、简体中文、English；Qt 翻译目录随程序嵌入，语言偏好独立保存，重启后生效 |
+| Lua | 用户启动脚本、脚本命令与快捷键、自定义工具条／状态项、当前窗口操作、事件和可取消计时器；使用说明见 [Lua 指南](lua-guide.md) |
 | 图形行为设置 | 在可移动设置标签中搜索、分类和修改拖出形态、空窗口策略、目标唤起、悬停延迟、四栏显隐和当前显示范围 |
 | 保存恢复 | 严格 JSON 布局由宿主通过 `QSaveFile` 原子写入；行为设置、正常几何／最大化状态、顶部／底部工具条、四栏偏好及全屏／禅模式随布局保存 |
 
@@ -174,6 +178,33 @@ Windows 完整和轻量窗口在首次显示前准备原生帧，保留原生窗
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 已取得的验证记录
+
+### Lua、组件扩展与资源审计（2026-10-16）
+
+本批加入官方 Lua 5.5.1，解释器随程序编译，用户不必另装 Lua。“工具 → Lua”提供打开 `User/init.lua`、重载和运行脚本入口。脚本可以注册稳定命令、多个快捷键、工具条、状态项，调用当前窗口、标签、窗格、侧栏、布局、外观及主题 API；也提供非模态通知、独立参数启动程序和 Windows WAV／beep。二至四段组合键共用后续按键、后续按键同时有独立绑定，均由程序断言覆盖。
+
+窗口模块保持不依赖 Lua 或 Muxora 业务。新组件通过命令菜单路径、按目标／内容类型过滤的右键贡献、工具条／状态项公开描述，以及具名 Lua 服务和宿主事件接入。注册与移除的界面通知合并到下一事件循环，避免注册过程中提前执行有副作用的可用性回调；快捷键编辑仍立即更新。相同 ID 的脚本工具条在重载后保留各窗口、各形态的布局，删除的贡献则释放控件及历史偏好。
+
+Lua 有专用线程、分配／执行预算、有界任务与错误回执、值传输和回调数量限制。普通事件顺序排队，布局状态通知可以合并；超限明确报错并撤订阅。周期任务失败后停止，不无限报错或积压。纯 Lua 模块只能从指定目录加载。真实终端输出源、SSH／SFTP 业务，以及按月／年、时区和夏令时的日历调度尚未实现。
+
+本轮只集中运行一次完整 Release：53 个套件中 49 个首次通过，4 个失败。已修复新命令的菜单分类遗漏、同步目录刷新提前调用 `enabled` 导致重入和窗口销毁的问题；原有菜单、窗口命令、标签创建和相关快捷键用例定向通过。首次完整记录保留为 `out/diagnostics/lua-release-full.log`，后续修复记录为 `lua-catalog-recheck.log`、`lua-final-contracts.log`。
+
+**仍有一条不稳定记录**：旧的原生工具条悬停用例首次在 `button->underMouse()` 失败；定向整套复核通过，但尚未取得首次失败原因，不能据此宣称修复或本轮完整回归稳定通过。原断言、超时与负载均保留，证据为 `out/diagnostics/chrome-interaction-full-failure.txt` 和 `lua-catalog-chrome.trace`。没有用截图、Computer Use 或放宽标准判断结果。
+
+| 本批检查 | 实际结果与证据 |
+| --- | --- |
+| Lua 运行时 | 语义、保护调用、取消、OOM、无限终结函数、非法值和三类各 10000 次容量洪泛通过；`out/test-results/lua-release-full.xml`、`lua-review-fixes.xml` |
+| 窗口 Lua 与应用接入 | 上下文、身份、关闭许可、重载、事件顺序、回调释放、组件服务、外部启动及偏好保护通过；`lua-catalog-recheck.xml` |
+| 动态 UI 与生命周期 | 注册／移除通知、工具条独立布局和回收通过；`lua-catalog-lifecycle.xml` 中 custom-chrome 通过，最终内存套件见 `lua-memory-final.xml` |
+| 安装后的窗口 API | 独立外部宿主的原检查及新工具区／右键描述 API 通过；`lua-external-host.xml` |
+| 独立 Lua 宿主 | 使用安装后的 WindowSystem 加两层 Lua 源码 target，无 Muxora 应用依赖；运行通过，`lua-external-host-final.xml` |
+| 实际 Release | 固定目录覆盖，移除 SDK 环境后脚本启动、执行命令、保存及再次启动恢复工具条宽度／显隐和标签状态通过；`lua-deployment.json` |
+
+本批删除未使用但保留旧布局树的缓存，修正窗口形态切换累计命令连接及动态菜单不回收的问题。28 次窗口／内容移动关闭循环逐次核验对象基线，100 次菜单贡献循环核验控件、分类及原菜单身份。窗口模块夹具不创建 Lua VM；其最后一轮单窗口样本为 408 个所属 QObject、128 个 QWidget，私有提交约 42.9 MiB、工作集约 85.9 MiB；关闭后剩管理器及空存储的 4 个对象／1 个控件，约 24.2／64.9 MiB。原生句柄、GDI 和 USER 计数随记录保存；Lua 的分配、回调与重置归零另由运行时用例检查。这是限定负载下的资源检查，不是长期泄漏验收，也不能证明整个应用内存已达到理论最优。
+
+新夹具的两项修正经过独立审阅：目录通知按新契约等待异步提交，通知检查改订阅独立 catalog 回调并另查绑定通知为零；外部 Lua 宿主精确检查原有“活动标签 — 窗口基础标题”及布局中的基础标题。原对象释放、100 次循环、同步销毁、内容身份和精确计数断言保留。初次失败与修正结果均留存。
+
+本轮部署为 `out/package/muxora-preview/muxora.exe`，包含 Lua 许可证，临时部署检查状态已清理；没有制作或更新 7-Zip、没有发布新的 GitHub Release。普通构建／打包默认不计算文件校验值，只有显式 `-IncludeHashes` 才收集。旧版预发布包不包含本批 Lua 功能。
 
 ### 快捷键序列、多绑定、组合命令与中英文（2026-10-16）
 

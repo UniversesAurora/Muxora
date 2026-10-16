@@ -33,11 +33,15 @@
 
 `runCommands` 接受 `args.commands` 数组，元素为命令 ID 或 `{command, args}` 对象，依次执行并在失败时停止。窗口管理器为后续步骤解析原窗口的当前活动内容；独立使用注册表时默认保留原上下文，可通过 `setCompositeContextResolver` 注入自己的解析策略。组合有界且禁止递归调用，不运行脚本文本。
 
+组件批量修改绑定时可使用 `setBindingsBatch()`：先校验整批绑定，再提交并通知一次，观察者不会看到部分更新。动态添加和移除命令同样通知 `commandsChanged`，菜单回收已移除命令及不再使用的动态分类。
+
 [TranslationManager](include/window_system/localization.hpp) 由宿主在创建界面前构造、安装语言并保留生命周期，提供 `System`、`SimplifiedChinese` 和 `English`。宿主可通过 `addCatalog` 增加自己的翻译目录，通过 `requestedLanguageChanged` 持久化重启偏好。语言切换不会重建业务内容或修改用户名称。目录维护入口为 CMake 的 `window_system_lupdate`、`window_system_lrelease`；应用目录使用 `muxora_lupdate`、`muxora_lrelease`。新增文本更新两种语言的 `.ts` 后统一构建和测试。
 
 默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。非固定侧栏标签保留原紫色背景和浅色文字。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
 
 `Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
+
+`Command::contextMenus` 为右键菜单贡献 `ContextMenuPlacement`，可选择 Tab、Pane、Group 或 Window，并设置子菜单 `path`、`order` 和可选 `contentType`。内容类型按目标标签的 `TabOptions::contentType` 过滤，空类型匹配全部；菜单操作使用打开菜单时捕获的上下文，目标失效后不会改为操作当前焦点。未来 SSH／SFTP 组件可以通过这些元数据增加菜单，不需要修改窗口类。命令的显示文本由提供者负责翻译。
 
 轻量浮窗也提供菜单，默认放在标题同一行最左侧；执行使用本浮窗的 Window／Tab／Pane 上下文。它保留内容、布局和窗口操作，省去退出整个应用、保存／重置完整工作区等入口，不创建完整工作区按钮条或全局状态栏。浮窗条带 ID 为 `floating-menu`，与完整窗口的 `menu` 分开保存；升降级保留完整菜单的位置和定制，恢复浮窗时局部菜单与标题同行。
 
@@ -48,6 +52,10 @@
 对应命令为 `pane.moveToTab`、`pane.moveToGroup.left/right/up/down`、`pane.moveToWindow`、`pane.swap.left/right/up/down` 及 `workspace.moveTabToGroup.left/right/up/down`、`workspace.moveTabToWindow`。标签和窗口选择命令支持 ID 参数或键盘选择菜单，`.previous` / `.next` 提供循环移动。窗格前后标签移动默认 `Alt+PgUp` / `Alt+PgDown`；标签重排继续使用 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown`。全部命令可从快捷键编辑器绑定。
 
 `WindowManager::resetToolbarWidth(window, stripId)` 重置指定工具条的宽度，保留排列顺序和其他条带的请求宽度。工具条选项中的“重置尺寸”调用统一命令 `window.toolbar.resetSize`；指定 `strip` 可直接执行，不带参数则显示工具条列表，支持键盘选择。目标在弹性左侧或无弹性行中保持左端，在弹性右侧保持右端，在相应方向分配或收回空间；空间不足时遵守各自最小宽度。重置隐藏条不改变可见布局，重置弹性条仍保留弹性策略。
+
+宿主用 [CommandToolbar / StatusItem](include/window_system/custom_chrome.hpp) 值描述扩展工具区：`registerToolbar()` 接受稳定 ID、标题、命令 ID 序列和默认区域／行；`updateToolbar()` 更新相同 ID 的定义并保留各窗口及窗口形态的排列。工具条状态可通过 `toolbarState()` 查询，位置、宽度、弹性、按钮及显隐继续使用普通工具条 API。`registerStatusItem()` / `setStatusItemText()` / `removeStatusItem()` 管理全局状态项，各窗口独立保存显隐。移除贡献时清理该 ID 的布局元数据，提供者仍负责注销自己的命令。
+
+这些公开接口不引入 Lua 依赖。可选的 [WindowSystemLua](../window-system-lua/README.md) 在外部把值和稳定 ID 映射为本模块 API，其他宿主也可以直接用 C++ 注册组件。
 
 每行最多一条弹性工具条。标题条必须保持弹性，同一行的其他条带不能设为弹性；把弹性条拖入标题行时，它会改为普通条。宿主约束优先于保存布局，旧布局中的普通标题会恢复弹性。窗口宽度变化时先调整弹性空间，右侧条带直接相对右边缘排列；缩窄时的临时压缩不改写请求宽度，放大后恢复。标题在自身条带内居中，过长时右侧省略，内容区至少 96 个逻辑像素。
 
@@ -136,6 +144,8 @@
 各窗口保存自己的四栏显隐；`visibilityProfiles` 保存两种窗口最后明确编辑的默认值，新建、拖出和提取窗口使用目标类型的默认值。现有窗口不强制同步；保存或关闭旧窗口不覆盖较新的默认值。转换类型时，每个窗口通过 `barLayouts` 记录并恢复自身两种类型的偏好。布局恢复严格验证字段，禅模式的临时隐藏不会写进偏好。嵌入宿主可设置 `WindowOptions.inheritVisibilityProfile = false`，让创建参数中的四项显隐直接生效。
 
 `executeInContext(commandId, context)` 使用已经捕获的窗口、组、标签和窗格 ID；执行前及宿主的可用性回调后再次核验目标。已关闭或移到其他窗口的目标不会被替换成当前焦点。命令面板采用此入口；`execute()` 仍按指定窗口解析当前上下文。
+
+命令目录新增／移除通过 `setCatalogChangedHandler` 通知，绑定修改通过 `setBindingsChangedHandler` 通知。WindowManager 将目录的界面刷新合并到下一事件循环；注册过程中不提前调用命令的 `enabled`，批量注册也不会递归刷新菜单。需要观察界面贡献的宿主应等待该提交，命令本身注册后即可查询和执行。
 
 ## 规范与验证
 

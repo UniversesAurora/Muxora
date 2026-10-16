@@ -71,6 +71,7 @@ bool parseSteps(const QVariantMap& args, QVector<CommandStep>& steps, int depth 
 }
 
 struct CommandRegistry::State {
+    std::function<void()> catalogChanged;
     bool alive = true;
     QVector<Command> commands;
     std::function<void()> bindingsChanged;
@@ -141,13 +142,40 @@ bool CommandRegistry::add(Command command)
 {
     const auto state = state_;
     if (command.id.isEmpty() || !command.execute || state->find(command.id)) return false;
+    if (command.contextMenus.size() > 16) return false;
+    for (const auto& menu : command.contextMenus) {
+        if (menu.path.size() > 5 || menu.contentType.size() > 256
+            || menu.target < ContextMenuTarget::Tab || menu.target > ContextMenuTarget::Window) return false;
+        for (const auto& part : menu.path) {
+            if (part.trimmed().isEmpty() || part.size() > 256) return false;
+            for (const auto ch : part) if (ch.category() == QChar::Other_Control) return false;
+        }
+    }
     if (command.bindings.isEmpty()) {
         if (!command.shortcut.isEmpty()) command.bindings.append({command.shortcut, {}});
     } else if (!command.shortcut.isEmpty() && command.bindings.first().sequence != command.shortcut) return false;
     if (!normalizeBindings(command.bindings)) return false;
     command.shortcut = command.bindings.isEmpty() ? QKeySequence{} : command.bindings.first().sequence;
     state->commands.append(std::move(command));
-    return true;
+    const auto changed = state->catalogChanged;
+    if (changed) changed();
+    return state->alive;
+}
+bool CommandRegistry::remove(const QString& id)
+{
+    if (id == QStringLiteral("runCommands")) return false;
+    const auto state = state_;
+    const auto found = std::find_if(state->commands.begin(), state->commands.end(),
+        [&](const Command& command) { return command.id == id; });
+    if (found == state->commands.end()) return false;
+    state->commands.erase(found);
+    const auto changed = state->catalogChanged;
+    if (changed) changed();
+    return state->alive;
+}
+void CommandRegistry::setCatalogChangedHandler(std::function<void()> handler)
+{
+    state_->catalogChanged = std::move(handler);
 }
 bool CommandRegistry::setShortcut(const QString& id, QKeySequence shortcut)
 {
@@ -157,17 +185,24 @@ bool CommandRegistry::setShortcut(const QString& id, QKeySequence shortcut)
 }
 bool CommandRegistry::setBindings(const QString& id, QVector<CommandBinding> bindings)
 {
+    return setBindingsBatch({{id, std::move(bindings)}});
+}
+bool CommandRegistry::setBindingsBatch(QHash<QString, QVector<CommandBinding>> bindings)
+{
     const auto state = state_;
-    if (!normalizeBindings(bindings)) return false;
-    for (auto& command : state->commands) if (command.id == id) {
-        if (command.bindings == bindings) return true;
-        command.bindings = std::move(bindings);
+    for (auto it = bindings.begin(); it != bindings.end(); ++it)
+        if (!state->find(it.key()) || !normalizeBindings(it.value())) return false;
+    bool anyChanged = false;
+    for (auto& command : state->commands) if (bindings.contains(command.id)) {
+        const auto replacement = bindings.value(command.id);
+        if (command.bindings == replacement) continue;
+        command.bindings = replacement;
         command.shortcut = command.bindings.isEmpty() ? QKeySequence{} : command.bindings.first().sequence;
-        const auto changed = state->bindingsChanged;
-        if (changed) changed();
-        return state->alive;
+        anyChanged = true;
     }
-    return false;
+    const auto changed = state->bindingsChanged;
+    if (anyChanged && changed) changed();
+    return state->alive;
 }
 bool CommandRegistry::addBinding(const QString& id, CommandBinding binding)
 {

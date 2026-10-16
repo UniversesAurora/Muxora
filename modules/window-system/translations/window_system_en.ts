@@ -2191,5 +2191,33 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>等待续键：%1</source>
             <translation>Waiting for next key: %1</translation>
         </message>
+        <message>
+            <source>设置工具条可见性</source>
+            <translation>Set toolbar visibility</translation>
+        </message>
+        <message>
+            <source>设置工具条宽度</source>
+            <translation>Set toolbar width</translation>
+        </message>
+        <message>
+            <source>设置工具条按钮可见性</source>
+            <translation>Set toolbar button visibility</translation>
+        </message>
+        <message>
+            <source>设置状态栏控件文本</source>
+            <translation>Set status item text</translation>
+        </message>
+        <message>
+            <source>重命名标签…</source>
+            <translation>Rename tab…</translation>
+        </message>
+        <message>
+            <source>标签名称</source>
+            <translation>Tab name</translation>
+        </message>
+        <message>
+            <source>设置窗口标题</source>
+            <translation>Set window title</translation>
+        </message>
     </context>
 </TS>

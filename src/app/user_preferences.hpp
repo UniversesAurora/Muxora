@@ -22,7 +22,16 @@ public:
     [[nodiscard]] QString directory() const { return directory_; }
     bool saveLanguage(const QString& language);
     bool loadKeybindings(window_system::CommandRegistry& commands);
+    // Script reloads restore the prior defaults before replacing script-owned
+    // bindings, then capture the new generation before reapplying user rules.
+    bool restoreDefaultBindings(window_system::CommandRegistry& commands) const;
+    void captureDefaultBindings(const window_system::CommandRegistry& commands);
+    // Capture edits immediately while coalescing disk writes. Removed commands'
+    // user rules survive, but their defaults and observed bindings are released.
+    bool stageKeybindings(const window_system::CommandRegistry& commands);
     bool saveKeybindings(const window_system::CommandRegistry& commands);
+    [[nodiscard]] qsizetype trackedDefaultCommandCount() const { return defaults_.size(); }
+    [[nodiscard]] bool hasPendingKeybindingChanges() const { return userRules_ != persistedRules_; }
 
 private:
     QString directory_;
@@ -30,7 +39,9 @@ private:
     QString settingsDiagnostic_;
     QString keybindingsDiagnostic_;
     QMap<QString, QVector<window_system::CommandBinding>> defaults_;
-    QJsonArray unknownRules_;
+    QMap<QString, QVector<window_system::CommandBinding>> observedBindings_;
+    QJsonArray userRules_;
+    QJsonArray persistedRules_;
     bool defaultsCaptured_ = false;
     bool keybindingsWritable_ = false;
     bool keybindingsFileExisted_ = false;

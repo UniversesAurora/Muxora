@@ -11,6 +11,14 @@ add_test(NAME window-system.widgets COMMAND window-system-widget-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/widget-results.txt,txt)
 set_tests_properties(window-system.widgets PROPERTIES TIMEOUT 60)
 
+qt_add_executable(window-system-extension-api-test extension_api_test.cpp)
+target_link_libraries(window-system-extension-api-test PRIVATE WindowSystem::Widgets Qt6::Test)
+target_include_directories(window-system-extension-api-test PRIVATE ../src)
+set_target_properties(window-system-extension-api-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.extension-api COMMAND window-system-extension-api-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/extension-api-results.txt,txt)
+set_tests_properties(window-system.extension-api PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+
 qt_add_executable(window-system-drag-test drag_interaction_test.cpp)
 target_link_libraries(window-system-drag-test PRIVATE WindowSystem::Widgets Qt6::Test)
 target_include_directories(window-system-drag-test PRIVATE ../src)
@@ -25,9 +33,17 @@ target_compile_features(window-system-overlay-fixture PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(window-system-overlay-fixture PRIVATE user32)
 endif()
+
+qt_add_executable(window-system-custom-chrome-test custom_chrome_test.cpp)
+target_link_libraries(window-system-custom-chrome-test PRIVATE WindowSystem::Widgets Qt6::Test)
+target_include_directories(window-system-custom-chrome-test PRIVATE ../src)
+set_target_properties(window-system-custom-chrome-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.custom-chrome COMMAND window-system-custom-chrome-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/custom-chrome-results.txt,txt)
+set_tests_properties(window-system.custom-chrome PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile tab-strip-layout tab-appearance popup-menu tab-group shortcut-dispatch shortcut-settings localization)
+foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile tab-strip-layout tab-appearance popup-menu tab-group shortcut-dispatch shortcut-settings localization memory-lifecycle)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -50,6 +66,7 @@ add_test(NAME window-system.movement-model COMMAND window-system-movement-model-
     -o ${CMAKE_CURRENT_BINARY_DIR}/movement-model-results.txt,txt)
 
 if(WIN32)
+    target_link_libraries(window-system-memory-lifecycle-test PRIVATE psapi user32)
     qt_add_executable(window-system-native-frame-test native_frame_test.cpp)
     target_link_libraries(window-system-native-frame-test PRIVATE WindowSystem::Widgets Qt6::Test)
     target_include_directories(window-system-native-frame-test PRIVATE ../src)

@@ -130,7 +130,7 @@ const Items& layout(CommandMenuSurface surface)
         group("布局", QT_TRANSLATE_NOOP("WindowSystem", "布局(&L)"), {
             group("layout.groups", QT_TRANSLATE_NOOP("WindowSystem", "标签组"), {group("group.create", QT_TRANSLATE_NOOP("WindowSystem", "新建标签组"), directions("workspace.splitGroup.")),
                 group("group.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("workspace.resizeGroup.")), separator(), command("group.close")}),
-            group("layout.tabAppearance", QT_TRANSLATE_NOOP("WindowSystem", "标签外观"), {command("tab.color.set")}),
+            group("layout.tabAppearance", QT_TRANSLATE_NOOP("WindowSystem", "标签外观"), {command("tab.rename"), command("tab.color.set")}),
             group("layout.panes", QT_TRANSLATE_NOOP("WindowSystem", "窗格"), {group("pane.split", QT_TRANSLATE_NOOP("WindowSystem", "拆分"), directions("pane.split.")),
                 group("pane.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("pane.resize.")),
                 group("pane.swap", QT_TRANSLATE_NOOP("WindowSystem", "交换位置"), directions("pane.swap."))}),
@@ -151,7 +151,7 @@ const Items& layout(CommandMenuSurface surface)
         group("工具", QT_TRANSLATE_NOOP("WindowSystem", "工具(&T)"), {command("window.settings"), command("preferences.openKeyboardShortcuts")}, 50),
         group("帮助", QT_TRANSLATE_NOOP("WindowSystem", "帮助(&H)"), {}, 60)};
     static const Items floating = floatingItems(application);
-    static const Items tab = {command("workspace.closeTab"), command("workspace.pinTab"), command("workspace.unpinTab"),
+    static const Items tab = {command("workspace.closeTab"), command("tab.rename"), command("workspace.pinTab"), command("workspace.unpinTab"),
         group("tab.closeRange", QT_TRANSLATE_NOOP("WindowSystem", "批量关闭标签"), {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
         group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "排列标签"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
@@ -175,6 +175,7 @@ const Items& layout(CommandMenuSurface surface)
     case CommandMenuSurface::Application: return application;
     case CommandMenuSurface::FloatingApplication: return floating;
     case CommandMenuSurface::Tab: return tab;
+    case CommandMenuSurface::Group: return tab;
     case CommandMenuSurface::Pane: return pane;
     case CommandMenuSurface::Window: return window;
     }
@@ -239,7 +240,8 @@ QMenu* makeMenu(QWidget* owner, const Item& item, const QStringList& path)
 }
 using Context = std::function<CommandContext()>;
 void addItems(QMenu* menu, const Items& items, WindowManager* manager, const Context& context,
-              QList<QPointer<QAction>>& actions, QList<QPointer<QMenu>>* menus, QObject* actionOwner)
+              QList<QPointer<QAction>>& actions, QList<QPointer<QMenu>>* menus, QObject* actionOwner,
+              bool contribution = false)
 {
     const QPointer<QMenu> retainedMenu(menu);
     const QPointer<WindowManager> retainedManager(manager);
@@ -251,6 +253,7 @@ void addItems(QMenu* menu, const Items& items, WindowManager* manager, const Con
         if (item.command) {
             action = menu->addAction(QString()); action->setData(item.id); action->setObjectName(item.id);
             action->setProperty("windowSystemCommand", item.id); actions.append(action);
+            if (contribution) action->setProperty("commandMenuContribution", true);
             const QPointer<QAction> retainedAction(action);
             refreshCommandAction(manager, action, context());
             if (!retainedMenu || !retainedManager || !retainedAction || (actionOwner && !retainedOwner)) return;
@@ -260,15 +263,14 @@ void addItems(QMenu* menu, const Items& items, WindowManager* manager, const Con
                 const auto captured = context();
                 QTimer::singleShot(0, receiver.data(), [manager, id, captured] {
                     if (!manager) return;
-                    const bool executed = manager->commands().execute(id, captured);
-                    if (manager && !executed) emit manager->commandFailed(QCoreApplication::translate("WindowSystem", "命令不可执行：%1").arg(id));
+                    manager->executeInContext(id, captured);
                 });
             });
         } else if (!item.id.isEmpty()) {
             const auto path = menu->property("commandMenuPath").toStringList() + QStringList{plainTitle(item.title)};
             auto* child = makeMenu(menu, item, path); menu->addMenu(child); action = child->menuAction();
             if (menus) menus->append(child);
-            addItems(child, item.children, manager, context, actions, menus, actionOwner);
+            addItems(child, item.children, manager, context, actions, menus, actionOwner, contribution);
             if (!retainedMenu || !retainedManager || (actionOwner && !retainedOwner)) return;
         } else action = menu->addSeparator();
         action->setProperty("menuOrder", item.order ? item.order : ++ordinal * 10);
@@ -288,11 +290,15 @@ QString applicationMenuExclusion(const QString& id)
     if (id == "presentation.setCentralPlacement" || id == "presentation.setPinnedPlacement")
         return QCoreApplication::translate("WindowSystem", "标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整");
     if (id == "window.activate") return QCoreApplication::translate("WindowSystem", "窗口菜单的窗口族列表及选择面板提供入口");
+    if (id == "window.setTitle") return QCoreApplication::translate("WindowSystem", "窗口标题由宿主、脚本或命令参数提供");
     if (id == "window.statusItem.setVisible") return QCoreApplication::translate("WindowSystem", "状态栏右键提供逐控件显隐入口");
+    if (id == "window.statusItem.setText") return QCoreApplication::translate("WindowSystem", "状态项内容由宿主、脚本或命令参数提供");
     if (id == "layout.setRatio" || id == "layout.setEdgeExtent") return QCoreApplication::translate("WindowSystem", "内部布局提交，需要明确节点或分区参数");
     if (id == "window.moveAllToEdge" || id == "window.moveAllToEdgeBar") return QCoreApplication::translate("WindowSystem", "内部整窗投放，需要目标窗口和落点参数");
     if (id == "workspace.moveTabToEdge" || id == "workspace.moveTabToEdgeBar") return QCoreApplication::translate("WindowSystem", "内部标签投放；用户入口为四方向收纳及拖拽");
     if (id == "window.toolbar.setSizing" || id == "window.toolbar.resetSize") return QCoreApplication::translate("WindowSystem", "工具条选项菜单及命令面板提供定制入口");
+    if (id == "window.toolbar.setVisible" || id == "window.toolbar.setWidth" || id == "window.toolbar.setItemVisible")
+        return QCoreApplication::translate("WindowSystem", "工具条选项菜单及命令面板提供定制入口");
     if (id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing") return QCoreApplication::translate("WindowSystem", "内容右键附加栏菜单及命令面板提供入口");
     const QStringList closeScopes{"workspace.closeTabs.left", "workspace.closeTabs.right", "workspace.closeTabs.others", "workspace.closeTabs.all"};
     if (closeScopes.contains(id)) return QCoreApplication::translate("WindowSystem", "标签右键提供关闭范围；文件菜单保留关闭当前标签");
@@ -373,10 +379,47 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
 
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager, const CommandContext& captured)
 {
+    const QPointer<QMenu> retainedMenu(menu);
+    const QPointer<WindowManager> retainedManager(manager);
     if (!menu->actions().isEmpty()) menu->addSeparator();
     QList<QPointer<QAction>> actions;
-    addItems(menu, layout(surface), manager, [captured] { return captured; }, actions, nullptr, nullptr);
-    if (surface == CommandMenuSurface::Tab) {
+    addItems(menu, layout(surface), manager, [captured] { return captured; }, actions, nullptr, manager);
+    if (!retainedMenu || !retainedManager) return;
+    struct Contribution { Command command; ContextMenuPlacement placement; };
+    QVector<Contribution> contributions;
+    const auto target = surface == CommandMenuSurface::Tab ? ContextMenuTarget::Tab
+        : surface == CommandMenuSurface::Group ? ContextMenuTarget::Group
+        : surface == CommandMenuSurface::Pane ? ContextMenuTarget::Pane : ContextMenuTarget::Window;
+    const auto contentType = manager->tabOptions(captured.tab).contentType;
+    for (const auto& command : manager->commands().commands())
+        for (const auto& placement : command.contextMenus)
+            if (placement.target == target && (placement.contentType.isEmpty() || placement.contentType == contentType))
+                contributions.append({command, placement});
+    std::stable_sort(contributions.begin(), contributions.end(), [](const auto& left, const auto& right) {
+        if (left.placement.order != right.placement.order) return left.placement.order < right.placement.order;
+        return left.command.id < right.command.id;
+    });
+    QHash<QString, QPointer<QMenu>> contributedMenus;
+    if (!contributions.isEmpty()) menu->addSeparator();
+    for (const auto& contribution : contributions) {
+        if (!retainedMenu || !retainedManager) return;
+        QPointer<QMenu> destination(menu);
+        QString prefix;
+        for (const auto& title : contribution.placement.path) {
+            prefix += QChar(0x1f) + title;
+            auto child = contributedMenus.value(prefix);
+            if (!child) {
+                child = new DismissOnlyMenu(title, destination);
+                child->setObjectName(QStringLiteral("ExtensionContextMenu"));
+                destination->addMenu(child); contributedMenus.insert(prefix, child);
+            }
+            destination = child;
+        }
+        addItems(destination, {command(contribution.command.id)}, manager, [captured] { return captured; },
+                 actions, nullptr, manager);
+    }
+    if (!retainedMenu || !retainedManager) return;
+    if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group) {
         for (auto* action : menu->actions()) if (action->objectName() == "tab.color.set") {
             auto* colors = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "设置标签颜色"), menu);
             colors->setObjectName(QStringLiteral("TabColorChoices"));
@@ -427,12 +470,46 @@ QMenu* ApplicationCommandMenus::menuAtPath(const QStringList& path)
         else {
             Item item{QStringLiteral("extension.") + partial.join('.'), title, {}, 500, false};
             auto* child = makeMenu(parent ? static_cast<QWidget*>(parent) : bar_.data(), item, partial);
+            child->setProperty("commandMenuContribution", true);
             if (parent) { parent->addMenu(child); insertOrdered(parent, child->menuAction()); }
             else { bar_->addMenu(child); insertOrdered(bar_, child->menuAction()); }
             menus_.append(child); connect(child, &QMenu::aboutToShow, this, [this] { refresh(); }); parent = child;
         }
     }
     return parent;
+}
+bool ApplicationCommandMenus::removeUnusedContributions()
+{
+    bool removed = false;
+    const QPointer<ApplicationCommandMenus> retained(this);
+    const auto actions = actions_;
+    for (const auto& action : actions) {
+        if (!retained || !manager_ || !bar_) return removed;
+        // Built-in placeholders intentionally survive absent host commands so
+        // their declared position is still available for a later registration.
+        if (action && action->property("commandMenuContribution").toBool()
+            && !manager_->commands().find(action->data().toString())) {
+            delete action.data();
+            removed = true;
+        }
+    }
+    if (!retained) return removed;
+    actions_.removeIf([](const auto& action) { return action.isNull(); });
+    // Children are appended after their parent. Reclaim empty dynamic branches
+    // from the leaves upward, preserving both core menus and shared branches.
+    const auto menus = menus_;
+    for (auto it = menus.crbegin(); it != menus.crend(); ++it) {
+        if (!retained || !manager_ || !bar_) return removed;
+        const auto menu = *it;
+        if (!menu || !menu->property("commandMenuContribution").toBool()) continue;
+        const auto items = menu->actions();
+        if (std::none_of(items.cbegin(), items.cend(), [](QAction* action) { return !action->isSeparator(); })) {
+            delete menu.data();
+            removed = true;
+        }
+    }
+    if (retained) menus_.removeIf([](const auto& menu) { return menu.isNull(); });
+    return removed;
 }
 void ApplicationCommandMenus::addContributions()
 {
@@ -454,16 +531,22 @@ void ApplicationCommandMenus::addContributions()
             path = core.contains(category) ? QStringList{category, QString::fromUtf8(QT_TRANSLATE_NOOP("WindowSystem", "扩展"))}
                 : QStringList{QString::fromUtf8(QT_TRANSLATE_NOOP("WindowSystem", "扩展")), category};
         }
-        auto* menu = menuAtPath(path); if (!menu) continue;
-        const auto count = actions_.size();
+        const QPointer<QMenu> menu(menuAtPath(path)); if (!menu) continue;
         addItems(menu, {command(definition.id, definition.menuOrder)}, manager_,
-            [this] { return manager_ ? manager_->context(window_) : CommandContext{}; }, actions_, nullptr, this);
+            [this] { return manager_ ? manager_->context(window_) : CommandContext{}; }, actions_, nullptr, this, true);
         if (!retained || !manager_ || !bar_) return;
-        if (actions_.size() > count) {
-            actions_.last()->setProperty("menuOrder", definition.menuOrder);
-            actions_.last()->setProperty("menuSortTitle", definition.title);
-        }
-        insertOrdered(menu, actions_.last());
+        // An enabled callback can unload its own command and synchronously
+        // reclaim this branch. It can also register unrelated contributions;
+        // the last action in the list is therefore not necessarily ours.
+        if (!menu || !manager_->commands().find(definition.id)) continue;
+        const auto found = std::find_if(actions_.cbegin(), actions_.cend(), [&definition](const auto& action) {
+            return action && action->data().toString() == definition.id;
+        });
+        if (found == actions_.cend()) continue;
+        const QPointer<QAction> action = *found;
+        action->setProperty("menuOrder", definition.menuOrder);
+        action->setProperty("menuSortTitle", definition.title);
+        insertOrdered(menu, action);
     }
 }
 void ApplicationCommandMenus::refreshWindowList()
@@ -555,6 +638,8 @@ void ApplicationCommandMenus::refresh()
     }
     const QPointer<ApplicationCommandMenus> retained(this);
     const auto previousCount = actions_.size();
+    const bool removed = removeUnusedContributions();
+    if (!retained || !manager_ || !bar_) return;
     addContributions(); if (!retained || !manager_ || !bar_) return;
     const auto context = manager_->context(window_);
     bool availabilityChanged = false;
@@ -572,7 +657,7 @@ void ApplicationCommandMenus::refresh()
         rootAction->setProperty("commandMenuAvailable", available);
         if (!available) rootAction->setVisible(false);
     }
-    if ((previousCount != actions_.size() || availabilityChanged) && structureChanged) structureChanged();
+    if ((removed || previousCount != actions_.size() || availabilityChanged) && structureChanged) structureChanged();
 }
 
 } // namespace window_system

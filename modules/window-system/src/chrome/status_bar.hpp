@@ -2,6 +2,8 @@
 #pragma once
 
 #include <window_system/layout_model.hpp>
+#include <window_system/custom_chrome.hpp>
+#include <QHash>
 #include <QLabel>
 #include <QPointer>
 #include <QStringList>
@@ -20,6 +22,7 @@ public:
     void setMessage(const QString& text);
     void setWorkspace(const QString& title, int tabCount);
     void setHiddenItems(const QStringList& hidden);
+    void setCustomItems(const QVector<StatusItem>& items);
     [[nodiscard]] QMenu* createContextMenu(QWidget* parent = nullptr) const;
 
 protected:
@@ -30,6 +33,9 @@ private:
     WindowId window_;
     QLabel* message_;
     QLabel* workspace_;
+    QHash<QString, QPointer<QLabel>> customItems_;
+    QVector<StatusItem> customDefinitions_;
+    QStringList hiddenItems_;
 };
 
 } // namespace window_system

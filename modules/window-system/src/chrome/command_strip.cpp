@@ -407,6 +407,27 @@ void CommandStripHost::setLocked(bool locked)
     arrange(); changed();
 }
 bool CommandStripHost::isLocked() const { return d->locked; }
+bool CommandStripHost::removeStrip(const QString& id)
+{
+    auto* strip = d->strips.value(id);
+    if (!strip) return false;
+    const QPointer<CommandStripHost> retained(this);
+    if (isDragging()) finishDrag(false);
+    if (!retained) return false;
+    strip = d->strips.value(id);
+    if (!strip) return false;
+    strip->removeEventFilter(this);
+    strip->handle->removeEventFilter(this);
+    for (const auto& item : strip->items)
+        if (item.action) disconnect(item.action, nullptr, this, nullptr);
+    if (strip->tail->menu()) disconnect(strip->tail->menu(), nullptr, this, nullptr);
+    removeFromRows(id);
+    d->strips.remove(id);
+    if (d->pendingStrip == id) d->pendingStrip.clear();
+    delete strip;
+    arrange(); changed();
+    return true;
+}
 bool CommandStripHost::isDragging() const { return !d->dragging.isEmpty(); }
 QWidget* CommandStripHost::stripWidget(const QString& id) const { return d->strips.value(id); }
 QStringList CommandStripHost::stripIds() const

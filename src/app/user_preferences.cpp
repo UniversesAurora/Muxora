@@ -148,10 +148,7 @@ bool UserPreferences::saveLanguage(const QString& language)
 
 bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
 {
-    if (!defaultsCaptured_) {
-        for (const auto& command : commands.commands()) defaults_.insert(command.id, commands.bindings(command.id));
-        defaultsCaptured_ = true;
-    }
+    if (!defaultsCaptured_) captureDefaultBindings(commands);
     keybindingsDiagnostic_.clear();
     keybindingsWritable_ = false;
     QJsonDocument document;
@@ -161,8 +158,11 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
     if (!document.isNull() && (!document.isArray() || document.array().size() > maximumRules)) {
         keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "keybindings.json 必须是最多 4096 项的 JSON 数组。"); return false;
     }
-    auto bindings = defaults_;
-    QJsonArray unknown;
+    QMap<QString, Bindings> bindings;
+    for (const auto& command : commands.commands()) {
+        if (!defaults_.contains(command.id)) defaults_.insert(command.id, command.bindings);
+        bindings.insert(command.id, defaults_.value(command.id, command.bindings));
+    }
     int index = 0;
     for (const auto& value : document.array()) {
         ++index;
@@ -184,7 +184,7 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
             return reject(QCoreApplication::translate("WindowSystem", "命令 ID 或快捷键无效。"));
         if (rule.contains(QStringLiteral("args")) && !rule.value(QStringLiteral("args")).isObject())
             return reject(QCoreApplication::translate("WindowSystem", "args 必须是对象。"));
-        if (!commands.find(command)) { unknown.append(rule); continue; }
+        if (!commands.find(command)) continue;
         if (remove) {
             auto& values = bindings[command];
             const bool matchArguments = rule.contains(QStringLiteral("args"));
@@ -199,20 +199,81 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
                 values.append(binding);
         }
     }
-    // Parse the entire file before touching the registry. If a registry policy
-    // rejects a binding, restore all previous values instead of partial import.
-    QMap<QString, Bindings> previous;
-    for (auto it = bindings.cbegin(); it != bindings.cend(); ++it) {
-        previous.insert(it.key(), commands.bindings(it.key()));
-        if (!commands.setBindings(it.key(), it.value())) {
-            for (auto old = previous.cbegin(); old != previous.cend(); ++old) commands.setBindings(old.key(), old.value());
-            keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则不符合命令绑定限制，已保留原绑定。"); return false;
-        }
+    // Validate and commit the entire batch atomically. A rejected binding never
+    // exposes partially imported values to registry observers.
+    QHash<QString, Bindings> batch;
+    for (auto it = bindings.cbegin(); it != bindings.cend(); ++it) batch.insert(it.key(), it.value());
+    if (!commands.setBindingsBatch(std::move(batch))) {
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则不符合命令绑定限制，已保留原绑定。"); return false;
     }
-    unknownRules_ = unknown;
+    userRules_ = document.array();
+    persistedRules_ = userRules_;
+    observedBindings_ = std::move(bindings);
     keybindingsFileExisted_ = QFileInfo::exists(path);
     keybindingsBytes_ = original;
     keybindingsWritable_ = true;
+    return true;
+}
+
+bool UserPreferences::restoreDefaultBindings(window_system::CommandRegistry& commands) const
+{
+    if (!defaultsCaptured_) return true;
+    QHash<QString, Bindings> batch;
+    for (auto it = defaults_.cbegin(); it != defaults_.cend(); ++it)
+        if (commands.find(it.key())) batch.insert(it.key(), it.value());
+    return commands.setBindingsBatch(std::move(batch));
+}
+
+void UserPreferences::captureDefaultBindings(const window_system::CommandRegistry& commands)
+{
+    defaults_.clear(); observedBindings_.clear();
+    for (const auto& command : commands.commands()) {
+        defaults_.insert(command.id, command.bindings);
+        observedBindings_.insert(command.id, command.bindings);
+    }
+    defaultsCaptured_ = true;
+}
+
+bool UserPreferences::stageKeybindings(const window_system::CommandRegistry& commands)
+{
+    if (!defaultsCaptured_ || !keybindingsWritable_) return false;
+    QMap<QString, Bindings> current;
+    for (const auto& command : commands.commands()) current.insert(command.id, command.bindings);
+    if (current == observedBindings_) return true;
+    QJsonArray rules;
+    // Unknown rules remain useful when a temporarily unloaded extension comes
+    // back. For just-removed commands the last observed effective binding below
+    // replaces those rules, preserving an edit made before the deferred save.
+    for (const auto& value : userRules_) {
+        auto id = value.toObject().value(QStringLiteral("command")).toString();
+        if (id.startsWith(QLatin1Char('-'))) id.remove(0, 1);
+        if (!current.contains(id) && !observedBindings_.contains(id)) rules.append(value);
+    }
+    const auto appendRules = [&rules](const QString& id, const Bindings& defaults, const Bindings& effective) {
+        if (sameBindings(defaults, effective)) return;
+        for (const auto& binding : defaults)
+            rules.append(QJsonObject{{QStringLiteral("key"), portableSequence(binding.sequence)},
+                {QStringLiteral("command"), QLatin1Char('-') + id}});
+        for (const auto& binding : effective) {
+            QJsonObject rule{{QStringLiteral("key"), portableSequence(binding.sequence)}, {QStringLiteral("command"), id}};
+            if (!binding.args.isEmpty()) rule.insert(QStringLiteral("args"), QJsonObject::fromVariantMap(binding.args));
+            rules.append(rule);
+        }
+    };
+    for (auto it = observedBindings_.cbegin(); it != observedBindings_.cend(); ++it)
+        if (!current.contains(it.key())) appendRules(it.key(), defaults_.value(it.key()), it.value());
+    for (auto it = current.cbegin(); it != current.cend(); ++it) {
+        if (!defaults_.contains(it.key())) defaults_.insert(it.key(), it.value());
+        appendRules(it.key(), defaults_.value(it.key()), it.value());
+    }
+    if (rules.size() > maximumRules) {
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则超过 4096 项限制。");
+        return false;
+    }
+    for (auto it = defaults_.begin(); it != defaults_.end();)
+        if (!current.contains(it.key())) it = defaults_.erase(it); else ++it;
+    observedBindings_ = std::move(current);
+    userRules_ = std::move(rules);
     return true;
 }
 
@@ -222,6 +283,7 @@ bool UserPreferences::saveKeybindings(const window_system::CommandRegistry& comm
         if (keybindingsDiagnostic_.isEmpty()) keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键文件尚未成功读取，未覆盖原文件。");
         return false;
     }
+    if (!stageKeybindings(commands)) return false;
     // Do not overwrite an external editor's changes with an older UI snapshot.
     // Files are bounded; compare the saved bytes rather than computing hashes.
     const auto path = QDir(directory_).filePath(QStringLiteral("keybindings.json"));
@@ -233,25 +295,13 @@ bool UserPreferences::saveKeybindings(const window_system::CommandRegistry& comm
         return false;
     }
     existing.close();
-    QJsonArray rules = unknownRules_;
-    for (const auto& command : commands.commands()) {
-        const auto current = commands.bindings(command.id);
-        if (!defaults_.contains(command.id)) defaults_.insert(command.id, current);
-        const auto defaults = defaults_.value(command.id);
-        if (sameBindings(defaults, current)) continue;
-        for (const auto& binding : defaults)
-            rules.append(QJsonObject{{QStringLiteral("key"), portableSequence(binding.sequence)}, {QStringLiteral("command"), QLatin1Char('-') + command.id}});
-        for (const auto& binding : current) {
-            QJsonObject rule{{QStringLiteral("key"), portableSequence(binding.sequence)}, {QStringLiteral("command"), command.id}};
-            if (!binding.args.isEmpty()) rule.insert(QStringLiteral("args"), QJsonObject::fromVariantMap(binding.args));
-            rules.append(rule);
-        }
-    }
+    const QJsonArray rules = userRules_;
     if (rules.size() > maximumRules) { keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则超过 4096 项限制。"); return false; }
     keybindingsDiagnostic_.clear();
     const QJsonDocument document(rules);
     if (!writeDocument(path, document, keybindingsDiagnostic_)) return false;
     keybindingsBytes_ = document.toJson(QJsonDocument::Indented);
+    persistedRules_ = rules;
     keybindingsFileExisted_ = true;
     return true;
 }

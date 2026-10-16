@@ -4,105 +4,105 @@
     <context>
         <name>Muxora</name>
         <message>
-            <location filename="../main.cpp" line="37" />
+            <location filename="../main.cpp" line="46" />
             <source>Muxora 窗口系统预览</source>
             <translation>Muxora 窗口系统预览</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="38" />
+            <location filename="../main.cpp" line="47" />
             <source>使用初始布局，不读取保存状态</source>
             <translation>使用初始布局，不读取保存状态</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="39" />
+            <location filename="../main.cpp" line="48" />
             <source>启动检查后自动退出</source>
             <translation>启动检查后自动退出</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="40" />
+            <location filename="../main.cpp" line="49" />
             <source>启动后保存窗口截图</source>
             <translation>启动后保存窗口截图</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="41" />
+            <location filename="../main.cpp" line="50" />
             <source>启动后执行已注册命令</source>
             <translation>启动后执行已注册命令</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="42" />
+            <location filename="../main.cpp" line="51" />
             <source>指定独立布局状态目录</source>
             <translation>指定独立布局状态目录</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="59" />
+            <location filename="../main.cpp" line="68" />
             <source>新建工作区标签</source>
             <translation>新建工作区标签</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="61" />
+            <location filename="../main.cpp" line="70" />
             <source>工作区 %1</source>
             <translation>工作区 %1</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="68" />
+            <location filename="../main.cpp" line="77" />
             <location filename="../../workspace_host/placeholder_content.cpp" line="101" />
             <source>文件浏览</source>
             <translation>文件浏览</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="69" />
+            <location filename="../main.cpp" line="78" />
             <location filename="../../workspace_host/placeholder_content.cpp" line="107" />
             <source>会话</source>
             <translation>会话</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="70" />
+            <location filename="../main.cpp" line="79" />
             <location filename="../../workspace_host/placeholder_content.cpp" line="110" />
             <source>传输队列</source>
             <translation>传输队列</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="76" />
+            <location filename="../main.cpp" line="85" />
             <source>新建%1标签</source>
             <translation>新建%1标签</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="87" />
+            <location filename="../main.cpp" line="96" />
             <source>保存工作区布局</source>
             <translation>保存工作区布局</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="88" />
+            <location filename="../main.cpp" line="97" />
             <source>布局已保存</source>
             <translation>布局已保存</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="88" />
+            <location filename="../main.cpp" line="97" />
             <source>布局保存失败</source>
             <translation>布局保存失败</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="89" />
+            <location filename="../main.cpp" line="98" />
             <source>退出</source>
             <translation>退出</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="92" />
+            <location filename="../main.cpp" line="101" />
             <source>布局保存失败，未退出</source>
             <translation>布局保存失败，未退出</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="95" />
+            <location filename="../main.cpp" line="104" />
             <source>恢复初始工作区布局</source>
             <translation>恢复初始工作区布局</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="102" />
+            <location filename="../main.cpp" line="111" />
             <source>关于 Muxora</source>
             <translation>关于 Muxora</translation>
         </message>
         <message>
-            <location filename="../main.cpp" line="105" />
+            <location filename="../main.cpp" line="114" />
             <source>Muxora 0.1.0
 窗口系统首个预览
 
@@ -132,7 +132,7 @@ Ctrl+Shift+O     向下拆分窗格
 Ctrl+Alt+方向    标签组导航
 Alt+方向        内部窗格导航
 Ctrl+Shift+D     移到轻量浮窗
-</source>
+    </source>
             <translation>Muxora / 工作区草稿
 
 这是一块本地编辑区域，可以输入文字并观察移动后状态是否保留。
@@ -149,7 +149,7 @@ Ctrl+Shift+O     向下拆分窗格
 Ctrl+Alt+方向    标签组导航
 Alt+方向        内部窗格导航
 Ctrl+Shift+D     移到轻量浮窗
-</translation>
+    </translation>
         </message>
         <message>
             <location filename="../../workspace_host/placeholder_content.cpp" line="45" />
@@ -272,6 +272,147 @@ Ctrl+Shift+D     移到轻量浮窗
             <source>7 项  ·  文件功能尚未接入</source>
             <translation>7 项  ·  文件功能尚未接入</translation>
         </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="46" />
+            <source>Lua 配置加载失败：%1</source>
+            <translation>Lua 配置加载失败：%1</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="55" />
+            <source>运行 Lua 脚本…</source>
+            <translation>运行 Lua 脚本…</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="59" />
+            <source>重新加载 Lua 配置</source>
+            <translation>重新加载 Lua 配置</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="62" />
+            <source>打开 Lua 配置文件</source>
+            <translation>打开 Lua 配置文件</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="66" />
+            <source>无法打开 Lua 配置文件。</source>
+            <translation>无法打开 Lua 配置文件。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="93" />
+            <source>无法恢复脚本加载前的默认快捷键。</source>
+            <translation>无法恢复脚本加载前的默认快捷键。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="113" />
+            <source>Lua 脚本超过 1 MiB 限制。</source>
+            <translation>Lua 脚本超过 1 MiB 限制。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="116" />
+            <source>Lua 脚本必须使用 UTF-8 编码。</source>
+            <translation>Lua 脚本必须使用 UTF-8 编码。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="126" />
+            <source>运行脚本时只能提供 code 或 file 其中一个。</source>
+            <translation>运行脚本时只能提供 code 或 file 其中一个。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="129" />
+            <source>Lua 脚本参数必须是字符串。</source>
+            <translation>Lua 脚本参数必须是字符串。</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="144" />
+            <source>运行 Lua 脚本</source>
+            <translation>运行 Lua 脚本</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="144" />
+            <source>输入 Lua 脚本：</source>
+            <translation>输入 Lua 脚本：</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="146" />
+            <source>运行</source>
+            <translation>运行</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="146" />
+            <source>取消</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <location filename="../scripting_setup.cpp" line="175" />
+            <source>无法创建 Lua 配置目录。</source>
+            <translation>无法创建 Lua 配置目录。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="99" />
+            <source>脚本服务已关闭。</source>
+            <translation>脚本服务已关闭。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="107" />
+            <source>通知需要文本；正文最多 8192 个字符，标题最多 256 个字符。</source>
+            <translation>通知需要文本；正文最多 8192 个字符，标题最多 256 个字符。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="111" />
+            <source>通知时长必须是 0 到 600000 之间的毫秒数。</source>
+            <translation>通知时长必须是 0 到 600000 之间的毫秒数。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="112" />
+            <source>最多同时显示 16 条脚本通知。</source>
+            <translation>最多同时显示 16 条脚本通知。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="134" />
+            <source>启动程序需要有效的 program 和 cwd 字符串。</source>
+            <translation>启动程序需要有效的 program 和 cwd 字符串。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="136" />
+            <location filename="../script_services.cpp" line="140" />
+            <source>程序参数 args 必须是字符串数组。</source>
+            <translation>程序参数 args 必须是字符串数组。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="143" />
+            <source>程序参数超过数量或长度限制。</source>
+            <translation>程序参数超过数量或长度限制。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="144" />
+            <source>最多同时处理 8 个程序启动请求。</source>
+            <translation>最多同时处理 8 个程序启动请求。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="168" />
+            <source>声音参数需要 beep 或本地 WAV 文件路径。</source>
+            <translation>声音参数需要 beep 或本地 WAV 文件路径。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="171" />
+            <source>声音文件必须是最多 16 MiB 的本地 WAV 文件。</source>
+            <translation>声音文件必须是最多 16 MiB 的本地 WAV 文件。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="175" />
+            <source>无法播放声音文件。</source>
+            <translation>无法播放声音文件。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="177" />
+            <source>当前平台仅支持 beep 提示音。</source>
+            <translation>当前平台仅支持 beep 提示音。</translation>
+        </message>
+        <message>
+            <location filename="../script_services.cpp" line="180" />
+            <source>未知脚本服务：%1</source>
+            <translation>未知脚本服务：%1</translation>
+        </message>
     </context>
     <context>
         <name>WindowSystem</name>
@@ -309,7 +450,7 @@ Ctrl+Shift+D     移到轻量浮窗
             <translation>不支持此界面语言。</translation>
         </message>
         <message>
-            <location filename="../user_preferences.cpp" line="162" />
+            <location filename="../user_preferences.cpp" line="159" />
             <source>keybindings.json 必须是最多 4096 项的 JSON 数组。</source>
             <translation>keybindings.json 必须是最多 4096 项的 JSON 数组。</translation>
         </message>
@@ -349,17 +490,18 @@ Ctrl+Shift+D     移到轻量浮窗
             <translation>快捷键规则不符合命令绑定限制，已保留原绑定。</translation>
         </message>
         <message>
-            <location filename="../user_preferences.cpp" line="220" />
+            <location filename="../user_preferences.cpp" line="283" />
             <source>快捷键文件尚未成功读取，未覆盖原文件。</source>
             <translation>快捷键文件尚未成功读取，未覆盖原文件。</translation>
         </message>
         <message>
-            <location filename="../user_preferences.cpp" line="230" />
+            <location filename="../user_preferences.cpp" line="294" />
             <source>快捷键文件已被外部修改，未覆盖；请重新启动以加载修改。</source>
             <translation>快捷键文件已被外部修改，未覆盖；请重新启动以加载修改。</translation>
         </message>
         <message>
-            <location filename="../user_preferences.cpp" line="248" />
+            <location filename="../user_preferences.cpp" line="270" />
+            <location filename="../user_preferences.cpp" line="299" />
             <source>快捷键规则超过 4096 项限制。</source>
             <translation>快捷键规则超过 4096 项限制。</translation>
         </message>

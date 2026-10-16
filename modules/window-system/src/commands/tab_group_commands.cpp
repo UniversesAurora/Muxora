@@ -184,6 +184,6 @@ void WindowManager::showGroupMenu(GroupId group, QPoint position)
     auto* menu = new DismissOnlyMenu(windowWidget(record->windowId)); menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->setObjectName(QStringLiteral("TabBarContextMenu")); applyTheme(menu, theme());
     appendTabPresentationActions(menu, this, captured);
-    populateContextMenu(menu, CommandMenuSurface::Tab, this, captured); menu->popup(position);
+    populateContextMenu(menu, CommandMenuSurface::Group, this, captured); menu->popup(position);
 }
 } // namespace window_system

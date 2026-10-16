@@ -5,6 +5,7 @@ param(
     [switch]$Test,
     [switch]$Run,
     [switch]$Package,
+    [switch]$IncludeHashes,
     [string]$PackageDirectory
 )
 $ErrorActionPreference = 'Stop'
@@ -131,9 +132,12 @@ try {
             if (Test-Path -LiteralPath $taskRuntimeLicenses) {
                 Copy-Item -LiteralPath $taskRuntimeLicenses -Destination (Join-Path $taskPackageDirectory 'licenses/mingw') -Recurse -Force
             }
-            @{ qt = $taskQtVersion; configuration = $Configuration;
-               application = '0.1.0-window-preview'; compiler = "MinGW GCC $taskRequiredCompilerVersion";
-               executableSha256 = (Get-FileHash -LiteralPath $taskPackagedExe -Algorithm SHA256).Hash } |
+            $taskBuildInfo = @{ qt = $taskQtVersion; configuration = $Configuration;
+                application = '0.1.0-window-preview'; compiler = "MinGW GCC $taskRequiredCompilerVersion" }
+            if ($IncludeHashes) {
+                $taskBuildInfo.executableSha256 = (Get-FileHash -LiteralPath $taskPackagedExe -Algorithm SHA256).Hash
+            }
+            $taskBuildInfo |
                 ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskPackageDirectory 'build-info.json') -Encoding utf8NoBOM
             $taskExecutable = $taskPackagedExe
             Write-DeploymentInventory $taskPackageDirectory

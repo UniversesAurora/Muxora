@@ -65,6 +65,30 @@ int main(int argc, char** argv)
     if (!externalAction || !externalAction->isVisible() || !externalAction->shortcut().isEmpty()) return 83;
     externalAction->trigger(); QCoreApplication::processEvents();
     if (menuExecutions != 1) return 84;
+    if (!windows.registerToolbar({"external.tools", "External tools", {"external.menu"}}) ||
+        !windows.setToolbarWidth(root, "external.tools", 137) ||
+        !windows.setToolbarVisible(root, "external.tools", false))
+        return 160;
+    const auto customToolbar = windows.toolbarState(root, "external.tools");
+    if (!customToolbar || customToolbar->width != 137 || customToolbar->visible ||
+        !windows.updateToolbar({"external.tools", "Updated tools", {"external.menu"}}) ||
+        windows.toolbarState(root, "external.tools")->width != 137)
+        return 161;
+    if (!windows.registerStatusItem({"external.status", "Ready", "External provider"}) ||
+        !windows.setStatusItemText("external.status", "Updated") ||
+        !windows.statusItemIds().contains("external.status") ||
+        !windows.setStatusItemVisible(root, "external.status", false))
+        return 162;
+    window_system::Command extension{
+        "external.context", "Context action", "Host", {}, {}, [](const window_system::CommandContext &) {
+            return true;
+        }};
+    extension.contextMenus = {{window_system::ContextMenuTarget::Pane, {"External"}, "contract.text", 10}};
+    if (!windows.commands().add(extension) ||
+        windows.commands().find("external.context")->contextMenus.size() != 1 ||
+        !windows.commands().remove("external.context") || !windows.removeToolbar("external.tools") ||
+        !windows.removeStatusItem("external.status"))
+        return 163;
     if (!windows.resetToolbarWidth(root, "title")
         || !windows.execute("window.toolbar.resetSize", {{"strip", "caption-controls"}}, root)
         || windows.resetToolbarWidth(root, "missing")) return 12;

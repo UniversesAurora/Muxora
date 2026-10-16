@@ -8,6 +8,7 @@
 #include <QContextMenuEvent>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QSet>
 #include <QTimer>
 
 namespace window_system {
@@ -41,12 +42,49 @@ void WorkspaceStatusBar::setWorkspace(const QString& title, int tabCount)
 
 void WorkspaceStatusBar::setHiddenItems(const QStringList& hidden)
 {
+    hiddenItems_ = hidden;
     const bool messageVisible = !hidden.contains(QStringLiteral("message"));
     const bool workspaceVisible = !hidden.contains(QStringLiteral("workspace"));
     const QPointer<WorkspaceStatusBar> retained(this);
     message_->setVisible(messageVisible);
     if (!retained) return;
     workspace_->setVisible(workspaceVisible);
+    if (!retained) return;
+    const auto items = customItems_;
+    for (auto it = items.cbegin(); it != items.cend(); ++it) {
+        if (it.value()) it.value()->setVisible(!hidden.contains(it.key()));
+        if (!retained) return;
+    }
+}
+
+void WorkspaceStatusBar::setCustomItems(const QVector<StatusItem>& items)
+{
+    customDefinitions_ = items;
+    const QPointer<WorkspaceStatusBar> retained(this);
+    QSet<QString> live;
+    for (const auto& item : items) live.insert(item.id);
+    for (auto it = customItems_.begin(); it != customItems_.end();) {
+        if (live.contains(it.key())) { ++it; continue; }
+        auto label = it.value(); it = customItems_.erase(it);
+        if (label) delete label.data();
+        if (!retained) return;
+    }
+    auto* row = qobject_cast<QHBoxLayout*>(layout());
+    for (const auto& item : items) {
+        auto label = customItems_.value(item.id);
+        if (!label) {
+            label = new QLabel(this);
+            label->setTextFormat(Qt::PlainText);
+            label->setObjectName(QStringLiteral("CustomStatusItem"));
+            label->setProperty("statusItemId", item.id);
+            customItems_.insert(item.id, label);
+            row->insertWidget(row->count() - 1, label);
+        }
+        label->setText(item.text); label->setToolTip(item.tooltip);
+        label->setAccessibleName(item.text);
+        label->setVisible(!hiddenItems_.contains(item.id));
+        if (!retained) return;
+    }
 }
 
 QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
@@ -55,8 +93,10 @@ QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
     menu->setObjectName(QStringLiteral("StatusBarMenu"));
     if (!manager_) return menu;
     applyTheme(menu, manager_->theme());
-    for (const auto& entry : {std::pair{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "状态消息")},
-                             std::pair{QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "工作区信息")}}) {
+    QVector<QPair<QString, QString>> entries{{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "状态消息")},
+        {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "工作区信息")}};
+    for (const auto& item : customDefinitions_) entries.append({item.id, item.text.isEmpty() ? item.id : item.text});
+    for (const auto& entry : entries) {
         auto* action = menu->addAction(entry.second);
         action->setObjectName(QStringLiteral("StatusItemToggle"));
         action->setData(entry.first);

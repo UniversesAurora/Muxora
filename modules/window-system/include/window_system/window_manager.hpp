@@ -3,6 +3,7 @@
 #include <window_system/command_registry.hpp>
 #include <window_system/theme.hpp>
 #include <window_system/toolbar_layout.hpp>
+#include <window_system/custom_chrome.hpp>
 #include <window_system/view_state.hpp>
 #include <window_system/floating_panel.hpp>
 #include <window_system/tab_appearance.hpp>
@@ -126,6 +127,7 @@ public:
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
     bool closeTab(TabId tab);
+    bool renameTab(TabId tab, QString title);
     bool closePane(TabId tab, PaneId pane);
     bool closeTabs(const QVector<TabId>& tabs);
     bool requestCloseWindow(WindowId window);
@@ -176,6 +178,7 @@ public:
 
     void showWindow(WindowId window);
     bool activateWindow(WindowId window);
+    bool setWindowTitle(WindowId window, QString title);
     bool activateTab(TabId tab);
     bool focusPane(TabId tab, PaneId pane);
     [[nodiscard]] QWidget* windowWidget(WindowId window) const;
@@ -202,6 +205,26 @@ public:
     // logical slot or the next slot after the last row; index -1 appends.
     bool moveToolbar(WindowId window, const QString& stripId, ToolbarArea area,
                      int row, int index = -1);
+    // Dynamic definitions apply to existing and future windows. IDs must not
+    // collide with built-in chrome. Removal releases presentations and their
+    // saved preferences; preserve toolbarState explicitly across replacement.
+    bool registerToolbar(CommandToolbar toolbar);
+    bool updateToolbar(CommandToolbar toolbar); // Same ID; preserves each window's layout.
+    bool removeToolbar(const QString& id);
+    [[nodiscard]] QVector<CommandToolbar> toolbars() const;
+    [[nodiscard]] std::optional<ToolbarState> toolbarState(WindowId window, const QString& id) const;
+    bool setToolbarVisible(WindowId window, const QString& id, bool visible);
+    bool setToolbarWidth(WindowId window, const QString& id, int width);
+    bool setToolbarElastic(WindowId window, const QString& id, bool elastic);
+    bool setToolbarItemVisible(WindowId window, const QString& id, const QString& item, bool visible);
+    bool setToolbarsLocked(WindowId window, bool locked);
+    // Floating windows retain their existing compact chrome policy (no global
+    // status bar); status definitions survive conversion to a full window.
+    bool registerStatusItem(StatusItem item);
+    bool removeStatusItem(const QString& id);
+    [[nodiscard]] QVector<StatusItem> statusItems() const;
+    [[nodiscard]] QStringList statusItemIds() const;
+    bool setStatusItemText(const QString& id, QString text, QString tooltip = {});
     [[nodiscard]] QJsonObject saveLayout() const;
     OperationResult restoreLayout(const QJsonObject& snapshot);
     void setStatus(WindowId window, const QString& text);
@@ -230,6 +253,7 @@ private:
     void refresh(bool preserveDrag = false);
     void registerWindowCommands();
     void registerTabGroupCommands();
+    void registerCustomChromeCommands();
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
     bool setPaneBar(PaneId pane, QWidget* bar, bool top);

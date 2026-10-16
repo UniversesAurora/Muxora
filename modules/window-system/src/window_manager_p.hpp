@@ -24,7 +24,6 @@ struct WindowManager::Private {
     QHash<WindowId, WindowKind> visibilityKinds;
     QSet<WindowId> projectingViews;
     QHash<TabId, QPointer<TabContent>> tabs;
-    QHash<TabId, LayoutTree> renderedTrees;
     QHash<PaneId, QPointer<QWidget>> panes;
     QHash<PaneId, QPointer<QWidget>> paneTopBars;
     QHash<PaneId, QPointer<QWidget>> paneBottomBars;
@@ -39,6 +38,8 @@ struct WindowManager::Private {
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();
     TabAppearance appearance;
+    QVector<CommandToolbar> customToolbars;
+    QVector<StatusItem> customStatusItems;
     WindowId activeWindow;
     bool refreshing = false;
     bool destroying = false;
@@ -51,6 +52,7 @@ struct WindowManager::Private {
     QPointer<QWidget> keyFocus;
     CommandContext keyContext;
     quint64 bindingsRevision = 0;
+    bool catalogRefreshPending = false;
     QTimer* keyTimer = nullptr;
     struct NavigationAnchor {
         WindowId window;

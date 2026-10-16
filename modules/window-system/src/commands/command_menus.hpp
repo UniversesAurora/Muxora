@@ -15,7 +15,7 @@ class QMenuBar;
 namespace window_system {
 class WindowManager;
 
-enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window };
+enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window, Group };
 
 // Built-in menu taxonomy, also used to audit complete command coverage.
 [[nodiscard]] QStringList declaredMenuCommands(CommandMenuSurface surface);
@@ -44,6 +44,7 @@ private:
     QPointer<QAction> windowListSeparator_;
     QHash<WindowId, QPointer<QAction>> windowActions_;
     QMenu* menuAtPath(const QStringList& path);
+    bool removeUnusedContributions();
     void addContributions();
     void refreshWindowList();
 };
