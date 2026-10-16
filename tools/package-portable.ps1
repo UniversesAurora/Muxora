@@ -96,7 +96,7 @@ Ctrl+K、Z：切换禅模式；普通窗口会自动进入设置指定的全屏�
 首次启动使用初始布局；恢复初始布局可从命令面板操作。
 
 本版供窗口交互试用，SSH、SFTP 和真实终端尚未接入。
-编辑区文字和用户修改的快捷键暂不随退出保存。
+编辑区文字暂不随退出保存。用户快捷键保存在 data/User/keybindings.json，界面语言保存在 data/User/settings.json。
 源码与许可证说明见 LICENSE、THIRD_PARTY_NOTICES.md 和 licenses/。
 '@
 [IO.File]::WriteAllText((Join-Path $taskPackage '使用说明.txt'), $taskReadme, [Text.UTF8Encoding]::new($true))

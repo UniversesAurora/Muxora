@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/localization.hpp>
 #include <window_system/toolbar_layout.hpp>
 #include <QApplication>
 #include <QEvent>
@@ -14,6 +15,9 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+    window_system::TranslationManager translations;
+    if (!translations.installLanguage(window_system::UiLanguage::English)) return 120;
+    if (QCoreApplication::translate("WindowSystem", "设置") != QStringLiteral("Settings")) return 121;
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
     {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "settings_page.hpp"
 #include "../style/themed_controls.hpp"
+#include <window_system/localization.hpp>
+#include <QCoreApplication>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -39,11 +41,6 @@ bool matches(const QString& haystack, const QString& query)
     return std::all_of(terms.cbegin(), terms.cend(), [&folded](const QString& term) {
         return folded.contains(term);
     });
-}
-
-QString titleFor(const Command& command)
-{
-    return command.title.isEmpty() ? command.id : command.title;
 }
 
 QLabel* descriptionLabel(const QString& text, QWidget* parent)
@@ -182,19 +179,19 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     initialWindow_ = manager->context().window;
     setObjectName(QStringLiteral("SettingsPage"));
     setProperty("windowSystemSettingsKind", QStringLiteral("window_system.settings"));
-    auto* layout = pageLayout(this, QStringLiteral("设置"),
-        QStringLiteral("修改立即生效。窗口行为随工作区布局保存。"));
+    auto* layout = pageLayout(this, QCoreApplication::translate("WindowSystem", "设置"),
+        QCoreApplication::translate("WindowSystem", "修改立即生效。窗口行为随工作区布局保存。"));
     search_ = new QLineEdit(this);
     search_->setObjectName(QStringLiteral("SettingsSearch"));
-    search_->setPlaceholderText(QStringLiteral("搜索设置名称、说明或设置 ID…"));
-    search_->setAccessibleName(QStringLiteral("搜索设置"));
+    search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "搜索设置名称、说明或设置 ID…"));
+    search_->setAccessibleName(QCoreApplication::translate("WindowSystem", "搜索设置"));
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto* body = new QHBoxLayout;
     body->setSpacing(12);
     categories_ = new CategoryNavigation(manager, this);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
-    categories_->setAccessibleName(QStringLiteral("设置分类"));
+    categories_->setAccessibleName(QCoreApplication::translate("WindowSystem", "设置分类"));
     categories_->setHeaderHidden(true);
     categories_->setFrameShape(QFrame::NoFrame);
     categories_->setColumnCount(1);
@@ -228,51 +225,69 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     rows->setContentsMargins(0, 0, 12, 0);
     rows->setSpacing(18);
 
-    addCategory(contents, rows, QStringLiteral("window"), QStringLiteral("窗口"));
+    if (auto* translations = TranslationManager::applicationInstance()) {
+        addCategory(contents, rows, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "应用"));
+        language_ = new ThemedComboBox(contents);
+        language_->setObjectName(QStringLiteral("DisplayLanguage"));
+        language_->setAccessibleName(QCoreApplication::translate("WindowSystem", "界面语言"));
+        for (const auto language : supportedUiLanguages()) language_->addItem(uiLanguageName(language), uiLanguageId(language));
+        rows->addWidget(addRow(contents, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "界面语言"),
+            QStringLiteral("workbench.language"), QCoreApplication::translate("WindowSystem", "重启应用后生效。此设置独立于窗口布局。"), language_));
+        const QPointer<TranslationManager> controller(translations);
+        QObject::connect(language_, &QComboBox::currentIndexChanged, this, [this, controller] {
+            if (!controller) return;
+            const QPointer<SettingsPage> self(this);
+            controller->setRequestedLanguage(uiLanguageFromId(language_->currentData().toString()));
+            if (self) self->syncControls();
+        });
+        QObject::connect(translations, &TranslationManager::requestedLanguageChanged, this, [this] { syncControls(); });
+        QObject::connect(translations, &QObject::destroyed, language_, [this] { language_->setEnabled(false); });
+    }
+    addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "窗口"));
     newTabPosition_ = new ThemedComboBox(contents);
     newTabPosition_->setObjectName(QStringLiteral("NewTabPosition"));
-    newTabPosition_->setAccessibleName(QStringLiteral("新建标签的位置"));
-    for (const auto& entry : {std::pair{QStringLiteral("当前标签之后（默认）"), NewTabPosition::AfterActive},
-                             std::pair{QStringLiteral("当前标签之前"), NewTabPosition::BeforeActive},
-                             std::pair{QStringLiteral("标签组开头"), NewTabPosition::Beginning},
-                             std::pair{QStringLiteral("标签组末尾"), NewTabPosition::End}})
+    newTabPosition_->setAccessibleName(QCoreApplication::translate("WindowSystem", "新建标签的位置"));
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "当前标签之后（默认）"), NewTabPosition::AfterActive},
+                             std::pair{QCoreApplication::translate("WindowSystem", "当前标签之前"), NewTabPosition::BeforeActive},
+                             std::pair{QCoreApplication::translate("WindowSystem", "标签组开头"), NewTabPosition::Beginning},
+                             std::pair{QCoreApplication::translate("WindowSystem", "标签组末尾"), NewTabPosition::End}})
         newTabPosition_->addItem(entry.first, int(entry.second));
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("新建标签的位置"),
-        QStringLiteral("window.newTabPosition"), QStringLiteral("适用于加号、类型菜单和命令创建的标签。"), newTabPosition_));
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "新建标签的位置"),
+        QStringLiteral("window.newTabPosition"), QCoreApplication::translate("WindowSystem", "适用于加号、类型菜单和命令创建的标签。"), newTabPosition_));
     detachKind_ = new ThemedComboBox(contents);
     detachKind_->setObjectName(QStringLiteral("DetachWindowKind"));
-    detachKind_->setAccessibleName(QStringLiteral("拖出标签的窗口形态"));
-    detachKind_->addItem(QStringLiteral("轻量浮窗（保留所属窗口）"), int(WindowKind::Floating));
-    detachKind_->addItem(QStringLiteral("完整工作窗口"), int(WindowKind::Workbench));
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("拖出标签的形态"),
+    detachKind_->setAccessibleName(QCoreApplication::translate("WindowSystem", "拖出标签的窗口形态"));
+    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "轻量浮窗（保留所属窗口）"), int(WindowKind::Floating));
+    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "完整工作窗口"), int(WindowKind::Workbench));
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "拖出标签的形态"),
         QStringLiteral("window.dragOutsideKind"),
-        QStringLiteral("将标签拖出时使用轻量浮窗或完整工作窗口。"), detachKind_));
+        QCoreApplication::translate("WindowSystem", "将标签拖出时使用轻量浮窗或完整工作窗口。"), detachKind_));
 
     emptyPolicy_ = new ThemedComboBox(contents);
     emptyPolicy_->setObjectName(QStringLiteral("EmptyWorkbenchPolicy"));
-    emptyPolicy_->setAccessibleName(QStringLiteral("完整窗口移空后的行为"));
-    emptyPolicy_->addItem(QStringLiteral("保留空的完整窗口"), false);
-    emptyPolicy_->addItem(QStringLiteral("自动关闭空的完整窗口"), true);
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QStringLiteral("移空后的行为"),
+    emptyPolicy_->setAccessibleName(QCoreApplication::translate("WindowSystem", "完整窗口移空后的行为"));
+    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "保留空的完整窗口"), false);
+    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "自动关闭空的完整窗口"), true);
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "移空后的行为"),
         QStringLiteral("window.closeEmptyWorkbench"),
-        QStringLiteral("如果还有从属轻量浮窗，完整窗口会继续保留。"), emptyPolicy_));
+        QCoreApplication::translate("WindowSystem", "如果还有从属轻量浮窗，完整窗口会继续保留。"), emptyPolicy_));
 
-    addCategory(contents, rows, QStringLiteral("window/drag"), QStringLiteral("拖拽"));
-    reveal_ = new ThemedCheckBox(QStringLiteral("悬停时抬起被遮挡的目标窗口"), contents);
+    addCategory(contents, rows, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "拖拽"));
+    reveal_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "悬停时抬起被遮挡的目标窗口"), contents);
     reveal_->setObjectName(QStringLiteral("RevealDuringDrag"));
-    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QStringLiteral("显示目标窗口"),
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "显示目标窗口"),
         QStringLiteral("window.revealDuringDrag"),
-        QStringLiteral("拖动标签停留在目标窗口位置时，显示该窗口以便投放。"), reveal_));
+        QCoreApplication::translate("WindowSystem", "拖动标签停留在目标窗口位置时，显示该窗口以便投放。"), reveal_));
 
     delay_ = new ThemedSpinBox(contents);
     delay_->setObjectName(QStringLiteral("RevealDelayMs"));
-    delay_->setAccessibleName(QStringLiteral("显示拖拽目标的悬停时间"));
+    delay_->setAccessibleName(QCoreApplication::translate("WindowSystem", "显示拖拽目标的悬停时间"));
     delay_->setRange(200, 2000);
     delay_->setSingleStep(100);
-    delay_->setSuffix(QStringLiteral(" 毫秒"));
-    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QStringLiteral("悬停时间"),
+    delay_->setSuffix(QCoreApplication::translate("WindowSystem", " 毫秒"));
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "悬停时间"),
         QStringLiteral("window.revealDelayMs"),
-        QStringLiteral("显示被遮挡窗口前的等待时间。"), delay_));
+        QCoreApplication::translate("WindowSystem", "显示被遮挡窗口前的等待时间。"), delay_));
     addViewOptions(contents, rows);
     addTabAppearanceOptions(contents, rows);
     rows->addStretch();
@@ -414,6 +429,10 @@ void SettingsPage::syncNavigation()
 
 void SettingsPage::syncControls()
 {
+    if (language_) if (auto* translations = TranslationManager::applicationInstance()) {
+        const QSignalBlocker blocked(language_);
+        language_->setCurrentIndex(language_->findData(uiLanguageId(translations->requestedLanguage())));
+    }
     if (!manager_) return;
     const auto behavior = manager_->behavior();
     const QSignalBlocker detachBlock(detachKind_);
@@ -447,140 +466,12 @@ void SettingsPage::filterRows()
         if (section.heading) section.heading->setVisible(visible);
         section.item->setHidden(!visible);
     }
-    results_->setText(count ? QStringLiteral("%1 项设置").arg(count) : QStringLiteral("没有匹配的设置"));
+    results_->setText(count ? QCoreApplication::translate("WindowSystem", "%1 项设置").arg(count) : QCoreApplication::translate("WindowSystem", "没有匹配的设置"));
     scroll_->widget()->layout()->activate();
     syncNavigation();
     // QScrollArea updates its range after child layouts respond to visibility.
     // Re-evaluate then without storing a stale content coordinate.
     QTimer::singleShot(0, this, [this] { syncNavigation(); });
-}
-
-ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
-    : QWidget(parent), manager_(manager)
-{
-    setObjectName(QStringLiteral("ShortcutsPage"));
-    setProperty("windowSystemSettingsKind", QStringLiteral("window_system.shortcuts"));
-    auto* layout = pageLayout(this, QStringLiteral("键盘快捷键"),
-        QStringLiteral("搜索命令并修改按键。当前修改在本次运行中生效。"));
-    search_ = new QLineEdit(this);
-    search_->setObjectName(QStringLiteral("ShortcutSearch"));
-    search_->setPlaceholderText(QStringLiteral("搜索全部命令、分类、命令 ID 或快捷键…"));
-    search_->setClearButtonEnabled(true);
-    layout->addWidget(search_);
-    commands_ = new QTreeWidget(this);
-    commands_->setObjectName(QStringLiteral("ShortcutCommands"));
-    commands_->setColumnCount(3);
-    commands_->setHeaderLabels({QStringLiteral("命令"), QStringLiteral("快捷键"), QStringLiteral("分类")});
-    commands_->setRootIsDecorated(false);
-    commands_->setUniformRowHeights(true);
-    commands_->setAlternatingRowColors(true);
-    commands_->setSelectionMode(QAbstractItemView::SingleSelection);
-    commands_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    commands_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    commands_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    layout->addWidget(commands_, 1);
-    selectedTitle_ = new QLabel(this);
-    selectedTitle_->setWordWrap(true);
-    layout->addWidget(selectedTitle_);
-    capture_ = new QKeySequenceEdit(this);
-    capture_->setObjectName(QStringLiteral("ShortcutCapture"));
-    capture_->setAccessibleName(QStringLiteral("录入命令快捷键"));
-    capture_->setMaximumSequenceLength(4);
-    layout->addWidget(capture_);
-    diagnostic_ = descriptionLabel({}, this);
-    diagnostic_->setObjectName(QStringLiteral("ShortcutDiagnostic"));
-    layout->addWidget(diagnostic_);
-    auto* actions = new QHBoxLayout;
-    apply_ = new QPushButton(QStringLiteral("应用快捷键"), this);
-    apply_->setObjectName(QStringLiteral("ApplyShortcut"));
-    clear_ = new QPushButton(QStringLiteral("清除绑定"), this);
-    clear_->setObjectName(QStringLiteral("ClearShortcut"));
-    actions->addWidget(apply_);
-    actions->addWidget(clear_);
-    actions->addStretch();
-    layout->addLayout(actions);
-    QObject::connect(search_, &QLineEdit::textChanged, this, [this] { rebuild(); });
-    QObject::connect(commands_, &QTreeWidget::currentItemChanged, this, [this] { selectCommand(); });
-    QObject::connect(commands_, &QTreeWidget::itemActivated, this, [this] { capture_->setFocus(); });
-    QObject::connect(capture_, &QKeySequenceEdit::keySequenceChanged, this, [this] { updateDiagnostic(); });
-    QObject::connect(apply_, &QPushButton::clicked, this, [this] {
-        updateDiagnostic();
-        if (manager_ && apply_->isEnabled() && !selectedId_.isEmpty() &&
-            manager_->commands().setShortcut(selectedId_, capture_->keySequence())) rebuild();
-    });
-    QObject::connect(clear_, &QPushButton::clicked, this, [this] {
-        if (manager_ && !selectedId_.isEmpty() && manager_->commands().setShortcut(selectedId_, {})) rebuild();
-    });
-    rebuild();
-    setFocusProxy(search_);
-}
-
-void ShortcutsPage::rebuild()
-{
-    const QString previous = selectedId_;
-    const QString query = search_->text().trimmed();
-    // A complete command ID is an unambiguous lookup. Broad text queries still
-    // match titles, categories and shortcuts, including partial command IDs.
-    const bool exactCommand = manager_ && manager_->commands().find(query);
-    {
-        const QSignalBlocker blocker(commands_);
-        commands_->clear();
-        if (manager_) for (const auto& command : manager_->commands().commands()) {
-            const QString shortcut = command.shortcut.toString(QKeySequence::NativeText);
-            if (exactCommand && command.id != query) continue;
-            if (!matches(titleFor(command) + QLatin1Char(' ') + command.category + QLatin1Char(' ') +
-                         command.id + QLatin1Char(' ') + shortcut, query)) continue;
-            auto* item = new QTreeWidgetItem(commands_, {titleFor(command), shortcut, command.category});
-            item->setData(0, Qt::UserRole, command.id);
-            item->setToolTip(0, command.id);
-            if (command.id == previous) commands_->setCurrentItem(item);
-        }
-        if (!commands_->currentItem() && commands_->topLevelItemCount())
-            commands_->setCurrentItem(commands_->topLevelItem(0));
-    }
-    selectCommand();
-}
-
-void ShortcutsPage::selectCommand()
-{
-    const auto* current = commands_->currentItem();
-    selectedId_ = current ? current->data(0, Qt::UserRole).toString() : QString();
-    const auto* command = manager_ ? manager_->commands().find(selectedId_) : nullptr;
-    {
-        const QSignalBlocker blocker(capture_);
-        capture_->setKeySequence(command ? command->shortcut : QKeySequence());
-    }
-    selectedTitle_->setText(command ? titleFor(*command) + QStringLiteral("  ·  ") + command->id :
-                            QStringLiteral("没有匹配的命令"));
-    updateDiagnostic();
-}
-
-void ShortcutsPage::updateDiagnostic()
-{
-    const bool selected = manager_ && !selectedId_.isEmpty();
-    capture_->setEnabled(selected);
-    clear_->setEnabled(selected);
-    apply_->setEnabled(selected);
-    if (!selected) { diagnostic_->clear(); return; }
-    const auto sequence = capture_->keySequence();
-    QStringList duplicates, prefixes;
-    for (const auto& command : manager_->commands().commands()) {
-        if (command.id == selectedId_ || command.shortcut.isEmpty() || sequence.isEmpty()) continue;
-        const auto forward = sequence.matches(command.shortcut);
-        const auto backward = command.shortcut.matches(sequence);
-        if (forward == QKeySequence::ExactMatch) duplicates.push_back(titleFor(command));
-        else if (forward == QKeySequence::PartialMatch || backward == QKeySequence::PartialMatch)
-            prefixes.push_back(titleFor(command));
-    }
-    apply_->setEnabled(duplicates.isEmpty());
-    if (!duplicates.isEmpty()) {
-        diagnostic_->setText(QStringLiteral("此快捷键已绑定到：%1。请先清除其他绑定。").arg(duplicates.join(QStringLiteral("、"))));
-    } else if (!prefixes.isEmpty()) {
-        diagnostic_->setText(QStringLiteral("此按键序列与以下命令有前缀关系：%1。").arg(prefixes.join(QStringLiteral("、"))));
-    } else {
-        diagnostic_->setText(sequence.isEmpty() ? QStringLiteral("应用后将清除绑定；命令仍可通过菜单和命令面板执行。") :
-                             QStringLiteral("可录入最多 4 段按键序列；点击应用后立即生效。"));
-    }
 }
 
 } // namespace window_system

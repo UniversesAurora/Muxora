@@ -8,7 +8,7 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TESTING})
 
-find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
 add_library(WindowSystemModel STATIC src/model/layout_model.cpp src/model/tab_ordering.cpp)
 add_library(WindowSystem::Model ALIAS WindowSystemModel)
@@ -20,6 +20,7 @@ target_include_directories(WindowSystemModel PUBLIC
 target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 
 add_library(WindowSystemWidgets STATIC
+    src/localization/localization.cpp
     src/window_manager.cpp
     src/view_state.cpp
     src/navigation/workspace_navigation.cpp
@@ -51,9 +52,11 @@ add_library(WindowSystemWidgets STATIC
     src/style/tab_appearance.cpp
     src/style/themed_controls.cpp
     src/settings/settings_page.cpp
+    src/settings/shortcuts_page.cpp
     src/settings/settings_view_options.cpp
     src/settings/settings_tab_appearance.cpp
     include/window_system/window_manager.hpp
+    include/window_system/localization.hpp
     include/window_system/floating_panel.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)
 set_target_properties(WindowSystemWidgets PROPERTIES EXPORT_NAME Widgets AUTOMOC ON)
@@ -63,6 +66,43 @@ target_include_directories(WindowSystemWidgets PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets)
+
+# Keep editable Qt Linguist sources in version control; compiled catalogs are
+# generated and embedded for SDK-independent deployment and module consumers.
+set(window_system_translation_sources
+    translations/window_system_en.ts translations/window_system_zh_CN.ts)
+qt_add_lrelease(TS_FILES ${window_system_translation_sources}
+    QM_FILES_OUTPUT_VARIABLE window_system_translation_files
+    LRELEASE_TARGET window_system_lrelease OPTIONS -nounfinished)
+get_target_property(window_system_qtpaths Qt6::qtpaths IMPORTED_LOCATION)
+execute_process(COMMAND "${window_system_qtpaths}" --query QT_INSTALL_TRANSLATIONS
+    OUTPUT_VARIABLE window_system_qt_translations_dir OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE window_system_qtpaths_result)
+if(NOT window_system_qtpaths_result EQUAL 0)
+    message(FATAL_ERROR "Could not locate the installed Qt translations using qtpaths")
+endif()
+find_file(window_system_qt_zh_catalog qtbase_zh_CN.qm
+    PATHS "${window_system_qt_translations_dir}" NO_DEFAULT_PATH REQUIRED)
+# The source-file resource form puts rcc output directly into this static
+# archive. Installed consumers need no separate object/resource export targets.
+set(window_system_catalog_qrc_entries "")
+foreach(catalog IN LISTS window_system_translation_files)
+    get_filename_component(catalog_name "${catalog}" NAME)
+    string(REPLACE "&" "&amp;" catalog_qrc_path "${catalog}")
+    string(REPLACE "<" "&lt;" catalog_qrc_path "${catalog_qrc_path}")
+    string(APPEND window_system_catalog_qrc_entries "        <file alias=\"${catalog_name}\">${catalog_qrc_path}</file>\n")
+endforeach()
+string(REPLACE "&" "&amp;" window_system_qt_zh_catalog_qrc_path "${window_system_qt_zh_catalog}")
+string(REPLACE "<" "&lt;" window_system_qt_zh_catalog_qrc_path "${window_system_qt_zh_catalog_qrc_path}")
+configure_file(cmake/window_system_translations.qrc.in
+    "${CMAKE_CURRENT_BINARY_DIR}/window_system_translations.qrc" @ONLY)
+qt_add_resources(window_system_translation_resource
+    "${CMAKE_CURRENT_BINARY_DIR}/window_system_translations.qrc")
+target_sources(WindowSystemWidgets PRIVATE ${window_system_translation_resource})
+add_dependencies(WindowSystemWidgets window_system_lrelease)
+qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets
+    TS_FILES ${window_system_translation_sources}
+    LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32)

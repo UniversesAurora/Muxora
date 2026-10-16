@@ -58,6 +58,7 @@ private:
     QTreeWidget* categories_ = nullptr;
     QScrollArea* scroll_ = nullptr;
     QLabel* results_ = nullptr;
+    QComboBox* language_ = nullptr;
     QComboBox* detachKind_ = nullptr;
     QComboBox* newTabPosition_ = nullptr;
     QComboBox* emptyPolicy_ = nullptr;
@@ -95,17 +96,30 @@ public:
 private:
     void rebuild();
     void selectCommand();
+    void rebuildBindings(int preferred = 0);
+    void selectBinding();
+    void startAdding();
     void updateDiagnostic();
+    [[nodiscard]] bool readArguments(QVariantMap& args, QString& error) const;
+    void applyBinding();
+    void removeBinding();
 
     QPointer<WindowManager> manager_;
     QLineEdit* search_ = nullptr;
     QTreeWidget* commands_ = nullptr;
+    QTreeWidget* bindings_ = nullptr;
     QLabel* selectedTitle_ = nullptr;
     QKeySequenceEdit* capture_ = nullptr;
+    QPlainTextEdit* arguments_ = nullptr;
     QLabel* diagnostic_ = nullptr;
     QPushButton* apply_ = nullptr;
+    QPushButton* add_ = nullptr;
     QPushButton* clear_ = nullptr;
     QString selectedId_;
+    int selectedBinding_ = -1;
+    CommandBinding originalBinding_;
+    bool dirty_ = false;
+    bool refreshing_ = false;
 };
 
 } // namespace window_system

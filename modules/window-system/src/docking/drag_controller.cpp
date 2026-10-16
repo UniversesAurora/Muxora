@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "drag_controller.hpp"
 #include "window_manager_p.hpp"
 #include "dock_guides.hpp"
@@ -81,11 +82,11 @@ protected:
             p.fillRect(inner, QColor("#8A52C7"));
         }
         if (!target.accepted) return;
-        const auto text = target.toEdgeBar ? QStringLiteral("插入 %1 个边栏标签").arg(count)
-            : target.toEdge ? (target.pinned ? QStringLiteral("固定到边栏") : QStringLiteral("收纳到边栏"))
-            : target.insertionIndex >= 0 ? QStringLiteral("插入 %1 个标签").arg(count)
-            : target.placement == Placement::Center ? QStringLiteral("合并 %1 个标签").arg(count)
-            : whole ? QStringLiteral("保留分组并停靠") : QStringLiteral("创建相邻标签组");
+        const auto text = target.toEdgeBar ? QCoreApplication::translate("WindowSystem", "插入 %1 个边栏标签").arg(count)
+            : target.toEdge ? (target.pinned ? QCoreApplication::translate("WindowSystem", "固定到边栏") : QCoreApplication::translate("WindowSystem", "收纳到边栏"))
+            : target.insertionIndex >= 0 ? QCoreApplication::translate("WindowSystem", "插入 %1 个标签").arg(count)
+            : target.placement == Placement::Center ? QCoreApplication::translate("WindowSystem", "合并 %1 个标签").arg(count)
+            : whole ? QCoreApplication::translate("WindowSystem", "保留分组并停靠") : QCoreApplication::translate("WindowSystem", "创建相邻标签组");
         const auto preview = target.preview.translated(-origin);
         const QRect label(preview.topLeft() + QPoint(8, 8), QSize(qMax(180, fontMetrics().horizontalAdvance(text) + 20), 28));
         p.fillRect(label, QColor("#4D356E")); p.setPen(Qt::white); p.drawText(label, Qt::AlignCenter, text);

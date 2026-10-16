@@ -1,3 +1,4 @@
+#include <QCoreApplication>
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
@@ -35,7 +36,25 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
     d->storage = new QWidget; d->storage->setObjectName("WindowSystemStorage"); d->storage->hide();
     d->drag = new DragController(this);
     d->keyTimer = new QTimer(this); d->keyTimer->setSingleShot(true);
-    QObject::connect(d->keyTimer, &QTimer::timeout, this, [this] { d->pendingKeys = {}; });
+    d->keyTimer->setObjectName(QStringLiteral("CommandChordTimer"));
+    QObject::connect(d->keyTimer, &QTimer::timeout, this, [this] {
+        d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
+    });
+    const QPointer<WindowManager> owner(this);
+    d->commands.setExecutionValidator([owner](const CommandContext& target) {
+        return owner && owner->validCommandContext(target);
+    });
+    d->commands.setCompositeContextResolver([owner](const CommandContext& original) -> std::optional<CommandContext> {
+        if (!owner || original.window.isNull() || !owner->d->model.window(original.window)) return {};
+        return owner->context(original.window);
+    });
+    d->commands.setBindingsChangedHandler([owner] {
+        if (!owner) return;
+        ++owner->d->bindingsRevision;
+        owner->d->pendingKeys = {}; owner->d->keyWindow = WindowId{}; owner->d->keyFocus.clear(); owner->d->keyContext = {};
+        owner->d->keyTimer->stop();
+        emit owner->commandsChanged();
+    });
     qApp->installEventFilter(this); registerWindowCommands();
 }
 WindowManager::~WindowManager()
@@ -562,7 +581,7 @@ TabId WindowManager::extractPane(TabId tab, PaneId pane, WindowKind kind)
     const auto sourceWindow = candidate.group(candidate.groupForTab(tab))->windowId;
     const auto root = candidate.familyRoot(candidate.window(sourceWindow)->familyId);
     const auto newWindow = candidate.createWindow(WindowKind::Workbench);
-    const auto placeholder = candidate.addTab(newWindow, QStringLiteral("临时"));
+    const auto placeholder = candidate.addTab(newWindow, QCoreApplication::translate("WindowSystem", "临时"));
     const auto targetGroup = candidate.groupForTab(placeholder);
     const auto extracted = candidate.extractPane(tab, pane, targetGroup);
     if (extracted.isNull()) return {};
@@ -732,17 +751,11 @@ bool WindowManager::executeInContext(const QString& command, const CommandContex
 bool WindowManager::executeResolved(const QString& command, CommandContext ctx, bool requireGroup)
 {
     const QPointer<WindowManager> self(this);
-    bool executed = false;
-    if (const auto* registered = d->commands.find(command)) {
-        const Command retained = *registered;
-        const bool enabled = !retained.enabled || retained.enabled(ctx);
-        if (!self) return false;
-        const bool targetValid = !requireGroup || validCommandContext(ctx);
-        if (enabled && targetValid) executed = retained.execute(ctx);
-    }
+    const bool executed = requireGroup ? d->commands.executeValidated(command, ctx)
+                                      : d->commands.execute(command, ctx);
     if (!self) return false;
     if (executed) return true;
-    emit commandFailed(QStringLiteral("命令不可执行：%1").arg(command)); return false;
+    emit commandFailed(QCoreApplication::translate("WindowSystem", "命令不可执行：%1").arg(command)); return false;
 }
 void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
 void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
@@ -916,6 +929,16 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
 {
     if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);
+    const auto cancelChord = [this] {
+        d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
+        d->keyTimer->stop();
+    };
+    if (!d->pendingKeys.isEmpty()
+        && (event->type() == QEvent::ApplicationDeactivate || event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::InputMethod
+            || (event->type() == QEvent::WindowDeactivate && widget
+                && widget->window()->property("windowId").toUuid() == d->keyWindow)
+            || (event->type() == QEvent::FocusOut && widget == d->keyFocus))) cancelChord();
     if (widget && (event->type() == QEvent::Move || event->type() == QEvent::Resize)
         && d->navigationAnchor && widget->property("windowId").toUuid() == d->navigationAnchor->window)
         d->navigationAnchor.reset();
@@ -944,7 +967,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
                 break;
             }
         }
-        d->pendingKeys = {};
+        cancelChord();
     }
     if (event->type() == QEvent::ContextMenu && widget && !d->drag->isActive()) {
         for (auto* current = widget; current; current = current->parentWidget()) {
@@ -957,28 +980,75 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
             break;
         }
     }
-    if (event->type() != QEvent::KeyPress || d->drag->isActive() || !widget) return false;
-    for (auto* current = widget; current; current = current->parentWidget()) if (qobject_cast<QKeySequenceEdit*>(current)) return false;
+    if ((event->type() != QEvent::KeyPress && event->type() != QEvent::ShortcutOverride)
+        || d->drag->isActive() || !widget) return false;
+    for (auto* current = widget; current; current = current->parentWidget()) if (qobject_cast<QKeySequenceEdit*>(current)) {
+        cancelChord(); return false;
+    }
     const auto windowId = widget->window()->property("windowId").toUuid();
-    if (windowId.isNull()) return false; // Dialogs retain their native input handling.
+    if (windowId.isNull()) { cancelChord(); return false; } // Dialogs retain their native input handling.
+    if (!d->pendingKeys.isEmpty() && d->keyWindow != windowId) cancelChord();
     auto* key = static_cast<QKeyEvent*>(event);
-    if (key->key() == Qt::Key_Control || key->key() == Qt::Key_Shift || key->key() == Qt::Key_Alt || key->key() == Qt::Key_Meta) return false;
-    if (!d->pendingKeys.isEmpty() && key->key() == Qt::Key_Escape) { d->pendingKeys = {}; return true; }
+    if (key->key() == Qt::Key_Control || key->key() == Qt::Key_Shift || key->key() == Qt::Key_Alt
+        || key->key() == Qt::Key_Meta || key->key() == Qt::Key_AltGr || !key->key() || key->key() == Qt::Key_unknown) return false;
+    if (!d->pendingKeys.isEmpty() && key->key() == Qt::Key_Escape) {
+        key->accept();
+        if (event->type() == QEvent::KeyPress) cancelChord();
+        return true;
+    }
+    if (!d->pendingKeys.isEmpty() && key->isAutoRepeat()) { key->accept(); return true; }
     QVector<QKeyCombination> combinations;
     for (int i = 0; i < d->pendingKeys.count(); ++i) combinations << d->pendingKeys[i];
-    if (combinations.size() == 4) { d->pendingKeys = {}; return true; }
+    if (combinations.size() == 4) { cancelChord(); key->accept(); return true; }
     combinations << key->keyCombination();
     const auto emptyKey = QKeyCombination::fromCombined(0);
     const QKeySequence sequence(combinations.value(0, emptyKey), combinations.value(1, emptyKey),
                                 combinations.value(2, emptyKey), combinations.value(3, emptyKey));
-    const auto ctx = context(windowId);
-    for (const auto& command : d->commands.commands()) {
-        if (command.shortcut.isEmpty() || (command.enabled && !command.enabled(ctx))) continue;
-        const auto match = sequence.matches(command.shortcut);
-        if (match == QKeySequence::ExactMatch) { d->pendingKeys = {}; d->keyTimer->stop(); d->commands.execute(command.id, ctx); return true; }
-        if (match == QKeySequence::PartialMatch) { d->pendingKeys = sequence; d->keyWindow = windowId; d->keyTimer->start(1500); setStatus(windowId, QStringLiteral("等待续键：%1").arg(sequence.toString())); return true; }
+    const bool continuing = !d->pendingKeys.isEmpty();
+    const auto ctx = continuing ? d->keyContext : context(windowId);
+    const auto commands = d->commands.commands();
+    const QPointer<WindowManager> self(this);
+    const QPointer<QWidget> receiver(widget);
+    const auto bindingRevision = d->bindingsRevision;
+    QString exact;
+    QVariantMap exactArgs;
+    bool partial = false;
+    for (const auto& command : commands) {
+        for (const auto& binding : command.bindings) {
+            const auto match = sequence.matches(binding.sequence);
+            if (match == QKeySequence::NoMatch) continue;
+            auto target = ctx; target.args = binding.args;
+            const bool enabled = !command.enabled || command.enabled(target);
+            if (!self || !receiver) return true;
+            if (bindingRevision != d->bindingsRevision) { key->accept(); return true; }
+            if (!enabled) continue;
+            if (event->type() == QEvent::ShortcutOverride) { key->accept(); return true; }
+            if (match == QKeySequence::ExactMatch) {
+                exact = command.id; exactArgs = binding.args; break;
+            }
+            partial = true;
+        }
+        if (!exact.isEmpty()) break;
     }
-    if (!d->pendingKeys.isEmpty()) { d->pendingKeys = {}; return true; }
+    // Override events reserve only the input. Advancing the chord here would
+    // process the same physical stroke twice when KeyPress follows it.
+    if (event->type() == QEvent::ShortcutOverride) {
+        if (continuing) { key->accept(); return true; }
+        return false;
+    }
+    if (!exact.isEmpty()) {
+        cancelChord(); key->accept();
+        auto target = ctx; target.args = exactArgs;
+        executeInContext(exact, target);
+        return true;
+    }
+    if (partial && validCommandContext(ctx)) {
+        d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = widget; d->keyContext = ctx;
+        d->keyTimer->start(1500); key->accept();
+        setStatus(windowId, QCoreApplication::translate("WindowSystem", "等待续键：%1").arg(sequence.toString()));
+        return true;
+    }
+    if (continuing) { cancelChord(); key->accept(); return true; }
     return false;
 }
 

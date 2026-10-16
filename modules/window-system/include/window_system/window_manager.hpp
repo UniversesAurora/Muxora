@@ -209,6 +209,7 @@ public:
     [[nodiscard]] bool statusItemVisible(WindowId window, const QString& item) const;
 
 signals:
+    void commandsChanged();
     void layoutChanged();
     void commandFailed(const QString& message);
     void allWindowsClosed();

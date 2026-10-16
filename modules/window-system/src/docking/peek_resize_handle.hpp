@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <QCoreApplication>
 #include <window_system/layout_model.hpp>
 #include <QMouseEvent>
 #include <QWidget>
@@ -28,7 +29,7 @@ public:
         const bool height = resizeEdges.testFlag(Qt::TopEdge) || resizeEdges.testFlag(Qt::BottomEdge);
         setCursor(width && height ? (resizeEdges.testFlag(Qt::LeftEdge) == resizeEdges.testFlag(Qt::TopEdge)
             ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor) : width ? Qt::SizeHorCursor : Qt::SizeVerCursor);
-        setAccessibleName(QStringLiteral("调整临时展开面板大小"));
+        setAccessibleName(QCoreApplication::translate("WindowSystem", "调整临时展开面板大小"));
     }
     std::function<PeekSizePolicy()> requestedSize;
     std::function<void(PeekSizePolicy)> resizeRequested;

@@ -13,6 +13,8 @@
 
 可通过 `add_subdirectory()` 嵌入，也可安装后使用 `find_package(WindowSystem CONFIG REQUIRED)`。独立模块构建不探测 Muxora 或远程业务依赖；安装后接入由 `tests/fixtures/external-host/` 验证，不额外交付示例产品。
 
+从源码构建需要 Qt 的 LinguistTools；翻译目录在构建时编译并嵌入静态库，已安装的模块消费者不需要翻译工具或 SDK 目录中的 `.qm` 文件。
+
 ## 公开 API
 
 入口为 [WindowManager](include/window_system/window_manager.hpp)，独立模型见 [LayoutModel](include/window_system/layout_model.hpp)。实际宿主组装见 [Muxora 启动入口](../../src/app/main.cpp) 与 [内容接入](../../src/workspace_host/placeholder_content.cpp)。
@@ -26,6 +28,12 @@
 侧栏同样按释放位置插入。`moveTabToEdgeBar(tab, targetWindow, edge, index)` 和 `moveAllTabsToEdgeBar(sourceWindow, targetWindow, edge, index)` 操作该侧可见的自动隐藏标签序列，内部标签组边界不影响视觉顺序。`index` 为排除待移动内容后的最终索引，`-1` 追加到末尾；整窗移动保留载荷顺序。模型可通过 `autoHiddenTabs()` 查询这一序列，普通组与侧栏都可使用 `workspace.reorderTab.previous` / `workspace.reorderTab.next` 命令和默认 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown` 调整顺序。
 
 菜单、命令面板和快捷键共用 [CommandRegistry](include/window_system/command_registry.hpp)。宿主可以注册自己的操作；主题使用 [Theme](include/window_system/theme.hpp) 令牌，默认不添加应用 logo。布局快照由宿主选择保存位置，模块不写 Muxora 用户文件。
+
+每个命令的 `bindings` 为 `CommandBinding` 数组，每条含 `sequence` 与对象 `args`。`setBindings` 替换、`addBinding` 增加、`removeBinding` 按索引移除；原 `shortcut` 镜像第一条，`setShortcut` 仍表示替换全部绑定。二至四段序列可在组合前缀后接裸字母或数字。`WindowManager::commandsChanged` 用于界面同步和宿主持久化，模块不选择用户配置路径。
+
+`runCommands` 接受 `args.commands` 数组，元素为命令 ID 或 `{command, args}` 对象，依次执行并在失败时停止。窗口管理器为后续步骤解析原窗口的当前活动内容；独立使用注册表时默认保留原上下文，可通过 `setCompositeContextResolver` 注入自己的解析策略。组合有界且禁止递归调用，不运行脚本文本。
+
+[TranslationManager](include/window_system/localization.hpp) 由宿主在创建界面前构造、安装语言并保留生命周期，提供 `System`、`SimplifiedChinese` 和 `English`。宿主可通过 `addCatalog` 增加自己的翻译目录，通过 `requestedLanguageChanged` 持久化重启偏好。语言切换不会重建业务内容或修改用户名称。目录维护入口为 CMake 的 `window_system_lupdate`、`window_system_lrelease`；应用目录使用 `muxora_lupdate`、`muxora_lrelease`。新增文本更新两种语言的 `.ts` 后统一构建和测试。
 
 默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。非固定侧栏标签保留原紫色背景和浅色文字。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
 

@@ -48,6 +48,9 @@ struct WindowManager::Private {
     bool closeAllPending = false;
     QKeySequence pendingKeys;
     WindowId keyWindow;
+    QPointer<QWidget> keyFocus;
+    CommandContext keyContext;
+    quint64 bindingsRevision = 0;
     QTimer* keyTimer = nullptr;
     struct NavigationAnchor {
         WindowId window;

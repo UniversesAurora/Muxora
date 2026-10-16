@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "tab_appearance_p.hpp"
 #include "../window_manager_p.hpp"
 
@@ -104,6 +105,26 @@ QVector<TabColorPreset> defaultTabColorPresets()
     return colors;
 }
 
+QString tabColorDisplayName(const TabColorPreset& preset)
+{
+    struct Name { const char* id; const char* source; };
+    static constexpr Name names[] = {
+        {"gray", QT_TRANSLATE_NOOP("WindowSystem", "灰色")},
+        {"blue", QT_TRANSLATE_NOOP("WindowSystem", "蓝色")},
+        {"red", QT_TRANSLATE_NOOP("WindowSystem", "红色")},
+        {"yellow", QT_TRANSLATE_NOOP("WindowSystem", "金色")},
+        {"green", QT_TRANSLATE_NOOP("WindowSystem", "绿色")},
+        {"pink", QT_TRANSLATE_NOOP("WindowSystem", "粉色")},
+        {"purple", QT_TRANSLATE_NOOP("WindowSystem", "紫色")},
+        {"cyan", QT_TRANSLATE_NOOP("WindowSystem", "青色")},
+        {"orange", QT_TRANSLATE_NOOP("WindowSystem", "橙色")}};
+    for (const auto& name : names) {
+        if (preset.id == QLatin1String(name.id) && preset.name == QString::fromUtf8(name.source))
+            return QCoreApplication::translate("WindowSystem", name.source);
+    }
+    return preset.name;
+}
+
 bool validTabAppearance(const TabAppearance& appearance)
 {
     const auto validPlacement = [](TabBarPlacement value) { return value == TabBarPlacement::Top || value == TabBarPlacement::Bottom; };
@@ -137,25 +158,25 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
 {
     TabAppearance candidate;
     if (value.isUndefined()) { appearance = candidate; return {true, {}}; }
-    if (!value.isObject()) return {false, QStringLiteral("标签外观设置必须是对象")};
+    if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "标签外观设置必须是对象")};
     const auto object = value.toObject();
     if (!parsePlacement(object.value("centralPlacement"), candidate.centralPlacement)
         || !parsePlacement(object.value("pinnedPlacement"), candidate.pinnedPlacement))
-        return {false, QStringLiteral("标签栏仅支持顶部或底部")};
+        return {false, QCoreApplication::translate("WindowSystem", "标签栏仅支持顶部或底部")};
     for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
         std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
         std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}}) {
         const auto field = object.value(entry.first);
-        if (!field.isUndefined() && !field.isBool()) return {false, QStringLiteral("标签显示设置类型无效")};
+        if (!field.isUndefined() && !field.isBool()) return {false, QCoreApplication::translate("WindowSystem", "标签显示设置类型无效")};
         if (field.isBool()) *entry.second = field.toBool();
     }
     const auto palette = object.value("colors");
     if (!palette.isUndefined()) {
-        if (!palette.isArray() || palette.toArray().size() > 128) return {false, QStringLiteral("标签颜色列表无效")};
+        if (!palette.isArray() || palette.toArray().size() > 128) return {false, QCoreApplication::translate("WindowSystem", "标签颜色列表无效")};
         candidate.colors.clear();
         for (const auto& value : palette.toArray()) {
-            if (!value.isObject()) return {false, QStringLiteral("标签颜色定义无效")};
+            if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "标签颜色定义无效")};
             const auto definition = value.toObject();
             TabColorPreset preset;
             if (definition.size() != 6 || !definition.value("id").isString() || !definition.value("name").isString()
@@ -163,13 +184,13 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
                 || !parseColors(definition.value("groupInactive"), preset.groupInactive)
                 || !parseColors(definition.value("autoHideActive"), preset.autoHideActive)
                 || !parseColors(definition.value("autoHideInactive"), preset.autoHideInactive))
-                return {false, QStringLiteral("标签颜色须包含 ID、名称和四种完整状态，颜色使用 #RRGGBB 或 #AARRGGBB")};
+                return {false, QCoreApplication::translate("WindowSystem", "标签颜色须包含 ID、名称和四种完整状态，颜色使用 #RRGGBB 或 #AARRGGBB")};
             preset.id = definition.value("id").toString(); preset.name = definition.value("name").toString();
             candidate.colors.append(std::move(preset));
         }
     }
     upgradeUnmodifiedBuiltinPalette(candidate.colors);
-    if (!validTabAppearance(candidate)) return {false, QStringLiteral("标签外观包含无效颜色、重复 ID 或不适用的滚轮设置")};
+    if (!validTabAppearance(candidate)) return {false, QCoreApplication::translate("WindowSystem", "标签外观包含无效颜色、重复 ID 或不适用的滚轮设置")};
     appearance = std::move(candidate);
     return {true, {}};
 }

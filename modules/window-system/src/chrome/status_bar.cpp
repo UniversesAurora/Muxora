@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "status_bar.hpp"
 #include "commands/popup_menu.hpp"
 
@@ -13,13 +14,13 @@ namespace window_system {
 
 WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, QWidget* parent)
     : QLabel(parent), manager_(manager), window_(window),
-      message_(new QLabel(QStringLiteral("就绪"), this)), workspace_(new QLabel(this))
+      message_(new QLabel(QCoreApplication::translate("WindowSystem", "就绪"), this)), workspace_(new QLabel(this))
 {
     setObjectName(QStringLiteral("StatusBar"));
     message_->setObjectName(QStringLiteral("StatusMessage"));
     workspace_->setObjectName(QStringLiteral("StatusWorkspace"));
-    message_->setAccessibleName(QStringLiteral("状态消息"));
-    workspace_->setAccessibleName(QStringLiteral("工作区信息"));
+    message_->setAccessibleName(QCoreApplication::translate("WindowSystem", "状态消息"));
+    workspace_->setAccessibleName(QCoreApplication::translate("WindowSystem", "工作区信息"));
     message_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     workspace_->setMaximumWidth(320);
     auto* row = new QHBoxLayout(this);
@@ -33,8 +34,8 @@ void WorkspaceStatusBar::setMessage(const QString& text) { message_->setText(tex
 
 void WorkspaceStatusBar::setWorkspace(const QString& title, int tabCount)
 {
-    workspace_->setText(title.isEmpty() ? QStringLiteral("%1 个标签").arg(tabCount)
-        : QStringLiteral("%1  ·  %2 个标签").arg(title).arg(tabCount));
+    workspace_->setText(title.isEmpty() ? QCoreApplication::translate("WindowSystem", "%1 个标签").arg(tabCount)
+        : QCoreApplication::translate("WindowSystem", "%1  ·  %2 个标签").arg(title).arg(tabCount));
     workspace_->setToolTip(workspace_->text());
 }
 
@@ -54,8 +55,8 @@ QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
     menu->setObjectName(QStringLiteral("StatusBarMenu"));
     if (!manager_) return menu;
     applyTheme(menu, manager_->theme());
-    for (const auto& entry : {std::pair{QStringLiteral("message"), QStringLiteral("状态消息")},
-                             std::pair{QStringLiteral("workspace"), QStringLiteral("工作区信息")}}) {
+    for (const auto& entry : {std::pair{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "状态消息")},
+                             std::pair{QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "工作区信息")}}) {
         auto* action = menu->addAction(entry.second);
         action->setObjectName(QStringLiteral("StatusItemToggle"));
         action->setData(entry.first);

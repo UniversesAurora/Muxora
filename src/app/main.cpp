@@ -1,14 +1,19 @@
+#include <QCoreApplication>
 #include <window_system/window_manager.hpp>
+#include <window_system/localization.hpp>
 #include "workspace_host/placeholder_content.hpp"
 #include "state_paths.hpp"
+#include "user_preferences.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QSaveFile>
+#include <QSignalBlocker>
 #include <QTimer>
 
 int main(int argc, char* argv[])
@@ -17,12 +22,32 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setApplicationName("Muxora"); app.setOrganizationName("Muxora"); app.setApplicationVersion("0.1.0");
     app.setQuitOnLastWindowClosed(false);
-    QCommandLineParser parser; parser.setApplicationDescription(QStringLiteral("Muxora 窗口系统预览")); parser.addHelpOption(); parser.addVersionOption();
-    parser.addOption({"fresh", QStringLiteral("使用初始布局，不读取保存状态")});
-    parser.addOption({"smoke", QStringLiteral("启动检查后自动退出")});
-    parser.addOption({"screenshot", QStringLiteral("启动后保存窗口截图"), "path"});
-    parser.addOption({"command", QStringLiteral("启动后执行已注册命令"), "id"});
-    parser.addOption({"state-dir", QStringLiteral("指定独立布局状态目录"), "path"}); parser.process(app);
+    // Locate user preferences before constructing localized CLI/UI descriptions.
+    // The parser still performs validation once all translated options exist.
+    QString explicitStateDirectory;
+    const auto arguments = app.arguments();
+    for (int i = 1; i < arguments.size(); ++i) {
+        if (arguments[i] == "--") break;
+        if (arguments[i].startsWith("--state-dir=")) explicitStateDirectory = arguments[i].mid(12);
+        else if (arguments[i] == "--state-dir" && i + 1 < arguments.size()) explicitStateDirectory = arguments[++i];
+        else if (arguments[i].startsWith("-state-dir=")) explicitStateDirectory = arguments[i].mid(11);
+        else if (arguments[i] == "-state-dir" && i + 1 < arguments.size()) explicitStateDirectory = arguments[++i];
+    }
+    const auto stateRoot = muxora::resolveStateDirectory(explicitStateDirectory, QCoreApplication::applicationDirPath());
+    const auto userDirectory = muxora::resolveUserDirectory(explicitStateDirectory, QCoreApplication::applicationDirPath());
+    const auto requestedLanguage = window_system::uiLanguageFromId(muxora::UserPreferences(userDirectory).language());
+    window_system::TranslationManager translations(&app);
+    translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
+    if (!translations.installLanguage(requestedLanguage)) return 5;
+    // Load the owned preferences after translation installation so any cached
+    // configuration diagnostics use the selected display language as well.
+    muxora::UserPreferences preferences(userDirectory);
+    QCommandLineParser parser; parser.setApplicationDescription(QCoreApplication::translate("Muxora", "Muxora 窗口系统预览")); parser.addHelpOption(); parser.addVersionOption();
+    parser.addOption({"fresh", QCoreApplication::translate("Muxora", "使用初始布局，不读取保存状态")});
+    parser.addOption({"smoke", QCoreApplication::translate("Muxora", "启动检查后自动退出")});
+    parser.addOption({"screenshot", QCoreApplication::translate("Muxora", "启动后保存窗口截图"), "path"});
+    parser.addOption({"command", QCoreApplication::translate("Muxora", "启动后执行已注册命令"), "id"});
+    parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "指定独立布局状态目录"), "path"}); parser.process(app);
     window_system::WindowManager windows;
     windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
         return muxora::createPlaceholder(options, &windows);
@@ -30,8 +55,6 @@ int main(int argc, char* argv[])
     QObject::connect(&windows, &window_system::WindowManager::allWindowsClosed, &app, [&] {
         QTimer::singleShot(0, &app, [&] { if (windows.model().windows().isEmpty()) app.quit(); });
     });
-    const auto stateRoot = muxora::resolveStateDirectory(parser.value("state-dir"),
-        QCoreApplication::applicationDirPath());
     const auto stateFile = stateRoot + "/window-layout.json";
     auto save = [&] {
         if (windows.model().windows().isEmpty()) return true;
@@ -41,24 +64,24 @@ int main(int argc, char* argv[])
         return file.commit();
     };
     int count = 1;
-    windows.commands().add({"host.newTab", QStringLiteral("新建工作区标签"), "文件", QKeySequence("Ctrl+T"), {},
+    windows.commands().add({"host.newTab", QCoreApplication::translate("Muxora", "新建工作区标签"), "文件", QKeySequence("Ctrl+T"), {},
         [&windows, &count](const window_system::CommandContext& ctx) {
-            window_system::TabOptions options{QStringLiteral("工作区 %1").arg(++count), "notes", {}};
+            window_system::TabOptions options{QCoreApplication::translate("Muxora", "工作区 %1").arg(++count), "notes", {}};
             auto* content = muxora::createPlaceholder(options, &windows);
             const auto id = windows.addTab(ctx.window, content, options, ctx.group);
             if (id.isNull()) { delete content; return false; } return true;
         }, {"文件", "新建标签"}, 10});
     struct TabKind { const char* command; const char* type; const char* title; };
     const TabKind previewKinds[] = {
-        {"host.newFilesTab", "files", "文件浏览"},
-        {"host.newSessionsTab", "sessions", "会话"},
-        {"host.newTransfersTab", "transfers", "传输队列"},
+        {"host.newFilesTab", "files", QT_TRANSLATE_NOOP("Muxora", "文件浏览")},
+        {"host.newSessionsTab", "sessions", QT_TRANSLATE_NOOP("Muxora", "会话")},
+        {"host.newTransfersTab", "transfers", QT_TRANSLATE_NOOP("Muxora", "传输队列")},
     };
     int creationOrder = 20;
     for (const auto& kind : previewKinds) {
-        const auto title = QString::fromUtf8(kind.title);
+        const auto title = QCoreApplication::translate("Muxora", kind.title);
         const auto type = QString::fromLatin1(kind.type);
-        windows.commands().add({kind.command, QStringLiteral("新建%1标签").arg(title), "文件", {}, {},
+        windows.commands().add({kind.command, QCoreApplication::translate("Muxora", "新建%1标签").arg(title), "文件", {}, {},
             [&windows, title, type](const window_system::CommandContext& ctx) {
                 const window_system::TabOptions options{title, type, {}};
                 auto* content = muxora::createPlaceholder(options, &windows);
@@ -69,26 +92,43 @@ int main(int argc, char* argv[])
     }
     windows.setTabCreationCommands("host.newTab",
         {"host.newTab", "host.newFilesTab", "host.newSessionsTab", "host.newTransfersTab"});
-    windows.commands().add({"layout.save", QStringLiteral("保存工作区布局"), "文件", QKeySequence("Ctrl+S"), {},
-        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QStringLiteral("布局已保存") : QStringLiteral("布局保存失败")); return ok; }, {"文件"}, 40});
-    windows.commands().add({"application.exit", QStringLiteral("退出"), "文件", QKeySequence(QKeySequence::Quit),
+    windows.commands().add({"layout.save", QCoreApplication::translate("Muxora", "保存工作区布局"), "文件", QKeySequence("Ctrl+S"), {},
+        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QCoreApplication::translate("Muxora", "布局已保存") : QCoreApplication::translate("Muxora", "布局保存失败")); return ok; }, {"文件"}, 40});
+    windows.commands().add({"application.exit", QCoreApplication::translate("Muxora", "退出"), "文件", QKeySequence(QKeySequence::Quit),
         [&windows](const window_system::CommandContext&) { return !windows.model().windows().isEmpty(); },
         [&windows, &save](const window_system::CommandContext& ctx) {
-            if (!save()) { windows.setStatus(ctx.window, QStringLiteral("布局保存失败，未退出")); return false; }
+            if (!save()) { windows.setStatus(ctx.window, QCoreApplication::translate("Muxora", "布局保存失败，未退出")); return false; }
             return windows.requestCloseAllWindows();
         }, {"文件"}, 100});
-    windows.commands().add({"layout.reset", QStringLiteral("恢复初始工作区布局"), "布局", {}, {},
+    windows.commands().add({"layout.reset", QCoreApplication::translate("Muxora", "恢复初始工作区布局"), "布局", {}, {},
         [&windows](const window_system::CommandContext&) {
             const auto current = windows.model().windowOrder();
             for (const auto id : current) if (windows.model().window(id)) windows.requestCloseWindow(id);
             const auto id = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
             muxora::populateInitialWorkspace(windows, id); windows.showWindow(id); return true;
         }, {"布局"}, 1000});
-    windows.commands().add({"help.about", QStringLiteral("关于 Muxora"), "帮助", {}, {},
+    windows.commands().add({"help.about", QCoreApplication::translate("Muxora", "关于 Muxora"), "帮助", {}, {},
         [&windows](const window_system::CommandContext& ctx) {
             QMessageBox::about(windows.windowWidget(ctx.window), QStringLiteral("Muxora"),
-                QStringLiteral("Muxora 0.1.0\n窗口系统首个预览\n\nQt / 原生 C++，MIT 开源。\n远程连接与文件功能将在窗口系统确定后接入。")); return true;
+                QCoreApplication::translate("Muxora", "Muxora 0.1.0\n窗口系统首个预览\n\nQt / 原生 C++，MIT 开源。\n远程连接与文件功能将在窗口系统确定后接入。")); return true;
         }, {"帮助"}, 10});
+    if (!preferences.loadKeybindings(windows.commands()))
+        qWarning().noquote() << preferences.diagnostic();
+    QObject::connect(&windows, &window_system::WindowManager::commandsChanged, &app, [&] {
+        if (!preferences.saveKeybindings(windows.commands())) {
+            qWarning().noquote() << preferences.diagnostic();
+            windows.setStatus(windows.context().window, preferences.diagnostic());
+        }
+    });
+    QObject::connect(&translations, &window_system::TranslationManager::requestedLanguageChanged, &app,
+        [&](window_system::UiLanguage language) {
+            const auto previous = window_system::uiLanguageFromId(preferences.language());
+            if (preferences.saveLanguage(window_system::uiLanguageId(language))) return;
+            const QSignalBlocker rollback(&translations);
+            translations.setRequestedLanguage(previous);
+            qWarning().noquote() << preferences.diagnostic();
+            windows.setStatus(windows.context().window, preferences.diagnostic());
+        });
     QObject::connect(&windows, &window_system::WindowManager::commandFailed, &windows, [&windows](const QString& text) { windows.setStatus(windows.context().window, text); });
     bool restored = false;
     if (!parser.isSet("fresh")) {

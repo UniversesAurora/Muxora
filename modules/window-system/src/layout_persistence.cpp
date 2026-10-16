@@ -1,3 +1,4 @@
+#include <QCoreApplication>
 #include "window_manager_p.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
@@ -44,15 +45,15 @@ QJsonObject visibilityProfilesToJson(const QHash<WindowKind, BarVisibility>& pro
 OperationResult parseVisibilityProfiles(const QJsonValue& value, QHash<WindowKind, BarVisibility>& result)
 {
     if (value.isUndefined()) return {true, {}};
-    if (!value.isObject()) return {false, QStringLiteral("栏显示配置无效")};
+    if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "栏显示配置无效")};
     const auto object = value.toObject();
     for (auto it = object.begin(); it != object.end(); ++it) {
         if ((it.key() != "workbench" && it.key() != "floating") || !it.value().isObject())
-            return {false, QStringLiteral("栏显示窗口类型无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "栏显示窗口类型无效")};
         const auto bars = it.value().toObject();
-        if (bars.size() != 4) return {false, QStringLiteral("栏显示字段不完整")};
+        if (bars.size() != 4) return {false, QCoreApplication::translate("WindowSystem", "栏显示字段不完整")};
         for (const auto key : {"toolbars", "statusBar", "tabBars", "sideBars"})
-            if (!bars.value(key).isBool()) return {false, QStringLiteral("栏显示字段类型无效")};
+            if (!bars.value(key).isBool()) return {false, QCoreApplication::translate("WindowSystem", "栏显示字段类型无效")};
         result.insert(it.key() == "workbench" ? WindowKind::Workbench : WindowKind::Floating,
             {bars.value("toolbars").toBool(), bars.value("statusBar").toBool(), bars.value("tabBars").toBool(), bars.value("sideBars").toBool()});
     }
@@ -79,52 +80,52 @@ QList<QRect> availableScreenGeometries()
 OperationResult validateStripLayout(const QJsonValue& value)
 {
     if (value.isUndefined()) return {true, {}};
-    if (!value.isObject()) return {false, QStringLiteral("工具条布局无效")};
+    if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "工具条布局无效")};
     const auto object = value.toObject();
     if (object.isEmpty()) return {true, {}};
     if (object.contains("locked") && !object.value("locked").isBool())
-        return {false, QStringLiteral("工具条锁定设置无效")};
+        return {false, QCoreApplication::translate("WindowSystem", "工具条锁定设置无效")};
     QSet<QString> seen;
     for (const auto* field : {"rows", "bottomRows"}) {
         const auto rows = object.value(field);
         if (rows.isUndefined()) continue;
-        if (!rows.isArray()) return {false, QStringLiteral("工具条行布局无效")};
+        if (!rows.isArray()) return {false, QCoreApplication::translate("WindowSystem", "工具条行布局无效")};
         for (const auto& row : rows.toArray()) {
-            if (!row.isArray()) return {false, QStringLiteral("工具条行布局无效")};
+            if (!row.isArray()) return {false, QCoreApplication::translate("WindowSystem", "工具条行布局无效")};
             for (const auto& entry : row.toArray()) {
                 if (!entry.isString() || entry.toString().isEmpty() || seen.contains(entry.toString()))
-                    return {false, QStringLiteral("重复或非法工具条 ID")};
+                    return {false, QCoreApplication::translate("WindowSystem", "重复或非法工具条 ID")};
                 seen.insert(entry.toString());
             }
         }
     }
     const auto settings = object.value("strips");
     if (settings.isUndefined()) return {true, {}};
-    if (!settings.isObject()) return {false, QStringLiteral("工具条设置无效")};
+    if (!settings.isObject()) return {false, QCoreApplication::translate("WindowSystem", "工具条设置无效")};
     const auto entries = settings.toObject();
     for (auto it = entries.begin(); it != entries.end(); ++it) {
-        if (it.key().isEmpty() || !it->isObject()) return {false, QStringLiteral("工具条设置无效")};
+        if (it.key().isEmpty() || !it->isObject()) return {false, QCoreApplication::translate("WindowSystem", "工具条设置无效")};
         const auto strip = it->toObject();
         for (const auto* flag : {"visible", "contentVisible", "naturalWidthPriority"})
-            if (strip.contains(flag) && !strip.value(flag).isBool()) return {false, QStringLiteral("工具条显示设置无效")};
+            if (strip.contains(flag) && !strip.value(flag).isBool()) return {false, QCoreApplication::translate("WindowSystem", "工具条显示设置无效")};
         const auto width = strip.value("width");
         if (!width.isUndefined() && (!width.isDouble() || width.toDouble() != width.toInt(-2)
-            || width.toInt(-2) < -1 || width.toInt(-2) > QWIDGETSIZE_MAX)) return {false, QStringLiteral("工具条宽度无效")};
+            || width.toInt(-2) < -1 || width.toInt(-2) > QWIDGETSIZE_MAX)) return {false, QCoreApplication::translate("WindowSystem", "工具条宽度无效")};
         const bool known = it.key() == "menu" || it.key() == "floating-menu" || it.key() == "workspace"
             || it.key() == "title" || it.key() == "caption-controls";
         const bool options = it.key() != "title" && it.key() != "caption-controls";
         if (known && !width.isUndefined() && width.toInt() != -1
             && width.toInt() < CommandStripHost::minimumSavedWidth(options, object.value("locked").toBool(true)))
-            return {false, QStringLiteral("工具条宽度小于可恢复的最小值")};
+            return {false, QCoreApplication::translate("WindowSystem", "工具条宽度小于可恢复的最小值")};
         const auto sizing = strip.value("sizing");
-        if (!sizing.isUndefined() && sizing != "elastic" && sizing != "content") return {false, QStringLiteral("工具条伸缩设置无效")};
+        if (!sizing.isUndefined() && sizing != "elastic" && sizing != "content") return {false, QCoreApplication::translate("WindowSystem", "工具条伸缩设置无效")};
         const auto excluded = strip.value("excluded");
         if (excluded.isUndefined()) continue;
-        if (!excluded.isArray()) return {false, QStringLiteral("工具条按钮设置无效")};
+        if (!excluded.isArray()) return {false, QCoreApplication::translate("WindowSystem", "工具条按钮设置无效")};
         QSet<QString> buttons;
         for (const auto& button : excluded.toArray()) {
             if (!button.isString() || button.toString().isEmpty() || buttons.contains(button.toString()))
-                return {false, QStringLiteral("工具条按钮 ID 无效")};
+                return {false, QCoreApplication::translate("WindowSystem", "工具条按钮 ID 无效")};
             buttons.insert(button.toString());
         }
     }
@@ -139,15 +140,15 @@ QString toolbarKindKey(WindowKind kind)
 OperationResult validateToolbarKinds(const QJsonValue& value)
 {
     if (value.isUndefined()) return {true, {}};
-    if (!value.isObject()) return {false, QStringLiteral("窗口类型工具条布局无效")};
+    if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "窗口类型工具条布局无效")};
     const auto layouts = value.toObject();
     for (auto it = layouts.begin(); it != layouts.end(); ++it) {
         if (it.key() != "workbench" && it.key() != "floating")
-            return {false, QStringLiteral("工具条窗口类型无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "工具条窗口类型无效")};
         const auto parsed = validateStripLayout(it.value());
         if (!parsed) return parsed;
         const auto layout = it->toObject();
-        if (!layout.value("rows").isArray()) return {false, QStringLiteral("工具条行布局无效")};
+        if (!layout.value("rows").isArray()) return {false, QCoreApplication::translate("WindowSystem", "工具条行布局无效")};
         const auto settings = layout.value("strips").toObject();
         QSet<QString> ids;
         for (const auto* field : {"rows", "bottomRows"})
@@ -156,7 +157,7 @@ OperationResult validateToolbarKinds(const QJsonValue& value)
         for (auto setting = settings.begin(); setting != settings.end(); ++setting) ids.insert(setting.key());
         const bool mixed = it.key() == "workbench" ? ids.contains("floating-menu")
             : ids.contains("menu") || ids.contains("workspace");
-        if (mixed) return {false, QStringLiteral("不同窗口类型的工具条布局不能混用")};
+        if (mixed) return {false, QCoreApplication::translate("WindowSystem", "不同窗口类型的工具条布局不能混用")};
     }
     return {true, {}};
 }
@@ -256,7 +257,7 @@ QJsonObject WindowManager::saveLayout() const
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
 {
     const QPointer<WindowManager> self(this);
-    if (snapshot.value("schemaVersion").toInt() != 1) return {false, QStringLiteral("布局版本无效")};
+    if (snapshot.value("schemaVersion").toInt() != 1) return {false, QCoreApplication::translate("WindowSystem", "布局版本无效")};
     LayoutModel candidate;
     const auto parsed = candidate.fromJson(snapshot.value("model").toObject()); if (!parsed) return parsed;
     TabAppearance restoredAppearance;
@@ -277,18 +278,18 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     WindowBehavior restoredBehavior;
     const auto settings = snapshot.value("behavior").toObject();
     for (const auto key : {"hideSingleTabWorkbench", "hideSingleTabFloating"})
-        if (settings.contains(key) && !settings.value(key).isBool()) return {false, QStringLiteral("单标签隐藏设置无效")};
+        if (settings.contains(key) && !settings.value(key).isBool()) return {false, QCoreApplication::translate("WindowSystem", "单标签隐藏设置无效")};
     restoredBehavior.hideSingleTabWorkbench = settings.value("hideSingleTabWorkbench").toBool(false);
     restoredBehavior.hideSingleTabFloating = settings.value("hideSingleTabFloating").toBool(true);
     const auto position = settings.value("newTabPosition");
     if (!position.isUndefined() && (!position.isDouble() || position.toDouble() != position.toInt(-1)
         || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))
-        return {false, QStringLiteral("新建标签位置无效")};
+        return {false, QCoreApplication::translate("WindowSystem", "新建标签位置无效")};
     restoredBehavior.newTabPosition = NewTabPosition(position.toInt(int(NewTabPosition::AfterActive)));
     const auto zenMode = settings.value("zenFullscreenMode");
     if (!zenMode.isUndefined() && (!zenMode.isDouble() || zenMode.toDouble() != zenMode.toInt(-1)
         || !validZenFullscreenMode(ViewMode(zenMode.toInt(-1)))))
-        return {false, QStringLiteral("禅模式全屏类型无效")};
+        return {false, QCoreApplication::translate("WindowSystem", "禅模式全屏类型无效")};
     restoredBehavior.zenFullscreenMode = ViewMode(zenMode.toInt(int(ViewMode::WindowFullscreen)));
     restoredBehavior.dragOutsideKind = settings.value("dragOutsideFloating").toBool(true) ? WindowKind::Floating : WindowKind::Workbench;
     restoredBehavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
@@ -300,24 +301,24 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         const WindowId id(object.value("id").toString());
         if (!candidate.window(id)) continue;
         if (object.contains("tabBarsVisible") && !object.value("tabBarsVisible").isBool())
-            return {false, QStringLiteral("标签栏显示设置无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "标签栏显示设置无效")};
         if (object.contains("sideBarsVisible") && !object.value("sideBarsVisible").isBool())
-            return {false, QStringLiteral("侧边栏显示设置无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "侧边栏显示设置无效")};
         if (object.contains("toolbarsVisible") && !object.value("toolbarsVisible").isBool())
-            return {false, QStringLiteral("工具栏显示设置无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "工具栏显示设置无效")};
         if (object.contains("statusBarVisible") && !object.value("statusBarVisible").isBool())
-            return {false, QStringLiteral("状态栏显示设置无效")};
+            return {false, QCoreApplication::translate("WindowSystem", "状态栏显示设置无效")};
         const auto hiddenItems = object.value("hiddenStatusItems");
         QHash<WindowKind, BarVisibility> windowBars;
         const auto windowBarsParsed = parseVisibilityProfiles(object.value("barLayouts"), windowBars);
         if (!windowBarsParsed) return windowBarsParsed;
         restoredWindowVisibility.insert(id, windowBars);
         if (!hiddenItems.isUndefined()) {
-            if (!hiddenItems.isArray()) return {false, QStringLiteral("状态控件显示设置无效")};
+            if (!hiddenItems.isArray()) return {false, QCoreApplication::translate("WindowSystem", "状态控件显示设置无效")};
             QSet<QString> seen;
             for (const auto& item : hiddenItems.toArray()) {
                 if (!item.isString() || !WorkspaceWindow::statusItemIds().contains(item.toString()) || seen.contains(item.toString()))
-                    return {false, QStringLiteral("状态控件 ID 无效")};
+                    return {false, QCoreApplication::translate("WindowSystem", "状态控件 ID 无效")};
                 seen.insert(item.toString());
             }
         }
@@ -355,14 +356,14 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     QHash<PaneId, TabOptions> descriptors;
     for (const auto& entry : snapshot.value("panes").toArray()) {
         const auto object = entry.toObject(); const PaneId id(object.value("id").toString());
-        if (id.isNull() || descriptors.contains(id)) return {false, QStringLiteral("重复或非法内容 ID")};
+        if (id.isNull() || descriptors.contains(id)) return {false, QCoreApplication::translate("WindowSystem", "重复或非法内容 ID")};
         TabOptions options{object.value("title").toString(), object.value("type").toString(),
             object.value("state").toObject().toVariantMap(), object.value("showIcon").toBool(true)};
         for (const bool top : {true, false}) {
             const auto key = top ? "topBarSharing" : "bottomBarSharing";
             const auto value = object.value(key);
             if (!value.isUndefined() && (!value.isString() || (value.toString() != "shared" && value.toString() != "perPane")))
-                return {false, QStringLiteral("窗格栏共享设置无效")};
+                return {false, QCoreApplication::translate("WindowSystem", "窗格栏共享设置无效")};
             (top ? options.topBarSharing : options.bottomBarSharing) = value.toString() == "perPane"
                 ? PaneBarSharing::PerPane : PaneBarSharing::Shared;
         }
@@ -373,13 +374,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         for (const auto pane : candidate.panes(tab.id)) {
             const auto other = descriptors.value(pane);
             if (other.topBarSharing != options.topBarSharing || other.bottomBarSharing != options.bottomBarSharing)
-                return {false, QStringLiteral("同一标签的窗格栏共享设置不一致")};
+                return {false, QCoreApplication::translate("WindowSystem", "同一标签的窗格栏共享设置不一致")};
         }
     }
     QHash<PaneId, QPointer<QWidget>> created;
     auto cleanup = [&] { for (auto widget : created) delete widget; };
     for (const auto& tab : candidate.tabs()) for (const auto id : candidate.panes(tab.id)) {
-        if (!descriptors.contains(id)) { cleanup(); return {false, QStringLiteral("缺少内容恢复描述")}; }
+        if (!descriptors.contains(id)) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "缺少内容恢复描述")}; }
         const QPointer<QWidget> content(createContent(descriptors.value(id), id));
         if (!self) {
             // Previously prepared content has not entered the manager's pane
@@ -387,16 +388,16 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
             // it is a widget the host already registered with another manager.
             if (content && !content->property("windowSystemManaged").toBool()) delete content.data();
             cleanup();
-            return {false, QStringLiteral("窗口管理器在准备恢复内容时被销毁")};
+            return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在准备恢复内容时被销毁")};
         }
-        if (!content || content->property("windowSystemManaged").toBool()) { cleanup(); return {false, QStringLiteral("内容恢复失败")}; }
+        if (!content || content->property("windowSystemManaged").toBool()) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "内容恢复失败")}; }
         created.insert(id, content);
         content->setProperty("windowSystemManaged", true);
-        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
+        if (!self || !content) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "恢复内容在准备时被销毁")}; }
         content->setProperty("paneId", id);
-        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
+        if (!self || !content) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "恢复内容在准备时被销毁")}; }
         if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
-        if (!self || !content) { cleanup(); return {false, QStringLiteral("恢复内容在准备时被销毁")}; }
+        if (!self || !content) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "恢复内容在准备时被销毁")}; }
     }
     const bool previouslyBlocked = blockSignals(true);
     auto unblock = qScopeGuard([self, previouslyBlocked] { if (self) self->blockSignals(previouslyBlocked); });
@@ -435,7 +436,7 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
     refresh();
-    if (!self) return {false, QStringLiteral("窗口管理器在恢复时被销毁")};
+    if (!self) return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在恢复时被销毁")};
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
         auto widget = d->windows.value(id); if (!widget) continue;
@@ -443,13 +444,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         const auto minimum = widget->minimumSize().expandedTo(widget->minimumSizeHint());
         const auto desired = normalizeWindowPlacement(savedWindowGeometry(object), available, minimum);
         widget->restorePlacement(desired, object.value("maximized").toBool());
-        if (!self) return {false, QStringLiteral("窗口管理器在恢复时被销毁")};
+        if (!self) return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在恢复时被销毁")};
     }
     // Establish the saved normal placement before entering native fullscreen.
     // A temporary screen-sized view must never replace the restart geometry.
     d->viewStates = std::move(restoredViews);
     applyWindowViewStates();
-    if (!self) return {false, QStringLiteral("窗口管理器在恢复时被销毁")};
+    if (!self) return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在恢复时被销毁")};
     blockSignals(previouslyBlocked); unblock.dismiss();
     emit layoutChanged();
     return {true, {}};

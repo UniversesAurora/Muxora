@@ -37,18 +37,6 @@ using namespace window_system;
 
 namespace {
 
-class MenuShowObserver final : public QObject {
-public:
-    explicit MenuShowObserver(std::function<void()> onShow) : onShow_(std::move(onShow)) {}
-    bool eventFilter(QObject*, QEvent* event) override
-    {
-        if (event->type() == QEvent::Show) onShow_();
-        return false;
-    }
-private:
-    std::function<void()> onShow_;
-};
-
 // Optional, bounded diagnostics for the real popup routing. This does not add
 // waits or replace any timing/visibility assertions in the interaction test.
 class PopupEventTrace final : public QObject {
@@ -532,28 +520,29 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     bool visibleBeforeSecondClick = false;
     bool watchdogFired = false;
     QSignalSpy shown(tail->menu(), &QMenu::aboutToShow);
-    // Native input is queued, and platform menu effects can defer Show. The
-    // closing click requires an already visible menu; keep the original delay
-    // after that event and the original overall watchdog below.
-    MenuShowObserver observer([&] {
-        trace.note("show-observer");
-        QTimer::singleShot(30, &host, [&] {
-            trace.note("second-click-timer");
-            visibleBeforeSecondClick = tail->menu()->isVisible();
-            nativeMouse(tail, tail->rect().center(), true);
-        });
+    // Show is delivered before the native popup is exposed. On a cold first
+    // show, platform effects/color-profile work can block both timers, letting
+    // the old watchdog close the menu before its closing click is delivered.
+    // Establish the real interaction preconditions first; the closing-click
+    // delay and its watchdog remain exactly 30 and 300 ms.
+    nativeMouse(tail, tail->rect().center(), true);
+    trace.note("first-input-queued");
+    QTRY_VERIFY(tail->menu()->isVisible());
+    QTRY_VERIFY(QApplication::activePopupWidget() == tail->menu());
+    QVERIFY(QTest::qWaitForWindowExposed(tail->menu()));
+    QTRY_COMPARE(QApplication::mouseButtons(), Qt::MouseButtons(Qt::NoButton));
+    trace.note("popup-ready");
+    QTimer::singleShot(30, &host, [&] {
+        trace.note("second-click-timer");
+        visibleBeforeSecondClick = tail->menu()->isVisible();
+        nativeMouse(tail, tail->rect().center(), true);
     });
-    tail->menu()->installEventFilter(&observer);
     // Watchdog closes only after recording the expected toggle; it prevents a
     // broken nested popup from hanging the test runner.
     QTimer::singleShot(300, &host, [tail, &watchdogFired, &trace] {
         trace.note("watchdog-timer");
         if (tail->menu() && tail->menu()->isVisible()) { watchdogFired = true; tail->menu()->close(); }
     });
-    // A native popup needs QWidgetWindow's complete input routing. Direct
-    // QWidget notify injection bypasses replay cleanup and poisons later input.
-    nativeMouse(tail, tail->rect().center(), true);
-    trace.note("first-input-queued");
     QTRY_VERIFY(visibleBeforeSecondClick);
     // SendInput queues the closing click as well. Observe its result before
     // checking the watchdog, so forced dismissal can never count as success.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "toolbar_move_command.hpp"
 #include "popup_menu.hpp"
 #include "chrome/command_strip.hpp"
@@ -43,12 +44,12 @@ QVariantMap chooseDestination(WorkspaceWindow* window, const Theme& theme)
     const auto layout = window->strips()->saveLayout();
     for (const auto* area : {"top", "bottom"}) {
         const bool top = QString::fromLatin1(area) == "top";
-        auto* menu = picker.addMenu(top ? QStringLiteral("顶部") : QStringLiteral("底部"));
+        auto* menu = picker.addMenu(top ? QCoreApplication::translate("WindowSystem", "顶部") : QCoreApplication::translate("WindowSystem", "底部"));
         const auto rows = layout.value(top ? "rows" : "bottomRows").toArray();
         const int count = int(rows.size());
         for (int row = 0; row <= count; ++row) {
             if (row < count && rows.at(row).toArray().isEmpty()) continue;
-            auto* action = menu->addAction(row == count ? QStringLiteral("新一行") : QStringLiteral("第 %1 行").arg(row + 1));
+            auto* action = menu->addAction(row == count ? QCoreApplication::translate("WindowSystem", "新一行") : QCoreApplication::translate("WindowSystem", "第 %1 行").arg(row + 1));
             action->setData(QVariantMap{{"area", QString::fromLatin1(area)}, {"row", row}});
         }
     }
@@ -87,7 +88,7 @@ bool moveToolbar(WindowManager* manager, const CommandContext& context)
 
 void registerToolbarMoveCommand(WindowManager* manager)
 {
-    manager->commands().add({"window.toolbar.move", QStringLiteral("移动工具条…"), "视图", {},
+    manager->commands().add({"window.toolbar.move", QCoreApplication::translate("WindowSystem", "移动工具条…"), "视图", {},
         [manager](const CommandContext& context) { return manager->model().window(context.window) != nullptr; },
         [manager](const CommandContext& context) { return moveToolbar(manager, context); }});
 }

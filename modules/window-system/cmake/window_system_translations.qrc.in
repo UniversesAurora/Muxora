@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/window_system/i18n">
+@window_system_catalog_qrc_entries@    </qresource>
+    <qresource prefix="/window_system/i18n/qt">
+        <file alias="qtbase_zh_CN.qm">@window_system_qt_zh_catalog_qrc_path@</file>
+    </qresource>
+</RCC>

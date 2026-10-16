@@ -6,13 +6,13 @@ Muxora 是一款面向远程工作的原生桌面应用，计划整合 SSH 终�
 
 ## 下载试用
 
-Windows x64 便携版见 [GitHub 预发布](https://github.com/UniversesAurora/Muxora/releases/tag/v0.1.0-preview.1)。下载 `Muxora-preview-windows-x64.7z`，完整解压后运行 `Muxora/muxora.exe`，无需安装 Qt。布局和行为设置保存在相邻的 `data/` 目录；编辑区文字和修改后的快捷键暂不随退出保存。
+Windows x64 已发布的便携版见 [GitHub 预发布](https://github.com/UniversesAurora/Muxora/releases/tag/v0.1.0-preview.1)。下载 `Muxora-preview-windows-x64.7z`，完整解压后运行 `Muxora/muxora.exe`，无需安装 Qt。该发布包的功能以对应 Release 说明为准；后续源码改动不会自动进入旧包。
 
 同页的 `.sha256` 文件用于核验下载。Qt 源码 ZIP 是可选的依赖源码，运行程序无需下载；自有代码与各项依赖的许可证见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 构建与运行
 
-需要 PowerShell 7、Git、CMake、Ninja，以及包含匹配 C++ 编译器的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MinGW 工具链。Qt 安装在仓库外，不提交 SDK 或构建产物。
+需要 PowerShell 7、Git、CMake、Ninja，以及包含匹配 C++ 编译器和 Linguist 翻译工具的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MinGW 工具链。Qt 安装在仓库外，不提交 SDK 或构建产物。
 
 ```powershell
 pwsh ./tools/build.ps1 -Configuration Debug -Test -Run

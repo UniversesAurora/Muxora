@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "command_dialogs.hpp"
 #include "../settings/settings_page.hpp"
 
@@ -30,9 +31,12 @@ QString displayTitle(const Command& command)
     return command.title.isEmpty() ? command.id : command.title;
 }
 
-QString shortcutText(const QKeySequence& sequence)
+QString shortcutText(const Command& command)
 {
-    return sequence.toString(QKeySequence::NativeText);
+    QStringList sequences;
+    for (const auto& binding : command.bindings)
+        sequences.append(binding.sequence.toString(QKeySequence::NativeText));
+    return sequences.join(QStringLiteral(" / "));
 }
 
 bool matchesSearch(const QString& searchable, const QString& query)
@@ -172,23 +176,23 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
     const QPointer<WindowManager> alive(manager);
     const CommandContext target = context;
     auto* dialog = createDialog(manager, parent, QStringLiteral("CommandPalette"),
-                                QStringLiteral("命令面板"), QSize(780, 450), options);
+                                QCoreApplication::translate("WindowSystem", "命令面板"), QSize(780, 450), options);
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
     auto* search = new QLineEdit(dialog);
     search->setObjectName(QStringLiteral("CommandPaletteSearch"));
-    search->setPlaceholderText(QStringLiteral("输入命令名称、分类或命令 ID…"));
-    search->setAccessibleName(QStringLiteral("搜索命令"));
+    search->setPlaceholderText(QCoreApplication::translate("WindowSystem", "输入命令名称、分类或命令 ID…"));
+    search->setAccessibleName(QCoreApplication::translate("WindowSystem", "搜索命令"));
     layout->addWidget(search);
-    auto* tree = createList(dialog, {QStringLiteral("命令"), QStringLiteral("分类"), QStringLiteral("快捷键")});
+    auto* tree = createList(dialog, {QCoreApplication::translate("WindowSystem", "命令"), QCoreApplication::translate("WindowSystem", "分类"), QCoreApplication::translate("WindowSystem", "快捷键")});
     tree->setObjectName(QStringLiteral("CommandPaletteCommands"));
     layout->addWidget(tree, 1);
-    auto* details = hintLabel(QStringLiteral("↑ ↓ 选择  ·  Enter 执行  ·  Esc 关闭"), dialog);
+    auto* details = hintLabel(QCoreApplication::translate("WindowSystem", "↑ ↓ 选择  ·  Enter 执行  ·  Esc 关闭"), dialog);
     layout->addWidget(details);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
-    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("执行"));
-    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("关闭"));
+    buttons->button(QDialogButtonBox::Ok)->setText(QCoreApplication::translate("WindowSystem", "执行"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QCoreApplication::translate("WindowSystem", "关闭"));
     layout->addWidget(buttons);
     new SearchListNavigation(search, tree);
 
@@ -207,7 +211,7 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         const bool enabled = found && canExecute(command, target);
         if (!alive || !tree || !buttons || !details) return;
         buttons->button(QDialogButtonBox::Ok)->setEnabled(enabled);
-        details->setText(found ? command.id : QStringLiteral("没有匹配的可执行命令。"));
+        details->setText(found ? command.id : QCoreApplication::translate("WindowSystem", "没有匹配的可执行命令。"));
     };
     const auto rebuild = [alive, tree = retainedTree, search = retainedSearch, target, updateSelected] {
         if (!tree || !search) return;
@@ -216,16 +220,17 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         const QString query = search->text();
         const auto commands = alive->commands().commands();
         for (const auto& command : commands) {
-            const QString searchable = displayTitle(command) + QLatin1Char(' ') + command.category + QLatin1Char(' ') + command.id;
+            const QString category = QCoreApplication::translate("WindowSystem", command.category.toUtf8().constData());
+            const QString searchable = displayTitle(command) + QLatin1Char(' ') + category + QLatin1Char(' ') + command.id;
             if (!matchesSearch(searchable, query)) continue;
             const bool enabled = canExecute(command, target);
             if (!alive || !tree || !search) return;
-            auto* item = new QTreeWidgetItem(tree, {displayTitle(command), command.category, shortcutText(command.shortcut)});
+            auto* item = new QTreeWidgetItem(tree, {displayTitle(command), category, shortcutText(command)});
             item->setData(0, Qt::UserRole, command.id);
             item->setToolTip(0, command.id);
             if (!enabled) {
                 item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-                item->setToolTip(0, command.id + QStringLiteral("\n当前窗口或内容不满足执行条件。"));
+                item->setToolTip(0, command.id + QCoreApplication::translate("WindowSystem", "\n当前窗口或内容不满足执行条件。"));
             }
         }
         selectFirstEnabled(tree);
@@ -260,7 +265,7 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
             if (!alive) return;
             const bool executed = alive->executeInContext(id, target);
             if (!executed && alive && alive->model().window(target.window))
-                alive->setStatus(target.window, QStringLiteral("命令未执行：%1").arg(id));
+                alive->setStatus(target.window, QCoreApplication::translate("WindowSystem", "命令未执行：%1").arg(id));
         });
     });
     rebuild();
@@ -276,20 +281,20 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
     if (!manager) return;
     const QPointer<WindowManager> alive(manager);
     auto* dialog = createDialog(manager, parent, QStringLiteral("WindowSelector"),
-                                QStringLiteral("切换窗口"), QSize(780, 410), options);
+                                QCoreApplication::translate("WindowSystem", "切换窗口"), QSize(780, 410), options);
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(12, 12, 12, 12);
     auto* search = new QLineEdit(dialog);
     search->setObjectName(QStringLiteral("WindowSelectorSearch"));
-    search->setPlaceholderText(QStringLiteral("搜索窗口、所属窗口或形态…"));
+    search->setPlaceholderText(QCoreApplication::translate("WindowSystem", "搜索窗口、所属窗口或形态…"));
     layout->addWidget(search);
-    auto* tree = createList(dialog, {QStringLiteral("窗口"), QStringLiteral("形态"), QStringLiteral("所属完整窗口"), QStringLiteral("标签")});
+    auto* tree = createList(dialog, {QCoreApplication::translate("WindowSystem", "窗口"), QCoreApplication::translate("WindowSystem", "形态"), QCoreApplication::translate("WindowSystem", "所属完整窗口"), QCoreApplication::translate("WindowSystem", "标签")});
     tree->setObjectName(QStringLiteral("WindowSelectorWindows"));
     layout->addWidget(tree, 1);
-    layout->addWidget(hintLabel(QStringLiteral("包含所有完整窗口和轻量浮窗。Enter 切换；Esc 取消。"), dialog));
+    layout->addWidget(hintLabel(QCoreApplication::translate("WindowSystem", "包含所有完整窗口和轻量浮窗。Enter 切换；Esc 取消。"), dialog));
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
-    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("切换"));
-    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    buttons->button(QDialogButtonBox::Ok)->setText(QCoreApplication::translate("WindowSystem", "切换"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QCoreApplication::translate("WindowSystem", "取消"));
     layout->addWidget(buttons);
     new SearchListNavigation(search, tree);
     const auto rebuild = [alive, tree, search, buttons, source] {
@@ -302,12 +307,12 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
             const auto* record = model.window(id);
             if (!record) continue;
             const auto* widget = alive->windowWidget(id);
-            const QString title = widget ? widget->windowTitle() : QStringLiteral("工作区窗口");
-            const QString kind = record->kind == WindowKind::Workbench ? QStringLiteral("完整窗口") : QStringLiteral("轻量浮窗");
+            const QString title = widget ? widget->windowTitle() : QCoreApplication::translate("WindowSystem", "工作区窗口");
+            const QString kind = record->kind == WindowKind::Workbench ? QCoreApplication::translate("WindowSystem", "完整窗口") : QCoreApplication::translate("WindowSystem", "轻量浮窗");
             const WindowId rootId = model.familyRoot(record->familyId);
             const auto* ownerWidget = alive->windowWidget(rootId);
             const QString owner = record->kind == WindowKind::Workbench ? QStringLiteral("—") :
-                (ownerWidget ? ownerWidget->windowTitle() : QStringLiteral("所属完整窗口"));
+                (ownerWidget ? ownerWidget->windowTitle() : QCoreApplication::translate("WindowSystem", "所属完整窗口"));
             if (!matchesSearch(title + QLatin1Char(' ') + kind + QLatin1Char(' ') + owner + QLatin1Char(' ') + id.toString(), search->text())) continue;
             auto* item = new QTreeWidgetItem(tree, {title, kind, owner, QString::number(model.orderedTabs(id).size())});
             item->setData(0, Qt::UserRole, id);
@@ -396,12 +401,12 @@ QWidget* createInternalSettingsContent(WindowManager* manager, const TabOptions&
 
 void openBehaviorSettings(WindowManager* manager, QWidget* parent)
 {
-    openSettingsTab(manager, parent, QStringLiteral("window_system.settings"), QStringLiteral("设置"));
+    openSettingsTab(manager, parent, QStringLiteral("window_system.settings"), QCoreApplication::translate("WindowSystem", "设置"));
 }
 
 void openShortcutEditor(WindowManager* manager, QWidget* parent)
 {
-    openSettingsTab(manager, parent, QStringLiteral("window_system.shortcuts"), QStringLiteral("键盘快捷键"));
+    openSettingsTab(manager, parent, QStringLiteral("window_system.shortcuts"), QCoreApplication::translate("WindowSystem", "键盘快捷键"));
 }
 
 } // namespace window_system
