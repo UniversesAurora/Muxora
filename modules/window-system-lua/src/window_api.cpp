@@ -81,6 +81,13 @@ WindowKind windowKind(QString kind) {
 bool boolField(const QVariantMap &map, const QString &key, bool fallback) {
     return map.contains(key) ? boolean({map.value(key)}, 0) : fallback;
 }
+FloatingPanelOptions panelOptions(const Args &args) {
+    const auto spec = object(args, 1);
+    for (auto it = spec.cbegin(); it != spec.cend(); ++it)
+        if (it.key() != "modal" && it.key() != "dismiss_on_outside")
+            throw std::runtime_error("Unknown panel option");
+    return {boolField(spec, "dismiss_on_outside", true), boolField(spec, "modal", false)};
+}
 } // namespace
 void ScriptHost::Private::installWindowApi() {
     handlers["context"] = [this](const Args &, const Context &c) { return result(contextMap(current(c))); };
@@ -211,6 +218,28 @@ void ScriptHost::Private::installWindowApi() {
     };
     handlers["windows.set_title"] = [this](const Args &a, const Context &c) {
         return result(manager->setWindowTitle(target(a, 0, c, Target::Window), text(a, 1)));
+    };
+    handlers["windows.state"] = [this](const Args &a, const Context &c) {
+        const auto id = target(a, 0, c, Target::Window);
+        const auto *window = manager->windowWidget(id);
+        if (!window)
+            return result();
+        return result(QVariantMap{{"minimized", window->isMinimized()},
+                                  {"maximized", window->isMaximized()},
+                                  {"mode", modeName(manager->viewMode(id))}});
+    };
+    handlers["windows.set_state"] = [this](const Args &a, const Context &c) {
+        const auto id = target(a, 0, c, Target::Window);
+        if (!manager->model().window(id))
+            return result(false);
+        const auto state = text(a, 1);
+        const QString command = state == "normal"      ? "window.restore"
+                                : state == "maximized" ? "window.maximize"
+                                : state == "minimized" ? "window.minimize"
+                                                       : QString{};
+        if (command.isEmpty())
+            return failure("Window state must be normal, maximized or minimized");
+        return result(manager->executeInContext(command, manager->context(id)));
     };
     handlers["groups.list"] = [this](const Args &a, const Context &c) {
         QVariantList list;
@@ -481,11 +510,11 @@ void ScriptHost::Private::installWindowApi() {
         return result(true);
     };
     handlers["ui.command_palette"] = [this](const Args &a, const Context &c) {
-        manager->showCommandPalette(target(a, 0, c, Target::Window));
+        manager->showCommandPalette(target(a, 0, c, Target::Window), panelOptions(a));
         return result(true);
     };
     handlers["ui.window_selector"] = [this](const Args &a, const Context &c) {
-        manager->showWindowSelector(target(a, 0, c, Target::Window));
+        manager->showWindowSelector(target(a, 0, c, Target::Window), panelOptions(a));
         return result(true);
     };
     installAppearanceApi();

@@ -2,7 +2,7 @@
 
 从“工具 → Lua → 打开 Lua 配置文件”进入 `User/init.lua`，保存后选择“重新加载 Lua 配置”。没有配置文件时不会自动创建或执行其他目录的脚本。“运行 Lua 脚本…”可以运行一次输入的代码。
 
-普通安装的 `User` 在系统用户配置目录，便携运行在 `data/User`；指定 `--state-dir` 时使用该隔离目录的 `User`。脚本使用 UTF-8。模块放在 `User/lua`，例如 `User/lua/workspace.lua` 可以用 `require('workspace')` 加载；只支持这里的纯 Lua 文本模块。
+普通安装的 `User` 在系统用户配置目录，便携运行在 `data/User`；指定 `--state-dir` 时使用该隔离目录的 `User`。脚本使用 UTF-8。模块放在 `User/lua`，例如 `User/lua/workspace.lua` 可以用 `require('workspace')` 加载；只支持这里的纯 Lua 文本模块。模块含无效 UTF-8 字节时会报错，不会替换字符后继续执行。
 
 ## 快捷键与命令
 
@@ -22,7 +22,9 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
                   'user.prepare_workspace')
 ```
 
-每个序列最多四段，可混用组合键与普通字母／数字。后续按键可以与独立快捷键相同；完整序列的前缀冲突需要明确处理。`keymap.set` 默认拒绝冲突，传入 `{ replace = true }` 可以替换冲突绑定，卸载脚本会还原原绑定。
+每个序列最多四段，可混用组合键与普通字母／数字。后续按键可以与独立快捷键相同；例如 `ctrl+k x`、`ctrl+j x`、`ctrl+k y` 和独立的 `x` 可以同时存在。
+
+`keymap.set` 默认拒绝完整序列重复占用，以及短序列恰好是长序列开头的冲突，同一命令的多个绑定也检查后者。传入 `{ replace = true }` 会移除冲突的旧绑定，卸载脚本会还原。一次提供的按键列表内部不能包含前缀冲突，开启替换也会整次拒绝，不部分修改其他命令。同一命令再次设置完全相同的序列可更新其 `args`，不会增加重复绑定。
 
 命令描述可用 `menu = { '工具', 'Lua' }` 和 `order` 指定主菜单路径与顺序。`context_menus` 接受 `tab`、`pane`、`group`、`window` 目标、子菜单 `path`、`order` 和可选 `content_type` 过滤条件。脚本提供的标题、菜单名和通知文字按原文显示，不会自动翻译。
 
@@ -35,7 +37,7 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 | 分组 | 操作 |
 | --- | --- |
 | `commands` | 列出、注册、注销和执行命令，复用菜单、快捷键与命令面板路径。 |
-| `windows` | 查询、新建、关闭、激活、升降级、窗口族、几何、标题、栏显隐、全屏和禅模式。 |
+| `windows` | 查询、新建、关闭、激活、最小化／最大化／还原、升降级、窗口族、几何、标题、栏显隐、全屏和禅模式。 |
 | `tabs` / `groups` / `panes` | 查询、创建、分割、重命名、移动、合并、交换、拆出、关闭、颜色、图标及附加栏。 |
 | `sidebar` | 收纳、固定、整侧固定及独立记忆的临时展开宽高。 |
 | `toolbars` / `status` | 注册命令工具条和状态项，调整位置、宽度、弹性、按钮、文本和显隐。 |
@@ -46,6 +48,30 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 | `clock` / `runtime` | 本地／UTC 时间、日期字段，以及 Lua 分配、队列和注册资源计数。 |
 
 接口传值和 UUID 字符串，不传 Qt 对象。省略目标 ID 的操作使用来源窗口当前目标；显式有效 ID 可以操作其他窗口。关闭仍经过宿主关闭许可。命令返回的布尔值表示操作是否接受；Lua 命令本身异步执行，后续失败会在诊断中报告。
+
+## 窗口状态与浮动面板
+
+| 调用 | 参数与结果 |
+| --- | --- |
+| `windows.state(window_id)` | 返回 `{ minimized, maximized, mode }`；目标窗口不存在时返回 `nil`。 |
+| `windows.set_state(window_id, state)` | `state` 为 `'normal'`、`'maximized'` 或 `'minimized'`，返回操作是否接受。 |
+| `windows.set_mode(window_id, mode)` | 设置显示范围：`'normal'`、`'window'`、`'group'` 或 `'pane'`。 |
+| `ui.command_palette(window_id, options)` | 打开命令面板，`options` 可配置模态与外点关闭行为。 |
+| `ui.window_selector(window_id, options)` | 打开窗口选择面板，使用相同 `options`。 |
+
+`window_id` 传 `nil` 时使用来源窗口。需要传后续参数时保留这个 `nil` 位置，例如：
+
+```lua
+assert(muxora.windows.set_state(nil, 'maximized'))
+muxora.ui.command_palette(nil, {
+  modal = false,
+  dismiss_on_outside = true
+})
+```
+
+最小化／最大化／还原使用 `window.minimize`、`window.maximize`、`window.restore` 命令，与菜单和快捷键共用执行路径。最大化和还原会先退出全屏范围；最小化保留当前范围，以便恢复。`state()` 的 `mode` 表示全屏范围，和 `minimized`、`maximized` 分开查询。
+
+面板默认 `modal = false`、`dismiss_on_outside = true`，即非模态且点击其他区域关闭。两项只接受布尔值，不识别的选项会报错。打开面板后 Lua 可以继续执行；即使设为模态，也不会启动嵌套事件循环或等待用户关掉面板。
 
 ## 状态项与定时回调
 

@@ -6,6 +6,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QAction>
+#include <QAbstractNativeEventFilter>
 #include <QApplication>
 #include <QCursor>
 #include <QElapsedTimer>
@@ -39,14 +40,23 @@ namespace {
 
 // Optional, bounded diagnostics for the real popup routing. This does not add
 // waits or replace any timing/visibility assertions in the interaction test.
-class PopupEventTrace final : public QObject {
+class PopupEventTrace final : public QObject
+#ifdef Q_OS_WIN
+    , public QAbstractNativeEventFilter
+#endif
+{
 public:
     PopupEventTrace(QWidget* host, QToolButton* button)
         : host_(host), button_(button), menu_(button->menu()), path_(qEnvironmentVariable("MUXORA_CHROME_TRACE_PATH"))
     {
         timer_.start();
         if (path_.isEmpty()) return;
+        command_ = host->findChild<QToolButton*>("StripCommandButton");
         qApp->installEventFilter(this);
+#ifdef Q_OS_WIN
+        hostHandle_ = reinterpret_cast<HWND>(host->effectiveWinId());
+        qApp->installNativeEventFilter(this);
+#endif
         connect(menu_, &QMenu::aboutToShow, this, [this] { note("signal-aboutToShow"); });
         connect(menu_, &QMenu::aboutToHide, this, [this] { note("signal-aboutToHide"); });
         note("trace-start");
@@ -54,7 +64,25 @@ public:
     ~PopupEventTrace() override
     {
         if (path_.isEmpty()) return;
+#ifdef Q_OS_WIN
+        qApp->removeNativeEventFilter(this);
+#endif
         qApp->removeEventFilter(this); note("trace-end");
+#ifdef Q_OS_WIN
+        // Foreign-window hit testing can send synchronous messages. Collect it
+        // only after the timed interaction and both filters have ended.
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        const auto hit = WindowFromPoint(cursor);
+        GUITHREADINFO gui{};
+        gui.cbSize = sizeof(gui);
+        GetGUIThreadInfo(GetCurrentThreadId(), &gui);
+        lines_.append(QStringLiteral("final-native cursor=%1,%2 capture=%3 hit=%4 hitRoot=%5 foreground=%6 guiCapture=%7 guiMenuOwner=%8")
+            .arg(cursor.x).arg(cursor.y).arg(quintptr(GetCapture()), 0, 16)
+            .arg(quintptr(hit), 0, 16).arg(quintptr(GetAncestor(hit, GA_ROOT)), 0, 16)
+            .arg(quintptr(GetForegroundWindow()), 0, 16).arg(quintptr(gui.hwndCapture), 0, 16)
+            .arg(quintptr(gui.hwndMenuOwner), 0, 16));
+#endif
         QFile output(path_);
         if (output.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
             output.write(lines_.join('\n').toUtf8());
@@ -62,10 +90,15 @@ public:
     void note(const QString& event)
     {
         if (path_.isEmpty() || lines_.size() >= 256) return;
+        const auto cursor = QCursor::pos();
         lines_.append(QStringLiteral("%1ms %2 visible=%3 hidden=%4 popup=%5 down=%6 buttons=%7 cursor=%8,%9")
             .arg(timer_.elapsed()).arg(event).arg(menu_ && menu_->isVisible()).arg(menu_ && menu_->isHidden())
             .arg(QApplication::activePopupWidget() == menu_).arg(button_ && button_->isDown())
-            .arg(int(QApplication::mouseButtons())).arg(QCursor::pos().x()).arg(QCursor::pos().y()));
+            .arg(int(QApplication::mouseButtons())).arg(cursor.x()).arg(cursor.y()));
+        lines_.last() += QStringLiteral(" commandHover=%1 commandHit=%2 mouseGrabber=%3")
+            .arg(command_ && command_->underMouse())
+            .arg(command_ && command_->rect().contains(command_->mapFromGlobal(cursor)))
+            .arg(quintptr(QWidget::mouseGrabber()), 0, 16);
     }
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
@@ -74,27 +107,59 @@ protected:
         if (watched == host_) target = "host";
         else if (watched == button_) target = "button";
         else if (watched == menu_) target = "menu";
+        else if (watched == command_) target = "command";
         else if (menu_ && watched == menu_->windowHandle()) target = "menu-window";
         else if (host_ && watched == host_->windowHandle()) target = "host-window";
         else return false;
+#ifdef Q_OS_WIN
+        if (event->type() == QEvent::WinIdChange) {
+            if (watched == host_ && host_) hostHandle_ = reinterpret_cast<HWND>(host_->effectiveWinId());
+            if (watched == menu_ && menu_) popupHandle_ = reinterpret_cast<HWND>(menu_->effectiveWinId());
+        }
+#endif
         switch (event->type()) {
         case QEvent::Show: case QEvent::Hide: case QEvent::ShowToParent: case QEvent::HideToParent:
         case QEvent::WinIdChange: case QEvent::WindowActivate: case QEvent::WindowDeactivate:
         case QEvent::MouseButtonPress: case QEvent::MouseButtonRelease: case QEvent::FocusIn: case QEvent::FocusOut:
         case QEvent::PlatformSurface: case QEvent::WindowStateChange: case QEvent::Move: case QEvent::Resize:
         case QEvent::Expose:
+        case QEvent::Enter: case QEvent::Leave: case QEvent::MouseMove:
+        case QEvent::HoverEnter: case QEvent::HoverLeave: case QEvent::HoverMove:
             note(target + QStringLiteral("-event-%1").arg(int(event->type()))); break;
         default: break;
         }
         return false;
     }
+#ifdef Q_OS_WIN
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override
+    {
+        const auto* native = static_cast<const MSG*>(message);
+        if (!native || lines_.size() >= 256) return false;
+        if (native->message == WM_CAPTURECHANGED || native->message == WM_CANCELMODE
+            || native->message == WM_DISPLAYCHANGE || native->message == WM_DPICHANGED
+            || native->message == WM_SETTINGCHANGE || native->message == WM_ACTIVATEAPP
+            || ((native->hwnd == hostHandle_ || native->hwnd == popupHandle_)
+                && (native->message == WM_MOUSEMOVE || native->message == WM_MOUSELEAVE
+                    || native->message == WM_LBUTTONDOWN || native->message == WM_LBUTTONUP
+                    || native->message == WM_ACTIVATE)))
+            lines_.append(QStringLiteral("%1ms native-%2 hwnd=%3 point=%4,%5 time=%6")
+                .arg(timer_.elapsed()).arg(native->message, 0, 16).arg(quintptr(native->hwnd), 0, 16)
+                .arg(native->pt.x).arg(native->pt.y).arg(native->time));
+        return false;
+    }
+#endif
 private:
     QPointer<QWidget> host_;
     QPointer<QToolButton> button_;
+    QPointer<QToolButton> command_;
     QPointer<QMenu> menu_;
     QString path_;
     QElapsedTimer timer_;
     QStringList lines_;
+#ifdef Q_OS_WIN
+    HWND hostHandle_ = nullptr;
+    HWND popupHandle_ = nullptr;
+#endif
 };
 
 QList<QAction*> actions(QWidget* owner, int count)
@@ -555,6 +620,7 @@ void ChromeInteractionTest::overflowToggleRestoresHoverAndPressState()
     auto* button = host.stripWidget("tools")->findChild<QToolButton*>("StripCommandButton");
     QVERIFY(button);
     nativeMouse(button, button->rect().center());
+    trace.note("command-move-queued");
     QCoreApplication::processEvents();
     QTRY_VERIFY(button->underMouse());
     QTRY_VERIFY(!tail->underMouse());

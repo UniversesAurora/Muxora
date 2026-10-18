@@ -146,6 +146,7 @@ const Items& layout(CommandMenuSurface surface)
                 group("window.cycle.family", QT_TRANSLATE_NOOP("WindowSystem", "所属窗口族"), {command("window.focusPrevious.family"), command("window.focusNext.family")}),
                 group("window.cycle.all", QT_TRANSLATE_NOOP("WindowSystem", "全部窗口"), {command("window.focusPrevious.all"), command("window.focusNext.all")}),
                 group("window.cycle.workbenches", QT_TRANSLATE_NOOP("WindowSystem", "完整窗口"), {command("window.focusPrevious.workbenches"), command("window.focusNext.workbenches")})}),
+            group("window.state", QT_TRANSLATE_NOOP("WindowSystem", "窗口状态"), {command("window.minimize"), command("window.maximize"), command("window.restore")}),
             windowOperations()[0], windowOperations()[1],
             group("window.drag", QT_TRANSLATE_NOOP("WindowSystem", "拖动"), {command("window.drag.selectTarget"), command("window.drag.cancel")})}, 40),
         group("工具", QT_TRANSLATE_NOOP("WindowSystem", "工具(&T)"), {command("window.settings"), command("preferences.openKeyboardShortcuts")}, 50),

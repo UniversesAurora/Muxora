@@ -2219,5 +2219,21 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>设置窗口标题</source>
             <translation>设置窗口标题</translation>
         </message>
+        <message>
+            <source>最小化窗口</source>
+            <translation>最小化窗口</translation>
+        </message>
+        <message>
+            <source>窗口状态</source>
+            <translation>窗口状态</translation>
+        </message>
+        <message>
+            <source>最大化窗口</source>
+            <translation>最大化窗口</translation>
+        </message>
+        <message>
+            <source>还原窗口</source>
+            <translation>还原窗口</translation>
+        </message>
     </context>
 </TS>

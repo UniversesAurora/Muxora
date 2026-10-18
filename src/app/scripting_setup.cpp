@@ -156,7 +156,7 @@ bool AppScriptingSetup::readScript(QString path, QString &source, QString &error
         error = QCoreApplication::translate("Muxora", "Lua 脚本超过 1 MiB 限制。");
         return false;
     }
-    QStringDecoder decoder(QStringDecoder::Utf8);
+    QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
     source = decoder(bytes);
     if (decoder.hasError()) {
         source.clear();

@@ -53,7 +53,7 @@ class ScriptWorker final : public QObject {
     void logReady(QString message);
     void hostRequested(quint64 id, quint64 generation, quint64 cancellation, QString method,
                        QVariantList arguments, QVariantMap context);
-    void didReset();
+    void didReset(quint64 generation);
 
   private:
     struct ActiveJob {

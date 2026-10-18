@@ -48,6 +48,8 @@ class ScriptingTest final : public QObject {
     void reloadRetainsUserOverridesWithoutWritingIntermediateState();
     void missingConfigurationDoesNotCreateUserFiles();
     void malformedConfigurationKeepsBuiltinCommandsAndUserFiles();
+    void invalidUtf8ScriptsAreRejected_data();
+    void invalidUtf8ScriptsAreRejected();
     void runCommandAcceptsInlineAndFileScripts();
     void removedCommandDefaultsDoNotAccumulate();
     void notificationsHaveBoundedLifetimeAndPlainText();
@@ -174,6 +176,47 @@ void ScriptingTest::runCommandAcceptsInlineAndFileScripts() {
     QVERIFY2(reply.ok, qPrintable(reply.error));
     QCOMPARE(reply.values[0].toInt(), 42);
     QVERIFY(!manager.execute("lua.run", {{"code", "return 1"}, {"file", "more.lua"}}, window));
+}
+void ScriptingTest::invalidUtf8ScriptsAreRejected_data() {
+    QTest::addColumn<bool>("startup");
+    QTest::addColumn<QByteArray>("invalidTail");
+    QTest::newRow("init-invalid-byte") << true << QByteArray::fromHex("ff");
+    QTest::newRow("init-incomplete-two-byte") << true << QByteArray::fromHex("c2");
+    QTest::newRow("init-incomplete-three-byte") << true << QByteArray::fromHex("e282");
+    QTest::newRow("run-invalid-byte") << false << QByteArray::fromHex("ff");
+    QTest::newRow("run-incomplete-two-byte") << false << QByteArray::fromHex("c2");
+    QTest::newRow("run-incomplete-three-byte") << false << QByteArray::fromHex("e282");
+}
+void ScriptingTest::invalidUtf8ScriptsAreRejected() {
+    QFETCH(bool, startup);
+    QFETCH(QByteArray, invalidTail);
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto fileName = startup ? QStringLiteral("init.lua") : QStringLiteral("invalid.lua");
+    const QByteArray source = QByteArray("rejected_execution=true ") + invalidTail;
+    QVERIFY(write(dir.filePath(fileName), source));
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    muxora::UserPreferences prefs(dir.path());
+    muxora::AppScriptingSetup setup(&manager, prefs);
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    QSignalSpy diagnostics(&setup, &muxora::AppScriptingSetup::diagnostic);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    if (startup) {
+        QVERIFY(!initialized[0][0].toBool());
+        QVERIFY(initialized[0][1].toString().contains("UTF-8"));
+    } else {
+        QVERIFY(initialized[0][0].toBool());
+        QVERIFY(!manager.execute("lua.run", {{"file", fileName}}, window));
+        QVERIFY(!diagnostics.isEmpty());
+        QVERIFY(diagnostics.last()[0].toString().contains("UTF-8"));
+    }
+    const auto reply = evaluate(setup.host(), "return rejected_execution==nil");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+    QCOMPARE(read(dir.filePath(fileName)), source);
 }
 void ScriptingTest::removedCommandDefaultsDoNotAccumulate() {
     QTemporaryDir dir;

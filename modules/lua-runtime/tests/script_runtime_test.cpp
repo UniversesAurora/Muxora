@@ -1,6 +1,7 @@
 #include <lua_runtime/script_runtime.hpp>
 
 #include <QPointer>
+#include <QElapsedTimer>
 #include <QSet>
 #include <QSignalSpy>
 #include <QTest>
@@ -70,7 +71,34 @@ class ScriptRuntimeTest final : public QObject {
     void memoryExhaustionLeavesTheVmUsable();
     void repeatedResetReleasesCallbacksAndJobStorage();
     void cleanupCannotExecuteUnboundedFinalizers();
+    void supersededResetRepliesDoNotReachTheNewGeneration();
 };
+
+void ScriptRuntimeTest::supersededResetRepliesDoNotReachTheNewGeneration() {
+    ScriptRuntime runtime;
+    QVERIFY(evaluate(runtime, "return 1").ok);
+    QSignalSpy reset(&runtime, &ScriptRuntime::resetFinished);
+    const auto waitForAllocation = [&](bool allocated) {
+        QElapsedTimer deadline;
+        deadline.start();
+        // Keep the owner event queue paused while observing the worker's
+        // atomic allocator counter. This deliberately retains old replies.
+        while ((runtime.memoryBytes() > 0) != allocated && deadline.elapsed() < 5000)
+            QThread::msleep(1);
+        return (runtime.memoryBytes() > 0) == allocated;
+    };
+    for (int generation = 0; generation < 16; ++generation) {
+        runtime.reset();
+        QVERIFY(waitForAllocation(false));
+        QVERIFY(runtime.execute("return 1") != 0);
+        // Recreating the VM proves the preceding reset completed on its
+        // worker before this owner processes any of those completion replies.
+        QVERIFY(waitForAllocation(true));
+    }
+    QTRY_COMPARE(reset.size(), 1);
+    QTRY_COMPARE(runtime.pendingJobs(), 0);
+    QVERIFY(evaluate(runtime, "return 42").ok);
+}
 
 void ScriptRuntimeTest::standardValuesAndContext() {
     ScriptRuntime runtime;

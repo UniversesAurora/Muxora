@@ -51,6 +51,12 @@ class ScriptHostTest final : public QObject {
   private slots:
     void stateAndLiveQueriesUseValuesOnly();
     void luaCommandsSupportMultipleChordBindings();
+    void sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload_data();
+    void sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload();
+    void internalShortcutPrefixAliasesAreRejected_data();
+    void internalShortcutPrefixAliasesAreRejected();
+    void exactShortcutAliasesUpdateArgumentsWithoutDuplicates();
+    void sharedShortcutContinuationsRemainReachable();
     void explicitCommandContextDoesNotFollowLaterFocus();
     void layoutOperationsKeepContentIdentity();
     void customChromeIsReleasedWithItsScriptGeneration();
@@ -70,6 +76,9 @@ class ScriptHostTest final : public QObject {
     void rejectedRegistrationsReleaseFunctionReferences();
     void reloadingToolbarsPreservesPerWindowAndKindLayouts();
     void failingPeriodicCallbacksStopAndReleaseTheirReferences();
+    void windowDisplayStateUsesSharedCommands_data();
+    void windowDisplayStateUsesSharedCommands();
+    void panelPoliciesCanBeConfiguredWithoutNestedExecution();
 };
 void ScriptHostTest::stateAndLiveQueriesUseValuesOnly() {
     WindowManager manager;
@@ -121,6 +130,169 @@ void ScriptHostTest::luaCommandsSupportMultipleChordBindings() {
     QVERIFY2(reply.ok, qPrintable(reply.error));
     QCOMPARE(reply.values[0].toLongLong(), 4);
     QCOMPARE(reply.values[1].toLongLong(), 1);
+    QVERIFY(editor->toPlainText().isEmpty());
+}
+void ScriptHostTest::sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload_data() {
+    QTest::addColumn<bool>("oldIsShort");
+    QTest::addColumn<bool>("replace");
+    QTest::newRow("reject-existing-short") << true << false;
+    QTest::newRow("reject-existing-long") << false << false;
+    QTest::newRow("replace-existing-short") << true << true;
+    QTest::newRow("replace-existing-long") << false << true;
+}
+void ScriptHostTest::sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload() {
+    QFETCH(bool, oldIsShort);
+    QFETCH(bool, replace);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    const QString shortKey = "Ctrl+Alt+F9";
+    const QString longKey = "Ctrl+Alt+F9, X";
+    const QString requested = oldIsShort ? longKey : shortKey;
+    const QVector<CommandBinding> original{
+        {QKeySequence(oldIsShort ? shortKey : longKey), {{"value", "original"}}},
+        {QKeySequence("Ctrl+Alt+F8"), {{"value", "retained"}}}};
+    QVariantMap invokedArguments;
+    Command command;
+    command.id = "fixture.prefix";
+    command.title = "Prefix fixture";
+    command.bindings = original;
+    command.execute = [&](const CommandContext &context) {
+        invokedArguments = context.args;
+        return true;
+    };
+    QVERIFY(manager.commands().add(std::move(command)));
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, QString(R"lua(
+        return muxora.keymap.set({'ctrl+alt+f10','%1'},'fixture.prefix',
+                                {replace=%2,args={value='replacement'}})
+    )lua")
+                                     .arg(requested, replace ? "true" : "false"));
+    if (replace) {
+        QVERIFY2(reply.ok, qPrintable(reply.error));
+        QCOMPARE(reply.values, QVariantList{true});
+        const QVector<CommandBinding> expected{original[1],
+                                               {QKeySequence("Ctrl+Alt+F10"), {{"value", "replacement"}}},
+                                               {QKeySequence(requested), {{"value", "replacement"}}}};
+        QCOMPARE(manager.commands().bindings("fixture.prefix"), expected);
+        auto *editor = manager.paneWidget(manager.model().tab(tab)->activePane);
+        const QKeySequence sequence(requested);
+        for (int index = 0; index < sequence.count(); ++index)
+            QTest::keyClick(editor, sequence[index].key(), sequence[index].keyboardModifiers());
+        QCOMPARE(invokedArguments, QVariantMap({{"value", "replacement"}}));
+        QCOMPARE(host.resourceCounts()["bindings"].toInt(), 1);
+    } else {
+        QVERIFY(!reply.ok);
+        QCOMPARE(manager.commands().bindings("fixture.prefix"), original);
+        QCOMPARE(host.resourceCounts()["bindings"].toInt(), 0);
+    }
+    host.unload();
+    QCOMPARE(manager.commands().bindings("fixture.prefix"), original);
+    QCOMPARE(host.resourceCounts()["bindings"].toInt(), 0);
+}
+void ScriptHostTest::internalShortcutPrefixAliasesAreRejected_data() {
+    QTest::addColumn<bool>("shortFirst");
+    QTest::addColumn<bool>("replace");
+    QTest::newRow("short-first-default") << true << false;
+    QTest::newRow("long-first-default") << false << false;
+    QTest::newRow("short-first-replace") << true << true;
+    QTest::newRow("long-first-replace") << false << true;
+}
+void ScriptHostTest::internalShortcutPrefixAliasesAreRejected() {
+    QFETCH(bool, shortFirst);
+    QFETCH(bool, replace);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    Command target;
+    target.id = "fixture.target";
+    target.title = "Target";
+    target.bindings = {{QKeySequence("Ctrl+Alt+F8"), {}}};
+    target.execute = [](const CommandContext &) { return true; };
+    const auto targetBindings = target.bindings;
+    QVERIFY(manager.commands().add(std::move(target)));
+    Command other;
+    other.id = "fixture.other";
+    other.title = "Other";
+    other.bindings = {{QKeySequence("Ctrl+Alt+F10"), {}}};
+    other.execute = [](const CommandContext &) { return true; };
+    const auto otherBindings = other.bindings;
+    QVERIFY(manager.commands().add(std::move(other)));
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    // replace=true would also remove the other command's F10 binding if the
+    // descriptor were applied before validating all newly supplied aliases.
+    const auto aliases = shortFirst ? "'ctrl+alt+f9','ctrl+alt+f9 x'" : "'ctrl+alt+f9 x','ctrl+alt+f9'";
+    const auto reply = run(host, QString(R"lua(
+        return muxora.keymap.set({%1,'ctrl+alt+f10'},'fixture.target',{replace=%2})
+    )lua")
+                                     .arg(aliases, replace ? "true" : "false"));
+    QVERIFY(!reply.ok);
+    QVERIFY(reply.error.contains("prefix", Qt::CaseInsensitive));
+    QCOMPARE(manager.commands().bindings("fixture.target"), targetBindings);
+    QCOMPARE(manager.commands().bindings("fixture.other"), otherBindings);
+    QCOMPARE(host.resourceCounts()["bindings"].toInt(), 0);
+}
+void ScriptHostTest::exactShortcutAliasesUpdateArgumentsWithoutDuplicates() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    Command command;
+    command.id = "fixture.arguments";
+    command.title = "Arguments";
+    command.bindings = {{QKeySequence("Ctrl+Alt+F8"), {}}};
+    const auto original = command.bindings;
+    QVariantMap invokedArguments;
+    command.execute = [&](const CommandContext &context) {
+        invokedArguments = context.args;
+        return true;
+    };
+    QVERIFY(manager.commands().add(std::move(command)));
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+        assert(muxora.keymap.set({'ctrl+alt+f9','ctrl+alt+f9'},'fixture.arguments',{args={value='first'}}))
+        return muxora.keymap.set('ctrl+alt+f9','fixture.arguments',{args={value='updated'}})
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    const QVector<CommandBinding> expected{original[0],
+                                           {QKeySequence("Ctrl+Alt+F9"), {{"value", "updated"}}}};
+    QCOMPARE(manager.commands().bindings("fixture.arguments"), expected);
+    auto *editor = manager.paneWidget(manager.model().tab(tab)->activePane);
+    QTest::keyClick(editor, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
+    QCOMPARE(invokedArguments, QVariantMap({{"value", "updated"}}));
+    host.unload();
+    QCOMPARE(manager.commands().bindings("fixture.arguments"), original);
+}
+void ScriptHostTest::sharedShortcutContinuationsRemainReachable() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host, R"lua(
+        seen={0,0,0,0}
+        local function bind(key,index)
+            muxora.keymap.set(key,function()seen[index]=seen[index]+1 end,
+                              {id='user.shared_'..index})
+        end
+        bind('ctrl+alt+f9 x',1)
+        bind('ctrl+alt+f8 x',2)
+        bind('ctrl+alt+f9 y',3)
+        bind('x',4)
+    )lua"));
+    auto *editor = qobject_cast<QPlainTextEdit *>(manager.paneWidget(manager.model().tab(tab)->activePane));
+    QVERIFY(editor);
+    for (const auto first : {Qt::Key_F9, Qt::Key_F8}) {
+        QTest::keyClick(editor, first, Qt::ControlModifier | Qt::AltModifier);
+        QTest::keyClick(editor, Qt::Key_X);
+    }
+    QTest::keyClick(editor, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
+    QTest::keyClick(editor, Qt::Key_Y);
+    QTest::keyClick(editor, Qt::Key_X);
+    const auto reply = run(host, "return seen");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList({QVariantList{1, 1, 1, 1}}));
     QVERIFY(editor->toPlainText().isEmpty());
 }
 void ScriptHostTest::explicitCommandContextDoesNotFollowLaterFocus() {
@@ -338,6 +510,87 @@ void ScriptHostTest::pureLuaModulesAreCachedAndCannotEscapeTheirDirectory() {
     reply = run(host, "return require('../sample')");
     QVERIFY(!reply.ok);
     QVERIFY(!reply.error.isEmpty());
+    QFile invalid(root.filePath("invalid.lua"));
+    QVERIFY(invalid.open(QIODevice::WriteOnly));
+    const QByteArray invalidSource("return '\xff'");
+    QCOMPARE(invalid.write(invalidSource), invalidSource.size());
+    invalid.close();
+    reply = run(host, "return require('invalid')");
+    QVERIFY(!reply.ok);
+    QVERIFY(reply.error.contains("UTF-8"));
+    const QList<QByteArray> incompleteTails{QByteArray::fromHex("c2"), QByteArray::fromHex("e282")};
+    for (int index = 0; index < incompleteTails.size(); ++index) {
+        const auto module = QStringLiteral("incomplete_%1").arg(index);
+        QFile incomplete(root.filePath(module + ".lua"));
+        QVERIFY(incomplete.open(QIODevice::WriteOnly));
+        const QByteArray incompleteSource = QByteArray("return 42 ") + incompleteTails[index];
+        QCOMPARE(incomplete.write(incompleteSource), incompleteSource.size());
+        incomplete.close();
+        reply = run(host, QStringLiteral("return require('%1')").arg(module));
+        QVERIFY2(!reply.ok, qPrintable(module + " silently accepted incomplete UTF-8"));
+        QVERIFY(reply.error.contains("UTF-8"));
+    }
+}
+void ScriptHostTest::windowDisplayStateUsesSharedCommands_data() {
+    QTest::addColumn<bool>("floating");
+    QTest::newRow("workbench") << false;
+    QTest::newRow("floating") << true;
+}
+void ScriptHostTest::windowDisplayStateUsesSharedCommands() {
+    QFETCH(bool, floating);
+    WindowManager manager;
+    const auto root = manager.createWindow();
+    const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, root) : root;
+    const auto tab = addEditor(manager, window);
+    const auto pane = manager.model().tab(tab)->activePane;
+    const auto *content = manager.paneWidget(pane);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+        assert(muxora.windows.set_state(nil,'maximized'))
+        assert(muxora.windows.state().maximized)
+        assert(muxora.commands.execute('window.minimize'))
+        assert(muxora.windows.state().minimized)
+        assert(muxora.windows.set_state(nil,'normal'))
+        local state=muxora.windows.state()
+        assert(not state.maximized and not state.minimized and state.mode=='normal')
+        assert(muxora.windows.set_mode(nil,'group'))
+        assert(muxora.commands.execute('window.restore'))
+        assert(muxora.windows.state().mode=='normal')
+        assert(not pcall(muxora.windows.set_state,nil,'unknown'))
+    )lua",
+                           manager.context(window));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(manager.model().tab(tab)->activePane, pane);
+}
+void ScriptHostTest::panelPoliciesCanBeConfiguredWithoutNestedExecution() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    auto reply = run(host, "return muxora.ui.command_palette(nil,{modal=true,dismiss_on_outside=false})");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    auto panels = manager.windowWidget(window)->findChildren<FloatingPanel *>();
+    QCOMPARE(panels.size(), 1);
+    QVERIFY(panels[0]->isVisible());
+    QVERIFY(panels[0]->isModal());
+    QVERIFY(!panels[0]->options().dismissOnOutsidePress);
+    panels[0]->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    reply = run(host, "return muxora.ui.window_selector(nil,{modal=false,dismiss_on_outside=true})");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    panels = manager.windowWidget(window)->findChildren<FloatingPanel *>();
+    QCOMPARE(panels.size(), 1);
+    QVERIFY(panels[0]->isVisible());
+    QVERIFY(!panels[0]->isModal());
+    QVERIFY(panels[0]->options().dismissOnOutsidePress);
+    panels[0]->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    reply = run(host, "return muxora.ui.command_palette(nil,{modal='yes'})");
+    QVERIFY(!reply.ok);
+    QVERIFY(manager.windowWidget(window)->findChildren<FloatingPanel *>().isEmpty());
 }
 void ScriptHostTest::invalidArgumentsDoNotPartiallyReplaceBindings() {
     WindowManager manager;

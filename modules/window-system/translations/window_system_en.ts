@@ -2219,5 +2219,21 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>设置窗口标题</source>
             <translation>Set window title</translation>
         </message>
+        <message>
+            <source>最小化窗口</source>
+            <translation>Minimize window</translation>
+        </message>
+        <message>
+            <source>窗口状态</source>
+            <translation>Window state</translation>
+        </message>
+        <message>
+            <source>最大化窗口</source>
+            <translation>Maximize window</translation>
+        </message>
+        <message>
+            <source>还原窗口</source>
+            <translation>Restore window</translation>
+        </message>
     </context>
 </TS>

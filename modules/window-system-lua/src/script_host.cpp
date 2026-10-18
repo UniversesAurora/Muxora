@@ -49,7 +49,7 @@ function muxora.keymap.set(keys, target, options)
   end
   return host('keymap.set',keys,target,options)
 end
-muxora.windows = api('windows','list new close activate promote demote set_owner set_visibility visibility set_mode mode set_zen zen resize move set_title')
+muxora.windows = api('windows','list new close activate promote demote set_owner set_visibility visibility set_mode mode set_zen zen resize move set_title state set_state')
 muxora.tabs = api('tabs','list new close activate rename color icon move move_to_window reorder detach sort set_bar_sharing set_bar appearance set_appearance')
 muxora.groups = api('groups','list close move merge swap detach to_window to_edge to_center')
 muxora.panes = api('panes','list split close focus move swap detach set_bar')

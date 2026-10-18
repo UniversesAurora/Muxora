@@ -198,6 +198,25 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { return closeTab(c.tab); }, hasTab);
     add("window.close", QCoreApplication::translate("WindowSystem", "关闭当前窗口"), "窗口", QKeySequence("Alt+F4"),
         [this](const CommandContext& c) { return requestCloseWindow(c.window); }, hasWindow);
+    const auto setDisplayState = [this](const CommandContext& c, const QString& state) {
+        const QPointer<WindowManager> owner(this);
+        const QPointer<WorkspaceWindow> window(d->windows.value(c.window));
+        if (!window) return false;
+        if (state != "minimized" && viewMode(c.window) != ViewMode::Normal) {
+            if (!setViewMode(c.window, ViewMode::Normal)) return false;
+            if (!owner || !window || !owner->model().window(c.window)) return false;
+        }
+        if (state == "minimized") window->showMinimized();
+        else if (state == "maximized") window->showMaximized();
+        else window->showNormal();
+        return owner && window && owner->model().window(c.window);
+    };
+    add("window.minimize", QCoreApplication::translate("WindowSystem", "最小化窗口"), "窗口", {},
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "minimized"); }, hasWindow);
+    add("window.maximize", QCoreApplication::translate("WindowSystem", "最大化窗口"), "窗口", {},
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "maximized"); }, hasWindow);
+    add("window.restore", QCoreApplication::translate("WindowSystem", "还原窗口"), "窗口", {},
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "normal"); }, hasWindow);
     add("window.new", QCoreApplication::translate("WindowSystem", "新建完整工作窗口"), "文件", QKeySequence("Ctrl+Shift+N"),
         [this](const CommandContext& c) {
             auto options = d->options.value(c.window);

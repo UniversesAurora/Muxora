@@ -602,7 +602,7 @@ void ScriptWorker::reset(quint64 generation) {
         return;
     closeState();
     initializationError_.clear();
-    emit didReset();
+    emit didReset(generation);
 }
 
 void ScriptWorker::shutdown() {

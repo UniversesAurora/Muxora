@@ -7,6 +7,7 @@
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QDateTime>
+#include <QStringDecoder>
 #include <algorithm>
 
 namespace window_system_lua {
@@ -170,11 +171,21 @@ void ScriptHost::Private::installScriptApi() {
         const auto arguments = object({options.value("args")}, 0);
         if (keys.isEmpty() || keys.size() > 32)
             return failure("Too many script bindings");
+        const auto strictPrefix = [](const QKeySequence &first, const QKeySequence &second) {
+            return first.matches(second) == QKeySequence::PartialMatch ||
+                   second.matches(first) == QKeySequence::PartialMatch;
+        };
         QVector<CommandBinding> additions;
         for (const auto &key : keys) {
             const auto parsed = sequence(key);
             if (parsed.isEmpty())
                 return failure("Invalid shortcut sequence");
+            for (const auto &addition : additions)
+                if (strictPrefix(parsed, addition.sequence))
+                    return failure("Shortcut aliases contain a prefix conflict");
+            if (std::any_of(additions.cbegin(), additions.cend(),
+                            [&](const CommandBinding &binding) { return binding.sequence == parsed; }))
+                continue;
             additions.append({parsed, arguments});
         }
         auto replacement = manager->commands().bindings(command);
@@ -197,10 +208,17 @@ void ScriptHost::Private::installScriptApi() {
                     conflicts.insert(other.id, bindings);
             }
         for (const auto &addition : additions) {
-            replacement.erase(
-                std::remove_if(replacement.begin(), replacement.end(),
-                               [&](const CommandBinding &b) { return b.sequence == addition.sequence; }),
-                replacement.end());
+            if (!replace &&
+                std::any_of(replacement.cbegin(), replacement.cend(), [&](const CommandBinding &binding) {
+                    return strictPrefix(binding.sequence, addition.sequence);
+                }))
+                return failure("Shortcut has a prefix conflict with " + command);
+            replacement.erase(std::remove_if(replacement.begin(), replacement.end(),
+                                             [&](const CommandBinding &binding) {
+                                                 return binding.sequence == addition.sequence ||
+                                                        strictPrefix(binding.sequence, addition.sequence);
+                                             }),
+                              replacement.end());
             replacement.append(addition);
         }
         conflicts.insert(command, replacement);
@@ -414,7 +432,11 @@ void ScriptHost::Private::installScriptApi() {
         const auto source = file.read(1024 * 1024 + 1);
         if (source.size() > 1024 * 1024)
             return failure("Lua module exceeds 1 MiB");
-        return Reply{true, {QString::fromUtf8(source), QStringLiteral("@") + path}, {}};
+        QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
+        const QString decoded = decoder(source);
+        if (decoder.hasError())
+            return failure("Lua modules must use UTF-8");
+        return Reply{true, {decoded, QStringLiteral("@") + path}, {}};
     };
 }
 } // namespace window_system_lua

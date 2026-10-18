@@ -1,6 +1,6 @@
 # Muxora 窗口系统首个预览
 
-日期：2026-10-16\
+日期：2026-10-18\
 状态：首个交互预览，用于试用并继续改进窗口系统；完整 V0 的业务功能和验收尚未完成。
 
 本阶段交付 Muxora 应用的首个预览。应用通过 WindowSystem 公开 API 组织界面，后续远程业务继续在这套代码中接入。入口为 `src/app/main.cpp`，占位内容由 `src/workspace_host/` 提供，用来试用布局、拖拽、窗口和键盘导航；SSH、SFTP、终端解析、远程桌面与会话管理留在后续阶段。
@@ -178,6 +178,30 @@ Windows 完整和轻量窗口在首次显示前准备原生帧，保留原生窗
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 已取得的验证记录
+
+### Lua 收尾与部署复核（2026-10-18）
+
+最终代码的窗口 Lua 与应用脚本两套相关检查通过，共 49 个实际测试行，不含初始化／清理；记录为 `out/test-results/lua-finish-related.xml`。重新安装当前 WindowSystem 后，独立 Lua 宿主构建及契约检查通过，记录为 `lua-finish-external.xml`。运行时、菜单／语言和组合生命周期检查沿用下方已取得的结果，没有重复执行完整矩阵。
+
+固定 Release 已更新到 `out/package/muxora-preview/muxora.exe`。移除 SDK／插件环境后，隔离程序完成 Lua 启动、命令执行、布局保存和第二次启动恢复，核验工具条宽度、栏显隐、标签状态及 Lua 许可证；记录为 `out/test-results/lua-deployment.json`。覆盖前核对了正在运行程序的绝对路径，通过正常关窗保存后退出；部署的 `data/` 和未知用户文件保留，隔离检查状态已清理。本轮没有生成 7Z、发布新 Release 或计算文件校验值。
+
+补齐同一命令内部的前缀冲突检查：短序列本身已绑定命令时，以它开头的长序列会无法触发，现在默认拒绝。显式 `replace = true` 移除冲突的旧绑定，保留其余别名，卸载脚本后还原原绑定；完全相同序列仍可更新参数。一次提交的别名列表内部存在前缀冲突时，整次拒绝，包括替换模式，其他命令不受影响。
+
+新增回归修复前有六个测试行失败，修复后十个新增测试行及原有多段快捷键用例通过。检查覆盖两个方向的前缀、整批拒绝、替换、参数更新、卸载还原，并通过实际按键验证 `ctrl+alt+f9 x`、`ctrl+alt+f8 x`、`ctrl+alt+f9 y` 与独立 `x` 都能触发各自命令。记录为 `out/diagnostics/lua-prefix-before.txt`、`lua-prefix-after.txt`；原有按键、无输入泄漏和精确绑定断言保留。
+
+### Lua 重载、接口与编码边界复核（2026-10-17）
+
+连续重置时，工作线程已完成的旧通知可能滞留在宿主事件队列中，随后触发新一代初始化。现在重置通知携带代次，仅在投递时仍为最新代次才发出 `resetFinished`。新增回归在不处理宿主消息时完成 16 次重置及 VM 重建；修复前收到 16 次通知，修复后只收到最新一次。前失败记录为 `out/diagnostics/lua-reset-before-fix.txt`，修复后的运行时、窗口适配、应用和组合生命周期检查见 `out/test-results/lua-completion-focused.xml`。
+
+补齐 `windows.state`、`windows.set_state`，最小化、最大化和还原与菜单、快捷键共用 `window.minimize`、`window.maximize`、`window.restore` 命令。命令面板及窗口选择器可通过 Lua 设置模态和外点关闭策略，默认仍是非模态、外点关闭。完整／浮动窗口、全屏退出、内容身份、非法参数和面板非阻塞检查，以及菜单分类、语言和应用相关检查已通过，记录为 `out/test-results/lua-api-completion.xml`。
+
+模块与用户脚本读取均按完整 UTF-8 文件校验。审阅发现默认流式解码器会暂存文件末尾的半个字符，造成截断字节被丢弃；现改用无状态解码。模块的两类截断尾部回归修复前失败，应用的启动脚本／文件脚本共六个场景中四个截断场景修复前失败，修复后全部通过；另查脚本前缀没有执行、原文件未改变。证据为 `out/diagnostics/lua-module-utf8-before.txt`、`lua-module-utf8-after.txt`、`lua-app-utf8-before.txt`、`lua-app-utf8-after.txt`。
+
+新增 `window-system.lua-lifecycle`，在完整窗口和浮动窗口之间共同保留界面贡献，执行 24 代重载和 768 个有序事件。每代检查命令、工具条、状态项、计时器、订阅各 1 个，回调 3 个，排空后任务和事件积压为零；预热后的 QObject 类型数量保持基线，卸载后 VM 分配及全部脚本资源归零，原窗口内容实例保持。两窗分别保存的工具条宽度 137／159 也保持。
+
+该夹具记录的第 4／12／24 代 Lua 分配为 219689／219630／219630 字节，其中脚本保留 128 KiB 字符串；原生句柄均为 355，GDI 为 12，USER 为 20，私有提交约 16.9 MiB、工作集约 48.2 MiB。卸载后 Lua 分配为零。窗口没有显示，以上不是实际应用峰值、渲染资源或长期泄漏验收，也不能证明整个进程达到理论最优；结果见 `out/build/dev-release/modules/window-system-lua/tests/script-lifecycle-results.txt`。
+
+本轮没有重跑完整测试矩阵。旧原生悬停用例增加可选、有界的输入日志，原断言和 30／300 ms 定时保留；可能同步发送窗口消息的原生查询移到检查结束后执行。一次诊断在第二次点击前出现光标位置变化、捕获取消及 watchdog 失败，尚未走到原来的悬停断言；轻量诊断随后通过，但两者均不能解释或消除旧故障。日志为 `out/diagnostics/lua-final-native-hover.trace` 和 `lua-native-light.trace`，用例结果为 `lua-native-light.txt`。本次没有据此修改生产悬停逻辑，也不宣称完整回归已稳定通过。
 
 ### Lua、组件扩展与资源审计（2026-10-16）
 

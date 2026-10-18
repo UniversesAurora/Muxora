@@ -34,7 +34,10 @@ struct ScriptRuntime::Private {
             statistics->pendingLogs.fetch_sub(1, std::memory_order_release);
             emit this->owner->logMessage(std::move(message));
         });
-        QObject::connect(worker, &detail::ScriptWorker::didReset, owner, &ScriptRuntime::resetFinished);
+        QObject::connect(worker, &detail::ScriptWorker::didReset, owner, [this](quint64 generation) {
+            if (generation == statistics->generation.load(std::memory_order_acquire))
+                emit this->owner->resetFinished();
+        });
         QObject::connect(
             worker, &detail::ScriptWorker::hostRequested, owner,
             [this](quint64 id, quint64 generation, quint64 cancellation, QString method,
