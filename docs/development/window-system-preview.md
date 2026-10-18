@@ -26,6 +26,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot E:/develop/sdk/Qt/6.12.0/min
 | `-Configuration Debug` / `Release` | 选择构建类型 |
 | `-QtRoot <path>` | 指定本机 Qt kit 目录，覆盖自动发现 |
 | `-Test` | 构建后运行自动化测试 |
+| `-TestLabel <regex>` | 与 `-Test` 一起使用，只运行指定层：`model`、`widget`、`desktop` 或 `model\|widget` |
 | `-Run` | 构建后启动 Muxora |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
 | `-IncludeHashes` | 显式记录部署程序的 SHA-256；默认不计算 |
@@ -66,6 +67,12 @@ pwsh ./tools/verify.ps1
 完整窗口系统设计见 [窗口模块](../design/window-system-design.md)、[工作区](../design/workspace-design.md) 和 [浮动窗口](../design/floating-window-design.md)。本次以能交互的基础版本为起点，继续根据试用结果修订。
 
 ## 当前可试用的功能
+
+### 基线与度量工具（2026-10-18）
+
+阶段 0 只增加测试与度量工具，应用行为、公开 API 和默认 Release 编译选项都没有变化。
+
+59 个 CTest 套件按 [测试要求](testing-design.md#ctest-分层标签) 分为 `model` 8 个、`widget` 10 个、`desktop` 41 个，只有 `desktop` 保留串行。`ctest -L "model|widget" -j 8` 连续三次 18 个套件、732 行全部通过，用时约 10 秒（串行 28 秒）；`-L desktop` 串行一次 41 个套件全部通过。三层合计 2189 行通过、0 行失败，上一轮因窗口遮挡失败的 `native-frame` 这次也全部通过。`tools/build.ps1` 新增 `-TestLabel`。没有执行 Debug、独立模块、外部宿主夹具或打包检查。
 
 ### 审查与热路径修订（2026-10-18）
 

@@ -30,6 +30,7 @@ if(BUILD_TESTING)
         BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${muxora_translation_files})
     add_test(NAME muxora.localization COMMAND muxora-localization-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/localization-results.txt,txt)
+    set_tests_properties(muxora.localization PROPERTIES LABELS widget)
     qt_add_executable(muxora-state-paths-test tests/state_paths_test.cpp state_paths.cpp)
     target_link_libraries(muxora-state-paths-test PRIVATE Qt6::Core Qt6::Test)
     target_compile_features(muxora-state-paths-test PRIVATE cxx_std_20)
@@ -37,6 +38,7 @@ if(BUILD_TESTING)
     set_target_properties(muxora-state-paths-test PROPERTIES AUTOMOC ON)
     add_test(NAME muxora.state-paths COMMAND muxora-state-paths-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/state-paths-results.txt,txt)
+    set_tests_properties(muxora.state-paths PROPERTIES LABELS model)
 
     qt_add_executable(muxora-user-preferences-test tests/user_preferences_test.cpp user_preferences.cpp)
     target_link_libraries(muxora-user-preferences-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -45,6 +47,7 @@ if(BUILD_TESTING)
     set_target_properties(muxora-user-preferences-test PROPERTIES AUTOMOC ON)
     add_test(NAME muxora.user-preferences COMMAND muxora-user-preferences-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/user-preferences-results.txt,txt)
+    set_tests_properties(muxora.user-preferences PROPERTIES LABELS model)
 
     qt_add_executable(muxora-script-child tests/script_child.cpp)
     target_link_libraries(muxora-script-child PRIVATE Qt6::Core)
@@ -61,5 +64,5 @@ if(BUILD_TESTING)
     add_dependencies(muxora-scripting-test muxora-script-child)
     add_test(NAME muxora.scripting COMMAND muxora-scripting-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/scripting-results.txt,txt)
-    set_tests_properties(muxora.scripting PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+    set_tests_properties(muxora.scripting PROPERTIES TIMEOUT 60 LABELS widget)
 endif()

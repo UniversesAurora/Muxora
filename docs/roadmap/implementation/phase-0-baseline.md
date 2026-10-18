@@ -164,13 +164,23 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **完成标准**：
 
-- [ ] 三层套件数之和等于总套件数，没有套件漏标签。
-- [ ] 去掉 `RUN_SERIAL` 的套件在 `-j 8` 下连续三次通过。若某个套件在并行时失败而串行通过，说明分类错误，改回 `desktop`，不要修改测试本身。
-- [ ] `testing-design.md` 写明分类规则与命令。
+- [x] 三层套件数之和等于总套件数，没有套件漏标签。
+- [x] 去掉 `RUN_SERIAL` 的套件在 `-j 8` 下连续三次通过。若某个套件在并行时失败而串行通过，说明分类错误，改回 `desktop`，不要修改测试本身。
+- [x] `testing-design.md` 写明分类规则与命令。
 
 **风险**：有些套件在构造函数里创建窗口但不显示，可能仍依赖焦点。以并行实测为准。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Label CTest suites as model, widget or desktop”）。实际分类：
+
+| 标签 | 数量 | 套件 |
+| --- | --- | --- |
+| `model` | 8 | `window-system.model`、`tab-ordering-model`、`movement-model`、`pinned-layout`、`pinned-positions`、`lua-runtime.runtime`、`muxora.state-paths`、`muxora.user-preferences` |
+| `widget` | 10 | `window-system.extension-api`、`custom-chrome`、`hierarchy-conversion`、`visibility-profile`、`tab-appearance`、`shortcut-settings`、`localization`、`window-system.lua`、`muxora.localization`、`muxora.scripting` |
+| `desktop` | 41 | 其余 window-system 套件（含 `widgets`、`drag-interaction`、`native-frame`、`view-state`）和 `window-system.lua-lifecycle` |
+
+验证（Release，`out/build/dev-release`）：`ctest -N` 共 59 个，三层 8 + 10 + 41 = 59，`-LE` 排除三层后为 0；`RUN_SERIAL` 只出现在 41 个 `desktop` 套件上。`-L "model|widget"` 串行一次、`-j 8` 连续三次，18 个套件均通过，`test-summary.ps1` 统计每次 732 行通过、0 行失败。`-L desktop` 串行一次，41 个套件通过（287 s）。三层合计 2189 行通过、0 行失败（汇总 `out/test-results/0.2-after-layers-summary.json`）。`tools/build.ps1 -Configuration Release -Test -TestLabel "model|widget"` 运行 18 个套件，报告为 `out/test-results/dev-release-model-widget.xml`。
+
+分类说明：`view-state` 不在 grep 结果中，但通过 `restorePlacement()` 最大化和全屏真实窗口，归入 `desktop`。`window-system.lua-lifecycle` 只为读取进程内存计数包含 `windows.h`，按规则归入 `desktop`。`window-system.widgets` 原来没有 `RUN_SERIAL`，但它调用 `showWindow`，现归入 `desktop` 并改为串行。`window-system.lua`、`muxora.scripting`、`extension-api`、`custom-chrome` 原来带 `RUN_SERIAL`，现在归入 `widget`，以上三次并行运行均通过。
 
 ---
 

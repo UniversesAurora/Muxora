@@ -3,6 +3,8 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
     [string]$QtRoot,
     [switch]$Test,
+    # CTest label regex for -Test: model, widget, desktop or a combination such as 'model|widget'.
+    [string]$TestLabel,
     [switch]$Run,
     [switch]$Package,
     [switch]$IncludeHashes,
@@ -94,8 +96,14 @@ try {
         if ($Test) {
             $taskTestOutput = Join-Path $taskRepository 'out/test-results'
             New-Item -ItemType Directory -Path $taskTestOutput -Force | Out-Null
-            Invoke-Checked $taskCtest @('--test-dir', $taskBuild, '--output-on-failure',
-                '--no-tests=error', '--output-junit', (Join-Path $taskTestOutput "$taskPreset.xml"))
+            $taskCtestArguments = @('--test-dir', $taskBuild, '--output-on-failure', '--no-tests=error')
+            $taskJunitName = $taskPreset
+            if ($TestLabel) {
+                $taskCtestArguments += @('-L', $TestLabel)
+                $taskJunitName += '-' + ($TestLabel -replace '[^A-Za-z0-9_-]+', '-')
+            }
+            $taskCtestArguments += @('--output-junit', (Join-Path $taskTestOutput "$taskJunitName.xml"))
+            Invoke-Checked $taskCtest $taskCtestArguments
         }
         $taskExecutable = Join-Path $taskBuild 'bin/muxora.exe'
         if ($Package) {

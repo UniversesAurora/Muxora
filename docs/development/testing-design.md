@@ -47,6 +47,34 @@
 
 提供共享 CMake build／test presets 和明确的快速、集成、桌面、诊断、压力、性能、发行包测试入口，供本机与 CI 使用。Windows 脚本优先使用 `pwsh`。入口返回真实退出状态，保存报告，不能吞掉子进程失败；选定的必需测试组收集到零个用例时也应失败。
 
+### CTest 分层标签
+
+每个 CTest 套件只带一个标签，按测试源码判断：
+
+| 标签 | 规则 | 运行方式 |
+| --- | --- | --- |
+| `desktop` | 调用 `showWindow`、`show()`／`showMaximized()` 等显示窗口、`qWaitForWindowExposed`、`QTest::mouse*`、`QCursor::setPos` 或 Win32 API（包括 `windows.h` 的进程计数）的套件 | 保留 `RUN_SERIAL TRUE`，一次只运行一个 |
+| `widget` | 创建 `QWidget` 或 `WindowManager`，但不显示窗口 | 可以并行 |
+| `model` | 只用布局模型、`CommandRegistry` 或 Lua 运行时，不创建控件 | 可以并行 |
+
+初步分类用下面的命令列出可能属于 `desktop` 的源码，再逐个打开确认（例如 `view-state` 通过 `restorePlacement()` 最大化窗口，命令匹配不到，也属于 `desktop`）：
+
+```bash
+cd modules/window-system/tests
+grep -lE "showWindow|\.show\(\)|qWaitForWindowExposed|QTest::mouse|QCursor::setPos|windows\.h" *_test.cpp
+```
+
+`pinned-layout`、`pinned-positions` 写在控件套件的同一个循环中、链接控件库，但只调用 `LayoutModel`，标为 `model`。并行运行中失败而串行通过的套件说明分类有误，应改回 `desktop`，不改测试本身。
+
+```powershell
+ctest --test-dir out/build/dev-release -N -L model          # 只列出
+ctest --test-dir out/build/dev-release -L "model|widget" -j 8
+ctest --test-dir out/build/dev-release -L desktop
+pwsh ./tools/build.ps1 -Configuration Release -Test -TestLabel "model|widget"
+```
+
+`-TestLabel` 把值作为 `ctest -L` 的正则传入，junit 报告文件名加上标签后缀，例如 `out/test-results/dev-release-model-widget.xml`。
+
 异步测试等待具体事件或可观察状态，并设置有理由的超时；不能依赖固定长 sleep、网络运气或执行顺序。每个用例可独立运行，临时资源清理明确，随机场景记录 seed 和操作序列。
 
 Qt 生命周期夹具须遵循对象销毁契约。控件正在处理 Show、Hide 等通知时，宿主请求销毁该控件或其所有者，应使用 `deleteLater()`。事件过滤器返回 `true` 只能停止事件继续分发；Qt 的 `show()` / `hide()` 调用栈还可能继续访问控件的私有状态，不能把这一返回值当成同步删除窗口的保证。[QObject 析构与延迟删除说明](https://github.com/qt/qtbase/blob/6.12/src/corelib/kernel/qobject.cpp)、[QWidget 显隐实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/kernel/qwidget.cpp)
