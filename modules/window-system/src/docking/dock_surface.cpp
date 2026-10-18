@@ -87,6 +87,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         root_->deleteLater();
     }
     root_ = new QWidget(this);
+    root_->setObjectName("DockSurfaceRoot");
     auto* outer = new QGridLayout(root_);
     outer->setContentsMargins(0, 0, 0, 0); outer->setSpacing(0);
     outer->setRowStretch(2, 1); outer->setColumnStretch(2, 1);
@@ -123,7 +124,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         : vertical->widget(i)->property("preferredExtent").toInt());
     vertical->setSizes(sizes);
     QObject::connect(vertical, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
-    outer->addWidget(vertical, 2, 2);
+    outer->addWidget(vertical, 1, 1, 3, 3);
     layout()->addWidget(root_);
     // Layout insertion into an already visible parent defers the implicit show.
     // A completed API mutation must expose its replacement controls immediately,
@@ -304,12 +305,13 @@ void DockSurface::updateRailLayout()
     };
     const bool left = visible(Edge::Left), right = visible(Edge::Right);
     const bool top = visible(Edge::Top), bottom = visible(Edge::Bottom);
-    // Explicit gap tracks disappear with their rail. Global grid spacing
-    // leaves phantom margins when a focus projection hides other branches.
-    outer->setColumnMinimumWidth(1, left ? 2 : 0);
-    outer->setColumnMinimumWidth(3, right ? 2 : 0);
-    outer->setRowMinimumHeight(1, top ? 2 : 0);
-    outer->setRowMinimumHeight(3, bottom ? 2 : 0);
+    // Only perpendicular rails need separation. The workspace spans these
+    // tracks so its edges remain flush with each rail, without a surrounding
+    // gutter. Missing neighbours leave no gap at the outer corners.
+    outer->setColumnMinimumWidth(1, left && top ? 2 : 0);
+    outer->setColumnMinimumWidth(3, right && top ? 2 : 0);
+    outer->setRowMinimumHeight(1, 0);
+    outer->setRowMinimumHeight(3, bottom && (left || right) ? 2 : 0);
     for (const auto& bar : edgeBars_) if (bar) outer->removeWidget(bar);
     // Bottom owns both lower corners; vertical rails own the upper corners.
     // A missing or hidden neighbour gives its corner to the remaining rail.
@@ -760,7 +762,7 @@ void DockSurface::applyFocusScope()
         if (vertical_) vertical_->hide();
         auto* outer = root_ ? qobject_cast<QGridLayout*>(root_->layout()) : nullptr;
         if (!outer) return;
-        outer->addWidget(target, 2, 2);
+        outer->addWidget(target, 1, 1, 3, 3);
         target->show();
     } else {
         focusProjection_.apply(target, root_);

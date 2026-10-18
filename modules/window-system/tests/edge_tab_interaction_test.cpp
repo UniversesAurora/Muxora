@@ -218,17 +218,45 @@ void EdgeTabInteractionTest::edgeBarCornerOwnership()
             if (iterator.key() != edge) QVERIFY(!button.adjusted(-1, -1, 1, 1).intersects(iterator.value()));
     }
     QRect expectedContent = area;
-    if (bars.contains(Edge::Left)) expectedContent.setLeft(bars.value(Edge::Left).right() + 3);
-    if (bars.contains(Edge::Right)) expectedContent.setRight(bars.value(Edge::Right).left() - 3);
-    if (bars.contains(Edge::Top)) expectedContent.setTop(bars.value(Edge::Top).bottom() + 3);
-    if (bars.contains(Edge::Bottom)) expectedContent.setBottom(bars.value(Edge::Bottom).top() - 3);
+    if (bars.contains(Edge::Left)) expectedContent.setLeft(bars.value(Edge::Left).right() + 1);
+    if (bars.contains(Edge::Right)) expectedContent.setRight(bars.value(Edge::Right).left() - 1);
+    if (bars.contains(Edge::Top)) expectedContent.setTop(bars.value(Edge::Top).bottom() + 1);
+    if (bars.contains(Edge::Bottom)) expectedContent.setBottom(bars.value(Edge::Bottom).top() - 1);
     QCOMPARE(surface->centralRectGlobal(), expectedContent);
+    // Junctions expose the same light background as the space between rail
+    // labels. They are empty layout space, not another painted border.
+    QList<QRect> junctions;
+    if (bars.contains(Edge::Top)) {
+        const auto top = bars.value(Edge::Top);
+        if (bars.contains(Edge::Left)) junctions.append(QRect(bars.value(Edge::Left).right() + 1, top.top(), 2, top.height()));
+        if (bars.contains(Edge::Right)) junctions.append(QRect(top.right() + 1, top.top(), 2, top.height()));
+    }
+    if (bars.contains(Edge::Bottom)) {
+        const int gapTop = bars.value(Edge::Bottom).top() - 2;
+        for (const auto edge : {Edge::Left, Edge::Right})
+            if (bars.contains(edge)) junctions.append(QRect(bars.value(edge).left(), gapTop, bars.value(edge).width(), 2));
+    }
+    const auto verifyGapPixels = [&](const QColor& expected) {
+        const auto image = surface->grab().toImage();
+        const auto ratio = image.devicePixelRatio();
+        for (const auto junction : junctions) {
+            const auto local = junction.translated(-area.topLeft());
+            for (int y = local.top(); y <= local.bottom(); ++y)
+                for (int x = local.left(); x <= local.right(); ++x)
+                    QCOMPARE(image.pixelColor(qRound(x * ratio), qRound(y * ratio)), expected);
+        }
+    };
+    verifyGapPixels(manager.theme().headerBackground);
+    auto changedTheme = manager.theme(); changedTheme.headerBackground = QColor("#bfcfde");
+    manager.setTheme(changedTheme);
+    verifyGapPixels(changedTheme.headerBackground);
     QVERIFY(manager.setSideBarsVisible(windowId, false));
     QTRY_VERIFY(surface->edgeBarRects().isEmpty());
     QTRY_COMPARE(surface->centralRectGlobal(), area);
     QVERIFY(manager.setSideBarsVisible(windowId, true));
     QTRY_COMPARE(surface->edgeBarRects(), bars);
     QTRY_COMPARE(surface->centralRectGlobal(), expectedContent);
+    verifyGapPixels(changedTheme.headerBackground);
 }
 void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs()
 {

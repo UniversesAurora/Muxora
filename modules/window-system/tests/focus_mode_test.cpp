@@ -58,12 +58,12 @@ QRect contentBounds(DockSurface* surface)
 {
     auto available = globalBounds(surface);
     const auto rails = surface->edgeBarRects();
-    // The rail's own edge plus the explicit two-pixel workspace separator.
-    // Missing or hidden rails consume neither their slot nor a separator.
-    if (rails.contains(Edge::Left)) available.setLeft(rails.value(Edge::Left).right() + 3);
-    if (rails.contains(Edge::Right)) available.setRight(rails.value(Edge::Right).left() - 3);
-    if (rails.contains(Edge::Top)) available.setTop(rails.value(Edge::Top).bottom() + 3);
-    if (rails.contains(Edge::Bottom)) available.setBottom(rails.value(Edge::Bottom).top() - 3);
+    // Content stays flush with each rail; only perpendicular rail junctions
+    // expose spacing. Missing or hidden rails consume no workspace area.
+    if (rails.contains(Edge::Left)) available.setLeft(rails.value(Edge::Left).right() + 1);
+    if (rails.contains(Edge::Right)) available.setRight(rails.value(Edge::Right).left() - 1);
+    if (rails.contains(Edge::Top)) available.setTop(rails.value(Edge::Top).bottom() + 1);
+    if (rails.contains(Edge::Bottom)) available.setBottom(rails.value(Edge::Bottom).top() - 1);
     return available;
 }
 

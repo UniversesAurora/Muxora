@@ -367,6 +367,8 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
     const int extent = Edge(edge) == Edge::Top ? region->height() : region->width();
     QVERIFY(extent > 16);
     region->setProperty("preferredExtent", extent + 23);
+    QPointer<QWidget> originalHost(content->parentWidget());
+    QVERIFY(originalHost); QCOMPARE(originalHost->objectName(), QStringLiteral("PaneHost"));
     bool handled = false, changed = false, uiAliveDuringCallback = false;
     TabId created; QJsonObject afterCallback;
     content->resized = [&] {
@@ -380,7 +382,7 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
             changed = !created.isNull();
         }
         // Deletion must wait until Qt returns from the active child layout.
-        uiAliveDuringCallback = window && surface && region && original;
+        uiAliveDuringCallback = window && surface && region && original && originalHost;
         if (owner) afterCallback = manager->model().toJson();
     };
     // Trigger the same extent-restoration path used by a real surface resize,
@@ -390,7 +392,7 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
     QVERIFY(handled); QVERIFY(uiAliveDuringCallback);
     if (mutation == "destroy-manager") {
         QVERIFY(!owner); QVERIFY(window); QVERIFY(surface); QVERIFY(original);
-        settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original); QVERIFY(!keptContent);
+        settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original); QVERIFY(!originalHost); QVERIFY(!keptContent);
         return;
     }
     QVERIFY(owner); QVERIFY(changed); QCOMPARE(manager->model().toJson(), afterCallback);
@@ -398,11 +400,13 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
     QVERIFY(keptContent);
     if (mutation == "close-window") {
         QVERIFY(!manager->model().window(id)); QVERIFY(manager->model().window(survivor));
-        settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original);
+        settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original); QVERIFY(!originalHost);
     } else {
         QVERIFY(manager->model().tab(created)); QVERIFY(manager->model().tab(central));
         QCOMPARE(manager->paneWidget(pane), original.data());
-        settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(!region); QVERIFY(original);
+        QVERIFY(originalHost); QVERIFY(originalHost->isHidden());
+        QVERIFY(original->parentWidget() != originalHost);
+        settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(!region); QVERIFY(original); QVERIFY(!originalHost);
         QCOMPARE(manager->model().toJson(), afterCallback);
         QCOMPARE(manager->model().group(manager->model().groupForTab(created))->location, GroupLocation::Pinned);
     }

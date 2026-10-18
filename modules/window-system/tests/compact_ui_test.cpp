@@ -192,7 +192,7 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     const auto normal = image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
     const int grayValue = qGray(defaultTheme().border.rgb());
     const QColor gray(grayValue, grayValue, grayValue);
-    QCOMPARE(normal, composite(gray, 112));
+    QCOMPARE(normal, composite(gray, 144));
     QVERIFY(normal != gray); QVERIFY(normal != under);
     // Moving the native cursor queues Enter on Windows. Wait for that input
     // precondition before checking pixels; a QPA move alone does not establish
@@ -200,7 +200,7 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     QCursor::setPos(scrollbar->mapToGlobal(handle.center()));
     QTRY_VERIFY(scrollbar->underMouse());
     const auto hovered = tabs->grab().toImage().pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    QCOMPARE(hovered, composite(gray, 176));
+    QCOMPARE(hovered, composite(gray, 192));
     QVERIFY(hovered != gray); QVERIFY(hovered != normal);
     const auto selected = tabs->currentIndex();
     scrollbar->setValue(scrollbar->maximum() / 2);

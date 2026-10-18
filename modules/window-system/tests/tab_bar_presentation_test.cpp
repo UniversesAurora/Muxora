@@ -162,12 +162,12 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     expected.fill(unoccluded.pixelColor(center));
     QPainter painter(&expected); const int gray = qGray(defaultTheme().border.rgb());
     QColor translucentBorder(gray, gray, gray);
-    translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
+    translucentBorder.setAlpha(144); painter.fillRect(expected.rect(), translucentBorder); painter.end();
     QCOMPARE(image.pixelColor(center), expected.pixelColor(0, 0));
     QTest::mouseMove(scrollbar, handle.center());
     QImage hoveredExpected(1, 1, QImage::Format_ARGB32_Premultiplied);
     hoveredExpected.fill(unoccluded.pixelColor(center));
-    QPainter hoveredPainter(&hoveredExpected); translucentBorder.setAlpha(176);
+    QPainter hoveredPainter(&hoveredExpected); translucentBorder.setAlpha(192);
     hoveredPainter.fillRect(hoveredExpected.rect(), translucentBorder); hoveredPainter.end();
     QTRY_COMPARE(tabs->grab().toImage().pixelColor(center), hoveredExpected.pixelColor(0, 0));
     QVERIFY(hoveredExpected.pixelColor(0, 0) != QColor(gray, gray, gray));
@@ -189,21 +189,52 @@ void TabBarPresentationTest::tabListMarksTheActiveTabWithoutChangingSelection()
     GroupTabs tabs(defaultTheme(), nullptr);
     for (int i = 0; i < 3; ++i)
         tabs.addTab(new QLabel("Content"), {}, QStringLiteral("Entry %1").arg(i), QUuid::createUuid());
+    TabRecord record; record.id = tabs.tabBar()->tabData(1).toUuid(); record.colorId = "red";
+    tabs.setTabMetadata(1, record);
     tabs.setCurrentIndex(1); applyTheme(&tabs); tabs.resize(500, 250); tabs.show();
     QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     QTest::mouseClick(tabs.findChild<QToolButton*>("TabListButton"), Qt::LeftButton);
     auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
     QCOMPARE(menu->actions().size(), 3);
+    menu->setActiveAction(nullptr);
+    DismissOnlyMenu ordinary(&tabs);
+    auto* ordinaryAction = ordinary.addAction(QStringLiteral("Ordinary command"));
+    ordinary.ensurePolished(); ordinary.resize(ordinary.sizeHint());
+    const auto ordinaryHeight = ordinary.actionGeometry(ordinaryAction).height();
+    QVERIFY(ordinaryHeight > 0);
+    const auto pixel = [](const QImage& image, QPoint point) {
+        const auto ratio = image.devicePixelRatio();
+        return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
+    };
     for (int i = 0; i < menu->actions().size(); ++i) {
         auto* action = qobject_cast<QWidgetAction*>(menu->actions()[i]); QVERIFY(action);
         auto* row = action->defaultWidget(); QVERIFY(row);
         QCOMPARE(row->property("activeTab").toBool(), i == 1);
         QVERIFY(action->isCheckable()); QCOMPARE(action->isChecked(), i == 1);
-        auto* mark = row->findChild<QLabel*>("TabListActiveMark"); QVERIFY(mark);
-        QCOMPARE(mark->text().isEmpty(), i != 1);
+        QVERIFY(!row->findChild<QLabel*>("TabListActiveMark"));
         auto* title = row->findChild<QLabel*>("TabListTitle"); QVERIFY(title);
-        QCOMPARE(title->font().bold(), i == 1);
+        QCOMPARE(title->font().bold(), menu->font().bold());
+        QVERIFY(row->height() <= ordinaryHeight);
+        QVERIFY(row->height() >= title->fontMetrics().height());
+        auto* close = row->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close);
+        QCOMPARE(close->size(), QSize(18, 18)); QVERIFY(close->isHidden());
+        const auto image = row->grab().toImage();
+        const auto background = i == 1 ? defaultTheme().selection : defaultTheme().surface;
+        for (int y = 0; y < row->height(); ++y) {
+            // Highlight touches the row's edges, immediately after the full-height marker.
+            QCOMPARE(pixel(image, QPoint(4, y)), background);
+            QCOMPARE(pixel(image, QPoint(row->width() - 1, y)), background);
+            if (i == 1) QCOMPARE(pixel(image, QPoint(0, y)), tabs.tabBar()->tabPreset(1)->groupInactive.line);
+            else QCOMPARE(pixel(image, QPoint(0, y)), background);
+        }
     }
+    menu->setActiveAction(menu->actions().first());
+    auto* hovered = qobject_cast<QWidgetAction*>(menu->actions().first())->defaultWidget();
+    auto* active = qobject_cast<QWidgetAction*>(menu->actions()[1])->defaultWidget();
+    QTRY_VERIFY(hovered->property("emphasized").toBool());
+    QTRY_VERIFY(active->property("emphasized").toBool());
+    QCOMPARE(pixel(hovered->grab().toImage(), QPoint(4, 0)), defaultTheme().selection);
+    QCOMPARE(pixel(active->grab().toImage(), QPoint(4, 0)), defaultTheme().selection);
     QCOMPARE(tabs.currentIndex(), 1); menu->close();
 }
 

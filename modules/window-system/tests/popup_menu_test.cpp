@@ -302,8 +302,12 @@ void PopupMenuTest::tabListShowsEachAssignedColorBeforeItsContent()
         QCOMPARE(row->property("tabColorMarker").value<QColor>(), expected);
         auto checkMarker = [&] {
             const auto pixels = row->grab().toImage(); const auto scale = pixels.devicePixelRatio();
-            QCOMPARE(pixels.pixelColor(qRound(3 * scale), qRound((row->height() / 2) * scale)),
-                expected.isValid() ? expected : row->property("emphasized").toBool() ? theme.selection : theme.surface);
+            const auto background = row->property("emphasized").toBool() ? theme.selection : theme.surface;
+            for (int y = 0; y < row->height(); ++y) {
+                QCOMPARE(pixels.pixelColor(qRound(3 * scale), qRound(y * scale)),
+                    expected.isValid() ? expected : background);
+                QCOMPARE(pixels.pixelColor(qRound(4 * scale), qRound(y * scale)), background);
+            }
         };
         checkMarker();
         menu->setActiveAction(action); QCoreApplication::processEvents(); checkMarker();

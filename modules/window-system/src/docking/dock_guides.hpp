@@ -56,16 +56,12 @@ inline QRect placeEdgeGuidePair(QRect pair, const QRect& available, const QList<
 // its five hit rectangles must move together with the painted rectangles.
 inline QRect placeGroupCrossInward(QRect cross, const QRect& available, const QList<QRect>& obstacles, Edge edge)
 {
-    const bool vertical = edge == Edge::Left || edge == Edge::Right;
     if (cross.width() > available.width() || cross.height() > available.height()) return {};
-    if (vertical) cross.moveTop(std::clamp(cross.top(), available.top(), available.bottom() - cross.height() + 1));
-    else cross.moveLeft(std::clamp(cross.left(), available.left(), available.right() - cross.width() + 1));
     // Another group's header can span the full edge-parallel axis. In that
     // case sliding along the edge cannot find a slot: advance past the header
     // toward the workspace instead of removing every group drop target.
     for (qsizetype attempt = 0; attempt <= obstacles.size(); ++attempt) {
         if (!available.contains(cross)) return {};
-        if (const auto fitted = placeEdgeGuidePair(cross, available, obstacles, vertical); !fitted.isEmpty()) return fitted;
         auto next = cross;
         for (const auto& obstacle : obstacles) {
             if (!cross.intersects(obstacle)) continue;
@@ -76,7 +72,7 @@ inline QRect placeGroupCrossInward(QRect cross, const QRect& available, const QL
             case Edge::Bottom: next.moveBottom(std::min(next.bottom(), obstacle.top() - 3)); break;
             }
         }
-        if (next == cross) return {};
+        if (next == cross) return cross;
         cross = next;
     }
     return {};
@@ -103,6 +99,12 @@ inline void separateGroupGuides(QVector<DockGuide>& guides, int groupCount, QRec
         overlaps = true;
         auto candidate = cross;
         constexpr int gap = 2;
+        const auto pair = iterator.value();
+        // The pair and cross read as one control. Keep their perpendicular
+        // centers aligned, even when the pair moved to avoid a tab header.
+        if (iterator.key() == Edge::Left || iterator.key() == Edge::Right)
+            candidate.moveCenter({candidate.center().x(), pair.center().y()});
+        else candidate.moveCenter({pair.center().x(), candidate.center().y()});
         switch (iterator.key()) {
         case Edge::Left: candidate.moveLeft(iterator.value().right() + 1 + gap); break;
         case Edge::Right: candidate.moveRight(iterator.value().left() - 1 - gap); break;

@@ -241,7 +241,7 @@ void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
     QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied); expected.fill(QColor("#6a568c"));
     QPainter painter(&expected); const int gray = qGray(defaultTheme().border.rgb());
     QColor translucentBorder(gray, gray, gray);
-    translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
+    translucentBorder.setAlpha(144); painter.fillRect(expected.rect(), translucentBorder); painter.end();
     QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())),
         expected.pixelColor(0, 0));
     QVERIFY(overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarAddLine, overlay).isEmpty());

@@ -69,6 +69,7 @@ private slots:
     void secondaryBindingsAppearInSearchAndConflictChecks();
     void recordSearchFindsSequenceBindingsWithoutExecutingOrEditing();
     void compositeArgumentsValidateAndRetainExecutionOrder();
+    void compositeBindingsCanBeAddedEditedAndRemovedIndependently();
     void externalChangeDoesNotOverwriteAnUnfinishedBindingEdit();
 };
 
@@ -186,6 +187,51 @@ void ShortcutSettingsTest::compositeArgumentsValidateAndRetainExecutionOrder()
         editor.apply->click();
         QCOMPARE(manager.commands().bindings(QStringLiteral("runCommands")), stored);
     }
+}
+
+void ShortcutSettingsTest::compositeBindingsCanBeAddedEditedAndRemovedIndependently()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    QStringList events;
+    QVERIFY(manager.commands().add({"test.step", "Step", {}, {}, {},
+        [&events](const CommandContext& context) { events.append(context.args.value("value").toString()); return true; }}));
+    auto* page = shortcutPage(manager, window); QVERIFY(page);
+    Editor editor(page); QVERIFY(editor.complete());
+    editor.search->setText("runCommands");
+    for (int index = 0; index < 2; ++index) {
+        editor.add->click();
+        editor.capture->setKeySequence(QKeySequence(index == 0 ? "Ctrl+Alt+F10" : "Ctrl+Alt+F11"));
+        editor.arguments->setPlainText(index == 0
+            ? R"({"commands":[{"command":"test.step","args":{"value":"A1"}},{"command":"test.step","args":{"value":"A2"}}]})"
+            : R"({"commands":[{"command":"test.step","args":{"value":"B1"}}]})");
+        QVERIFY(editor.apply->isEnabled()); editor.apply->click();
+        QCOMPARE(editor.bindings->topLevelItemCount(), index + 1);
+    }
+    const auto original = manager.commands().bindings("runCommands");
+    QCOMPARE(original.size(), 2);
+    for (const auto& binding : original) {
+        auto context = manager.context(window); context.args = binding.args;
+        QVERIFY(manager.executeInContext("runCommands", context));
+    }
+    QCOMPARE(events, QStringList({"A1", "A2", "B1"}));
+    editor.bindings->setCurrentItem(editor.bindings->topLevelItem(0));
+    editor.arguments->setPlainText(R"({"commands":[{"command":"test.step","args":{"value":"edited A"}}]})");
+    QVERIFY(editor.apply->isEnabled()); editor.apply->click();
+    const auto edited = manager.commands().bindings("runCommands");
+    QCOMPARE(edited.size(), 2);
+    QCOMPARE(edited.first().sequence, original.first().sequence);
+    QCOMPARE(edited.last(), original.last());
+    events.clear();
+    for (const auto& binding : edited) {
+        auto context = manager.context(window); context.args = binding.args;
+        QVERIFY(manager.executeInContext("runCommands", context));
+    }
+    QCOMPARE(events, QStringList({"edited A", "B1"}));
+    editor.bindings->setCurrentItem(editor.bindings->topLevelItem(0));
+    editor.remove->click();
+    QCOMPARE(manager.commands().bindings("runCommands"), (QVector<CommandBinding>{original.last()}));
+    QCOMPARE(editor.bindings->topLevelItemCount(), 1);
 }
 
 void ShortcutSettingsTest::recordSearchFindsSequenceBindingsWithoutExecutingOrEditing()

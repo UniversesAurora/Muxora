@@ -122,22 +122,19 @@ public:
         setObjectName("TabListRow");
         setProperty("tabColorMarker", marker_);
         setProperty("activeTab", active);
+        setProperty("emphasized", active);
         setMouseTracking(true);
         auto* layout = new QHBoxLayout(this);
-        layout->setContentsMargins(8, 2, 5, 2); layout->setSpacing(8);
-        auto* activeMark = new QLabel(active ? QStringLiteral("\u2713") : QString(), this);
-        activeMark->setObjectName("TabListActiveMark");
-        activeMark->setFixedWidth(14); activeMark->setAlignment(Qt::AlignCenter);
-        activeMark->setAttribute(Qt::WA_TransparentForMouseEvents);
-        layout->addWidget(activeMark);
+        layout->setContentsMargins(8, 2, 5, 2); layout->setSpacing(7);
         if (!icon.isNull()) {
             auto* image = new QLabel(this); image->setPixmap(icon.pixmap(16, 16)); layout->addWidget(image);
         }
         title_ = new TabListTitle(text, this); title_->setToolTip(text);
-        auto font = title_->font(); font.setBold(active); title_->setFont(font);
         title_->setObjectName("TabListTitle");
         title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
-        closeButton = new QToolButton(this);
+        closeButton = new CompactToolButton(this, 18);
+        closeButton->setObjectName("TabListCloseButton");
+        closeButton->setStyleSheet("QToolButton{padding:0;min-height:0;min-width:0;}");
         auto policy = closeButton->sizePolicy(); policy.setRetainSizeWhenHidden(true);
         closeButton->setSizePolicy(policy); closeButton->hide(); layout->addWidget(closeButton);
         setMinimumWidth(240); setMaximumWidth(520);
@@ -170,7 +167,7 @@ protected:
         const bool emphasized = property("emphasized").toBool();
         painter.fillRect(rect(), tabListColor(this, emphasized ? "selection" : "surface",
             emphasized ? QPalette::Highlight : QPalette::Base));
-        if (marker_.isValid()) painter.fillRect(QRect(2, 2, 3, height() - 4), marker_);
+        if (marker_.isValid()) painter.fillRect(QRect(0, 0, 4, height()), marker_);
     }
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (event->button() == Qt::LeftButton) { const auto callback = activate; if (callback) callback(); }
@@ -180,7 +177,8 @@ private:
     void updateEmphasis() {
         auto* menu = qobject_cast<QMenu*>(parentWidget());
         auto* action = menu ? qobject_cast<QWidgetAction*>(menu->activeAction()) : nullptr;
-        const bool emphasized = action && action->defaultWidget() == this;
+        const bool emphasized = property("activeTab").toBool()
+            || (action && action->defaultWidget() == this);
         if (property("emphasized").toBool() == emphasized) return;
         setProperty("emphasized", emphasized);
         update(); title_->update();

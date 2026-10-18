@@ -65,7 +65,7 @@ QString overlayScrollbarStyle(const Theme& theme)
         "QScrollBar::handle:hover, QScrollBar::handle:pressed { background: %2; }"
         "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
         "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
-        .arg(rgba(handle, 112), rgba(handle, 176));
+        .arg(rgba(handle, 144), rgba(handle, 192));
 }
 
 void ThemedComboBox::showPopup()

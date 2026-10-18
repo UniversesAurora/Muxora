@@ -239,7 +239,7 @@ QScrollArea#TabScrollViewport { background: @header; }
 QWidget#TabPage, QWidget#PaneHost { background: @surface; }
 QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }
-QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
+QWidget#DockSurfaceRoot, QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
 QWidget#PeekPanel { background: @surface; border: 1px solid @accent; }
 QWidget#DragEdgeContent { background: @surface; border: 1px solid @border; }
 QWidget#DragPeekTitle { background: @header; color: @headerText; }

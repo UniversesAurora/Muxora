@@ -96,6 +96,9 @@ void UserPreferencesTest::bindingsAndCompositeArgumentsSurviveRestart()
     QVERIFY(commands.setBindings("test.second", {}));
     const QVariantMap composite{{"commands", QVariantList{QString("test.first"), QVariantMap{{"command", "test.second"}, {"args", QVariantMap{{"enabled", true}}}}}}};
     QVERIFY(commands.addBinding("runCommands", {QKeySequence("Ctrl+K, R"), composite}));
+    const QVariantMap secondComposite{{"commands", QVariantList{QVariantMap{{"command", "test.first"}, {"args", QVariantMap{{"value", 42}}}}, QString("test.second")}}};
+    QVERIFY(commands.addBinding("runCommands", {QKeySequence("Ctrl+K, S"), secondComposite}));
+    const auto compositeBindings = commands.bindings("runCommands");
     QVERIFY(preferences.saveKeybindings(commands));
     QVERIFY(!read(root.filePath("keybindings.json")).contains("window-layout"));
     muxora::UserPreferences restarted(root.path());
@@ -103,8 +106,9 @@ void UserPreferencesTest::bindingsAndCompositeArgumentsSurviveRestart()
     QVERIFY(restarted.loadKeybindings(restored));
     QCOMPARE(restored.bindings("test.first"), first);
     QVERIFY(restored.bindings("test.second").isEmpty());
-    QCOMPARE(restored.bindings("runCommands").size(), 1);
+    QCOMPARE(restored.bindings("runCommands"), compositeBindings);
     QCOMPARE(restored.bindings("runCommands").first().args, composite);
+    QCOMPARE(restored.bindings("runCommands").last().args, secondComposite);
 }
 
 void UserPreferencesTest::invalidRulesKeepAllBindings_data()

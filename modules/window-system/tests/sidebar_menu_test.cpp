@@ -276,6 +276,7 @@ void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme()
     GroupTabs tabs(theme, nullptr);
     tabs.addTab(new QLabel(QStringLiteral("first content")), {}, QStringLiteral("First visible tab title"), QUuid::createUuid());
     tabs.addTab(new QLabel(QStringLiteral("second content")), {}, QStringLiteral("Second visible tab title"), QUuid::createUuid());
+    tabs.setCurrentIndex(1);
     tabs.resize(460, 260);
     applyTheme(&tabs, theme);
     tabs.setWindowFlag(Qt::WindowStaysOnTopHint);
@@ -294,6 +295,7 @@ void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme()
     auto* title = first->findChild<QLabel*>(QStringLiteral("TabListTitle"));
     auto* close = first->findChild<QToolButton*>();
     QVERIFY(title && close);
+    QCOMPARE(leftBackground(second), theme.selection);
     QTest::mouseMove(first, QPoint(3, first->height() / 2));
     QTRY_VERIFY(first->property("emphasized").toBool());
     QTRY_COMPARE(leftBackground(first), theme.selection);
@@ -312,6 +314,10 @@ void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme()
     QTRY_COMPARE(leftBackground(first), changed.surface);
     QTRY_VERIFY(!close->isVisible());
     QTRY_COMPARE(leftBackground(second), changed.selection);
+    QTest::mouseMove(first, QPoint(3, first->height() / 2));
+    QTRY_COMPARE(leftBackground(first), changed.selection);
+    QTRY_COMPARE(leftBackground(second), changed.selection);
+    QCOMPARE(tabs.currentIndex(), 1);
     QTest::keyClick(menu, Qt::Key_Escape);
     QTRY_VERIFY(!QApplication::activePopupWidget());
 }

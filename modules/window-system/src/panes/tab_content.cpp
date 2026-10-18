@@ -62,7 +62,16 @@ void TabContent::rebuild(const TabRecord& record,
     }
     activePane_ = record.activePane;
     frames_.clear();
-    if (tree_) { layout_->removeWidget(tree_); delete tree_; }
+    if (tree_) {
+        layout_->removeWidget(tree_);
+        // A host can request a rebuild from a pane's resize callback. The old
+        // PaneHost layout is still on Qt's geometry stack until that callback
+        // returns, even after its live content has been parked elsewhere.
+        if (manager_->d->geometryUpdateDepth) {
+            tree_->hide();
+            tree_->deleteLater();
+        } else delete tree_;
+    }
     tree_ = buildNode(record.panes, record, contents);
     const int topIndex = visibleTop_ ? layout_->indexOf(visibleTop_) : -1;
     if (tree_) layout_->insertWidget(topIndex >= 0 ? topIndex + 1 : 0, tree_, 1);

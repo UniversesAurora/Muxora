@@ -273,16 +273,23 @@ DropTarget DragController::hit(QPoint global)
     if (!result.windowRect.contains(global)) return {};
     result.group = surface->groupAt(global);
     const auto groups = surface->groupRects();
-    if (target_.window == result.window && groups.contains(target_.group))
-        for (const auto& guide : target_.guides)
-            if (!guide.toEdge && guide.rect.contains(global)) { result.group = target_.group; break; }
+    bool retainedCross = false;
+    if (overlay_ && overlay_->isVisible() && target_.window == result.window && groups.contains(target_.group)) {
+        QRect cross;
+        for (const auto& guide : target_.guides) if (!guide.toEdge) cross = cross.united(guide.rect);
+        // The cross can extend over a neighbouring group after avoiding edge
+        // targets. Its arms and the gaps between them belong to the same
+        // control until the pointer leaves the complete displayed bounds.
+        retainedCross = cross.contains(global);
+        if (retainedCross) result.group = target_.group;
+    }
     if (const auto* group = manager_->model().group(result.group)) result.splitGroup = group->location != GroupLocation::AutoHide;
     result.groupRect = surface->groupRects().value(result.group, surface->centralRectGlobal());
     if (result.groupRect.isEmpty()) result.groupRect = result.windowRect;
     // A displayed side bar is an insertion strip along its full axis, including
     // the area where the outer guide would otherwise overlap that strip.
     const auto edgeBars = surface->edgeBarRects();
-    for (auto it = edgeBars.cbegin(); it != edgeBars.cend(); ++it) if (it.value().contains(global)) {
+    for (auto it = edgeBars.cbegin(); it != edgeBars.cend(); ++it) if (!retainedCross && it.value().contains(global)) {
         result.accepted = true; result.toEdge = true; result.edge = it.key(); result.pinned = false;
         result.toEdgeBar = true;
         result.insertionIndex = surface->edgeTabInsertionIndex(it.key(), global);
@@ -291,7 +298,7 @@ DropTarget DragController::hit(QPoint global)
     // A visible tab strip is an insertion target. Content bodies and invisible
     // edge margins deliberately have no implicit drop operation.
     const auto barGroup = surface->tabBarAt(global);
-    if (!result.accepted && !barGroup.isNull()) {
+    if (!retainedCross && !result.accepted && !barGroup.isNull()) {
         result.accepted = true; result.group = barGroup; result.toEdge = false;
         result.placement = Placement::Center;
         result.groupRect = surface->groupRects().value(barGroup);
