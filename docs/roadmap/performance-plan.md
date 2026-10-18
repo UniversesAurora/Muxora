@@ -65,7 +65,9 @@ void setContentVisibilityHandler(std::function<void(const ContentVisibility&)> h
 - 模块自绘的控件（标签条、边栏、工具条）直接读 `Theme` 令牌，不再依赖样式表。
 - 宿主内容默认不受模块样式影响；需要统一外观时读 `Theme` 或调色板。
 
-逐个控件迁移，迁移一个删一段 QSS；每步用现有像素和几何测试守住外观。这一步也是深色主题的基础，见 [交互 §1](window-system-ux-plan.md#1-主题深色与黑色)。
+逐个控件迁移，迁移一个删一段 QSS；每步用现有像素和几何测试守住外观。
+
+**限制（实现计划阶段补充）**：`theme.cpp` 中 `styleSheet()` 的注释说明，`QWidget::setStyle()` 只作用于单个控件，不随子控件增加和改挂传播；整棵控件树使用同一个样式只能靠 `QApplication::setStyle()`，而模块契约是不改变应用级样式。因此迁移只能作为宿主可选的应用级入口，模块默认仍用样式表。阶段 1 减少改挂之后，样式表的成本可能已不重要，先测量再决定，见 [实现计划 2.7](implementation/phase-2-themes.md#27-样式实现迁移可选先测量)。深色主题不依赖这一步，直接在现有令牌上实现。
 
 ## 5. GPU 渲染与终端视图契约
 

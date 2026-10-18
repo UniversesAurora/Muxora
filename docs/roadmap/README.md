@@ -13,6 +13,7 @@
 | [Lua 编辑器与脚本管理](lua-plan.md) | 运行时审查结论、内置编辑器、补全、脚本管理界面 |
 | [工程结构与测试](engineering-plan.md) | 目录、构建、测试冗余与缺口、静态检查、CI |
 | [业务功能对标](feature-parity-plan.md) | 终端、SSH 管理、SFTP、X11 的对标清单与接入顺序 |
+| [实现计划](implementation/README.md) | 按阶段拆分的逐步实现说明：改哪些文件、怎么改、加什么测试、怎么验证、完成标准；供 Agent 按步骤执行 |
 
 ## 优先级
 
@@ -22,6 +23,7 @@ P0 指不先解决就会在“成百上千会话”目标下返工的结构问�
 | --- | --- | --- |
 | P0 | 布局变更时不再重建全部标签视图和重设全部内容 parent（增量调和） | [性能](performance-plan.md#1-布局变化改为增量调和) |
 | P0 | 非活动标签延迟创建视图；隐藏内容停止绘制 | [性能](performance-plan.md#2-非活动标签的视图按需创建) |
+| P0 | 标签激活、焦点切换不再走整模型事务（R17） | [实现 1.2](implementation/phase-1-layout-performance.md#12-激活与分割比例快速路径r17) |
 | P0 | 模型增加 Tab→Group、Pane→Tab 索引；拖动分隔条不做整模型校验 | [性能](performance-plan.md#3-布局模型的查找与事务成本) |
 | P0 | 终端渲染走 GPU（QRhi）路线前先定下内容控件的接入契约 | [性能](performance-plan.md#5-gpu-渲染与终端视图契约) |
 | P1 | 深色、黑色主题与跟随系统；拖拽指示和标签色板改用主题令牌 | [交互](window-system-ux-plan.md#1-主题深色与黑色) |

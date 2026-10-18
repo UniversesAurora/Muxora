@@ -1,0 +1,227 @@
+# 阶段 0：基线与度量
+
+**目的**：后续性能改动必须先有可以重复的测量，测试也要能按层次选择运行。本阶段只增加工具和文档，不改变应用行为。
+
+**阶段约束**：
+
+- 基准程序由默认关闭的 CMake 选项控制，在单独的构建目录中编译，不影响 `out/build/dev-release` 和固定部署目录。
+- 基准结果是本机测量，记录机器、Qt 版本、提交和平台插件；不写成跨机器的结论。
+
+---
+
+## 0.1 规模基准程序
+
+**目标**：一条命令得到 100／500／1000／2000 个标签下的创建、关闭、移动、拆分、分隔条、按键、保存与循环开关的耗时和内存数据，输出 JSON。
+
+**前置**：无。
+
+**涉及文件**：
+
+- 新建 `modules/window-system/benchmarks/CMakeLists.txt`
+- 新建 `modules/window-system/benchmarks/layout_scale_benchmark.cpp`
+- 新建 `modules/window-system/benchmarks/benchmark_support.hpp`、`benchmark_support.cpp`
+- 修改 `modules/window-system/CMakeLists.txt`（增加选项）
+- 新建 `tools/bench.ps1`
+
+**实现**：
+
+1. 在 `modules/window-system/CMakeLists.txt` 的测试选项旁增加：
+
+   ```cmake
+   option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
+   if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
+       add_subdirectory(benchmarks)
+   endif()
+   ```
+
+   不调用 `add_test`，基准不进入 CTest。
+
+2. `benchmarks/CMakeLists.txt`：
+
+   ```cmake
+   qt_add_executable(window-system-layout-benchmark layout_scale_benchmark.cpp benchmark_support.cpp)
+   target_link_libraries(window-system-layout-benchmark PRIVATE WindowSystem::Widgets Qt6::Test)
+   target_include_directories(window-system-layout-benchmark PRIVATE ../src)
+   if(WIN32)
+       target_link_libraries(window-system-layout-benchmark PRIVATE psapi)
+   endif()
+   ```
+
+   需要 `find_package(Qt6 REQUIRED COMPONENTS Test)`，因为按键场景使用 `QTest::keyClick`。
+
+3. `benchmark_support.hpp` 提供：
+
+   ```cpp
+   struct Samples { QVector<double> ms; };
+   struct Summary { double p50 = 0, p95 = 0, max = 0, mean = 0; int count = 0; };
+   Summary summarize(QVector<double> values);          // 排序后取分位
+   quint64 privateBytes();                             // Windows: GetProcessMemoryInfo + PROCESS_MEMORY_COUNTERS_EX::PrivateUsage；其他平台返回 0
+   void drainDeferredDeletes();                        // QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete) 后 processEvents
+   int liveWidgetCount();                              // QApplication::allWidgets().size()
+   ```
+
+   分位数用“最近秩”法：`index = ceil(p * n) - 1`，不插值，在文件注释中写明。
+
+4. `layout_scale_benchmark.cpp`：
+
+   - `QCommandLineParser` 参数：`--tabs 100,500,1000,2000`、`--repeat 30`、`--scenario all|create|close|move|split|ratio|keys|save|cycle`（可多次）、`--out <path>`、`--commit <hash>`。
+   - 每个规模新建一个 `WindowManager` 和一个完整窗口，窗口尺寸 1600×1000，调用 `showWindow` 并等待曝光（使用 `QTest::qWaitForWindowExposed`）。平台插件由环境变量决定：脚本默认设置 `QT_QPA_PLATFORM=offscreen`，`-Visible` 时不设置。
+   - **构造工作区**：每 25 个标签开一个新组：第一个组用 `addTab`，之后用 `addTabToNewGroup(window, content, options, previousGroup, placement)`，`placement` 在 `Right` 与 `Bottom` 间交替，使中央树有深度。内容用 `new QLabel(QString::number(i))`，`contentType = "bench"`。
+   - **场景**（每项测 `--repeat` 次，记录每次耗时）：
+
+     | 场景 | 一次操作 | 恢复方式 |
+     | --- | --- | --- |
+     | create | 从空窗口加到 N 个标签，记录总耗时和每 100 个标签的累计耗时 | 每个规模只做一次 |
+     | close | `closeTab(中间某个标签)` | 关闭后 `addTab` 补回同一组，补回不计时 |
+     | move | `moveTab(tab, otherGroup, Placement::Center)` | 交替移回原组 |
+     | split | `splitPane(tab, pane, new QLabel, Placement::Right)` | `closePane` 不计时 |
+     | ratio | `execute("layout.setRatio", {{"node", id}, {"ratio", r}})`，`r` 在 0.3 与 0.7 间交替；`id` 取中央树根节点 | 无 |
+     | keys | 焦点放在一个内容上，`QTest::keyClick(content, Qt::Key_X)` 连续 1000 次，记录总耗时 / 1000 | 无 |
+     | save | `QJsonDocument(manager.saveLayout()).toJson()`，同时记录字节数 | 无 |
+     | cycle | 1000 次“`addTab` + `closeTab`”，每 100 次调用 `drainDeferredDeletes()` 后记录 `privateBytes()` 和 `liveWidgetCount()` | 无 |
+
+   - **内存**：create 完成后先 `drainDeferredDeletes()`，记录 `privateBytes()`、`liveWidgetCount()`、每标签平均增量（减去空窗口时的值）。
+   - 每个计时区间结束后调用 `QCoreApplication::processEvents()`，并把它计入耗时：用户看到的是事件循环处理完之后的结果。
+
+5. 输出 JSON（UTF-8，缩进）：
+
+   ```json
+   {
+     "benchmark": "layout-scale",
+     "commit": "<hash>",
+     "qt": "6.12.0",
+     "platform": "offscreen",
+     "machine": { "cpu": "<QSysInfo::currentCpuArchitecture()>", "logicalCores": 16 },
+     "results": [ { "scenario": "close", "tabs": 1000, "samples": 30, "p50Ms": 0, "p95Ms": 0, "maxMs": 0, "meanMs": 0 } ],
+     "memory": [ { "tabs": 1000, "privateBytes": 0, "widgets": 0, "bytesPerTab": 0, "widgetsPerTab": 0 } ],
+     "cycle": [ { "tabs": 1000, "iteration": 100, "privateBytes": 0, "widgets": 0 } ],
+     "save": [ { "tabs": 1000, "bytes": 0 } ]
+   }
+   ```
+
+6. `tools/bench.ps1`：
+
+   - 参数：`-Name <label>`（必填，用于文件名）、`-Tabs '100,500,1000,2000'`、`-Repeat 30`、`-Visible`。
+   - 读取 `.local/sdk.json` 中的 `qtRoot`、`compiler`（由 `tools/build.ps1` 生成）；找不到时提示先运行 `build.ps1`。
+   - 配置单独目录：`cmake -S . -B out/build/bench-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<qtRoot> -DCMAKE_CXX_COMPILER=<compiler> -DCMAKE_MAKE_PROGRAM=<ninja> -DBUILD_TESTING=OFF -DWINDOW_SYSTEM_BUILD_BENCHMARKS=ON`。
+   - 只构建目标 `window-system-layout-benchmark`；运行时把 Qt `bin` 加入 PATH；`--commit` 传 `git rev-parse --short HEAD`；输出 `out/test-results/bench-<Name>.json`。
+
+**测试**：基准本身不是测试。为 `summarize()` 写一个小的 Qt 测试即可：`window-system.benchmark-support`（放在 `modules/window-system/tests/`，只在基准选项开启时编译）。断言：`{1..100}` 的 p50 为 50、p95 为 95、max 为 100；空输入返回 `count == 0`。
+
+**验证**：
+
+```powershell
+pwsh ./tools/bench.ps1 -Name baseline
+```
+
+检查 JSON 字段齐全；用 `-Tabs 100 -Repeat 3` 快速跑一遍确认可用。默认 `tools/build.ps1 -Configuration Release` 的构建目录中不应出现基准目标。
+
+**完成标准**：
+
+- [ ] 默认 Release 构建产物与之前相同（不出现基准目标，`muxora.exe` 不受影响）。
+- [ ] `bench-baseline.json` 生成，八个场景在四个规模下都有数据。
+- [ ] 在 [性能方案 §6](../performance-plan.md#6-测量与预算) 末尾追加“基线数据”表，写明机器、平台插件、提交。
+
+**风险**：offscreen 平台不走原生窗口和 DWM，绘制成本偏低。表格中注明平台；需要原生数据时用 `-Visible` 另跑一份。
+
+**状态**：未开始。
+
+---
+
+## 0.2 测试分层标签
+
+**目标**：`ctest -L model`、`-L widget`、`-L desktop` 可以分别运行三层；不显示窗口的套件可以并行。
+
+**前置**：无。
+
+**涉及文件**：`modules/window-system/tests/CMakeLists.txt`、`modules/lua-runtime/tests/CMakeLists.txt`、`modules/window-system-lua/tests/CMakeLists.txt`、`src/app/CMakeLists.txt`、`tools/build.ps1`、`docs/development/testing-design.md`。
+
+**实现**：
+
+1. 分类规则（按测试源码判断，写进 `testing-design.md`）：
+   - `desktop`：调用 `showWindow`、`show()`、`qWaitForWindowExposed`、`QTest::mouse*`、`QCursor::setPos` 或 Win32 API 的套件；
+   - `widget`：创建 `QWidget` 但不显示窗口；
+   - `model`：只链接 `WindowSystem::Model`、`CommandRegistry` 或 Lua 运行时，不创建控件。
+2. 用下面的命令初步分类，再逐个打开源码确认：
+
+   ```bash
+   cd modules/window-system/tests
+   grep -lE "showWindow|\.show\(\)|qWaitForWindowExposed|QTest::mouse|QCursor::setPos|windows\.h" *_test.cpp
+   ```
+
+3. 在 `modules/window-system/tests/CMakeLists.txt` 中，`foreach(suite ...)` 改为三个列表 `window_system_model_suites`、`window_system_widget_suites`、`window_system_desktop_suites`，循环体相同，只是 `set_tests_properties` 增加 `LABELS`。`desktop` 保留 `RUN_SERIAL TRUE`；`model` 和 `widget` 去掉 `RUN_SERIAL`。单独写出的套件（model、widgets、extension-api、drag-interaction、custom-chrome、tab-ordering-model 等）逐个加 `LABELS`。
+4. 其他三个 CMakeLists 同样加标签：`lua-runtime.runtime` 为 `model`；`window-system.lua`、`window-system.lua-lifecycle` 按源码判断；应用的 `muxora.state-paths`、`muxora.user-preferences` 为 `model`，`muxora.localization`、`muxora.scripting` 按源码判断。
+5. `tools/build.ps1` 增加 `[string]$TestLabel`，非空时给 ctest 传 `-L $TestLabel`；junit 文件名加上标签后缀。
+
+**测试**：无新增 Qt 测试。用 CTest 本身验证：
+
+```powershell
+ctest --test-dir out/build/dev-release -N -L model   # 只列出，不运行
+ctest --test-dir out/build/dev-release -N            # 总数仍为 59
+```
+
+**验证**：分别运行三层各一次；再并行运行 `ctest -L "model|widget" -j 8`，与串行结果比较，失败数必须一致（都为 0，或失败都能在基线复现）。
+
+**完成标准**：
+
+- [ ] 三层套件数之和等于总套件数，没有套件漏标签。
+- [ ] 去掉 `RUN_SERIAL` 的套件在 `-j 8` 下连续三次通过。若某个套件在并行时失败而串行通过，说明分类错误，改回 `desktop`，不要修改测试本身。
+- [ ] `testing-design.md` 写明分类规则与命令。
+
+**风险**：有些套件在构造函数里创建窗口但不显示，可能仍依赖焦点。以并行实测为准。
+
+**状态**：未开始。
+
+---
+
+## 0.3 测试结果汇总脚本
+
+**目标**：统一统计“实际测试行”（不含 `initTestCase`／`cleanupTestCase`），生成 JSON，取代手工统计。
+
+**涉及文件**：新建 `tools/test-summary.ps1`。
+
+**实现**：
+
+1. 参数：`-BuildDirectory`（默认 `out/build/dev-release`）、`-Output`（必填）。
+2. 递归读取 `*-results.txt`（这些文件由各 `add_test(... -o <name>-results.txt,txt)` 生成）。
+3. 逐行匹配 `^(PASS|FAIL!|SKIP|BLACKLIST|XFAIL|XPASS)\s*:\s*(\S+)::(\w+)(\((.*)\))?`。按“套件文件 + 函数名 + 数据标签”去重：同一行出现多条 `FAIL!` 只算一个失败行；同一行既有 `FAIL!` 又有 `PASS` 的情况按失败算。
+4. 输出：每个套件的通过／失败／跳过行数、失败行列表；以及总计。文件不存在或为空的套件单独列出“无结果”。
+
+**验证**：对当前构建目录运行，结果应与审查记录中的数字一致（最近一次全量为 2168 个通过行；失败行按去重规则计算）。
+
+**状态**：未开始。
+
+---
+
+## 0.4 架构决定记录
+
+**目标**：`docs/adr/` 中记录已经做出、但只散落在设计文档里的决定。
+
+**实现**：新建以下文件，每个包含“背景、决定、后果、替代方案、日期”五节，内容取自现有设计文档，不新增决定：
+
+| 文件 | 内容来源 |
+| --- | --- |
+| `docs/adr/0001-own-docking-implementation.md` | `engineering-design.md` §2：自研停靠，不用 KDDockWidgets |
+| `docs/adr/0002-lua-as-cxx-with-gc-hook.md` | `third_party/lua/CMakeLists.txt` 注释、`lua-scripting-design.md` |
+| `docs/adr/0003-lua-sandbox-scope.md` | `script_worker.cpp` `initialize()` 去掉的库与函数 |
+| `docs/adr/0004-windows-toolchain.md` | 实际使用 MinGW GCC 15.1 构建 Release；MSVC 只用于诊断构建（见阶段 6.4）。同时修订 `engineering-design.md` §6.1 中“首选 MSVC”的表述，使两者一致 |
+
+`docs/README.md` 的表格中加入 ADR 目录入口。
+
+**状态**：未开始。
+
+---
+
+## 0.5 预览说明拆分
+
+**目标**：`docs/development/window-system-preview.md` 只写当前状态。
+
+**实现**：
+
+1. 新建 `docs/development/verification-log/2026-10.md`，把预览说明中带日期的“修订”与“验证记录”小节原样移入（保持标题与正文不变，按日期倒序）。
+2. 预览说明保留：开发环境、当前可试用功能（功能表，不带日期叙述）、快捷键表、试用步骤、“最近一次验证”一节（只写最新一次），以及指向日志的链接。
+3. `docs/README.md` 增加日志入口。
+
+**完成标准**：移动前后用 `git diff --stat` 确认总行数基本守恒；所有原有链接仍然有效（用 `grep -rn "window-system-preview.md#" docs` 检查锚点引用）。
+
+**状态**：未开始。

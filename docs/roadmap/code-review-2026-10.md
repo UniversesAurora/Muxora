@@ -36,6 +36,7 @@
 | R14 | 低 | 应用目标 `muxora` 和应用测试没有开启 `-Wall -Wextra`，模块目标已开启 | `src/app/CMakeLists.txt` | 待处理；本轮按要求不改 Release 默认编译选项 |
 | R15 | 低 | 约 50 个测试可执行文件各自静态链接 WindowSystem，链接时间和磁盘占用随套件数线性增长 | `modules/window-system/tests/CMakeLists.txt` | 待处理，见[工程 §3](engineering-plan.md#3-测试) |
 | R16 | 中 | 侧栏隐藏期间发生重建，再显示侧栏时，收纳条要等下一轮事件循环才真正显示；紧随其后的临时面板定位和固定分区尺寸计算看不到收纳条。`sidebar-presentation` 套件 8 行因此稳定失败，上一提交的定向测试没有覆盖该套件 | `dock_surface.cpp` `updateRailLayout()` | **已修复**（本轮） |
+| R17 | 高 | `LayoutModel::activateTab()`、`activatePane()` 也走完整事务（复制模型、同步固定树、全量校验）。每次焦点变化，`eventFilter` 调一次 `activatePane()`，`updateActive()` 再调一次 `activateTab()`，点击标签和切换焦点的成本随标签总数增长 | `layout_model.cpp` `activateTab`／`activatePane`；`window_manager.cpp` `eventFilter`、`updateActive` | 待处理，见 [实现计划 1.2](implementation/phase-1-layout-performance.md#12-激活与分割比例快速路径r17)（编写实现计划时发现） |
 
 ### 关于内存泄漏
 
