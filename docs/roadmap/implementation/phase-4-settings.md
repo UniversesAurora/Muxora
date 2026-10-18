@@ -101,6 +101,8 @@
 
 ## 4.3 设置页由声明生成
 
+> 界面规格以 [界面设计规范 §4.9](../../design/ui-design-system.md#49-设置页参照-vs-code-设置编辑器) 为准，并遵守 [执行规则中的界面标准](README.md#界面标准)。注意规范要求设置 ID 不在每行常驻显示（放进齿轮菜单），控件放在说明下方。
+
 **涉及文件**：`src/settings/settings_page.{hpp,cpp}`、`settings_view_options.cpp`、`settings_tab_appearance.cpp`；新建 `src/settings/setting_editors.{hpp,cpp}`（各类型控件工厂）；测试 `tests/pane_settings_test.cpp` 等使用设置页的测试。
 
 **实现**：

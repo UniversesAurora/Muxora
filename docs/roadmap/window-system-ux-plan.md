@@ -4,27 +4,15 @@
 
 ## 1. 主题：深色与黑色
 
-**现状**：只有一套 Violet Light（`theme.hpp` 中的 `defaultTheme()`）。`WindowManager::setTheme()` 和 Lua 外观 API 可以换颜色令牌，但没有内置深色方案，也没有跟随系统；部分颜色写死在代码里：
+> 2026-10-19 修订：主题部分已扩展为独立的 [主题系统设计](../design/theme-system-design.md)，实现步骤见 [阶段 2](implementation/phase-2-themes.md)。原来“在现有 `Theme` 结构上加几个字段、给两套颜色”的方案不再采用。
 
-- `drag_controller.cpp` 中拖拽投放指示的边框、填充和标签（约 60–92 行）；
-- `tab_appearance.cpp` 中标签颜色预设，只有浅色背景配深色文字一组取值。
+要点：
 
-**方案**：
-
-1. **内置主题**：`Violet Light`（现有）、`Violet Dark`、`Black`（纯黑背景，适合 OLED 和长时间终端使用）、`High Contrast`。在模块中提供 `builtInThemes()`，按 ID 取用。
-2. **设置项**（与 VS Code 对应）：
-   - `workbench.colorTheme`：当前主题；
-   - `window.autoDetectColorScheme`：跟随系统深浅色；
-   - `workbench.preferredLightColorTheme` / `workbench.preferredDarkColorTheme`：跟随系统时各用哪套。
-   这样就能实现“深色模式下用哪套主题可设置”，黑色主题可以作为深色时的选择。
-3. **跟随系统**：读取 `QGuiApplication::styleHints()->colorScheme()`，监听 `colorSchemeChanged`。原生帧在平台层对每个顶层窗口设置 `DWMWA_USE_IMMERSIVE_DARK_MODE`，让系统边框、Snap 弹窗和阴影一致。
-4. **令牌补齐**：给 `Theme` 增加 `dropIndicator`、`dropIndicatorFill`、`dropLabelBackground`、`dropLabelText`、`shadow` 等令牌；标签颜色预设改成每个颜色一对“浅色／深色”取值，由当前主题的明暗选用。
-5. **自定义主题文件**：`User/themes/*.json`，只写需要覆盖的令牌，基于某个内置主题继承；加载失败时报告具体字段，不部分应用。
-6. **终端配色独立**：界面主题和终端配色方案（ANSI 16 色、前景、背景、光标、选区）分开，参照 Windows Terminal 的 `schemes`。界面切到深色时，终端配色可以单独选择是否跟随。
-
-**依赖**：先完成 [性能 §4](performance-plan.md#4-主题从样式表转向调色板与-proxystyle) 的样式迁移，或者至少保证 QSS 中所有颜色都来自令牌（现在已基本如此）。
-
-**验证**：对每套内置主题跑现有的像素和几何测试（参数化主题）；运行中切换主题后，所有窗口、浮窗、弹出菜单、拖拽预览颜色一致；跟随系统时切换系统设置，检查实际窗口。
+- 行为与 VS Code 一致：`workbench.colorTheme`、`window.autoDetectColorScheme`、`workbench.preferredLightColorTheme`／`workbench.preferredDarkColorTheme`、高对比自动切换、`workbench.colorCustomizations`；“首选项：颜色主题”列表移动即预览、`Esc` 恢复；跟随系统时从列表选择会写入当前深浅色对应的首选项。
+- 结构与 VS Code 一致：颜色注册表中每个颜色 ID 必须有浅色、深色、深色高对比、浅色高对比四类默认值；主题文件只写差异，可继承。
+- 深色主题单独设计：以中性灰阶表达层次，强调色只用于少量位置；状态栏、收纳条、活动标签、标签颜色、拖拽指示、选中、阴影在深色下各有专门做法（设计 §3.2），不沿用浅色主题的大面积紫色。
+- 协调性由机制保证：注册完整性测试、对比度测试、状态完整性测试、组件画廊及三套截图评审。
+- 界面主题与终端配色分开；终端配色以颜色 ID（`terminal.*`）进入同一套主题。
 
 ## 2. 菜单与命令结构
 
@@ -130,3 +118,11 @@
 - **广播输入**：Xshell 的“发送到所有会话”、iTerm2 的广播输入、MobaXterm 的 MultiExec。窗口模块提供“窗格选择集”（多选窗格并显示标记），内容层负责实际发送。
 - **通知**：Lua 已有非模态通知。为长任务完成、连接断开等增加统一通知中心（状态栏图标加历史列表），有容量上限。
 - **可访问性**：自绘控件已有可访问名称；还需要检查高对比主题和屏幕阅读器下的标签条、边栏。
+
+## 6. 界面质量与面板调整
+
+> 2026-10-19 新增。
+
+- **整体标准**：所有界面以 Visual Studio、VS Code 为参照，遵守 [界面设计规范](../design/ui-design-system.md)。现有界面与规范的差距见 [界面审查](ui-audit-2026-10.md)：命令面板、窗口选择是带表头和按钮的居中对话框；标签组目标选择是三层嵌套菜单；重命名、Lua 运行、临时展开大小用系统默认输入框或 `exec()` 对话框；设置页和快捷键页信息过密、层次弱。处理方式是统一组件（快速输入、浮层、对话框、通知），见 [阶段 8](implementation/phase-8-ui-quality.md)。
+- **临时面板八向调整**：侧栏临时展开面板的四条边、四个角都可以拖动调整大小，位置仍按现有对齐规则，拖动只改变宽高（[窗口交互设计](../design/window-interaction-design.md)，实现 8.2）。
+- **贴窗口边缘时的冲突**：隐藏侧边栏后，左右面板一直延伸到窗口边缘；非最大化时窗口在客户区内侧约 8 像素的缩放命中区挡住了面板外侧边。解决方法是把窗口的左、右、下缩放区移到可见边框之外的不可见系统边框（与普通 Windows 窗口一致），可见外观和内容贴边都不变，不需要留白（[窗口交互设计“窗口缩放边框”](../design/window-interaction-design.md#窗口缩放边框)，实现 8.1）。

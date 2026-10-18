@@ -1,0 +1,310 @@
+# 阶段 8：界面质量
+
+**目的**：让所有临时界面、页面和窗口交互达到 [界面设计规范](../../design/ui-design-system.md) 的标准，解决 [界面审查](../ui-audit-2026-10.md) 中的问题，并实现侧栏临时面板的八向调整和窗口外侧缩放边框（[窗口交互设计](../../design/window-interaction-design.md#窗口缩放边框)）。
+
+**阶段约束**：
+
+- 每个步骤完成时，按规范 §6 导出浅色、深色、黑色截图到 `out/diagnostics/ui-review/<步骤>/` 并对照规范检查；阶段 2.5 的组件画廊完成前，用真实窗口截图代替。
+- 统一组件替换旧实现后，旧实现删除，不保留两套。
+- 现有测试按对象名查找控件的，新组件保留原对象名（例如 `CommandPalette`、`CommandPaletteSearch`）。依赖旧控件类型（如 `QTreeWidget` 接口）的断言，按测试规范提交独立证据说明新组件中如何检查同一行为，经评审后修订，并保留等效覆盖。
+- **改变现有尺寸规格的步骤**（8.10）会修改已有测试中写明的尺寸，按测试规范必须先得到用户确认。
+
+**步骤与依赖**：
+
+| 步骤 | 内容 | 前置 |
+| --- | --- | --- |
+| 8.1 | 窗口缩放区移到外侧不可见边框 | 无 |
+| 8.2 | 临时面板八向调整 | 8.1（贴窗口边缘的一侧依赖它） |
+| 8.3 | 浮层窗口基类 | 2.4（颜色 ID），可先用现有令牌 |
+| 8.4 | 快速输入组件并替换命令面板等 | 8.3 |
+| 8.5 | 标签行内重命名 | 8.4（侧栏标签用输入框模式） |
+| 8.6 | 统一对话框 | 8.3 |
+| 8.7 | 通知与通知中心 | 8.3 |
+| 8.8 | 空工作区 | 2.4 |
+| 8.9 | 菜单结构、右键菜单顺序与文案 | 3.4（菜单 `when`）为佳，非硬性 |
+| 8.10 | 尺寸规格统一 | 用户确认 |
+
+设置页与快捷键页的界面按规范 §4.9、§4.10 分别在 [4.3](phase-4-settings.md#43-设置页由声明生成) 和 [3.8](phase-3-keybindings.md#38-快捷键编辑器重做) 中实现，本阶段不重复。
+
+---
+
+## 8.1 窗口缩放区移到外侧不可见边框（W2）
+
+**目标**：非最大化窗口的左、右、下缩放区位于可见边框之外（与普通 Win32 窗口一致）；客户区边缘的像素全部归内容使用。外观不变。
+
+**涉及文件**：`src/platform/windows/window_frame.cpp`（`WM_NCCALCSIZE` 约 492 行、`WM_NCHITTEST` 约 512 行、`resizeBorder()` 约 158 行、正常矩形与最大化对齐相关代码）、`src/platform/window_placement.hpp`、`tests/native_frame_test.cpp`、`tests/window_placement_test.cpp`。
+
+**实现**：
+
+1. 先阅读 `window_frame.cpp` 全文，列出所有依赖“客户区等于窗口矩形”的地方：正常矩形记录、最大化时扣除边框、全屏、拖拽预览窗口（`windowSystemDragPresentation`）、Snap、DPI 变化。把清单写进提交说明。
+2. `WM_NCCALCSIZE`（非最大化、非全屏、非拖拽预览）：
+
+   ```cpp
+   const int border = resizeBorder(msg->hwnd, window);  // 系统缩放边框宽度（物理像素）
+   bounds->left += border;
+   bounds->right -= border;
+   bounds->bottom -= border;
+   // top 不变：自绘标题行一直到窗口顶部
+   ```
+
+   最大化分支保持现有逻辑。返回值仍为 0。
+3. `WM_NCHITTEST`：
+   - 先保留“标题按钮优先”的现有规则；
+   - 点在客户区之外（左、右、下的不可见边框中）时返回对应的 `HTLEFT`／`HTRIGHT`／`HTBOTTOM`／`HTBOTTOMLEFT`／`HTBOTTOMRIGHT`；
+   - 顶部：客户区最上方 `border` 像素内仍返回 `HTTOP`（左右两端返回 `HTTOPLEFT`／`HTTOPRIGHT`，范围扩展到不可见边框）；
+   - 客户区内其余点返回 `HTCLIENT`，不再返回缩放命中。
+4. 可见边框：现在 1 像素可见边框由 QSS 的 `QWidget#WorkspaceWindow { border: 1px }` 绘制在客户区内；保持不变。DWM 在不可见边框区域不绘制任何东西（Windows 10 起的标准行为），需要在 Windows 10 和 11 上分别确认没有出现可见的系统边框；若某版本出现，在提交说明中记录并改用备选方案（设计文档中的窄带方案）。
+5. 窗口几何：`QWidget::geometry()` 是客户区，`frameGeometry()` 包含不可见边框。逐个检查保存／恢复正常矩形、`fitInitialPlacement()`、拖出窗口定位（“先放到鼠标位置再显示”）、最大化对齐，确保用户看到的位置与之前一致（可见边框位置不变）。
+6. 现有注释中说明“客户区包含缩放边缘”的地方同步修改。
+
+**测试**：
+
+- `native_frame_test` 全部现有行通过。新增：
+  - `resizeBorderLiesOutsideClient`：非最大化时 `GetClientRect` 换算的屏幕矩形比 `GetWindowRect` 左右下各小 `resizeBorder`；客户区左边缘内 1 像素处 `WM_NCHITTEST` 返回 `HTCLIENT`，客户区外 1 像素处返回 `HTLEFT`（直接 `SendMessage(WM_NCHITTEST)` 检查）；
+  - `visibleBoundsUnchanged`：同一保存布局在修改前后恢复，可见窗口矩形（`DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)`）相同；
+  - 最大化与全屏的现有对齐测试保持通过。
+- `window_placement_test` 全部通过。
+- 真实桌面试用：从左、右、下、四角拖动缩放；Snap 布局弹窗；拖到屏幕边缘的系统贴靠；多显示器不同 DPI 之间移动。结果写入预览说明，未试用的项写明未试用。
+
+**完成标准**：测试全部通过；Windows 11 上试用通过；Windows 10 若无法试用，在状态中写明“未在 Windows 10 验证”。
+
+**风险**：这是原生帧的核心改动，影响面大。必须单独提交，提交前运行 `native-frame`、`window-placement`、`chrome-interaction`、`caption-strip`、`drag-*`、`focus-mode` 和应用部署夹具。
+
+**状态**：未开始。
+
+---
+
+## 8.2 临时面板八向调整（W1）
+
+**目标**：临时展开面板的四条边、四个角都能调整大小；位置仍按现有对齐规则；面板贴窗口边缘时也能从外侧调整。
+
+**前置**：8.1。
+
+**涉及文件**：`src/docking/peek_resize_handle.hpp`、`src/docking/dock_surface.{hpp,cpp}`（`showEdgeGroup` 中创建手柄的部分约 655–690 行，`placePeek()` 约 855–925 行）、`tests/peek_size_test.cpp`。
+
+**实现**：
+
+1. `DockSurface` 中三个手柄成员（`peekResizeHandle_`、`peekSecondaryResizeHandle_`、`peekCornerResizeHandle_`）替换为 `std::array<QPointer<QWidget>, 8> peekHandles_`，下标对应 `Qt::Edges` 的八种组合（上、下、左、右、左上、右上、左下、右下）。保留原有三个对象名（`PeekResizeHandle`、`PeekHeightResizeHandle`／`PeekWidthResizeHandle`、`PeekCornerResizeHandle`）给原来对应的那三个手柄，现有测试不受影响；新增的五个使用 `PeekResizeHandle.<方向>` 形式的对象名。
+2. 尺寸计算改为“方向符号”：
+
+   ```cpp
+   // 向远离面板中心的方向拖动为放大。
+   const int sx = edges & Qt::RightEdge ? +1 : edges & Qt::LeftEdge ? -1 : 0;
+   const int sy = edges & Qt::BottomEdge ? +1 : edges & Qt::TopEdge ? -1 : 0;
+   size.width  = sx ? qBound(140, initial.width()  + sx * delta.x(), QWIDGETSIZE_MAX) : initialPolicy.width;
+   size.height = sy ? qBound(100, initial.height() + sy * delta.y(), QWIDGETSIZE_MAX) : initialPolicy.height;
+   ```
+
+   这与现有 `PeekResizeHandle::mouseMoveEvent` 的写法一致，只是推广到全部方向。贴边一侧（例如左侧面板的左边）同样适用：向左（远离中心）拖为放大。
+3. 位置：`placePeek()` 不变（仍按触发标签对齐并限制在可用区域内），每次尺寸变化后重新放置。手柄几何按八个方向分别计算：边的命中带宽 4，长度为对应边长减去两端角区；角为 8×8；全部叠在面板边缘内侧，不增加留白（与现有设计“调整区域叠在面板边缘”的约束一致）。
+4. 悬停提示：手柄悬停 300 ms 后，在面板对应边绘制 2 像素 `sash.hoverBorder`（阶段 2 之前用 `focus` 令牌）；拖动中保持；离开或松开后消失。实现为手柄自身的 `paintEvent`（手柄就在边上，直接画）。
+5. 光标：上下边 `SizeVerCursor`，左右边 `SizeHorCursor`，左上／右下 `SizeFDiagCursor`，右上／左下 `SizeBDiagCursor`（现有构造函数已有此逻辑）。
+6. 键盘：现有“设置临时展开大小…”命令保留（8.4 后改为输入框模式）。
+
+**测试**（`peek_size_test.cpp` 新增，数据驱动 4 个边 × 8 个手柄）：
+
+- 每个手柄向外拖 40 像素，对应维度增加 40（受最小值和可用区域限制），另一维度不变；向内拖则减小。
+- 拖动后面板位置符合对齐规则（与 `placePeek()` 的计算一致）。
+- 隐藏侧边栏、窗口非最大化、左侧面板贴窗口左边缘时：面板左边的手柄可拖动且窗口宽度不变；在窗口可见边框外 2 像素处按下拖动，窗口宽度改变而面板宽度不变（依赖 8.1；该行属于 `desktop` 层）。
+- 原有三个手柄的全部断言保持通过。
+
+**状态**：未开始。
+
+---
+
+## 8.3 浮层窗口基类（U7、M3）
+
+**目标**：快速输入、菜单、下拉列表、通知、工具提示、对话框共用同一种顶层窗口外观：圆角、系统阴影、主题颜色、深色边框、焦点返回。
+
+**涉及文件**：新建 `src/chrome/overlay_window.{hpp,cpp}`；`src/platform/windows/window_frame.{hpp,cpp}`（新增 `applyOverlayFrame(QWidget*)`）；`src/commands/floating_panel.cpp`（改为基于新基类）；`src/commands/popup_menu.cpp`（`DismissOnlyMenu` 显示前调用平台函数）；测试 `tests/floating_panel_test.cpp`、新 `tests/overlay_window_test.cpp`。
+
+**实现**：
+
+1. `OverlayWindow : QWidget`，窗口标志 `Qt::Tool | Qt::FramelessWindowHint`（菜单仍是 `QMenu` 自己的 `Qt::Popup`），提供：
+   - `void showRelativeTo(QWidget* owner, OverlayAnchor anchor)`：`TopCenter`（快速输入）、`Center`（对话框）、`BottomRight`（通知）、`AtRect`（下拉、工具提示）；位置限制在所属窗口所在屏幕的可用区域内。
+   - 焦点返回：显示时记录 `QApplication::focusWidget()` 的 `QPointer`，隐藏时若该控件仍存在且可见则 `setFocus()`，否则把焦点交给所属窗口的当前窗格（调用 `WindowManager::focusPane`）。
+   - `Esc` 关闭；外部点击关闭的策略沿用 `FloatingPanelOptions`。
+2. `applyOverlayFrame()`（Windows）：
+   - `DwmSetWindowAttribute(handle, 33 /*DWMWA_WINDOW_CORNER_PREFERENCE*/, DWMWCP_ROUND)`；
+   - 系统阴影：先尝试 `DwmExtendFrameIntoClientArea` 设 1 像素边距（无边框窗口获得 DWM 阴影的常用做法），若在实测中无效，再改用窗口类样式 `CS_DROPSHADOW`；选定的方法和实测结果写进代码注释；
+   - 深色主题时设置沉浸式深色（2.7）。
+   - 非 Windows 平台空实现。
+3. `FloatingPanel` 改为继承 `OverlayWindow`（或组合），保留其公开 API 和“非模态、外部点击关闭且不吞掉点击”的契约；`FloatingPanelOptions` 不变。
+4. 菜单：`DismissOnlyMenu` 在 `showEvent` 中调用 `applyOverlayFrame()`；QSS 中菜单的圆角、内边距、行高按规范 §4.2。
+
+**测试**：`overlay_window_test`：各锚点的位置与屏幕边界限制；焦点返回到原控件、原控件已销毁时回到窗格内容；`Esc` 关闭。`floating_panel_test` 全部现有行通过。`desktop` 层另加一行读取 `DWMWA_WINDOW_CORNER_PREFERENCE` 确认已设置。
+
+**状态**：未开始。
+
+---
+
+## 8.4 快速输入组件（U1、U2、U3、U5）
+
+**目标**：实现规范 §4.1 的快速输入（列表选择与单值输入两种模式），并替换命令面板、窗口选择、标签组目标选择、临时展开大小输入、工具条移动等全部同类界面。
+
+**涉及文件**：新建 `src/quickinput/quick_input.{hpp,cpp}`、`quick_input_model.{hpp,cpp}`、`quick_input_delegate.{hpp,cpp}`、`fuzzy_match.{hpp,cpp}`、`command_history.{hpp,cpp}`；改写 `src/commands/command_dialogs.cpp`（命令面板、窗口选择）、`src/commands/tab_group_commands.cpp`（`chooseTarget` 约 77 行起）、`src/commands/peek_size_command.cpp`、`src/commands/toolbar_move_command.cpp`、`src/commands/hierarchy_commands.cpp` 中的目标选择；测试 `tests/view_commands_test.cpp`、`tests/floating_panel_test.cpp`、新 `tests/quick_input_test.cpp`、`tests/fuzzy_match_test.cpp`。
+
+**实现**：
+
+1. **模糊匹配**（`fuzzy_match`，纯函数）：
+
+   ```cpp
+   struct FuzzyMatch { int score = 0; QVector<QPair<int, int>> ranges; }; // 命中区间，用于高亮
+   std::optional<FuzzyMatch> fuzzyMatch(QStringView pattern, QStringView text);
+   ```
+
+   规则：模式中的字符按顺序出现在文本中即匹配（大小写不敏感）；得分：连续命中加分、词首（空格、`.`、`/`、大写字母、中文字符边界之后）命中加分、首字符命中加分、间隔减分。多个空格分隔的词分别匹配并合并区间。参照 VS Code `fuzzyScore` 的思路，但不追求完全相同的分数。
+
+2. **模型与绘制**：`QuickInputModel : QAbstractListModel`，条目为
+
+   ```cpp
+   struct QuickPickItem {
+       QString id; QString label; QString description; QIcon icon;
+       QVector<QKeySequence> keys; QString group; bool enabled = true;
+   };
+   ```
+
+   `QuickInputDelegate` 自绘一行：图标、标签（命中区间加粗并用 `list.highlightForeground`）、同行说明（`descriptionForeground`）、右侧按键方框（`keybindingLabel.*`，每个按键一个圆角 3 的小框，组合键之间用“+”，续键之间留空格）。分组标题行由模型插入为不可选的特殊行。不为每行创建控件。
+
+3. **QuickInput 控件**（基于 8.3 `OverlayWindow`，锚点 `TopCenter`）：
+
+   ```cpp
+   class QuickInput : public OverlayWindow {
+   public:
+       struct Step { QString title; QString placeholder; QVector<QuickPickItem> items; };
+       void showPick(Step step);                         // 列表模式
+       void showInput(QString title, QString prompt, QString value,
+                      std::function<QString(const QString&)> validate); // 输入框模式，返回错误文字
+       std::function<void(const QuickPickItem&)> activeChanged;  // 预览（例如主题）
+       std::function<void(const QuickPickItem&, Qt::KeyboardModifiers)> accepted;
+       std::function<void()> cancelled;
+   };
+   ```
+
+   每个窗口最多一个实例；打开新的替换旧的（旧的触发 `cancelled`）。多步流程由调用方在 `accepted` 中调用下一步 `showPick`，标题显示“（2/3）”，输入框为空时 `Backspace` 返回上一步。
+
+4. **命令面板**：
+   - 条目来自命令注册表；`menuWhen`（3.4）为假或 `enabled` 为假的命令默认不显示；设置 `commandPalette.showUnavailable` 为真时以禁用状态显示在最后。
+   - 分组：“最近使用”（最多 10 条）与“其他命令”。最近使用记录在 `CommandHistory`（容量 50，按执行时间）；`WindowManager` 提供 `commandHistory()`／`setCommandHistory()` 和变化信号，宿主随布局或状态文件保存。
+   - 说明列显示分类；按键显示全部绑定（最多 2 个，多余的在工具提示中）。
+   - 前缀：`>` 命令（默认）、`%` 已打开的标签（跨窗口，选中即激活）、`@` 当前标签的窗格。
+   - 保留对象名 `CommandPalette`、`CommandPaletteSearch`；列表对象名 `CommandPaletteCommands`。
+5. **窗口选择**：条目为窗口标题与类型、所属窗口族，说明列显示活动标签；对象名 `WindowSelector` 保留。
+6. **标签组目标选择**（替换三层菜单）：多步——①选择目标标签组（列出全部窗口的组，说明列为“窗口名 · n 个标签”；移动时当前组不列出）；②需要方向时选择方向（左、右、上、下，带图标）。在第①步移动选择时，在目标窗口中用 `muxora.dropTarget.*` 颜色高亮该组（复用拖拽覆盖层的绘制），关闭时清除。
+7. **输入框模式的使用**：临时展开大小（“宽 × 高”，如 `320 × 480`，留空表示该轴默认；校验范围与现有对话框相同）、移动工具条的行号、命令面板中执行带参数的重命名。
+8. 删除 `command_dialogs.cpp` 中旧的 `createDialog`、`QTreeWidget` 列表和按钮代码，删除 `peek_size_command.cpp` 中的 `QDialog::exec()`。
+
+**测试**：
+
+- `fuzzy_match_test`：匹配与不匹配、区间、得分次序（词首 > 连续 > 分散）、中英文混排、多词。
+- `quick_input_test`：键盘导航（含分组行跳过）、`Enter`／`Esc`、预览回调、多步前进与返回、输入框校验阻止提交、替换旧实例、焦点返回。
+- 现有 `view_commands_test`、`floating_panel_test` 中命令面板和窗口选择相关断言：按对象名的保持；依赖 `QTreeWidget` 的按约束修订。
+- 目标选择：键盘完成“与指定标签组交换”“移动到指定组的右侧”；高亮在选择时出现、关闭后消失。
+
+**状态**：未开始。
+
+---
+
+## 8.5 标签行内重命名（U4）
+
+**涉及文件**：`src/docking/tab_strip.{hpp,cpp}`、`src/docking/edge_strip.cpp`、`src/custom_chrome.cpp`（`tab.rename` 约 390–405 行）、测试 `tests/tab_strip_layout_test.cpp` 或新 `tests/tab_rename_test.cpp`。
+
+**实现**：
+
+1. 中央与固定组的标签：`tab.rename` 无 `title` 参数时，在标签位置覆盖一个 `QLineEdit`（与标签同尺寸，选中全部文字），`Enter` 或失焦提交、`Esc` 取消；提交时调用 `renameTab`。标签条滚动或布局刷新时取消编辑。
+2. 收纳条标签（竖排）和命令面板入口：使用 8.4 的输入框模式。
+3. 双击标签不触发重命名（与 VS Code 一致）；右键菜单“重命名…”和 `F2`（`when: tabFocus`，阶段 3 之后）触发。
+4. 删除 `QInputDialog::getText` 调用。
+
+**测试**：行内编辑提交、取消、失焦提交、空标题处理（与现有 `renameTab` 规则一致）、编辑中关闭标签不崩溃、编辑中布局刷新取消编辑。
+
+**状态**：未开始。
+
+---
+
+## 8.6 统一对话框（U8）
+
+**涉及文件**：新建 `src/chrome/message_dialog.{hpp,cpp}`；公开到 `include/window_system/`（宿主需要用于关闭确认）；`src/app/main.cpp`（关于对话框）。
+
+**实现**：
+
+```cpp
+struct DialogButton { QString text; QString id; bool primary = false; };
+struct MessageDialogOptions {
+    enum class Severity { Info, Warning, Error } severity = Severity::Info;
+    QString title; QString detail; QVector<DialogButton> buttons; // 按显示顺序；主要按钮在左
+    QString cancelId;                                             // Esc 返回的按钮
+};
+// 非阻塞：立即返回；结果通过回调。所属窗口关闭时以 cancelId 回调。
+void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::function<void(QString buttonId)> done);
+```
+
+外观按规范 §4.3（基于 8.3 浮层，锚点 `Center`，对所属窗口模态）。“关于 Muxora”改用此组件。阶段 5.2 的未保存确认使用它。
+
+**测试**：按钮顺序与默认、`Enter`／`Esc`、所属窗口关闭时的回调、回调中销毁所属窗口不崩溃。
+
+**状态**：未开始。
+
+---
+
+## 8.7 通知与通知中心（U9）
+
+**涉及文件**：新建 `src/chrome/notifications.{hpp,cpp}`、公开 API；`window-system-lua/src/script_api.cpp`（`ui.notify` 改用新组件）；状态栏通知图标。
+
+**实现**：
+
+```cpp
+struct Notification {
+    enum class Severity { Info, Warning, Error } severity;
+    QString message; QString source;                      // 来源，例如 "Lua" 或会话名
+    QVector<DialogButton> actions; int timeoutMs = 8000;  // 0 表示不自动消失
+};
+quint64 WindowManager::notify(WindowId window, Notification n, std::function<void(QString actionId)> onAction = {});
+void WindowManager::dismissNotification(quint64 id);
+```
+
+外观按规范 §4.4；同一窗口最多同时显示 3 条，其余排队；通知中心历史上限 100 条。状态栏右端图标显示未读数（`badge.*`）。`commandFailed` 信号产生的错误也进入通知中心（仍在状态栏显示一次）。
+
+**测试**：排队与上限、超时与悬停暂停、操作回调、历史上限、Lua `ui.notify` 兼容现有参数。
+
+**状态**：未开始。
+
+---
+
+## 8.8 空工作区（P3）
+
+**涉及文件**：`src/docking/dock_surface.cpp`（`EmptyWorkspace` 标签，约 106 行）。
+
+**实现**：中央显示若干常用命令（新建标签、命令面板、设置、键盘快捷方式；业务阶段加入“打开会话”），每行左侧是命令名（可点击执行）、右侧是按键方框；命令列表由宿主通过 `setEmptyWorkspaceCommands(QStringList)` 指定，默认包含模块内的三个。文字颜色 `descriptionForeground`，居中，不显示图标或插图。
+
+**测试**：点击执行命令；按键显示随绑定变化更新；宿主自定义列表。
+
+**状态**：未开始。
+
+---
+
+## 8.9 菜单结构、右键菜单顺序与文案（M1、M2、M4）
+
+**涉及文件**：`src/commands/command_menus.cpp`、`src/app/main.cpp`（应用命令的菜单路径）、两个翻译文件、`tests/menu_structure_test.cpp`、`tests/sidebar_menu_test.cpp`。
+
+**实现**：
+
+1. 主菜单调整为 [交互改进 §2](../window-system-ux-plan.md#2-菜单与命令结构) 的结构：文件、编辑、视图、窗口（合并原“布局”和“窗口”）、工具、帮助；“会话”“终端”菜单在阶段 7 加入。
+2. “编辑”菜单的通用命令：`edit.undo`、`edit.redo`、`edit.cut`、`edit.copy`、`edit.paste`、`edit.selectAll`、`edit.find`。实现为“转发给当前焦点控件”：`QLineEdit`、`QTextEdit`、`QPlainTextEdit` 调用其同名槽；内容控件可以通过动态属性 `windowSystemEditActions` 声明支持的操作，或实现一个小接口（`EditTarget`）由模块查找。没有可用目标时命令禁用。
+3. 标签右键菜单按规范 §4.2 重新分组：关闭组 → 固定与颜色 → 移动与拆分 → 转换 → 所在标签组 → 复制标题。
+4. 文案检查：写一个测试遍历所有命令，检查：需要进一步输入的命令（打开快速输入或对话框的）标题以“…”结尾，其他命令不以“…”结尾；标题不以句号结尾；同一命令在菜单中显示的文字与命令标题一致。需要输入的命令在注册时用一个标志声明（`Command` 增加 `bool opensInput = false;`）。
+5. 菜单结构变化是用户可见的规格变化，`menu_structure_test` 的预期按新结构修订——这属于需求变化而不是放宽测试，在提交说明中引用本文档和用户要求。
+
+**测试**：菜单结构新预期；编辑命令对 `QLineEdit`、`QPlainTextEdit` 生效、无目标时禁用；文案检查。
+
+**状态**：未开始。
+
+---
+
+## 8.10 尺寸规格统一（W3，需要用户确认）
+
+**内容**：按规范 §2.2 统一状态栏高度（23 → 22）、菜单行高、输入控件高度等。现有测试中写明了部分尺寸（例如状态栏、工具条、临时标题），修改它们属于规格变化。
+
+**做法**：先列出所有与规范不一致的尺寸及其测试位置（`grep -rn "23\b\|setFixedHeight" modules/window-system/src`，再逐个核对），整理成一张“现值 → 规范值 → 受影响测试”的表，提交给用户确认；确认后再改代码和测试预期。
+
+**状态**：未开始（等待确认）。

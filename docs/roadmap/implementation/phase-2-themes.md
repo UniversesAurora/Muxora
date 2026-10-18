@@ -1,265 +1,264 @@
-# 阶段 2：主题（深色、黑色、跟随系统）
+# 阶段 2：主题系统
 
-**目的**：提供 Violet Dark 和 Black 两套内置深色主题，可以固定使用某一套，也可以跟随系统并分别指定浅色、深色时使用的主题；所有自绘部分都从主题取色。
+**目的**：按 [主题系统设计](../../design/theme-system-design.md) 实现与 VS Code 相同的主题机制：颜色注册表（每个颜色 ID 带四类默认值）、主题定义与继承、`workbench.colorTheme` 等设置与切换逻辑、用户颜色覆盖；提供 Muxora Dark 与 Muxora Black，并用对比度测试和组件画廊保证深色下配色协调。
+
+> 2026-10-19 修订：本阶段原计划在现有 `Theme` 结构上增加几个字段、直接给出两套颜色。用户要求主题行为完全按 VS Code 的逻辑、深色配色整体协调，因此改为颜色注册表方案。原计划中“去掉硬编码颜色”“原生深色边框”“外观设置”的内容并入下面的步骤。
 
 **阶段约束**：
 
-- 模块仍然以值类型 `Theme` 为核心，`WindowManager::setTheme()` 的语义不变；宿主可以继续传入任意主题。
-- 模块不读写宿主配置文件。主题偏好的保存方式与界面语言相同：模块提供状态和信号，应用负责写入 `User/settings.json`。
-- 本阶段沿用现有的样式表路径（所有颜色已经来自令牌），不迁移到 `QProxyStyle`。原因见 2.7。
-- 颜色值在下面给出初稿。实现时以对比度测试（2.2）为准，可以微调，但调整必须让测试通过，不能放宽阈值。
+- **浅色主题像素不变**：注册表中 `light` 默认值和 Muxora Light 主题必须让现有界面逐像素保持原样，现有像素测试不改预期。这是迁移正确性的主要检查。
+- 公开结构 `window_system::Theme` 和 `setTheme()` 继续可用（设计 §5 的兼容视图）。
+- 模块不读写文件；内置主题以 Qt 资源打包在模块中，用户主题文件由宿主读取后交给模块。
+- 颜色值以设计文档 §3 为初稿，以本阶段的对比度测试为准；调整颜色让测试通过，不调整阈值。
+- 每个步骤都更新组件画廊（2.5 之后）并导出三套截图到 `out/diagnostics/ui-review/<步骤>/`。
+
+**步骤顺序**：2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 2.6 → 2.7 → 2.8 → 2.9。2.10 可选。
 
 ---
 
-## 2.1 补齐主题令牌，去掉硬编码颜色
+## 2.1 颜色注册表核心
 
-**目标**：拖拽投放指示、投放说明标签和拖动阴影都从 `Theme` 取色。默认主题下外观像素不变。
+**目标**：可注册颜色 ID、表达默认值、按主题类型解析的纯数据模块。
 
-**涉及文件**：`include/window_system/theme.hpp`、`src/style/theme.cpp`、`src/docking/drag_controller.cpp`（约 53–92 行的 `paintEvent`）、`src/docking/drag_presentation.cpp`（约 41–46 行的阴影）、`window-system-lua/src/appearance_api.cpp`（`themeColors` 表）、`tests/drag_presentation_test.cpp`。
+**涉及文件**：新建 `include/window_system/color_registry.hpp`、`src/style/color_registry.cpp`、`src/style/color_expression.{hpp,cpp}`（内部）；`modules/window-system/CMakeLists.txt`；新测试 `tests/color_registry_test.cpp`（model 层）。
 
 **实现**：
 
-1. `Theme` 增加字段，默认值等于当前硬编码值，保证默认外观不变：
+1. 公开类型：
 
-   | 字段 | 默认值 | 原位置 |
-   | --- | --- | --- |
-   | `dropPreviewFill` | `QColor(138, 82, 199, 62)` | 投放区域填充 |
-   | `dropPreviewBorder` | `#8A52C7` | 投放区域边框、指示内块 |
-   | `dropGuideBorder` | `#725591` | 指示方块边框 |
-   | `dropGuideBackground` | `#FAF8FD` | 指示方块背景 |
-   | `dropGuideSelected` | `#D9BDF5` | 选中方块背景 |
-   | `dropLabelBackground` | `#4D356E` | 说明标签背景 |
-   | `dropLabelText` | `#FFFFFF` | 说明标签文字 |
-   | `shadow` | `QColor(0, 0, 0, 10)` | 拖动标签阴影每层颜色 |
+   ```cpp
+   enum class ColorThemeType { Light, Dark, HighContrastDark, HighContrastLight };
+   class ColorId {                       // 注册后得到的轻量句柄，内部为下标
+   public:
+       [[nodiscard]] int index() const noexcept;
+       [[nodiscard]] bool isValid() const noexcept;
+   };
+   struct ColorDefaults { QString light, dark, hcDark, hcLight; }; // 每项是一个默认值表达式
+   class ColorRegistry {
+   public:
+       static ColorRegistry& instance();   // 进程内唯一；只在 GUI 线程修改
+       ColorId registerColor(QString id, ColorDefaults defaults, QString description);
+       [[nodiscard]] ColorId find(QStringView id) const;
+       [[nodiscard]] QString idOf(ColorId color) const;
+       [[nodiscard]] int count() const;
+   };
+   ```
 
-2. 再增加两个元数据字段：`QString id = QStringLiteral("violet-light");`、`bool dark = false;`。`name` 仍是显示名。
-3. `drag_controller.cpp` 的投放覆盖层需要主题：它是 `DragController` 创建的窗口，`DragController` 持有 `manager_`，在创建或每次 `paintEvent` 时读取 `manager_->theme()`（覆盖层生命周期短，直接在绘制时读取即可）。
-4. `drag_presentation.cpp` 中 `DragLabelPreview` 构造时传入 `Theme`（调用点已经有主题可用），保存 `shadow` 颜色。
-5. `appearance_api.cpp` 的 `themeColors` 表加入新字段名（`drop_preview_fill` 等，沿用该表现有的命名风格——先看表中已有条目的写法再决定），并更新 `docs/development/lua-guide.md` 的主题字段列表。
-6. 全仓库再搜一次硬编码颜色，确认只剩主题定义、标签颜色预设（2.3 处理）和测试：
+   单例的理由：颜色 ID 是全局词汇表（与 VS Code 相同），多个 `WindowManager` 共享；注册只追加，不删除，因此下标稳定。在头文件注释中写明。
+
+2. 默认值表达式（设计 §1.1）：`#rrggbb`、`#rrggbbaa`、`ref(id)`、`transparent(id, a)`、`mix(id1, id2, t)`、`lighten(id, f)`、`darken(id, f)`、`none`。`color_expression` 中实现解析（注册时解析一次并保存语法树，非法表达式让注册失败）和求值。
+3. 解析器：
+
+   ```cpp
+   class ResolvedColors {               // 一次解析的结果，按 ColorId 下标访问
+   public:
+       [[nodiscard]] QColor color(ColorId id) const;
+       [[nodiscard]] ColorThemeType type() const;
+   };
+   ResolvedColors resolveColors(ColorThemeType type, const QHash<QString, QColor>& explicitColors, QStringList& diagnostics);
+   ```
+
+   求值顺序：显式颜色（主题与覆盖合并后的结果）→ 当前类型的默认表达式。引用链递归求值并缓存；检测循环（循环时该颜色回退为透明并写入诊断）。
+
+4. 变换的数学定义写进源码注释：`mix` 在线性 sRGB 中按比例混合后转回 sRGB；`lighten`／`darken` 在 HSL 空间加减亮度（与 VS Code 的 `Color.lighten`／`darken` 一致：`l' = l + l·f`／`l' = l − l·f`）；结果用 8 位通道保存，避免 16 位通道在保存恢复后变化（现有 `tab_appearance.cpp` 注释说明过这个问题）。
+
+**测试**：各表达式求值；引用链；循环检测；未注册 ID 的引用；同名重复注册失败；四类主题分别解析；变换结果与手算值一致（固定数据）。
+
+**状态**：未开始。
+
+---
+
+## 2.2 颜色主题定义与内置主题
+
+**涉及文件**：新建 `include/window_system/color_theme.hpp`、`src/style/color_theme.cpp`；新建资源目录 `modules/window-system/themes/`（`muxora-light.json`、`muxora-dark.json`、`muxora-black.json`）及 `themes.qrc`；`CMakeLists.txt`；新测试 `tests/color_theme_test.cpp`。
+
+**实现**：
+
+1. 结构：
+
+   ```cpp
+   struct ColorThemeDefinition {
+       QString id;            // 稳定 ID，例如 "muxora-dark"
+       QString label;         // 显示名称，例如 "Muxora Dark"；设置中按名称引用
+       QStringList aliases;   // 旧名称
+       ColorThemeType type;
+       QString include;       // 继承的主题名称，可空
+       QHash<QString, QColor> colors;
+   };
+   [[nodiscard]] QVector<ColorThemeDefinition> builtInColorThemes();
+   // 解析 JSON 对象（不含注释；JSONC 由宿主先转换）。失败返回诊断，不部分生效。
+   std::optional<ColorThemeDefinition> parseColorTheme(const QJsonObject& json, QStringList& diagnostics);
+   ```
+
+2. 主题文件格式按设计 §2.3。内置主题的 `colors` 只写与注册表默认值不同的部分；因为注册表默认值就是按 Muxora 的设计写的，内置主题文件通常很短。
+3. 继承：解析时按 `include` 链合并，深度上限 8，循环报错。
+4. `WindowManager` 增加：
+
+   ```cpp
+   bool registerColorTheme(ColorThemeDefinition theme);   // 名称不能与内置主题冲突
+   bool removeColorTheme(const QString& label);           // 不能删除内置主题
+   [[nodiscard]] QVector<ColorThemeDefinition> colorThemes() const;
+   ```
+
+**测试**：三个内置主题可解析；继承合并顺序；循环继承；非法颜色值；同名冲突；别名查找。
+
+**状态**：未开始。
+
+---
+
+## 2.3 注册全部颜色 ID，浅色默认值等于现有颜色
+
+**目标**：设计 §4 中的全部颜色 ID 注册完毕；`light` 默认值让现有界面不变。
+
+**涉及文件**：新建 `src/style/builtin_colors.{hpp,cpp}`（声明表）；`src/style/theme.cpp`；测试 `tests/color_registry_test.cpp`、新建 `tests/color_coverage_test.cpp`。
+
+**实现**：
+
+1. 声明表的写法，每个 ID 一行，便于审阅：
+
+   ```cpp
+   const ColorId tabActiveBackground = registerColor(u"tab.activeBackground"_s,
+       {u"#ead9fa"_s, u"ref(muxora.content.background)"_s, u"#000000"_s, u"#ffffff"_s},
+       u"Active tab background in a focused group."_s);
+   ```
+
+   `light` 值逐个取自 `theme.cpp` 的 `defaultTheme()`、`styleSheet()` 中的 QSS 颜色、`tab_appearance.cpp` 的预设和 2.4 中要替换的硬编码颜色。逐项列一张对照表放在 `builtin_colors.cpp` 顶部注释中：“颜色 ID ← 原来的字段或 QSS 选择器”。
+2. `dark` 值使用设计 §3.1 的 Muxora Dark 阶梯和 §3.2 的做法；Muxora Black 只在其主题文件中覆盖与 Dark 不同的颜色（中性阶梯和强调色）。`hcDark`、`hcLight` 先给出合理的高对比值（黑底白字、白底黑字、边框用 `contrastBorder`），2.9 再完善。
+3. 兼容视图：`Theme defaultTheme()` 改为“用 Muxora Light 解析后填充 `Theme` 字段”，字段映射按设计 §5。
+4. **覆盖检查测试**（`color_coverage_test`）：
+   - 所有注册 ID 在四类主题下都能解析为非空颜色，诊断为空；
+   - `Theme` 兼容视图中每个字段都有对应 ID；
+   - 新增：`defaultThemeIsPixelIdentical`：解析得到的 `defaultTheme()` 与本步骤之前硬编码的值逐字段相等（把旧值写在测试中作为固定数据）。
+
+**完成标准**：全量测试通过，不修改任何像素测试的预期。
+
+**状态**：未开始。
+
+---
+
+## 2.4 组件改用颜色 ID
+
+**目标**：样式表、自绘控件、拖拽覆盖层、标签颜色都从解析结果取色；不再有界面硬编码颜色。
+
+**涉及文件**：`src/style/theme.cpp`（`styleSheet()` 改为从 `ResolvedColors` 生成）、`src/style/themed_controls.cpp`、`src/docking/drag_controller.cpp`（53–92 行）、`src/docking/drag_presentation.cpp`（41–46 行阴影）、`src/docking/tab_strip.cpp`、`src/docking/edge_tab_button.cpp`、`src/docking/edge_strip.cpp`、`src/chrome/*.cpp`、`src/style/tab_appearance.cpp`；`window_manager.cpp`（解析结果的保存与分发）。
+
+**实现**：
+
+1. `WindowManager::Private` 保存当前 `ResolvedColors`；`applyTheme()` 的根属性 `windowSystemThemeColors` 改为保存指向解析结果的共享句柄（`std::shared_ptr<const ResolvedColors>`，只读共享，主题变化时替换），自绘控件从最近的根读取。
+2. `styleSheet()`：QSS 模板中的 `@text` 等占位符改为颜色 ID 占位，例如 `@{tab.activeBackground}`；生成时查解析结果。模板中出现未注册 ID 时，在 Debug 构建断言、Release 写诊断。
+3. 拖拽覆盖层、阴影、标签条指示线等改用对应 ID（`muxora.dropTarget.*`、`widget.shadow` 等）。
+4. **标签颜色预设**：每个预设注册三个 ID（`muxora.tabColor.<id>.background`／`.foreground`／`.indicator`），四类默认值；浅色值等于现有预设。`TabAppearance::colors` 中用户自定义的颜色继续作为显式值，优先于注册表（保持现有用户数据语义）。深色值按设计 §3.2：背景为颜色与内容背景混合 18–28%。
+5. grep 确认没有剩余的界面硬编码颜色：
 
    ```bash
    grep -rnE "QColor\(\"#|QColor\([0-9]+, *[0-9]+|Qt::white|Qt::black" modules/window-system/src src
    ```
 
-**测试**：`drag_presentation_test` 中增加 `dropOverlayUsesThemeTokens`：设置一个各字段都不同的测试主题，触发拖拽到中心目标，对覆盖层 `grab()` 取样，断言预览边框和说明标签背景像素等于主题值。原有像素断言保持（默认值未变）。
+   剩余的每一处在提交说明中解释（例如测试或非界面用途）。
 
-**验证**：`window-system.drag-presentation`、`window-system.drag-interaction`、`window-system.strip-drag`、`window-system.lua`。
-
-**完成标准**：默认主题下现有像素测试全部通过；grep 结果中没有遗漏的界面硬编码颜色（每个剩余位置在提交说明中解释）。
+**测试**：全部现有像素测试通过（浅色不变）；新增 `drag_presentation_test::overlayUsesRegisteredColors`：以覆盖方式把相关 ID 改成特殊值，取样覆盖层像素等于这些值。
 
 **状态**：未开始。
 
 ---
 
-## 2.2 内置主题目录
+## 2.5 深色主题定稿、对比度测试与组件画廊
 
-**目标**：模块提供 `violet-light`、`violet-dark`、`black` 三套主题，并有自动化的对比度检查。
+**目标**：Muxora Dark、Muxora Black 在所有组件、所有状态下协调可用，并且有可以重复执行的检查。
 
-**涉及文件**：`theme.hpp`、`theme.cpp`、新测试 `tests/theme_catalog_test.cpp`（model 层，只链接 `WindowSystem::Widgets` 而不创建控件；`QColor` 计算不需要窗口）。
+**涉及文件**：`themes/muxora-dark.json`、`themes/muxora-black.json`、`src/style/builtin_colors.cpp`；新建 `src/developer/component_gallery.{hpp,cpp}`（模块内，开发者命令）；新测试 `tests/theme_contrast_test.cpp`、`tests/component_gallery_test.cpp`。
 
 **实现**：
 
-1. 公开函数：
+1. **对比度测试**（`theme_contrast_test`，数据驱动）：组合清单写在测试数据中，每行为“前景 ID、背景 ID、最低对比度”。至少包括：`foreground` 对 `muxora.content.background`、`sideBar.background`、`titleBar.activeBackground`、`input.background`、`menu.background`、`quickInput.background`；`tab.activeForeground`／`tab.inactiveForeground` 对各自背景；`statusBar.foreground` 对 `statusBar.background`；`list.activeSelectionForeground` 对选中背景叠加后的颜色（带透明度的背景先与底色合成再计算）；`muxora.rail.tabForeground` 对 `muxora.rail.tabBackground`；每个标签颜色预设的前景对背景；`descriptionForeground` ≥ 3.0；`focusBorder` 对相邻背景 ≥ 3.0。对 Light、Dark、Black 都执行；高对比主题正文要求 ≥ 7.0（2.9）。
+2. **状态完整性**：注册表声明每个组件的状态组（例如按钮：`button.background`、`button.hoverBackground`、按下、焦点、禁用）；测试检查每个状态组的 ID 都已注册。
+3. **组件画廊**：命令 `developer.showComponentGallery` 打开一个工作区标签，网格展示：标签条（活动、非活动、悬停、带颜色、固定）、收纳条与临时面板、工具条（正常、悬停、按下、禁用、溢出）、菜单、快速输入（8.4 之后）、按钮、输入框（正常、焦点、错误）、复选框、下拉框、列表（悬停、选中、失焦选中）、滚动条、状态栏、通知、拖拽覆盖层的各种目标。画廊用真实组件，不用截图拼图。
+4. 命令 `developer.exportThemeGallery`：依次应用每个内置主题，把画廊 `grab()` 保存到 `out/diagnostics/theme-gallery/<主题>.png`，结束后恢复原主题。
+5. 按设计 §6 的评审清单逐项检查截图，并据此调整 `muxora-dark.json`、`muxora-black.json` 和注册表的深色默认值。调整记录（改了哪些 ID、原因）写进提交说明。
+
+**测试**：`component_gallery_test`：画廊能在三个主题下构建并显示，组件数量与清单一致；导出命令生成三个文件。
+
+**完成标准**：对比度测试通过；三套截图经过评审（在状态中记录评审结论和截图路径）。
+
+**状态**：未开始。
+
+---
+
+## 2.6 主题设置与切换命令（VS Code 逻辑）
+
+**目标**：设计 §2 的全部设置和两个命令。
+
+**前置**：2.5；选择主题的列表依赖 8.4 快速输入组件——8.4 未完成时先用现有命令面板容器实现，8.4 完成后替换。设置的持久化：阶段 4.1／4.4 已完成时使用设置注册表；否则先按界面语言的方式写入 `User/settings.json`（键名相同），4.4 时迁移进注册表，不改键名。
+
+**涉及文件**：`window_manager.hpp/.cpp`（偏好状态）、新建 `src/style/theme_preference.{hpp,cpp}`、`src/commands/theme_commands.cpp`、`src/app/user_preferences.{hpp,cpp}`、`src/app/main.cpp`、`command_menus.cpp`（“视图 → 外观”子菜单）、测试 `tests/theme_preference_test.cpp`、`src/app/tests/user_preferences_test.cpp`。
+
+**实现**：
+
+1. 偏好结构包含设计 §2 表中的七个设置（`workbench.colorCustomizations` 在 2.8 处理）。
+2. 解析函数是纯函数，单独测试：
 
    ```cpp
-   [[nodiscard]] QVector<Theme> builtInThemes();               // 顺序固定：violet-light, violet-dark, black
-   [[nodiscard]] std::optional<Theme> builtInTheme(QStringView id);
+   QString resolveThemeLabel(const ThemePreference& preference, Qt::ColorScheme scheme, bool highContrast);
    ```
 
-   `defaultTheme()` 保持返回 `violet-light`。
+   规则：`autoDetectHighContrast && highContrast` → 高对比首选项（按系统深浅选深色或浅色高对比）；否则 `autoDetectColorScheme` → 按系统深浅选首选项；否则 `colorTheme`。主题名找不到时回退到 Muxora Light 并写诊断。
+3. 命令 `workbench.action.selectTheme`（默认 `Ctrl+K Ctrl+T`）：分组列表、移动即预览、`Enter` 确认、`Esc` 恢复；跟随系统开启时写入当前深浅色对应的首选项，并在列表标题中说明（设计 §2.1）。
+4. 命令 `workbench.action.toggleLightDarkThemes`（默认不绑定）：跟随系统开启时先关闭跟随，然后在浅色和深色首选项之间切换，并在状态栏提示一次。
+5. 设置变化、系统深浅色变化（`QStyleHints::colorSchemeChanged`）、高对比变化（2.7）都触发重新解析；同一事件循环内多次变化只解析一次。
+6. 应用：读取和保存这些设置；保存失败时回滚并显示诊断（参照语言设置的回滚写法）。
 
-2. **Violet Dark** 初稿：
-
-   | 字段 | 值 | 字段 | 值 |
-   | --- | --- | --- | --- |
-   | background | `#1e1a24` | surface | `#17141c` |
-   | raisedSurface | `#241f2c` | headerBackground | `#2a2433` |
-   | headerText | `#e8e2f0` | text | `#e4def0` |
-   | mutedText | `#9a90a8` | border | `#3d3448` |
-   | accent | `#a77bdb` | accentHover | `#b991e6` |
-   | accentSoft | `#3a2d4d` | buttonHover | `#332a40` |
-   | activeTab | `#3a2f4a` | inactiveTab | `#2a2433` |
-   | edgeTabBackground | `#4a3a66` | edgeTabHover | `#5d4a80` |
-   | edgeTabText | `#ffffff` | statusBackground | `#3b2752` |
-   | statusText | `#f2ecf8` | selection | `#4b3866` |
-   | selectionText | `#ffffff` | focus | `#b98ae6` |
-   | danger | `#ff5c72` | checkedIndicatorText | `#ffffff` |
-   | dropPreviewFill | `rgba(167,123,219,70)` | dropPreviewBorder | `#a77bdb` |
-   | dropGuideBorder | `#8a6cb0` | dropGuideBackground | `#241f2c` |
-   | dropGuideSelected | `#4b3866` | dropLabelBackground | `#3b2752` |
-   | dropLabelText | `#ffffff` | shadow | `rgba(0,0,0,40)` |
-
-3. **Black** 初稿（纯黑背景，强调色保持紫色系）：
-
-   | 字段 | 值 | 字段 | 值 |
-   | --- | --- | --- | --- |
-   | background | `#000000` | surface | `#000000` |
-   | raisedSurface | `#0d0d0f` | headerBackground | `#0a0a0c` |
-   | headerText | `#e6e6e6` | text | `#e0e0e0` |
-   | mutedText | `#8a8a8f` | border | `#26262b` |
-   | accent | `#9d6cdf` | accentHover | `#b48af0` |
-   | accentSoft | `#1f1630` | buttonHover | `#18181c` |
-   | activeTab | `#1c1526` | inactiveTab | `#0a0a0c` |
-   | edgeTabBackground | `#1c1526` | edgeTabHover | `#2a1f3a` |
-   | edgeTabText | `#f0f0f0` | statusBackground | `#0a0a0c` |
-   | statusText | `#d0d0d0` | selection | `#3a2a55` |
-   | selectionText | `#ffffff` | focus | `#a77bdb` |
-   | danger | `#ff4d5e` | checkedIndicatorText | `#ffffff` |
-   | dropPreviewFill | `rgba(157,108,223,60)` | dropPreviewBorder | `#9d6cdf` |
-   | dropGuideBorder | `#5a4580` | dropGuideBackground | `#0d0d0f` |
-   | dropGuideSelected | `#3a2a55` | dropLabelBackground | `#1c1526` |
-   | dropLabelText | `#ffffff` | shadow | `rgba(0,0,0,60)` |
-
-   两套主题的 `metrics` 与默认主题相同。
-
-4. 对比度辅助函数放在测试中（不进公开 API）：按 WCAG 2.x 公式计算相对亮度和对比度。
-
-**测试**（`theme_catalog_test.cpp`）：
-
-- `idsAreUniqueAndLookupWorks`：三个 ID 唯一，`builtInTheme("violet-dark")->dark == true`，未知 ID 返回空。
-- `textContrastMeetsMinimum_data/…`：对每套主题检查下列组合对比度 ≥ 4.5：`text/surface`、`text/raisedSurface`、`headerText/headerBackground`、`statusText/statusBackground`、`selectionText/selection`、`edgeTabText/edgeTabBackground`、`dropLabelText/dropLabelBackground`；`mutedText/surface` ≥ 3.0；`focus/surface` ≥ 3.0（非文字元素）。
-- `defaultThemeUnchanged`：`defaultTheme()` 各字段与 2.1 之前的值相同（防止误改默认主题）。
-
-**完成标准**：测试通过；如需改色以满足对比度，在本文档表格中同步更新数值。
+**测试**：解析函数的全部组合（数据驱动）；预览与恢复；跟随系统时选择主题写入的设置键；切换命令；设置非法值的诊断；同一轮多次变化只解析一次。
 
 **状态**：未开始。
 
 ---
 
-## 2.3 标签颜色预设的深色变体
+## 2.7 系统检测与原生深色
 
-**目标**：深色主题下，带颜色的标签使用深底浅字的配色。
-
-**涉及文件**：`include/window_system/tab_appearance.hpp`、`src/style/tab_appearance.cpp`（`defaultTabColorPresets()`、JSON 读写）、`src/style/tab_appearance_p.hpp`、使用预设绘制标签的位置（`tab_strip.cpp`、`edge_tab_button.cpp` 中读取 `TabColorPreset` 的代码）、`tests/tab_appearance_test.cpp`。
+**涉及文件**：`src/platform/windows/window_frame.{hpp,cpp}`、新建 `src/platform/windows/system_appearance.{hpp,cpp}`（非 Windows 提供空实现）、`src/commands/floating_panel.cpp`、`src/commands/popup_menu.cpp`、`tests/native_frame_test.cpp`。
 
 **实现**：
 
-1. `TabAppearance` 增加 `QVector<TabColorPreset> darkColors = defaultDarkTabColorPresets();`，新函数 `defaultDarkTabColorPresets()` 与浅色预设使用相同 ID 和名称。
-2. 深色预设生成：沿用 `defaultTabColorPresets()` 中的 `seeds`，规则为
-   - 活动：背景 = 强调色与 `#17141c` 按 35% 混合；文字 `#f2f2f2`；线 = 强调色提亮 130%；图标 = 文字色；
-   - 非活动：背景 = 强调色与 `#17141c` 按 20% 混合；文字 `#d8d8d8`；线 = 强调色；图标 = `#bdbdbd`。
-   混合后用 `QColor::name(QColor::HexArgb)` 回写，避免 16 位通道在保存恢复后变化（现有代码注释说明了这个问题）。
-3. 新增内部函数 `const QVector<TabColorPreset>& activePresets(const TabAppearance&, const Theme&)`：`theme.dark` 时返回 `darkColors`，否则 `colors`。所有按颜色 ID 取预设的地方改用它。`WindowManager::tabColorPreset(id)` 按当前主题返回。
-4. JSON：`tabAppearance` 增加 `darkColors` 数组，缺省时使用默认深色预设；旧布局可以正常读取。写入时仅当与默认不同才写出（与 `colors` 的现有处理方式一致——先确认现有代码的写法）。
-5. 设置页的“标签颜色”编辑器（`settings_tab_appearance.cpp`）编辑当前主题对应的那一组，并在标题上注明“深色主题”或“浅色主题”。
+1. 高对比检测：`SystemParametersInfoW(SPI_GETHIGHCONTRAST, ...)`；在一个隐藏的消息窗口（或现有顶层窗口的原生事件过滤）中监听 `WM_SETTINGCHANGE`（`lParam` 为 `"WindowsThemeElement"` 或高对比相关），变化时发信号。
+2. 深色边框：主题类型为深色或深色高对比时，对每个顶层窗口（完整窗口、浮窗、浮动面板、菜单、快速输入）调用 `DwmSetWindowAttribute(handle, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &TRUE, sizeof(BOOL))`；旧系统返回错误时忽略，并记录到现有的原生帧诊断结构。调用时机：首次准备原生帧时、主题类型变化时。
+3. 浮层的圆角和阴影在 8.3 统一处理，本步只处理深色属性。
 
-**测试**：`tab_appearance_test` 增加 `darkPresetsFollowTheme`：切换到 `violet-dark` 后，给标签设置 `blue`，取样标签背景等于深色预设；切回浅色等于浅色预设；`darkColors` 保存恢复后逐字段相等；旧快照（没有 `darkColors`）恢复为默认深色预设。对比度：深色预设文字与背景 ≥ 4.5。
+**测试**：`native_frame_test::darkThemeSetsImmersiveDarkMode`（完整窗口、浮窗各一行）：切换到 Muxora Dark 后用 `DwmGetWindowAttribute` 读回为真，切回浅色为假。属于 `desktop` 层；运行时确保测试窗口未被遮挡。
 
 **状态**：未开始。
 
 ---
 
-## 2.4 主题偏好与跟随系统
+## 2.8 用户颜色覆盖、用户主题文件与 Lua
 
-**目标**：可以选择固定主题，或跟随系统并分别指定浅色、深色时的主题；系统切换深浅色时立即生效。
-
-**涉及文件**：`theme.hpp`（偏好结构）、`window_manager.hpp/.cpp`（偏好状态与信号）、`window_manager_p.hpp`、`src/app/user_preferences.{hpp,cpp}`、`src/app/main.cpp`、`window-system-lua/src/appearance_api.cpp`、新测试 `tests/theme_preference_test.cpp`、`src/app/tests/user_preferences_test.cpp`。
+**前置**：3.6（JSONC 模块）。
 
 **实现**：
 
-1. 偏好结构：
+1. `workbench.colorCustomizations`：解析全局项与 `"[主题名]"` 作用域块（支持 `*` 通配）；优先级按设计 §2.2。非法 ID 或颜色写入诊断，其余照常生效。
+2. 用户主题：应用读取 `User/themes/*.json`（JSONC 转成 `QJsonObject` 后交给 `parseColorTheme`），调用 `registerColorTheme`；文件变化时重新加载（与设置文件相同的监听）。
+3. Lua：`muxora.theme.get()` 返回当前主题名、类型和解析后的全部颜色；`muxora.theme.update(colors)` 写入当前主题作用域的覆盖，脚本卸载时撤销；现有字段名（`background`、`accent` 等）通过设计 §5 的映射转换为颜色 ID，旧脚本继续可用。`lua-guide.md` 更新。
 
-   ```cpp
-   struct ThemePreference {
-       bool followSystem = false;
-       QString theme = QStringLiteral("violet-light");      // followSystem == false 时使用
-       QString lightTheme = QStringLiteral("violet-light");
-       QString darkTheme = QStringLiteral("violet-dark");
-       bool operator==(const ThemePreference&) const = default;
-   };
-   ```
-
-2. `WindowManager` 新增：
-
-   ```cpp
-   bool registerTheme(Theme theme);                  // 宿主或 Lua 增加的主题；ID 不能与内置重复
-   [[nodiscard]] QVector<Theme> availableThemes() const;   // 内置 + 已注册
-   bool setThemePreference(const ThemePreference& preference); // ID 不存在时返回 false，不改变状态
-   [[nodiscard]] ThemePreference themePreference() const;
-   signals:
-   void themePreferenceChanged(const window_system::ThemePreference& preference);
-   ```
-
-3. 解析规则：`followSystem` 为真时，读取 `QGuiApplication::styleHints()->colorScheme()`；`Qt::ColorScheme::Dark` 用 `darkTheme`，其他（包括 `Unknown`）用 `lightTheme`。得到主题后调用现有的 `setTheme()`。
-4. 构造函数中连接 `QStyleHints::colorSchemeChanged`（接收者为管理器自身），只有 `followSystem` 时才重新解析。
-5. **与直接 `setTheme()` 的关系**：宿主或 Lua 直接调用 `setTheme()` 时，视为一次临时覆盖，不修改偏好；下一次偏好变化或系统切换时按偏好重新解析。在头文件注释中写明。Lua 的 `theme.update` 保持现有语义（修改当前主题）。
-6. 应用侧：
-   - `UserPreferences` 增加 `themePreference()`、`saveThemePreference()`，写入 `settings.json` 的四个键：`workbench.colorTheme`、`window.autoDetectColorScheme`、`workbench.preferredLightColorTheme`、`workbench.preferredDarkColorTheme`（与 VS Code 同名）。读取时校验类型，非法值回退默认并记录诊断，与语言设置的处理方式一致。
-   - `main.cpp`：启动时读取偏好并调用 `setThemePreference()`；连接 `themePreferenceChanged` 保存，保存失败时回滚并显示诊断（参照语言设置的回滚写法）。
-7. 命令：新增 `view.theme.select`（打开命令面板中的主题列表，选中即应用，Esc 恢复原主题——即 VS Code 的预览行为）和 `view.theme.toggleDark`（在当前浅色／深色偏好之间切换）。注册到“视图 → 外观”子菜单。快捷键默认不绑定。
-
-**测试**（`theme_preference_test.cpp`）：
-
-- `fixedPreferenceAppliesTheme`、`unknownIdIsRejectedAtomically`。
-- `followSystemTracksColorScheme`：Qt 6.8 起可以用 `QStyleHints::setColorScheme()` 在测试中模拟系统切换；若当前 Qt 版本的平台插件不支持，测试内用 `QSKIP` 是不允许的——改为把解析逻辑抽成纯函数 `resolveTheme(preference, Qt::ColorScheme, themes)` 单独测试，再用一个信号注入的私有入口验证管理器会重新解析。
-- `directSetThemeIsTemporary`：`setTheme(custom)` 后改偏好，主题回到偏好结果。
-- `selectCommandPreviewsAndRestores`：命令面板中移动选择时主题跟随，Esc 后恢复。
-- 应用 `user_preferences_test`：四个键的读写、非法值、文件缺失、写入失败。
-
-**验证**：新套件、`window-system.floating-panel`、`window-system.menu-structure`（新菜单项）、`muxora.user-preferences`、`window-system.lua`。
+**测试**：覆盖优先级（全局、作用域、通配、主题、默认）；用户主题加载、继承内置主题、错误文件不影响其他主题；Lua 旧字段名兼容、卸载撤销。
 
 **状态**：未开始。
 
 ---
 
-## 2.5 原生深色边框
+## 2.9 高对比主题
 
-**目标**：深色主题下，Windows 的窗口边框、系统菜单、Snap 弹窗和滚动条等原生部分使用深色。
-
-**涉及文件**：`src/platform/windows/window_frame.{hpp,cpp}`、`src/platform/windows/window_menu.cpp`、`src/chrome/workspace_window.cpp`（应用主题的位置）、`src/commands/floating_panel.cpp`、`src/commands/popup_menu.cpp`、`tests/native_frame_test.cpp`。
-
-**实现**：
-
-1. `window_frame.hpp` 增加 `void applyNativeColorScheme(QWidget* window, bool dark);`。Windows 实现：
-
-   ```cpp
-   constexpr DWORD immersiveDarkMode = 20; // DWMWA_USE_IMMERSIVE_DARK_MODE（Windows 10 20H1 起）
-   const BOOL value = dark ? TRUE : FALSE;
-   DwmSetWindowAttribute(handle, immersiveDarkMode, &value, sizeof(value));
-   ```
-
-   旧系统返回错误时忽略，与现有圆角属性的处理方式一致（见 `applyNativeFrame` 中的注释），并把结果记入现有的 `state->configuration` 诊断结构，方便测试读取。
-2. 调用时机：窗口首次准备原生帧时（`applyNativeFrame` 之后），以及 `WindowManager::setTheme()` 遍历窗口应用主题时。浮动面板（`FloatingPanel`）和弹出菜单（`DismissOnlyMenu`）在显示前调用。
-3. 非 Windows 平台提供空实现，不加条件编译到调用方。
-4. 现有边框颜色属性（`DWMWA_BORDER_COLOR` = 34）目前设置为默认／无；深色主题下是否改用 `theme.border`，在实际桌面上对比后决定，本步先不改。
-
-**测试**：`native_frame_test` 增加 `darkThemeSetsImmersiveDarkMode`：切换到 `violet-dark` 后，用 `DwmGetWindowAttribute(handle, 20, ...)` 读回为真；切回浅色为假。浮动窗口和完整窗口各一行。该测试属于 `desktop` 层；运行时确保测试窗口没有被其他程序遮挡。
+**实现**：Muxora High Contrast（`hcDark`）与 Muxora High Contrast Light（`hcLight`）。规则参照 VS Code 高对比主题：所有交互元素有 1 像素 `contrastBorder`，焦点和活动元素用 `contrastActiveBorder`；不使用半透明背景表达状态；正文对比 ≥ 7.0。对比度测试加入这两个主题。
 
 **状态**：未开始。
 
 ---
 
-## 2.6 外观设置
+## 2.10 样式实现迁移（可选，先测量）
 
-**目标**：设置页增加“外观”分类，可以选择主题和跟随系统。
+`theme.cpp` 中 `styleSheet()` 的注释说明：`QWidget::setStyle()` 只作用于单个控件，不随子控件增加和改挂传播；整棵控件树统一样式只能用 `QApplication::setStyle()`，而模块契约是不改变应用级样式。因此：
 
-**涉及文件**：`src/settings/settings_page.{hpp,cpp}`、`tests/pane_settings_test.cpp` 或新增 `tests/appearance_settings_test.cpp`、两个翻译文件。
+1. 先用阶段 0.1 基准和阶段 1.6 之后的数据确认样式表是否仍是明显成本。
+2. 确有必要时，提供宿主可选的 `installApplicationStyle()`，模块默认仍用样式表；两条路径共用同一解析结果，用同一组像素测试覆盖。
+3. 写成设计评审后再实施。
 
-**实现**：
-
-1. 在“应用”分类之后加入分类 `appearance`（“外观”），包含：
-   - 复选框“跟随系统深浅色”（`window.autoDetectColorScheme`）；
-   - 下拉框“颜色主题”（`workbench.colorTheme`），跟随系统时禁用；
-   - 下拉框“浅色时使用”“深色时使用”，不跟随系统时禁用。
-   列表内容来自 `availableThemes()`，显示 `name`，数据为 `id`。深色主题条目后面加“（深色）”。
-2. 修改立即调用 `setThemePreference()`；监听 `themePreferenceChanged` 同步控件（用 `QSignalBlocker` 防止循环），与现有 `syncControls()` 的做法一致。
-3. 搜索词包含设置 ID 和“主题”“深色”“dark”“theme”，保证搜索能找到。
-
-**测试**：`appearanceSettingsDriveThePreference`：操作三个控件，断言 `themePreference()` 变化、窗口主题变化；外部调用 `setThemePreference()` 后控件同步；搜索“dark”能定位到该分类。
-
-**状态**：未开始。
-
----
-
-## 2.7 样式实现迁移（可选，先测量）
-
-**背景**：审查记录 R6 建议把样式表换成调色板加 `QProxyStyle`。但 `theme.cpp` 中 `styleSheet()` 的注释说明了一个限制：`QWidget::setStyle()` 只作用于单个控件，不会随子控件的增加和改挂传播；要让整棵控件树使用同一个样式，只能用 `QApplication::setStyle()`，而模块的契约是“不改变应用级样式”。
-
-**做法**：
-
-1. 先用 0.1 基准和 1.6 之后的数据确认样式表是否仍是明显成本（例如创建 1000 个标签时 polish 的耗时占比，可以用 `QElapsedTimer` 包住 `applyTheme()` 和首次显示测量）。改挂次数在 1.6 之后已大幅减少，样式表的成本可能已经不重要。
-2. 确实需要时，提供**可选**的应用级入口：`void installApplicationStyle(const Theme&)`，只有拥有整个应用的宿主（Muxora）调用；模块默认仍然使用样式表。两条路径共用同一套令牌，并用同一组像素测试覆盖。
-3. 这一步写成单独的设计评审，不在没有数据时实施。
-
-**状态**：未开始（需要先完成 1.6 并取得数据）。
+**状态**：未开始（需要数据）。

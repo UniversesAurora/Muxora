@@ -260,6 +260,8 @@
 
 ## 3.8 快捷键编辑器重做
 
+> 界面规格以 [界面设计规范 §4.10](../../design/ui-design-system.md#410-快捷键编辑器参照-vs-code-键盘快捷方式编辑器) 为准，并遵守 [执行规则中的界面标准](README.md#界面标准)。下文与规范冲突时以规范为准。
+
 **目标**：对齐 VS Code 键盘快捷方式编辑器。
 
 **涉及文件**：`src/settings/shortcuts_page.cpp`（现约 500 行，基于 `QTreeWidget`），拆分为 `shortcuts_model.{hpp,cpp}`（`QAbstractTableModel`）、`shortcuts_page.cpp`（界面）、`shortcut_capture.{hpp,cpp}`（现有 `ShortcutCapture` 类移出）；`tests/shortcut_settings_test.cpp`。

@@ -14,6 +14,8 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [设置与命令](design/settings-and-commands-design.md) | JSONC、图形设置、命令面板与快捷键 |
 | [Lua 脚本与组件扩展](design/lua-scripting-design.md) | 运行时、脚本 API、资源预算及未来组件扩展 |
 | [终端 Normal / Visual 模式](design/terminal-mark-mode-design.md) | 本地键盘浏览、选择、搜索与复制 |
+| [主题系统](design/theme-system-design.md) | 颜色注册表、主题定义、与 VS Code 相同的深浅色设置和切换逻辑、深色配色方法 |
+| [界面设计规范](design/ui-design-system.md) | 以 VS / VS Code 为标准的尺寸、字体、交互规则与组件规格 |
 
 ## 开发
 
