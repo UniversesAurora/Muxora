@@ -50,6 +50,7 @@ struct WindowBehavior {
     NewTabPosition newTabPosition = NewTabPosition::AfterActive;
     bool hideSingleTabWorkbench = false;
     bool hideSingleTabFloating = true;
+    bool hideToolbarOptionsWhenLocked = false;
     ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
 };
 
@@ -123,6 +124,12 @@ public:
     bool moveGroupToEdge(GroupId group, WindowId target, Edge edge, bool pinned);
     WindowId detachGroup(GroupId group, WindowKind kind = WindowKind::Floating);
     bool closeGroup(GroupId group);
+    // Hierarchy conversions retain Pane IDs, live content and business objects.
+    TabId convertGroupToTab(GroupId group, Placement placement = Placement::Right);
+    bool moveGroupIntoTab(GroupId group, TabId targetTab, PaneId targetPane = {}, Placement placement = Placement::Right);
+    bool moveTabIntoTab(TabId sourceTab, TabId targetTab, PaneId targetPane = {}, Placement placement = Placement::Right);
+    GroupId convertTabToGroup(TabId tab, Placement placement = Placement::Right);
+    TabId extractPaneToTab(TabId tab, PaneId pane);
     void showGroupMenu(GroupId group, QPoint globalPosition);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
@@ -253,6 +260,9 @@ private:
     void refresh(bool preserveDrag = false);
     void registerWindowCommands();
     void registerTabGroupCommands();
+    void registerHierarchyCommands();
+    bool prepareHierarchyBars(const QVector<QPair<TabId, PaneId>>& tabs);
+    void usePerPaneBars(TabId tab);
     void registerCustomChromeCommands();
     bool applyResult(const OperationResult& result);
     bool approveClose(const QVector<TabId>& tabs);
@@ -265,8 +275,9 @@ private:
     GroupId adjacentVisibleGroup(GroupId group, Placement direction, bool forMove = false) const;
     PaneId adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor = {}) const;
     WindowId adjacentWindow(WindowId window, bool forward) const;
-    void resizeActive(Placement direction, bool panes);
+    void resizeActive(Placement direction, bool panes, const CommandContext& target);
     void focusWindowCycle(bool forward, const QString& scope);
+    void cancelPendingShortcut();
     void beginTabDrag(TabId tab, QPoint globalPosition);
     WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag = false);
     void beginWindowDrag(WindowId window, QPoint globalPosition);

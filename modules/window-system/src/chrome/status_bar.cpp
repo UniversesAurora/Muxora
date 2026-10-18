@@ -19,6 +19,7 @@ WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, 
 {
     setObjectName(QStringLiteral("StatusBar"));
     message_->setObjectName(QStringLiteral("StatusMessage"));
+    messageText_ = message_->text();
     workspace_->setObjectName(QStringLiteral("StatusWorkspace"));
     message_->setAccessibleName(QCoreApplication::translate("WindowSystem", "状态消息"));
     workspace_->setAccessibleName(QCoreApplication::translate("WindowSystem", "工作区信息"));
@@ -31,7 +32,19 @@ WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, 
 }
 
 QStringList WorkspaceStatusBar::itemIds() { return {QStringLiteral("message"), QStringLiteral("workspace")}; }
-void WorkspaceStatusBar::setMessage(const QString& text) { message_->setText(text); message_->setToolTip(text); }
+void WorkspaceStatusBar::setMessage(const QString& text)
+{
+    messageText_ = text;
+    const auto displayed = transientMessage_.isEmpty() ? messageText_ : transientMessage_;
+    message_->setText(displayed); message_->setToolTip(displayed);
+}
+
+void WorkspaceStatusBar::setTransientMessage(const QString& text)
+{
+    transientMessage_ = text;
+    const auto displayed = transientMessage_.isEmpty() ? messageText_ : transientMessage_;
+    message_->setText(displayed); message_->setToolTip(displayed);
+}
 
 void WorkspaceStatusBar::setWorkspace(const QString& title, int tabCount)
 {

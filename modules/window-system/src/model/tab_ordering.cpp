@@ -38,10 +38,7 @@ bool visibleGroup(const GroupRecord* group)
 bool acceptsDirection(const GroupRecord& target, Placement direction)
 {
     if (direction < Placement::Left || direction > Placement::Bottom) return false;
-    if (target.location == GroupLocation::Central) return true;
-    const bool horizontalEdge = target.edge == Edge::Left || target.edge == Edge::Right;
-    return target.location == GroupLocation::Pinned
-        && horizontalEdge == (direction == Placement::Left || direction == Placement::Right);
+    return target.location == GroupLocation::Central || target.location == GroupLocation::Pinned;
 }
 LayoutTree exchangeLeaves(LayoutTree tree, GroupId first, GroupId second)
 {
@@ -118,6 +115,7 @@ OperationResult LayoutModel::moveGroup(GroupId source, GroupId target, Placement
             return bad("A group move requires distinct visible groups and a supported split direction.");
         const auto destination = model.groups_[target];
         const auto targetWindow = destination.windowId;
+        model.synchronizePinnedLayouts();
         model.unlinkGroupUnchecked(source);
         auto& moved = model.groups_[source];
         moved.windowId = targetWindow; moved.location = destination.location; moved.edge = destination.edge;
@@ -133,6 +131,8 @@ OperationResult LayoutModel::moveGroup(GroupId source, GroupId target, Placement
                 || (destination.edge == Edge::Top && direction == Placement::Top)
                 || (destination.edge == Edge::Bottom && direction == Placement::Bottom);
             order.insert(order.indexOf(target) + (outward ? 0 : 1), source);
+            auto& tree = model.windows_[targetWindow].pinnedLayouts[size_t(destination.edge)];
+            tree = replaceGroup(tree, target, adjacentTree(target, source, direction));
             model.rememberPinnedPositionsUnchecked(targetWindow, destination.edge);
         }
         model.windows_[targetWindow].activeGroup = source;
@@ -150,6 +150,7 @@ OperationResult LayoutModel::swapGroups(GroupId first, GroupId second)
         for (const auto window : affected) {
             auto& record = model.windows_[window];
             record.central = exchangeLeaves(record.central, first, second);
+            for (auto& tree : record.pinnedLayouts) tree = exchangeLeaves(tree, first, second);
             for (auto& id : record.edgeGroups) {
                 if (id == first) id = second;
                 else if (id == second) id = first;

@@ -260,6 +260,9 @@ QPushButton:pressed, QToolButton:pressed, QToolButton:checked { background: @sel
 QPushButton:focus, QToolButton:focus { border-color: @focus; }
 QPushButton:default { border-color: @accent; }
 QPushButton:disabled, QToolButton:disabled { color: @muted; border-color: @border; background: @raised; }
+QToolButton#StripCommandButton:disabled, QToolButton#StripOverflowButton:disabled {
+    color: @muted; background: transparent; border-color: transparent;
+}
 QToolButton#CaptionButton { color: @headerText; background: transparent; border: none; border-radius: 0; padding: 0; }
 QToolButton#CaptionButton:hover { background: @buttonHover; }
 QToolButton#CaptionButton[role="close"]:hover { background: @danger; color: white; }

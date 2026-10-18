@@ -185,6 +185,7 @@ struct ScriptHost::Private {
     Reply dispatch(QString method, Args args, Context context);
     void clearResources(bool preserveChrome = false);
     void installWindowApi();
+    void installHierarchyApi();
     void installScriptApi();
     void installAppearanceApi();
     void finishInitialization(bool ok, QString error = {});

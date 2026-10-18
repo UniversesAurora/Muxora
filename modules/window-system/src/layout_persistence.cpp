@@ -228,8 +228,7 @@ QJsonObject WindowManager::saveLayout() const
             {"sideBarsVisible", d->options.value(id).sideBarsVisible},
             {"toolbarsVisible", d->options.value(id).toolbarsVisible},
             {"statusBarVisible", d->options.value(id).statusBarVisible},
-            {"hiddenStatusItems", QJsonArray::fromStringList(d->options.value(id).hiddenStatusItems)},
-            {"viewState", windowViewStateToJson(windowViewState(id))}};
+            {"hiddenStatusItems", QJsonArray::fromStringList(d->options.value(id).hiddenStatusItems)}};
         record.insert("strips", widget->saveStripLayout());
         record.insert("barLayouts", visibilityProfilesToJson(d->windowVisibility.value(id)));
         const auto inactive = widget->saveInactiveStripLayouts();
@@ -252,6 +251,7 @@ QJsonObject WindowManager::saveLayout() const
             {"closeEmptyWorkbench", d->behavior.closeEmptyWorkbench}, {"revealDuringDrag", d->behavior.revealDuringDrag},
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
             {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating},
+            {"hideToolbarOptionsWhenLocked", d->behavior.hideToolbarOptionsWhenLocked},
             {"zenFullscreenMode", int(d->behavior.zenFullscreenMode)}}}};
 }
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
@@ -281,6 +281,9 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         if (settings.contains(key) && !settings.value(key).isBool()) return {false, QCoreApplication::translate("WindowSystem", "单标签隐藏设置无效")};
     restoredBehavior.hideSingleTabWorkbench = settings.value("hideSingleTabWorkbench").toBool(false);
     restoredBehavior.hideSingleTabFloating = settings.value("hideSingleTabFloating").toBool(true);
+    if (settings.contains("hideToolbarOptionsWhenLocked") && !settings.value("hideToolbarOptionsWhenLocked").isBool())
+        return {false, QCoreApplication::translate("WindowSystem", "工具条选项显示设置无效")};
+    restoredBehavior.hideToolbarOptionsWhenLocked = settings.value("hideToolbarOptionsWhenLocked").toBool(false);
     const auto position = settings.value("newTabPosition");
     if (!position.isUndefined() && (!position.isDouble() || position.toDouble() != position.toInt(-1)
         || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))
@@ -295,7 +298,6 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     restoredBehavior.closeEmptyWorkbench = settings.value("closeEmptyWorkbench").toBool();
     restoredBehavior.revealDuringDrag = settings.value("revealDuringDrag").toBool(true);
     restoredBehavior.revealDelayMs = qBound(200, settings.value("revealDelayMs").toInt(500), 2000);
-    QHash<WindowId, WindowViewState> restoredViews;
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject();
         const WindowId id(object.value("id").toString());
@@ -327,8 +329,10 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
                 seen.insert(item.toString());
             }
         }
-        WindowViewState state;
-        const auto parsedState = parseWindowViewState(object.value("viewState"), candidate, id, state);
+        // Older previews persisted fullscreen/Zen targets. Validate their
+        // complete contract before mutating content, but never restore this
+        // temporary presentation as a user preference.
+        const auto parsedState = validateSavedWindowViewState(object.value("viewState"), candidate, id);
         if (!parsedState) return parsedState;
         const auto parsedStrips = validateStripLayout(object.value("strips"));
         if (!parsedStrips) return parsedStrips;
@@ -356,7 +360,6 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         // per kind once; current windows keep all their individual layouts.
         if (!snapshot.contains("toolbarProfiles") && !current.isEmpty() && !restoredProfiles.contains(kind))
             restoredProfiles.insert(kind, current);
-        restoredViews.insert(id, state);
     }
     QHash<PaneId, TabOptions> descriptors;
     for (const auto& entry : snapshot.value("panes").toArray()) {
@@ -451,9 +454,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         widget->restorePlacement(desired, object.value("maximized").toBool());
         if (!self) return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在恢复时被销毁")};
     }
-    // Establish the saved normal placement before entering native fullscreen.
-    // A temporary screen-sized view must never replace the restart geometry.
-    d->viewStates = std::move(restoredViews);
+    // Normal/maximized placement and bar preferences survive restart;
+    // fullscreen and Zen are confined to the current running window.
     applyWindowViewStates();
     if (!self) return {false, QCoreApplication::translate("WindowSystem", "窗口管理器在恢复时被销毁")};
     blockSignals(previouslyBlocked); unblock.dismiss();

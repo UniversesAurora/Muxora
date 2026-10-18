@@ -51,6 +51,8 @@ public:
     [[nodiscard]] StripConstraints stripConstraints(const QString& id) const;
     void setLocked(bool locked);
     [[nodiscard]] bool isLocked() const;
+    void setHideOptionsWhenLocked(bool hidden);
+    [[nodiscard]] bool hideOptionsWhenLocked() const;
     bool setStripVisible(const QString& id, bool visible);
     [[nodiscard]] bool isStripVisible(const QString& id) const;
     bool setStripItemVisible(const QString& id, const QString& item, bool visible);

@@ -8,6 +8,7 @@
 #include <QVector>
 
 #include <functional>
+#include <array>
 #include <memory>
 #include <optional>
 
@@ -55,6 +56,12 @@ struct WindowRecord {
     LayoutTree central;
     // Edge groups have explicit order; their location and edge live in records.
     QVector<GroupId> edgeGroups;
+    // Each pinned side has its own two-dimensional group tree. Auto-hide
+    // records remain ordered in edgeGroups and never enter these trees.
+    std::array<LayoutTree, 4> pinnedLayouts;
+    // One bounded skeleton per side remembers dormant pinned slots. Nodes have
+    // independent identities; it never stores tab contents or a layout history.
+    std::array<LayoutTree, 4> pinnedRestoreLayouts;
     GroupId activeGroup;
 };
 
@@ -114,6 +121,7 @@ public:
     [[nodiscard]] GroupId groupForTab(TabId id) const;
     [[nodiscard]] WindowId familyRoot(FamilyId id) const;
     [[nodiscard]] QVector<GroupId> centralGroups(WindowId id) const;
+    [[nodiscard]] LayoutTree pinnedLayout(WindowId window, Edge edge) const;
     [[nodiscard]] QVector<TabId> orderedTabs(WindowId id) const;
     [[nodiscard]] QVector<TabId> autoHiddenTabs(WindowId windowId, Edge edge) const;
     [[nodiscard]] QVector<PaneId> panes(TabId id) const;
@@ -125,7 +133,7 @@ public:
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           WindowId ownerWorkbench = {});
     TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1);
-    // Create the tab directly in an adjacent central group in one revision.
+    // Create the tab directly in an adjacent central or pinned group in one revision.
     // The existing group's active tab, order and visit history stay intact.
     TabId addTabToNewGroup(WindowId windowId, QString title, GroupId targetGroup, Placement placement);
     OperationResult renameTab(TabId tabId, QString title);
@@ -138,7 +146,7 @@ public:
     // Auto-hide records are an implementation detail, not visible tab groups.
     OperationResult mergeGroups(GroupId source, GroupId target, int insertionIndex = -1);
     // Relocate the source beside the target; this never means exchange/merge.
-    // Pinned targets accept directions on their edge's partition axis only.
+    // All four directions retain the target's central or pinned region.
     OperationResult moveGroup(GroupId group, GroupId target, Placement placement);
     OperationResult moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
     OperationResult moveGroupToEdge(GroupId group, WindowId target, Edge edge, bool pinned);
@@ -195,6 +203,10 @@ public:
                            Placement placement = Placement::Right);
     TabId extractPane(TabId sourceTab, PaneId paneId, GroupId targetGroup,
                       Placement placement = Placement::Center);
+    TabId convertGroupToTab(GroupId group, Placement placement = Placement::Right);
+    OperationResult moveGroupIntoTab(GroupId group, TabId targetTab, PaneId targetPane = {}, Placement placement = Placement::Right);
+    OperationResult moveTabIntoTab(TabId sourceTab, TabId targetTab, PaneId targetPane = {}, Placement placement = Placement::Right);
+    GroupId convertTabToGroup(TabId tab, Placement placement = Placement::Right);
     OperationResult setSplitRatio(QUuid nodeId, double ratio);
 
     [[nodiscard]] QJsonObject toJson() const;
@@ -203,6 +215,10 @@ public:
 
 private:
     OperationResult transact(const std::function<OperationResult(LayoutModel&)>& operation);
+    void synchronizePinnedLayouts(WindowId onlyWindow = {});
+    void rememberPinnedLayoutUnchecked(WindowId window, Edge edge);
+    void restorePinnedLayoutUnchecked(WindowId window, Edge edge, GroupId group);
+    void reconcilePinnedRestoreLayouts();
     // JSON stores exact integers through 2^53 - 1. Rare rollover compacts ranks.
     static constexpr quint64 maximumTabOrder = (quint64(1) << 53) - 1;
     quint64 nextTabOrder();

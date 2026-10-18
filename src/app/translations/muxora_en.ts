@@ -35,6 +35,7 @@
         </message>
         <message>
             <location filename="../main.cpp" line="68" />
+            <location filename="../tests/localization_test.cpp" line="86" />
             <source>新建工作区标签</source>
             <translation>New workspace tab</translation>
         </message>
@@ -132,7 +133,7 @@ Ctrl+Shift+O     向下拆分窗格
 Ctrl+Alt+方向    标签组导航
 Alt+方向        内部窗格导航
 Ctrl+Shift+D     移到轻量浮窗
-    </source>
+</source>
             <translation>Muxora / Workspace notes
 
 This is a local editor. Type here and check that content survives moving between windows.
@@ -149,7 +150,7 @@ Ctrl+Shift+O     Split pane down
 Ctrl+Alt+Arrow   Navigate tab groups
 Alt+Arrow        Navigate panes
 Ctrl+Shift+D     Move to floating window
-    </translation>
+</translation>
         </message>
         <message>
             <location filename="../../workspace_host/placeholder_content.cpp" line="45" />
@@ -273,143 +274,143 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
             <translation>7 items  ·  File operations are not connected yet</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="46" />
+            <location filename="../scripting_setup.cpp" line="50" />
             <source>Lua 配置加载失败：%1</source>
             <translation>Failed to load Lua configuration: %1</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="55" />
+            <location filename="../scripting_setup.cpp" line="63" />
             <source>运行 Lua 脚本…</source>
             <translation>Run Lua Script…</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="59" />
+            <location filename="../scripting_setup.cpp" line="77" />
             <source>重新加载 Lua 配置</source>
             <translation>Reload Lua Configuration</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="62" />
+            <location filename="../scripting_setup.cpp" line="86" />
             <source>打开 Lua 配置文件</source>
             <translation>Open Lua Configuration</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="66" />
+            <location filename="../scripting_setup.cpp" line="95" />
             <source>无法打开 Lua 配置文件。</source>
             <translation>Could not open the Lua configuration file.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="93" />
+            <location filename="../scripting_setup.cpp" line="129" />
             <source>无法恢复脚本加载前的默认快捷键。</source>
             <translation>Could not restore the default keybindings before loading scripts.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="113" />
+            <location filename="../scripting_setup.cpp" line="156" />
             <source>Lua 脚本超过 1 MiB 限制。</source>
             <translation>Lua script exceeds the 1 MiB limit.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="116" />
+            <location filename="../scripting_setup.cpp" line="163" />
             <source>Lua 脚本必须使用 UTF-8 编码。</source>
             <translation>Lua scripts must use UTF-8 encoding.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="126" />
+            <location filename="../scripting_setup.cpp" line="175" />
             <source>运行脚本时只能提供 code 或 file 其中一个。</source>
             <translation>Provide either code or file when running a script, not both.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="129" />
+            <location filename="../scripting_setup.cpp" line="181" />
             <source>Lua 脚本参数必须是字符串。</source>
             <translation>Lua script parameters must be strings.</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="144" />
+            <location filename="../scripting_setup.cpp" line="205" />
             <source>运行 Lua 脚本</source>
             <translation>Run Lua Script</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="144" />
+            <location filename="../scripting_setup.cpp" line="206" />
             <source>输入 Lua 脚本：</source>
             <translation>Enter Lua script:</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="146" />
+            <location filename="../scripting_setup.cpp" line="209" />
             <source>运行</source>
             <translation>Run</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="146" />
+            <location filename="../scripting_setup.cpp" line="210" />
             <source>取消</source>
             <translation>Cancel</translation>
         </message>
         <message>
-            <location filename="../scripting_setup.cpp" line="175" />
+            <location filename="../scripting_setup.cpp" line="246" />
             <source>无法创建 Lua 配置目录。</source>
             <translation>Could not create the Lua configuration directory.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="99" />
+            <location filename="../script_services.cpp" line="103" />
             <source>脚本服务已关闭。</source>
             <translation>Script services have been closed.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="107" />
+            <location filename="../script_services.cpp" line="111" />
             <source>通知需要文本；正文最多 8192 个字符，标题最多 256 个字符。</source>
             <translation>Notifications require text; the message may contain up to 8192 characters and the title up to 256.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="111" />
+            <location filename="../script_services.cpp" line="119" />
             <source>通知时长必须是 0 到 600000 之间的毫秒数。</source>
             <translation>Notification duration must be between 0 and 600000 milliseconds.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="112" />
+            <location filename="../script_services.cpp" line="121" />
             <source>最多同时显示 16 条脚本通知。</source>
             <translation>At most 16 script notifications may be shown at once.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="134" />
+            <location filename="../script_services.cpp" line="151" />
             <source>启动程序需要有效的 program 和 cwd 字符串。</source>
             <translation>Launching a program requires valid program and cwd strings.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="136" />
-            <location filename="../script_services.cpp" line="140" />
+            <location filename="../script_services.cpp" line="156" />
+            <location filename="../script_services.cpp" line="161" />
             <source>程序参数 args 必须是字符串数组。</source>
             <translation>Program args must be an array of strings.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="143" />
+            <location filename="../script_services.cpp" line="166" />
             <source>程序参数超过数量或长度限制。</source>
             <translation>Program arguments exceed the count or length limit.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="144" />
+            <location filename="../script_services.cpp" line="168" />
             <source>最多同时处理 8 个程序启动请求。</source>
             <translation>At most 8 program launch requests may be pending at once.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="168" />
+            <location filename="../script_services.cpp" line="205" />
             <source>声音参数需要 beep 或本地 WAV 文件路径。</source>
             <translation>Sound must be beep or the path to a local WAV file.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="171" />
+            <location filename="../script_services.cpp" line="210" />
             <source>声音文件必须是最多 16 MiB 的本地 WAV 文件。</source>
             <translation>Sound must be a local WAV file no larger than 16 MiB.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="175" />
+            <location filename="../script_services.cpp" line="215" />
             <source>无法播放声音文件。</source>
             <translation>Could not play the sound file.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="177" />
+            <location filename="../script_services.cpp" line="217" />
             <source>当前平台仅支持 beep 提示音。</source>
             <translation>Only the beep sound is supported on this platform.</translation>
         </message>
         <message>
-            <location filename="../script_services.cpp" line="180" />
+            <location filename="../script_services.cpp" line="220" />
             <source>未知脚本服务：%1</source>
             <translation>Unknown script service: %1</translation>
         </message>
@@ -445,6 +446,7 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
             <translation>workbench.language supports only system, zh_CN, or en.</translation>
         </message>
         <message>
+            <location filename="../tests/localization_test.cpp" line="90" />
             <location filename="../user_preferences.cpp" line="136" />
             <source>不支持此界面语言。</source>
             <translation>Unsupported display language.</translation>

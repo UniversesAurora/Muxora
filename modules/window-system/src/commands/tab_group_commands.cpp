@@ -104,10 +104,8 @@ void WindowManager::registerTabGroupCommands()
                     continue;
                 }
                 auto* positions = new DismissOnlyMenu(label, windowMenu); windowMenu->addMenu(positions);
-                const bool horizontal = group->edge == Edge::Left || group->edge == Edge::Right;
                 const QStringList names{QCoreApplication::translate("WindowSystem", "左侧"), QCoreApplication::translate("WindowSystem", "右侧"), QCoreApplication::translate("WindowSystem", "上方"), QCoreApplication::translate("WindowSystem", "下方")};
                 for (int i = 0; i < 4; ++i) {
-                    if (group->location == GroupLocation::Pinned && horizontal != (i < 2)) continue;
                     auto* action = positions->addAction(names[i]); action->setData(id);
                     action->setProperty("groupPlacement", i + int(Placement::Left));
                 }
@@ -129,7 +127,7 @@ void WindowManager::registerTabGroupCommands()
         add(QStringLiteral("group.merge.") + direction.id, QCoreApplication::translate("WindowSystem", "合并到%1方标签组").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"布局", "合并标签组"},
             [this, direction](const CommandContext& c) { return mergeGroupDirection(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction).isNull(); });
-        add(QStringLiteral("group.move.") + direction.id, QCoreApplication::translate("WindowSystem", "移到%1方标签组旁").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"布局", "移动标签组"},
+        add(QStringLiteral("group.move.") + direction.id, QCoreApplication::translate("WindowSystem", "将当前标签组移到%1侧相邻组的外侧").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"布局", "移动标签组"},
             [this, direction](const CommandContext& c) { return moveGroupToAdjacentGroup(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction, true).isNull(); });
         const Edge edge = direction.direction == Placement::Left ? Edge::Left : direction.direction == Placement::Right ? Edge::Right

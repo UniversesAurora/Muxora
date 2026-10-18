@@ -51,6 +51,79 @@ inline QRect placeEdgeGuidePair(QRect pair, const QRect& available, const QList<
     return pair;
 }
 
+// A narrow pinned group can put its cross on top of a window-edge pair.
+// Keep the pair anchored to the edge and move the whole cross just inward;
+// its five hit rectangles must move together with the painted rectangles.
+inline QRect placeGroupCrossInward(QRect cross, const QRect& available, const QList<QRect>& obstacles, Edge edge)
+{
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    if (cross.width() > available.width() || cross.height() > available.height()) return {};
+    if (vertical) cross.moveTop(std::clamp(cross.top(), available.top(), available.bottom() - cross.height() + 1));
+    else cross.moveLeft(std::clamp(cross.left(), available.left(), available.right() - cross.width() + 1));
+    // Another group's header can span the full edge-parallel axis. In that
+    // case sliding along the edge cannot find a slot: advance past the header
+    // toward the workspace instead of removing every group drop target.
+    for (qsizetype attempt = 0; attempt <= obstacles.size(); ++attempt) {
+        if (!available.contains(cross)) return {};
+        if (const auto fitted = placeEdgeGuidePair(cross, available, obstacles, vertical); !fitted.isEmpty()) return fitted;
+        auto next = cross;
+        for (const auto& obstacle : obstacles) {
+            if (!cross.intersects(obstacle)) continue;
+            switch (edge) {
+            case Edge::Left: next.moveLeft(std::max(next.left(), obstacle.right() + 3)); break;
+            case Edge::Right: next.moveRight(std::min(next.right(), obstacle.left() - 3)); break;
+            case Edge::Top: next.moveTop(std::max(next.top(), obstacle.bottom() + 3)); break;
+            case Edge::Bottom: next.moveBottom(std::min(next.bottom(), obstacle.top() - 3)); break;
+            }
+        }
+        if (next == cross) return {};
+        cross = next;
+    }
+    return {};
+}
+
+inline void separateGroupGuides(QVector<DockGuide>& guides, int groupCount, QRect available,
+                                const QList<QRect>& strips)
+{
+    if (!groupCount || groupCount == guides.size()) return;
+    QRect cross;
+    for (int index = 0; index < groupCount; ++index) cross = cross.united(guides[index].rect);
+    QList<QRect> obstacles = strips;
+    QHash<Edge, QRect> pairs;
+    for (int index = groupCount; index < guides.size(); ++index) {
+        const auto& guide = guides[index];
+        pairs[guide.edge] = pairs.value(guide.edge).united(guide.rect);
+        obstacles.append(guide.rect);
+    }
+    QRect best;
+    int bestDistance = std::numeric_limits<int>::max();
+    bool overlaps = false;
+    for (auto iterator = pairs.cbegin(); iterator != pairs.cend(); ++iterator) {
+        if (!cross.intersects(iterator.value())) continue;
+        overlaps = true;
+        auto candidate = cross;
+        constexpr int gap = 2;
+        switch (iterator.key()) {
+        case Edge::Left: candidate.moveLeft(iterator.value().right() + 1 + gap); break;
+        case Edge::Right: candidate.moveRight(iterator.value().left() - 1 - gap); break;
+        case Edge::Top: candidate.moveTop(iterator.value().bottom() + 1 + gap); break;
+        case Edge::Bottom: candidate.moveBottom(iterator.value().top() - 1 - gap); break;
+        }
+        candidate = placeGroupCrossInward(candidate, available, obstacles, iterator.key());
+        if (candidate.isEmpty()) continue;
+        const int distance = (candidate.topLeft() - cross.topLeft()).manhattanLength();
+        if (distance < bestDistance || (distance == bestDistance &&
+            (candidate.x() < best.x() || (candidate.x() == best.x() && candidate.y() < best.y())))) {
+            best = candidate; bestDistance = distance;
+        }
+    }
+    if (!overlaps) return;
+    // If no full cross fits, do not paint overlapping, ambiguous hit targets.
+    if (best.isEmpty()) { guides.remove(0, groupCount); return; }
+    const auto delta = best.topLeft() - cross.topLeft();
+    for (int index = 0; index < groupCount; ++index) guides[index].rect.translate(delta);
+}
+
 inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup = true,
                                     const QList<QRect>& strips = {}, const QHash<Edge, QRect>& edgeStrips = {})
 {
@@ -76,6 +149,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
             guides.append({QRect(group.center() + offset - QPoint(cell / 2, cell / 2), QSize(cell, cell)), placement});
         }
     }
+    const int groupGuideCount = guides.size();
     QRect available = bounds;
     for (auto it = edgeStrips.cbegin(); it != edgeStrips.cend(); ++it) {
         if (it.value().isEmpty()) continue;
@@ -109,6 +183,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
         guides.append({QRect(outer, QSize(cell, cell)), Placement::Center, true, edge, false});
         guides.append({QRect(outer + inward, QSize(cell, cell)), Placement::Center, true, edge, true});
     }
+    separateGroupGuides(guides, groupGuideCount, available, obstacles);
     return guides;
 }
 

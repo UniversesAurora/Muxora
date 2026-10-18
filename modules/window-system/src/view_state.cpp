@@ -234,21 +234,10 @@ void WindowManager::leaveFocusScopeFor(TabId tab, PaneId pane)
         setViewMode(record->windowId, ViewMode::WindowFullscreen);
 }
 
-QJsonObject windowViewStateToJson(const WindowViewState& state)
+OperationResult validateSavedWindowViewState(const QJsonValue& value, const LayoutModel& model,
+                                            WindowId window)
 {
-    QJsonObject object{{"mode", modeName(state.mode)}, {"zen", state.zen}};
-    if (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen) {
-        object.insert("group", state.group.toString(QUuid::WithoutBraces));
-        object.insert("tab", state.tab.toString(QUuid::WithoutBraces));
-        object.insert("pane", state.pane.toString(QUuid::WithoutBraces));
-    }
-    return object;
-}
-
-OperationResult parseWindowViewState(const QJsonValue& value, const LayoutModel& model,
-                                    WindowId window, WindowViewState& state)
-{
-    if (value.isUndefined()) { state = {}; return {true, {}}; }
+    if (value.isUndefined()) return {true, {}};
     if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "窗口显示模式无效")};
     const auto object = value.toObject();
     const auto name = object.value("mode");
@@ -278,7 +267,6 @@ OperationResult parseWindowViewState(const QJsonValue& value, const LayoutModel&
         if (candidate.mode == ViewMode::PaneFullscreen && model.tab(candidate.tab)->activePane != candidate.pane)
             return {false, QCoreApplication::translate("WindowSystem", "窗格全屏目标与活动窗格不一致")};
     }
-    state = candidate;
     return {true, {}};
 }
 

@@ -73,6 +73,8 @@ private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
     void applicationTreeUsesSemanticGroupsAndCoversEveryCommand();
     void directionalFamiliesHaveAConsistentOrder();
+    void layoutMenusIdentifyTheSourceObjectAndConversionTarget();
+    void groupContextMenusDoNotPretendToOperateOnASingleTab();
     void lateContributionsRespectMetadataAndPreserveExistingMenus();
     void unknownCategoriesStayVisibleAndSortIndependentlyOfRegistration();
     void menuExecutionAndShortcutsUseTheRegistryExactlyOnce();
@@ -130,15 +132,78 @@ void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
     auto* bar = menuBar(manager, window);
     const QList<QPair<QStringList, QString>> families{
         {{"视图", "聚焦标签组"}, "workspace.focusGroup."}, {{"视图", "聚焦窗格"}, "pane.focus."},
-        {{"布局", "标签组", "新建标签组"}, "workspace.splitGroup."}, {{"布局", "窗格", "拆分"}, "pane.split."},
-        {{"布局", "窗格", "交换位置"}, "pane.swap."}, {{"布局", "移动标签", "到标签组"}, "workspace.moveTabToGroup."},
-        {{"布局", "移动窗格", "到标签组"}, "pane.moveToGroup."}};
+        {{"布局", "当前标签组", "在此组旁新建标签组"}, "workspace.splitGroup."},
+        {{"布局", "当前标签组", "调整此组边界"}, "workspace.resizeGroup."},
+        {{"布局", "当前标签组", "移动此标签组", "放到相邻标签组旁"}, "group.move."},
+        {{"布局", "当前窗格", "拆分此窗格"}, "pane.split."},
+        {{"布局", "当前窗格", "与同一标签内的窗格交换位置"}, "pane.swap."},
+        {{"布局", "当前标签", "移动此标签", "移入相邻标签组"}, "workspace.moveTabToGroup."},
+        {{"布局", "当前窗格", "移动此窗格", "并入相邻标签组的活动标签"}, "pane.moveToGroup."}};
     for (const auto& [path, prefix] : families) {
         auto* menu = menuAt(bar, path); QVERIFY2(menu, qPrintable(path.join('/')));
         QCOMPARE(ids(menu, false), (QStringList{prefix + "left", prefix + "right", prefix + "up", prefix + "down"}));
     }
     QCOMPARE(ids(menuAt(bar, {"窗口", "切换窗口", "全部窗口"})),
         (QStringList{"window.focusPrevious.all", "window.focusNext.all"}));
+}
+
+void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
+    auto* bar = menuBar(manager, window); auto* layout = menuAt(bar, {"布局"}); QVERIFY(layout);
+    QStringList objectNames, objectTitles;
+    for (auto* action : layout->actions()) if (auto* child = action->menu()) {
+        objectNames.append(child->objectName()); objectTitles.append(child->title());
+    }
+    QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.panes"}));
+    QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前窗格"}));
+    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签组", "转换组内内容"}), false),
+        (QStringList{"group.convertToTab", "group.moveIntoTab"}));
+    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签", "转换此标签的内容"}), false),
+        (QStringList{"tab.convertToGroup", "tab.moveIntoTab"}));
+    const auto paneMoves = ids(menuAt(bar, {"布局", "当前窗格", "移动此窗格"}), false);
+    QCOMPARE(paneMoves, QStringList{"pane.extractToTab"});
+    const auto withinTabBar = ids(menuAt(bar, {"布局", "当前标签", "调整此标签在栏内的位置"}), false);
+    QCOMPARE(withinTabBar, (QStringList{"workspace.reorderTab.previous", "workspace.reorderTab.next"}));
+    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签组", "排列此组内的标签"}), false),
+        (QStringList{"group.sort.alphabeticalAscending", "group.sort.alphabeticalDescending", "group.sort.openedAscending",
+            "group.sort.openedDescending", "group.sort.visitedAscending", "group.sort.visitedDescending"}));
+    const QList<QPair<QStringList, QStringList>> scoped{
+        {{"布局", "当前标签组"}, {"group.convertToTab", "group.moveIntoTab", "group.moveToGroup", "group.swap", "group.merge", "group.close"}},
+        {{"布局", "当前标签"}, {"tab.convertToGroup", "tab.moveIntoTab", "workspace.moveTabToWindow", "workspace.pinTab", "tab.peek.setSize"}},
+        {{"布局", "当前窗格"}, {"pane.extractToTab", "pane.moveToTab", "pane.moveToWindow", "pane.close"}}};
+    QHash<QString, int> all;
+    for (const auto& [path, commands] : scoped) {
+        auto* source = menuAt(bar, path); QVERIFY(source);
+        QHash<QString, int> occurrences; walk(source, occurrences);
+        for (const auto& command : commands) {
+            QVERIFY2(manager.commands().find(command), qPrintable(command));
+            QCOMPARE(occurrences.value(command), 1); ++all[command];
+        }
+        verifySeparators(source);
+    }
+    for (auto count : all) QCOMPARE(count, 1);
+    for (const auto* oldRoot : {"layout.moveGroup", "layout.swapGroup", "layout.mergeGroup", "layout.moveTab", "layout.movePane", "layout.edge"})
+        QVERIFY(!layout->findChild<QMenu*>(QString::fromLatin1(oldRoot), Qt::FindDirectChildrenOnly));
+}
+
+void MenuStructureTest::groupContextMenusDoNotPretendToOperateOnASingleTab()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto first = manager.addTab(window, new QLabel("First"), {"First", "label", {}});
+    manager.addTab(window, new QLabel("Second"), {"Second", "label", {}});
+    QMenu menu; populateContextMenu(&menu, CommandMenuSurface::Group, &manager, manager.context(window));
+    QHash<QString, int> occurrences; walk(&menu, occurrences);
+    for (const auto* id : {"group.close", "group.convertToTab", "group.moveIntoTab", "group.moveToGroup", "group.swap", "group.merge",
+                           "workspace.splitGroup.left", "workspace.splitGroup.right", "workspace.splitGroup.up", "workspace.splitGroup.down"})
+        QCOMPARE(occurrences.value(QString::fromLatin1(id)), 1);
+    for (const auto* id : {"workspace.closeTab", "tab.rename", "tab.color.set", "tab.convertToGroup", "workspace.pinTab", "pane.close"})
+        QCOMPARE(occurrences.value(QString::fromLatin1(id)), 0);
+    for (auto count : occurrences) QCOMPARE(count, 1);
+    const auto declared = declaredMenuCommands(CommandMenuSurface::Group);
+    QCOMPARE(QSet<QString>(declared.cbegin(), declared.cend()).size(), declared.size());
+    verifySeparators(&menu); QVERIFY(manager.model().tab(first));
 }
 
 void MenuStructureTest::lateContributionsRespectMetadataAndPreserveExistingMenus()
@@ -226,6 +291,18 @@ void MenuStructureTest::tabAndPaneContextMenusRetainScopeAndUsefulGroups()
     refreshCommandAction(&manager, sharing, captured); QVERIFY(!sharing->isChecked()); QCOMPARE(manager.model().tab(tab)->activePane, pane);
     for (auto* menu : {&tabMenu, &paneMenu}) {
         QHash<QString, int> occurrences; walk(menu, occurrences); for (auto count : occurrences) QCOMPARE(count, 1); verifySeparators(menu);
+    }
+    // Classification is checked for every declared context operation, including
+    // currently disabled items and the color action which owns a submenu.
+    for (const auto surface : {CommandMenuSurface::Tab, CommandMenuSurface::Group, CommandMenuSurface::Pane, CommandMenuSurface::Window}) {
+        QMenu current; populateContextMenu(&current, surface, &manager, captured);
+        const auto declarations = declaredMenuCommands(surface);
+        QCOMPARE(QSet<QString>(declarations.cbegin(), declarations.cend()).size(), declarations.size());
+        for (const auto& id : declarations) {
+            QVERIFY2(manager.commands().find(id), qPrintable(id));
+            QCOMPARE(current.findChildren<QAction*>(id).size(), 1);
+        }
+        verifySeparators(&current);
     }
 }
 

@@ -19,8 +19,8 @@ public:
     void setBarSharing(PaneBarSharing top, PaneBarSharing bottom);
     void setTopBar(QWidget* widget);
     void setBottomBar(QWidget* widget);
-    QWidget* takeTopBar();
-    QWidget* takeBottomBar();
+    QWidget* takeTopBar(QWidget* owner = nullptr);
+    QWidget* takeBottomBar(QWidget* owner = nullptr);
     [[nodiscard]] QHash<PaneId, QWidget*> paneFrames() const;
 private:
     QWidget* buildNode(LayoutTree node, const TabRecord& record,

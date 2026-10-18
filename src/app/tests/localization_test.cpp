@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
@@ -17,12 +18,26 @@
 
 using namespace window_system;
 
+namespace {
+QStringList multilineText(QWidget* root)
+{
+    QStringList result;
+    if (const auto* editor = qobject_cast<QPlainTextEdit*>(root)) result.append(editor->toPlainText());
+    if (const auto* label = qobject_cast<QLabel*>(root)) result.append(label->text());
+    for (const auto* label : root->findChildren<QLabel*>()) result.append(label->text());
+    result.removeIf([](const QString& text) { return !text.contains(QLatin1Char('\n')); });
+    return result;
+}
+}
+
 class AppLocalizationTest final : public QObject {
     Q_OBJECT
 private slots:
     void englishHostContentAndInitialTitles();
     void chineseHostCatalogAndPreferenceDiagnostics();
     void hostCatalogsAreComplete();
+    void multilineHostTextMatchesExactCatalogKeys_data();
+    void multilineHostTextMatchesExactCatalogKeys();
 };
 
 void AppLocalizationTest::englishHostContentAndInitialTitles()
@@ -104,6 +119,60 @@ void AppLocalizationTest::hostCatalogsAreComplete()
         QVERIFY(!xml.hasError());
         QVERIFY(messages > 0);
     }
+}
+
+void AppLocalizationTest::multilineHostTextMatchesExactCatalogKeys_data()
+{
+    QTest::addColumn<QString>("contentType");
+    QTest::newRow("notes-with-terminal-newline") << QStringLiteral("notes");
+    QTest::newRow("transfers") << QStringLiteral("transfers");
+    QTest::newRow("welcome") << QStringLiteral("welcome");
+}
+
+void AppLocalizationTest::multilineHostTextMatchesExactCatalogKeys()
+{
+    QFETCH(QString, contentType);
+    TranslationManager translations;
+    translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
+    QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
+    WindowManager manager;
+    const TabOptions options{QStringLiteral("User title"), contentType, {}};
+    std::unique_ptr<QWidget> chinese(muxora::createPlaceholder(options, &manager));
+    const auto originals = multilineText(chinese.get());
+    QVERIFY(!originals.isEmpty());
+    if (contentType == QStringLiteral("notes")) QVERIFY(originals.first().endsWith(QLatin1Char('\n')));
+
+    const QDir source(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath());
+    QStringList expectedEnglish;
+    for (const auto& locale : {QStringLiteral("zh_CN"), QStringLiteral("en")}) {
+        QFile file(source.filePath(QStringLiteral("../translations/muxora_%1.ts").arg(locale)));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QXmlStreamReader xml(&file);
+        QHash<QString, QString> values;
+        QString context, original;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (!xml.isStartElement()) continue;
+            if (xml.name() == QStringLiteral("name")) context = xml.readElementText();
+            else if (xml.name() == QStringLiteral("source")) original = xml.readElementText();
+            else if (xml.name() == QStringLiteral("translation")) {
+                const auto translated = xml.readElementText();
+                if (context == QStringLiteral("Muxora")) values.insert(original, translated);
+            }
+        }
+        QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+        for (const auto& original : originals) {
+            // Do not trim: indentation accidentally written inside a source
+            // element is part of Qt's lookup key, including after a final '\n'.
+            QVERIFY2(values.contains(original), qPrintable(QStringLiteral("%1 has no exact key for %2")
+                .arg(file.fileName(), contentType)));
+            if (locale == QStringLiteral("zh_CN")) QCOMPARE(values.value(original), original);
+            else expectedEnglish.append(values.value(original));
+        }
+    }
+    QVERIFY(translations.installLanguage(UiLanguage::English));
+    std::unique_ptr<QWidget> english(muxora::createPlaceholder(options, &manager));
+    QCOMPARE(multilineText(english.get()), expectedEnglish);
 }
 
 QTEST_MAIN(AppLocalizationTest)

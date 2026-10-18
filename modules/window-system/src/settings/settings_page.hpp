@@ -64,11 +64,10 @@ private:
     QComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
-    QComboBox* viewMode_ = nullptr;
     QComboBox* zenFullscreenMode_ = nullptr;
-    QCheckBox* zen_ = nullptr;
     QCheckBox* hideSingleWorkbench_ = nullptr;
     QCheckBox* hideSingleFloating_ = nullptr;
+    QCheckBox* hideToolbarOptionsWhenLocked_ = nullptr;
     QComboBox* centralPlacement_ = nullptr;
     QComboBox* pinnedPlacement_ = nullptr;
     QCheckBox* multiline_ = nullptr;
@@ -109,6 +108,8 @@ private:
     QTreeWidget* commands_ = nullptr;
     QTreeWidget* bindings_ = nullptr;
     QLabel* selectedTitle_ = nullptr;
+    QLabel* commandHelp_ = nullptr;
+    QKeySequenceEdit* searchCapture_ = nullptr;
     QKeySequenceEdit* capture_ = nullptr;
     QPlainTextEdit* arguments_ = nullptr;
     QLabel* diagnostic_ = nullptr;

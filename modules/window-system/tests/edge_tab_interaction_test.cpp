@@ -187,22 +187,48 @@ void EdgeTabInteractionTest::edgeBarCornerOwnership()
     const QRect area(surface->mapToGlobal(QPoint()), surface->size());
     for (int i = 0; i < edges.size(); ++i) QCOMPARE(bars.contains(edges[i]), bool(visibleEdges & (1 << i)));
     if (bars.contains(Edge::Left)) {
+        QCOMPARE(bars[Edge::Left].left(), area.left());
         QCOMPARE(bars[Edge::Left].top(), area.top());
-        QCOMPARE(bars[Edge::Left].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 1 : area.bottom());
+        QCOMPARE(bars[Edge::Left].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 3 : area.bottom());
     }
     if (bars.contains(Edge::Right)) {
+        QCOMPARE(bars[Edge::Right].right(), area.right());
         QCOMPARE(bars[Edge::Right].top(), area.top());
-        QCOMPARE(bars[Edge::Right].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 1 : area.bottom());
+        QCOMPARE(bars[Edge::Right].bottom(), bars.contains(Edge::Bottom) ? bars[Edge::Bottom].top() - 3 : area.bottom());
     }
     if (bars.contains(Edge::Top)) {
-        QCOMPARE(bars[Edge::Top].left(), bars.contains(Edge::Left) ? bars[Edge::Left].right() + 1 : area.left());
-        QCOMPARE(bars[Edge::Top].right(), bars.contains(Edge::Right) ? bars[Edge::Right].left() - 1 : area.right());
+        QCOMPARE(bars[Edge::Top].top(), area.top());
+        QCOMPARE(bars[Edge::Top].left(), bars.contains(Edge::Left) ? bars[Edge::Left].right() + 3 : area.left());
+        QCOMPARE(bars[Edge::Top].right(), bars.contains(Edge::Right) ? bars[Edge::Right].left() - 3 : area.right());
     }
     if (bars.contains(Edge::Bottom)) {
+        QCOMPARE(bars[Edge::Bottom].bottom(), area.bottom());
         QCOMPARE(bars[Edge::Bottom].left(), area.left()); QCOMPARE(bars[Edge::Bottom].right(), area.right());
     }
     for (int i = 0; i < edges.size(); ++i) for (int j = i + 1; j < edges.size(); ++j)
         if (bars.contains(edges[i]) && bars.contains(edges[j])) QVERIFY(!bars[edges[i]].intersects(bars[edges[j]]));
+    // The trailing all-pin control also stops before a neighbouring rail;
+    // its reserved space must not erase the corner separator.
+    for (auto* pin : window->findChildren<QToolButton*>("PinEdgeButton")) {
+        if (!pin->isVisible()) continue;
+        const QRect button(pin->mapToGlobal(QPoint()), pin->size());
+        const auto edge = Edge(pin->parentWidget()->property("edge").toInt());
+        QVERIFY(bars.value(edge).contains(button));
+        for (auto iterator = bars.cbegin(); iterator != bars.cend(); ++iterator)
+            if (iterator.key() != edge) QVERIFY(!button.adjusted(-1, -1, 1, 1).intersects(iterator.value()));
+    }
+    QRect expectedContent = area;
+    if (bars.contains(Edge::Left)) expectedContent.setLeft(bars.value(Edge::Left).right() + 3);
+    if (bars.contains(Edge::Right)) expectedContent.setRight(bars.value(Edge::Right).left() - 3);
+    if (bars.contains(Edge::Top)) expectedContent.setTop(bars.value(Edge::Top).bottom() + 3);
+    if (bars.contains(Edge::Bottom)) expectedContent.setBottom(bars.value(Edge::Bottom).top() - 3);
+    QCOMPARE(surface->centralRectGlobal(), expectedContent);
+    QVERIFY(manager.setSideBarsVisible(windowId, false));
+    QTRY_VERIFY(surface->edgeBarRects().isEmpty());
+    QTRY_COMPARE(surface->centralRectGlobal(), area);
+    QVERIFY(manager.setSideBarsVisible(windowId, true));
+    QTRY_COMPARE(surface->edgeBarRects(), bars);
+    QTRY_COMPARE(surface->centralRectGlobal(), expectedContent);
 }
 void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs()
 {
@@ -216,9 +242,14 @@ void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs(
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* buttonA = edgeButton(window, a); auto* buttonB = edgeButton(window, b);
     QVERIFY(buttonA); QVERIFY(buttonB);
-    auto* pinAll = buttonA->parentWidget()->findChild<QToolButton*>("PinEdgeButton"); QVERIFY(pinAll);
-    auto* row = buttonA->parentWidget()->layout();
-    QVERIFY(row->indexOf(pinAll) > row->indexOf(buttonA)); QVERIFY(row->indexOf(pinAll) > row->indexOf(buttonB));
+    auto* rail = buttonA->parentWidget();
+    while (rail && rail->objectName() != "EdgeBar") rail = rail->parentWidget();
+    QVERIFY(rail);
+    auto* pinAll = rail->findChild<QToolButton*>("PinEdgeButton"); QVERIFY(pinAll);
+    auto* row = pinAll->parentWidget()->layout(); QVERIFY(row);
+    QVERIFY(pinAll->parentWidget() != buttonA->parentWidget());
+    QVERIFY(row->indexOf(pinAll) > 0);
+    QVERIFY(pinAll->mapToGlobal(QPoint()).y() > buttonB->mapToGlobal(buttonB->rect().bottomLeft()).y());
     QVERIFY(manager.activateTab(a));
     auto* pinCurrent = window->findChild<QToolButton*>("PinPeekTabButton"); QVERIFY(pinCurrent);
     QVERIFY(pinCurrent->icon().pixmap(16, 16).toImage() != pinAll->icon().pixmap(16, 16).toImage());

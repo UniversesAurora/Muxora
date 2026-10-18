@@ -20,6 +20,7 @@ public:
     WorkspaceStatusBar(WindowManager* manager, WindowId window, QWidget* parent = nullptr);
     static QStringList itemIds();
     void setMessage(const QString& text);
+    void setTransientMessage(const QString& text);
     void setWorkspace(const QString& title, int tabCount);
     void setHiddenItems(const QStringList& hidden);
     void setCustomItems(const QVector<StatusItem>& items);
@@ -36,6 +37,8 @@ private:
     QHash<QString, QPointer<QLabel>> customItems_;
     QVector<StatusItem> customDefinitions_;
     QStringList hiddenItems_;
+    QString messageText_;
+    QString transientMessage_;
 };
 
 } // namespace window_system

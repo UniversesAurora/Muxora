@@ -21,6 +21,8 @@
 
 `windows.state(id)` 查询最小化、最大化和全屏范围；`windows.set_state(id, state)` 接受 `normal`、`maximized`、`minimized`，使用与菜单相同的窗口命令。`ui.command_palette(id, options)` 和 `ui.window_selector(id, options)` 的 `options` 接受 `modal`、`dismiss_on_outside`，默认分别为 `false`、`true`。面板打开后脚本继续执行，不使用嵌套事件循环。
 
+`groups.to_tab`、`groups.into_tab`、`tabs.into_tab`、`tabs.to_group` 和 `panes.to_tab` 对应窗口模块的层级转换 API，保留 Pane ID 与原内容。并入操作明确指定目标标签及可选目标窗格，方向为 `left`、`right`、`top`、`bottom`，默认 `right`；组来源限中央或固定区域的可见组。详细参数与示例见 [Lua 使用说明](../../docs/development/lua-guide.md#标签组标签与窗格转换)。全屏、禅模式保持运行时状态，不随 `layout.snapshot()` 保存或恢复。
+
 ## 组件扩展
 
 组件可以分别贡献 UI 命令和 Lua 方法：

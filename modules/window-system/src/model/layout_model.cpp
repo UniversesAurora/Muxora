@@ -343,6 +343,8 @@ OperationResult LayoutModel::transact(const std::function<OperationResult(Layout
     LayoutModel candidate = *this;
     auto result = operation(candidate);
     if (!result) return result;
+    candidate.synchronizePinnedLayouts();
+    candidate.reconcilePinnedRestoreLayouts();
     result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;
@@ -426,9 +428,9 @@ TabId LayoutModel::addTabToNewGroup(WindowId windowId, QString title, GroupId ta
     const auto result = transact([&](LayoutModel& model) {
         const auto* target = model.group(targetGroup);
         if (!model.window(windowId) || !target || target->windowId != windowId
-            || target->location != GroupLocation::Central
+            || target->location == GroupLocation::AutoHide
             || placement < Placement::Left || placement > Placement::Bottom)
-            return failure("An adjacent group needs a central target in its window and a split direction.");
+            return failure("An adjacent group needs a visible target in its window and a split direction.");
         created = QUuid::createUuid();
         const auto pane = QUuid::createUuid();
         TabRecord record;
@@ -483,7 +485,12 @@ void LayoutModel::unlinkGroupUnchecked(GroupId groupId)
     auto& windowRecord = windows_[record.windowId];
     if (record.location == GroupLocation::Central)
         windowRecord.central = replace(windowRecord.central, groupId, {});
-    else windowRecord.edgeGroups.removeAll(groupId);
+    else {
+        windowRecord.edgeGroups.removeAll(groupId);
+        if (record.location == GroupLocation::Pinned)
+            windowRecord.pinnedLayouts[size_t(record.edge)] = replace(
+                windowRecord.pinnedLayouts[size_t(record.edge)], groupId, {});
+    }
     if (windowRecord.activeGroup == groupId) {
         const auto central = centralGroups(record.windowId);
         windowRecord.activeGroup = !central.isEmpty() ? central.first()
@@ -510,19 +517,29 @@ OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                                Placement placement, int insertionIndex)
 {
     const auto sourceId = groupForTab(tabId);
-    if (sourceId.isNull() || !groups_.contains(targetGroup))
+    if (sourceId.isNull() || !groups_.contains(targetGroup)
+        || placement < Placement::Center || placement > Placement::Bottom)
         return failure("The source tab or target group no longer exists.");
     auto destinationId = targetGroup;
     const auto targetWindow = groups_[targetGroup].windowId;
     if (placement != Placement::Center) {
-        if (groups_[targetGroup].location != GroupLocation::Central)
-            return failure("Directional splitting requires a central target group.");
+        const auto targetRecord = groups_[targetGroup];
+        if (targetRecord.location == GroupLocation::AutoHide)
+            return failure("Directional splitting requires a visible target group.");
+        synchronizePinnedLayouts();
         destinationId = QUuid::createUuid();
         GroupRecord destination;
         destination.id = destinationId;
         destination.windowId = targetWindow;
+        destination.location = targetRecord.location;
+        destination.edge = targetRecord.edge;
+        destination.edgeExtent = targetRecord.edgeExtent;
         groups_.insert(destinationId, std::move(destination));
-        auto& tree = windows_[targetWindow].central;
+        if (targetRecord.location == GroupLocation::Pinned)
+            windows_[targetWindow].edgeGroups.insert(
+                windows_[targetWindow].edgeGroups.indexOf(targetGroup) + 1, destinationId);
+        auto& tree = targetRecord.location == GroupLocation::Pinned
+            ? windows_[targetWindow].pinnedLayouts[size_t(targetRecord.edge)] : windows_[targetWindow].central;
         tree = replace(tree, targetGroup, split(findLeaf(tree, targetGroup), leaf(destinationId), placement));
     }
     auto& source = groups_[sourceId];
@@ -690,6 +707,7 @@ OperationResult LayoutModel::setGroupPinned(GroupId groupId, bool pinned)
                 auto& order = model.windows_[record->windowId].edgeGroups;
                 order.removeAll(groupId);
                 order.insert(std::clamp(saved->groupIndex, 0, int(order.size())), groupId);
+                model.restorePinnedLayoutUnchecked(record->windowId, record->edge, groupId);
             } else model.placePinnedGroupOutermostUnchecked(groupId);
         }
         return success();
@@ -709,6 +727,7 @@ void LayoutModel::placePinnedGroupOutermostUnchecked(GroupId groupId)
 }
 void LayoutModel::rememberPinnedPositionsUnchecked(WindowId windowId, Edge edge)
 {
+    rememberPinnedLayoutUnchecked(windowId, edge);
     const auto order = windows_[windowId].edgeGroups;
     const bool rebase = std::none_of(order.cbegin(), order.cend(), [&](GroupId id) {
         const auto& group = groups_[id];
@@ -742,6 +761,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
     const auto edge = source->edge;
     const auto extent = source->edgeExtent;
     GroupId targetId;
+    bool restoreSavedSlot = false;
     int insertion = -1;
     if (!pinned) {
         rememberPinnedPositionsUnchecked(windowId, edge);
@@ -755,6 +775,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
     } else {
         const auto saved = tabs_[tabId].pinnedPosition;
         if (saved && saved->window == windowId && saved->edge == edge) {
+            restoreSavedSlot = true;
             const auto* previous = group(saved->group);
             if (previous && previous->windowId == windowId && previous->edge == edge
                 && previous->location == GroupLocation::Pinned) targetId = saved->group;
@@ -764,6 +785,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
                     auto& order = windows_[windowId].edgeGroups;
                     order.removeAll(sourceId);
                     order.insert(std::clamp(saved->groupIndex, 0, int(order.size())), sourceId);
+                    restorePinnedLayoutUnchecked(windowId, edge, sourceId);
                     return success();
                 }
                 targetId = saved->group;
@@ -798,7 +820,9 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
             placePinnedGroupOutermostUnchecked(targetId);
         }
     }
-    return moveTabUnchecked(tabId, targetId, Placement::Center, insertion);
+    const auto result = moveTabUnchecked(tabId, targetId, Placement::Center, insertion);
+    if (result && pinned && restoreSavedSlot) restorePinnedLayoutUnchecked(windowId, edge, targetId);
+    return result;
 }
 OperationResult LayoutModel::setTabPinned(TabId tabId, bool pinned)
 {
@@ -980,11 +1004,20 @@ OperationResult LayoutModel::moveAllTabs(WindowId sourceWindow, GroupId targetGr
 
 LayoutTree LayoutModel::takeWindowTreeUnchecked(WindowId sourceWindow, WindowId targetWindow)
 {
+    synchronizePinnedLayouts();
     auto carried = windows_[sourceWindow].central;
     const auto edgeGroups = windows_[sourceWindow].edgeGroups;
     auto carriedGroups = centralGroups(sourceWindow);
     for (auto edge : {Edge::Top, Edge::Right, Edge::Bottom, Edge::Left}) {
+        const auto direction = edge == Edge::Top ? Placement::Top
+            : edge == Edge::Right ? Placement::Right
+            : edge == Edge::Bottom ? Placement::Bottom : Placement::Left;
+        if (const auto tree = windows_[sourceWindow].pinnedLayouts[size_t(edge)]) {
+            carried = carried ? split(carried, tree, direction) : tree;
+            collect(tree, carriedGroups);
+        }
         for (auto location : {GroupLocation::Pinned, GroupLocation::AutoHide}) {
+            if (location == GroupLocation::Pinned) continue;
             for (auto groupId : edgeGroups) {
                 auto& record = groups_[groupId];
                 if (record.edge != edge || record.location != location) continue;
@@ -1004,6 +1037,7 @@ LayoutTree LayoutModel::takeWindowTreeUnchecked(WindowId sourceWindow, WindowId 
     auto& sourceRecord = windows_[sourceWindow];
     sourceRecord.central.reset();
     sourceRecord.edgeGroups.clear();
+    sourceRecord.pinnedLayouts = {};
     sourceRecord.activeGroup = GroupId{};
     return carried;
 }
@@ -1017,6 +1051,7 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
     const auto ordered = orderedTabs(sourceWindow);
     if (ordered.isEmpty()) return failure("The source window has no tabs.");
     const auto targetWindow = target->windowId;
+    const auto destination = *target;
     const auto activeGroup = source->activeGroup;
     const auto activeTab = group(activeGroup) ? groups_[activeGroup].activeTab : ordered.first();
     if (placement == Placement::Center) {
@@ -1029,10 +1064,22 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
         groups_[targetGroup].activeTab = activeTab;
         windows_[targetWindow].activeGroup = targetGroup;
     } else {
-        if (target->location != GroupLocation::Central)
-            return failure("Directional whole-window movement needs a central target group.");
+        if (destination.location == GroupLocation::AutoHide)
+            return failure("Directional whole-window movement needs a visible target group.");
         const auto carried = takeWindowTreeUnchecked(sourceWindow, targetWindow);
-        auto& targetTree = windows_[targetWindow].central;
+        if (destination.location == GroupLocation::Pinned) {
+            QVector<QUuid> carriedGroups;
+            collect(carried, carriedGroups);
+            for (const auto id : carriedGroups) {
+                auto& moved = groups_[id];
+                moved.location = GroupLocation::Pinned;
+                moved.edge = destination.edge;
+                moved.edgeExtent = destination.edgeExtent;
+                windows_[targetWindow].edgeGroups.append(id);
+            }
+        }
+        auto& targetTree = destination.location == GroupLocation::Pinned
+            ? windows_[targetWindow].pinnedLayouts[size_t(destination.edge)] : windows_[targetWindow].central;
         targetTree = replace(targetTree, targetGroup,
                              split(findLeaf(targetTree, targetGroup), carried, placement));
         windows_[targetWindow].activeGroup = activeGroup;
@@ -1239,7 +1286,10 @@ OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
         if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 0.95)
             return failure("Split ratios must stay between 0.05 and 0.95.");
         bool found = false;
-        for (auto& record : model.windows_) record.central = replaceRatio(record.central, nodeId, ratio, found);
+        for (auto& record : model.windows_) {
+            record.central = replaceRatio(record.central, nodeId, ratio, found);
+            for (auto& tree : record.pinnedLayouts) tree = replaceRatio(tree, nodeId, ratio, found);
+        }
         for (auto& record : model.tabs_) record.panes = replaceRatio(record.panes, nodeId, ratio, found);
         return found ? success() : failure("The split node does not exist.");
     });
@@ -1300,9 +1350,21 @@ OperationResult LayoutModel::validate() const
         if (const auto& saved = iterator->pinnedPosition) {
             if (saved->window.isNull() || saved->group.isNull() || saved->groupIndex < 0
                 || saved->groupIndex > maximumRecords || saved->tabIndex < 0 || saved->tabIndex > maximumRecords
-                || saved->extent < 32 || saved->extent > 32768)
+                || saved->extent < 32 || saved->extent > 32768
+                || (saved->edge != Edge::Left && saved->edge != Edge::Right
+                    && saved->edge != Edge::Top && saved->edge != Edge::Bottom))
                 return failure("A pinned position is malformed.");
         }
+    }
+
+    // A removed pinned group can return under its original identity. Reserve
+    // that identity while its position is dormant, so a loaded tree or pane
+    // cannot occupy it and make a later, otherwise valid pin operation fail.
+    QSet<GroupId> dormantGroupIds;
+    for (const auto& record : tabs_) if (record.pinnedPosition && !groups_.contains(record.pinnedPosition->group)) {
+        const auto id = record.pinnedPosition->group;
+        if (objectIds.contains(id)) return failure("A dormant pinned group identity collides with another object.");
+        dormantGroupIds.insert(id);
     }
 
     QSet<QUuid> treeIds;
@@ -1314,7 +1376,7 @@ OperationResult LayoutModel::validate() const
     walk = [&](LayoutTree tree, int depth, const auto& visit) -> OperationResult {
         if (!tree) return success();
         if (depth > maximumTreeDepth || ++nodeCount > maximumRecords || tree->id.isNull()
-            || treeIds.contains(tree->id) || objectIds.contains(tree->id))
+            || treeIds.contains(tree->id) || objectIds.contains(tree->id) || dormantGroupIds.contains(tree->id))
             return failure("Tree nodes are duplicated, invalid or exceed the resource limit.");
         treeIds.insert(tree->id);
         if (tree->isLeaf()) {
@@ -1343,6 +1405,55 @@ OperationResult LayoutModel::validate() const
                 || placedGroups.contains(groupId)) return failure("Edge groups have invalid or duplicate placement.");
             placedGroups.insert(groupId);
         }
+        QSet<GroupId> pinnedGroups;
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+            result = walk(windowRecord.pinnedLayouts[size_t(edge)], 0, [&](QUuid groupId) {
+                const auto* record = group(groupId);
+                if (!record || record->windowId != windowRecord.id || record->edge != edge
+                    || record->location != GroupLocation::Pinned || pinnedGroups.contains(groupId)
+                    || !windowRecord.edgeGroups.contains(groupId))
+                    return failure("Pinned trees have invalid or duplicate group placement.");
+                pinnedGroups.insert(groupId);
+                return success();
+            });
+            if (!result) return result;
+        }
+        for (const auto groupId : windowRecord.edgeGroups)
+            if (group(groupId)->location == GroupLocation::Pinned && !pinnedGroups.contains(groupId))
+                return failure("A pinned group is missing from its side's layout tree.");
+        QSet<GroupId> dormantSlots;
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+            const auto remembered = windowRecord.pinnedRestoreLayouts[size_t(edge)];
+            if (!remembered) continue;
+            QSet<GroupId> hiddenReferences;
+            for (const auto groupId : windowRecord.edgeGroups) {
+                const auto* current = group(groupId);
+                if (current->edge != edge || current->location != GroupLocation::AutoHide) continue;
+                for (const auto tabId : current->tabs) {
+                    const auto* currentTab = tab(tabId);
+                    if (!currentTab) return failure("A dormant pinned layout references an unknown tab.");
+                    const auto& saved = currentTab->pinnedPosition;
+                    if (saved && saved->window == windowRecord.id && saved->edge == edge) {
+                        const auto* previous = group(saved->group);
+                        if (!previous || (previous->windowId == windowRecord.id && previous->edge == edge
+                            && previous->location != GroupLocation::Central)) hiddenReferences.insert(saved->group);
+                    }
+                }
+            }
+            bool restorable = false;
+            result = walk(remembered, 0, [&](QUuid groupId) {
+                const auto* current = group(groupId);
+                const bool liveAnchor = current && current->windowId == windowRecord.id && current->edge == edge
+                    && current->location == GroupLocation::Pinned;
+                if ((!liveAnchor && !hiddenReferences.contains(groupId)) || dormantSlots.contains(groupId))
+                    return failure("Dormant pinned layouts contain invalid or duplicate group slots.");
+                dormantSlots.insert(groupId);
+                restorable |= hiddenReferences.contains(groupId);
+                return success();
+            });
+            if (!result) return result;
+            if (!restorable) return failure("A dormant pinned layout has no restorable slot.");
+        }
         if ((!windowRecord.central && windowRecord.edgeGroups.isEmpty()) != windowRecord.activeGroup.isNull())
             return failure("A window's active group does not match its contents.");
     }
@@ -1357,7 +1468,8 @@ OperationResult LayoutModel::validate() const
         if (!record.panes) return failure("A tab must contain at least one pane.");
         QSet<PaneId> localPanes;
         auto result = walk(record.panes, 0, [&](QUuid paneId) {
-            if (objectIds.contains(paneId) || treeIds.contains(paneId) || placedPanes.contains(paneId))
+            if (objectIds.contains(paneId) || treeIds.contains(paneId) || placedPanes.contains(paneId)
+                || dormantGroupIds.contains(paneId))
                 return failure("Pane identities are duplicated or invalid.");
             placedPanes.insert(paneId);
             localPanes.insert(paneId);
@@ -1378,10 +1490,19 @@ QJsonObject LayoutModel::toJson() const
     QJsonArray tabs;
     for (auto windowId : windowOrder_) {
         const auto& record = windows_[windowId];
-        windows.append(QJsonObject{{"id", uuidText(record.id)}, {"familyId", uuidText(record.familyId)},
+        QJsonObject windowObject{{"id", uuidText(record.id)}, {"familyId", uuidText(record.familyId)},
             {"kind", record.kind == WindowKind::Workbench ? "workbench" : "floating"},
             {"central", treeJson(record.central)}, {"edgeGroups", idArray(record.edgeGroups)},
-            {"activeGroup", record.activeGroup.isNull() ? QString{} : uuidText(record.activeGroup)}});
+            {"activeGroup", record.activeGroup.isNull() ? QString{} : uuidText(record.activeGroup)}};
+        QJsonArray pinned;
+        bool hasPinned = false;
+        for (const auto& tree : record.pinnedLayouts) { pinned.append(treeJson(tree)); hasPinned |= bool(tree); }
+        if (hasPinned) windowObject.insert("pinnedLayouts", pinned);
+        QJsonArray remembered;
+        bool hasRemembered = false;
+        for (const auto& tree : record.pinnedRestoreLayouts) { remembered.append(treeJson(tree)); hasRemembered |= bool(tree); }
+        if (hasRemembered) windowObject.insert("pinnedRestoreLayouts", remembered);
+        windows.append(windowObject);
         auto orderedGroups = centralGroups(windowId);
         orderedGroups += record.edgeGroups;
         for (auto groupId : orderedGroups) {
@@ -1424,6 +1545,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             return failure("Layout records must be bounded arrays.");
     LayoutModel candidate;
     JsonReader reader;
+    QSet<WindowId> legacyPinnedLayouts;
     if (json.contains("orderCounter")) {
         const auto value = json.value("orderCounter");
         if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > double(maximumTabOrder)
@@ -1441,6 +1563,20 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.kind = kind == "workbench" ? WindowKind::Workbench : WindowKind::Floating;
         record.central = reader.tree(object.value("central"));
         record.edgeGroups = reader.ids(object, "edgeGroups");
+        if (object.contains("pinnedLayouts")) {
+            const auto layouts = object.value("pinnedLayouts");
+            if (!layouts.isArray() || layouts.toArray().size() != 4)
+                return failure("Pinned layouts must contain exactly four side trees.");
+            for (int index = 0; index < 4; ++index)
+                record.pinnedLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
+        } else legacyPinnedLayouts.insert(record.id);
+        if (object.contains("pinnedRestoreLayouts")) {
+            const auto layouts = object.value("pinnedRestoreLayouts");
+            if (!layouts.isArray() || layouts.toArray().size() != 4)
+                return failure("Dormant pinned layouts must contain exactly four side trees.");
+            for (int index = 0; index < 4; ++index)
+                record.pinnedRestoreLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
+        }
         record.activeGroup = reader.id(object, "activeGroup", true);
         if (candidate.windows_.contains(record.id)) reader.fail("Duplicate window identity.");
         candidate.windows_.insert(record.id, record);
@@ -1549,6 +1685,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         const auto order = candidate.nextTabOrder();
         candidate.tabs_[tab].openedOrder = candidate.tabs_[tab].visitedOrder = order;
     }
+    for (const auto window : legacyPinnedLayouts) candidate.synchronizePinnedLayouts(window);
     auto result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;

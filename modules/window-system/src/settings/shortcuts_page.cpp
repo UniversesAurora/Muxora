@@ -152,10 +152,17 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "搜索全部命令、分类、命令 ID 或快捷键…"));
     search_->setClearButtonEnabled(true);
     searchRow->addWidget(search_, 1);
-    auto* composite = new QPushButton(QCoreApplication::translate("WindowSystem", "组合命令…"), this);
-    composite->setObjectName(QStringLiteral("AddCompositeShortcut"));
-    searchRow->addWidget(composite);
+    auto* recordSearch = new QPushButton(QCoreApplication::translate("WindowSystem", "按键查询"), this);
+    recordSearch->setObjectName(QStringLiteral("RecordShortcutSearch"));
+    recordSearch->setCheckable(true);
+    recordSearch->setToolTip(QCoreApplication::translate("WindowSystem", "录入按键以查找绑定；查询期间不会执行命令。"));
+    searchRow->addWidget(recordSearch);
     layout->addLayout(searchRow);
+    searchCapture_ = new ShortcutCapture(this);
+    searchCapture_->setObjectName(QStringLiteral("ShortcutSearchCapture"));
+    searchCapture_->setAccessibleName(QCoreApplication::translate("WindowSystem", "录入要查询的快捷键"));
+    searchCapture_->hide();
+    layout->addWidget(searchCapture_);
     commands_ = new QTreeWidget(this);
     commands_->setObjectName(QStringLiteral("ShortcutCommands"));
     commands_->setColumnCount(3);
@@ -172,6 +179,12 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     selectedTitle_ = new QLabel(this);
     selectedTitle_->setWordWrap(true);
     layout->addWidget(selectedTitle_);
+    commandHelp_ = new QLabel(this);
+    commandHelp_->setObjectName(QStringLiteral("ShortcutCommandHelp"));
+    commandHelp_->setWordWrap(true);
+    commandHelp_->setProperty("role", QStringLiteral("hint"));
+    commandHelp_->hide();
+    layout->addWidget(commandHelp_);
     bindings_ = new QTreeWidget(this);
     bindings_->setObjectName(QStringLiteral("ShortcutBindings"));
     bindings_->setColumnCount(2);
@@ -220,11 +233,20 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     QObject::connect(apply_, &QPushButton::clicked, this, [this] { applyBinding(); });
     QObject::connect(add_, &QPushButton::clicked, this, [this] { startAdding(); });
     QObject::connect(clear_, &QPushButton::clicked, this, [this] { removeBinding(); });
-    QObject::connect(composite, &QPushButton::clicked, this, [this] {
-        search_->setText(QStringLiteral("runCommands"));
-        startAdding();
-        arguments_->setPlainText(QStringLiteral("{\n  \"commands\": [\n    \"workbench.showCommandPalette\"\n  ]\n}"));
-        arguments_->setFocus();
+    QObject::connect(recordSearch, &QPushButton::toggled, this, [this](bool recording) {
+        searchCapture_->setVisible(recording);
+        if (recording) {
+            searchCapture_->clear();
+            searchCapture_->setFocus();
+        } else {
+            search_->setFocus();
+        }
+    });
+    QObject::connect(searchCapture_, &QKeySequenceEdit::keySequenceChanged, this, [this](const QKeySequence& sequence) {
+        if (sequence.isEmpty()) return;
+        // Quotes distinguish a recorded key sequence from ordinary words.
+        // Compare strokes, not substrings (Ctrl+K must not match Ctrl+Shift+K).
+        search_->setText(QLatin1Char('"') + sequence.toString(QKeySequence::NativeText) + QLatin1Char('"'));
     });
     QObject::connect(manager, &WindowManager::commandsChanged, this, [this] {
         if (refreshing_) return;
@@ -245,16 +267,26 @@ void ShortcutsPage::rebuild()
 {
     const QString previous = selectedId_;
     const QString query = search_->text().trimmed();
+    const bool keyQuery = query.size() > 2 && query.startsWith(QLatin1Char('"'))
+        && query.endsWith(QLatin1Char('"'));
+    const QKeySequence recorded = keyQuery ? QKeySequence::fromString(query.mid(1, query.size() - 2),
+        QKeySequence::NativeText) : QKeySequence{};
     const bool exactCommand = manager_ && manager_->commands().find(query);
     {
         const QSignalBlocker blocker(commands_);
         commands_->clear();
         if (manager_) for (const auto& command : manager_->commands().commands()) {
-            const QString shortcut = bindingText(manager_->commands().bindings(command.id));
+            const auto bindings = manager_->commands().bindings(command.id);
+            const QString shortcut = bindingText(bindings);
             const auto category = QCoreApplication::translate("WindowSystem", command.category.toUtf8().constData());
             if (exactCommand && command.id != query) continue;
-            if (!matches(titleFor(command) + QLatin1Char(' ') + category + QLatin1Char(' ') +
-                         command.id + QLatin1Char(' ') + shortcut, query)) continue;
+            if (keyQuery) {
+                if (recorded.isEmpty() || std::none_of(bindings.cbegin(), bindings.cend(),
+                    [&recorded](const CommandBinding& binding) {
+                        return recorded.matches(binding.sequence) != QKeySequence::NoMatch;
+                    })) continue;
+            } else if (!matches(titleFor(command) + QLatin1Char(' ') + category + QLatin1Char(' ') +
+                                command.id + QLatin1Char(' ') + shortcut, query)) continue;
             auto* item = new QTreeWidgetItem(commands_, {titleFor(command), shortcut, category});
             item->setData(0, Qt::UserRole, command.id);
             item->setToolTip(0, command.id);
@@ -273,6 +305,14 @@ void ShortcutsPage::selectCommand()
     const auto* command = manager_ ? manager_->commands().find(selectedId_) : nullptr;
     selectedTitle_->setText(command ? titleFor(*command) + QStringLiteral("  ·  ") + command->id :
         QCoreApplication::translate("WindowSystem", "没有匹配的命令"));
+    const bool composite = selectedId_ == QStringLiteral("runCommands");
+    commandHelp_->setVisible(composite);
+    commandHelp_->setText(composite ? QCoreApplication::translate("WindowSystem",
+        "runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。"
+        "例如 {\"commands\":[\"host.newTab\",{\"command\":\"pane.split.right\",\"args\":{}}]}。"
+        "结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。") : QString());
+    arguments_->setPlaceholderText(composite ? QStringLiteral("{\n  \"commands\": [\n    \"host.newTab\",\n    {\"command\": \"pane.split.right\", \"args\": {}}\n  ]\n}")
+        : QCoreApplication::translate("WindowSystem", "参数（JSON 对象，可留空）"));
     rebuildBindings();
 }
 

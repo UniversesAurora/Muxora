@@ -2,7 +2,7 @@
 
 可独立构建的 Qt Widgets 工作区模块。Muxora 通过公开 API 使用它；其他项目也可通过 CMake package 接入，模块不依赖 SSH、终端、文件业务或 Muxora 配置。
 
-当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-16。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
+当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、组／标签／窗格层级转换、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-18。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
 
 ## 构建边界
 
@@ -32,6 +32,8 @@
 每个命令的 `bindings` 为 `CommandBinding` 数组，每条含 `sequence` 与对象 `args`。`setBindings` 替换、`addBinding` 增加、`removeBinding` 按索引移除；原 `shortcut` 镜像第一条，`setShortcut` 仍表示替换全部绑定。二至四段序列可在组合前缀后接裸字母或数字。`WindowManager::commandsChanged` 用于界面同步和宿主持久化，模块不选择用户配置路径。
 
 `runCommands` 接受 `args.commands` 数组，元素为命令 ID 或 `{command, args}` 对象，依次执行并在失败时停止。窗口管理器为后续步骤解析原窗口的当前活动内容；独立使用注册表时默认保留原上下文，可通过 `setCompositeContextResolver` 注入自己的解析策略。组合有界且禁止递归调用，不运行脚本文本。
+
+快捷键页“按键查询”录入最多四段按键，按完整序列或前缀筛选绑定，查询不执行命令。`runCommands` 使用普通命令的绑定与参数编辑，没有独立的组合快捷键类型。状态栏把续键等待提示与普通消息分开；命中、失败、取消和其他等待结束路径恢复最新的普通消息，不覆盖宿主在等待期间更新的状态。
 
 组件批量修改绑定时可使用 `setBindingsBatch()`：先校验整批绑定，再提交并通知一次，观察者不会看到部分更新。动态添加和移除命令同样通知 `commandsChanged`，菜单回收已移除命令及不再使用的动态分类。
 
@@ -65,6 +67,8 @@
 
 解锁拖动到最后一行时，工作区一侧出现一行投放预览；其他时候空行没有高度，移走最后一条后该行立即消失。上下区域共用锁定、弹性、压缩和溢出规则。`window.toolbar.move` 支持 `strip`、`area: "top" / "bottom"`、`row`、`index`；不带参数时提供工具条和区域／行的键盘选择菜单，位于“视图 → 工具条 → 移动工具条…”。区域随布局中的 `rows`／`bottomRows` 保存，旧快照沿用顶部区域。
 
+`WindowBehavior::hideToolbarOptionsWhenLocked` 默认 `false`，设置页使用 `window.hideToolbarOptionsWhenLocked`。开启后，锁定且无溢出的普通工具条隐藏选项尾部并释放宽度；溢出或解锁时恢复。禁用工具按钮不绘制高亮边框，只显示灰色图标。
+
 当前 API 为 0.1 初版，尚在交互迭代阶段，不承诺稳定二进制 ABI。完整 JSONC 用户键位、条件表达式和后续扩展仍按设计逐步接入。
 
 `setTabBarsVisible(window, visible)` / `tabBarsVisible(window)` 按窗口控制中央标签组的标签栏，隐藏时内容与布局模型保持。侧边收纳条、固定面板标签栏及临时展开标题继续显示。窗口创建选项 `WindowOptions.tabBarsVisible` 默认为 `true`；命令 `window.tabBars.toggle` 可从菜单、命令面板或 `Ctrl+Alt+T` 调用，设置随布局保存。
@@ -85,13 +89,17 @@
 | `window.zen.toggle` | 依次按 `Ctrl+K`、`Z` |
 | `window.fullscreen.exit` | `Esc` |
 
-全屏状态和目标通过 `viewState` 随窗口快照保存；正常矩形仍独立保存，不使用全屏尺寸替代。恢复先检查目标属于该窗口。保存的禅模式必须对应实际全屏范围；旧快照缺失的新显示字段采用默认值，无效字段拒绝恢复并保留当前工作区。
+全屏状态、禅模式和临时目标只在当前运行中有效，不写入窗口快照。恢复使用正常矩形、最大化状态和原栏偏好，不恢复全屏或禅模式。旧快照的 `viewState` 仍严格校验，但合法值只用于兼容读取，不重新进入保存的模式；非法字段仍拒绝整次恢复。`zenFullscreenMode` 是进入禅模式的行为偏好，继续保存。
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
+
+各侧固定区使用独立的二维 `pinnedLayouts` 树，中央树和其他侧的比例不受其内部调整影响。取消固定还保留有界的分割恢复骨架，重新固定只重建缺失槽位，不回写整侧旧快照覆盖后续编辑；没有隐藏标签引用的记录会清理。旧布局未提供固定树时按原组顺序迁移，显式树中的重复、错侧和无效引用仍拒绝。
 
 临时展开面板可从边缘或角调整宽高。`setPeekSize(tab, edge, QSize(width, height))` 按标签分别保存左右侧和上下侧的请求；同方向两边共享，两个方向互不影响。默认左右宽 250 并填满可用高度，上下高 170 并填满可用宽度。`setPeekSizePolicy(tab, edge, PeekSizePolicy{width, height})` 的两个维度均可省略，省略时使用对应默认行为；`resetPeekSize(tab, edge)` 重置该方向。宽度有效范围 140..16777215，高度 100..16777215；实际可用区域限制显示尺寸，不改写请求，也不影响固定分区尺寸。
 
 方向策略随标签跨组、换边和跨窗口移动并保存到布局。旧 `setPeekSize(tab, QSize)` / `peekSize(tab)` 及 `TabRecord::peekSize` 保持兼容；旧设置清除两套方向覆盖，左右面板只采用其中的宽度、上下只采用高度，另一轴继续填满。旧重置清除全部请求。命令 `tab.peek.setSize` 接受可选 `tab` 和同时提供的 `width` / `height`，其中 0 表示该维度默认值；无参数时显示可键盘编辑的对话框。`tab.peek.resetSize` 只重置标签当前所在方向。两项命令均可绑定快捷键，自动隐藏标签的菜单入口位于“边栏 → 临时展开大小”。
+
+临时面板沿条带方向缩短时尽量对齐触发标签的起始边，再限制到可用范围。整侧固定按钮独立于条带滚动内容，始终可见；相邻显示的收纳条在交界保留 2 个逻辑像素的间隙。
 
 新建标签默认插在本组当前标签之后。`WindowBehavior.newTabPosition` 可选择 `Beginning`、`BeforeActive`、`AfterActive`、`End`；图形设置同步该值并随布局保存。`WindowManager::addTab` 的末尾参数 `insertionIndex` 为非负数时使用显式位置，-1 跟随行为设置；独立 `LayoutModel::addTab` 的 -1 仍表示追加，避免模型依赖宿主偏好。
 
@@ -109,9 +117,9 @@
 
 `sortTabs(group, TabSortOrder)` 按名称升／降序、打开时间最早／最近优先或访问时间最早／最近优先排序。名称比较忽略大小写，同值保持已有顺序；活动标签、原内容、Pane ID 和 Group ID 保持。标签的 `openedOrder`、`visitedOrder` 随模型保存，切换活动标签时更新访问次序。
 
-`swapGroups(source, target)` 交换两个中央或固定组的槽位，保留分割节点、比例和槽位尺寸；`mergeGroups(source, target, insertionIndex)` 把源标签按原顺序插入目标，保留目标组 ID，清理空源组。`moveGroup(source, target, placement)` 把源组插到目标旁；中央目标允许四方向，固定目标只允许其分区轴。对应方向、指定目标、已有窗口、新窗口与边栏命令分别使用 `group.swap.*`、`group.merge.*`、`group.moveToGroup`、`group.moveWindow*`、`group.detachFloating` / `group.detachWorkbench`、`group.moveEdge.*` / `group.hideEdge.*`。窗口和边栏移动也有公开 API，均保留组、标签、窗格与原内容。`closeGroup()` 一次申请该组全部标签的关闭许可，拒绝时保留内容。
+`swapGroups(source, target)` 交换两个中央或固定组的槽位，保留分割节点、比例和槽位尺寸；`mergeGroups(source, target, insertionIndex)` 把源标签按原顺序插入目标，保留目标组 ID，清理空源组。`moveGroup(source, target, placement)` 把源组插到目标旁；中央和固定目标均允许四方向，固定目标生成同侧固定组。对应方向、指定目标、已有窗口、新窗口与边栏命令分别使用 `group.swap.*`、`group.merge.*`、`group.moveToGroup`、`group.moveWindow*`、`group.detachFloating` / `group.detachWorkbench`、`group.moveEdge.*` / `group.hideEdge.*`。窗口和边栏移动也有公开 API，均保留组、标签、窗格与原内容。`closeGroup()` 一次申请该组全部标签的关闭许可，拒绝时保留内容。
 
-`addTabToNewGroup(window, content, options, reference, placement)` 原子创建相邻中央组，不在原组发布或激活临时标签；原组的活动标签、顺序和滚动锚点保持。提交前准备失败时返回空 ID，仍存活的内容由调用者持有；属性与焦点恢复原值，同步宿主回调对布局的修改继续保留。提交后模块接管内容，即使刷新通知关闭了新标签或销毁了管理器，仍返回本次提交的稳定 ID。相邻组与窗格拆分命令在工厂销毁管理器后终止，不再检查可能已随管理器销毁的返回指针；工厂须自行安排仍存活拆分结果的清理。新建完整窗口首次显示前按所在屏幕工作区调整整个外框的位置和大小，恢复布局仍使用独立的桌面归一化规则。标题区域不显示悬停气泡，完整标题继续用于窗口标题和可访问名称。
+`addTabToNewGroup(window, content, options, reference, placement)` 原子创建相邻中央或同侧固定组，不在原组发布或激活临时标签；原组的活动标签、顺序和滚动锚点保持。提交前准备失败时返回空 ID，仍存活的内容由调用者持有；属性与焦点恢复原值，同步宿主回调对布局的修改继续保留。提交后模块接管内容，即使刷新通知关闭了新标签或销毁了管理器，仍返回本次提交的稳定 ID。相邻组与窗格拆分命令在工厂销毁管理器后终止，不再检查可能已随管理器销毁的返回指针；工厂须自行安排仍存活拆分结果的清理。新建完整窗口首次显示前按所在屏幕工作区调整整个外框的位置和大小，恢复布局仍使用独立的桌面归一化规则。标题区域不显示悬停气泡，完整标题继续用于窗口标题和可访问名称。
 
 | 操作 | 统一命令 |
 | --- | --- |
@@ -128,6 +136,20 @@
 | 关闭本组 | `group.close` |
 
 这些操作可以从菜单、命令面板或绑定的快捷键调用。用户已取消 Chrome 式命名、着色、折叠标签集合；模块保留现有分割 `GroupId` 层级，不提供集合 API、集合工具条或关闭集合的归档存储。
+
+层级转换提供以下公开入口；方向参数只允许 `Left`、`Right`、`Top`、`Bottom`，默认 `Right`：
+
+| API | 结果与命令 |
+| --- | --- |
+| `convertGroupToTab(group, placement)` | 组内全部窗格树组合成一个标签，返回保留的活动 Tab ID；`group.convertToTab`。 |
+| `moveGroupIntoTab(sourceGroup, targetTab, targetPane, placement)` | 整组窗格树插入组外目标窗格旁，保留目标标签；`group.moveIntoTab`。 |
+| `moveTabIntoTab(sourceTab, targetTab, targetPane, placement)` | 来源标签整个窗格树插入另一标签的目标窗格旁；`tab.moveIntoTab`。 |
+| `convertTabToGroup(tab, placement)` | 各 Pane 转成单窗格标签，活动 Pane 保留原 Tab ID，返回目标 Group ID；`tab.convertToGroup`。 |
+| `extractPaneToTab(tab, pane)` | 一个窗格提取为同组标签，返回 Tab ID；只有一个窗格时返回原 Tab ID；`pane.extractToTab`。 |
+
+空 `targetPane` 使用目标活动窗格。组来源必须可见；转换保留 Pane ID、内容与专属栏，跨窗口也不重建业务实例。组转标签和并入标签时，来源 Tab 栏迁移到其活动 Pane，与已有栏组合，目标使用逐窗格附加栏。中央和固定来源保留所在区域规则，自动隐藏条带内部组不作为组转换来源。带目标的命令接受 `targetTab`、可选 `targetPane` 和整数 `placement`；缺参时提供窗口→组→标签→窗格→方向选择器。布局菜单与右键菜单按当前组、标签、窗格区分来源，单纯交换和合并仍使用各自命令。
+
+窗格内容的显式最小尺寸或 `minimumSizeHint()` 逐层约束分割、标签组和窗口，动态变化会更新，不能把内容压到相邻窗格上。内容最小尺寸大于屏幕时无法同时满足全窗可见；模块保留内容最小尺寸，超出轴从可用屏幕左侧或上侧起始，不再压低最小尺寸换取全窗显示。
 
 `FloatingPanel` 是可独立使用的临时面板 API。`FloatingPanelOptions.dismissOnOutsidePress` 与 `modal` 分别控制外点关闭和模态，默认自动关闭、非模态；`show()` 立即返回。命令面板和窗口选择器采用这一默认值，宿主也可通过 `showCommandPalette` / `showWindowSelector` 的选项参数修改。非模态外点关闭不会吞掉或合成原点击，面板内打开的菜单仍视为其内部。
 

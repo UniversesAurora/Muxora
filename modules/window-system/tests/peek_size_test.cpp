@@ -3,10 +3,12 @@
 #include "chrome/command_strip.hpp"
 #include "commands/command_menus.hpp"
 #include "docking/dock_surface.hpp"
+#include "docking/edge_strip.hpp"
 #include "docking/tab_strip.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAction>
+#include <QAbstractButton>
 #include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -153,7 +155,57 @@ private slots:
     void oppositeSidesShareSizesWithoutChangingTheOtherOrientation();
     void autoAxisCommandsPreserveViewportStretch();
     void directionalPoliciesRejectInvalidSizesWithoutReplacingContent();
+    void shortenedPanelsFollowTheirTriggerAndClampToTheViewport_data() { edgeRows(); }
+    void shortenedPanelsFollowTheirTriggerAndClampToTheViewport();
 };
+
+void PeekSizeTest::shortenedPanelsFollowTheirTriggerAndClampToTheViewport()
+{
+    QFETCH(int, edge); const auto direction = Edge(edge);
+    const bool vertical = direction == Edge::Left || direction == Edge::Right;
+    WindowManager manager; const auto id = manager.createWindow();
+    manager.addTab(id, new QLabel("Central"), {"Central", "label", {}});
+    QVector<TabId> tabs;
+    for (int index = 0; index < 12; ++index) {
+        const auto tab = manager.addTab(id, new QLabel(QString::number(index)),
+            {QString("Sidebar section %1").arg(index), "label", {}});
+        QVERIFY(manager.moveTabToEdge(tab, direction)); tabs.append(tab);
+    }
+    auto* window = manager.windowWidget(id); sizeWindow(window); manager.showWindow(id);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto tab = tabs[2]; const auto pane = manager.model().tab(tab)->activePane;
+    auto* content = manager.paneWidget(pane);
+    EdgeStrip* strip = nullptr;
+    for (auto* frame : window->findChildren<QFrame*>("EdgeBar"))
+        if (frame->isVisible() && frame->property("edge").toInt() == edge) strip = dynamic_cast<EdgeStrip*>(frame);
+    QVERIFY(strip);
+    QAbstractButton* trigger = nullptr;
+    for (auto* button : strip->findChildren<QAbstractButton*>("EdgeButton"))
+        if (button->property("tabId").toUuid() == tab) trigger = button;
+    QVERIFY(trigger); QVERIFY(manager.activateTab(tab));
+    auto* dock = surface(manager, id); QPointer<QWidget> panel = peek(manager, id); QVERIFY(panel);
+    const auto expectedOrigin = [&] {
+        const auto area = peekAvailable(dock);
+        const auto position = trigger->mapTo(dock, QPoint());
+        return vertical ? qBound(area.top(), position.y(), area.bottom() - panel->height() + 1)
+                        : qBound(area.left(), position.x(), area.right() - panel->width() + 1);
+    };
+    QVERIFY(manager.setPeekSizePolicy(tab, direction, {300, 180}));
+    QTRY_COMPARE(vertical ? panel->y() : panel->x(), expectedOrigin());
+    QVERIFY((vertical ? panel->y() : panel->x()) > (vertical ? peekAvailable(dock).top() : peekAvailable(dock).left()));
+    QVERIFY(peekAvailable(dock).contains(panel->geometry()));
+
+    const auto offset = strip->scrollOffset();
+    strip->scrollByWheel({0, -36}); QTRY_VERIFY(strip->scrollOffset() > offset);
+    QTRY_COMPARE(vertical ? panel->y() : panel->x(), expectedOrigin());
+    const auto area = peekAvailable(dock);
+    QVERIFY(manager.setPeekSizePolicy(tab, direction, {area.width(), area.height()}));
+    QTRY_COMPARE(panel->geometry(), area);
+    QVERIFY(manager.setPeekSizePolicy(tab, direction, {300, 180}));
+    QTRY_COMPARE(vertical ? panel->y() : panel->x(), expectedOrigin());
+    QCOMPARE(peek(manager, id), panel.data()); QCOMPARE(manager.paneWidget(pane), content);
+    QVERIFY(content->isVisible()); QVERIFY(manager.model().validate());
+}
 
 void PeekSizeTest::perTabPreferencesUpdateTheLivePanelWithoutRebuilding()
 {

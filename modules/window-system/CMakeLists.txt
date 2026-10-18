@@ -10,7 +10,8 @@ option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TE
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
-add_library(WindowSystemModel STATIC src/model/layout_model.cpp src/model/tab_ordering.cpp)
+add_library(WindowSystemModel STATIC src/model/layout_model.cpp src/model/tab_ordering.cpp
+    src/model/pinned_layout.cpp src/model/pinned_positions.cpp src/model/hierarchy_conversion.cpp)
 add_library(WindowSystem::Model ALIAS WindowSystemModel)
 set_target_properties(WindowSystemModel PROPERTIES EXPORT_NAME Model)
 target_compile_features(WindowSystemModel PUBLIC cxx_std_20)
@@ -36,6 +37,8 @@ add_library(WindowSystemWidgets STATIC
     src/commands/popup_menu.cpp
     src/commands/tab_group_commands.cpp
     src/tab_group_api.cpp
+    src/hierarchy_api.cpp
+    src/commands/hierarchy_commands.cpp
     src/commands/window_commands.cpp
     src/commands/tab_presentation_commands.cpp
     src/commands/toolbar_move_command.cpp

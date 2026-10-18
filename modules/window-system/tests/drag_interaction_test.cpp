@@ -144,7 +144,8 @@ private slots:
     void tabStripDropInsertsAtTheReleasedPosition();
     void wholeWindowDropInsertsAllTabsAtTheReleasedPosition();
     void draggingThePeekTitleImmediatelyRemovesThePeek();
-    void pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops();
+    void pinnedGroupAcceptsDirectionalDrops_data();
+    void pinnedGroupAcceptsDirectionalDrops();
     void cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences();
     void sideBarDragReordersAcrossInternalGroups_data();
     void sideBarDragReordersAcrossInternalGroups();
@@ -563,28 +564,71 @@ void DragInteractionTest::draggingThePeekTitleImmediatelyRemovesThePeek()
     QCOMPARE(manager.model().group(manager.model().groupForTab(a))->location, GroupLocation::AutoHide);
     QVERIFY(preserved); QVERIFY(manager.model().validate().ok);
 }
-void DragInteractionTest::pinnedGroupDoesNotAdvertiseUnsupportedDirectionalDrops()
+void DragInteractionTest::pinnedGroupAcceptsDirectionalDrops_data()
 {
+    QTest::addColumn<int>("direction");
+    QTest::newRow("left") << int(Placement::Left);
+    QTest::newRow("right") << int(Placement::Right);
+    QTest::newRow("top") << int(Placement::Top);
+    QTest::newRow("bottom") << int(Placement::Bottom);
+}
+void DragInteractionTest::pinnedGroupAcceptsDirectionalDrops()
+{
+    QFETCH(int, direction); const auto placement = Placement(direction);
     WindowManager manager;
     const auto source = manager.createWindow(WindowKind::Workbench, {"Source", QSize(600, 500)});
     const auto target = manager.createWindow(WindowKind::Workbench, {"Pinned", QSize(740, 600)});
-    const auto a = manager.addTab(source, new QLabel("A"), {"A", "label", {}});
+    auto* content = new QLabel("Stable dragged content"); QPointer<QWidget> stableContent(content);
+    const auto a = manager.addTab(source, content, {"A", "label", {}});
+    const auto pane = manager.model().tab(a)->activePane;
     const auto b = manager.addTab(target, new QLabel("B"), {"B", "label", {}});
-    manager.addTab(target, new QLabel("Central"), {"Central", "label", {}});
+    const auto central = manager.addTab(target, new QLabel("Central"), {"Central", "label", {}});
+    const auto centralGroup = manager.model().groupForTab(central);
     QVERIFY(manager.moveTabToEdge(b, Edge::Left, true));
+    const auto targetGroup = manager.model().groupForTab(b);
     auto* first = manager.windowWidget(source); auto* second = manager.windowWidget(target);
     prepareDesktopFixture(first); prepareDesktopFixture(second); first->move(20, 30); second->move(660, 30);
     manager.showWindow(target); manager.showWindow(source);
     QVERIFY(QTest::qWaitForWindowExposed(first)); QVERIFY(QTest::qWaitForWindowExposed(second));
-    const auto area = groupRect(second, manager.model().groupForTab(b)); QVERIFY(!area.isEmpty());
+    auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
+    const auto area = groupRect(second, targetGroup); QVERIFY(!area.isEmpty());
     auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
     const auto moving = manager.model().group(manager.model().groupForTab(a))->windowId;
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
-    const auto point = area.center() + QPoint(32, 0);
+    mouse(actor, QEvent::MouseMove, area.center(), Qt::NoButton, Qt::LeftButton);
+    const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
+    const auto guides = dockGuides(bounds, area, true, surface->tabBarRects().values(), surface->edgeBarRects());
+    QPoint point; int directionalGuides = 0;
+    for (const auto& guide : guides) if (!guide.toEdge && guide.placement != Placement::Center) {
+        ++directionalGuides;
+        if (guide.placement == placement) point = guide.rect.center();
+    }
+    QCOMPARE(directionalGuides, 4); QVERIFY(!point.isNull());
     mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
     mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
-    QCOMPARE(manager.model().group(manager.model().groupForTab(a))->windowId, moving);
-    QCOMPARE(manager.model().group(manager.model().groupForTab(b))->windowId, target);
+    const auto createdGroup = manager.model().groupForTab(a); QVERIFY(createdGroup != targetGroup);
+    const auto* created = manager.model().group(createdGroup); QVERIFY(created);
+    QCOMPARE(created->windowId, target); QCOMPARE(created->location, GroupLocation::Pinned);
+    QCOMPARE(created->edge, Edge::Left); QCOMPARE(created->tabs, QVector<TabId>{a});
+    QCOMPARE(manager.model().groupForTab(b), targetGroup);
+    QCOMPARE(manager.model().group(targetGroup)->tabs, QVector<TabId>{b});
+    QCOMPARE(manager.model().centralGroups(target), QVector<GroupId>{centralGroup});
+    QVERIFY(!manager.model().window(moving));
+    QTRY_VERIFY(!groupRect(second, createdGroup).isEmpty());
+    const auto movedBounds = groupRect(second, createdGroup), retainedBounds = groupRect(second, targetGroup);
+    if (placement == Placement::Left || placement == Placement::Right) {
+        QCOMPARE(movedBounds.top(), retainedBounds.top()); QCOMPARE(movedBounds.bottom(), retainedBounds.bottom());
+        if (placement == Placement::Left) QCOMPARE(retainedBounds.left() - movedBounds.right() - 1, 2);
+        else QCOMPARE(movedBounds.left() - retainedBounds.right() - 1, 2);
+    } else {
+        QCOMPARE(movedBounds.left(), retainedBounds.left()); QCOMPARE(movedBounds.right(), retainedBounds.right());
+        if (placement == Placement::Top) QCOMPARE(retainedBounds.top() - movedBounds.bottom() - 1, 2);
+        else QCOMPARE(movedBounds.top() - retainedBounds.bottom() - 1, 2);
+    }
+    QVERIFY(stableContent); QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(manager.model().tab(a)->activePane, pane); QCOMPARE(content->window(), second);
+    QVERIFY(content->isVisible()); QCOMPARE(content->text(), QStringLiteral("Stable dragged content"));
+    QVERIFY(!QWidget::mouseGrabber());
     QVERIFY(manager.model().validate().ok);
 }
 void DragInteractionTest::cancelFromAnEmptiedFloatingWindowRestoresItsToolbarPreferences()

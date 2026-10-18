@@ -52,7 +52,6 @@ try {
     if ((Get-Content -LiteralPath $taskBlockedState -Raw) -ne 'fixture') { throw 'Save failure changed the blocking file.' }
     @{ checkedAtUtc = [DateTime]::UtcNow.ToString('o'); sdkRemovedFromPath = $true;
        windowCount = 3; completeModelPreserved = $true; temporaryStateCleanedOnExit = $true;
-       executableSha256 = (Get-FileHash -LiteralPath $taskExecutable -Algorithm SHA256).Hash;
        runs = $taskRuns.ToArray() } | ConvertTo-Json -Depth 10 |
         Set-Content -LiteralPath (Join-Path $taskOutput 'test-results/application-exit.json') -Encoding utf8NoBOM
     Write-Host 'Application exit checks passed: three windows, restart and save failure.'

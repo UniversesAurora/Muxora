@@ -43,7 +43,7 @@ add_test(NAME window-system.custom-chrome COMMAND window-system-custom-chrome-te
 set_tests_properties(window-system.custom-chrome PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
-foreach(suite pane-settings pane-bar-policy window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile tab-strip-layout tab-appearance popup-menu tab-group shortcut-dispatch shortcut-settings localization memory-lifecycle)
+foreach(suite pane-settings pane-bar-policy pane-minimum pinned-layout pinned-positions pinned-ui hierarchy-conversion window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation visibility-profile tab-strip-layout tab-appearance popup-menu tab-group shortcut-dispatch shortcut-settings localization memory-lifecycle)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
     target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
@@ -75,3 +75,6 @@ if(WIN32)
         -o ${CMAKE_CURRENT_BINARY_DIR}/native-frame-results.txt,txt)
     set_tests_properties(window-system.native-frame PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
+
+# This matrix constructs a real Qt window for each drag/geometry scenario.
+set_tests_properties(window-system.pinned-ui PROPERTIES TIMEOUT 120)

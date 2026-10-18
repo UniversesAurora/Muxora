@@ -108,6 +108,8 @@ private slots:
     void exactFitAndOnePixelOverflowFollowResize();
     void removingGapAndLabelsReclaimsTheScrollRange_data() { addEdges(); }
     void removingGapAndLabelsReclaimsTheScrollRange();
+    void allPinActionStaysVisibleOutsideTheScrollableTrack_data() { addEdges(); }
+    void allPinActionStaysVisibleOutsideTheScrollableTrack();
 };
 
 void EdgeStripTest::initialOverlayRangeMatchesTheViewport()
@@ -156,7 +158,7 @@ void EdgeStripTest::exactFitAndOnePixelOverflowFollowResize()
     QFETCH(int, edgeValue); const auto edge = Edge(edgeValue); Fixture fixture(edge, 1);
     fixture.resizeAxis(124); // 100px label + 2px spacing + 22px all-pin control.
     QVERIFY(QTest::qWaitForWindowExposed(&fixture.root));
-    QCOMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 124);
+    QCOMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 100);
     QCOMPARE(extent(edge, fixture.buttons.first()->geometry()), 100);
     QCOMPARE(extent(edge, fixture.tail->geometry()), 22);
     QCOMPARE(axis(edge, fixture.tail->geometry().topLeft()), 102);
@@ -164,19 +166,19 @@ void EdgeStripTest::exactFitAndOnePixelOverflowFollowResize()
     enter(fixture.scroll()->viewport()); QVERIFY(fixture.overlay()->isHidden());
 
     fixture.resizeAxis(123);
-    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 123);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 99);
     QTRY_COMPARE(fixture.axisBar()->maximum(), 1);
     QTRY_VERIFY(fixture.overlay()->isVisible());
     QCOMPARE(fixture.overlay()->maximum(), 1);
     fixture.axisBar()->setValue(1); QCOMPARE(fixture.overlay()->value(), 1);
 
     fixture.resizeAxis(124);
-    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 124);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 100);
     QTRY_COMPARE(fixture.axisBar()->maximum(), 0);
     QTRY_VERIFY(fixture.overlay()->isHidden());
     QCOMPARE(fixture.axisBar()->value(), 0); QCOMPARE(fixture.overlay()->value(), 0);
     fixture.resizeAxis(400);
-    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 400);
+    QTRY_COMPARE(extent(edge, fixture.strip->viewportRectGlobal()), 376);
     QCOMPARE(fixture.axisBar()->maximum(), 0); QVERIFY(fixture.overlay()->isHidden());
 }
 
@@ -237,17 +239,19 @@ void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
     QVERIFY(!handle.isEmpty());
     const auto image = fixture.strip->grab().toImage(); const auto point = overlay->mapTo(fixture.strip, handle.center());
     QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied); expected.fill(QColor("#6a568c"));
-    QPainter painter(&expected); auto translucentBorder = defaultTheme().border;
+    QPainter painter(&expected); const int gray = qGray(defaultTheme().border.rgb());
+    QColor translucentBorder(gray, gray, gray);
     translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
     QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())),
         expected.pixelColor(0, 0));
     QVERIFY(overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarAddLine, overlay).isEmpty());
     QVERIFY(overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSubLine, overlay).isEmpty());
     bar->setValue(bar->maximum());
-    QVERIFY(viewport.contains(fixture.tail->mapToGlobal(fixture.tail->rect().center())));
-    QCOMPARE(fixture.tail->parentWidget(), fixture.buttons.first()->parentWidget());
-    auto* layout = fixture.tail->parentWidget()->layout(); QVERIFY(layout);
-    QVERIFY(layout->indexOf(fixture.tail) > layout->indexOf(fixture.buttons.last()));
+    QVERIFY(!viewport.intersects(QRect(fixture.tail->mapToGlobal(QPoint()), fixture.tail->size())));
+    QCOMPARE(fixture.tail->parentWidget(), fixture.strip);
+    QVERIFY(fixture.tail->parentWidget() != fixture.buttons.first()->parentWidget());
+    auto* layout = fixture.strip->layout(); QVERIFY(layout);
+    QVERIFY(layout->indexOf(fixture.tail) > layout->indexOf(fixture.scroll()));
 }
 
 void EdgeStripTest::insertionGapMovesRealButtonsAndCapturesItsIndex()
@@ -265,7 +269,7 @@ void EdgeStripTest::insertionGapMovesRealButtonsAndCapturesItsIndex()
         const auto delta = isVertical(edge) ? QPoint(0, index >= 2 ? 62 : 0) : QPoint(index >= 2 ? 62 : 0, 0);
         QCOMPARE(button->geometry(), before[index].translated(delta));
     }
-    QCOMPARE(fixture.tail->geometry(), tailBefore.translated(isVertical(edge) ? QPoint(0, 62) : QPoint(62, 0)));
+    QCOMPARE(fixture.tail->geometry(), tailBefore);
     QCOMPARE(fixture.strip->findChildren<QAbstractButton*>().size(), childCount);
     const auto gap = fixture.strip->insertionPreviewRect(); QVERIFY(!gap.isEmpty()); QCOMPARE(extent(edge, gap), 60);
     for (int offset : {1, 15, 30, 45, 58}) {
@@ -284,10 +288,39 @@ void EdgeStripTest::insertionGapMovesRealButtonsAndCapturesItsIndex()
 
     fixture.strip->setInsertionPreview(fixture.buttons.size(), 42);
     auto* gapWidget = fixture.strip->findChild<QWidget*>("EdgeInsertionPreview"); QVERIFY(gapWidget);
-    QVERIFY(axis(edge, gapWidget->geometry().bottomRight()) < axis(edge, fixture.tail->geometry().topLeft()));
+    QCOMPARE(gapWidget->parentWidget(), fixture.buttons.first()->parentWidget());
+    QCOMPARE(fixture.tail->geometry(), tailBefore);
     fixture.strip->setInsertionPreview(fixture.buttons.size() + 1, 42);
     QVERIFY(fixture.strip->insertionPreviewRect().isEmpty());
     QCOMPARE(fixture.tail->geometry(), tailBefore);
+}
+
+void EdgeStripTest::allPinActionStaysVisibleOutsideTheScrollableTrack()
+{
+    QFETCH(int, edgeValue); const auto edge = Edge(edgeValue); Fixture fixture(edge, 12);
+    QVERIFY(QTest::qWaitForWindowExposed(&fixture.root));
+    QTRY_VERIFY(fixture.axisBar()->maximum() > 0);
+    const auto tailGeometry = fixture.tail->geometry();
+    QCOMPARE(axis(edge, tailGeometry.bottomRight()), extent(edge, fixture.strip->rect()) - 1);
+    QCOMPARE(fixture.tail->parentWidget(), fixture.strip);
+    int pinClicks = 0;
+    QObject::connect(fixture.tail, &QToolButton::clicked, &fixture.root, [&] { ++pinClicks; });
+    for (const int offset : {0, fixture.axisBar()->maximum() / 2, fixture.axisBar()->maximum()}) {
+        fixture.axisBar()->setValue(offset);
+        QCOMPARE(fixture.tail->geometry(), tailGeometry);
+        QVERIFY(fixture.tail->isVisible());
+        QVERIFY(fixture.strip->rect().contains(tailGeometry));
+        const auto viewport = fixture.strip->viewportRectGlobal();
+        QVERIFY(!viewport.intersects(QRect(fixture.tail->mapToGlobal(QPoint()), fixture.tail->size())));
+        const auto point = fixture.tail->mapTo(&fixture.root, fixture.tail->rect().center());
+        QCOMPARE(fixture.root.childAt(point), fixture.tail);
+        QTest::mouseClick(fixture.tail, Qt::LeftButton);
+    }
+    QCOMPARE(pinClicks, 3); QCOMPARE(fixture.clicks, 0);
+    fixture.strip->setInsertionPreview(2, 60);
+    QCOMPARE(fixture.tail->geometry(), tailGeometry);
+    fixture.strip->setInsertionPreview(-1, 0);
+    QCOMPARE(fixture.tail->geometry(), tailGeometry);
 }
 
 void EdgeStripTest::dragHoverScrollsThenStopsAndNotifiesGeometry()

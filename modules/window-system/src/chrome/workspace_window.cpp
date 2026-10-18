@@ -155,7 +155,10 @@ WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const Wind
       placementTimer_(new QTimer(this))
 {
     setObjectName("WorkspaceWindow"); setProperty("windowId", id);
-    setMinimumSize(480, 320); resize(options.size);
+    // The content split tree defines the window's real minimum. A fixed outer
+    // minimum would override larger child-layout hints and allow overlap.
+    column_->setSizeConstraint(QLayout::SetDefaultConstraint);
+    resize(options.size);
     normalPlacement_ = geometry();
     placementTimer_->setSingleShot(true);
     connect(placementTimer_, &QTimer::timeout, this, [this] { notifyPlacementChanged(); });
@@ -349,6 +352,7 @@ void WorkspaceWindow::createChrome()
     auto* row = new QHBoxLayout(chrome_); row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
     chrome_->installEventFilter(this);
     strips_ = new CommandStripHost(chrome_);
+    strips_->setHideOptionsWhenLocked(manager_->behavior().hideToolbarOptionsWhenLocked);
     strips_->setLayoutChangedCallback([this] {
         if (!manager_) return;
         for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
@@ -586,6 +590,10 @@ void WorkspaceWindow::setStatus(const QString& text)
 {
     if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setMessage(text);
 }
+void WorkspaceWindow::setTransientStatus(const QString& text)
+{
+    if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setTransientMessage(text);
+}
 QStringList WorkspaceWindow::statusItemIds() { return WorkspaceStatusBar::itemIds(); }
 bool WorkspaceWindow::statusItemVisible(const QString& id) const
 {
@@ -722,10 +730,12 @@ void WorkspaceWindow::fitInitialPlacement()
     // The custom frame's NCCALCSIZE makes the entire native window a client
     // area, so its complete logical rectangle is the client rectangle.
     const auto original = geometry();
-    const QSize fittingMinimum(std::min(minimumWidth(), available.width()),
-                               std::min(minimumHeight(), available.height()));
-    if (minimumSize() != fittingMinimum) setMinimumSize(fittingMinimum.expandedTo(QSize(1, 1)));
-    const auto fitted = normalizeWindowPlacement(original, {available}, minimumSize());
+    auto fitted = normalizeWindowPlacement(original, {available}, minimumSize());
+    // A host may require more space than one screen provides. Keep the
+    // content contract rather than making sibling panes overlap to fit it.
+    fitted.setSize(fitted.size().expandedTo(minimumSize()));
+    if (fitted.width() > available.width()) fitted.moveLeft(available.left());
+    if (fitted.height() > available.height()) fitted.moveTop(available.top());
     if (fitted != original) setGeometry(fitted);
 }
 void WorkspaceWindow::showEvent(QShowEvent* event)

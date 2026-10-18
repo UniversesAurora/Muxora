@@ -67,6 +67,8 @@ private slots:
     void guidesAvoidVisibleStripsAndShortGroupHeaders();
     void edgeGuidesStayInTheirOwnSideBand_data();
     void edgeGuidesStayInTheirOwnSideBand();
+    void narrowGroupCrossStaysBesideItsWindowEdgePair_data();
+    void narrowGroupCrossStaysBesideItsWindowEdgePair();
     void edgeGuidesAcceptDropsBesideStackedGroups_data();
     void edgeGuidesAcceptDropsBesideStackedGroups();
     void guidesTrackWindowGeometryWithoutMouseMovement_data();
@@ -119,7 +121,71 @@ void DragPresentationTest::guidesAvoidVisibleStripsAndShortGroupHeaders()
     for (const auto& guide : guides) {
         QVERIFY(!guide.rect.intersects(header));
         QVERIFY(bounds.contains(guide.rect));
-        if (!guide.toEdge) QVERIFY(group.adjusted(0, 27, 0, 0).contains(guide.rect));
+        if (!guide.toEdge) {
+            for (const auto& other : guides) if (other.toEdge) QVERIFY(!guide.rect.intersects(other.rect));
+        }
+    }
+}
+void DragPresentationTest::narrowGroupCrossStaysBesideItsWindowEdgePair_data()
+{
+    QTest::addColumn<int>("edge");
+    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom})
+        QTest::newRow(qPrintable(QString::number(int(edge)))) << int(edge);
+}
+void DragPresentationTest::narrowGroupCrossStaysBesideItsWindowEdgePair()
+{
+    QFETCH(int, edge); const auto direction = Edge(edge);
+    const QRect bounds(100, 80, 800, 600);
+    QRect group;
+    switch (direction) {
+    case Edge::Left: group = QRect(bounds.left(), bounds.top(), 100, bounds.height()); break;
+    case Edge::Right: group = QRect(bounds.right() - 99, bounds.top(), 100, bounds.height()); break;
+    case Edge::Top: group = QRect(bounds.left(), bounds.top(), bounds.width(), 100); break;
+    case Edge::Bottom: group = QRect(bounds.left(), bounds.bottom() - 99, bounds.width(), 100); break;
+    }
+    const QList<QRect> strips{QRect(bounds.left(), bounds.top(), bounds.width(), 27)};
+    const auto guides = dockGuides(bounds, group, true, strips);
+    QCOMPARE(guides.size(), 13);
+    QRect cross, pair; QHash<Placement, QRect> cells;
+    for (const auto& guide : guides) {
+        QVERIFY(bounds.contains(guide.rect));
+        for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip));
+        if (!guide.toEdge) { cross = cross.united(guide.rect); cells.insert(guide.placement, guide.rect); }
+        else if (guide.edge == direction) pair = pair.united(guide.rect);
+    }
+    QCOMPARE(cells.size(), 5); QVERIFY(!pair.isEmpty());
+    for (const auto& guide : guides) if (guide.toEdge)
+        for (const auto& cell : cells) QVERIFY(!cell.intersects(guide.rect));
+    if (direction == Edge::Left) QCOMPARE(cross.left(), pair.right() + 3);
+    if (direction == Edge::Right) QCOMPARE(cross.right(), pair.left() - 3);
+    if (direction == Edge::Top) QCOMPARE(cross.top(), pair.bottom() + 3);
+    if (direction == Edge::Bottom) QCOMPARE(cross.bottom(), pair.top() - 3);
+    const auto center = cells.value(Placement::Center);
+    const int step = center.width() + 4;
+    QCOMPARE(cells.value(Placement::Left), center.translated(-step, 0));
+    QCOMPARE(cells.value(Placement::Right), center.translated(step, 0));
+    QCOMPARE(cells.value(Placement::Top), center.translated(0, -step));
+    QCOMPARE(cells.value(Placement::Bottom), center.translated(0, step));
+    QCOMPARE(dockGuides(bounds, group, true, strips).size(), guides.size());
+    const auto repeated = dockGuides(bounds, group, true, strips);
+    for (int index = 0; index < guides.size(); ++index) QCOMPARE(repeated[index].rect, guides[index].rect);
+    if (direction == Edge::Top || direction == Edge::Bottom) {
+        // A full-width neighbouring header leaves no edge-parallel route.
+        // Keep all five targets and place the complete cross beyond it.
+        const QRect blocker(bounds.left(), direction == Edge::Top ? group.bottom() + 3 : group.top(), bounds.width(), 27);
+        auto blockedStrips = strips; blockedStrips.append(blocker);
+        const auto shifted = dockGuides(bounds, group, true, blockedStrips);
+        QCOMPARE(shifted.size(), 13);
+        QRect shiftedCross; int targets = 0;
+        for (const auto& guide : shifted) if (!guide.toEdge) {
+            ++targets; shiftedCross = shiftedCross.united(guide.rect);
+            QVERIFY(bounds.contains(guide.rect));
+            for (const auto& strip : blockedStrips) QVERIFY(!guide.rect.intersects(strip));
+            for (const auto& other : shifted) if (other.toEdge) QVERIFY(!guide.rect.intersects(other.rect));
+        }
+        QCOMPARE(targets, 5);
+        if (direction == Edge::Top) QCOMPARE(shiftedCross.top(), blocker.bottom() + 3);
+        else QCOMPARE(shiftedCross.bottom(), blocker.top() - 3);
     }
 }
 void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent_data()
@@ -524,8 +590,13 @@ void DragPresentationTest::stationaryDragScrollsAndStops()
     const auto oldScrollBar = scrolling;
     scrolling = currentScrollBar(); QVERIFY(scrolling); QVERIFY(scrolling != oldScrollBar);
     QTRY_VERIFY(scrolling->maximum() > 0); scrolling->setValue(0);
-    const auto area = edge ? targetWindow->surface()->edgeBarRects().value(Edge::Top)
-        : groupView(targetWindow, manager.model().groupForTab(first))->viewportRectGlobal();
+    QRect area;
+    if (edge) {
+        for (auto* widget : targetWindow->surface()->findChildren<QWidget*>())
+            if (auto* strip = dynamic_cast<EdgeStrip*>(widget); strip && strip->isVisible()
+                && strip->property("edge").toInt() == int(Edge::Top)) area = strip->viewportRectGlobal();
+    } else area = groupView(targetWindow, manager.model().groupForTab(first))->viewportRectGlobal();
+    QVERIFY(!area.isEmpty());
     moveMouse(carrier, QPoint(area.right() - 6, area.center().y()));
     QTRY_VERIFY_WITH_TIMEOUT(scrolling->value() > 20, 1000);
     const auto beforeMove = scrolling->value();

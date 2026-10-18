@@ -8,6 +8,7 @@
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QDebug>
 #include <QImage>
 #include <QLabel>
 #include <QMenu>
@@ -80,6 +81,8 @@ class TabStripLayoutTest final : public QObject {
 private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
     void multilineWrapsWithoutHorizontalScrollAndKeepsEveryTab();
+    void multilineHeaderActionsReserveOnlyTheLastRow_data();
+    void multilineHeaderActionsReserveOnlyTheLastRow();
     void wheelExpansionShowsEveryRowThenOnlyActiveRow();
     void placementIsIndependentForCentralAndPinnedGroups();
     void displayFlagsChangeActualLabelWidthsAndCreationControls();
@@ -100,6 +103,57 @@ private slots:
     void activeOnlyLaterRowDragNeverFallsBackToFirstRow_data();
     void activeOnlyLaterRowDragNeverFallsBackToFirstRow();
 };
+
+void TabStripLayoutTest::multilineHeaderActionsReserveOnlyTheLastRow_data()
+{
+    QTest::addColumn<bool>("pinned");
+    QTest::addColumn<bool>("newTab");
+    QTest::newRow("central") << false << false;
+    QTest::newRow("central-create") << false << true;
+    QTest::newRow("pinned") << true << false;
+    QTest::newRow("pinned-create") << true << true;
+}
+
+void TabStripLayoutTest::multilineHeaderActionsReserveOnlyTheLastRow()
+{
+    QFETCH(bool, pinned); QFETCH(bool, newTab);
+    GroupTabs tabs(defaultTheme(), nullptr);
+    auto appearance = TabAppearance{}; appearance.multiline = true; appearance.showNewTabButton = newTab;
+    tabs.setAppearance(appearance, pinned); populate(tabs, 8);
+    if (pinned) tabs.setPinnedActions([] {}, [] {});
+    tabs.resize(700, 400); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar();
+    const int tabWidth = bar->displayTabRect(0).width();
+    auto* actions = tabs.findChild<QWidget*>("TabHeaderActions"); QVERIFY(actions);
+    tabs.resize(tabWidth * 2 + actions->sizeHint().width() / 2, 400);
+    auto* scroll = tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
+    QTRY_VERIFY(bar->rowCount() > 1);
+    // The actions and scroll viewport live in sibling branches. mapTo() only
+    // accepts an ancestor, so compare all rectangles through global coordinates.
+    const auto inViewport = [&](QWidget* widget, QRect area) {
+        return QRect(scroll->viewport()->mapFromGlobal(widget->mapToGlobal(area.topLeft())), area.size());
+    };
+    QCOMPARE(scroll->viewport()->width(), tabs.width());
+    QCOMPARE(bar->displayTabRect(0).top(), bar->displayTabRect(1).top());
+    QVERIFY(inViewport(bar, bar->displayTabRect(1)).right() >= scroll->viewport()->width() - actions->width());
+    const QRect actionsInViewport = inViewport(actions, actions->rect());
+    QString actionGeometry;
+    QDebug(&actionGeometry) << "viewport" << scroll->viewport()->rect() << "actions" << actionsInViewport
+        << "actions-in-header" << actions->geometry() << "header" << actions->parentWidget()->geometry()
+        << "scroll" << scroll->geometry() << "bar" << bar->geometry() << "rows" << bar->rowCount();
+    QVERIFY2(scroll->viewport()->rect().contains(actionsInViewport), qPrintable(actionGeometry));
+    QCOMPARE(actionsInViewport.height(), bar->displayTabRect(0).height());
+    QCOMPARE(actionsInViewport.right(), scroll->viewport()->rect().right());
+    QCOMPARE(actionsInViewport.bottom(), scroll->viewport()->rect().bottom());
+    for (int i = 0; i < bar->count(); ++i)
+        QVERIFY(!inViewport(bar, bar->displayTabRect(i)).intersects(actionsInViewport));
+    auto* create = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(create);
+    if (newTab) QVERIFY(!inViewport(create, create->rect()).intersects(actionsInViewport));
+    QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+    // The ordinary one-line layout still reserves its compact trailing controls.
+    appearance.multiline = false; tabs.setAppearance(appearance, pinned);
+    QTRY_COMPARE(scroll->viewport()->width(), tabs.width() - actions->width());
+}
 
 void TabStripLayoutTest::multilineWrapsWithoutHorizontalScrollAndKeepsEveryTab()
 {

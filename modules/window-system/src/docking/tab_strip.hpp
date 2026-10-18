@@ -36,7 +36,7 @@ public:
     void setAppearance(const TabAppearance& appearance);
     void setTabMetadata(int index, const TabRecord& tab);
     [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
-    void layoutTabs(int availableWidth, bool expanded);
+    void layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth = 0);
     [[nodiscard]] QSize displayedSize() const;
     [[nodiscard]] QPoint creationPosition() const;
     [[nodiscard]] int rowCount() const;
@@ -123,6 +123,7 @@ private:
     [[nodiscard]] TabViewportState currentViewportState() const;
     void updateCanvasGeometry();
     QWidget* header_ = nullptr;
+    QWidget* headerActions_ = nullptr;
     DragTabBar* bar_ = nullptr;
     QWidget* canvas_ = nullptr;
     QWidget* createButtons_ = nullptr;
@@ -143,6 +144,7 @@ private:
     std::optional<TabViewportState> pendingViewportState_;
     bool viewportReflowQueued_ = false;
     bool applyingViewportState_ = false;
+    bool updatingBarGeometry_ = false;
     TabAppearance appearance_;
     bool pinned_ = false;
     bool rowsExpanded_ = true;

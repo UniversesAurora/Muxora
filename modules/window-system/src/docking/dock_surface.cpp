@@ -17,6 +17,7 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QScopeGuard>
 #include <QSplitter>
 #include <QTabBar>
 #include <QTabWidget>
@@ -55,6 +56,16 @@ void configureGroupSplitter(QSplitter* splitter, const Theme& theme) {
     splitter->setProperty("windowSystemGroupSplitter", true);
     configureSplitter(splitter, theme.metrics.groupSplitterWidth);
 }
+int pinnedExtent(LayoutTree tree, const LayoutModel& model, Qt::Orientation axis, int gap) {
+    if (!tree) return 0;
+    if (tree->isLeaf()) {
+        const auto* group = model.group(tree->itemId);
+        return group ? group->edgeExtent : 0;
+    }
+    const int first = pinnedExtent(tree->first, model, axis, gap);
+    const int second = pinnedExtent(tree->second, model, axis, gap);
+    return tree->orientation == axis ? first + second + gap : qMax(first, second);
+}
 } // namespace
 
 DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* parent)
@@ -67,6 +78,7 @@ DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* paren
 }
 void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
+    ++rebuildGeneration_;
     restoreFocusScope();
     closePeek(); groups_.clear(); edgeBars_.clear(); pinnedRegions_.clear(); contents_ = contents;
     if (root_) {
@@ -77,21 +89,9 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     root_ = new QWidget(this);
     auto* outer = new QGridLayout(root_);
     outer->setContentsMargins(0, 0, 0, 0); outer->setSpacing(0);
-    outer->setRowStretch(1, 1); outer->setColumnStretch(1, 1);
-    auto* topBar = buildEdge(Edge::Top, contents);
-    auto* leftBar = buildEdge(Edge::Left, contents);
-    auto* rightBar = buildEdge(Edge::Right, contents);
-    auto* bottomBar = buildEdge(Edge::Bottom, contents);
-    // Bottom owns both lower corners; the vertical bars own the upper
-    // corners. Missing neighbours leave their corner to the remaining bar.
-    if (leftBar) outer->addWidget(leftBar, 0, 0, bottomBar ? 2 : 3, 1);
-    if (rightBar) outer->addWidget(rightBar, 0, 2, bottomBar ? 2 : 3, 1);
-    if (topBar) {
-        const int firstColumn = leftBar ? 1 : 0;
-        const int lastColumn = rightBar ? 1 : 2;
-        outer->addWidget(topBar, 0, firstColumn, 1, lastColumn - firstColumn + 1);
-    }
-    if (bottomBar) outer->addWidget(bottomBar, 2, 0, 1, 3);
+    outer->setRowStretch(2, 1); outer->setColumnStretch(2, 1);
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) buildEdge(edge, contents);
+    updateRailLayout();
     auto* vertical = new QSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
     configureGroupSplitter(vertical, manager_->theme());
@@ -123,7 +123,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         : vertical->widget(i)->property("preferredExtent").toInt());
     vertical->setSizes(sizes);
     QObject::connect(vertical, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
-    outer->addWidget(vertical, 1, 1);
+    outer->addWidget(vertical, 2, 2);
     layout()->addWidget(root_);
     // Layout insertion into an already visible parent defers the implicit show.
     // A completed API mutation must expose its replacement controls immediately,
@@ -257,8 +257,12 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     auto* bar = new EdgeStrip(edge, manager_->theme(), this);
-    bar->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
-    if (!manager_->sideBarsVisible(window_)) bar->hide();
+    bar->hoverGeometryChanged = [this] {
+        const QPointer<DockSurface> self(this);
+        placePeek();
+        if (self && manager_) manager_->d->drag->refreshHover();
+    };
+    bar->setVisible(manager_->sideBarsVisible(window_));
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     int ordinal = 0;
     for (const auto groupId : ids) {
@@ -290,29 +294,48 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     bar->setTailWidget(pinAll);
     return bar;
 }
+void DockSurface::updateRailLayout()
+{
+    auto* outer = root_ ? qobject_cast<QGridLayout*>(root_->layout()) : nullptr;
+    if (!outer) return;
+    const auto visible = [this](Edge edge) {
+        const auto bar = edgeBars_.value(edge);
+        return bar && !bar->isHidden();
+    };
+    const bool left = visible(Edge::Left), right = visible(Edge::Right);
+    const bool top = visible(Edge::Top), bottom = visible(Edge::Bottom);
+    // Explicit gap tracks disappear with their rail. Global grid spacing
+    // leaves phantom margins when a focus projection hides other branches.
+    outer->setColumnMinimumWidth(1, left ? 2 : 0);
+    outer->setColumnMinimumWidth(3, right ? 2 : 0);
+    outer->setRowMinimumHeight(1, top ? 2 : 0);
+    outer->setRowMinimumHeight(3, bottom ? 2 : 0);
+    for (const auto& bar : edgeBars_) if (bar) outer->removeWidget(bar);
+    // Bottom owns both lower corners; vertical rails own the upper corners.
+    // A missing or hidden neighbour gives its corner to the remaining rail.
+    if (left) outer->addWidget(edgeBars_.value(Edge::Left), 0, 0, bottom ? 3 : 5, 1);
+    if (right) outer->addWidget(edgeBars_.value(Edge::Right), 0, 4, bottom ? 3 : 5, 1);
+    if (top) {
+        const int first = left ? 2 : 0, last = right ? 2 : 4;
+        outer->addWidget(edgeBars_.value(Edge::Top), 0, first, 1, last - first + 1);
+    }
+    if (bottom) outer->addWidget(edgeBars_.value(Edge::Bottom), 4, 0, 1, 5);
+}
 QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents)
 {
-    const auto* window = manager_->model().window(window_);
-    if (!window) return nullptr;
-    QVector<GroupId> ids;
-    for (const auto id : window->edgeGroups) {
-        const auto* group = manager_->model().group(id);
-        if (group && group->edge == edge && group->location == GroupLocation::Pinned) ids << id;
-    }
-    if (ids.isEmpty()) return nullptr;
+    const auto tree = manager_->model().pinnedLayout(window_, edge);
+    if (!tree) return nullptr;
     const auto orientation = edge == Edge::Left || edge == Edge::Right ? Qt::Horizontal : Qt::Vertical;
-    auto* region = new QSplitter(orientation, this); region->setObjectName("PinnedRegion");
+    auto* body = buildTree(tree, contents);
+    auto* region = !tree->isLeaf() && tree->orientation == orientation ? qobject_cast<QSplitter*>(body) : nullptr;
+    if (!region) {
+        region = new QSplitter(orientation, this);
+        region->addWidget(body);
+    }
+    region->setObjectName("PinnedRegion");
     pinnedRegions_.insert(edge, region);
     configureGroupSplitter(region, manager_->theme());
-    int totalExtent = 0;
-    for (const auto id : ids) totalExtent += manager_->model().group(id)->edgeExtent;
-    totalExtent += (ids.size() - 1) * region->handleWidth();
-    region->setProperty("preferredExtent", totalExtent);
-    if (edge == Edge::Right || edge == Edge::Bottom) std::reverse(ids.begin(), ids.end());
-    for (const auto id : ids) region->addWidget(buildGroup(id, contents));
-    QList<int> sizes;
-    for (const auto id : ids) sizes << manager_->model().group(id)->edgeExtent;
-    region->setSizes(sizes);
+    region->setProperty("preferredExtent", pinnedExtent(tree, manager_->model(), orientation, region->handleWidth()));
     QObject::connect(region, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
     return region;
 }
@@ -320,23 +343,54 @@ void DockSurface::savePinnedExtents()
 {
     if (!manager_) return;
     if (hasContentFocusScope()) return;
+    const QPointer<DockSurface> self(this);
+    const QPointer<WindowManager> owner(manager_);
+    const auto generation = rebuildGeneration_;
+    QVector<QPair<GroupId, int>> updates;
     for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator) {
         const auto* record = manager_->model().group(iterator.key());
         if (!record || record->location != GroupLocation::Pinned || !iterator.value()) continue;
         const auto extent = record->edge == Edge::Left || record->edge == Edge::Right
             ? iterator.value()->width() : iterator.value()->height();
-        manager_->execute("layout.setEdgeExtent", {{"group", iterator.key()}, {"extent", extent}}, window_);
+        updates.append({iterator.key(), extent});
     }
-    for (const auto& region : pinnedRegions_) if (region)
-        region->setProperty("preferredExtent", region->orientation() == Qt::Horizontal ? region->width() : region->height());
+    // Host notifications may close this window or rebuild the same surface.
+    // Neither member iterators nor geometry from the old view survive that.
+    const auto regions = pinnedRegions_.values();
+    const auto window = window_;
+    for (const auto& [group, extent] : updates) {
+        owner->execute("layout.setEdgeExtent", {{"group", group}, {"extent", extent}}, window);
+        if (!self || !owner || self->rebuildGeneration_ != generation || !owner->model().window(window)) return;
+    }
+    for (const auto& region : regions) {
+        if (region) region->setProperty("preferredExtent", region->orientation() == Qt::Horizontal ? region->width() : region->height());
+        if (!self || !owner || self->rebuildGeneration_ != generation) return;
+    }
 }
 void DockSurface::restorePinnedExtents()
 {
     if (!manager_) return;
     if (hasContentFocusScope()) return;
     if (!horizontal_ || !vertical_) return;
+    const QPointer<DockSurface> self(this);
+    const QPointer<WindowManager> owner(manager_);
+    const auto generation = rebuildGeneration_;
+    const auto window = window_;
+    const QPointer<QSplitter> horizontal(horizontal_), vertical(vertical_);
+    const QPointer<QWidget> center(center_);
+    // setSizes synchronously resizes host content. A callback may destroy its
+    // manager, but Qt must finish the active splitter layout before releasing
+    // the UI. Rebuilding also invalidates all geometry from this generation.
+    ++owner->d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([owner] { if (owner) --owner->d->geometryUpdateDepth; });
+    const auto current = [&] {
+        return self && owner && self->rebuildGeneration_ == generation
+            && owner->model().window(window) && horizontal && vertical && center
+            && self->horizontal_ == horizontal && self->vertical_ == vertical && self->center_ == center;
+    };
     const auto requested = [](QWidget* widget) { return widget->property("preferredExtent").toInt(); };
-    auto restoreOuter = [&](QSplitter* splitter, QWidget* flexible) {
+    const auto restoreOuter = [&](QPointer<QSplitter> splitter, QPointer<QWidget> flexible) {
+        if (!current() || !splitter || !flexible) return false;
         QList<int> sizes;
         int fixed = 0;
         for (int i = 0; i < splitter->count(); ++i)
@@ -347,17 +401,12 @@ void DockSurface::restorePinnedExtents()
                 ? qMax(1, available - fixed - (splitter->count() - 1) * splitter->handleWidth())
                 : requested(splitter->widget(i)));
         splitter->setSizes(sizes);
+        return current() && splitter && flexible;
     };
-    restoreOuter(vertical_, horizontal_);
-    restoreOuter(horizontal_, center_);
-    for (const auto& region : pinnedRegions_) if (region) {
-        QList<int> sizes;
-        for (int i = 0; i < region->count(); ++i) {
-            const auto* group = manager_->model().group(region->widget(i)->property("groupId").toUuid());
-            sizes << (group ? group->edgeExtent : 250);
-        }
-        region->setSizes(sizes);
-    }
+    if (!restoreOuter(vertical, horizontal)) return;
+    if (!restoreOuter(horizontal, center)) return;
+    // Nested pinned splitters retain their own ratios. Resizing the outer
+    // region must not reset an independent inner boundary to leaf extents.
 }
 QHash<GroupId, QRect> DockSurface::groupRects() const
 {
@@ -653,6 +702,7 @@ void DockSurface::setSideBarsVisible(bool visible)
 {
     if (!visible) closePeek();
     for (auto bar : edgeBars_) if (bar) bar->setVisible(visible);
+    updateRailLayout();
     if (root_) root_->layout()->activate();
     restorePinnedExtents();
     placePeek();
@@ -710,7 +760,7 @@ void DockSurface::applyFocusScope()
         if (vertical_) vertical_->hide();
         auto* outer = root_ ? qobject_cast<QGridLayout*>(root_->layout()) : nullptr;
         if (!outer) return;
-        outer->addWidget(target, 1, 1);
+        outer->addWidget(target, 2, 2);
         target->show();
     } else {
         focusProjection_.apply(target, root_);
@@ -811,12 +861,25 @@ void DockSurface::placePeek()
     const auto minimum = peek_->minimumSizeHint();
     const auto h = qMin(available.height(), qMax(minimum.height(), requested.height.value_or(vertical ? available.height() : 170)));
     const auto w = qMin(available.width(), qMax(minimum.width(), requested.width.value_or(vertical ? 250 : available.width())));
+    // A shortened panel follows its own trigger label, rather than always
+    // opening from the leading corner of the workspace. Keep the full panel
+    // inside the usable viewport when the label is near its trailing edge.
+    QPoint origin = available.topLeft();
+    if (const auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data()); strip && strip->isVisible()) {
+        for (auto* button : strip->findChildren<QAbstractButton*>("EdgeButton")) {
+            if (button->property("tabId").toUuid() != peekTab_) continue;
+            const QRect trigger(button->mapTo(this, QPoint()), button->size());
+            if (vertical) origin.setY(qBound(available.top(), trigger.top(), available.bottom() - h + 1));
+            else origin.setX(qBound(available.left(), trigger.left(), available.right() - w + 1));
+            break;
+        }
+    }
     const QPointer<DockSurface> self(this);
     switch (edge) {
-    case Edge::Left: peek_->setGeometry(available.x(), available.y(), w, h); break;
-    case Edge::Right: peek_->setGeometry(available.right() - w + 1, available.y(), w, h); break;
-    case Edge::Top: peek_->setGeometry(available.x(), available.y(), w, h); break;
-    case Edge::Bottom: peek_->setGeometry(available.x(), available.bottom() - h + 1, w, h); break;
+    case Edge::Left: peek_->setGeometry(available.x(), origin.y(), w, h); break;
+    case Edge::Right: peek_->setGeometry(available.right() - w + 1, origin.y(), w, h); break;
+    case Edge::Top: peek_->setGeometry(origin.x(), available.y(), w, h); break;
+    case Edge::Bottom: peek_->setGeometry(origin.x(), available.bottom() - h + 1, w, h); break;
     }
     if (!self || !manager_ || !panel || peek_ != panel || peekGeneration_ != generation) return;
     if (QPointer<QWidget> handle = peekResizeHandle_) {
@@ -845,7 +908,19 @@ void DockSurface::placePeek()
         handle->raise();
     }
 }
-void DockSurface::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); restorePinnedExtents(); placePeek(); }
+void DockSurface::resizeEvent(QResizeEvent* event)
+{
+    const QPointer<DockSurface> self(this);
+    const QPointer<WindowManager> owner(manager_);
+    const auto generation = rebuildGeneration_;
+    if (owner) ++owner->d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([owner] { if (owner) --owner->d->geometryUpdateDepth; });
+    QFrame::resizeEvent(event);
+    if (!self || !owner || self->rebuildGeneration_ != generation) return;
+    restorePinnedExtents();
+    if (!self || !owner || self->rebuildGeneration_ != generation || !owner->model().window(window_)) return;
+    placePeek();
+}
 bool DockSurface::eventFilter(QObject* watched, QEvent* event)
 {
     if (!manager_) return QFrame::eventFilter(watched, event);

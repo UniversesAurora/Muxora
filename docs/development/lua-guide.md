@@ -38,7 +38,7 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 | --- | --- |
 | `commands` | 列出、注册、注销和执行命令，复用菜单、快捷键与命令面板路径。 |
 | `windows` | 查询、新建、关闭、激活、最小化／最大化／还原、升降级、窗口族、几何、标题、栏显隐、全屏和禅模式。 |
-| `tabs` / `groups` / `panes` | 查询、创建、分割、重命名、移动、合并、交换、拆出、关闭、颜色、图标及附加栏。 |
+| `tabs` / `groups` / `panes` | 查询、创建、分割、重命名、移动、合并、交换、组／标签／窗格转换、拆出、关闭、颜色、图标及附加栏。 |
 | `sidebar` | 收纳、固定、整侧固定及独立记忆的临时展开宽高。 |
 | `toolbars` / `status` | 注册命令工具条和状态项，调整位置、宽度、弹性、按钮、文本和显隐。 |
 | `layout` | `snapshot()` / `restore(snapshot)`，保持宿主内容工厂与布局校验。 |
@@ -72,6 +72,27 @@ muxora.ui.command_palette(nil, {
 最小化／最大化／还原使用 `window.minimize`、`window.maximize`、`window.restore` 命令，与菜单和快捷键共用执行路径。最大化和还原会先退出全屏范围；最小化保留当前范围，以便恢复。`state()` 的 `mode` 表示全屏范围，和 `minimized`、`maximized` 分开查询。
 
 面板默认 `modal = false`、`dismiss_on_outside = true`，即非模态且点击其他区域关闭。两项只接受布尔值，不识别的选项会报错。打开面板后 Lua 可以继续执行；即使设为模态，也不会启动嵌套事件循环或等待用户关掉面板。
+
+全屏和禅模式是本次运行的临时状态，`layout.snapshot()` 不保存它们，恢复布局或重启不会重新进入全屏。正常几何、最大化状态、栏显隐和启动禅模式的默认范围继续保存。
+
+## 标签组、标签与窗格转换
+
+| 调用 | 结果 |
+| --- | --- |
+| `groups.to_tab(group_id, direction)` | 将组内所有标签的窗格树合成一个多窗格标签，返回保留的活动 Tab ID。 |
+| `groups.into_tab(group_id, target_tab_id, target_pane_id, direction)` | 将整组内容并入组外目标标签的指定窗格旁，返回是否接受。 |
+| `tabs.into_tab(tab_id, target_tab_id, target_pane_id, direction)` | 将来源标签的完整窗格树并入另一标签，返回是否接受。 |
+| `tabs.to_group(tab_id, direction)` | 每个 Pane 转为一个单窗格标签，返回目标 Group ID；原组还有其他标签时在指定方向新建组，否则复用原组。 |
+| `panes.to_tab(pane_id)` | 将窗格提取为同组标签，返回 Tab ID；原标签只有该窗格时返回原 Tab ID。 |
+
+`direction` 支持 `'left'`、`'right'`、`'top'`、`'bottom'`，省略时为 `'right'`。来源 ID 为 `nil` 时使用当前上下文；目标标签必须明确指定，目标窗格为 `nil` 时使用目标的活动窗格。例如，将当前标签并入另一个标签的活动窗格左侧：
+
+```lua
+-- target_tab_id 来自 tabs 查询结果，且必须与来源标签不同。
+assert(muxora.tabs.into_tab(nil, target_tab_id, nil, 'left'))
+```
+
+这些操作移动原 Pane 和内容，不重新创建连接。组来源必须是中央或固定区域中的可见组；目标可以跨窗口，必须仍然有效，目标窗格必须属于指定标签。整组来源不能并入自己的标签。转换后活动内容继续保留，来源空组或空浮窗按既有规则清理；来源标签附加栏转移到其活动窗格，与原专属栏组合并采用逐窗格显示。取消 Chrome 式标签集合的决定不受影响，这里的组仍是拥有标签栏的分割区域。
 
 ## 状态项与定时回调
 

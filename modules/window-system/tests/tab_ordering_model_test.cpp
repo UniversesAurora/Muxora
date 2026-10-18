@@ -43,9 +43,41 @@ private slots:
         QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Center).isNull()); QCOMPARE(model.toJson(),before);
         QVERIFY(model.addTabToNewGroup(window,"new",group,Placement(99)).isNull()); QCOMPARE(model.toJson(),before);
         QVERIFY(model.moveGroupToEdge(group,Edge::Left,true)); const auto pinned = model.toJson();
-        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Right).isNull()); QCOMPARE(model.toJson(),pinned);
-        QVERIFY(model.setGroupPinned(group,false)); const auto hidden = model.toJson();
-        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Right).isNull()); QCOMPARE(model.toJson(),hidden); QVERIFY(model.validate());
+        const auto pinnedRevision = model.revision();
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Center).isNull()); QCOMPARE(model.toJson(),pinned);
+        QCOMPARE(model.revision(),pinnedRevision);
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement(99)).isNull()); QCOMPARE(model.toJson(),pinned);
+        QCOMPARE(model.revision(),pinnedRevision);
+        QVERIFY(model.setGroupPinned(group,false)); const auto hidden = model.toJson(); const auto hiddenRevision = model.revision();
+        QVERIFY(model.addTabToNewGroup(window,"new",group,Placement::Right).isNull()); QCOMPARE(model.toJson(),hidden);
+        QCOMPARE(model.revision(),hiddenRevision); QVERIFY(model.validate());
+    }
+    void pinnedGroupCreationAndMovementSupportBothAxes()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto moved = model.addTab(window,"moved"), pinned = model.addTab(window,"pinned");
+        const auto source = model.groupForTab(moved);
+        const auto movedPanes = model.panes(moved), pinnedPanes = model.panes(pinned);
+        QVERIFY(model.moveTabToEdge(pinned,Edge::Left,true)); const auto target = model.groupForTab(pinned);
+        const auto created = model.addTabToNewGroup(window,"new",target,Placement::Right); QVERIFY(!created.isNull());
+        const auto adjacent = model.groupForTab(created); QVERIFY(adjacent != target);
+        const auto initial = model.pinnedLayout(window,Edge::Left); QVERIFY(initial && !initial->isLeaf());
+        QCOMPARE(initial->orientation,Qt::Horizontal); QCOMPARE(initial->first->itemId,target);
+        QCOMPARE(initial->second->itemId,adjacent); QCOMPARE(model.group(adjacent)->tabs,QVector<TabId>{created});
+        QCOMPARE(model.group(adjacent)->windowId,window); QCOMPARE(model.group(adjacent)->location,GroupLocation::Pinned);
+        QCOMPARE(model.group(adjacent)->edge,Edge::Left); QCOMPARE(model.centralGroups(window),QVector<GroupId>{source});
+        const auto revision = model.revision();
+        QVERIFY(model.moveGroup(source,target,Placement::Top)); QCOMPARE(model.revision(),revision + 1);
+        const auto current = model.pinnedLayout(window,Edge::Left); QVERIFY(current && !current->isLeaf());
+        QCOMPARE(current->id,initial->id); QCOMPARE(current->orientation,Qt::Horizontal); QCOMPARE(current->ratio,initial->ratio);
+        QCOMPARE(current->second,initial->second); QVERIFY(current->first && !current->first->isLeaf());
+        QCOMPARE(current->first->orientation,Qt::Vertical); QCOMPARE(current->first->first->itemId,source);
+        QCOMPARE(current->first->second->itemId,target); QCOMPARE(initial->first->itemId,target);
+        QCOMPARE(model.groupForTab(moved),source); QCOMPARE(model.group(source)->tabs,QVector<TabId>{moved});
+        QCOMPARE(model.group(source)->windowId,window); QCOMPARE(model.group(source)->location,GroupLocation::Pinned);
+        QCOMPARE(model.group(source)->edge,Edge::Left); QCOMPARE(model.group(target)->tabs,QVector<TabId>{pinned});
+        QVERIFY(model.centralGroups(window).isEmpty()); QCOMPARE(model.panes(moved),movedPanes);
+        QCOMPARE(model.panes(pinned),pinnedPanes); QVERIFY(model.validate());
     }
     void sortUsesRecordedEventsWithoutChangingContent_data()
     {
@@ -400,13 +432,19 @@ private slots:
         QVERIFY(!model.mergeGroups(first,first)); QCOMPARE(model.toJson(),before);
         QVERIFY(!model.mergeGroups(first,second,2)); QCOMPARE(model.toJson(),before);
         QVERIFY(!model.mergeGroups(first,second,-2)); QCOMPARE(model.toJson(),before);
-        QVERIFY(!model.moveGroup(first,second,Placement::Top)); QCOMPARE(model.toJson(),before);
+        const auto revision = model.revision();
+        QVERIFY(!model.moveGroup(first,second,Placement::Center)); QCOMPARE(model.toJson(),before); QCOMPARE(model.revision(),revision);
+        QVERIFY(!model.moveGroup(first,second,Placement(99))); QCOMPARE(model.toJson(),before); QCOMPARE(model.revision(),revision);
+        QVERIFY(!model.moveGroup(first,first,Placement::Top)); QCOMPARE(model.toJson(),before); QCOMPARE(model.revision(),revision);
+        QVERIFY(!model.moveGroup({},second,Placement::Top)); QCOMPARE(model.toJson(),before); QCOMPARE(model.revision(),revision);
         QVERIFY(!model.moveGroupToEdge(first,{},Edge::Left,true)); QCOMPARE(model.toJson(),before);
         QVERIFY(!model.moveGroupToEdge(first,root,Edge(99),true)); QCOMPARE(model.toJson(),before);
         QVERIFY(model.detachGroup(first,WindowKind(99)).isNull()); QCOMPARE(model.toJson(),before);
-        QVERIFY(model.setGroupPinned(second,false)); const auto hidden = model.toJson();
+        QVERIFY(model.setGroupPinned(second,false)); const auto hidden = model.toJson(); const auto hiddenRevision = model.revision();
         QVERIFY(!model.swapGroups(first,second)); QCOMPARE(model.toJson(),hidden);
         QVERIFY(!model.mergeGroups(second,first)); QCOMPARE(model.toJson(),hidden);
+        QVERIFY(!model.moveGroup(first,second,Placement::Top)); QCOMPARE(model.toJson(),hidden); QCOMPARE(model.revision(),hiddenRevision);
+        QVERIFY(!model.moveGroup(second,first,Placement::Top)); QCOMPARE(model.toJson(),hidden); QCOMPARE(model.revision(),hiddenRevision);
         const auto other = model.createWindow(); const auto final = model.toJson();
         QVERIFY(!model.moveGroupToWindow(second,other)); QCOMPARE(model.toJson(),final);
         QVERIFY(model.detachGroup(second).isNull()); QCOMPARE(model.toJson(),final); QVERIFY(model.validate());

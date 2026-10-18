@@ -33,7 +33,8 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     setObjectName("EdgeBar"); setProperty("edge", int(edge)); setFrameShape(QFrame::NoFrame);
     const int thickness = std::max(1, theme_.metrics.edgeThickness);
     if (vertical_) setFixedWidth(thickness); else setFixedHeight(thickness);
-    auto* column = new QVBoxLayout(this); column->setContentsMargins(0, 0, 0, 0); column->setSpacing(0);
+    auto* column = new QBoxLayout(vertical_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, this);
+    column->setContentsMargins(0, 0, 0, 0); column->setSpacing(spacing);
     scroll_->setObjectName("EdgeScrollViewport"); scroll_->setFrameShape(QFrame::NoFrame);
     scroll_->setWidgetResizable(false);
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -48,7 +49,7 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     gap_->setStyleSheet(QStringLiteral("QWidget#EdgeInsertionPreview { background: %1; border: none; }")
         .arg(theme_.inactiveTab.name()));
     gap_->hide();
-    scroll_->setWidget(track_); column->addWidget(scroll_);
+    scroll_->setWidget(track_); column->addWidget(scroll_, 1);
 
     scrollbar_->setObjectName("EdgeScrollBar"); scrollbar_->setSingleStep(28);
     // The overlay is not managed by QScrollArea. A new QScrollBar otherwise
@@ -96,19 +97,23 @@ void EdgeStrip::addButton(QAbstractButton* button)
 {
     if (!button || std::any_of(buttons_.cbegin(), buttons_.cend(), [button](const auto& existing) { return existing == button; })) return;
     button->setParent(track_); buttons_.append(button); observe(button);
-    const int index = tail_ ? trackLayout_->indexOf(tail_) : trackLayout_->count() - 1;
-    trackLayout_->insertWidget(index, button); button->show(); layoutTrack();
+    trackLayout_->insertWidget(trackLayout_->count() - 1, button); button->show(); layoutTrack();
 }
 
 void EdgeStrip::setTailWidget(QWidget* widget)
 {
     if (tail_ == widget) return;
-    if (tail_) { trackLayout_->removeWidget(tail_); tail_->hide(); }
+    if (tail_) { layout()->removeWidget(tail_); tail_->hide(); }
     tail_ = widget;
     if (widget) {
-        widget->setParent(track_); observe(widget);
-        trackLayout_->insertWidget(trackLayout_->count() - 1, widget); widget->show();
+        // The all-pin action belongs to the rail, not the scrolling label
+        // track. It remains reachable at the trailing edge at every offset.
+        widget->setParent(this); observe(widget);
+        const int thickness = std::max(1, theme_.metrics.edgeThickness);
+        widget->setFixedSize(thickness, thickness);
+        static_cast<QBoxLayout*>(layout())->addWidget(widget); widget->show();
     }
+    layout()->activate();
     layoutTrack();
 }
 
@@ -188,7 +193,7 @@ void EdgeStrip::setInsertionPreview(int index, int extent)
     previewIndex_ = nextIndex; previewExtent_ = nextExtent;
     if (valid) {
         const int insertion = index < visible.size() ? trackLayout_->indexOf(visible[index])
-            : tail_ ? trackLayout_->indexOf(tail_) : trackLayout_->count() - 1;
+            : trackLayout_->count() - 1;
         trackLayout_->insertWidget(insertion, gap_); gap_->show();
     }
     layoutTrack();
@@ -221,7 +226,7 @@ void EdgeStrip::layoutTrack()
         button->setFixedSize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
         total += extent; ++count;
     }
-    if (tail_) { tail_->setFixedSize(thickness, thickness); total += thickness; ++count; }
+    if (tail_) tail_->setFixedSize(thickness, thickness);
     if (previewIndex_ >= 0) {
         gap_->setFixedSize(vertical_ ? QSize(thickness, previewExtent_) : QSize(previewExtent_, thickness));
         total += previewExtent_; ++count;

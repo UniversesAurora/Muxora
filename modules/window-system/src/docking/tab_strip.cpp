@@ -118,16 +118,23 @@ protected:
 
 class TabListRow final : public QWidget {
 public:
-    TabListRow(QString text, QIcon icon, QColor marker, QWidget* parent) : QWidget(parent), marker_(marker) {
+    TabListRow(QString text, QIcon icon, QColor marker, bool active, QWidget* parent) : QWidget(parent), marker_(marker) {
         setObjectName("TabListRow");
         setProperty("tabColorMarker", marker_);
+        setProperty("activeTab", active);
         setMouseTracking(true);
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(8, 2, 5, 2); layout->setSpacing(8);
+        auto* activeMark = new QLabel(active ? QStringLiteral("\u2713") : QString(), this);
+        activeMark->setObjectName("TabListActiveMark");
+        activeMark->setFixedWidth(14); activeMark->setAlignment(Qt::AlignCenter);
+        activeMark->setAttribute(Qt::WA_TransparentForMouseEvents);
+        layout->addWidget(activeMark);
         if (!icon.isNull()) {
             auto* image = new QLabel(this); image->setPixmap(icon.pixmap(16, 16)); layout->addWidget(image);
         }
         title_ = new TabListTitle(text, this); title_->setToolTip(text);
+        auto font = title_->font(); font.setBold(active); title_->setFont(font);
         title_->setObjectName("TabListTitle");
         title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
         closeButton = new QToolButton(this);
@@ -214,12 +221,15 @@ int DragTabBar::displayedTabAt(QPoint local) const
 QSize DragTabBar::displayedSize() const { return displayedSize_; }
 QPoint DragTabBar::creationPosition() const { return creationPosition_; }
 int DragTabBar::rowCount() const { return rowCount_; }
-void DragTabBar::layoutTabs(int availableWidth, bool expanded)
+void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth)
 {
     customLayout_ = appearance_.multiline;
     displayedRects_.clear(); previewRect_ = {};
     const int lineHeight = std::max(24, count() ? tabSizeHint(0).height() : 28);
-    const int limit = std::max(1, availableWidth);
+    // Expanded rows use the full bar width. Only the final row reserves the
+    // list/pinning controls; a collapsed one-row view reserves them normally.
+    const int limit = std::max(1, availableWidth - (appearance_.multiline && !expanded ? trailingActionsWidth : 0));
+    if (!expanded) trailingActionsWidth = 0;
     int x = 0, y = 0, ordinal = 0;
     auto append = [&](int width) {
         width = appearance_.multiline ? std::min(width, limit) : width;
@@ -241,7 +251,8 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded)
     }
     if (insertionIndex_ == ordinal && insertionExtent_) previewRect_ = append(insertionExtent_);
     creationPosition_ = {x,y};
-    if (appearance_.multiline && appearance_.showNewTabButton && x + newTabButtonWidth + listButtonWidth + createButtonGap > limit) {
+    const int creationWidth = appearance_.showNewTabButton ? newTabButtonWidth + listButtonWidth + createButtonGap : 0;
+    if (appearance_.multiline && x && x + creationWidth + trailingActionsWidth > limit) {
         creationPosition_ = {0, y + lineHeight}; y += lineHeight;
     }
     rowCount_ = y / lineHeight + 1;
@@ -442,7 +453,7 @@ void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {
 
 GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), theme_(theme)
 {
-    setObjectName("TabGroup"); setMinimumSize(120, 90);
+    setObjectName("TabGroup");
     viewportWindow_ = window(); viewportWindow_->installEventFilter(this);
     auto* layout = new QVBoxLayout(this); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
     auto* header = new QWidget(this); header_ = header; header->setObjectName("TabGroupHeader");
@@ -474,11 +485,14 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     scrollbar_->setStyleSheet(overlayScrollbarStyle(theme));
     scrollbar_->hide();
     stripLayout->addWidget(scroll_, 1);
-    list_ = new CompactToolButton(header, QSize(listButtonWidth, theme.metrics.tabHeight)); list_->setObjectName("TabListButton");
+    headerActions_ = new QWidget(header); headerActions_->setObjectName("TabHeaderActions");
+    auto* actions = new QHBoxLayout(headerActions_); actions->setContentsMargins(0, 0, 0, 0); actions->setSpacing(0);
+    list_ = new CompactToolButton(headerActions_, QSize(listButtonWidth, theme.metrics.tabHeight)); list_->setObjectName("TabListButton");
     list_->installEventFilter(this); list_->setMouseTracking(true);
     list_->setIcon(iconFor("chevron-down", theme)); list_->setToolTip(QCoreApplication::translate("WindowSystem", "所有标签"));
     list_->setAccessibleName(list_->toolTip());
-    row->addWidget(strip, 1); row->addWidget(list_,0,Qt::AlignBottom);
+    actions->addWidget(list_);
+    row->addWidget(strip, 1); row->addWidget(headerActions_,0,Qt::AlignBottom);
     layout->addWidget(header);
     stack_ = new QStackedWidget(this); layout->addWidget(stack_, 1);
     autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
@@ -688,7 +702,15 @@ void GroupTabs::scrollByWheel(QPoint delta)
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
 void GroupTabs::updateBarGeometry() {
-    bar_->layoutTabs(scroll_->viewport()->width(),rowsExpanded_);
+    if (updatingBarGeometry_) return;
+    QScopedValueRollback updating(updatingBarGeometry_, true);
+    auto* headerLayout = static_cast<QHBoxLayout*>(header_->layout());
+    const int actionsWidth = headerActions_->sizeHint().width();
+    const bool inLayout = headerLayout->indexOf(headerActions_) >= 0;
+    if (appearance_.multiline && inLayout) headerLayout->removeWidget(headerActions_);
+    else if (!appearance_.multiline && !inLayout) headerLayout->addWidget(headerActions_, 0, Qt::AlignBottom);
+    headerLayout->activate();
+    bar_->layoutTabs(scroll_->viewport()->width(),rowsExpanded_,appearance_.multiline ? actionsWidth : 0);
     const auto hint = bar_->displayedSize();
     bar_->setFixedSize(qMax(1, hint.width()), qMax(24, hint.height()));
     const int lineHeight = bar_->height() / (appearance_.multiline && rowsExpanded_ ? std::max(1,bar_->rowCount()) : 1);
@@ -697,6 +719,12 @@ void GroupTabs::updateBarGeometry() {
     updateCanvasGeometry();
     static_cast<CompactToolButton*>(list_)->setTargetSize(QSize(listButtonWidth, lineHeight));
     scroll_->setFixedHeight(bar_->height());
+    headerActions_->setFixedHeight(lineHeight);
+    if (appearance_.multiline) {
+        headerActions_->setGeometry(std::max(0, header_->width() - actionsWidth),
+            std::max(0, bar_->height() - lineHeight), actionsWidth, lineHeight);
+        headerActions_->raise();
+    }
     updateScrollBarGeometry();
     // In particular, a bottom header changes its origin when rows expand.
     // Publish that position together with the rectangles used for hit testing,
@@ -709,6 +737,14 @@ void GroupTabs::updateBarGeometry() {
         section->updateGeometry();
         if (section == this) break;
     }
+    // Changing the row count from a viewport Resize callback can resize the
+    // scroll area while QAbstractScrollArea is already laying it out. Qt skips
+    // that nested Resize, leaving the viewport at the previous row count.
+    // Both native scrollbars are AlwaysOff, so an owned layout request safely
+    // recomputes the viewport after our final height, without pumping input.
+    QEvent request(QEvent::LayoutRequest);
+    QCoreApplication::sendEvent(scroll_, &request);
+    updateScrollBarGeometry();
 }
 void GroupTabs::updateCanvasGeometry()
 {
@@ -790,6 +826,7 @@ void GroupTabs::setPinnedActions(std::function<void()> current, std::function<vo
         row->insertWidget(row->count() - 1, button, 0, Qt::AlignBottom);
         QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
     }
+    updateBarGeometry();
 }
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
     if(event->type()==QEvent::ContextMenu && (watched==header_ || watched==canvas_ || (scroll_ && watched==scroll_->viewport()))) {
@@ -838,9 +875,10 @@ void GroupTabs::showTabList() {
     menu->setStyleSheet("QMenu{menu-scrollable:1;}");
     for (int index = 0; index < bar_->count(); ++index) {
         auto* action = new QWidgetAction(menu);
+        action->setCheckable(true); action->setChecked(index == bar_->currentIndex());
         const auto* preset = bar_->tabPreset(index);
         auto* row = new TabListRow(bar_->tabText(index), appearance_.showIcons ? bar_->tabIcon(index) : QIcon{},
-            preset ? preset->groupInactive.line : QColor{}, menu);
+            preset ? preset->groupInactive.line : QColor{}, index == bar_->currentIndex(), menu);
         row->setProperty("tabId", bar_->tabData(index));
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "关闭标签"));
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);

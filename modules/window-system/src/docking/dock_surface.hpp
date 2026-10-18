@@ -52,6 +52,7 @@ private:
     GroupTabs* buildGroup(GroupId group, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildEdge(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
+    void updateRailLayout();
     void placePeek();
     void updateEdgeTabSelection(TabId tab);
     [[nodiscard]] bool centralTabBarVisible(bool requested) const;
@@ -72,6 +73,7 @@ private:
     GroupId peekGroup_;
     TabId peekTab_;
     quint64 peekGeneration_ = 0;
+    quint64 rebuildGeneration_ = 0;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
     QHash<Edge, QPointer<QWidget>> edgeBars_;
     QHash<GroupId, TabViewportState> groupViewportStates_;

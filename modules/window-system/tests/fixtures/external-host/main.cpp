@@ -184,6 +184,33 @@ int main(int argc, char** argv)
         || windows.peekSizePolicy(tab, window_system::Edge::Bottom).width != std::optional<int>(510)
         || !windows.resetPeekSize(tab)
         || windows.peekSize(tab) != QSize(250, 170) || windows.paneWidget(pane) != restoredFirst.data()) return 96;
+    {
+        const auto conversionWindow = windows.createWindow();
+        auto* first = new QLabel("First conversion content");
+        auto* second = new QLabel("Second conversion content");
+        const auto firstTab = windows.addTab(conversionWindow, first, {"First", "contract.text", {}});
+        const auto secondTab = windows.addTab(conversionWindow, second, {"Second", "contract.text", {}});
+        const auto firstPane = windows.model().tab(firstTab)->activePane;
+        const auto secondPane = windows.model().tab(secondTab)->activePane;
+        const auto collapsed = windows.convertGroupToTab(windows.model().groupForTab(firstTab));
+        if (collapsed.isNull() || windows.model().panes(collapsed).size() != 2
+            || windows.paneWidget(firstPane) != first || windows.paneWidget(secondPane) != second) return 170;
+        const auto expanded = windows.convertTabToGroup(collapsed);
+        if (expanded.isNull() || windows.model().group(expanded)->tabs.size() != 2) return 171;
+        const auto target = windows.model().tabForPane(secondPane);
+        if (!windows.moveTabIntoTab(windows.model().tabForPane(firstPane), target, secondPane)
+            || windows.model().tabForPane(firstPane) != target
+            || windows.extractPaneToTab(target, firstPane).isNull()) return 172;
+        auto* third = new QLabel("Group conversion content");
+        const auto thirdTab = windows.addTabToNewGroup(conversionWindow, third,
+            {"Third", "contract.text", {}}, expanded, window_system::Placement::Right);
+        if (thirdTab.isNull()) return 173;
+        const auto thirdPane = windows.model().tab(thirdTab)->activePane;
+        if (!windows.moveGroupIntoTab(windows.model().groupForTab(thirdTab), target, secondPane)
+            || windows.model().tabForPane(thirdPane) != target || windows.paneWidget(thirdPane) != third
+            || windows.paneWidget(firstPane) != first || windows.paneWidget(secondPane) != second
+            || !windows.model().validate() || !windows.requestCloseWindow(conversionWindow)) return 173;
+    }
     if (!windows.requestCloseWindow(root)) return 5;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     return observer.isNull() && secondObserver.isNull() && restoredFirst.isNull() && restoredSecond.isNull()

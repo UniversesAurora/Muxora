@@ -246,6 +246,8 @@ private slots:
     void restoringLockedMinimumWidthDoesNotUseTheCurrentUnlockedMinimum();
     void titleFirstFillsTheRowAndIsAWindowDragArea();
     void optionsPolicyDoesNotReserveSpaceOrChangeSavedLayout();
+    void lockedEmptyOptionsDisappearAndReturnForOverflow();
+    void disabledToolbarButtonsHaveNoBorderOrHoverFeedback();
     void oneElasticStripOwnsEachRowAndRestoresLegacyDefaults();
     void movingElasticStripClaimsTheTargetRowAndEscRestoresTheOwner();
     void elasticContentDoesNotBecomeAWindowDragTarget();
@@ -280,6 +282,74 @@ private slots:
 };
 
 void ChromeInteractionTest::initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+
+void ChromeInteractionTest::lockedEmptyOptionsDisappearAndReturnForOverflow()
+{
+    CommandStripHost host; applyTheme(&host);
+    const auto commands = actions(&host, 5);
+    host.addActionStrip("tools", "Tools", commands, 0);
+    host.resize(600, host.height()); host.show(); QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* strip = host.stripWidget("tools");
+    auto* tail = strip->findChild<QToolButton*>("StripOverflowButton"); QVERIFY(tail && tail->isVisible());
+    const auto layout = host.saveLayout();
+    const int originalWidth = strip->width();
+    host.setHideOptionsWhenLocked(true);
+    QVERIFY(host.hideOptionsWhenLocked()); QVERIFY(tail->isHidden());
+    QCOMPARE(strip->width(), originalWidth - 12); QCOMPARE(host.saveLayout(), layout);
+    host.setLocked(false); QVERIFY(tail->isVisible());
+    host.setLocked(true); QVERIFY(tail->isHidden());
+    QVERIFY(host.setStripWidth("tools", 65));
+    QVERIFY(tail->isVisible()); QVERIFY(tail->property("hasOverflow").toBool());
+    QVERIFY(!host.overflowItems("tools").isEmpty());
+    QVERIFY(host.resetStripWidth("tools"));
+    QVERIFY(tail->isHidden()); QVERIFY(host.overflowItems("tools").isEmpty());
+    host.setHideOptionsWhenLocked(false); QVERIFY(tail->isVisible());
+    QCOMPARE(strip->width(), originalWidth);
+    host.setHideOptionsWhenLocked(true);
+    host.addActionStrip("later", "Later", actions(&host, 1), 1);
+    QVERIFY(host.stripWidget("later")->findChild<QToolButton*>("StripOverflowButton")->isHidden());
+}
+
+void ChromeInteractionTest::disabledToolbarButtonsHaveNoBorderOrHoverFeedback()
+{
+    CommandStripHost host; applyTheme(&host);
+    auto commands = actions(&host, 1); commands[0]->setEnabled(false);
+    host.addActionStrip("tools", "Tools", commands, 0);
+    host.resize(300, host.height()); host.show(); QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* button = host.findChild<QToolButton*>("StripCommandButton"); QVERIFY(button && !button->isEnabled());
+    const QRect buttonArea(button->mapTo(&host, QPoint()), button->size());
+    QVERIFY(host.rect().contains(buttonArea));
+    // The button deliberately paints transparent background and border pixels.
+    // Render its parent too, so these checks inspect the composed toolbar rather
+    // than comparing a transparent child-only grab to an opaque header color.
+    const auto composedButton = [&] {
+        const auto image = host.grab().toImage(); const auto scale = image.devicePixelRatio();
+        const int left = qRound(buttonArea.x() * scale);
+        const int top = qRound(buttonArea.y() * scale);
+        return image.copy(left, top, qRound((buttonArea.x() + buttonArea.width()) * scale) - left,
+                          qRound((buttonArea.y() + buttonArea.height()) * scale) - top);
+    };
+    QTest::mouseMove(&host, QPoint(host.width() - 1, host.height() - 1));
+    const auto before = composedButton();
+    QVERIFY(!before.isNull());
+    for (int x = 0; x < before.width(); ++x) {
+        QCOMPARE(before.pixelColor(x, 0), defaultTheme().headerBackground);
+        QCOMPARE(before.pixelColor(x, before.height() - 1), defaultTheme().headerBackground);
+    }
+    for (int y = 0; y < before.height(); ++y) {
+        QCOMPARE(before.pixelColor(0, y), defaultTheme().headerBackground);
+        QCOMPARE(before.pixelColor(before.width() - 1, y), defaultTheme().headerBackground);
+    }
+    QTest::mouseMove(button, button->rect().center());
+    QCOMPARE(composedButton(), before);
+    QSignalSpy invoked(commands[0], &QAction::triggered);
+    QTest::mouseClick(button, Qt::LeftButton); QCOMPARE(invoked.count(), 0);
+    const auto disabledIcon = button->icon().pixmap(button->iconSize(), QIcon::Disabled).toImage();
+    const auto normalIcon = button->icon().pixmap(button->iconSize(), QIcon::Normal).toImage();
+    QVERIFY(disabledIcon != normalIcon);
+    QVERIFY(pixelsOfColor(disabledIcon, defaultTheme().mutedText) > 0);
+    QVERIFY(pixelsOfColor(normalIcon, defaultTheme().text) > 0);
+}
 
 void ChromeInteractionTest::narrowStripsKeepTheTailAndExposeOverflowActions()
 {

@@ -54,6 +54,8 @@ QString overlayScrollbarStyle(const Theme& theme)
         color.setAlpha(alpha);
         return QStringLiteral("rgba(%1,%2,%3,%4)").arg(color.red()).arg(color.green()).arg(color.blue()).arg(color.alpha());
     };
+    const int gray = qGray(theme.border.rgb());
+    const QColor handle(gray, gray, gray);
     return QStringLiteral(
         "QScrollBar { background: transparent; border: none; margin: 0; }"
         "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
@@ -63,7 +65,7 @@ QString overlayScrollbarStyle(const Theme& theme)
         "QScrollBar::handle:hover, QScrollBar::handle:pressed { background: %2; }"
         "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
         "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
-        .arg(rgba(theme.border, 112), rgba(theme.accent, 176));
+        .arg(rgba(handle, 112), rgba(handle, 176));
 }
 
 void ThemedComboBox::showPopup()

@@ -59,6 +59,7 @@ class ScriptHostTest final : public QObject {
     void sharedShortcutContinuationsRemainReachable();
     void explicitCommandContextDoesNotFollowLaterFocus();
     void layoutOperationsKeepContentIdentity();
+    void hierarchyConversionsKeepTheSamePaneObjects();
     void customChromeIsReleasedWithItsScriptGeneration();
     void initializationFailureReleasesPartialRegistrations();
     void reloadReplacesFunctionsAndRestoresUnderlyingBindings();
@@ -80,6 +81,32 @@ class ScriptHostTest final : public QObject {
     void windowDisplayStateUsesSharedCommands();
     void panelPoliciesCanBeConfiguredWithoutNestedExecution();
 };
+void ScriptHostTest::hierarchyConversionsKeepTheSamePaneObjects() {
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto first = addEditor(manager, window, "First");
+    const auto firstPane = manager.model().tab(first)->activePane; const auto firstWidget = manager.paneWidget(firstPane);
+    const auto second = addEditor(manager, window, "Second");
+    const auto group = manager.model().groupForTab(second);
+    ScriptHost host(&manager); QVERIFY(initialize(host));
+    auto reply = run(host, QString("return muxora.groups.to_tab('%1')").arg(group.toString(QUuid::WithoutBraces)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QCOMPARE(reply.values[0].toString(), second.toString(QUuid::WithoutBraces));
+    QCOMPARE(manager.paneWidget(firstPane), firstWidget); QCOMPARE(manager.model().panes(second).size(), 2);
+    reply = run(host, QString("return muxora.tabs.to_group('%1','top')").arg(second.toString(QUuid::WithoutBraces)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QCOMPARE(manager.model().group(QUuid(reply.values[0].toString()))->tabs.size(), 2);
+    const auto newPane = manager.splitPane(second, manager.model().tab(second)->activePane, new QLabel("Extra"), Placement::Right);
+    const auto extraWidget = manager.paneWidget(newPane);
+    reply = run(host, QString("return muxora.panes.to_tab('%1')").arg(newPane.toString(QUuid::WithoutBraces)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); const QUuid extracted(reply.values[0].toString()); QVERIFY(!extracted.isNull());
+    reply = run(host, QString("return muxora.tabs.into_tab('%1','%2',nil,'bottom')")
+        .arg(extracted.toString(QUuid::WithoutBraces), second.toString(QUuid::WithoutBraces)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool()); QCOMPARE(manager.paneWidget(newPane), extraWidget);
+    const auto otherWindow = manager.createWindow(); const auto targetTab = addEditor(manager, otherWindow, "Target");
+    reply = run(host, QString("return muxora.groups.into_tab('%1','%2',nil,'left')")
+        .arg(manager.model().groupForTab(second).toString(QUuid::WithoutBraces), targetTab.toString(QUuid::WithoutBraces)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool());
+    QCOMPARE(manager.paneWidget(firstPane), firstWidget); QCOMPARE(manager.paneWidget(newPane), extraWidget);
+    QVERIFY(manager.model().validate());
+}
 void ScriptHostTest::stateAndLiveQueriesUseValuesOnly() {
     WindowManager manager;
     auto window = manager.createWindow();

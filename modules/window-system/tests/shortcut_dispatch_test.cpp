@@ -4,6 +4,7 @@
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QInputMethodEvent>
+#include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QShortcut>
@@ -54,6 +55,8 @@ private slots:
     void compositeCommandsAbortWhenTheirSourceWindowDisappears();
     void compositeFirstStepRespectsItsCapturedContext();
     void changedBindingsAndInputMethodsCancelTheChord();
+    void finishedOrCancelledChordsRestoreTheCurrentStatus_data();
+    void finishedOrCancelledChordsRestoreTheCurrentStatus();
     void disabledBindingsDoNotReserveNativeShortcutInput();
     void enabledCallbacksCanDestroyTheInputReceiver();
     void capturedContextIsRecheckedAfterEnabledCallbacks();
@@ -412,6 +415,70 @@ void ShortcutDispatchTest::changedBindingsAndInputMethodsCancelTheChord()
     QInputMethodEvent commit; commit.setCommitString(QStringLiteral("拼"));
     QApplication::sendEvent(fixture.editor, &commit);
     QVERIFY(!timer->isActive()); QCOMPARE(calls, 0);
+}
+
+void ShortcutDispatchTest::finishedOrCancelledChordsRestoreTheCurrentStatus_data()
+{
+    QTest::addColumn<QString>("finish");
+    for (const auto* finish : {"complete", "command-message", "command-failure", "escape", "invalid", "timeout",
+                               "focus", "input-method", "bindings", "catalog"})
+        QTest::newRow(finish) << QString::fromLatin1(finish);
+}
+
+void ShortcutDispatchTest::finishedOrCancelledChordsRestoreTheCurrentStatus()
+{
+    QFETCH(QString, finish);
+    WindowManager manager;
+    const auto fixture = createFixture(manager);
+    int calls = 0;
+    QVERIFY(manager.commands().add({"host.chord", "Chord", "Test", QKeySequence("Ctrl+K, Ctrl+G, 3"), {},
+        [&](const CommandContext&) {
+            ++calls;
+            if (finish == "command-message") manager.setStatus(fixture.window, QStringLiteral("Command finished"));
+            return finish != "command-failure";
+        }}));
+    manager.showWindow(fixture.window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(fixture.window)));
+    QVERIFY(manager.focusPane(fixture.tab, manager.model().tab(fixture.tab)->activePane));
+    auto* message = manager.windowWidget(fixture.window)->findChild<QLabel*>(QStringLiteral("StatusMessage"));
+    auto* timer = manager.findChild<QTimer*>(QStringLiteral("CommandChordTimer"));
+    QVERIFY(message); QVERIFY(timer);
+    manager.setStatus(fixture.window, QStringLiteral("Saved"));
+    QTest::keyClick(fixture.editor, Qt::Key_K, Qt::ControlModifier);
+    QVERIFY(timer->isActive());
+    QVERIFY(message->text().contains(QStringLiteral("Ctrl+K")));
+    QTest::keyClick(fixture.editor, Qt::Key_G, Qt::ControlModifier);
+    QVERIFY(timer->isActive());
+    QVERIFY(message->text().contains(QStringLiteral("Ctrl+G")));
+    // A background status update must survive the temporary waiting message.
+    manager.setStatus(fixture.window, QStringLiteral("Saved while waiting"));
+    QVERIFY(message->text().contains(QStringLiteral("Ctrl+G")));
+    if (finish == "complete" || finish == "command-message" || finish == "command-failure") {
+        QTest::keyClick(fixture.editor, Qt::Key_3);
+    } else if (finish == "escape") {
+        QTest::keyClick(fixture.editor, Qt::Key_Escape);
+    } else if (finish == "invalid") {
+        QTest::keyClick(fixture.editor, Qt::Key_X);
+    } else if (finish == "timeout") {
+        QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+    } else if (finish == "focus") {
+        QFocusEvent out(QEvent::FocusOut, Qt::OtherFocusReason);
+        QApplication::sendEvent(fixture.editor, &out);
+    } else if (finish == "input-method") {
+        QInputMethodEvent input(QStringLiteral("拼"), {});
+        QApplication::sendEvent(fixture.editor, &input);
+    } else if (finish == "bindings") {
+        QVERIFY(manager.commands().setShortcut("host.chord", QKeySequence("Ctrl+K, 4")));
+    } else if (finish == "catalog") {
+        QVERIFY(manager.commands().add({"host.added", "Added", "Test", {}, {}, [](const CommandContext&) { return true; }}));
+    }
+    QCOMPARE(calls, finish == "complete" || finish == "command-message" || finish == "command-failure" ? 1 : 0);
+    QVERIFY(!timer->isActive());
+    const auto expected = finish == "command-message" ? QStringLiteral("Command finished")
+        : QStringLiteral("Saved while waiting");
+    QCOMPARE(message->text(), expected);
+    QCOMPARE(message->toolTip(), expected);
+    QVERIFY(fixture.editor->toPlainText().isEmpty());
 }
 
 void ShortcutDispatchTest::disabledBindingsDoNotReserveNativeShortcutInput()

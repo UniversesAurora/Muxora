@@ -133,6 +133,7 @@ void WindowManager::registerWindowCommands()
     registerToolbarMoveCommand(this);
     registerPeekSizeCommands(this);
     registerTabGroupCommands();
+    registerHierarchyCommands();
     registerCustomChromeCommands();
     add("window.toolbar.setSizing", QCoreApplication::translate("WindowSystem", "切换工具条弹性空间…"), "布局", {},
         [this](const CommandContext& c) {
@@ -307,7 +308,7 @@ void WindowManager::registerWindowCommands()
             const auto place = static_cast<Placement>(c.args.value("placement", int(Placement::Center)).toInt());
             return moveTabToWindow(tab, target, place);
         }, hasTab);
-    add("pane.moveToWindow", QCoreApplication::translate("WindowSystem", "移动当前窗格到已有窗口…"), "窗口", {},
+    add("pane.moveToWindow", QCoreApplication::translate("WindowSystem", "将当前窗格并入指定窗口的活动标签…"), "窗口", {},
         [this, chooseWindow](const CommandContext& c) {
             const auto tab = c.args.value("tab", c.tab).toUuid();
             const auto pane = c.args.value("pane", c.pane).toUuid();
@@ -317,7 +318,7 @@ void WindowManager::registerWindowCommands()
             return !target.isNull() && movePaneToWindow(tab, pane, target,
                 static_cast<Placement>(c.args.value("placement", int(Placement::Right)).toInt()));
         }, hasPane);
-    add("pane.moveToTab", QCoreApplication::translate("WindowSystem", "移动当前窗格到其他标签…"), "布局", {},
+    add("pane.moveToTab", QCoreApplication::translate("WindowSystem", "将当前窗格并入指定标签…"), "布局", {},
         [this](const CommandContext& c) {
             const auto sourceTab = c.args.value("tab", c.tab).toUuid();
             const auto sourcePane = c.args.value("pane", c.pane).toUuid();
@@ -345,10 +346,10 @@ void WindowManager::registerWindowCommands()
         add("workspace.moveTabToWindow." + suffix, QCoreApplication::translate("WindowSystem", "将当前标签移到%1窗口").arg(label), "窗口", {},
             [this, forward](const CommandContext& c) { return moveTabToWindowCycle(c.tab, forward); },
             [this](const CommandContext& c) { return d->model.tab(c.tab) && d->model.windowOrder().size() > 1; });
-        add("pane.moveToWindow." + suffix, QCoreApplication::translate("WindowSystem", "将当前窗格移到%1窗口").arg(label), "窗口", {},
+        add("pane.moveToWindow." + suffix, QCoreApplication::translate("WindowSystem", "将当前窗格并入%1窗口的活动标签").arg(label), "窗口", {},
             [this, forward](const CommandContext& c) { return movePaneToWindowCycle(c.tab, c.pane, forward); },
             [this, hasPane](const CommandContext& c) { return hasPane(c) && d->model.windowOrder().size() > 1; });
-        add("pane.moveToTab." + suffix, QCoreApplication::translate("WindowSystem", "将当前窗格移到%1标签").arg(label), "布局",
+        add("pane.moveToTab." + suffix, QCoreApplication::translate("WindowSystem", "将当前窗格并入本组%1标签").arg(label), "布局",
             QKeySequence(forward ? "Alt+PgDown" : "Alt+PgUp"),
             [this, forward](const CommandContext& c) { return movePaneToAdjacentTab(c.tab, c.pane, forward); },
             [this, hasPane](const CommandContext& c) { const auto* group = d->model.group(c.group); return hasPane(c) && group && group->tabs.size() > 1; });
@@ -408,21 +409,21 @@ void WindowManager::registerWindowCommands()
         add("workspace.moveTabToGroup." + direction.first, QCoreApplication::translate("WindowSystem", "将当前标签移到%1侧标签组").arg(label), "布局", {},
             [this, direction](const CommandContext& c) { return moveTabToAdjacentGroup(c.tab, direction.second); },
             [this, direction](const CommandContext& c) { return !adjacentGroup(c.tab, direction.second).isNull(); });
-        add("pane.moveToGroup." + direction.first, QCoreApplication::translate("WindowSystem", "将当前窗格移到%1侧标签组").arg(label), "布局", {},
+        add("pane.moveToGroup." + direction.first, QCoreApplication::translate("WindowSystem", "将当前窗格并入%1侧标签组的活动标签").arg(label), "布局", {},
             [this, direction](const CommandContext& c) { return movePaneToAdjacentGroup(c.tab, c.pane, direction.second); },
             [this, direction, hasPane](const CommandContext& c) { return hasPane(c) && !adjacentGroup(c.tab, direction.second).isNull(); });
         add("pane.swap." + direction.first, QCoreApplication::translate("WindowSystem", "与%1侧窗格交换位置").arg(label), "布局", {},
             [this, direction](const CommandContext& c) { return swapPaneDirection(c.tab, c.pane, direction.second); },
             [this, direction](const CommandContext& c) { return !adjacentPane(c.tab, c.pane, direction.second).isNull(); });
         add("workspace.resizeGroup." + direction.first, QCoreApplication::translate("WindowSystem", "向%1调整标签组边界").arg(label), "布局", QKeySequence("Ctrl+Alt+Shift+" + QString(keyName)),
-            [this, direction](const CommandContext&) { resizeActive(direction.second, false); return true; });
+            [this, direction](const CommandContext& c) { resizeActive(direction.second, false, c); return true; });
         add("pane.resize." + direction.first, QCoreApplication::translate("WindowSystem", "向%1调整窗格边界").arg(label), "布局", QKeySequence("Alt+Shift+" + QString(keyName)),
-            [this, direction](const CommandContext&) { resizeActive(direction.second, true); return true; });
+            [this, direction](const CommandContext& c) { resizeActive(direction.second, true, c); return true; });
         add("workspace.splitGroup." + direction.first, QCoreApplication::translate("WindowSystem", "新建%1侧标签组").arg(label), "布局", {},
             [this, direction](const CommandContext& c) {
                 if (!d->model.tab(c.tab)) return false;
                 const auto* target = d->model.group(c.group);
-                if (!target || target->location != GroupLocation::Central) return false;
+                if (!target || target->location == GroupLocation::AutoHide) return false;
                 auto options = d->descriptors.value(c.pane); options.title += QCoreApplication::translate("WindowSystem", " · 新组");
                 const QPointer<WindowManager> self(this);
                 auto* created = createContent(options, {});
@@ -433,7 +434,7 @@ void WindowManager::registerWindowCommands()
                 const auto tab = addTabToNewGroup(c.window, content.data(), options, c.group, direction.second);
                 if (tab.isNull()) { delete content.data(); return false; }
                 return !self.isNull();
-            }, [this](const CommandContext& c) { const auto* group = d->model.group(c.group); return d->model.tab(c.tab) && group && group->location == GroupLocation::Central; });
+            }, [this](const CommandContext& c) { const auto* group = d->model.group(c.group); return d->model.tab(c.tab) && group && group->location != GroupLocation::AutoHide; });
         add("pane.split." + direction.first, QCoreApplication::translate("WindowSystem", "向%1拆分窗格").arg(label), "布局",
             direction.second == Placement::Right ? QKeySequence("Ctrl+Shift+E") : direction.second == Placement::Bottom ? QKeySequence("Ctrl+Shift+O") : QKeySequence{},
             [this, direction](const CommandContext& c) {

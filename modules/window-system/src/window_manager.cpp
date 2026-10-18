@@ -37,9 +37,7 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
     d->drag = new DragController(this);
     d->keyTimer = new QTimer(this); d->keyTimer->setSingleShot(true);
     d->keyTimer->setObjectName(QStringLiteral("CommandChordTimer"));
-    QObject::connect(d->keyTimer, &QTimer::timeout, this, [this] {
-        d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
-    });
+    QObject::connect(d->keyTimer, &QTimer::timeout, this, &WindowManager::cancelPendingShortcut);
     const QPointer<WindowManager> owner(this);
     d->commands.setExecutionValidator([owner](const CommandContext& target) {
         return owner && owner->validCommandContext(target);
@@ -51,16 +49,13 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
     d->commands.setBindingsChangedHandler([owner] {
         if (!owner) return;
         ++owner->d->bindingsRevision;
-        owner->d->pendingKeys = {}; owner->d->keyWindow = WindowId{}; owner->d->keyFocus.clear(); owner->d->keyContext = {};
-        owner->d->keyTimer->stop();
+        owner->cancelPendingShortcut();
         emit owner->commandsChanged();
     });
     d->commands.setCatalogChangedHandler([owner] {
         if (!owner) return;
         ++owner->d->bindingsRevision;
-        owner->d->pendingKeys = {}; owner->d->keyWindow = WindowId{};
-        owner->d->keyFocus.clear(); owner->d->keyContext = {};
-        owner->d->keyTimer->stop();
+        owner->cancelPendingShortcut();
         if (owner->d->catalogRefreshPending) return;
         owner->d->catalogRefreshPending = true;
         QTimer::singleShot(0, owner, [owner] {
@@ -279,7 +274,9 @@ bool WindowManager::setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top
         (top ? options.topBarSharing : options.bottomBarSharing) = sharing;
     }
     const auto options = tabOptions(tab);
+    const QPointer<WindowManager> self(this);
     if (auto view = d->tabs.value(tab)) view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
+    if (!self) return false;
     emit layoutChanged();
     return true;
 }
@@ -730,6 +727,11 @@ void WindowManager::setBehavior(const WindowBehavior& behavior)
     const QPointer<WindowManager> self(this);
     if (updateTabBars) applyWindowViewStates();
     if (!self) return;
+    const auto windows = d->windows;
+    for (const auto& window : windows) {
+        if (window && window->strips()) window->strips()->setHideOptionsWhenLocked(behavior.hideToolbarOptionsWhenLocked);
+        if (!self) return;
+    }
     emit layoutChanged();
 }
 void WindowManager::setTheme(const Theme& theme)
@@ -899,20 +901,22 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
     if (d->drag->hasStableLayout()) return;
     emit layoutChanged();
 }
-void WindowManager::beginTabDrag(TabId tab, QPoint global) { d->pendingKeys = {}; d->drag->beginTab(tab, global); }
-void WindowManager::beginWindowDrag(WindowId window, QPoint global) { d->pendingKeys = {}; d->drag->beginWindow(window, global); }
+void WindowManager::beginTabDrag(TabId tab, QPoint global) { cancelPendingShortcut(); d->drag->beginTab(tab, global); }
+void WindowManager::beginWindowDrag(WindowId window, QPoint global) { cancelPendingShortcut(); d->drag->beginWindow(window, global); }
 
 bool WindowManager::focusGroup(GroupId group)
 {
     const auto* record = d->model.group(group); if (!record) return false;
     return activateTab(record->activeTab);
 }
-void WindowManager::resizeActive(Placement direction, bool panes)
+void WindowManager::resizeActive(Placement direction, bool panes, const CommandContext& ctx)
 {
-    const auto ctx = context();
     const auto* window = d->model.window(ctx.window); const auto* tab = d->model.tab(ctx.tab);
+    const auto* group = d->model.group(ctx.group);
     const auto target = panes ? ctx.pane : ctx.group;
-    const auto root = panes ? (tab ? tab->panes : LayoutTree{}) : (window ? window->central : LayoutTree{});
+    const auto root = panes ? (tab ? tab->panes : LayoutTree{})
+        : group && group->location == GroupLocation::Pinned ? d->model.pinnedLayout(ctx.window, group->edge)
+        : (window ? window->central : LayoutTree{});
     const auto orientation = direction == Placement::Left || direction == Placement::Right ? Qt::Horizontal : Qt::Vertical;
     std::function<bool(LayoutTree)> adjust = [&](LayoutTree node) {
         if (!node || node->isLeaf()) return false;
@@ -939,14 +943,19 @@ void WindowManager::focusWindowCycle(bool forward, const QString& scope)
     const auto next = (targets.indexOf(ctx.window) + (forward ? 1 : targets.size() - 1) + targets.size()) % targets.size();
     showWindow(targets[next]); activateTab(context(targets[next]).tab);
 }
+void WindowManager::cancelPendingShortcut()
+{
+    const auto window = d->keyWindow;
+    d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
+    d->keyTimer->stop();
+    if (auto widget = d->windows.value(window)) widget->setTransientStatus({});
+}
+
 bool WindowManager::eventFilter(QObject* watched, QEvent* event)
 {
     if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);
-    const auto cancelChord = [this] {
-        d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
-        d->keyTimer->stop();
-    };
+    const auto cancelChord = [this] { cancelPendingShortcut(); };
     if (!d->pendingKeys.isEmpty()
         && (event->type() == QEvent::ApplicationDeactivate || event->type() == QEvent::MouseButtonPress
             || event->type() == QEvent::InputMethod
@@ -1059,7 +1068,8 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     if (partial && validCommandContext(ctx)) {
         d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = widget; d->keyContext = ctx;
         d->keyTimer->start(1500); key->accept();
-        setStatus(windowId, QCoreApplication::translate("WindowSystem", "等待续键：%1").arg(sequence.toString()));
+        if (auto window = d->windows.value(windowId)) window->setTransientStatus(
+            QCoreApplication::translate("WindowSystem", "等待续键：%1").arg(sequence.toString()));
         return true;
     }
     if (continuing) { cancelChord(); key->accept(); return true; }

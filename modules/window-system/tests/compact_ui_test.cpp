@@ -190,16 +190,18 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
         return pixel.pixelColor(0, 0);
     };
     const auto normal = image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    QCOMPARE(normal, composite(defaultTheme().border, 112));
-    QVERIFY(normal != defaultTheme().border); QVERIFY(normal != under);
+    const int grayValue = qGray(defaultTheme().border.rgb());
+    const QColor gray(grayValue, grayValue, grayValue);
+    QCOMPARE(normal, composite(gray, 112));
+    QVERIFY(normal != gray); QVERIFY(normal != under);
     // Moving the native cursor queues Enter on Windows. Wait for that input
     // precondition before checking pixels; a QPA move alone does not establish
     // the widget's native underMouse state.
     QCursor::setPos(scrollbar->mapToGlobal(handle.center()));
     QTRY_VERIFY(scrollbar->underMouse());
     const auto hovered = tabs->grab().toImage().pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    QCOMPARE(hovered, composite(defaultTheme().accent, 176));
-    QVERIFY(hovered != defaultTheme().accent); QVERIFY(hovered != normal);
+    QCOMPARE(hovered, composite(gray, 176));
+    QVERIFY(hovered != gray); QVERIFY(hovered != normal);
     const auto selected = tabs->currentIndex();
     scrollbar->setValue(scrollbar->maximum() / 2);
     QCOMPARE(scroll->horizontalScrollBar()->value(), scrollbar->value()); QCOMPARE(tabs->currentIndex(), selected);

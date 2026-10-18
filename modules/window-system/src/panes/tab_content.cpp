@@ -1,17 +1,50 @@
 #include "tab_content.hpp"
+#include "window_manager_p.hpp"
 #include <QApplication>
 #include <QSplitter>
 #include <QStyle>
+#include <QScopeGuard>
 #include <QVBoxLayout>
+#include <algorithm>
 
 namespace window_system {
+namespace {
+class PaneHostFrame final : public QFrame {
+public:
+    PaneHostFrame(QWidget* content, QWidget* parent) : QFrame(parent), content_(content) {}
+    QSize minimumSizeHint() const override
+    {
+        auto result = QFrame::minimumSizeHint().expandedTo(QSize(0, 0));
+        QSize accounted;
+        if (content_ && layout()) {
+            const int index = layout()->indexOf(content_);
+            if (index >= 0) accounted = layout()->itemAt(index)->minimumSize();
+        }
+        const auto explicitMinimum = content_ ? content_->minimumSize() : QSize();
+        const auto hintedMinimum = content_ ? content_->minimumSizeHint() : QSize();
+        const auto minimum = [](int explicitValue, int hint, int fallback) {
+            return explicitValue > 0 ? explicitValue : hint > 0 ? hint : fallback;
+        };
+        const QSize requested(minimum(explicitMinimum.width(), hintedMinimum.width(), 140),
+                              minimum(explicitMinimum.height(), hintedMinimum.height(), 85));
+        // A pane's fallback applies only to an axis without a content request.
+        // Leave the frame's explicit minimum unset: setting a hard minimum
+        // would override a larger child-layout hint inside QSplitter.
+        result.rwidth() += std::max(0, requested.width() - std::max(0, accounted.width()));
+        result.rheight() += std::max(0, requested.height() - std::max(0, accounted.height()));
+        return result;
+    }
+private:
+    QPointer<QWidget> content_;
+};
+}
+
 TabContent::TabContent(WindowManager* manager, TabId tab, QWidget* parent)
     : QFrame(parent), manager_(manager), tab_(tab), layout_(new QVBoxLayout(this))
 {
     setObjectName("TabPage");
     layout_->setContentsMargins(0, 0, 0, 0);
     layout_->setSpacing(0);
-    setMinimumSize(160, 100);
 }
 void TabContent::rebuild(const TabRecord& record,
                          const QHash<PaneId, QPointer<QWidget>>& contents,
@@ -58,12 +91,11 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
             });
         return splitter;
     }
-    auto* frame = new QFrame(this);
+    auto* frame = new PaneHostFrame(contents.value(node->itemId), this);
     frame->setObjectName("PaneHost");
     frame->setProperty("paneId", node->itemId);
     frame->setProperty("tabId", tab_);
     frame->setProperty("active", node->itemId == record.activePane);
-    frame->setMinimumSize(140, 85);
     auto* column = new QVBoxLayout(frame);
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
@@ -96,27 +128,29 @@ void TabContent::setBottomBar(QWidget* widget)
     if (bottom_) { bottom_->setParent(this); bottom_->hide(); }
     updateBars();
 }
-QWidget* TabContent::takeTopBar()
+QWidget* TabContent::takeTopBar(QWidget* owner)
 {
-    auto* result = top_.data();
+    const QPointer<TabContent> self(this);
+    const QPointer<QWidget> result = top_;
+    top_.clear();
     if (result) {
         if (visibleTop_ == result) { layout_->removeWidget(result); visibleTop_.clear(); }
-        result->setParent(nullptr);
+        result->setParent(owner);
+        if (!self) return result.data();
     }
-    top_.clear();
-    updateBars();
-    return result;
+    return result.data();
 }
-QWidget* TabContent::takeBottomBar()
+QWidget* TabContent::takeBottomBar(QWidget* owner)
 {
-    auto* result = bottom_.data();
+    const QPointer<TabContent> self(this);
+    const QPointer<QWidget> result = bottom_;
+    bottom_.clear();
     if (result) {
         if (visibleBottom_ == result) { layout_->removeWidget(result); visibleBottom_.clear(); }
-        result->setParent(nullptr);
+        result->setParent(owner);
+        if (!self) return result.data();
     }
-    bottom_.clear();
-    updateBars();
-    return result;
+    return result.data();
 }
 QHash<PaneId, QWidget*> TabContent::paneFrames() const { return frames_; }
 
@@ -198,6 +232,10 @@ void TabContent::replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool 
 void TabContent::updateBars()
 {
     const QPointer<TabContent> retained(this);
+    const QPointer<WindowManager> owner(manager_);
+    if (!owner) return;
+    ++owner->d->geometryUpdateDepth;
+    const auto releaseGeometry = qScopeGuard([owner] { if (owner) --owner->d->geometryUpdateDepth; });
     QPointer<QWidget> focus = QApplication::focusWidget();
     if (focus && !isAncestorOf(focus)) focus.clear();
     const QPointer<QWidget> top = topSharing_ == PaneBarSharing::Shared ? paneTopBars_.value(activePane_) : QPointer<QWidget>{};
@@ -211,6 +249,23 @@ void TabContent::updateBars()
     placePaneBars(paneBottomBars_, bottomSharing_, bottom, false);
     if (!retained) return;
     if (focus && focus->isVisible() && !focus->hasFocus()) focus->setFocus(Qt::OtherFocusReason);
+    if (!retained) return;
+    // PaneHost notifications queue a splitter layout request. Invalidate the
+    // pane tree's QWidgetItem cache before activating ancestors: otherwise the
+    // page layout can republish its old shared-bar minimum into every parent.
+    if (tree_) tree_->updateGeometry();
+    if (!isVisible()) { updateGeometry(); return; }
+    for (QPointer<QWidget> widget(this); widget;) {
+        const QPointer<QWidget> parent = widget->parentWidget();
+        if (auto* splitter = qobject_cast<QSplitter*>(widget.data())) splitter->refresh();
+        else if (auto* parentLayout = widget->layout()) {
+            parentLayout->invalidate(); parentLayout->activate();
+        }
+        if (!retained || !owner || !widget) return;
+        widget->updateGeometry();
+        if (!retained || !owner) return;
+        widget = parent;
+    }
 }
 
 void TabContent::placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
@@ -248,6 +303,8 @@ void TabContent::placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
             if (!retained || !bar) return;
         }
         bar->setVisible(barsVisible_);
+        if (!retained || !frame) return;
+        frame->updateGeometry();
     }
 }
 } // namespace window_system

@@ -19,122 +19,122 @@
             <translation>工具条拖动把手</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="799" />
+            <location filename="../src/chrome/command_strip.cpp" line="847" />
             <source>锁定工具条</source>
             <translation>锁定工具条</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="833" />
+            <location filename="../src/chrome/command_strip.cpp" line="881" />
             <source>重置尺寸</source>
             <translation>重置尺寸</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="840" />
+            <location filename="../src/chrome/command_strip.cpp" line="888" />
             <source>弹性空间</source>
             <translation>弹性空间</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="850" />
+            <location filename="../src/chrome/command_strip.cpp" line="898" />
             <source>添加或移除按钮</source>
             <translation>添加或移除按钮</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="17" />
+            <location filename="../src/chrome/status_bar.cpp" line="18" />
             <source>就绪</source>
             <translation>就绪</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="22" />
-            <location filename="../src/chrome/status_bar.cpp" line="58" />
+            <location filename="../src/chrome/status_bar.cpp" line="24" />
+            <location filename="../src/chrome/status_bar.cpp" line="109" />
             <source>状态消息</source>
             <translation>状态消息</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="23" />
-            <location filename="../src/chrome/status_bar.cpp" line="59" />
+            <location filename="../src/chrome/status_bar.cpp" line="25" />
+            <location filename="../src/chrome/status_bar.cpp" line="110" />
             <source>工作区信息</source>
             <translation>工作区信息</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="37" />
+            <location filename="../src/chrome/status_bar.cpp" line="51" />
             <source>%1 个标签</source>
             <translation>%1 个标签</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="38" />
+            <location filename="../src/chrome/status_bar.cpp" line="52" />
             <source>%1  ·  %2 个标签</source>
             <translation>%1  ·  %2 个标签</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="375" />
+            <location filename="../src/chrome/workspace_window.cpp" line="382" />
             <source>菜单</source>
             <translation>菜单</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="397" />
+            <location filename="../src/chrome/workspace_window.cpp" line="404" />
             <source>工作区</source>
             <translation>工作区</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="404" />
+            <location filename="../src/chrome/workspace_window.cpp" line="411" />
             <source>窗口标题</source>
             <translation>窗口标题</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="425" />
+            <location filename="../src/chrome/workspace_window.cpp" line="432" />
             <source>最小化</source>
             <translation>最小化</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="426" />
-            <location filename="../src/chrome/workspace_window.cpp" line="451" />
+            <location filename="../src/chrome/workspace_window.cpp" line="433" />
+            <location filename="../src/chrome/workspace_window.cpp" line="459" />
             <source>最大化</source>
             <translation>最大化</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="431" />
+            <location filename="../src/chrome/workspace_window.cpp" line="438" />
             <source>关闭窗口</source>
             <translation>关闭窗口</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="432" />
+            <location filename="../src/chrome/workspace_window.cpp" line="439" />
             <source>窗口控制</source>
             <translation>窗口控制</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="451" />
+            <location filename="../src/chrome/workspace_window.cpp" line="459" />
             <source>还原</source>
             <translation>还原</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="525" />
+            <location filename="../src/chrome/workspace_window.cpp" line="533" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="30" />
             <location filename="../src/settings/settings_tab_appearance.cpp" line="56" />
             <source>显示标签图标</source>
             <translation>显示标签图标</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="526" />
+            <location filename="../src/chrome/workspace_window.cpp" line="534" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="31" />
             <location filename="../src/settings/settings_tab_appearance.cpp" line="58" />
             <source>显示新建标签按钮</source>
             <translation>显示新建标签按钮</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="527" />
+            <location filename="../src/chrome/workspace_window.cpp" line="535" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="32" />
             <location filename="../src/settings/settings_tab_appearance.cpp" line="60" />
             <source>显示标签编号</source>
             <translation>显示标签编号</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="529" />
+            <location filename="../src/chrome/workspace_window.cpp" line="537" />
             <location filename="../src/commands/tab_group_commands.cpp" line="73" />
             <source>关闭此标签组</source>
             <translation>关闭此标签组</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="554" />
+            <location filename="../src/chrome/workspace_window.cpp" line="572" />
             <source> · 浮动窗口</source>
             <translation> · 浮动窗口</translation>
         </message>
@@ -155,21 +155,21 @@
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="188" />
-            <location filename="../src/commands/command_registry.cpp" line="123" />
-            <location filename="../src/settings/shortcuts_page.cpp" line="162" />
+            <location filename="../src/commands/command_registry.cpp" line="136" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="169" />
             <source>命令</source>
             <translation>命令</translation>
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="188" />
-            <location filename="../src/settings/shortcuts_page.cpp" line="163" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="170" />
             <source>分类</source>
             <translation>分类</translation>
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="188" />
-            <location filename="../src/settings/shortcuts_page.cpp" line="163" />
-            <location filename="../src/settings/shortcuts_page.cpp" line="178" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="170" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="191" />
             <source>快捷键</source>
             <translation>快捷键</translation>
         </message>
@@ -207,7 +207,7 @@
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="284" />
-            <location filename="../src/commands/command_menus.cpp" line="145" />
+            <location filename="../src/commands/command_menus.cpp" line="155" />
             <source>切换窗口</source>
             <translation>切换窗口</translation>
         </message>
@@ -218,10 +218,11 @@
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="291" />
-            <location filename="../src/commands/command_menus.cpp" line="452" />
-            <location filename="../src/commands/command_menus.cpp" line="471" />
+            <location filename="../src/commands/command_menus.cpp" line="538" />
+            <location filename="../src/commands/command_menus.cpp" line="563" />
+            <location filename="../src/commands/hierarchy_commands.cpp" line="64" />
             <location filename="../src/commands/tab_group_commands.cpp" line="94" />
-            <location filename="../src/settings/settings_page.cpp" line="244" />
+            <location filename="../src/settings/settings_page.cpp" line="246" />
             <source>窗口</source>
             <translation>窗口</translation>
         </message>
@@ -263,8 +264,8 @@
         </message>
         <message>
             <location filename="../src/commands/command_dialogs.cpp" line="311" />
-            <location filename="../src/commands/command_menus.cpp" line="148" />
-            <location filename="../src/commands/window_commands.cpp" line="245" />
+            <location filename="../src/commands/command_menus.cpp" line="158" />
+            <location filename="../src/commands/window_commands.cpp" line="266" />
             <source>完整窗口</source>
             <translation>完整窗口</translation>
         </message>
@@ -287,31 +288,6 @@
             <translation>键盘快捷键</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="47" />
-            <location filename="../src/commands/command_menus.cpp" line="80" />
-            <source>到标签组</source>
-            <translation>到标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="48" />
-            <location filename="../src/commands/command_menus.cpp" line="62" />
-            <location filename="../src/commands/command_menus.cpp" line="81" />
-            <source>到已有窗口</source>
-            <translation>到已有窗口</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="50" />
-            <location filename="../src/commands/command_menus.cpp" line="64" />
-            <location filename="../src/commands/command_menus.cpp" line="83" />
-            <source>到新窗口</source>
-            <translation>到新窗口</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="60" />
-            <source>到相邻位置</source>
-            <translation>到相邻位置</translation>
-        </message>
-        <message>
             <location filename="../src/commands/command_menus.cpp" line="65" />
             <source>固定到侧边栏</source>
             <translation>固定到侧边栏</translation>
@@ -322,363 +298,416 @@
             <translation>收纳到侧边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="78" />
-            <source>到标签</source>
-            <translation>到标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="87" />
-            <source>收纳当前标签</source>
-            <translation>收纳当前标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="90" />
-            <source>临时展开大小</source>
-            <translation>临时展开大小</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="91" />
-            <source>当前边栏组</source>
-            <translation>当前边栏组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="93" />
-            <source>当前侧全部标签</source>
-            <translation>当前侧全部标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="98" />
+            <location filename="../src/commands/command_menus.cpp" line="109" />
             <source>窗口形态</source>
             <translation>窗口形态</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="99" />
-            <source>整窗移动</source>
-            <translation>整窗移动</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="115" />
+            <location filename="../src/commands/command_menus.cpp" line="126" />
             <source>文件(&amp;F)</source>
             <translation>文件(&amp;F)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="117" />
+            <location filename="../src/commands/command_menus.cpp" line="128" />
             <source>视图(&amp;V)</source>
             <translation>视图(&amp;V)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="118" />
+            <location filename="../src/commands/command_menus.cpp" line="129" />
+            <location filename="../src/settings/settings_view_options.cpp" line="40" />
             <source>显示</source>
             <translation>显示</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="120" />
+            <location filename="../src/commands/command_menus.cpp" line="131" />
             <location filename="../src/settings/settings_view_options.cpp" line="15" />
             <source>标签栏</source>
             <translation>标签栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="123" />
+            <location filename="../src/commands/command_menus.cpp" line="134" />
             <source>侧边栏标签</source>
             <translation>侧边栏标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="124" />
+            <location filename="../src/commands/command_menus.cpp" line="135" />
             <source>全屏</source>
             <translation>全屏</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="126" />
+            <location filename="../src/commands/command_menus.cpp" line="137" />
             <source>切换标签</source>
             <translation>切换标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="127" />
+            <location filename="../src/commands/command_menus.cpp" line="138" />
             <source>聚焦标签组</source>
             <translation>聚焦标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="128" />
+            <location filename="../src/commands/command_menus.cpp" line="139" />
             <source>聚焦窗格</source>
             <translation>聚焦窗格</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="129" />
+            <location filename="../src/commands/command_menus.cpp" line="140" />
             <source>工具条</source>
             <translation>工具条</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="130" />
+            <location filename="../src/commands/command_menus.cpp" line="141" />
             <source>布局(&amp;L)</source>
             <translation>布局(&amp;L)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="131" />
-            <location filename="../src/commands/command_menus.cpp" line="160" />
             <location filename="../src/commands/tab_group_commands.cpp" line="100" />
             <source>标签组</source>
             <translation>标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="131" />
-            <location filename="../src/commands/command_menus.cpp" line="160" />
-            <source>新建标签组</source>
-            <translation>新建标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="132" />
-            <location filename="../src/commands/command_menus.cpp" line="135" />
-            <location filename="../src/commands/command_menus.cpp" line="161" />
-            <location filename="../src/commands/command_menus.cpp" line="170" />
-            <source>调整边界</source>
-            <translation>调整边界</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="133" />
             <location filename="../src/settings/settings_tab_appearance.cpp" line="21" />
             <source>标签外观</source>
             <translation>标签外观</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="134" />
-            <source>窗格</source>
-            <translation>窗格</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="134" />
-            <source>拆分</source>
-            <translation>拆分</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="136" />
-            <source>交换位置</source>
-            <translation>交换位置</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="137" />
-            <location filename="../src/commands/command_menus.cpp" line="157" />
-            <source>排列标签</source>
-            <translation>排列标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="138" />
-            <location filename="../src/commands/command_menus.cpp" line="158" />
-            <source>重新排序</source>
-            <translation>重新排序</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="139" />
-            <location filename="../src/commands/command_menus.cpp" line="163" />
-            <source>移动标签组</source>
-            <translation>移动标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="140" />
-            <location filename="../src/commands/command_menus.cpp" line="164" />
-            <source>交换标签组</source>
-            <translation>交换标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="141" />
-            <location filename="../src/commands/command_menus.cpp" line="165" />
-            <source>合并标签组</source>
-            <translation>合并标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="142" />
-            <location filename="../src/commands/command_menus.cpp" line="159" />
-            <source>移动标签</source>
-            <translation>移动标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="142" />
-            <location filename="../src/commands/command_menus.cpp" line="168" />
-            <source>移动窗格</source>
-            <translation>移动窗格</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="143" />
-            <location filename="../src/commands/command_menus.cpp" line="162" />
-            <source>边栏</source>
-            <translation>边栏</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="144" />
+            <location filename="../src/commands/command_menus.cpp" line="154" />
             <source>窗口(&amp;W)</source>
             <translation>窗口(&amp;W)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="146" />
-            <location filename="../src/commands/window_commands.cpp" line="245" />
+            <location filename="../src/commands/command_menus.cpp" line="156" />
+            <location filename="../src/commands/window_commands.cpp" line="266" />
             <source>所属窗口族</source>
             <translation>所属窗口族</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="147" />
-            <location filename="../src/commands/window_commands.cpp" line="245" />
+            <location filename="../src/commands/command_menus.cpp" line="157" />
+            <location filename="../src/commands/window_commands.cpp" line="266" />
             <source>全部窗口</source>
             <translation>全部窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="150" />
+            <location filename="../src/commands/command_menus.cpp" line="161" />
             <source>拖动</source>
             <translation>拖动</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="151" />
+            <location filename="../src/commands/command_menus.cpp" line="162" />
             <source>工具(&amp;T)</source>
             <translation>工具(&amp;T)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="152" />
+            <location filename="../src/commands/command_menus.cpp" line="163" />
             <source>帮助(&amp;H)</source>
             <translation>帮助(&amp;H)</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="155" />
+            <location filename="../src/commands/command_menus.cpp" line="166" />
             <source>批量关闭标签</source>
             <translation>批量关闭标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="167" />
-            <source>拆分窗格</source>
-            <translation>拆分窗格</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="169" />
-            <source>交换窗格位置</source>
-            <translation>交换窗格位置</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="171" />
-            <source>附加栏</source>
-            <translation>附加栏</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/command_menus.cpp" line="264" />
-            <location filename="../src/window_manager.cpp" line="747" />
+            <location filename="../src/window_manager.cpp" line="772" />
             <source>命令不可执行：%1</source>
             <translation>命令不可执行：%1</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="288" />
+            <location filename="../src/commands/command_menus.cpp" line="47" />
+            <source>移入相邻标签组</source>
+            <translation>移入相邻标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="48" />
+            <location filename="../src/commands/command_menus.cpp" line="62" />
+            <location filename="../src/commands/command_menus.cpp" line="82" />
+            <source>移到其他窗口</source>
+            <translation>移到其他窗口</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="50" />
+            <location filename="../src/commands/command_menus.cpp" line="64" />
+            <location filename="../src/commands/command_menus.cpp" line="84" />
+            <source>移到新窗口</source>
+            <translation>移到新窗口</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="60" />
+            <source>放到相邻标签组旁</source>
+            <translation>放到相邻标签组旁</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="79" />
+            <source>并入其他标签的窗格布局</source>
+            <translation>并入其他标签的窗格布局</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="81" />
+            <source>并入相邻标签组的活动标签</source>
+            <translation>并入相邻标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="88" />
+            <source>收纳此标签到侧边栏</source>
+            <translation>收纳此标签到侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="90" />
+            <source>此标签的临时展开大小</source>
+            <translation>此标签的临时展开大小</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="95" />
+            <source>在此组旁新建标签组</source>
+            <translation>在此组旁新建标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="96" />
+            <source>调整此组边界</source>
+            <translation>调整此组边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="97" />
+            <source>移动此标签组</source>
+            <translation>移动此标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="98" />
+            <source>与其他标签组交换位置</source>
+            <translation>与其他标签组交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="99" />
+            <source>将此组标签合并到其他组</source>
+            <translation>将此组标签合并到其他组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="100" />
+            <source>转换组内内容</source>
+            <translation>转换组内内容</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="101" />
+            <source>排列此组内的标签</source>
+            <translation>排列此组内的标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="102" />
+            <source>此组的侧边栏停靠</source>
+            <translation>此组的侧边栏停靠</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="104" />
+            <source>所在侧边栏的全部标签</source>
+            <translation>所在侧边栏的全部标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="110" />
+            <source>移动此窗口的全部标签</source>
+            <translation>移动此窗口的全部标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="142" />
+            <source>当前标签组</source>
+            <translation>当前标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="143" />
+            <source>当前标签</source>
+            <translation>当前标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="144" />
+            <location filename="../src/commands/command_menus.cpp" line="168" />
+            <source>调整此标签在栏内的位置</source>
+            <translation>调整此标签在栏内的位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="145" />
+            <location filename="../src/commands/command_menus.cpp" line="169" />
+            <source>移动此标签</source>
+            <translation>移动此标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="146" />
+            <location filename="../src/commands/command_menus.cpp" line="170" />
+            <source>转换此标签的内容</source>
+            <translation>转换此标签的内容</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="147" />
+            <location filename="../src/commands/command_menus.cpp" line="171" />
+            <source>此标签的侧边栏收纳</source>
+            <translation>此标签的侧边栏收纳</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="148" />
+            <source>当前窗格</source>
+            <translation>当前窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="149" />
+            <location filename="../src/commands/command_menus.cpp" line="175" />
+            <source>拆分此窗格</source>
+            <translation>拆分此窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="150" />
+            <location filename="../src/commands/command_menus.cpp" line="178" />
+            <source>调整此窗格边界</source>
+            <translation>调整此窗格边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="151" />
+            <location filename="../src/commands/command_menus.cpp" line="176" />
+            <source>移动此窗格</source>
+            <translation>移动此窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="152" />
+            <location filename="../src/commands/command_menus.cpp" line="177" />
+            <source>与同一标签内的窗格交换位置</source>
+            <translation>与同一标签内的窗格交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="172" />
+            <source>所在标签组</source>
+            <translation>所在标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="179" />
+            <source>此标签的附加栏</source>
+            <translation>此标签的附加栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="299" />
             <source>标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整</source>
             <translation>标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="289" />
+            <location filename="../src/commands/command_menus.cpp" line="300" />
             <source>窗口菜单的窗口族列表及选择面板提供入口</source>
             <translation>窗口菜单的窗口族列表及选择面板提供入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="290" />
+            <location filename="../src/commands/command_menus.cpp" line="301" />
+            <source>窗口标题由宿主、脚本或命令参数提供</source>
+            <translation>窗口标题由宿主、脚本或命令参数提供</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="302" />
             <source>状态栏右键提供逐控件显隐入口</source>
             <translation>状态栏右键提供逐控件显隐入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="291" />
+            <location filename="../src/commands/command_menus.cpp" line="303" />
+            <source>状态项内容由宿主、脚本或命令参数提供</source>
+            <translation>状态项内容由宿主、脚本或命令参数提供</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="304" />
             <source>内部布局提交，需要明确节点或分区参数</source>
             <translation>内部布局提交，需要明确节点或分区参数</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="292" />
+            <location filename="../src/commands/command_menus.cpp" line="305" />
             <source>内部整窗投放，需要目标窗口和落点参数</source>
             <translation>内部整窗投放，需要目标窗口和落点参数</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="293" />
+            <location filename="../src/commands/command_menus.cpp" line="306" />
             <source>内部标签投放；用户入口为四方向收纳及拖拽</source>
             <translation>内部标签投放；用户入口为四方向收纳及拖拽</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="294" />
+            <location filename="../src/commands/command_menus.cpp" line="307" />
+            <location filename="../src/commands/command_menus.cpp" line="309" />
             <source>工具条选项菜单及命令面板提供定制入口</source>
             <translation>工具条选项菜单及命令面板提供定制入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="295" />
+            <location filename="../src/commands/command_menus.cpp" line="310" />
             <source>内容右键附加栏菜单及命令面板提供入口</source>
             <translation>内容右键附加栏菜单及命令面板提供入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="297" />
+            <location filename="../src/commands/command_menus.cpp" line="312" />
             <source>标签右键提供关闭范围；文件菜单保留关闭当前标签</source>
             <translation>标签右键提供关闭范围；文件菜单保留关闭当前标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="303" />
+            <location filename="../src/commands/command_menus.cpp" line="318" />
             <source>退出整个应用只在完整窗口提供菜单入口</source>
             <translation>退出整个应用只在完整窗口提供菜单入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="304" />
+            <location filename="../src/commands/command_menus.cpp" line="319" />
             <source>完整工作区保存与重置只在完整窗口提供菜单入口</source>
             <translation>完整工作区保存与重置只在完整窗口提供菜单入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="305" />
+            <location filename="../src/commands/command_menus.cpp" line="320" />
             <source>新建完整工作窗口只在完整窗口提供菜单入口</source>
             <translation>新建完整工作窗口只在完整窗口提供菜单入口</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="306" />
+            <location filename="../src/commands/command_menus.cpp" line="321" />
             <source>轻量窗口没有全局状态栏</source>
             <translation>轻量窗口没有全局状态栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="307" />
+            <location filename="../src/commands/command_menus.cpp" line="322" />
             <source>轻量窗口已经采用浮动形态</source>
             <translation>轻量窗口已经采用浮动形态</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="380" />
+            <location filename="../src/commands/command_menus.cpp" line="432" />
             <source>设置标签颜色</source>
             <translation>设置标签颜色</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="391" />
+            <location filename="../src/commands/command_menus.cpp" line="443" />
             <location filename="../src/commands/tab_group_commands.cpp" line="56" />
             <source>默认颜色</source>
             <translation>默认颜色</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="450" />
+            <location filename="../src/commands/command_menus.cpp" line="536" />
             <source>其他</source>
             <translation>其他</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="451" />
+            <location filename="../src/commands/command_menus.cpp" line="537" />
             <source>文件</source>
             <translation>文件</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="451" />
+            <location filename="../src/commands/command_menus.cpp" line="537" />
             <source>视图</source>
             <translation>视图</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="451" />
+            <location filename="../src/commands/command_menus.cpp" line="537" />
             <source>布局</source>
             <translation>布局</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="452" />
+            <location filename="../src/commands/command_menus.cpp" line="538" />
             <source>工具</source>
             <translation>工具</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="452" />
+            <location filename="../src/commands/command_menus.cpp" line="538" />
             <source>帮助</source>
             <translation>帮助</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="453" />
-            <location filename="../src/commands/command_menus.cpp" line="454" />
+            <location filename="../src/commands/command_menus.cpp" line="539" />
+            <location filename="../src/commands/command_menus.cpp" line="540" />
             <source>扩展</source>
             <translation>扩展</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_registry.cpp" line="123" />
+            <location filename="../src/commands/command_registry.cpp" line="136" />
             <source>运行组合命令</source>
             <translation>运行组合命令</translation>
         </message>
@@ -774,111 +803,111 @@
             <translation>（%1 个标签）</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="108" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="107" />
             <source>左侧</source>
             <translation>左侧</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="108" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="107" />
             <source>右侧</source>
             <translation>右侧</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="108" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="107" />
             <source>上方</source>
             <translation>上方</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="108" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="107" />
             <source>下方</source>
             <translation>下方</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="124" />
-            <location filename="../src/commands/window_commands.cpp" line="383" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="122" />
+            <location filename="../src/commands/window_commands.cpp" line="404" />
             <source>左</source>
             <translation>左</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="124" />
-            <location filename="../src/commands/window_commands.cpp" line="383" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="122" />
+            <location filename="../src/commands/window_commands.cpp" line="404" />
             <source>右</source>
             <translation>右</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="125" />
-            <location filename="../src/commands/window_commands.cpp" line="383" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="123" />
+            <location filename="../src/commands/window_commands.cpp" line="404" />
             <source>上</source>
             <translation>上</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="125" />
-            <location filename="../src/commands/window_commands.cpp" line="383" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="123" />
+            <location filename="../src/commands/window_commands.cpp" line="404" />
             <source>下</source>
             <translation>下</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="126" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="124" />
             <source>向%1交换标签组</source>
             <translation>向%1交换标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="129" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="127" />
             <source>合并到%1方标签组</source>
             <translation>合并到%1方标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="132" />
-            <source>移到%1方标签组旁</source>
-            <translation>移到%1方标签组旁</translation>
+            <location filename="../src/commands/tab_group_commands.cpp" line="130" />
+            <source>将当前标签组移到%1侧相邻组的外侧</source>
+            <translation>将当前标签组移到%1侧相邻组的外侧</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="137" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="135" />
             <source>标签组固定到%1侧边栏</source>
             <translation>标签组固定到%1侧边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="139" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="137" />
             <source>标签组收纳到%1侧边栏</source>
             <translation>标签组收纳到%1侧边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="142" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="140" />
             <source>与指定标签组交换…</source>
             <translation>与指定标签组交换…</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="146" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="144" />
             <source>合并到指定标签组…</source>
             <translation>合并到指定标签组…</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="156" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="154" />
             <source>移到指定标签组旁…</source>
             <translation>移到指定标签组旁…</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="161" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="159" />
             <source>标签组移到下一个窗口</source>
             <translation>标签组移到下一个窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="161" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="159" />
             <source>标签组移到上一个窗口</source>
             <translation>标签组移到上一个窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="163" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="161" />
             <source>标签组移到指定窗口…</source>
             <translation>标签组移到指定窗口…</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="173" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="171" />
             <source>标签组移到新轻量浮窗</source>
             <translation>标签组移到新轻量浮窗</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="173" />
+            <location filename="../src/commands/tab_group_commands.cpp" line="171" />
             <source>标签组移到新完整窗口</source>
             <translation>标签组移到新完整窗口</translation>
         </message>
@@ -1002,7 +1031,6 @@
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="102" />
-            <location filename="../src/settings/settings_view_options.cpp" line="69" />
             <source>禅模式</source>
             <translation>禅模式</translation>
         </message>
@@ -1037,310 +1065,310 @@
             <translation>键盘快捷方式</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="136" />
+            <location filename="../src/commands/window_commands.cpp" line="138" />
             <source>切换工具条弹性空间…</source>
             <translation>切换工具条弹性空间…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="174" />
+            <location filename="../src/commands/window_commands.cpp" line="176" />
             <source>重置工具条大小…</source>
             <translation>重置工具条大小…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="196" />
+            <location filename="../src/commands/window_commands.cpp" line="198" />
             <source>关闭当前标签</source>
             <translation>关闭当前标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="198" />
+            <location filename="../src/commands/window_commands.cpp" line="200" />
             <source>关闭当前窗口</source>
             <translation>关闭当前窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="200" />
+            <location filename="../src/commands/window_commands.cpp" line="221" />
             <source>新建完整工作窗口</source>
             <translation>新建完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="220" />
+            <location filename="../src/commands/window_commands.cpp" line="241" />
             <source>当前标签移到轻量浮窗</source>
             <translation>当前标签移到轻量浮窗</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="222" />
+            <location filename="../src/commands/window_commands.cpp" line="243" />
             <source>当前标签移到完整工作窗口</source>
             <translation>当前标签移到完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="224" />
+            <location filename="../src/commands/window_commands.cpp" line="245" />
             <source>浮窗转换为完整工作窗口</source>
             <translation>浮窗转换为完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="237" />
+            <location filename="../src/commands/window_commands.cpp" line="258" />
             <source>转换为另一窗口的轻量浮窗…</source>
             <translation>转换为另一窗口的轻量浮窗…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="240" />
+            <location filename="../src/commands/window_commands.cpp" line="261" />
             <source>浮窗更改所属工作窗口…</source>
             <translation>浮窗更改所属工作窗口…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="243" />
+            <location filename="../src/commands/window_commands.cpp" line="264" />
             <source>返回所属完整工作窗口</source>
             <translation>返回所属完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="251" />
+            <location filename="../src/commands/window_commands.cpp" line="272" />
             <source>切换%1：%2</source>
             <translation>切换%1：%2</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="251" />
-            <location filename="../src/commands/window_commands.cpp" line="324" />
+            <location filename="../src/commands/window_commands.cpp" line="272" />
+            <location filename="../src/commands/window_commands.cpp" line="345" />
             <source>下一个</source>
             <translation>下一个</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="251" />
-            <location filename="../src/commands/window_commands.cpp" line="324" />
+            <location filename="../src/commands/window_commands.cpp" line="272" />
+            <location filename="../src/commands/window_commands.cpp" line="345" />
             <source>上一个</source>
             <translation>上一个</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="254" />
+            <location filename="../src/commands/window_commands.cpp" line="275" />
             <source>浮窗整体停靠回所属窗口</source>
             <translation>浮窗整体停靠回所属窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="263" />
+            <location filename="../src/commands/window_commands.cpp" line="284" />
             <source>移动本窗口全部标签…</source>
             <translation>移动本窗口全部标签…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="280" />
+            <location filename="../src/commands/window_commands.cpp" line="301" />
             <source>移动当前标签到另一个窗口…</source>
             <translation>移动当前标签到另一个窗口…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="290" />
-            <source>移动当前窗格到已有窗口…</source>
-            <translation>移动当前窗格到已有窗口…</translation>
+            <location filename="../src/commands/window_commands.cpp" line="311" />
+            <source>将当前窗格并入指定窗口的活动标签…</source>
+            <translation>将当前窗格并入指定窗口的活动标签…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="300" />
-            <source>移动当前窗格到其他标签…</source>
-            <translation>移动当前窗格到其他标签…</translation>
+            <location filename="../src/commands/window_commands.cpp" line="321" />
+            <source>将当前窗格并入指定标签…</source>
+            <translation>将当前窗格并入指定标签…</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="325" />
+            <location filename="../src/commands/window_commands.cpp" line="349" />
+            <source>将当前窗格并入%1窗口的活动标签</source>
+            <translation>将当前窗格并入%1窗口的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="352" />
+            <source>将当前窗格并入本组%1标签</source>
+            <translation>将当前窗格并入本组%1标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="412" />
+            <source>将当前窗格并入%1侧标签组的活动标签</source>
+            <translation>将当前窗格并入%1侧标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="346" />
             <source>将当前标签移到%1窗口</source>
             <translation>将当前标签移到%1窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="328" />
-            <source>将当前窗格移到%1窗口</source>
-            <translation>将当前窗格移到%1窗口</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="331" />
-            <source>将当前窗格移到%1标签</source>
-            <translation>将当前窗格移到%1标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="336" />
+            <location filename="../src/commands/window_commands.cpp" line="357" />
             <source>当前标签收纳到边栏</source>
             <translation>当前标签收纳到边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="349" />
+            <location filename="../src/commands/window_commands.cpp" line="370" />
             <source>将当前标签插入边栏</source>
             <translation>将当前标签插入边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="356" />
+            <location filename="../src/commands/window_commands.cpp" line="377" />
             <source>将整窗标签插入边栏</source>
             <translation>将整窗标签插入边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="370" />
+            <location filename="../src/commands/window_commands.cpp" line="391" />
             <source>将当前标签后移一位</source>
             <translation>将当前标签后移一位</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="370" />
+            <location filename="../src/commands/window_commands.cpp" line="391" />
             <source>将当前标签前移一位</source>
             <translation>将当前标签前移一位</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="374" />
+            <location filename="../src/commands/window_commands.cpp" line="395" />
             <source>整窗标签收纳到目标边栏</source>
             <translation>整窗标签收纳到目标边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="384" />
+            <location filename="../src/commands/window_commands.cpp" line="405" />
             <source>聚焦%1侧标签组</source>
             <translation>聚焦%1侧标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="386" />
+            <location filename="../src/commands/window_commands.cpp" line="407" />
             <source>聚焦%1侧窗格</source>
             <translation>聚焦%1侧窗格</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="388" />
+            <location filename="../src/commands/window_commands.cpp" line="409" />
             <source>将当前标签移到%1侧标签组</source>
             <translation>将当前标签移到%1侧标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="391" />
-            <source>将当前窗格移到%1侧标签组</source>
-            <translation>将当前窗格移到%1侧标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="394" />
+            <location filename="../src/commands/window_commands.cpp" line="415" />
             <source>与%1侧窗格交换位置</source>
             <translation>与%1侧窗格交换位置</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="397" />
+            <location filename="../src/commands/window_commands.cpp" line="418" />
             <source>向%1调整标签组边界</source>
             <translation>向%1调整标签组边界</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="399" />
+            <location filename="../src/commands/window_commands.cpp" line="420" />
             <source>向%1调整窗格边界</source>
             <translation>向%1调整窗格边界</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="401" />
+            <location filename="../src/commands/window_commands.cpp" line="422" />
             <source>新建%1侧标签组</source>
             <translation>新建%1侧标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="406" />
+            <location filename="../src/commands/window_commands.cpp" line="427" />
             <source> · 新组</source>
             <translation> · 新组</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="417" />
+            <location filename="../src/commands/window_commands.cpp" line="438" />
             <source>向%1拆分窗格</source>
             <translation>向%1拆分窗格</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="428" />
+            <location filename="../src/commands/window_commands.cpp" line="449" />
             <source>当前标签收纳到%1边栏</source>
             <translation>当前标签收纳到%1边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="432" />
+            <location filename="../src/commands/window_commands.cpp" line="453" />
             <source>当前组的下一个标签</source>
             <translation>当前组的下一个标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="432" />
+            <location filename="../src/commands/window_commands.cpp" line="453" />
             <source>当前组的上一个标签</source>
             <translation>当前组的上一个标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="438" />
+            <location filename="../src/commands/window_commands.cpp" line="459" />
             <source>固定边栏标签组</source>
             <translation>固定边栏标签组</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="441" />
+            <location filename="../src/commands/window_commands.cpp" line="462" />
             <source>取消固定并收纳到边栏</source>
             <translation>取消固定并收纳到边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="444" />
+            <location filename="../src/commands/window_commands.cpp" line="465" />
             <source>固定当前边栏标签</source>
             <translation>固定当前边栏标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="447" />
-            <location filename="../src/docking/tab_strip.cpp" line="785" />
+            <location filename="../src/commands/window_commands.cpp" line="468" />
+            <location filename="../src/docking/tab_strip.cpp" line="811" />
             <source>取消固定当前标签</source>
             <translation>取消固定当前标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="451" />
+            <location filename="../src/commands/window_commands.cpp" line="472" />
             <source>固定该侧全部标签</source>
             <translation>固定该侧全部标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="451" />
+            <location filename="../src/commands/window_commands.cpp" line="472" />
             <source>取消固定该侧全部标签</source>
             <translation>取消固定该侧全部标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="458" />
+            <location filename="../src/commands/window_commands.cpp" line="479" />
             <source>关闭左侧标签</source>
             <translation>关闭左侧标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="458" />
+            <location filename="../src/commands/window_commands.cpp" line="479" />
             <source>关闭右侧标签</source>
             <translation>关闭右侧标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="459" />
+            <location filename="../src/commands/window_commands.cpp" line="480" />
             <source>关闭其他标签</source>
             <translation>关闭其他标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="459" />
+            <location filename="../src/commands/window_commands.cpp" line="480" />
             <source>关闭该组全部标签</source>
             <translation>关闭该组全部标签</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="472" />
+            <location filename="../src/commands/window_commands.cpp" line="493" />
             <source>边栏标签组移回中央</source>
             <translation>边栏标签组移回中央</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="474" />
+            <location filename="../src/commands/window_commands.cpp" line="495" />
             <source>当前窗格移到轻量浮窗</source>
             <translation>当前窗格移到轻量浮窗</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="476" />
+            <location filename="../src/commands/window_commands.cpp" line="497" />
             <source>当前窗格移到完整窗口</source>
             <translation>当前窗格移到完整窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="478" />
+            <location filename="../src/commands/window_commands.cpp" line="499" />
             <source>关闭当前窗格</source>
             <translation>关闭当前窗格</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="480" />
+            <location filename="../src/commands/window_commands.cpp" line="501" />
             <source>锁定／解锁菜单与工具条</source>
             <translation>锁定／解锁菜单与工具条</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="483" />
+            <location filename="../src/commands/window_commands.cpp" line="509" />
             <source>拖拽中选择目标窗口</source>
             <translation>拖拽中选择目标窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="485" />
+            <location filename="../src/commands/window_commands.cpp" line="511" />
             <source>取消当前拖拽</source>
             <translation>取消当前拖拽</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="487" />
+            <location filename="../src/commands/window_commands.cpp" line="513" />
             <source>设置分割比例</source>
             <translation>设置分割比例</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="512" />
+            <location filename="../src/commands/window_commands.cpp" line="538" />
             <source>设置固定边栏分区大小</source>
             <translation>设置固定边栏分区大小</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="106" />
+            <location filename="../src/docking/dock_surface.cpp" line="117" />
             <source>这个工作区还没有标签
 
 Ctrl+Shift+P 打开命令面板</source>
@@ -1349,18 +1377,18 @@ Ctrl+Shift+P 打开命令面板</source>
 Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="287" />
+            <location filename="../src/docking/dock_surface.cpp" line="302" />
             <source>固定这一侧全部标签</source>
             <translation>固定这一侧全部标签</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="584" />
+            <location filename="../src/docking/dock_surface.cpp" line="599" />
             <source>固定并占用布局空间</source>
             <translation>固定并占用布局空间</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="587" />
-            <location filename="../src/docking/tab_strip.cpp" line="845" />
+            <location filename="../src/docking/dock_surface.cpp" line="602" />
+            <location filename="../src/docking/tab_strip.cpp" line="873" />
             <source>关闭标签</source>
             <translation>关闭标签</translation>
         </message>
@@ -1415,12 +1443,12 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>选择新建标签类型</translation>
         </message>
         <message>
-            <location filename="../src/docking/tab_strip.cpp" line="479" />
+            <location filename="../src/docking/tab_strip.cpp" line="492" />
             <source>所有标签</source>
             <translation>所有标签</translation>
         </message>
         <message>
-            <location filename="../src/docking/tab_strip.cpp" line="786" />
+            <location filename="../src/docking/tab_strip.cpp" line="812" />
             <source>取消固定这一侧全部标签</source>
             <translation>取消固定这一侧全部标签</translation>
         </message>
@@ -1528,91 +1556,96 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>单标签隐藏设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="287" />
+            <location filename="../src/layout_persistence.cpp" line="285" />
+            <source>工具条选项显示设置无效</source>
+            <translation>工具条选项显示设置无效</translation>
+        </message>
+        <message>
+            <location filename="../src/layout_persistence.cpp" line="290" />
             <source>新建标签位置无效</source>
             <translation>新建标签位置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="292" />
+            <location filename="../src/layout_persistence.cpp" line="295" />
             <source>禅模式全屏类型无效</source>
             <translation>禅模式全屏类型无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="304" />
+            <location filename="../src/layout_persistence.cpp" line="306" />
             <source>标签栏显示设置无效</source>
             <translation>标签栏显示设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="306" />
+            <location filename="../src/layout_persistence.cpp" line="308" />
             <source>侧边栏显示设置无效</source>
             <translation>侧边栏显示设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="308" />
+            <location filename="../src/layout_persistence.cpp" line="310" />
             <source>工具栏显示设置无效</source>
             <translation>工具栏显示设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="310" />
+            <location filename="../src/layout_persistence.cpp" line="312" />
             <source>状态栏显示设置无效</source>
             <translation>状态栏显示设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="317" />
+            <location filename="../src/layout_persistence.cpp" line="320" />
             <source>状态控件显示设置无效</source>
             <translation>状态控件显示设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="321" />
+            <location filename="../src/layout_persistence.cpp" line="328" />
             <source>状态控件 ID 无效</source>
             <translation>状态控件 ID 无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="359" />
+            <location filename="../src/layout_persistence.cpp" line="367" />
             <source>重复或非法内容 ID</source>
             <translation>重复或非法内容 ID</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="366" />
+            <location filename="../src/layout_persistence.cpp" line="374" />
             <source>窗格栏共享设置无效</source>
             <translation>窗格栏共享设置无效</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="377" />
+            <location filename="../src/layout_persistence.cpp" line="385" />
             <source>同一标签的窗格栏共享设置不一致</source>
             <translation>同一标签的窗格栏共享设置不一致</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="383" />
+            <location filename="../src/layout_persistence.cpp" line="391" />
             <source>缺少内容恢复描述</source>
             <translation>缺少内容恢复描述</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="391" />
+            <location filename="../src/layout_persistence.cpp" line="399" />
             <source>窗口管理器在准备恢复内容时被销毁</source>
             <translation>窗口管理器在准备恢复内容时被销毁</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="393" />
+            <location filename="../src/layout_persistence.cpp" line="401" />
             <source>内容恢复失败</source>
             <translation>内容恢复失败</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="396" />
-            <location filename="../src/layout_persistence.cpp" line="398" />
-            <location filename="../src/layout_persistence.cpp" line="400" />
+            <location filename="../src/layout_persistence.cpp" line="404" />
+            <location filename="../src/layout_persistence.cpp" line="406" />
+            <location filename="../src/layout_persistence.cpp" line="408" />
             <source>恢复内容在准备时被销毁</source>
             <translation>恢复内容在准备时被销毁</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="439" />
             <location filename="../src/layout_persistence.cpp" line="447" />
-            <location filename="../src/layout_persistence.cpp" line="453" />
+            <location filename="../src/layout_persistence.cpp" line="455" />
+            <location filename="../src/layout_persistence.cpp" line="460" />
             <source>窗口管理器在恢复时被销毁</source>
             <translation>窗口管理器在恢复时被销毁</translation>
         </message>
         <message>
-            <location filename="../src/localization/localization.cpp" line="74" />
+            <location filename="../src/localization/localization.cpp" line="77" />
             <source>跟随系统</source>
             <translation>跟随系统</translation>
         </message>
@@ -1653,133 +1686,133 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>重启应用后生效。此设置独立于窗口布局。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="247" />
-            <location filename="../src/settings/settings_page.cpp" line="253" />
+            <location filename="../src/settings/settings_page.cpp" line="249" />
+            <location filename="../src/settings/settings_page.cpp" line="255" />
             <source>新建标签的位置</source>
             <translation>新建标签的位置</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="248" />
+            <location filename="../src/settings/settings_page.cpp" line="250" />
             <source>当前标签之后（默认）</source>
             <translation>当前标签之后（默认）</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="249" />
+            <location filename="../src/settings/settings_page.cpp" line="251" />
             <source>当前标签之前</source>
             <translation>当前标签之前</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="250" />
+            <location filename="../src/settings/settings_page.cpp" line="252" />
             <source>标签组开头</source>
             <translation>标签组开头</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="251" />
+            <location filename="../src/settings/settings_page.cpp" line="253" />
             <source>标签组末尾</source>
             <translation>标签组末尾</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="254" />
+            <location filename="../src/settings/settings_page.cpp" line="256" />
             <source>适用于加号、类型菜单和命令创建的标签。</source>
             <translation>适用于加号、类型菜单和命令创建的标签。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="257" />
+            <location filename="../src/settings/settings_page.cpp" line="259" />
             <source>拖出标签的窗口形态</source>
             <translation>拖出标签的窗口形态</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="258" />
+            <location filename="../src/settings/settings_page.cpp" line="260" />
             <source>轻量浮窗（保留所属窗口）</source>
             <translation>轻量浮窗（保留所属窗口）</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="259" />
+            <location filename="../src/settings/settings_page.cpp" line="261" />
             <source>完整工作窗口</source>
             <translation>完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="260" />
+            <location filename="../src/settings/settings_page.cpp" line="262" />
             <source>拖出标签的形态</source>
             <translation>拖出标签的形态</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="262" />
+            <location filename="../src/settings/settings_page.cpp" line="264" />
             <source>将标签拖出时使用轻量浮窗或完整工作窗口。</source>
             <translation>将标签拖出时使用轻量浮窗或完整工作窗口。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="266" />
+            <location filename="../src/settings/settings_page.cpp" line="268" />
             <source>完整窗口移空后的行为</source>
             <translation>完整窗口移空后的行为</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="267" />
+            <location filename="../src/settings/settings_page.cpp" line="269" />
             <source>保留空的完整窗口</source>
             <translation>保留空的完整窗口</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="268" />
+            <location filename="../src/settings/settings_page.cpp" line="270" />
             <source>自动关闭空的完整窗口</source>
             <translation>自动关闭空的完整窗口</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="269" />
+            <location filename="../src/settings/settings_page.cpp" line="271" />
             <source>移空后的行为</source>
             <translation>移空后的行为</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="271" />
+            <location filename="../src/settings/settings_page.cpp" line="273" />
             <source>如果还有从属轻量浮窗，完整窗口会继续保留。</source>
             <translation>如果还有从属轻量浮窗，完整窗口会继续保留。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="273" />
+            <location filename="../src/settings/settings_page.cpp" line="275" />
             <source>拖拽</source>
             <translation>拖拽</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="274" />
+            <location filename="../src/settings/settings_page.cpp" line="276" />
             <source>悬停时抬起被遮挡的目标窗口</source>
             <translation>悬停时抬起被遮挡的目标窗口</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="276" />
+            <location filename="../src/settings/settings_page.cpp" line="278" />
             <source>显示目标窗口</source>
             <translation>显示目标窗口</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="278" />
+            <location filename="../src/settings/settings_page.cpp" line="280" />
             <source>拖动标签停留在目标窗口位置时，显示该窗口以便投放。</source>
             <translation>拖动标签停留在目标窗口位置时，显示该窗口以便投放。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="282" />
+            <location filename="../src/settings/settings_page.cpp" line="284" />
             <source>显示拖拽目标的悬停时间</source>
             <translation>显示拖拽目标的悬停时间</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="285" />
+            <location filename="../src/settings/settings_page.cpp" line="287" />
             <source> 毫秒</source>
             <translation> 毫秒</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="286" />
+            <location filename="../src/settings/settings_page.cpp" line="288" />
             <source>悬停时间</source>
             <translation>悬停时间</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="288" />
+            <location filename="../src/settings/settings_page.cpp" line="290" />
             <source>显示被遮挡窗口前的等待时间。</source>
             <translation>显示被遮挡窗口前的等待时间。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="467" />
+            <location filename="../src/settings/settings_page.cpp" line="469" />
             <source>%1 项设置</source>
             <translation>%1 项设置</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_page.cpp" line="467" />
+            <location filename="../src/settings/settings_page.cpp" line="469" />
             <source>没有匹配的设置</source>
             <translation>没有匹配的设置</translation>
         </message>
@@ -1874,82 +1907,67 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>侧边收纳条</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="40" />
-            <source>显示与全屏</source>
-            <translation>显示与全屏</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="42" />
-            <source>普通窗口</source>
-            <translation>普通窗口</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="44" />
-            <source>当前窗口显示范围</source>
-            <translation>当前窗口显示范围</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="45" />
-            <source>三种全屏均铺满当前显示器；标签组和窗格全屏保留原来的内容与布局。</source>
-            <translation>三种全屏均铺满当前显示器；标签组和窗格全屏保留原来的内容与布局。</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="49" />
+            <location filename="../src/settings/settings_view_options.cpp" line="41" />
             <source>完整窗口只有一个标签时隐藏标签栏</source>
             <translation>完整窗口只有一个标签时隐藏标签栏</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="51" />
+            <location filename="../src/settings/settings_view_options.cpp" line="43" />
             <source>完整窗口的单标签栏</source>
             <translation>完整窗口的单标签栏</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="52" />
+            <location filename="../src/settings/settings_view_options.cpp" line="44" />
             <source>按整个窗口的标签数量判断；固定面板和侧边收纳条保持显示。</source>
             <translation>按整个窗口的标签数量判断；固定面板和侧边收纳条保持显示。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="53" />
+            <location filename="../src/settings/settings_view_options.cpp" line="45" />
             <source>轻量浮窗只有一个标签时隐藏标签栏</source>
             <translation>轻量浮窗只有一个标签时隐藏标签栏</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="55" />
+            <location filename="../src/settings/settings_view_options.cpp" line="47" />
             <source>轻量浮窗的单标签栏</source>
             <translation>轻量浮窗的单标签栏</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="56" />
+            <location filename="../src/settings/settings_view_options.cpp" line="48" />
             <source>默认开启；出现第二个标签时恢复标签栏。</source>
             <translation>默认开启；出现第二个标签时恢复标签栏。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="67" />
-            <source>隐藏所有栏，专注当前内容</source>
-            <translation>隐藏所有栏，专注当前内容</translation>
+            <location filename="../src/settings/settings_view_options.cpp" line="59" />
+            <source>锁定工具栏且没有收起按钮时隐藏工具条选项</source>
+            <translation>锁定工具栏且没有收起按钮时隐藏工具条选项</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" line="61" />
+            <source>精简锁定工具条</source>
+            <translation>精简锁定工具条</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" line="62" />
+            <source>工具栏锁定且全部按钮可见时隐藏末尾选项；有按钮被收起时仍然显示。</source>
+            <translation>工具栏锁定且全部按钮可见时隐藏末尾选项；有按钮被收起时仍然显示。</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" line="70" />
-            <source>临时隐藏各类栏；普通窗口会按下方设置先进入全屏。显示任意栏时退出禅模式，恢复此前设置。</source>
-            <translation>临时隐藏各类栏；普通窗口会按下方设置先进入全屏。显示任意栏时退出禅模式，恢复此前设置。</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="76" />
             <source>禅模式默认全屏范围</source>
             <translation>禅模式默认全屏范围</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="77" />
+            <location filename="../src/settings/settings_view_options.cpp" line="71" />
             <source>在普通窗口启用禅模式时使用。已经全屏时保留当前范围；退出禅模式恢复各栏，但保留全屏。</source>
             <translation>在普通窗口启用禅模式时使用。已经全屏时保留当前范围；退出禅模式恢复各栏，但保留全屏。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="84" />
+            <location filename="../src/settings/settings_view_options.cpp" line="78" />
             <source>显示%1</source>
             <translation>显示%1</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="88" />
+            <location filename="../src/settings/settings_view_options.cpp" line="82" />
             <source>各栏显隐与全屏无关，在当前窗口生效并随布局保存。禅模式临时隐藏全部栏。</source>
             <translation>各栏显隐与全屏无关，在当前窗口生效并随布局保存。禅模式临时隐藏全部栏。</translation>
         </message>
@@ -1965,96 +1983,112 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/settings/shortcuts_page.cpp" line="155" />
-            <source>组合命令…</source>
-            <translation>组合命令…</translation>
+            <source>按键查询</source>
+            <translation>按键查询</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="179" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="158" />
+            <source>录入按键以查找绑定；查询期间不会执行命令。</source>
+            <translation>录入按键以查找绑定；查询期间不会执行命令。</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/shortcuts_page.cpp" line="163" />
+            <source>录入要查询的快捷键</source>
+            <translation>录入要查询的快捷键</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/shortcuts_page.cpp" line="192" />
             <source>参数</source>
             <translation>参数</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="188" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="201" />
             <source>录入命令快捷键</source>
             <translation>录入命令快捷键</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="192" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="205" />
             <source>快捷键参数 JSON</source>
             <translation>快捷键参数 JSON</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="193" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="206" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="315" />
             <source>参数（JSON 对象，可留空）</source>
             <translation>参数（JSON 对象，可留空）</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="203" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="216" />
             <source>应用快捷键</source>
             <translation>应用快捷键</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="205" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="218" />
             <source>添加绑定</source>
             <translation>添加绑定</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="207" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="220" />
             <source>移除此绑定</source>
             <translation>移除此绑定</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="275" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="307" />
             <source>没有匹配的命令</source>
             <translation>没有匹配的命令</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="343" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="310" />
+            <source>runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。例如 {&quot;commands&quot;:[&quot;host.newTab&quot;,{&quot;command&quot;:&quot;pane.split.right&quot;,&quot;args&quot;:{}}]}。结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。</source>
+            <translation>runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。例如 {&quot;commands&quot;:[&quot;host.newTab&quot;,{&quot;command&quot;:&quot;pane.split.right&quot;,&quot;args&quot;:{}}]}。结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/shortcuts_page.cpp" line="383" />
             <source>参数必须是有效的 JSON 对象：%1</source>
             <translation>参数必须是有效的 JSON 对象：%1</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="345" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="385" />
             <source>顶层不能是数组或其他类型</source>
             <translation>顶层不能是数组或其他类型</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="353" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="393" />
             <source>组合命令需要非空的 commands 数组，按数组顺序执行。</source>
             <translation>组合命令需要非空的 commands 数组，按数组顺序执行。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="360" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="400" />
             <source>组合命令包含未知或缺失的命令 ID：%1</source>
             <translation>组合命令包含未知或缺失的命令 ID：%1</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="364" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="404" />
             <source>组合命令中每一步的 args 必须是 JSON 对象。</source>
             <translation>组合命令中每一步的 args 必须是 JSON 对象。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="385" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="425" />
             <source>此绑定已在其他位置修改。请重新选择命令后编辑。</source>
             <translation>此绑定已在其他位置修改。请重新选择命令后编辑。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="413" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="453" />
             <source>此快捷键已绑定到：%1。请先移除其他绑定。</source>
             <translation>此快捷键已绑定到：%1。请先移除其他绑定。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="416" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="456" />
             <source>此按键序列与以下命令有前缀关系：%1。</source>
             <translation>此按键序列与以下命令有前缀关系：%1。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="419" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="459" />
             <source>录入按键后应用；清空现有按键并应用可移除此绑定。</source>
             <translation>录入按键后应用；清空现有按键并应用可移除此绑定。</translation>
         </message>
         <message>
-            <location filename="../src/settings/shortcuts_page.cpp" line="421" />
+            <location filename="../src/settings/shortcuts_page.cpp" line="461" />
             <source>最多 4 段按键；例如 Ctrl+K、G、1。应用后立即生效。</source>
             <translation>最多 4 段按键；例如 Ctrl+K、G、1。应用后立即生效。</translation>
         </message>
@@ -2145,95 +2179,162 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>全屏内容目标 ID 无效</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="252" />
-            <location filename="../src/view_state.cpp" line="255" />
-            <location filename="../src/view_state.cpp" line="260" />
+            <location filename="../src/view_state.cpp" line="241" />
+            <location filename="../src/view_state.cpp" line="244" />
+            <location filename="../src/view_state.cpp" line="249" />
             <source>窗口显示模式无效</source>
             <translation>窗口显示模式无效</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="262" />
+            <location filename="../src/view_state.cpp" line="251" />
             <source>禅模式设置无效</source>
             <translation>禅模式设置无效</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="264" />
+            <location filename="../src/view_state.cpp" line="253" />
             <source>普通窗口不能恢复禅模式</source>
             <translation>普通窗口不能恢复禅模式</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="271" />
+            <location filename="../src/view_state.cpp" line="260" />
             <source>窗口模式不能包含内容目标</source>
             <translation>窗口模式不能包含内容目标</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="275" />
+            <location filename="../src/view_state.cpp" line="264" />
             <source>全屏内容目标不属于当前窗口</source>
             <translation>全屏内容目标不属于当前窗口</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="277" />
+            <location filename="../src/view_state.cpp" line="266" />
             <source>标签组全屏目标与活动标签不一致</source>
             <translation>标签组全屏目标与活动标签不一致</translation>
         </message>
         <message>
-            <location filename="../src/view_state.cpp" line="279" />
+            <location filename="../src/view_state.cpp" line="268" />
             <source>窗格全屏目标与活动窗格不一致</source>
             <translation>窗格全屏目标与活动窗格不一致</translation>
         </message>
         <message>
-            <location filename="../src/window_manager.cpp" line="574" />
+            <location filename="../src/window_manager.cpp" line="593" />
             <source>临时</source>
             <translation>临时</translation>
         </message>
         <message>
-            <location filename="../src/window_manager.cpp" line="1033" />
+            <location filename="../src/window_manager.cpp" line="1070" />
             <source>等待续键：%1</source>
             <translation>等待续键：%1</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="326" />
             <source>设置工具条可见性</source>
             <translation>设置工具条可见性</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="342" />
             <source>设置工具条宽度</source>
             <translation>设置工具条宽度</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="355" />
             <source>设置工具条按钮可见性</source>
             <translation>设置工具条按钮可见性</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="366" />
             <source>设置状态栏控件文本</source>
             <translation>设置状态栏控件文本</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="381" />
+            <location filename="../src/custom_chrome.cpp" line="400" />
             <source>重命名标签…</source>
             <translation>重命名标签…</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="401" />
             <source>标签名称</source>
             <translation>标签名称</translation>
         </message>
         <message>
+            <location filename="../src/custom_chrome.cpp" line="335" />
             <source>设置窗口标题</source>
             <translation>设置窗口标题</translation>
         </message>
         <message>
+            <location filename="../src/commands/window_commands.cpp" line="215" />
             <source>最小化窗口</source>
             <translation>最小化窗口</translation>
         </message>
         <message>
+            <location filename="../src/commands/command_menus.cpp" line="159" />
             <source>窗口状态</source>
             <translation>窗口状态</translation>
         </message>
         <message>
+            <location filename="../src/commands/window_commands.cpp" line="217" />
             <source>最大化窗口</source>
             <translation>最大化窗口</translation>
         </message>
         <message>
+            <location filename="../src/commands/window_commands.cpp" line="219" />
             <source>还原窗口</source>
             <translation>还原窗口</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="57" />
+            <source>目标窗格左侧</source>
+            <translation>目标窗格左侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="58" />
+            <source>目标窗格右侧</source>
+            <translation>目标窗格右侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="59" />
+            <source>目标窗格上方</source>
+            <translation>目标窗格上方</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="60" />
+            <source>目标窗格下方</source>
+            <translation>目标窗格下方</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="71" />
+            <source>标签组：%1</source>
+            <translation>标签组：%1</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="84" />
+            <source>窗格 %1：%2</source>
+            <translation>窗格 %1：%2</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="126" />
+            <source>当前标签组转换为多窗格标签</source>
+            <translation>当前标签组转换为多窗格标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="135" />
+            <source>当前标签组并入指定标签的窗格…</source>
+            <translation>当前标签组并入指定标签的窗格…</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="146" />
+            <source>当前标签并入另一标签的窗格…</source>
+            <translation>当前标签并入另一标签的窗格…</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="150" />
+            <source>当前标签的窗格转换为独立标签组</source>
+            <translation>当前标签的窗格转换为独立标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/hierarchy_commands.cpp" line="159" />
+            <source>当前窗格提取为本组独立标签</source>
+            <translation>当前窗格提取为本组独立标签</translation>
         </message>
     </context>
 </TS>

@@ -44,10 +44,10 @@ Items directions(const char* prefix)
 }
 Items tabMovement()
 {
-    return {group("tab.move.group", QT_TRANSLATE_NOOP("WindowSystem", "到标签组"), directions("workspace.moveTabToGroup.")),
-        group("tab.move.window", QT_TRANSLATE_NOOP("WindowSystem", "到已有窗口"), {command("workspace.moveTabToWindow.previous"),
+    return {group("tab.move.group", QT_TRANSLATE_NOOP("WindowSystem", "移入相邻标签组"), directions("workspace.moveTabToGroup.")),
+        group("tab.move.window", QT_TRANSLATE_NOOP("WindowSystem", "移到其他窗口"), {command("workspace.moveTabToWindow.previous"),
             command("workspace.moveTabToWindow.next"), separator(), command("workspace.moveTabToWindow")}),
-        group("tab.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "到新窗口"), {command("workspace.detachFloating"), command("workspace.detachWorkbench")})};
+        group("tab.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "移到新窗口"), {command("workspace.detachFloating"), command("workspace.detachWorkbench")})};
 }
 Items sorting()
 {
@@ -57,11 +57,11 @@ Items sorting()
 }
 Items groupMovement()
 {
-    return {group("group.move.direction", QT_TRANSLATE_NOOP("WindowSystem", "到相邻位置"), directions("group.move.")),
+    return {group("group.move.direction", QT_TRANSLATE_NOOP("WindowSystem", "放到相邻标签组旁"), directions("group.move.")),
         command("group.moveToGroup"),
-        group("group.move.window", QT_TRANSLATE_NOOP("WindowSystem", "到已有窗口"), {command("group.moveWindow.previous"), command("group.moveWindow.next"),
+        group("group.move.window", QT_TRANSLATE_NOOP("WindowSystem", "移到其他窗口"), {command("group.moveWindow.previous"), command("group.moveWindow.next"),
             separator(), command("group.moveWindow")}),
-        group("group.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "到新窗口"), {command("group.detachFloating"), command("group.detachWorkbench")}),
+        group("group.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "移到新窗口"), {command("group.detachFloating"), command("group.detachWorkbench")}),
         group("group.move.edge", QT_TRANSLATE_NOOP("WindowSystem", "固定到侧边栏"), directions("group.moveEdge.")),
         group("group.move.hide", QT_TRANSLATE_NOOP("WindowSystem", "收纳到侧边栏"), directions("group.hideEdge."))};
 }
@@ -75,28 +75,39 @@ Items groupMerge()
 }
 Items paneMovement()
 {
-    return {group("pane.move.tab", QT_TRANSLATE_NOOP("WindowSystem", "到标签"), {command("pane.moveToTab.previous"), command("pane.moveToTab.next"),
+    return {command("pane.extractToTab"), separator(),
+        group("pane.move.tab", QT_TRANSLATE_NOOP("WindowSystem", "并入其他标签的窗格布局"), {command("pane.moveToTab.previous"), command("pane.moveToTab.next"),
             separator(), command("pane.moveToTab")}),
-        group("pane.move.group", QT_TRANSLATE_NOOP("WindowSystem", "到标签组"), directions("pane.moveToGroup.")),
-        group("pane.move.window", QT_TRANSLATE_NOOP("WindowSystem", "到已有窗口"), {command("pane.moveToWindow.previous"), command("pane.moveToWindow.next"),
+        group("pane.move.group", QT_TRANSLATE_NOOP("WindowSystem", "并入相邻标签组的活动标签"), directions("pane.moveToGroup.")),
+        group("pane.move.window", QT_TRANSLATE_NOOP("WindowSystem", "移到其他窗口"), {command("pane.moveToWindow.previous"), command("pane.moveToWindow.next"),
             separator(), command("pane.moveToWindow")}),
-        group("pane.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "到新窗口"), {command("pane.extractFloating"), command("pane.extractWorkbench")})};
+        group("pane.move.newWindow", QT_TRANSLATE_NOOP("WindowSystem", "移到新窗口"), {command("pane.extractFloating"), command("pane.extractWorkbench")})};
 }
-Items edgeOperations(bool includeCurrent = true)
+Items tabEdgeOperations(bool includeCurrent = true)
 {
-    Items result{group("edge.collect", QT_TRANSLATE_NOOP("WindowSystem", "收纳当前标签"), directions("workspace.hideToEdge.")), separator()};
+    Items result{group("edge.collect", QT_TRANSLATE_NOOP("WindowSystem", "收纳此标签到侧边栏"), directions("workspace.hideToEdge.")), separator()};
     if (includeCurrent) result += {command("workspace.pinTab"), command("workspace.unpinTab")};
-    result += {
-        group("edge.peek", QT_TRANSLATE_NOOP("WindowSystem", "临时展开大小"), {command("tab.peek.setSize"), command("tab.peek.resetSize")}),
-        group("edge.group", QT_TRANSLATE_NOOP("WindowSystem", "当前边栏组"), {command("workspace.pinGroup"), command("workspace.unpinGroup"),
-            command("workspace.restoreGroupToCenter")}),
-        group("edge.all", QT_TRANSLATE_NOOP("WindowSystem", "当前侧全部标签"), {command("workspace.pinEdge"), command("workspace.unpinEdge")})};
+    result.append(group("edge.peek", QT_TRANSLATE_NOOP("WindowSystem", "此标签的临时展开大小"), {command("tab.peek.setSize"), command("tab.peek.resetSize")}));
     return result;
+}
+Items groupOperations()
+{
+    return {group("group.create", QT_TRANSLATE_NOOP("WindowSystem", "在此组旁新建标签组"), directions("workspace.splitGroup.")),
+        group("group.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整此组边界"), directions("workspace.resizeGroup.")), separator(),
+        group("tab.group.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此标签组"), groupMovement()),
+        group("tab.group.swap", QT_TRANSLATE_NOOP("WindowSystem", "与其他标签组交换位置"), groupExchange()),
+        group("tab.group.merge", QT_TRANSLATE_NOOP("WindowSystem", "将此组标签合并到其他组"), groupMerge()),
+        group("group.convert", QT_TRANSLATE_NOOP("WindowSystem", "转换组内内容"), {command("group.convertToTab"), command("group.moveIntoTab")}),
+        separator(), group("group.sort", QT_TRANSLATE_NOOP("WindowSystem", "排列此组内的标签"), sorting()),
+        group("edge.group", QT_TRANSLATE_NOOP("WindowSystem", "此组的侧边栏停靠"), {command("workspace.pinGroup"), command("workspace.unpinGroup"),
+            command("workspace.restoreGroupToCenter"), separator(),
+            group("edge.all", QT_TRANSLATE_NOOP("WindowSystem", "所在侧边栏的全部标签"), {command("workspace.pinEdge"), command("workspace.unpinEdge")})}),
+        separator(), command("group.close")};
 }
 Items windowOperations()
 {
     return {group("window.kind", QT_TRANSLATE_NOOP("WindowSystem", "窗口形态"), {command("window.promote"), command("window.demote"), command("window.reassignFamily")}),
-        group("window.transfer", QT_TRANSLATE_NOOP("WindowSystem", "整窗移动"), {command("window.moveAllTabs"), command("window.redock")})};
+        group("window.transfer", QT_TRANSLATE_NOOP("WindowSystem", "移动此窗口的全部标签"), {command("window.moveAllTabs"), command("window.redock")})};
 }
 Items floatingItems(Items items)
 {
@@ -128,19 +139,18 @@ const Items& layout(CommandMenuSurface surface)
             group("view.panes", QT_TRANSLATE_NOOP("WindowSystem", "聚焦窗格"), directions("pane.focus.")),
             group("view.toolbars", QT_TRANSLATE_NOOP("WindowSystem", "工具条"), {command("window.toggleStripsLock"), command("window.toolbar.move")})}, 20),
         group("布局", QT_TRANSLATE_NOOP("WindowSystem", "布局(&L)"), {
-            group("layout.groups", QT_TRANSLATE_NOOP("WindowSystem", "标签组"), {group("group.create", QT_TRANSLATE_NOOP("WindowSystem", "新建标签组"), directions("workspace.splitGroup.")),
-                group("group.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("workspace.resizeGroup.")), separator(), command("group.close")}),
-            group("layout.tabAppearance", QT_TRANSLATE_NOOP("WindowSystem", "标签外观"), {command("tab.rename"), command("tab.color.set")}),
-            group("layout.panes", QT_TRANSLATE_NOOP("WindowSystem", "窗格"), {group("pane.split", QT_TRANSLATE_NOOP("WindowSystem", "拆分"), directions("pane.split.")),
-                group("pane.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("pane.resize.")),
-                group("pane.swap", QT_TRANSLATE_NOOP("WindowSystem", "交换位置"), directions("pane.swap."))}),
-            group("layout.tabOrder", QT_TRANSLATE_NOOP("WindowSystem", "排列标签"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
-                group("group.sort", QT_TRANSLATE_NOOP("WindowSystem", "重新排序"), sorting())}),
-            group("layout.moveGroup", QT_TRANSLATE_NOOP("WindowSystem", "移动标签组"), groupMovement()),
-            group("layout.swapGroup", QT_TRANSLATE_NOOP("WindowSystem", "交换标签组"), groupExchange()),
-            group("layout.mergeGroup", QT_TRANSLATE_NOOP("WindowSystem", "合并标签组"), groupMerge()),
-            group("layout.moveTab", QT_TRANSLATE_NOOP("WindowSystem", "移动标签"), tabMovement()), group("layout.movePane", QT_TRANSLATE_NOOP("WindowSystem", "移动窗格"), paneMovement()),
-            group("layout.edge", QT_TRANSLATE_NOOP("WindowSystem", "边栏"), edgeOperations()), separator(), command("pane.close"), separator(900)}, 30),
+            group("layout.groups", QT_TRANSLATE_NOOP("WindowSystem", "当前标签组"), groupOperations()),
+            group("layout.tab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签"), {command("tab.rename"), command("tab.color.set"), separator(),
+                group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "调整此标签在栏内的位置"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
+                group("tab.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此标签"), tabMovement()),
+                group("tab.convert", QT_TRANSLATE_NOOP("WindowSystem", "转换此标签的内容"), {command("tab.convertToGroup"), command("tab.moveIntoTab")}),
+                group("tab.edge", QT_TRANSLATE_NOOP("WindowSystem", "此标签的侧边栏收纳"), tabEdgeOperations())}),
+            group("layout.panes", QT_TRANSLATE_NOOP("WindowSystem", "当前窗格"), {
+                group("pane.split", QT_TRANSLATE_NOOP("WindowSystem", "拆分此窗格"), directions("pane.split.")),
+                group("pane.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整此窗格边界"), directions("pane.resize.")), separator(),
+                group("pane.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此窗格"), paneMovement()),
+                group("pane.swap", QT_TRANSLATE_NOOP("WindowSystem", "与同一标签内的窗格交换位置"), directions("pane.swap.")),
+                separator(), command("pane.close")}), separator(900)}, 30),
         group("窗口", QT_TRANSLATE_NOOP("WindowSystem", "窗口(&W)"), {command("window.select"), command("window.focusOwner"), separator(),
             group("window.cycle", QT_TRANSLATE_NOOP("WindowSystem", "切换窗口"), {
                 group("window.cycle.family", QT_TRANSLATE_NOOP("WindowSystem", "所属窗口族"), {command("window.focusPrevious.family"), command("window.focusNext.family")}),
@@ -155,28 +165,25 @@ const Items& layout(CommandMenuSurface surface)
     static const Items tab = {command("workspace.closeTab"), command("tab.rename"), command("workspace.pinTab"), command("workspace.unpinTab"),
         group("tab.closeRange", QT_TRANSLATE_NOOP("WindowSystem", "批量关闭标签"), {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
-        group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "排列标签"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next"),
-            group("group.sort", QT_TRANSLATE_NOOP("WindowSystem", "重新排序"), sorting())}),
-        group("tab.move", QT_TRANSLATE_NOOP("WindowSystem", "移动标签"), tabMovement()),
-        group("tab.group", QT_TRANSLATE_NOOP("WindowSystem", "标签组"), {group("tab.group.create", QT_TRANSLATE_NOOP("WindowSystem", "新建标签组"), directions("workspace.splitGroup.")),
-            group("tab.group.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("workspace.resizeGroup."))}),
-        group("tab.edge", QT_TRANSLATE_NOOP("WindowSystem", "边栏"), edgeOperations(false)), separator(), command("tab.color.set"),
-        group("tab.group.move", QT_TRANSLATE_NOOP("WindowSystem", "移动标签组"), groupMovement()),
-        group("tab.group.swap", QT_TRANSLATE_NOOP("WindowSystem", "交换标签组"), groupExchange()),
-        group("tab.group.merge", QT_TRANSLATE_NOOP("WindowSystem", "合并标签组"), groupMerge()), command("group.close")};
+        group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "调整此标签在栏内的位置"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
+        group("tab.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此标签"), tabMovement()),
+        group("tab.convert", QT_TRANSLATE_NOOP("WindowSystem", "转换此标签的内容"), {command("tab.convertToGroup"), command("tab.moveIntoTab")}),
+        group("tab.edge", QT_TRANSLATE_NOOP("WindowSystem", "此标签的侧边栏收纳"), tabEdgeOperations(false)), separator(), command("tab.color.set"),
+        group("tab.group", QT_TRANSLATE_NOOP("WindowSystem", "所在标签组"), groupOperations())};
+    static const Items tabGroup = groupOperations();
     static const Items pane = {command("pane.close"), separator(),
-        group("pane.split", QT_TRANSLATE_NOOP("WindowSystem", "拆分窗格"), directions("pane.split.")),
-        group("pane.move", QT_TRANSLATE_NOOP("WindowSystem", "移动窗格"), paneMovement()),
-        group("pane.swap", QT_TRANSLATE_NOOP("WindowSystem", "交换窗格位置"), directions("pane.swap.")),
-        group("pane.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整边界"), directions("pane.resize.")),
-        group("pane.bars", QT_TRANSLATE_NOOP("WindowSystem", "附加栏"), {command("tab.topBar.setSharing"), command("tab.bottomBar.setSharing")})};
+        group("pane.split", QT_TRANSLATE_NOOP("WindowSystem", "拆分此窗格"), directions("pane.split.")),
+        group("pane.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此窗格"), paneMovement()),
+        group("pane.swap", QT_TRANSLATE_NOOP("WindowSystem", "与同一标签内的窗格交换位置"), directions("pane.swap.")),
+        group("pane.resize", QT_TRANSLATE_NOOP("WindowSystem", "调整此窗格边界"), directions("pane.resize.")),
+        group("pane.bars", QT_TRANSLATE_NOOP("WindowSystem", "此标签的附加栏"), {command("tab.topBar.setSharing"), command("tab.bottomBar.setSharing")})};
     static const Items window = {command("window.select"), command("window.focusOwner"), separator(),
         windowOperations()[0], windowOperations()[1], separator(), command("window.settings"), command("window.close")};
     switch (surface) {
     case CommandMenuSurface::Application: return application;
     case CommandMenuSurface::FloatingApplication: return floating;
     case CommandMenuSurface::Tab: return tab;
-    case CommandMenuSurface::Group: return tab;
+    case CommandMenuSurface::Group: return tabGroup;
     case CommandMenuSurface::Pane: return pane;
     case CommandMenuSurface::Window: return window;
     }

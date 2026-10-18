@@ -22,6 +22,7 @@
 #include <QToolButton>
 #include <QWheelEvent>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 #include <algorithm>
 
 using namespace window_system;
@@ -34,6 +35,7 @@ private slots:
     void hidingAppliesToTheWholeWindow();
     void hiddenSettingRestoresAndSurvivesNewGroups();
     void thinScrollbarRendersAndDragsWithoutSelectingTabs();
+    void tabListMarksTheActiveTabWithoutChangingSelection();
     void compactIconsLeaveARealCloseTarget();
     void newTabControlsFollowTheLastTabAndShareEmphasis();
     void rectangularControlsAndContentUseUniformEdges();
@@ -158,9 +160,17 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     const auto center = QPoint(qRound(centerInTabs.x() * image.devicePixelRatio()), qRound(centerInTabs.y() * image.devicePixelRatio()));
     QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied);
     expected.fill(unoccluded.pixelColor(center));
-    QPainter painter(&expected); auto translucentBorder = defaultTheme().border;
+    QPainter painter(&expected); const int gray = qGray(defaultTheme().border.rgb());
+    QColor translucentBorder(gray, gray, gray);
     translucentBorder.setAlpha(112); painter.fillRect(expected.rect(), translucentBorder); painter.end();
     QCOMPARE(image.pixelColor(center), expected.pixelColor(0, 0));
+    QTest::mouseMove(scrollbar, handle.center());
+    QImage hoveredExpected(1, 1, QImage::Format_ARGB32_Premultiplied);
+    hoveredExpected.fill(unoccluded.pixelColor(center));
+    QPainter hoveredPainter(&hoveredExpected); translucentBorder.setAlpha(176);
+    hoveredPainter.fillRect(hoveredExpected.rect(), translucentBorder); hoveredPainter.end();
+    QTRY_COMPARE(tabs->grab().toImage().pixelColor(center), hoveredExpected.pixelColor(0, 0));
+    QVERIFY(hoveredExpected.pixelColor(0, 0) != QColor(gray, gray, gray));
     const auto backward = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSubLine, scrollbar);
     const auto forward = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarAddLine, scrollbar);
     QVERIFY(backward.isEmpty()); QVERIFY(forward.isEmpty());
@@ -172,6 +182,29 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     QCOMPARE(tabs->currentIndex(), selected);
     QTest::mouseMove(&root, QPoint(1, root.height() - 1)); QTRY_VERIFY(scrollbar->isHidden());
     tabs->setTabBarVisible(false); QVERIFY(tabs->viewportRectGlobal().isEmpty()); QVERIFY(scrollbar->isHidden());
+}
+
+void TabBarPresentationTest::tabListMarksTheActiveTabWithoutChangingSelection()
+{
+    GroupTabs tabs(defaultTheme(), nullptr);
+    for (int i = 0; i < 3; ++i)
+        tabs.addTab(new QLabel("Content"), {}, QStringLiteral("Entry %1").arg(i), QUuid::createUuid());
+    tabs.setCurrentIndex(1); applyTheme(&tabs); tabs.resize(500, 250); tabs.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    QTest::mouseClick(tabs.findChild<QToolButton*>("TabListButton"), Qt::LeftButton);
+    auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
+    QCOMPARE(menu->actions().size(), 3);
+    for (int i = 0; i < menu->actions().size(); ++i) {
+        auto* action = qobject_cast<QWidgetAction*>(menu->actions()[i]); QVERIFY(action);
+        auto* row = action->defaultWidget(); QVERIFY(row);
+        QCOMPARE(row->property("activeTab").toBool(), i == 1);
+        QVERIFY(action->isCheckable()); QCOMPARE(action->isChecked(), i == 1);
+        auto* mark = row->findChild<QLabel*>("TabListActiveMark"); QVERIFY(mark);
+        QCOMPARE(mark->text().isEmpty(), i != 1);
+        auto* title = row->findChild<QLabel*>("TabListTitle"); QVERIFY(title);
+        QCOMPARE(title->font().bold(), i == 1);
+    }
+    QCOMPARE(tabs.currentIndex(), 1); menu->close();
 }
 
 void TabBarPresentationTest::compactIconsLeaveARealCloseTarget()

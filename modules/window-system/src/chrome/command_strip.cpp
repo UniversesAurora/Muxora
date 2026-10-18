@@ -177,6 +177,7 @@ public:
 
     void setLocked(bool locked)
     {
+        locked_ = locked;
         handle->setVisible(!locked);
         handle->setCursor(locked ? Qt::ArrowCursor : Qt::SizeAllCursor);
         layoutItems();
@@ -188,7 +189,7 @@ public:
         if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
-        return std::max(chromeMinimumWidth(), width + (optionsEnabled ? tailWidth : 0));
+        return std::max(chromeMinimumWidth(), width + (optionsEnabled && !hideEmptyOptions() ? tailWidth : 0));
     }
 
     [[nodiscard]] int minimumWidthForLayout() const
@@ -198,15 +199,26 @@ public:
 
     [[nodiscard]] int chromeMinimumWidth() const
     {
+        // Keep the saved-width contract independent from this presentation
+        // preference. A narrow strip must still have room to reveal overflow.
         return (optionsEnabled ? tailWidth : 0) + (handle->isHidden() ? 0 : handleWidth) + constraints.minimumContentWidth;
     }
 
     void layoutItems()
     {
         const int handleSize = handle->isHidden() ? 0 : handleWidth;
-        const int optionsSize = optionsEnabled ? tailWidth : 0;
+        // Decide from the complete available content width, before reserving
+        // the tail. Otherwise reserving the tail itself can invent overflow.
+        int contentWidth = 0;
+        if (content && !content->isHidden()) contentWidth = content->sizeHint().width();
+        else for (const auto& item : items)
+            if (item.included && item.action && item.action->isVisible() && item.button)
+                contentWidth += item.button->sizeHint().width();
+        const bool optionsVisible = optionsEnabled && (!hideEmptyOptions() || contentWidth > width() - handleSize);
+        const int optionsSize = optionsVisible ? tailWidth : 0;
         handle->setGeometry(0, 0, handleSize, height());
-        tail->setVisible(optionsEnabled);
+        if (!optionsVisible && tail->menu() && tail->menu()->isVisible()) tail->menu()->close();
+        tail->setVisible(optionsVisible);
         tail->setGeometry(std::max(0, width() - optionsSize), 0, optionsSize, height());
         viewport->setGeometry(handleSize, 0, std::max(0, width() - handleSize - optionsSize), height());
         overflow.clear();
@@ -254,6 +266,7 @@ public:
     QStringList overflow;
     bool visible = true;
     bool optionsEnabled = true;
+    bool hideOptionsWhenLocked = false;
     CommandStripHost::StripConstraints constraints;
     CommandStripHost::StripSizing sizing = CommandStripHost::StripSizing::Content;
     int requestedWidth = -1;
@@ -261,6 +274,9 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent* event) override { QFrame::resizeEvent(event); layoutItems(); }
+private:
+    [[nodiscard]] bool hideEmptyOptions() const { return locked_ && hideOptionsWhenLocked; }
+    bool locked_ = true;
 };
 
 } // namespace
@@ -275,6 +291,7 @@ struct CommandStripHost::Private {
     int previewArea = -1;
     int dropRow = -1;
     bool locked = true;
+    bool hideOptionsWhenLocked = false;
     bool arranging = false;
     std::function<void(QMenu*)> contextMenuCustomizer;
     std::function<void()> layoutChanged;
@@ -337,6 +354,7 @@ void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int
     if (!content || id.isEmpty() || d->strips.contains(id)) return;
     auto* strip = new StripFrame(id, std::move(title), ensureRowWidget(ensureRow(Area::Top, std::max(0, row))));
     strip->content = content;
+    strip->hideOptionsWhenLocked = d->hideOptionsWhenLocked;
     strip->sizing = sizing;
     content->setParent(strip->viewport);
     content->show();
@@ -370,6 +388,7 @@ void CommandStripHost::addActionStrip(QString id, QString title, const QList<QAc
     auto* strip = new StripFrame(id, std::move(title), ensureRowWidget(ensureRow(Area::Top, std::max(0, row))));
     strip->sizing = sizing;
     int index = 0;
+    strip->hideOptionsWhenLocked = d->hideOptionsWhenLocked;
     for (auto* action : actions) {
         if (!action) continue;
         auto itemId = action->objectName();
@@ -407,6 +426,14 @@ void CommandStripHost::setLocked(bool locked)
     arrange(); changed();
 }
 bool CommandStripHost::isLocked() const { return d->locked; }
+void CommandStripHost::setHideOptionsWhenLocked(bool hidden)
+{
+    if (d->hideOptionsWhenLocked == hidden) return;
+    d->hideOptionsWhenLocked = hidden;
+    for (auto* strip : d->strips) strip->hideOptionsWhenLocked = hidden;
+    arrange();
+}
+bool CommandStripHost::hideOptionsWhenLocked() const { return d->hideOptionsWhenLocked; }
 bool CommandStripHost::removeStrip(const QString& id)
 {
     auto* strip = d->strips.value(id);

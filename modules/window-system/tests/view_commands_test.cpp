@@ -7,6 +7,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QJsonArray>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
@@ -348,20 +349,24 @@ void ViewCommandsTest::settingsShowRestoresZenPreferences()
     const auto fixture = createFixture(manager);
     manager.showSettings(fixture.window);
     auto* page = settingsPage(manager); QVERIFY(page);
-    auto* zen = page->findChild<QCheckBox*>("WindowZenMode"); auto* mode = page->findChild<QComboBox*>("WindowViewMode");
-    QVERIFY(zen && mode); QVERIFY(zen->isEnabled()); QCOMPARE(mode->currentData().toInt(), int(ViewMode::Normal));
+    QVERIFY(!page->findChild<QCheckBox*>("WindowZenMode"));
+    QVERIFY(!page->findChild<QComboBox*>("WindowViewMode"));
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!manager.zenMode(fixture.window));
     QSet<QString> visibilityIds;
     for (auto* box : page->findChildren<QCheckBox*>()) if (box->objectName().startsWith("window.visibility.")) visibilityIds.insert(box->objectName());
     QCOMPARE(visibilityIds, (QSet<QString>{"window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars"}));
     const BarVisibility preferences{false, true, false, true}; setPreferences(manager, fixture.window, preferences);
-    QVERIFY(manager.setViewMode(fixture.window, ViewMode::WindowFullscreen)); QVERIFY(manager.setZenMode(fixture.window, true));
-    QTRY_VERIFY(zen->isChecked()); QVERIFY(zen->isEnabled());
+    QVERIFY(manager.execute("window.fullscreen.toggle", {}, fixture.window));
+    QVERIFY(manager.execute("window.zen.toggle", {}, fixture.window));
+    QTRY_VERIFY(manager.zenMode(fixture.window));
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::WindowFullscreen);
     for (const auto& id : visibilityIds) { auto* box = page->findChild<QCheckBox*>(id); QVERIFY(box); QVERIFY(!box->isChecked()); }
     auto* control = page->findChild<QCheckBox*>(visibilityKey(bar)); QVERIFY(control);
     auto* scroll = page->findChild<QScrollArea*>("SettingsScrollArea"); QVERIFY(scroll);
     scroll->ensureWidgetVisible(control); QTRY_VERIFY(control->isVisible());
     QTest::mouseClick(control, Qt::LeftButton, Qt::NoModifier, QPoint(8, control->height() / 2));
-    QTRY_VERIFY(!manager.zenMode(fixture.window)); QVERIFY(!zen->isChecked());
+    QTRY_VERIFY(!manager.zenMode(fixture.window));
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::WindowFullscreen);
     QCOMPARE(manager.preferredBarVisibility(fixture.window), withShown(preferences, bar));
     QCOMPARE(manager.barVisibility(fixture.window), withShown(preferences, bar));
     for (const auto candidate : {WindowBar::Toolbars, WindowBar::StatusBar, WindowBar::TabBars, WindowBar::SideBars})
@@ -382,14 +387,17 @@ void ViewCommandsTest::movedSettingsEditTheirCurrentWindow()
     QCOMPARE(manager.paneWidget(pane), page.data()); QCOMPARE(page->window(), manager.windowWidget(second.window));
     for (const auto bar : {WindowBar::Toolbars, WindowBar::StatusBar, WindowBar::TabBars, WindowBar::SideBars})
         QTRY_COMPARE(page->findChild<QCheckBox*>(visibilityKey(bar))->isChecked(), shown(targetPreferences, bar));
-    auto* mode = page->findChild<QComboBox*>("WindowViewMode"); QVERIFY(mode);
-    mode->setCurrentIndex(mode->findData(int(ViewMode::WindowFullscreen)));
+    QVERIFY(!page->findChild<QComboBox*>("WindowViewMode"));
+    QVERIFY(!page->findChild<QCheckBox*>("WindowZenMode"));
+    const auto currentWindow = page->window()->property("windowId").toUuid(); QCOMPARE(currentWindow, second.window);
+    QVERIFY(manager.execute("window.fullscreen.toggle", {}, currentWindow));
     QTRY_COMPARE(manager.viewMode(second.window), ViewMode::WindowFullscreen);
     QCOMPARE(manager.viewMode(first.window), ViewMode::Normal);
-    auto* zen = page->findChild<QCheckBox*>("WindowZenMode"); QVERIFY(zen); QVERIFY(zen->isEnabled());
-    zen->click(); QTRY_VERIFY(manager.zenMode(second.window));
+    QVERIFY(manager.execute("window.zen.toggle", {}, currentWindow)); QTRY_VERIFY(manager.zenMode(second.window));
+    QVERIFY(!manager.zenMode(first.window));
     auto* toolbar = page->findChild<QCheckBox*>("window.visibility.toolbars"); QVERIFY(toolbar); toolbar->click();
     QTRY_VERIFY(!manager.zenMode(second.window));
+    QCOMPARE(manager.viewMode(second.window), ViewMode::WindowFullscreen);
     QCOMPARE(manager.preferredBarVisibility(second.window), (BarVisibility{true, false, true, true}));
     QCOMPARE(manager.preferredBarVisibility(first.window), sourcePreferences);
     QCOMPARE(manager.paneWidget(pane), page.data()); QCOMPARE(manager.model().groupForTab(tab), manager.context(second.window).group);
@@ -401,15 +409,31 @@ void ViewCommandsTest::displaySettingsSearchKeepsExactRowsAndSectionHeadings()
     const auto fixture = createFixture(manager); manager.showSettings(fixture.window);
     auto* page = settingsPage(manager); QVERIFY(page);
     auto* search = page->findChild<QLineEdit*>("SettingsSearch"); QVERIFY(search);
+    QSet<QString> allRows;
+    for (auto* row : page->findChildren<QWidget*>("SettingRow")) allRows.insert(row->property("settingId").toString());
+    QCOMPARE(allRows, (QSet<QString>{"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench",
+        "window.revealDuringDrag", "window.revealDelayMs", "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked",
+        "window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars",
+        "window.hideSingleTabWorkbench", "window.hideSingleTabFloating", "tabs.centralPlacement", "tabs.pinnedPlacement",
+        "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers",
+        "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.colors"}));
     search->setText("window.visibility.");
     QSet<QString> visibleRows, visibleSections;
     for (auto* row : page->findChildren<QWidget*>("SettingRow")) if (!row->isHidden()) visibleRows.insert(row->property("settingId").toString());
     for (auto* heading : page->findChildren<QLabel*>("SettingsCategoryHeading")) if (!heading->isHidden()) visibleSections.insert(heading->property("categoryId").toString());
     QCOMPARE(visibleRows, (QSet<QString>{"window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars"}));
     QCOMPARE(visibleSections, (QSet<QString>{"window", "window/display"}));
-    search->setText("window.zenMode"); visibleRows.clear();
+    for (const auto* removed : {"window.zenMode", "window.viewMode"}) {
+        search->setText(QString::fromLatin1(removed)); visibleRows.clear(); visibleSections.clear();
+        for (auto* row : page->findChildren<QWidget*>("SettingRow")) if (!row->isHidden()) visibleRows.insert(row->property("settingId").toString());
+        for (auto* heading : page->findChildren<QLabel*>("SettingsCategoryHeading")) if (!heading->isHidden()) visibleSections.insert(heading->property("categoryId").toString());
+        QCOMPARE(visibleRows, QSet<QString>{}); QCOMPARE(visibleSections, QSet<QString>{});
+    }
+    search->setText("window.zenFullscreenMode"); visibleRows.clear(); visibleSections.clear();
     for (auto* row : page->findChildren<QWidget*>("SettingRow")) if (!row->isHidden()) visibleRows.insert(row->property("settingId").toString());
-    QCOMPARE(visibleRows, (QSet<QString>{"window.zenMode"}));
+    for (auto* heading : page->findChildren<QLabel*>("SettingsCategoryHeading")) if (!heading->isHidden()) visibleSections.insert(heading->property("categoryId").toString());
+    QCOMPARE(visibleRows, (QSet<QString>{"window.zenFullscreenMode"}));
+    QCOMPARE(visibleSections, (QSet<QString>{"window", "window/display"}));
 }
 
 void ViewCommandsTest::bottomToolbarAndHiddenChromeUseNoExtraLayoutSpace_data()
@@ -626,16 +650,23 @@ void ViewCommandsTest::settingsChooseTheZenDefaultAndEnableItFromNormal()
     WindowManager manager; const auto fixture = createFixture(manager); manager.showSettings(fixture.window);
     auto* page = settingsPage(manager); QVERIFY(page);
     auto* choice = page->findChild<QComboBox*>("ZenFullscreenMode");
-    auto* zen = page->findChild<QCheckBox*>("WindowZenMode"); QVERIFY(choice && zen);
+    QVERIFY(choice); QVERIFY(!page->findChild<QCheckBox*>("WindowZenMode"));
+    QVERIFY(!page->findChild<QComboBox*>("WindowViewMode"));
     QCOMPARE(choice->count(), 3); QVERIFY(choice->findData(int(ViewMode::Normal)) < 0);
     QCOMPARE(choice->currentData().toInt(), int(ViewMode::WindowFullscreen));
     choice->setCurrentIndex(choice->findData(int(mode))); QCOMPARE(manager.behavior().zenFullscreenMode, mode);
-    QCOMPARE(manager.viewMode(fixture.window), ViewMode::Normal); QVERIFY(zen->isEnabled());
+    QCOMPARE(manager.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!manager.zenMode(fixture.window));
     const auto preferred = manager.preferredBarVisibility(fixture.window);
-    zen->setChecked(true); QTRY_VERIFY(manager.zenMode(fixture.window)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    const auto model = manager.model().toJson(); const auto text = fixture.editor->toPlainText();
+    QVERIFY(manager.execute("window.zen.toggle", {}, fixture.window));
+    QTRY_VERIFY(manager.zenMode(fixture.window)); QCOMPARE(manager.viewMode(fixture.window), mode);
+    QTRY_VERIFY(manager.windowWidget(fixture.window)->isFullScreen());
     QCOMPARE(manager.barVisibility(fixture.window), (BarVisibility{false, false, false, false}));
-    zen->setChecked(false); QTRY_VERIFY(!manager.zenMode(fixture.window));
+    for (const auto& entry : manager.saveLayout().value("windows").toArray()) QVERIFY(!entry.toObject().contains("viewState"));
+    QVERIFY(manager.execute("window.zen.toggle", {}, fixture.window)); QTRY_VERIFY(!manager.zenMode(fixture.window));
     QCOMPARE(manager.viewMode(fixture.window), mode); QCOMPARE(manager.barVisibility(fixture.window), preferred);
+    QCOMPARE(manager.model().toJson(), model); QCOMPARE(manager.paneWidget(fixture.pane), fixture.editor);
+    QCOMPARE(fixture.editor->toPlainText(), text);
     auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::WindowFullscreen; manager.setBehavior(behavior);
     QCOMPARE(choice->currentData().toInt(), int(ViewMode::WindowFullscreen));
 }

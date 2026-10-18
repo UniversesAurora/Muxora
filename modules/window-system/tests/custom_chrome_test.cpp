@@ -53,12 +53,36 @@ class CustomChromeTest final : public QObject {
     void registryNotificationsAndRemovalKeepRunningCallbacksAlive();
     void registryCanBeDestroyedByTheRegistrationObserver();
     void toolbarsUseCommandsAndRetainIndependentWindowLayouts();
+    void lockedOptionsPreferenceUpdatesEveryWindowAndRestoresStrictly();
     void toolbarsSurviveKindChangesAndReleaseEveryPresentation();
     void dynamicDefinitionsRejectInvalidAndReservedIds();
     void removedProviderIdsDoNotAccumulateInSavedProfiles();
     void statusItemsUpdateInPlaceAndParticipateInVisibilityAndRestore();
     void renamingPreservesContentAndTheFactoryDescriptor();
 };
+
+void CustomChromeTest::lockedOptionsPreferenceUpdatesEveryWindowAndRestoresStrictly() {
+    WindowManager manager;
+    const auto first = manager.createWindow();
+    const auto second = manager.createWindow(WindowKind::Floating, {}, first);
+    manager.addTab(first, new QLabel("Main"), {"Main", "label", {}});
+    manager.addTab(second, new QLabel("Float"), {"Float", "label", {}});
+    QVERIFY(!manager.behavior().hideToolbarOptionsWhenLocked);
+    auto behavior = manager.behavior(); behavior.hideToolbarOptionsWhenLocked = true;
+    manager.setBehavior(behavior);
+    for (auto id : {first, second}) QVERIFY(view(manager, id)->strips()->hideOptionsWhenLocked());
+    const auto third = manager.createWindow(); QVERIFY(view(manager, third)->strips()->hideOptionsWhenLocked());
+    const auto snapshot = manager.saveLayout();
+    QVERIFY(snapshot.value("behavior").toObject().value("hideToolbarOptionsWhenLocked").toBool());
+    WindowManager restored;
+    restored.setContentFactory([](const TabOptions& options, PaneId) { return new QLabel(options.title); });
+    QVERIFY(restored.restoreLayout(snapshot)); QVERIFY(restored.behavior().hideToolbarOptionsWhenLocked);
+    for (auto id : restored.model().windowOrder()) QVERIFY(view(restored, id)->strips()->hideOptionsWhenLocked());
+    auto invalid = snapshot; auto settings = invalid.value("behavior").toObject();
+    settings.insert("hideToolbarOptionsWhenLocked", "true"); invalid.insert("behavior", settings);
+    const auto before = restored.saveLayout(); QVERIFY(!restored.restoreLayout(invalid));
+    QCOMPARE(restored.saveLayout(), before);
+}
 
 void CustomChromeTest::registryNotificationsAndRemovalKeepRunningCallbacksAlive() {
     CommandRegistry registry;

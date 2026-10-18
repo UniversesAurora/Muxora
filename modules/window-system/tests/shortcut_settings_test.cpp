@@ -33,7 +33,9 @@ struct Editor {
     QPushButton* apply;
     QPushButton* add;
     QPushButton* remove;
-    QPushButton* composite;
+    QPushButton* recordSearch;
+    QKeySequenceEdit* searchCapture;
+    QLabel* help;
     QLabel* diagnostic;
 
     explicit Editor(QWidget* page)
@@ -45,12 +47,15 @@ struct Editor {
           apply(page->findChild<QPushButton*>(QStringLiteral("ApplyShortcut"))),
           add(page->findChild<QPushButton*>(QStringLiteral("AddShortcut"))),
           remove(page->findChild<QPushButton*>(QStringLiteral("ClearShortcut"))),
-          composite(page->findChild<QPushButton*>(QStringLiteral("AddCompositeShortcut"))),
+          recordSearch(page->findChild<QPushButton*>(QStringLiteral("RecordShortcutSearch"))),
+          searchCapture(page->findChild<QKeySequenceEdit*>(QStringLiteral("ShortcutSearchCapture"))),
+          help(page->findChild<QLabel*>(QStringLiteral("ShortcutCommandHelp"))),
           diagnostic(page->findChild<QLabel*>(QStringLiteral("ShortcutDiagnostic"))) {}
 
     bool complete() const
     {
-        return search && commands && bindings && capture && arguments && apply && add && remove && composite && diagnostic;
+        return search && commands && bindings && capture && arguments && apply && add && remove
+            && recordSearch && searchCapture && help && diagnostic;
     }
 };
 
@@ -62,6 +67,7 @@ private slots:
     void captureAcceptsUnmodifiedContinuationLettersAndDigits();
     void multipleBindingsCanBeAddedEditedAndRemovedIndependently();
     void secondaryBindingsAppearInSearchAndConflictChecks();
+    void recordSearchFindsSequenceBindingsWithoutExecutingOrEditing();
     void compositeArgumentsValidateAndRetainExecutionOrder();
     void externalChangeDoesNotOverwriteAnUnfinishedBindingEdit();
 };
@@ -154,8 +160,14 @@ void ShortcutSettingsTest::compositeArgumentsValidateAndRetainExecutionOrder()
     QVERIFY(page);
     Editor editor(page);
     QVERIFY(editor.complete());
-    editor.composite->click();
+    // runCommands uses the same selection/add-binding workflow as every other
+    // command. Each binding retains its own commands/args, not a separate mode.
+    QVERIFY(!page->findChild<QPushButton*>(QStringLiteral("AddCompositeShortcut")));
+    editor.search->setText(QStringLiteral("runCommands"));
+    editor.add->click();
     QCOMPARE(editor.commands->currentItem()->data(0, Qt::UserRole).toString(), QStringLiteral("runCommands"));
+    QVERIFY(!editor.help->isHidden());
+    QVERIFY(editor.help->text().contains(QStringLiteral("args.commands")));
     editor.capture->setKeySequence(QKeySequence(QStringLiteral("Ctrl+Alt+F10")));
     editor.arguments->setPlainText(QStringLiteral("{\"commands\":[\"test.first\",{\"command\":\"test.second\",\"args\":{\"value\":\"second\"}}]}"));
     QVERIFY(editor.apply->isEnabled());
@@ -174,6 +186,52 @@ void ShortcutSettingsTest::compositeArgumentsValidateAndRetainExecutionOrder()
         editor.apply->click();
         QCOMPARE(manager.commands().bindings(QStringLiteral("runCommands")), stored);
     }
+}
+
+void ShortcutSettingsTest::recordSearchFindsSequenceBindingsWithoutExecutingOrEditing()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    int executions = 0;
+    QVERIFY(manager.commands().add({QStringLiteral("test.recorded"), QStringLiteral("Recorded"), {},
+        QKeySequence(QStringLiteral("Ctrl+Alt+F10, Ctrl+Alt+F11")), {},
+        [&executions](const CommandContext&) { ++executions; return true; }}));
+    QVERIFY(manager.commands().add({QStringLiteral("test.longer"), QStringLiteral("Longer"), {},
+        QKeySequence(QStringLiteral("Ctrl+Alt+F10, G, 7")), {},
+        [&executions](const CommandContext&) { ++executions; return true; }}));
+    QVERIFY(manager.commands().add({QStringLiteral("test.otherModifiers"), QStringLiteral("Other modifiers"), {},
+        QKeySequence(QStringLiteral("Ctrl+Alt+Shift+F10")), {},
+        [&executions](const CommandContext&) { ++executions; return true; }}));
+    const auto original = manager.commands().bindings(QStringLiteral("test.recorded"));
+    auto* page = shortcutPage(manager, window);
+    QVERIFY(page);
+    Editor editor(page);
+    QVERIFY(editor.complete());
+    QVERIFY(editor.searchCapture->isHidden());
+    editor.recordSearch->click();
+    QVERIFY(editor.recordSearch->isChecked());
+    QVERIFY(!editor.searchCapture->isHidden());
+    QTest::keyClick(editor.searchCapture, Qt::Key_F10, Qt::ControlModifier | Qt::AltModifier);
+    QCOMPARE(editor.commands->topLevelItemCount(), 2);
+    QTest::keyClick(editor.searchCapture, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+    QCOMPARE(editor.commands->topLevelItemCount(), 1);
+    QCOMPARE(editor.commands->topLevelItem(0)->data(0, Qt::UserRole).toString(), QStringLiteral("test.recorded"));
+    QCOMPARE(executions, 0);
+    QCOMPARE(manager.commands().bindings(QStringLiteral("test.recorded")), original);
+    editor.recordSearch->click();
+    QVERIFY(editor.searchCapture->isHidden());
+    QCOMPARE(editor.commands->topLevelItemCount(), 1);
+    // A new recording starts afresh and can include bare continuation keys.
+    editor.recordSearch->click();
+    QTest::keyClick(editor.searchCapture, Qt::Key_F10, Qt::ControlModifier | Qt::AltModifier);
+    QTest::keyClick(editor.searchCapture, Qt::Key_G);
+    QTest::keyClick(editor.searchCapture, Qt::Key_7);
+    QCOMPARE(editor.commands->topLevelItemCount(), 1);
+    QCOMPARE(editor.commands->topLevelItem(0)->data(0, Qt::UserRole).toString(), QStringLiteral("test.longer"));
+    QCOMPARE(executions, 0);
+    editor.search->clear();
+    QVERIFY(editor.commands->topLevelItemCount() > 3);
+    QCOMPARE(manager.commands().bindings(QStringLiteral("test.recorded")), original);
 }
 
 void ShortcutSettingsTest::externalChangeDoesNotOverwriteAnUnfinishedBindingEdit()

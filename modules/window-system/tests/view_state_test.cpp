@@ -139,6 +139,8 @@ private slots:
     void invalidOperationsLeaveStateUnchanged();
     void fullscreenAndZenRestartPreserveNormalPlacement_data();
     void fullscreenAndZenRestartPreserveNormalPlacement();
+    void legacyFullscreenAndZenAreValidatedButNotRestored_data() { fullscreenAndZenRestartPreserveNormalPlacement_data(); }
+    void legacyFullscreenAndZenAreValidatedButNotRestored();
     void oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement_data() { fullscreenAndZenRestartPreserveNormalPlacement_data(); }
     void oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement();
     void oldSnapshotsRestoreDefaultDisplayState();
@@ -332,48 +334,95 @@ void ViewStateTest::invalidOperationsLeaveStateUnchanged()
 
 void ViewStateTest::fullscreenAndZenRestartPreserveNormalPlacement_data()
 {
-    QTest::addColumn<ViewMode>("mode"); QTest::addColumn<bool>("zen");
+    QTest::addColumn<ViewMode>("mode"); QTest::addColumn<bool>("zen"); QTest::addColumn<bool>("maximized");
     for (const auto& scope : {std::pair{"window", ViewMode::WindowFullscreen}, std::pair{"group", ViewMode::GroupFullscreen}, std::pair{"pane", ViewMode::PaneFullscreen}}) {
-        QTest::newRow(qPrintable(QString("%1").arg(scope.first))) << scope.second << false;
-        QTest::newRow(qPrintable(QString("%1-zen").arg(scope.first))) << scope.second << true;
+        for (const bool zen : {false, true}) for (const bool maximized : {false, true})
+            QTest::newRow(qPrintable(QString("%1-zen-%2-maximized-%3").arg(scope.first).arg(zen).arg(maximized)))
+                << scope.second << zen << maximized;
     }
 }
 
 void ViewStateTest::fullscreenAndZenRestartPreserveNormalPlacement()
 {
-    QFETCH(ViewMode, mode); QFETCH(bool, zen);
+    QFETCH(ViewMode, mode); QFETCH(bool, zen); QFETCH(bool, maximized);
     WindowManager original;
     const auto fixture = createFixture(original);
     auto* source = dynamic_cast<WorkspaceWindow*>(original.windowWidget(fixture.window)); QVERIFY(source);
     const auto available = qApp->primaryScreen()->availableGeometry();
     const auto normal = visibleFixtureGeometry(available);
     QVERIFY(available.contains(normal));
-    source->restorePlacement(normal, false);
+    source->restorePlacement(normal, maximized);
+    QTRY_COMPARE(source->isMaximized(), maximized);
     QVERIFY(original.setToolbarsVisible(fixture.window, false));
     const auto preferred = original.preferredBarVisibility(fixture.window);
     QVERIFY(original.setViewMode(fixture.window, mode));
     QVERIFY(original.setZenMode(fixture.window, zen));
     const auto snapshot = original.saveLayout();
     const auto saved = windowRecord(snapshot, fixture.window);
+    QVERIFY(!saved.contains("viewState"));
+    QCOMPARE(saved.value("maximized").toBool(), maximized);
     QCOMPARE(QRect(saved.value("x").toInt(), saved.value("y").toInt(), saved.value("width").toInt(), saved.value("height").toInt()), normal);
     QVERIFY(!saved.value("toolbarsVisible").toBool());
     source->hide();
     WindowManager restored; factory(restored);
     QVERIFY(restored.restoreLayout(snapshot));
-    QCOMPARE(restored.viewMode(fixture.window), mode); QCOMPARE(restored.zenMode(fixture.window), zen);
+    QCOMPARE(restored.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!restored.zenMode(fixture.window));
     QCOMPARE(restored.preferredBarVisibility(fixture.window), preferred);
-    QCOMPARE(restored.windowViewState(fixture.window), original.windowViewState(fixture.window));
+    QCOMPARE(restored.barVisibility(fixture.window), preferred);
+    QCOMPARE(original.viewMode(fixture.window), mode); QCOMPARE(original.zenMode(fixture.window), zen);
     auto* target = dynamic_cast<WorkspaceWindow*>(restored.windowWidget(fixture.window)); QVERIFY(target);
-    QTRY_VERIFY(target->isFullScreen());
+    QVERIFY(!target->isFullScreen());
+    QTRY_COMPARE(target->isMaximized(), maximized);
     QCOMPARE(target->normalPlacementGeometry(), normal);
     QVERIFY(restored.setViewMode(fixture.window, ViewMode::Normal));
-    QTRY_COMPARE(target->geometry(), normal); QVERIFY(!target->isFullScreen());
+    if (!maximized) QTRY_COMPARE(target->geometry(), normal);
+    QVERIFY(!target->isFullScreen());
     QCOMPARE(restored.barVisibility(fixture.window), preferred);
+}
+
+void ViewStateTest::legacyFullscreenAndZenAreValidatedButNotRestored()
+{
+    QFETCH(ViewMode, mode); QFETCH(bool, zen); QFETCH(bool, maximized);
+    WindowManager original;
+    const auto fixture = createFixture(original);
+    auto* source = dynamic_cast<WorkspaceWindow*>(original.windowWidget(fixture.window)); QVERIFY(source);
+    const auto normal = visibleFixtureGeometry(qApp->primaryScreen()->availableGeometry());
+    source->restorePlacement(normal, maximized);
+    QTRY_COMPARE(source->isMaximized(), maximized);
+    QVERIFY(original.setTabBarsVisible(fixture.window, false));
+    QVERIFY(original.setSideBarsVisible(fixture.window, false));
+    const auto preferences = original.preferredBarVisibility(fixture.window);
+    auto behavior = original.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen;
+    original.setBehavior(behavior);
+    auto snapshot = original.saveLayout();
+    changeWindowRecord(snapshot, fixture.window, [&](QJsonObject& record) {
+        const auto name = mode == ViewMode::WindowFullscreen ? "windowFullscreen"
+            : mode == ViewMode::GroupFullscreen ? "groupFullscreen" : "paneFullscreen";
+        QJsonObject legacy{{"mode", name}, {"zen", zen}};
+        if (mode != ViewMode::WindowFullscreen) {
+            legacy.insert("group", original.model().groupForTab(fixture.tab).toString(QUuid::WithoutBraces));
+            legacy.insert("tab", fixture.tab.toString(QUuid::WithoutBraces));
+            legacy.insert("pane", fixture.pane.toString(QUuid::WithoutBraces));
+        }
+        record.insert("viewState", legacy);
+    });
+    source->hide();
+    WindowManager restored; factory(restored);
+    QVERIFY(restored.restoreLayout(snapshot));
+    QCOMPARE(restored.model().toJson(), original.model().toJson());
+    QCOMPARE(restored.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!restored.zenMode(fixture.window));
+    QCOMPARE(restored.preferredBarVisibility(fixture.window), preferences);
+    QCOMPARE(restored.barVisibility(fixture.window), preferences);
+    QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::PaneFullscreen);
+    auto* target = dynamic_cast<WorkspaceWindow*>(restored.windowWidget(fixture.window)); QVERIFY(target);
+    QVERIFY(!target->isFullScreen()); QTRY_COMPARE(target->isMaximized(), maximized);
+    QCOMPARE(target->normalPlacementGeometry(), normal);
+    QVERIFY(!windowRecord(restored.saveLayout(), fixture.window).contains("viewState"));
 }
 
 void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
 {
-    QFETCH(ViewMode, mode); QFETCH(bool, zen);
+    QFETCH(ViewMode, mode); QFETCH(bool, zen); QFETCH(bool, maximized);
     // The first largest current screen gives an independent, unambiguous
     // oracle: this rectangle fully covers every screen, while no other screen
     // can have a larger overlap. Its border is outside the entire desktop.
@@ -398,7 +447,8 @@ void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
     auto* source = dynamic_cast<WorkspaceWindow*>(original.windowWidget(fixture.window)); QVERIFY(source);
     const auto minimum = source->minimumSize().expandedTo(source->minimumSizeHint());
     QVERIFY(available.width() >= minimum.width() && available.height() >= minimum.height());
-    source->restorePlacement(visible, false);
+    source->restorePlacement(visible, maximized);
+    QTRY_COMPARE(source->isMaximized(), maximized);
     QVERIFY(original.setToolbarsVisible(fixture.window, false));
     QVERIFY(original.setTabBarsVisible(fixture.window, false));
     const auto preferences = original.preferredBarVisibility(fixture.window);
@@ -415,23 +465,25 @@ void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
     WindowManager restored; factory(restored);
     QVERIFY(restored.restoreLayout(snapshot));
     QCOMPARE(savedPlacement(windowRecord(snapshot, fixture.window)), outside);
-    QCOMPARE(restored.viewMode(fixture.window), mode); QCOMPARE(restored.zenMode(fixture.window), zen);
+    QCOMPARE(restored.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!restored.zenMode(fixture.window));
     QCOMPARE(restored.preferredBarVisibility(fixture.window), preferences);
     QCOMPARE(restored.model().toJson(), model);
     QCOMPARE(restored.model().panes(fixture.tab), original.model().panes(fixture.tab));
     auto* target = dynamic_cast<WorkspaceWindow*>(restored.windowWidget(fixture.window)); QVERIFY(target);
-    QTRY_VERIFY(target->isFullScreen());
+    QVERIFY(!target->isFullScreen()); QTRY_COMPARE(target->isMaximized(), maximized);
     QCOMPARE(target->normalPlacementGeometry(), available);
     const auto repaired = windowRecord(restored.saveLayout(), fixture.window);
-    QCOMPARE(savedPlacement(repaired), available); QVERIFY(!repaired.value("maximized").toBool());
+    QCOMPARE(savedPlacement(repaired), available); QCOMPARE(repaired.value("maximized").toBool(), maximized);
+    QVERIFY(!repaired.contains("viewState"));
     QVERIFY(restored.setViewMode(fixture.window, ViewMode::Normal));
-    QTRY_COMPARE(target->geometry(), available); QVERIFY(!target->isFullScreen());
+    if (!maximized) QTRY_COMPARE(target->geometry(), available);
+    QVERIFY(!target->isFullScreen()); QTRY_COMPARE(target->isMaximized(), maximized);
     QCOMPARE(target->normalPlacementGeometry(), available);
     QCOMPARE(restored.preferredBarVisibility(fixture.window), preferences);
     QCOMPARE(restored.barVisibility(fixture.window), preferences);
     QCOMPARE(restored.model().toJson(), model);
     const auto savedAgain = windowRecord(restored.saveLayout(), fixture.window);
-    QCOMPARE(savedPlacement(savedAgain), available); QVERIFY(!savedAgain.value("maximized").toBool());
+    QCOMPARE(savedPlacement(savedAgain), available); QCOMPARE(savedAgain.value("maximized").toBool(), maximized);
 }
 
 void ViewStateTest::oldSnapshotsRestoreDefaultDisplayState()

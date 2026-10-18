@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(WindowSystemLua VERSION 0.1.0 LANGUAGES CXX)
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Widgets)
 add_library(WindowSystemLua STATIC
-    src/script_host.cpp src/window_api.cpp src/script_api.cpp src/appearance_api.cpp
+    src/script_host.cpp src/window_api.cpp src/script_api.cpp src/appearance_api.cpp src/hierarchy_api.cpp
     include/window_system_lua/script_host.hpp)
 add_library(WindowSystemLua::Host ALIAS WindowSystemLua)
 set_target_properties(WindowSystemLua PROPERTIES AUTOMOC ON)
