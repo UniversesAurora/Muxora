@@ -30,6 +30,18 @@
 #include <limits>
 
 namespace window_system {
+QVector<WindowManager::Private::BindingCandidate> WindowManager::Private::shortcutCandidates(QKeyCombination first)
+{
+    if (bindingIndexRevision != bindingsRevision) {
+        bindingIndex.clear();
+        for (const auto& command : commands.commands())
+            for (const auto& binding : command.bindings)
+                bindingIndex[binding.sequence[0].toCombined()].append(
+                    {command.id, binding.sequence, binding.args, command.enabled});
+        bindingIndexRevision = bindingsRevision;
+    }
+    return bindingIndex.value(first.toCombined());
+}
 WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_unique<Private>())
 {
     Q_ASSERT(qApp);
@@ -972,8 +984,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         for (auto* current = widget; current; current = current->parentWidget()) {
             const auto pane = current->property("paneId").toUuid();
             if (!pane.isNull()) {
-                for (const auto& tab : d->model.tabs()) if (d->model.panes(tab.id).contains(pane)) {
-                    const auto tabId = tab.id;
+                if (const auto tabId = d->model.tabForPane(pane); !tabId.isNull()) {
                     leaveFocusScopeFor(tabId, pane);
                     if (!self) return true;
                     if (!d->model.activatePane(tabId, pane)) return false;
@@ -985,7 +996,6 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
                     // The host can destroy its manager in a synchronous layout
                     // listener while this focus event is still being delivered.
                     if (!self) return true;
-                    break;
                 }
                 break;
             }
@@ -996,8 +1006,8 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         for (auto* current = widget; current; current = current->parentWidget()) {
             const auto pane = current->property("paneId").toUuid();
             if (pane.isNull()) continue;
-            for (const auto& tab : d->model.tabs()) if (d->model.panes(tab.id).contains(pane)) {
-                showPaneMenu(tab.id, pane, static_cast<QContextMenuEvent*>(event)->globalPos(), widget);
+            if (const auto tab = d->model.tabForPane(pane); !tab.isNull()) {
+                showPaneMenu(tab, pane, static_cast<QContextMenuEvent*>(event)->globalPos(), widget);
                 return true;
             }
             break;
@@ -1029,29 +1039,28 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
                                 combinations.value(2, emptyKey), combinations.value(3, emptyKey));
     const bool continuing = !d->pendingKeys.isEmpty();
     const auto ctx = continuing ? d->keyContext : context(windowId);
-    const auto commands = d->commands.commands();
+    // Only bindings sharing the first stroke can match. The retained copy keeps
+    // enabled callbacks alive even if one of them changes the registry.
+    const auto candidates = d->shortcutCandidates(combinations.first());
     const QPointer<WindowManager> self(this);
     const QPointer<QWidget> receiver(widget);
     const auto bindingRevision = d->bindingsRevision;
     QString exact;
     QVariantMap exactArgs;
     bool partial = false;
-    for (const auto& command : commands) {
-        for (const auto& binding : command.bindings) {
-            const auto match = sequence.matches(binding.sequence);
-            if (match == QKeySequence::NoMatch) continue;
-            auto target = ctx; target.args = binding.args;
-            const bool enabled = !command.enabled || command.enabled(target);
-            if (!self || !receiver) return true;
-            if (bindingRevision != d->bindingsRevision) { key->accept(); return true; }
-            if (!enabled) continue;
-            if (event->type() == QEvent::ShortcutOverride) { key->accept(); return true; }
-            if (match == QKeySequence::ExactMatch) {
-                exact = command.id; exactArgs = binding.args; break;
-            }
-            partial = true;
+    for (const auto& candidate : candidates) {
+        const auto match = sequence.matches(candidate.sequence);
+        if (match == QKeySequence::NoMatch) continue;
+        auto target = ctx; target.args = candidate.args;
+        const bool enabled = !candidate.enabled || candidate.enabled(target);
+        if (!self || !receiver) return true;
+        if (bindingRevision != d->bindingsRevision) { key->accept(); return true; }
+        if (!enabled) continue;
+        if (event->type() == QEvent::ShortcutOverride) { key->accept(); return true; }
+        if (match == QKeySequence::ExactMatch) {
+            exact = candidate.command; exactArgs = candidate.args; break;
         }
-        if (!exact.isEmpty()) break;
+        partial = true;
     }
     // Override events reserve only the input. Advancing the chord here would
     // process the same physical stroke twice when KeyPress follows it.

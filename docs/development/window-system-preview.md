@@ -67,6 +67,21 @@ pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+### 审查与热路径修订（2026-10-18）
+
+完成一次整体代码审查，结论和后续方案见 [审查与路线](../roadmap/README.md)。本轮代码改动三处：快捷键分发按首个按键缓存候选绑定，不再每次按键复制整个命令目录；焦点进入和右键菜单改用 `tabForPane()` 查找窗格所属标签；修复隐藏侧栏后重建、再显示时收纳条延迟一轮事件循环才出现的问题。前两项行为不变，没有修改公开 API、默认编译选项或测试预期。
+
+侧栏问题由全量测试发现：`sidebar-presentation` 的 `hidingKeepsPinnedContentAndCentralTabs` 共 8 行，在基线提交 `89ef8d0` 上同样稳定失败，修复后 36 行全部通过。新增回归 `dispatchFollowsCatalogAndBindingChanges`，用真实按键检查命令新增、改绑、同首键与删除后的分发。
+
+Release 全量运行两次（59 个套件）。第一次在侧栏修复前：58 个通过，`sidebar-presentation` 失败（即上述缺陷）。第二次在全部修改后：57 个通过，2168 个实际测试行通过，21 行失败，集中在两个依赖真实桌面的套件：
+
+- `native-frame` 20 行：检查点上的窗口是 Claude 桌面应用的窗口，测试窗口被它遮住，`WindowFromPoint` 命中了别的进程。在同样的桌面状态下，去掉侧栏修复的构建也是同样 20 行失败；第一次全量运行时该套件通过。
+- `floating-panel` 1 行：独立 `FloatingPanel` 的窗口曝光等待超时，该用例不经过本轮修改的代码；单独重跑 5 次均为 22 行全部通过。
+
+因此本轮不能写成“全量通过”。需要在没有其他窗口遮挡的桌面上重跑 `native-frame` 确认。首次失败和重跑记录在 `out/diagnostics/review-*`，汇总报告为 `out/test-results/review-full-release.xml`、`review-full-release-final.xml`。
+
+固定 Release 已覆盖 `out/package/muxora-preview/muxora.exe`；`application-exit-test.ps1` 的三窗口退出、重启和保存失败检查通过，临时状态已清理。没有执行 Debug 矩阵、独立模块构建、外部宿主夹具、DPI 缩放、7-Zip 打包或校验值计算。
+
 ### 侧栏交界与标签列表修订（2026-10-18）
 
 收纳条与中央内容区恢复贴齐，只在两条收纳条交叉的位置保留 2 像素间隙，包括尾部的整侧固定按钮。间隙露出条带原有的浅色背景，不增加线条、边框或整圈留白；默认主题、运行时换色、隐藏再显示均检查实际像素和几何。

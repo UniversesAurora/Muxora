@@ -24,6 +24,7 @@
 #include <QToolButton>
 #include <QTimer>
 #include <algorithm>
+#include <utility>
 
 namespace window_system {
 namespace {
@@ -322,6 +323,12 @@ void DockSurface::updateRailLayout()
         outer->addWidget(edgeBars_.value(Edge::Top), 0, first, 1, last - first + 1);
     }
     if (bottom) outer->addWidget(edgeBars_.value(Edge::Bottom), 4, 0, 1, 5);
+    // Adding a rail that was parked on the surface reparents it, and Qt defers
+    // the implicit show to the next event-loop turn. Peek placement and pinned
+    // extents are computed synchronously after this, so show requested rails now.
+    for (const auto& [edge, shown] : {std::pair{Edge::Left, left}, std::pair{Edge::Right, right},
+                                      std::pair{Edge::Top, top}, std::pair{Edge::Bottom, bottom}})
+        if (shown) edgeBars_.value(edge)->show();
 }
 QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents)
 {

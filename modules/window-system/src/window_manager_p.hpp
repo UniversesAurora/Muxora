@@ -52,6 +52,17 @@ struct WindowManager::Private {
     QPointer<QWidget> keyFocus;
     CommandContext keyContext;
     quint64 bindingsRevision = 0;
+    // Keyboard dispatch reads candidates by first stroke instead of copying the
+    // whole catalog per key event. Rebuilt lazily after binding/catalog edits.
+    struct BindingCandidate {
+        QString command;
+        QKeySequence sequence;
+        QVariantMap args;
+        std::function<bool(const CommandContext&)> enabled;
+    };
+    QHash<int, QVector<BindingCandidate>> bindingIndex;
+    std::optional<quint64> bindingIndexRevision;
+    QVector<BindingCandidate> shortcutCandidates(QKeyCombination first);
     bool catalogRefreshPending = false;
     QTimer* keyTimer = nullptr;
     struct NavigationAnchor {

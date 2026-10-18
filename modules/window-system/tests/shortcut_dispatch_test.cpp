@@ -62,6 +62,7 @@ private slots:
     void capturedContextIsRecheckedAfterEnabledCallbacks();
     void directTabCommandsKeepTheirOwnContextContract();
     void bindingSignalsCanDestroyTheManager();
+    void dispatchFollowsCatalogAndBindingChanges();
 };
 
 void ShortcutDispatchTest::multipleBindingsRetainArgumentsAndPrimaryCompatibility()
@@ -561,6 +562,43 @@ void ShortcutDispatchTest::bindingSignalsCanDestroyTheManager()
     connect(manager.get(), &WindowManager::commandsChanged, this, [&] { manager.reset(); });
     QVERIFY(!manager->commands().setShortcut("runCommands", QKeySequence("Ctrl+Alt+7")));
     QVERIFY(!guarded);
+}
+
+void ShortcutDispatchTest::dispatchFollowsCatalogAndBindingChanges()
+{
+    WindowManager manager;
+    const auto fixture = createFixture(manager);
+    QStringList calls;
+    const auto record = [&calls](QString id) {
+        return [&calls, id](const CommandContext&) { calls.append(id); return true; };
+    };
+    manager.showWindow(fixture.window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(fixture.window)));
+    QVERIFY(manager.focusPane(fixture.tab, manager.model().tab(fixture.tab)->activePane));
+    // The first stroke builds the dispatch index; later edits must invalidate it.
+    QTest::keyClick(fixture.editor, Qt::Key_F7, Qt::ControlModifier | Qt::AltModifier);
+    QVERIFY(calls.isEmpty());
+    QVERIFY(manager.commands().add({"host.first", "First", "Test", QKeySequence("Ctrl+Alt+F7"), {}, record("first")}));
+    QTest::keyClick(fixture.editor, Qt::Key_F7, Qt::ControlModifier | Qt::AltModifier);
+    QCOMPARE(calls, QStringList{"first"});
+    QVERIFY(manager.commands().setShortcut("host.first", QKeySequence("Ctrl+Alt+F6, X")));
+    QTest::keyClick(fixture.editor, Qt::Key_F7, Qt::ControlModifier | Qt::AltModifier);
+    QCOMPARE(calls, QStringList{"first"});
+    QTest::keyClick(fixture.editor, Qt::Key_F6, Qt::ControlModifier | Qt::AltModifier);
+    QTest::keyClick(fixture.editor, Qt::Key_X);
+    QCOMPARE(calls, (QStringList{"first", "first"}));
+    // Same first stroke in two commands keeps registry order for exact matches.
+    QVERIFY(manager.commands().add({"host.second", "Second", "Test", QKeySequence("Ctrl+Alt+F6, X"), {}, record("second")}));
+    QVERIFY(manager.commands().remove("host.first"));
+    QTest::keyClick(fixture.editor, Qt::Key_F6, Qt::ControlModifier | Qt::AltModifier);
+    QTest::keyClick(fixture.editor, Qt::Key_X);
+    QCOMPARE(calls, (QStringList{"first", "first", "second"}));
+    QVERIFY(manager.commands().remove("host.second"));
+    QTest::keyClick(fixture.editor, Qt::Key_F6, Qt::ControlModifier | Qt::AltModifier);
+    QTest::keyClick(fixture.editor, Qt::Key_X);
+    QCOMPARE(calls, (QStringList{"first", "first", "second"}));
+    // With no binding left, the unmodified stroke reaches the editor again.
+    QCOMPARE(fixture.editor->toPlainText(), QStringLiteral("x"));
 }
 
 QTEST_MAIN(ShortcutDispatchTest)
