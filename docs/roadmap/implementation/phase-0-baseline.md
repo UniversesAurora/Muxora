@@ -118,13 +118,27 @@ pwsh ./tools/bench.ps1 -Name baseline
 
 **完成标准**：
 
-- [ ] 默认 Release 构建产物与之前相同（不出现基准目标，`muxora.exe` 不受影响）。
-- [ ] `bench-baseline.json` 生成，八个场景在四个规模下都有数据。
-- [ ] 在 [性能方案 §6](../performance-plan.md#6-测量与预算) 末尾追加“基线数据”表，写明机器、平台插件、提交。
+- [x] 默认 Release 构建产物与之前相同（不出现基准目标，`muxora.exe` 不受影响）。
+- [ ] `bench-baseline.json` 生成，八个场景在四个规模下都有数据。（按用户决定只跑了 100／500／1000 三个规模，见下方状态）
+- [x] 在 [性能方案 §6](../performance-plan.md#6-测量与预算) 末尾追加“基线数据”表，写明机器、平台插件、提交。
 
 **风险**：offscreen 平台不走原生窗口和 DWM，绘制成本偏低。表格中注明平台；需要原生数据时用 `-Visible` 另跑一份。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Add opt-in WindowSystem layout scale benchmark”），2000 个标签这一档未运行。基线结果见 [性能方案 §6 基线数据](../performance-plan.md#基线数据2026-10-19)。
+
+实现与上面的差别：
+
+- 每次计时在 `processEvents()` 之后还要执行 `deleteLater()`（`settleEventLoop()`：先 `processEvents()`，再 `drainDeferredDeletes()`），创建循环和场景准备也这样处理。原因：基准不进入 `exec()`，此时 `processEvents()` 不会执行 DeferredDelete，被重建替换掉的视图会一直留着。第一次正式运行就是这样：500 个标签的创建跑了 30 多分钟，进程私有提交涨到 1.4 GB，运行被停止。日志保留在 `out/diagnostics/0.1-bench-*-attempt1-no-deferred-delete.*`，这些数据没有使用。真实的事件循环每一轮都会执行延迟删除，所以计入耗时。
+- 每跑完一个规模就重写一次输出文件，JSON 增加 `completedTabs` 和 `complete`，中途停止时已完成的规模仍然保留。第二次运行是在 1000 档的 cycle 中途按用户决定停止的，那时结果只在最后写出，所以没有留下数据（日志 `0.1-bench-baseline-attempt2-stopped-at-1000-cycle.txt`）。
+- JSON 另有 `tabs`（请求的规模）、`repeat`、`machine.os` 和 `createProgress`（每 100 个标签的累计创建耗时）；`cycle` 多记一个第 0 次的起点。`--commit` 在工作区有未提交的已跟踪改动时加 `-dirty` 后缀。`--tabs` 的每个值必须大于 25，保证 move 至少有两个组。
+- 运行时间：三档合计 3 小时 24 分钟，四档估计要 8 小时以上。按用户决定，`bench.ps1 -Tabs` 和程序 `--tabs` 的默认值改为 `100,500,1000`，2000 用 `-Tabs 2000` 单独补测。
+
+验证：
+
+- 基线：`pwsh ./tools/bench.ps1 -Name baseline -Tabs '100,500,1000'`，`complete: true`，三个规模的八个场景都有数据，另有 `memory`、`cycle`、`save` 各三组。提交标记为 `26fa199-dirty`：窗口模块库代码与 `ba1a98a` 相同，未提交的只有本步骤的基准文件。
+- 冒烟：修正后 `-Tabs 100 -Repeat 3` 一次通过（`out/test-results/bench-smoke.json`）。
+- `window-system.benchmark-support`：在临时目录（`BUILD_TESTING=ON`、`WINDOW_SYSTEM_BUILD_BENCHMARKS=ON`）中构建运行，2 行通过，带 `model` 标签；开启基准选项时 CTest 共 60 个，临时目录已删除。
+- 默认构建：`tools/build.ps1 -Configuration Release` 重新配置后 `WINDOW_SYSTEM_BUILD_BENCHMARKS=OFF`，`build.ninja` 中没有基准目标，`muxora.exe` 没有重新链接；CTest 仍为 59 个。
 
 ---
 
@@ -199,7 +213,7 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **验证**：对当前构建目录运行，结果应与审查记录中的数字一致（最近一次全量为 2168 个通过行；失败行按去重规则计算）。
 
-**状态**：已完成（提交标题 “Add test-summary.ps1 for Qt Test row counts”）。实现与上面的差别：
+**状态**：已完成（提交 `26fa199`）。实现与上面的差别：
 
 - 数据标签改为懒惰匹配，取到后面跟空白或行尾的 `)` 为止（`\((.*?)\)(?=\s|$)`）。按原写法的贪婪匹配，`FAIL!  : T::f(row) 'x' returned FALSE. ()` 会把失败消息算进数据标签，同一行的 `PASS` 与 `FAIL!` 就无法合并。
 - `XPASS` 与 `FAIL!` 一样算失败，`XFAIL` 算通过，`BLACKLIST` 算跳过。

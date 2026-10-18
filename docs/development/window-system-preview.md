@@ -76,6 +76,8 @@ pwsh ./tools/verify.ps1
 
 `tools/test-summary.ps1` 统计实际测试行，生成 JSON。对审查时的全量结果运行，得到 2168 行通过、21 行失败，与审查记录一致；上面的 2189 行也由它统计。
 
+新增默认关闭的规模基准 `pwsh ./tools/bench.ps1 -Name <名字>`，在单独的 `out/build/bench-release` 中构建，结果写入 `out/test-results/bench-<名字>.json`。基线只跑了 100／500／1000 个标签，结果见 [性能方案 §6](../roadmap/performance-plan.md#基线数据2026-10-19)：1000 个标签时，关闭、移动或拆分一次约 4 s，创建 1000 个标签用了 22 分钟。这些是 offscreen 平台下的本机数据。
+
 没有执行 Debug、独立模块、外部宿主夹具或打包检查。
 
 ### 审查与热路径修订（2026-10-18）

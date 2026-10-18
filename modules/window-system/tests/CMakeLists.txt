@@ -95,3 +95,19 @@ endif()
 
 # This matrix constructs a real Qt window for each drag/geometry scenario.
 set_tests_properties(window-system.pinned-ui PROPERTIES TIMEOUT 120)
+
+# Benchmark statistics only exist when the opt-in benchmark build is enabled.
+if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
+    qt_add_executable(window-system-benchmark-support-test benchmark_support_test.cpp
+        ../benchmarks/benchmark_support.cpp)
+    target_link_libraries(window-system-benchmark-support-test PRIVATE Qt6::Widgets Qt6::Test)
+    target_include_directories(window-system-benchmark-support-test PRIVATE ../benchmarks)
+    target_compile_features(window-system-benchmark-support-test PRIVATE cxx_std_20)
+    set_target_properties(window-system-benchmark-support-test PROPERTIES AUTOMOC ON)
+    if(WIN32)
+        target_link_libraries(window-system-benchmark-support-test PRIVATE psapi)
+    endif()
+    add_test(NAME window-system.benchmark-support COMMAND window-system-benchmark-support-test
+        -o ${CMAKE_CURRENT_BINARY_DIR}/benchmark-support-results.txt,txt)
+    set_tests_properties(window-system.benchmark-support PROPERTIES LABELS model)
+endif()

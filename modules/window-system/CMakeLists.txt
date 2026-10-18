@@ -7,6 +7,7 @@ if(PROJECT_IS_TOP_LEVEL)
     include(CTest)
 endif()
 option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TESTING})
+option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
@@ -123,6 +124,10 @@ if(WINDOW_SYSTEM_BUILD_TESTS)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
     add_subdirectory(tests)
+endif()
+# Benchmarks build in their own directory (tools/bench.ps1) and add no tests.
+if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 install(TARGETS WindowSystemModel WindowSystemWidgets EXPORT WindowSystemTargets
