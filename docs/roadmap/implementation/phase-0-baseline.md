@@ -170,7 +170,7 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **风险**：有些套件在构造函数里创建窗口但不显示，可能仍依赖焦点。以并行实测为准。
 
-**状态**：已完成（提交标题 “Label CTest suites as model, widget or desktop”）。实际分类：
+**状态**：已完成（提交 `55e57ab`）。实际分类：
 
 | 标签 | 数量 | 套件 |
 | --- | --- | --- |
@@ -199,7 +199,13 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **验证**：对当前构建目录运行，结果应与审查记录中的数字一致（最近一次全量为 2168 个通过行；失败行按去重规则计算）。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Add test-summary.ps1 for Qt Test row counts”）。实现与上面的差别：
+
+- 数据标签改为懒惰匹配，取到后面跟空白或行尾的 `)` 为止（`\((.*?)\)(?=\s|$)`）。按原写法的贪婪匹配，`FAIL!  : T::f(row) 'x' returned FALSE. ()` 会把失败消息算进数据标签，同一行的 `PASS` 与 `FAIL!` 就无法合并。
+- `XPASS` 与 `FAIL!` 一样算失败，`XFAIL` 算通过，`BLACKLIST` 算跳过。
+- 套件清单取自构建目录中的 `CTestTestfile.cmake`：已注册但没有结果文件、或结果文件中没有测试行的套件列入 `noResult`；没有对应注册套件的结果文件也按路径列出。`initTestCase`／`cleanupTestCase` 不计入测试行，但它们的失败列入该套件的 `fixtureFailures`。每个套件记录结果文件的修改时间，便于发现旧结果。
+
+验证：对审查时留下的 Release 全量结果运行（59 个结果文件，写入于 2026-10-18 22:34 前后），得到 59 个套件、2168 行通过、21 行失败（`native-frame` 20、`floating-panel` 1）、0 行跳过，与审查记录一致（`out/test-results/test-summary-review-baseline.json`）。0.2 的三层运行之后再次运行，得到 2189 行通过、0 行失败。
 
 ---
 

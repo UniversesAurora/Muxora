@@ -72,7 +72,11 @@ pwsh ./tools/verify.ps1
 
 阶段 0 只增加测试与度量工具，应用行为、公开 API 和默认 Release 编译选项都没有变化。
 
-59 个 CTest 套件按 [测试要求](testing-design.md#ctest-分层标签) 分为 `model` 8 个、`widget` 10 个、`desktop` 41 个，只有 `desktop` 保留串行。`ctest -L "model|widget" -j 8` 连续三次 18 个套件、732 行全部通过，用时约 10 秒（串行 28 秒）；`-L desktop` 串行一次 41 个套件全部通过。三层合计 2189 行通过、0 行失败，上一轮因窗口遮挡失败的 `native-frame` 这次也全部通过。`tools/build.ps1` 新增 `-TestLabel`。没有执行 Debug、独立模块、外部宿主夹具或打包检查。
+59 个 CTest 套件按 [测试要求](testing-design.md#ctest-分层标签) 分为 `model` 8 个、`widget` 10 个、`desktop` 41 个，只有 `desktop` 保留串行。`ctest -L "model|widget" -j 8` 连续三次 18 个套件、732 行全部通过，用时约 10 秒（串行 28 秒）；`-L desktop` 串行一次 41 个套件全部通过。三层合计 2189 行通过、0 行失败，上一轮因窗口遮挡失败的 `native-frame` 这次也全部通过。`tools/build.ps1` 新增 `-TestLabel`。
+
+`tools/test-summary.ps1` 统计实际测试行，生成 JSON。对审查时的全量结果运行，得到 2168 行通过、21 行失败，与审查记录一致；上面的 2189 行也由它统计。
+
+没有执行 Debug、独立模块、外部宿主夹具或打包检查。
 
 ### 审查与热路径修订（2026-10-18）
 

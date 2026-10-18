@@ -75,6 +75,12 @@ pwsh ./tools/build.ps1 -Configuration Release -Test -TestLabel "model|widget"
 
 `-TestLabel` 把值作为 `ctest -L` 的正则传入，junit 报告文件名加上标签后缀，例如 `out/test-results/dev-release-model-widget.xml`。
 
+测试行数用 `tools/test-summary.ps1` 统计，不再手工计数。它读取构建目录中各套件的 `*-results.txt`，按“套件 + 函数 + 数据标签”去重，不计 `initTestCase`／`cleanupTestCase`；同一行既有 `PASS` 又有 `FAIL!` 时算失败。没有结果的已注册套件单独列出。结果文件会被下一次运行覆盖，只运行部分层时，其他套件的数字来自旧结果，应看输出中的修改时间。
+
+```powershell
+pwsh ./tools/test-summary.ps1 -BuildDirectory out/build/dev-release -Output out/test-results/summary.json
+```
+
 异步测试等待具体事件或可观察状态，并设置有理由的超时；不能依赖固定长 sleep、网络运气或执行顺序。每个用例可独立运行，临时资源清理明确，随机场景记录 seed 和操作序列。
 
 Qt 生命周期夹具须遵循对象销毁契约。控件正在处理 Show、Hide 等通知时，宿主请求销毁该控件或其所有者，应使用 `deleteLater()`。事件过滤器返回 `true` 只能停止事件继续分发；Qt 的 `show()` / `hide()` 调用栈还可能继续访问控件的私有状态，不能把这一返回值当成同步删除窗口的保证。[QObject 析构与延迟删除说明](https://github.com/qt/qtbase/blob/6.12/src/corelib/kernel/qobject.cpp)、[QWidget 显隐实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/kernel/qwidget.cpp)
