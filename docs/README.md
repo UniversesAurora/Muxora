@@ -12,6 +12,7 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [浮动与完整窗口](design/floating-window-design.md) | 两种窗口、窗口族、整窗拖拽与跨窗口合并 |
 | [窗口交互修订](design/window-interaction-design.md) | 条内标签预览、离条浮窗、明确投放、逐标签固定、滚动标签与工具条 |
 | [设置与命令](design/settings-and-commands-design.md) | JSONC、图形设置、命令面板与快捷键 |
+| [Lua 扩展 API](design/lua-extension-api-design.md) | 对话框与通知、自定义界面、终端读写、会话与文件等扩展接口，以及运行时的多任务挂起 |
 | [Lua 脚本与组件扩展](design/lua-scripting-design.md) | 运行时、脚本 API、资源预算及未来组件扩展 |
 | [终端 Normal / Visual 模式](design/terminal-mark-mode-design.md) | 本地键盘浏览、选择、搜索与复制 |
 | [SSH config 修改与同步](design/ssh-config-sync-design.md) | 默认只读；可选的写回原文件与应用会话双向同步，无损解析、最小修改、`Include` 接入、冲突与开关切换 |

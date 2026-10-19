@@ -130,7 +130,7 @@
 
 | 场景 | 呈现方式 |
 | --- | --- |
-| Lua 脚本调用 `muxora.ui.notify({ title, text })` | Windows 系统通知。现在的实现是程序内弹出带“确定”按钮的消息框，改为系统通知 |
+| Lua 脚本调用 `muxora.ui.notify({ title, text })` | Windows 系统通知。现在的实现是程序内弹出带“确定”按钮的消息框，改为系统通知。Lua 需要程序内弹窗时用 `ui.message`、`ui.confirm`、`ui.dialog`（统一对话框，可模态或非模态，见 [Lua 扩展 API 设计](lua-extension-api-design.md#4-弹窗与通知)） |
 | 长时间运行的命令完成、后台终端响铃（阶段 7） | Muxora 不在前台时发系统通知并闪烁任务栏按钮；在前台时不发（与 Windows Terminal 一致）。可在设置中关闭 |
 | 连接失败、进程退出 | 显示在该会话自己的标签里（标签上的标记、内容区的原因和“重试”），不发通知 |
 | 需要用户输入或确认（密码、覆盖文件） | 对话框（§4.3） |

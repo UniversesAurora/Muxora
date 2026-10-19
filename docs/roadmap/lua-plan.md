@@ -103,7 +103,9 @@ src/editor/
 
 ### 3.3 权限
 
-`muxora.app.launch` 可以启动外部程序。从别处复制来的脚本，首次调用这类能力时应询问用户，并记住按脚本授权的结果；以后开放文件读写、网络等能力也走同一机制。
+> 2026-10-20 修订：用户自己放在 `User/` 下的脚本默认拥有全部能力，不弹权限确认（见 [Lua 扩展 API 设计 §2](../design/lua-extension-api-design.md#2-不变的原则)）。以后如果支持安装别人发布的扩展包，再为扩展包设计权限声明。
+
+Lua 能力的完整范围（对话框、自定义界面、终端读写、会话、文件、网络等）见 [Lua 扩展 API 设计](../design/lua-extension-api-design.md) 和 [实现阶段 9](implementation/phase-9-lua-extension-api.md)。
 
 ## 4. 实施顺序
 
