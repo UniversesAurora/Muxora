@@ -71,6 +71,7 @@
    取值与校验规则写在头文件注释中：`Enum` 必须是 `enumValues` 中的值；`Color` 是 `#RRGGBB` 或 `#AARRGGBB` 字符串；`Json` 只做“是对象或数组”的检查，内容由对应的使用方校验（例如 `tabs.colors`）。
 
 2. 未知 ID 的值（例如被卸载的 Lua 脚本留下的设置）由 `load()` 保留在一个“未知值”表中，`modifiedValues()` 照样返回它们，保存时不会丢失。
+2a. **需要确认的变更**（供 `ssh.config.syncAppSessions` 等使用，见阶段 7.4m）：`SettingDefinition` 增加可选的 `std::function<void(const QVariant& oldValue, const QVariant& newValue, std::function<void(bool accepted)> done)> confirmChange`。设置了它的设置项，`setValue()` 和 `load()` 先调用它，只有 `done(true)` 之后才提交新值并发出变化通知；`done(false)` 时保持旧值，并通知宿主把 `settings.json` 中的值改回。确认是异步的，期间该设置处于“待确认”状态，设置页显示对应提示，同一设置的再次修改会取消上一次待确认。
 3. `WindowManager` 拥有一个注册表：`SettingsRegistry& settings();`。
 
 **测试**：每种类型的合法与非法值；默认值等于值时 `isModified` 为假；`load` 部分非法时其他项照常生效并给出诊断；未知 ID 往返保留；通知合并。
