@@ -343,8 +343,19 @@ TabId LayoutModel::tabForPane(PaneId id) const
 }
 std::optional<LayoutModel::NodeOwner> LayoutModel::ownerOfNode(QUuid node) const
 {
+    if (!indexValid_) {
+        // Only a default-constructed model or a test-invalidated copy lacks
+        // the index; scan instead of answering from stale lookups.
+        QHash<TabId, GroupId> tabGroup;
+        QHash<PaneId, TabId> paneTab;
+        QHash<QUuid, NodeOwner> nodeOwner;
+        scanIndex(tabGroup, paneTab, nodeOwner);
+        const auto scanned = nodeOwner.constFind(node);
+        if (scanned == nodeOwner.cend()) return std::nullopt;
+        return scanned.value();
+    }
     const auto iterator = nodeOwner_.constFind(node);
-    if (!indexValid_ || iterator == nodeOwner_.cend()) return std::nullopt;
+    if (iterator == nodeOwner_.cend()) return std::nullopt;
     return iterator.value();
 }
 bool LayoutModel::familyHasTabs(FamilyId id) const

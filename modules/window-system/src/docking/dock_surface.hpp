@@ -44,6 +44,8 @@ public:
     void setSideBarsVisible(bool visible);
     void setFocusScope(const WindowViewState& state);
     [[nodiscard]] QRect centralRectGlobal() const;
+    // The splitter built for a central or pinned tree split node, or null.
+    [[nodiscard]] QSplitter* splitterFor(QUuid node) const;
 protected:
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -79,6 +81,7 @@ private:
     QHash<GroupId, TabViewportState> groupViewportStates_;
     QHash<Edge, int> edgeScrollOffsets_;
     QHash<Edge, QPointer<QSplitter>> pinnedRegions_;
+    QHash<QUuid, QPointer<QSplitter>> splitters_;
     QPointer<QSplitter> horizontal_;
     QPointer<QSplitter> vertical_;
     QHash<TabId, QPointer<TabContent>> contents_;

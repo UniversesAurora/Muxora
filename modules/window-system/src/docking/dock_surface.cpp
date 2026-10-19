@@ -81,7 +81,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
     ++rebuildGeneration_;
     restoreFocusScope();
-    closePeek(); groups_.clear(); edgeBars_.clear(); pinnedRegions_.clear(); contents_ = contents;
+    closePeek(); groups_.clear(); edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); contents_ = contents;
     if (root_) {
         layout()->removeWidget(root_);
         root_->hide();
@@ -184,6 +184,7 @@ QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<Tab
     split->addWidget(buildTree(node->second, contents));
     split->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
     split->setProperty("splitNodeId", node->id);
+    splitters_.insert(node->id, split);
     const auto nodeId = node->id;
     QObject::connect(split, &QSplitter::splitterMoved, manager_, [this, split, nodeId] {
         const auto sizes = split->sizes();
@@ -573,6 +574,7 @@ QRect DockSurface::centralRectGlobal() const
             return QRect(group->mapToGlobal(QPoint()), group->size());
     return center_ ? QRect(center_->mapToGlobal(QPoint()), center_->size()) : QRect();
 }
+QSplitter* DockSurface::splitterFor(QUuid node) const { return splitters_.value(node).data(); }
 void DockSurface::updateEdgeTabSelection(TabId tab)
 {
     for (const auto& strip : edgeBars_) if (strip)

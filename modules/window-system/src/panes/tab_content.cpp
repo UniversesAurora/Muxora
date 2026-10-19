@@ -62,6 +62,7 @@ void TabContent::rebuild(const TabRecord& record,
     }
     activePane_ = record.activePane;
     frames_.clear();
+    splitters_.clear();
     if (tree_) {
         layout_->removeWidget(tree_);
         // A host can request a rebuild from a pane's resize callback. The old
@@ -87,6 +88,7 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
         splitter->setObjectName("PaneSplitter");
         splitter->setHandleWidth(qMax(1, manager_->theme().metrics.splitterWidth));
         splitter->setProperty("splitNodeId", node->id);
+        splitters_.insert(node->id, splitter);
         splitter->setChildrenCollapsible(false);
         splitter->addWidget(buildNode(node->first, record, contents));
         splitter->addWidget(buildNode(node->second, record, contents));
@@ -162,6 +164,7 @@ QWidget* TabContent::takeBottomBar(QWidget* owner)
     return result.data();
 }
 QHash<PaneId, QWidget*> TabContent::paneFrames() const { return frames_; }
+QSplitter* TabContent::splitterFor(QUuid node) const { return splitters_.value(node).data(); }
 
 void TabContent::setFocusedPane(PaneId pane)
 {

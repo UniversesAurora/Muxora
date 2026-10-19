@@ -5,6 +5,7 @@
 #include <QPointer>
 #include "focus_projection.hpp"
 
+class QSplitter;
 class QVBoxLayout;
 namespace window_system {
 class TabContent final : public QFrame {
@@ -22,6 +23,8 @@ public:
     QWidget* takeTopBar(QWidget* owner = nullptr);
     QWidget* takeBottomBar(QWidget* owner = nullptr);
     [[nodiscard]] QHash<PaneId, QWidget*> paneFrames() const;
+    // The splitter built for a pane-tree split node, or null.
+    [[nodiscard]] QSplitter* splitterFor(QUuid node) const;
 private:
     QWidget* buildNode(LayoutTree node, const TabRecord& record,
                        const QHash<PaneId, QPointer<QWidget>>& contents);
@@ -43,6 +46,7 @@ private:
     PaneBarSharing topSharing_ = PaneBarSharing::Shared;
     PaneBarSharing bottomSharing_ = PaneBarSharing::Shared;
     QHash<PaneId, QWidget*> frames_;
+    QHash<QUuid, QPointer<QSplitter>> splitters_;
     PaneId focusedPane_;
     FocusProjection focusProjection_;
     bool barsVisible_ = true;

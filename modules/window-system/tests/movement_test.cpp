@@ -86,6 +86,8 @@ private slots:
     void directionalTiesFollowStableModelOrder();
     void ratioCommandUpdatesExistingSplitterWithoutRebuilding_data();
     void ratioCommandUpdatesExistingSplitterWithoutRebuilding();
+    void ratioCommandUpdatesOnlyTheOwningSplitter_data();
+    void ratioCommandUpdatesOnlyTheOwningSplitter();
     void splitterGapSelectsNearestProjection_data();
     void splitterGapSelectsNearestProjection();
 };
@@ -544,6 +546,63 @@ void MovementTest::ratioCommandUpdatesExistingSplitterWithoutRebuilding()
     QVERIFY(!manager.execute("layout.setRatio", {{"node", node}, {"ratio", 1.2}}, window));
     QCOMPARE(splitter->sizes(), sizes);
     QCOMPARE(manager.saveLayout(), snapshot);
+}
+
+void MovementTest::ratioCommandUpdatesOnlyTheOwningSplitter_data()
+{
+    QTest::addColumn<bool>("central");
+    QTest::newRow("tab-node") << false;
+    QTest::newRow("central-node") << true;
+}
+void MovementTest::ratioCommandUpdatesOnlyTheOwningSplitter()
+{
+    QFETCH(bool, central);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto left = add(manager, window, "left");
+    const auto right = add(manager, window, "right");
+    QVERIFY(manager.moveTab(right, manager.model().groupForTab(left), Placement::Right));
+    for (const auto tab : {left, right})
+        QVERIFY(!manager.splitPane(tab, manager.model().tab(tab)->activePane, new QLabel("split"), Placement::Bottom).isNull());
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    const auto splitterFor = [&](QUuid node) {
+        QPointer<QSplitter> result;
+        for (auto* candidate : manager.windowWidget(window)->findChildren<QSplitter*>())
+            if (candidate->property("splitNodeId").toUuid() == node) result = candidate;
+        return result;
+    };
+    const auto leftNode = manager.model().tab(left)->panes->id;
+    const auto rightNode = manager.model().tab(right)->panes->id;
+    const auto centralNode = manager.model().window(window)->central->id;
+    const auto leftSplitter = splitterFor(leftNode);
+    const auto rightSplitter = splitterFor(rightNode);
+    const auto centralSplitter = splitterFor(centralNode);
+    QVERIFY(leftSplitter && rightSplitter && centralSplitter);
+    QVERIFY(leftSplitter->isVisible() && rightSplitter->isVisible());
+    const auto target = central ? centralSplitter : leftSplitter;
+    const auto node = central ? centralNode : leftNode;
+    QVector<QPointer<QSplitter>> others{rightSplitter};
+    others << (central ? leftSplitter : centralSplitter);
+    QVector<QList<int>> before;
+    for (const auto& other : others) before << other->sizes();
+    const auto rightRatio = manager.model().tab(right)->panes->ratio;
+    for (const double ratio : {.3, .72}) {
+        QVERIFY(manager.execute("layout.setRatio", {{"node", node}, {"ratio", ratio}}, window));
+        QVERIFY(target);
+        const auto sizes = target->sizes();
+        const int available = sizes.value(0) + sizes.value(1);
+        QVERIFY(available > 0);
+        QVERIFY(std::abs(double(sizes.value(0)) / available - ratio) <= 2. / available);
+        // The command adjusts the existing widget instead of rebuilding.
+        QCOMPARE(splitterFor(node), target);
+        for (int i = 0; i < others.size(); ++i) {
+            QVERIFY(others[i]);
+            QCOMPARE(others[i]->sizes(), before[i]);
+        }
+        QCOMPARE(manager.model().tab(right)->panes->ratio, rightRatio);
+    }
 }
 
 void MovementTest::splitterGapSelectsNearestProjection_data()

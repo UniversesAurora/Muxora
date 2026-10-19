@@ -135,6 +135,18 @@ public:
     // so equal IDs mean identical records even when revisions repeat.
     // A default-constructed model has 0. Not serialized.
     [[nodiscard]] quint64 stateId() const noexcept;
+    // The tree that holds a split node: a window's central tree, one pinned
+    // side tree of a window, or a tab's pane tree. Layout-tree information
+    // only; it says nothing about the widgets a host builds for that tree.
+    struct NodeOwner {
+        enum class Kind : quint8 { Central, Pinned, Tab } kind = Kind::Central;
+        QUuid owner;            // WindowId (Central/Pinned) or TabId (Tab)
+        Edge edge = Edge::Left; // Pinned only
+        bool operator==(const NodeOwner&) const = default;
+    };
+    // O(1) on a committed model. nullopt for unknown IDs, leaves and the
+    // remembered pinned restore skeletons, which setSplitRatio() cannot edit.
+    [[nodiscard]] std::optional<NodeOwner> ownerOfNode(QUuid node) const;
 
     // Failed identifier-returning operations return a null UUID without changes.
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
@@ -226,20 +238,10 @@ public:
 private:
     // Model tests inspect and invalidate the lookup index; hosts never define it.
     friend struct LayoutModelTestAccess;
-    // The tree that holds a split node: a window's central tree, one pinned
-    // side tree of a window, or a tab's pane tree.
-    struct NodeOwner {
-        enum class Kind : quint8 { Central, Pinned, Tab } kind = Kind::Central;
-        QUuid owner;            // WindowId (Central/Pinned) or TabId (Tab)
-        Edge edge = Edge::Left; // Pinned only
-        bool operator==(const NodeOwner&) const = default;
-    };
     OperationResult transact(const std::function<OperationResult(LayoutModel&)>& operation);
     void rebuildIndex();
     void scanIndex(QHash<TabId, GroupId>& tabGroup, QHash<PaneId, TabId>& paneTab,
                    QHash<QUuid, NodeOwner>& nodeOwner) const;
-    // Requires a valid index; nullopt for unknown nodes, leaves and restore trees.
-    [[nodiscard]] std::optional<NodeOwner> ownerOfNode(QUuid node) const;
     bool activateIndexed(TabId tabId, GroupId groupId, PaneId paneId);
     void synchronizePinnedLayouts(WindowId onlyWindow = {});
     void rememberPinnedLayoutUnchecked(WindowId window, Edge edge);

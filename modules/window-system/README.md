@@ -21,6 +21,8 @@
 
 `LayoutModel::revision()` 统计同一个模型的已提交修改；宿主整体替换模型（恢复快照、回退到副本）后数值可能重复。需要判断“模型是否还是原来那份”时使用 `stateId()`：副本共享同一个值，每次成功修改或 `fromJson()` 都换成进程内的新值，默认构造的模型为 0。它不写入快照。
 
+`LayoutModel::ownerOfNode(node)` 返回分割节点所在的布局树：窗口的中央树、某一侧的固定树，或某个标签的窗格树。已提交的模型上为 O(1)；叶节点、未知 ID 和固定侧的恢复骨架返回空。它只描述模型，不涉及宿主为这棵树创建的控件。
+
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
 `setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。

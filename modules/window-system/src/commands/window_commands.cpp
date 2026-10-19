@@ -517,21 +517,23 @@ void WindowManager::registerWindowCommands()
             if (!d->model.setSplitRatio(node, ratio)) return false;
             d->drag->releaseForMutation();
             d->navigationAnchor.reset();
-            auto update = [node, ratio](QWidget* owner) {
-                if (!owner) return false;
-                for (auto* splitter : owner->findChildren<QSplitter*>()) {
-                    if (splitter->property("splitNodeId").toUuid() != node || !splitter->isVisibleTo(owner)) continue;
-                    const auto sizes = splitter->sizes();
-                    const int available = qMax(1000, sizes.value(0) + sizes.value(1));
-                    const QSignalBlocker suppressFeedback(splitter);
-                    splitter->setSizes({qRound(available * ratio), qRound(available * (1. - ratio))});
-                    return true;
+            // The model names the tree that holds the node; only that tab view
+            // or window surface can have built its splitter.
+            QWidget* owner = nullptr;
+            QSplitter* splitter = nullptr;
+            if (const auto tree = d->model.ownerOfNode(node)) {
+                if (tree->kind == LayoutModel::NodeOwner::Kind::Tab) {
+                    if (auto* view = d->tabs.value(tree->owner).data()) { owner = view; splitter = view->splitterFor(node); }
+                } else if (auto* window = d->windows.value(tree->owner).data()) {
+                    owner = window->surface(); splitter = window->surface()->splitterFor(node);
                 }
-                return false;
-            };
-            bool updated = false;
-            for (const auto& view : d->tabs) if (view && update(view)) { updated = true; break; }
-            if (!updated) for (const auto& view : d->windows) if (view && update(view->surface())) break;
+            }
+            if (splitter && splitter->isVisibleTo(owner)) {
+                const auto sizes = splitter->sizes();
+                const int available = qMax(1000, sizes.value(0) + sizes.value(1));
+                const QSignalBlocker suppressFeedback(splitter);
+                splitter->setSizes({qRound(available * ratio), qRound(available * (1. - ratio))});
+            }
             emit layoutChanged();
             return true;
         });

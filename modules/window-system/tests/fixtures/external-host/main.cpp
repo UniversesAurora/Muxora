@@ -174,6 +174,19 @@ int main(int argc, char** argv)
         || windows.paneWidget(secondPane) != restoredSecond.data()) return 92;
     // Restoring installs new records even when the content is identical.
     if (windows.model().stateId() == 0 || windows.model().stateId() == stateBeforeRestore) return 97;
+    // Split nodes resolve to the layout tree that holds them.
+    if (windows.model().ownerOfNode(QUuid::createUuid())) return 98;
+    using NodeOwner = window_system::LayoutModel::NodeOwner;
+    for (const auto& record : windows.model().windows())
+        if (record.central && !record.central->isLeaf()) {
+            const auto owner = windows.model().ownerOfNode(record.central->id);
+            if (!owner || owner->kind != NodeOwner::Kind::Central || owner->owner != record.id) return 99;
+        }
+    for (const auto& record : windows.model().tabs())
+        if (record.panes && !record.panes->isLeaf()) {
+            const auto owner = windows.model().ownerOfNode(record.panes->id);
+            if (!owner || owner->kind != NodeOwner::Kind::Tab || owner->owner != record.id) return 99;
+        }
     if (toolbar->parentWidget()->parentWidget()->property("toolbarArea").toString() != "bottom") return 93;
     auto toolbarLayout = [](const QJsonObject& snapshot, window_system::WindowId id) {
         for (const auto& entry : snapshot.value("windows").toArray()) {
