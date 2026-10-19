@@ -445,6 +445,15 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
     }
     if (hovered_ >= 0 && hovered_ != draggedIndex_) closeIcon_.paint(&painter, closeRect(hovered_));
 }
+void DragTabBar::tabRemoved(int index)
+{
+    // Decorations follow their tabs; later indices move down by one.
+    QHash<int, Decoration> shifted;
+    for (auto it = decorations_.cbegin(); it != decorations_.cend(); ++it)
+        if (it.key() != index) shifted.insert(it.key() > index ? it.key() - 1 : it.key(), it.value());
+    decorations_ = std::move(shifted);
+    QTabBar::tabRemoved(index);
+}
 void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {
     const auto callback = menu; if (callback) callback(displayedTabAt(event->pos()), event->globalPos());
 }
@@ -563,8 +572,23 @@ void GroupTabs::updateScrollBarGeometry()
     scrollbar_->raise();
 }
 void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
-    stack_->addWidget(widget); const auto index = bar_->addTab(icon, title);
+    stack_->addWidget(widget); pages_.insert(id, widget); const auto index = bar_->addTab(icon, title);
     bar_->setTabData(index, id); bar_->setTabToolTip(index, title); updateBarGeometry();
+}
+QWidget* GroupTabs::takePage(TabId id)
+{
+    const QPointer<QWidget> page = pages_.take(id);
+    for (int index = 0; index < bar_->count(); ++index) {
+        if (bar_->tabData(index).toUuid() != id) continue;
+        const QSignalBlocker quiet(bar_);
+        bar_->removeTab(index);
+        break;
+    }
+    const bool stacked = page && stack_->indexOf(page) >= 0;
+    if (stacked) stack_->removeWidget(page);
+    if (bar_->currentIndex() >= 0) stack_->setCurrentIndex(bar_->currentIndex());
+    updateBarGeometry();
+    return stacked ? page.data() : nullptr;
 }
 void GroupTabs::setCurrentIndex(int index, bool reveal) {
     bar_->setCurrentIndex(index); stack_->setCurrentIndex(index);

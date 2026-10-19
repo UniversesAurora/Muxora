@@ -94,6 +94,9 @@ void TabContent::rebuild(const TabRecord& record,
     }
     const int topIndex = visibleTop_ ? layout_->indexOf(visibleTop_) : -1;
     if (tree_) layout_->insertWidget(topIndex >= 0 ? topIndex + 1 : 0, tree_, 1);
+    // A view that stays mounted is visible while it rebuilds. Layout insertion
+    // would defer the new tree's show to the next event-loop turn.
+    if (tree_ && isVisible()) tree_->show();
     updateBars();
     setFocusedPane(focusedPane_);
 }

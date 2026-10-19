@@ -38,6 +38,30 @@ QSet<QWidget*> framesOf(const WindowManager& manager, TabId tab)
     for (const auto pane : manager.model().panes(tab)) result.insert(frameOf(manager, pane));
     return result;
 }
+QWidget* stripOf(const WindowManager& manager, WindowId window, GroupId group)
+{
+    for (auto* widget : manager.windowWidget(window)->findChildren<QWidget*>(QStringLiteral("TabGroup")))
+        if (widget->property("groupId").toUuid() == group) return widget;
+    return nullptr;
+}
+// One window with two central groups of three tabs each.
+struct TwoGroups {
+    WindowId window;
+    GroupId first, second;
+    QVector<TabId> firstTabs, secondTabs;
+};
+TwoGroups createTwoGroups(WindowManager& manager, WindowId window)
+{
+    TwoGroups result{window, {}, {}, {}, {}};
+    result.firstTabs << add(manager, window, "a0");
+    result.first = manager.model().groupForTab(result.firstTabs[0]);
+    result.firstTabs << add(manager, window, "a1", result.first) << add(manager, window, "a2", result.first);
+    const auto other = add(manager, window, "b0", result.first);
+    manager.moveTab(other, result.first, Placement::Right);
+    result.second = manager.model().groupForTab(other);
+    result.secondTabs << other << add(manager, window, "b1", result.second) << add(manager, window, "b2", result.second);
+    return result;
+}
 void settle()
 {
     QCoreApplication::processEvents();
@@ -75,6 +99,10 @@ private slots:
     void unrelatedTabsKeepTheirViewWidgets();
     void changedTreeRebuildsOnlyThatTab();
     void themeMetricChangeRebuilds();
+    void tabViewsStayInTheirWindow();
+    void crossWindowMoveReparentsOnlyTheMovedTab();
+    void deferredRootDeletionKeepsCarriedPages();
+    void mountedRebuildIsVisibleImmediately();
 };
 
 void ViewReuseTest::unrelatedTabsKeepTheirViewWidgets()
@@ -185,6 +213,125 @@ void ViewReuseTest::themeMetricChangeRebuilds()
     settle();
     QVERIFY(splitterOf());
     QCOMPARE(splitterOf()->handleWidth(), width);
+}
+
+void ViewReuseTest::tabViewsStayInTheirWindow()
+{
+    WindowManager manager;
+    const auto layout = createTwoGroups(manager, manager.createWindow());
+    settle();
+    QVERIFY(layout.first != layout.second);
+    const auto remaining = layout.firstTabs.mid(1) + layout.secondTabs;
+    QHash<TabId, QPointer<QWidget>> pages;
+    ParentRecorder recorder;
+    for (const auto tab : remaining) {
+        pages.insert(tab, pageOf(manager, tab));
+        QVERIFY(pages[tab]);
+        recorder.watch(pages[tab]);
+    }
+    QVERIFY(manager.closeTab(layout.firstTabs[0]));
+    settle();
+    for (const auto tab : remaining) {
+        QVERIFY(pages[tab]);
+        QCOMPARE(pageOf(manager, tab), pages[tab].data());
+        QCOMPARE(pages[tab]->window(), manager.windowWidget(layout.window));
+        QVERIFY(!recorder.everParkedIn(pages[tab], QStringLiteral("WindowSystemStorage")));
+    }
+}
+
+void ViewReuseTest::crossWindowMoveReparentsOnlyTheMovedTab()
+{
+    WindowManager manager;
+    const auto source = createTwoGroups(manager, manager.createWindow());
+    const auto targetWindow = manager.createWindow();
+    const auto targetTab = add(manager, targetWindow, "c0");
+    const auto targetGroup = manager.model().groupForTab(targetTab);
+    const auto targetOther = add(manager, targetWindow, "c1", targetGroup);
+    settle();
+    const auto moved = source.firstTabs[1];
+    const auto stayed = source.firstTabs.mid(0, 1) + source.firstTabs.mid(2) + source.secondTabs
+        + QVector<TabId>{targetTab, targetOther};
+    QHash<TabId, QPointer<QWidget>> pages;
+    QHash<PaneId, QPointer<QWidget>> contents;
+    ParentRecorder recorder;
+    for (const auto tab : stayed + QVector<TabId>{moved}) {
+        pages.insert(tab, pageOf(manager, tab));
+        QVERIFY(pages[tab]);
+        recorder.watch(pages[tab]);
+        const auto pane = activePane(manager, tab);
+        contents.insert(pane, manager.paneWidget(pane));
+        recorder.watch(contents[pane]);
+    }
+    QVERIFY(manager.moveTab(moved, targetGroup, Placement::Center));
+    settle();
+    QCOMPARE(manager.model().group(manager.model().groupForTab(moved))->windowId, targetWindow);
+    QVERIFY(pages[moved]);
+    QCOMPARE(pageOf(manager, moved), pages[moved].data());
+    QCOMPARE(pages[moved]->window(), manager.windowWidget(targetWindow));
+    QVERIFY(recorder.changes(pages[moved]) > 0);
+    for (const auto tab : stayed) {
+        QVERIFY(pages[tab]);
+        QCOMPARE(pageOf(manager, tab), pages[tab].data());
+        QVERIFY(!recorder.everParkedIn(pages[tab], QStringLiteral("WindowSystemStorage")));
+    }
+    // Pane content stays in its frame; only tab views move.
+    for (auto it = contents.cbegin(); it != contents.cend(); ++it) {
+        QVERIFY(it.value());
+        QCOMPARE(manager.paneWidget(it.key()), it.value().data());
+        QCOMPARE(recorder.changes(it.value()), 0);
+    }
+}
+
+void ViewReuseTest::deferredRootDeletionKeepsCarriedPages()
+{
+    WindowManager manager;
+    const auto layout = createTwoGroups(manager, manager.createWindow());
+    settle();
+    QHash<TabId, QPointer<QWidget>> pages;
+    QHash<TabId, QPointer<QWidget>> contents;
+    for (const auto tab : layout.firstTabs + layout.secondTabs) {
+        pages.insert(tab, pageOf(manager, tab));
+        contents.insert(tab, manager.paneWidget(activePane(manager, tab)));
+    }
+    const auto verify = [&](const QVector<TabId>& tabs, const char* step) {
+        // Run the old root's deferred deletion before anything else.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        for (const auto tab : tabs) {
+            QVERIFY2(pages[tab] && contents[tab], step);
+            QVERIFY2(manager.paneWidget(activePane(manager, tab)) == contents[tab], step);
+            QVERIFY2(pages[tab]->isAncestorOf(contents[tab]), step);
+        }
+    };
+    QVERIFY(manager.closeTab(layout.firstTabs[0]));
+    verify(layout.firstTabs.mid(1) + layout.secondTabs, "close");
+    // An auto-hide tab has no group on the surface; its carried view must
+    // still survive the old root.
+    QVERIFY(manager.moveTabToEdgeBar(layout.firstTabs[1], layout.window, Edge::Left));
+    verify(layout.firstTabs.mid(1) + layout.secondTabs, "edge");
+    QVERIFY(manager.activateTab(layout.firstTabs[1]));
+    settle();
+    QVERIFY(pages[layout.firstTabs[1]]);
+    QCOMPARE(pageOf(manager, layout.firstTabs[1]), pages[layout.firstTabs[1]].data());
+}
+
+void ViewReuseTest::mountedRebuildIsVisibleImmediately()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = add(manager, window, "tab");
+    add(manager, window, "other", manager.model().groupForTab(tab));
+    QVERIFY(manager.activateTab(tab));
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    const auto original = manager.paneWidget(activePane(manager, tab));
+    QVERIFY(original->isVisible());
+    // Without returning to the event loop, the rebuilt tree is shown.
+    const auto created = manager.splitPane(tab, activePane(manager, tab), new QLabel("split"), Placement::Right);
+    QVERIFY(!created.isNull());
+    QVERIFY(manager.paneWidget(created)->isVisible());
+    QVERIFY(original->isVisible());
+    QVERIFY(frameOf(manager, created)->isVisible());
 }
 
 QTEST_MAIN(ViewReuseTest)

@@ -847,7 +847,19 @@ void WindowManager::refresh(bool preserveDrag)
     for (const auto& bars : {d->paneTopBars, d->paneBottomBars})
         for (auto it = bars.cbegin(); it != bars.cend(); ++it)
             if (it.value() && !mounted(it.key())) { it.value()->setParent(d->storage); it.value()->hide(); }
-    for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->hide(); }
+    // A view stays mounted while its tab remains in the same window; that
+    // window's surface moves it between its groups. Views changing window or
+    // being deleted are parked so that no old surface deletes them.
+    const auto views = d->tabs;
+    for (auto it = views.cbegin(); it != views.cend(); ++it) {
+        const auto& view = it.value();
+        if (!view) continue;
+        const auto* group = d->model.group(d->model.groupForTab(it.key()));
+        const auto target = group ? d->windows.value(group->windowId) : QPointer<WorkspaceWindow>{};
+        if (target && view->window() == target.data()) continue;
+        view->setParent(d->storage);
+        if (view) view->hide();
+    }
     QSet<PaneId> livePanes;
     for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it)
         for (const auto pane : d->model.panes(it.key())) livePanes.insert(pane);

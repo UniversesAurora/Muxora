@@ -48,6 +48,7 @@ protected:
     void paintEvent(QPaintEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     QSize tabSizeHint(int index) const override;
+    void tabRemoved(int index) override;
 private:
     QRect closeRect(int index) const;
     int displayedTabAt(QPoint local) const;
@@ -87,6 +88,10 @@ public:
     std::function<void(QPoint)> groupMenuRequested;
     DragTabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
+    // Removes the tab and its page without deleting the page, which keeps
+    // this group as its parent until it is added elsewhere. Returns null if
+    // the page already left the stack. Does not call currentChanged.
+    QWidget* takePage(TabId id);
     void setCurrentIndex(int index, bool reveal = true);
     [[nodiscard]] int scrollOffset() const;
     [[nodiscard]] TabViewportState captureViewportState() const;
@@ -130,6 +135,7 @@ private:
     QScrollArea* scroll_ = nullptr;
     QScrollBar* scrollbar_ = nullptr;
     QStackedWidget* stack_ = nullptr;
+    QHash<TabId, QPointer<QWidget>> pages_;
     QToolButton* list_ = nullptr;
     Theme theme_;
     QPointer<QTimer> autoScroll_;

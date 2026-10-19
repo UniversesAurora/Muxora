@@ -81,11 +81,23 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
     ++rebuildGeneration_;
     restoreFocusScope();
-    closePeek(); groups_.clear(); edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); contents_ = contents;
-    if (root_) {
-        layout()->removeWidget(root_);
-        root_->hide();
-        root_->deleteLater();
+    closePeek();
+    const auto previousGroups = std::exchange(groups_, {});
+    edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); contents_ = contents;
+    const QPointer<QWidget> previousRoot = root_;
+    if (previousRoot) {
+        layout()->removeWidget(previousRoot);
+        previousRoot->hide();
+    }
+    // The manager parks every view that changes window or is deleted, so the
+    // old groups hold only pages of tabs that stay here. They move directly
+    // into the new groups instead of through the manager's storage.
+    QVector<QPointer<QWidget>> carried;
+    for (const auto& group : previousGroups) {
+        if (!group) continue;
+        QVector<TabId> ids;
+        for (int index = 0; index < group->tabBar()->count(); ++index) ids << group->tabBar()->tabData(index).toUuid();
+        for (const auto id : ids) if (auto* page = group->takePage(id)) carried << page;
     }
     root_ = new QWidget(this);
     root_->setObjectName("DockSurfaceRoot");
@@ -126,6 +138,15 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     vertical->setSizes(sizes);
     QObject::connect(vertical, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
     outer->addWidget(vertical, 1, 1, 3, 3);
+    // A carried page without a group here belongs to an auto-hide tab. Park
+    // it as the manager would: deleting the old root must never delete a
+    // live view. Adopted pages already have a new parent.
+    for (const auto& page : carried)
+        if (page && previousRoot && previousRoot->isAncestorOf(page)) {
+            page->setParent(manager_->d->storage);
+            if (page) page->hide();
+        }
+    if (previousRoot) previousRoot->deleteLater();
     layout()->addWidget(root_);
     // Layout insertion into an already visible parent defers the implicit show.
     // A completed API mutation must expose its replacement controls immediately,
