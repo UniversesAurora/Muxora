@@ -172,7 +172,7 @@
 
 1. **对比度测试**（`theme_contrast_test`，数据驱动）：组合清单写在测试数据中，每行为“前景 ID、背景 ID、最低对比度”。至少包括：`foreground` 对 `muxora.content.background`、`sideBar.background`、`titleBar.activeBackground`、`input.background`、`menu.background`、`quickInput.background`；`tab.activeForeground`／`tab.inactiveForeground` 对各自背景；`statusBar.foreground` 对 `statusBar.background`；`list.activeSelectionForeground` 对选中背景叠加后的颜色（带透明度的背景先与底色合成再计算）；`muxora.rail.tabForeground` 对 `muxora.rail.tabBackground`；每个标签颜色预设的前景对背景；`descriptionForeground` ≥ 3.0；`focusBorder` 对相邻背景 ≥ 3.0。对 Light、Dark、Black 都执行；高对比主题正文要求 ≥ 7.0（2.9）。
 2. **状态完整性**：注册表声明每个组件的状态组（例如按钮：`button.background`、`button.hoverBackground`、按下、焦点、禁用）；测试检查每个状态组的 ID 都已注册。
-3. **组件画廊**：命令 `developer.showComponentGallery` 打开一个工作区标签，网格展示：标签条（活动、非活动、悬停、带颜色、固定）、收纳条与临时面板、工具条（正常、悬停、按下、禁用、溢出）、菜单、快速输入（8.4 之后）、按钮、输入框（正常、焦点、错误）、复选框、下拉框、列表（悬停、选中、失焦选中）、滚动条、状态栏、通知、拖拽覆盖层的各种目标。画廊用真实组件，不用截图拼图。
+3. **组件画廊**：命令 `developer.showComponentGallery` 打开一个工作区标签，网格展示：标签条（活动、非活动、悬停、带颜色、固定）、收纳条与临时面板、工具条（正常、悬停、按下、禁用、溢出）、菜单、快速输入（8.4 之后）、按钮、输入框（正常、焦点、错误）、复选框、下拉框、列表（悬停、选中、失焦选中）、滚动条、状态栏、拖拽覆盖层的各种目标。画廊用真实组件，不用截图拼图。
 4. 命令 `developer.exportThemeGallery`：依次应用每个内置主题，把画廊 `grab()` 保存到 `out/diagnostics/theme-gallery/<主题>.png`，结束后恢复原主题。
 5. 按设计 §6 的评审清单逐项检查截图，并据此调整 `muxora-dark.json`、`muxora-black.json` 和注册表的深色默认值。调整记录（改了哪些 ID、原因）写进提交说明。
 

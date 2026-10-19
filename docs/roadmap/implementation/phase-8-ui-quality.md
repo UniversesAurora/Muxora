@@ -19,7 +19,7 @@
 | 8.4 | 快速输入组件并替换命令面板等 | 8.3 |
 | 8.5 | 标签行内重命名 | 8.4（侧栏标签用输入框模式） |
 | 8.6 | 统一对话框 | 8.3 |
-| 8.7 | 统一临时提示（不做通知中心） | 8.3 |
+| 8.7 | 改用 Windows 系统通知 | 无 |
 | 8.8 | 空工作区 | 2.4 |
 | 8.9 | 菜单结构、右键菜单顺序与文案 | 3.4（菜单 `when`）为佳，非硬性 |
 | 8.10 | 尺寸规格统一 | 用户确认 |
@@ -114,14 +114,14 @@
 
 ## 8.3 浮层窗口基类（U7、M3）
 
-**目标**：快速输入、菜单、下拉列表、通知、工具提示、对话框共用同一种顶层窗口外观：圆角、系统阴影、主题颜色、深色边框、焦点返回。
+**目标**：快速输入、菜单、下拉列表、工具提示、对话框共用同一种顶层窗口外观：圆角、系统阴影、主题颜色、深色边框、焦点返回。
 
 **涉及文件**：新建 `src/chrome/overlay_window.{hpp,cpp}`；`src/platform/windows/window_frame.{hpp,cpp}`（新增 `applyOverlayFrame(QWidget*)`）；`src/commands/floating_panel.cpp`（改为基于新基类）；`src/commands/popup_menu.cpp`（`DismissOnlyMenu` 显示前调用平台函数）；测试 `tests/floating_panel_test.cpp`、新 `tests/overlay_window_test.cpp`。
 
 **实现**：
 
 1. `OverlayWindow : QWidget`，窗口标志 `Qt::Tool | Qt::FramelessWindowHint`（菜单仍是 `QMenu` 自己的 `Qt::Popup`），提供：
-   - `void showRelativeTo(QWidget* owner, OverlayAnchor anchor)`：`TopCenter`（快速输入）、`Center`（对话框）、`BottomRight`（通知）、`AtRect`（下拉、工具提示）；位置限制在所属窗口所在屏幕的可用区域内。
+   - `void showRelativeTo(QWidget* owner, OverlayAnchor anchor)`：`TopCenter`（快速输入）、`Center`（对话框）、`AtRect`（下拉、工具提示）；位置限制在所属窗口所在屏幕的可用区域内。
    - 焦点返回：显示时记录 `QApplication::focusWidget()` 的 `QPointer`，隐藏时若该控件仍存在且可见则 `setFocus()`，否则把焦点交给所属窗口的当前窗格（调用 `WindowManager::focusPane`）。
    - `Esc` 关闭；外部点击关闭的策略沿用 `FloatingPanelOptions`。
 2. `applyOverlayFrame()`（Windows）：
@@ -247,19 +247,30 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 ---
 
-## 8.7 统一临时提示（U9）
+## 8.7 改用 Windows 系统通知（U9）
 
-> 2026-10-20 修订：不做通知中心和状态栏通知图标（[界面规范 §4.4](../../design/ui-design-system.md#44-临时提示)）。
+> 2026-10-20 修订：不做通知中心，也不做程序内的自绘提示（[界面规范 §4.4](../../design/ui-design-system.md#44-通知使用-windows-系统通知)）。
 
-**涉及文件**：现有 Lua `ui.notify` 的实现（`window-system-lua/src/script_api.cpp` 及其使用的提示控件）；新建 `src/chrome/toast.{hpp,cpp}`。
+**涉及文件**：`src/app/script_services.cpp`（`ui.notify` 现在用非模态 `QMessageBox`，约 104–136 行）；新建 `src/platform/windows/system_notification.{hpp,cpp}`；`src/app/tests/scripting_test.cpp`。
 
 **实现**：
 
-1. 把现有非模态通知改为规范 §4.4 的临时提示外观：基于 8.3 浮层，锚点右下角，宽 360，自动消失（默认 4 秒，悬停暂停），同时最多 2 条，多余的排队。
-2. API 保持小：`void WindowManager::showToast(WindowId window, QString text, int timeoutMs = 4000);`。不提供操作按钮、历史和未读计数。
-3. Lua `ui.notify` 的现有参数（`title`、`text`、`timeout_ms`）保持兼容。
+1. 平台层接口：
 
-**测试**：外观与位置、自动消失与悬停暂停、排队上限、Lua 参数兼容。
+   ```cpp
+   struct SystemNotification { QString title; QString text; QString tag; }; // tag 用于点击后定位窗口或标签
+   bool showSystemNotification(const SystemNotification& n, std::function<void(QString tag)> activated);
+   ```
+
+2. Windows 实现，按下面的顺序评估并在代码注释中记录选择：
+   - **首选 WinRT 通知**（`Windows.UI.Notifications.ToastNotificationManager`）：未打包的桌面程序需要应用标识：启动时调用 `SetCurrentProcessExplicitAppUserModelID(L"Muxora.Muxora")`，并在 `HKCU\Software\Classes\AppUserModelId\Muxora.Muxora` 下登记显示名（应用目前没有图标，按 AGENTS.md 暂不设计 logo，先不设图标）。需要先确认当前 MinGW 工具链能否使用对应的 WinRT 头文件或通过 COM ABI 调用；不能时用下一种。
+   - **备选**：`QSystemTrayIcon::showMessage`。Windows 10／11 会把它显示为系统通知，但需要一个托盘图标；只在有通知时显示托盘图标，通知消失后隐藏。
+3. 点击通知：激活 Muxora，按 `tag` 切到对应窗口或会话标签。
+4. `ui.notify` 改为调用 `showSystemNotification`；参数 `title`、`text` 保持兼容，`timeout_ms` 不再有意义（系统决定显示时长），接受但忽略，并在 `lua-guide.md` 中说明。删除程序内 `QMessageBox` 通知及其数量上限。
+5. 阶段 7 的“命令完成”“后台响铃”通知复用同一接口，只在 Muxora 不在前台时发出，并调用 `FlashWindowEx` 闪烁任务栏按钮；设置项 `terminal.notifications.enabled`。
+6. 系统“勿扰”或用户关闭了 Muxora 的通知时，系统会自行不显示，Muxora 不另做处理。
+
+**测试**：平台接口用可注入的实现做单元测试（参数、`tag` 回调、前后台判断）；`scripting_test` 中原来检查 `LuaNotification` 消息框的断言改为检查系统通知调用（参数、长度限制、非法参数报错保持不变）——这是用户要求的行为变化；真实系统通知的显示在桌面上试用确认，并在预览说明中如实记录。
 
 **状态**：未开始。
 
