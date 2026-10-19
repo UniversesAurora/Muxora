@@ -42,6 +42,11 @@ struct TabOptions {
 
 enum class NewTabPosition { Beginning, BeforeActive, AfterActive, End };
 
+// Windows: minimize, maximize, close, aligned to the strip's trailing edge.
+// Reversed (close, maximize, minimize) and MacOS (close, minimize, maximize)
+// align to the leading edge, so the controls can sit in the top-left corner.
+enum class CaptionButtonOrder { Windows, Reversed, MacOS };
+
 struct WindowBehavior {
     WindowKind dragOutsideKind = WindowKind::Floating;
     bool closeEmptyWorkbench = false;
@@ -51,9 +56,7 @@ struct WindowBehavior {
     bool hideSingleTabWorkbench = false;
     bool hideSingleTabFloating = true;
     bool hideToolbarOptionsWhenLocked = false;
-    // Close, maximize, minimize, aligned to the strip's leading edge, so the
-    // controls can sit in the top-left corner as on macOS.
-    bool reverseCaptionButtons = false;
+    CaptionButtonOrder captionButtonOrder = CaptionButtonOrder::Windows;
     ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
 };
 

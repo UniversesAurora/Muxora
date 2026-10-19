@@ -693,6 +693,10 @@ void ScriptHostTest::appearanceAndComponentBarsUseTypedDescriptions() {
       assert(muxora.tabs.set_appearance(appearance))
       assert(muxora.theme.update({name='Lua theme',metrics={spacing=3},accent='#663399'}))
       assert(muxora.settings.update({new_tab_position='end',drag_outside_kind='workbench'}))
+      assert(muxora.settings.get().caption_button_order=='windows')
+      assert(muxora.settings.update({caption_button_order='macos'}))
+      assert(muxora.settings.get().caption_button_order=='macos')
+      assert(not pcall(muxora.settings.update,{caption_button_order='mac'}))
       return muxora.theme.get().name,muxora.tabs.appearance().colors[1].group_active.background
     )");
     QVERIFY2(reply.ok, qPrintable(reply.error));
@@ -701,6 +705,7 @@ void ScriptHostTest::appearanceAndComponentBarsUseTypedDescriptions() {
     QCOMPARE(manager.theme().metrics.spacing, 3);
     QCOMPARE(manager.behavior().newTabPosition, NewTabPosition::End);
     QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
+    QCOMPARE(manager.behavior().captionButtonOrder, CaptionButtonOrder::MacOS);
     QCOMPARE(manager.paneWidget(pane), originalContent.data());
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {

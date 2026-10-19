@@ -752,7 +752,7 @@ void WindowManager::setBehavior(const WindowBehavior& behavior)
     for (const auto& window : windows) {
         if (window && window->strips()) window->strips()->setHideOptionsWhenLocked(behavior.hideToolbarOptionsWhenLocked);
         if (!self) return;
-        if (window) window->setCaptionButtonsReversed(behavior.reverseCaptionButtons);
+        if (window) window->setCaptionButtonOrder(behavior.captionButtonOrder);
         if (!self) return;
     }
     emit layoutChanged();

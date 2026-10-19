@@ -344,13 +344,13 @@ void WorkspaceWindow::syncKind()
     updateCaption();
     committedStripLayout_ = saveStripLayout();
 }
-void WorkspaceWindow::setCaptionButtonsReversed(bool reversed)
+void WorkspaceWindow::setCaptionButtonOrder(CaptionButtonOrder order)
 {
     auto* row = captionControls_ ? qobject_cast<QHBoxLayout*>(captionControls_->layout()) : nullptr;
     if (!row) return;
-    const auto current = captionControls_->property("captionButtonsReversed");
-    if (current.isValid() && current.toBool() == reversed) return;
-    captionControls_->setProperty("captionButtonsReversed", reversed);
+    const auto current = captionControls_->property("captionButtonOrder");
+    if (current.isValid() && current.toInt() == int(order)) return;
+    captionControls_->setProperty("captionButtonOrder", int(order));
     QHash<QString, QWidget*> buttons;
     while (auto* item = row->takeAt(0)) {
         if (auto* widget = item->widget()) buttons.insert(widget->property("role").toString(), widget);
@@ -358,11 +358,13 @@ void WorkspaceWindow::setCaptionButtonsReversed(bool reversed)
     }
     // The spare width stays on the inner side, so the outermost button keeps
     // the strip's outer edge (and the screen edge when the window is expanded).
-    const QStringList order = reversed ? QStringList{"close", "maximize", "minimize"}
-                                       : QStringList{"minimize", "maximize", "close"};
-    if (!reversed) row->addStretch();
-    for (const auto& role : order) if (auto* button = buttons.value(role)) row->addWidget(button);
-    if (reversed) row->addStretch();
+    const bool leading = order != CaptionButtonOrder::Windows;
+    const QStringList roles = order == CaptionButtonOrder::Reversed ? QStringList{"close", "maximize", "minimize"}
+        : order == CaptionButtonOrder::MacOS ? QStringList{"close", "minimize", "maximize"}
+        : QStringList{"minimize", "maximize", "close"};
+    if (!leading) row->addStretch();
+    for (const auto& role : roles) if (auto* button = buttons.value(role)) row->addWidget(button);
+    if (leading) row->addStretch();
 }
 void WorkspaceWindow::createChrome()
 {
@@ -457,7 +459,7 @@ void WorkspaceWindow::createChrome()
     });
     addCaption("close", QCoreApplication::translate("WindowSystem", "关闭窗口"), [this] { close(); });
     captionControls_ = controls;
-    setCaptionButtonsReversed(manager_->behavior().reverseCaptionButtons);
+    setCaptionButtonOrder(manager_->behavior().captionButtonOrder);
     strips_->addStrip("caption-controls", QCoreApplication::translate("WindowSystem", "窗口控制"), controls, 0);
     strips_->setStripOptionsEnabled("caption-controls", false);
     strips_->setStripConstraints("caption-controls", {false, false});

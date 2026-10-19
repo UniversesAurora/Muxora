@@ -2343,18 +2343,28 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>按“关闭、最大化、最小化”的顺序排列并靠左对齐</source>
-            <translation>Order as Close, Maximize, Minimize and align to the left</translation>
+            <source>窗口控制按钮顺序</source>
+            <translation>Window control button order</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>反向排列窗口控制按钮</source>
-            <translation>Reverse window control buttons</translation>
+            <source>Windows：最小化、最大化、关闭（靠右）</source>
+            <translation>Windows: Minimize, Maximize, Close (right)</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</source>
-            <translation>Use this when the window controls toolbar is moved to the top-left corner, similar to macOS.</translation>
+            <source>反向：关闭、最大化、最小化（靠左）</source>
+            <translation>Reversed: Close, Maximize, Minimize (left)</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>macOS：关闭、最小化、最大化（靠左）</source>
+            <translation>macOS: Close, Minimize, Maximize (left)</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</source>
+            <translation>The last two align the buttons to the left with Close outermost, for a window controls toolbar in the top-left corner.</translation>
         </message>
     </context>
 </TS>

@@ -88,7 +88,7 @@ QSet<QString> settingKeys(QWidget* page)
 QSet<QString> allSettingKeys()
 {
     return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
-            "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.reverseCaptionButtons", "window.visibility.toolbars", "window.visibility.statusBar",
+            "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
             "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.colors"};
 }
@@ -797,7 +797,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data(
     QTest::addColumn<QString>("control"); QTest::addColumn<bool>("deleteManager");
     for (const auto* control : {"NewTabPosition", "DetachWindowKind", "EmptyWorkbenchPolicy", "RevealDuringDrag", "RevealDelayMs",
                                 "HideSingleTabWorkbench", "HideSingleTabFloating",
-                                "ZenFullscreenMode", "HideToolbarOptionsWhenLocked", "ReverseCaptionButtons", "window.visibility.toolbars", "window.visibility.statusBar",
+                                "ZenFullscreenMode", "HideToolbarOptionsWhenLocked", "CaptionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
                                 "window.visibility.tabBars", "window.visibility.sideBars", "CentralTabPlacement", "PinnedTabPlacement",
                                 "MultilineTabs", "WheelExpandTabRows", "ShowTabIcons", "ShowNewTabButton", "ShowTabNumbers"}) {
         for (const bool deleteManager : {false, true}) {
@@ -858,7 +858,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "HideSingleTabFloating") QVERIFY(!settings.value("hideSingleTabFloating").toBool(true));
     else if (control == "ZenFullscreenMode") QCOMPARE(settings.value("zenFullscreenMode").toInt(), int(ViewMode::PaneFullscreen));
     else if (control == "HideToolbarOptionsWhenLocked") QVERIFY(settings.value("hideToolbarOptionsWhenLocked").toBool());
-    else if (control == "ReverseCaptionButtons") QVERIFY(settings.value("reverseCaptionButtons").toBool());
+    else if (control == "CaptionButtonOrder") QCOMPARE(settings.value("captionButtonOrder").toString(), QStringLiteral("macos"));
     const auto appearance = saved.value("tabAppearance").toObject();
     if (control == "CentralTabPlacement") QCOMPARE(appearance.value("centralPlacement").toString(), QStringLiteral("bottom"));
     else if (control == "PinnedTabPlacement") QCOMPARE(appearance.value("pinnedPlacement").toString(), QStringLiteral("bottom"));

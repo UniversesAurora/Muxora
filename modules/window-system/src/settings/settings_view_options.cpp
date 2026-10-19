@@ -18,6 +18,11 @@ constexpr ModeDescription modes[] = {
     {ViewMode::WindowFullscreen, "windowFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "窗口全屏")},
     {ViewMode::GroupFullscreen, "groupFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "标签组全屏")},
     {ViewMode::PaneFullscreen, "paneFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "窗格全屏")}};
+struct CaptionOrderDescription { CaptionButtonOrder order; const char* name; };
+constexpr CaptionOrderDescription captionOrders[] = {
+    {CaptionButtonOrder::Windows, QT_TRANSLATE_NOOP("WindowSystem", "Windows：最小化、最大化、关闭（靠右）")},
+    {CaptionButtonOrder::Reversed, QT_TRANSLATE_NOOP("WindowSystem", "反向：关闭、最大化、最小化（靠左）")},
+    {CaptionButtonOrder::MacOS, QT_TRANSLATE_NOOP("WindowSystem", "macOS：关闭、最小化、最大化（靠左）")}};
 bool shown(const BarVisibility& visibility, WindowBar bar)
 {
     switch (bar) {
@@ -65,13 +70,14 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
         auto behavior = manager_->behavior(); behavior.hideToolbarOptionsWhenLocked = enabled;
         manager_->setBehavior(behavior);
     });
-    reverseCaptionButtons_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "按“关闭、最大化、最小化”的顺序排列并靠左对齐"), parent);
-    reverseCaptionButtons_->setObjectName("ReverseCaptionButtons");
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "反向排列窗口控制按钮"), "window.reverseCaptionButtons",
-        QCoreApplication::translate("WindowSystem", "适合把窗口控制工具条移到左上角时使用，效果类似 macOS。"), reverseCaptionButtons_));
-    connect(reverseCaptionButtons_, &QCheckBox::toggled, this, [this](bool enabled) {
+    captionButtonOrder_ = new ThemedComboBox(parent); captionButtonOrder_->setObjectName("CaptionButtonOrder");
+    for (const auto& item : captionOrders)
+        captionButtonOrder_->addItem(QCoreApplication::translate("WindowSystem", item.name), int(item.order));
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "窗口控制按钮顺序"), "window.captionButtonOrder",
+        QCoreApplication::translate("WindowSystem", "后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。"), captionButtonOrder_));
+    connect(captionButtonOrder_, &QComboBox::currentIndexChanged, this, [this] {
         if (!manager_) return;
-        auto behavior = manager_->behavior(); behavior.reverseCaptionButtons = enabled;
+        auto behavior = manager_->behavior(); behavior.captionButtonOrder = CaptionButtonOrder(captionButtonOrder_->currentData().toInt());
         manager_->setBehavior(behavior);
     });
     zenFullscreenMode_ = new ThemedComboBox(parent); zenFullscreenMode_->setObjectName("ZenFullscreenMode");
@@ -110,8 +116,8 @@ void SettingsPage::syncViewOptions()
     const auto behavior = manager_->behavior();
     const QSignalBlocker hideOptionsBlock(hideToolbarOptionsWhenLocked_);
     hideToolbarOptionsWhenLocked_->setChecked(behavior.hideToolbarOptionsWhenLocked);
-    const QSignalBlocker reverseCaptionBlock(reverseCaptionButtons_);
-    reverseCaptionButtons_->setChecked(behavior.reverseCaptionButtons);
+    const QSignalBlocker captionOrderBlock(captionButtonOrder_);
+    captionButtonOrder_->setCurrentIndex(captionButtonOrder_->findData(int(behavior.captionButtonOrder)));
     hideSingleWorkbench_->setChecked(behavior.hideSingleTabWorkbench);
     hideSingleFloating_->setChecked(behavior.hideSingleTabFloating);
     zenFullscreenMode_->setCurrentIndex(zenFullscreenMode_->findData(int(behavior.zenFullscreenMode)));

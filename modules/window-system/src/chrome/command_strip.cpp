@@ -1041,14 +1041,12 @@ void CommandStripHost::arrange()
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
-        // Expanded windows have no resize rim. When the caption controls are
-        // the first or last strip, their outer pixel must reach the actual
-        // screen edge instead of leaving the ordinary toolbar's two-pixel gutter.
-        const bool expanded = window()->property("windowSystemExpanded").toBool();
-        const int leftMargin = !visible.isEmpty() && visible.first() == QStringLiteral("caption-controls")
-            && expanded ? 0 : rowMargin;
-        const int rightMargin = !visible.isEmpty() && visible.last() == QStringLiteral("caption-controls")
-            && expanded ? 0 : rowMargin;
+        // As with native Windows caption buttons, caption controls that are
+        // the first or last strip skip the ordinary toolbar's two-pixel
+        // gutter: they touch the restored window's border, and an expanded
+        // window's actual screen edge.
+        const int leftMargin = !visible.isEmpty() && visible.first() == QStringLiteral("caption-controls") ? 0 : rowMargin;
+        const int rightMargin = !visible.isEmpty() && visible.last() == QStringLiteral("caption-controls") ? 0 : rowMargin;
         const int available = std::max(0, host->width() - leftMargin - rightMargin
             - std::max(0, int(visible.size()) - 1) * stripSpacing);
         const auto sizes = rowWidths(visible, available);

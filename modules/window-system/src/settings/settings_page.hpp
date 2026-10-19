@@ -68,7 +68,7 @@ private:
     QCheckBox* hideSingleWorkbench_ = nullptr;
     QCheckBox* hideSingleFloating_ = nullptr;
     QCheckBox* hideToolbarOptionsWhenLocked_ = nullptr;
-    QCheckBox* reverseCaptionButtons_ = nullptr;
+    QComboBox* captionButtonOrder_ = nullptr;
     QComboBox* centralPlacement_ = nullptr;
     QComboBox* pinnedPlacement_ = nullptr;
     QCheckBox* multiline_ = nullptr;

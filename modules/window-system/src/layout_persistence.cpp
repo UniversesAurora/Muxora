@@ -27,6 +27,7 @@
 #include <QTimer>
 #include <algorithm>
 #include <limits>
+#include <optional>
 
 namespace window_system {
 namespace {
@@ -135,6 +136,23 @@ OperationResult validateStripLayout(const QJsonValue& value)
 QString toolbarKindKey(WindowKind kind)
 {
     return kind == WindowKind::Workbench ? QStringLiteral("workbench") : QStringLiteral("floating");
+}
+
+QString captionButtonOrderKey(CaptionButtonOrder order)
+{
+    switch (order) {
+    case CaptionButtonOrder::Windows: return QStringLiteral("windows");
+    case CaptionButtonOrder::Reversed: return QStringLiteral("reversed");
+    case CaptionButtonOrder::MacOS: return QStringLiteral("macos");
+    }
+    return QStringLiteral("windows");
+}
+
+std::optional<CaptionButtonOrder> captionButtonOrderFromKey(const QString& key)
+{
+    for (const auto order : {CaptionButtonOrder::Windows, CaptionButtonOrder::Reversed, CaptionButtonOrder::MacOS})
+        if (captionButtonOrderKey(order) == key) return order;
+    return std::nullopt;
 }
 
 OperationResult validateToolbarKinds(const QJsonValue& value)
@@ -258,7 +276,7 @@ QJsonObject WindowManager::saveViewLayout() const
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
             {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating},
             {"hideToolbarOptionsWhenLocked", d->behavior.hideToolbarOptionsWhenLocked},
-            {"reverseCaptionButtons", d->behavior.reverseCaptionButtons},
+            {"captionButtonOrder", captionButtonOrderKey(d->behavior.captionButtonOrder)},
             {"zenFullscreenMode", int(d->behavior.zenFullscreenMode)}}}};
 }
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
@@ -291,9 +309,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     if (settings.contains("hideToolbarOptionsWhenLocked") && !settings.value("hideToolbarOptionsWhenLocked").isBool())
         return {false, QCoreApplication::translate("WindowSystem", "工具条选项显示设置无效")};
     restoredBehavior.hideToolbarOptionsWhenLocked = settings.value("hideToolbarOptionsWhenLocked").toBool(false);
-    if (settings.contains("reverseCaptionButtons") && !settings.value("reverseCaptionButtons").isBool())
-        return {false, QCoreApplication::translate("WindowSystem", "窗口控制按钮顺序设置无效")};
-    restoredBehavior.reverseCaptionButtons = settings.value("reverseCaptionButtons").toBool(false);
+    const auto captionOrder = settings.value("captionButtonOrder");
+    if (!captionOrder.isUndefined()) {
+        const auto parsedOrder = captionButtonOrderFromKey(captionOrder.toString());
+        if (!captionOrder.isString() || !parsedOrder)
+            return {false, QCoreApplication::translate("WindowSystem", "窗口控制按钮顺序设置无效")};
+        restoredBehavior.captionButtonOrder = *parsedOrder;
+    }
     const auto position = settings.value("newTabPosition");
     if (!position.isUndefined() && (!position.isDouble() || position.toDouble() != position.toInt(-1)
         || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))

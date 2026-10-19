@@ -160,8 +160,10 @@ private slots:
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap();
     void maximizedCaptionControlsOwnTheActualScreenEdge_data();
     void maximizedCaptionControlsOwnTheActualScreenEdge();
-    void reversedCaptionButtonsFollowTheBehavior_data() { addWindowKinds(); }
-    void reversedCaptionButtonsFollowTheBehavior();
+    void captionButtonOrderFollowsTheBehavior_data() { addWindowKinds(); }
+    void captionButtonOrderFollowsTheBehavior();
+    void restoredCaptionControlsTouchTheWindowBorder_data() { addWindowKinds(); }
+    void restoredCaptionControlsTouchTheWindowBorder();
     void expandedCaptionControlsReachEveryScreenCorner_data();
     void expandedCaptionControlsReachEveryScreenCorner();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
@@ -502,16 +504,22 @@ void CaptionStripTest::centeredTitleKeepsDoubleClickAndContentIdentity()
 void CaptionStripTest::maximizeEntireRectangleRetainsNativeSnapHitAndQtHover_data()
 {
     QTest::addColumn<bool>("floating"); QTest::addColumn<bool>("maximized"); QTest::addColumn<int>("vertical");
+    QTest::addColumn<int>("order");
+    const char* orders[] = {"windows", "reversed", "macos"};
     for (const bool floating : {false, true}) for (const bool maximized : {false, true})
-        for (const int vertical : {0, 1, 2})
-            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(floating ? "floating" : "workbench")
-                .arg(maximized ? "maximized" : "restored").arg(vertical))) << floating << maximized << vertical;
+        for (const int vertical : {0, 1, 2}) for (const int order : {0, 1, 2})
+            QTest::newRow(qPrintable(QString("%1-%2-%3-%4").arg(floating ? "floating" : "workbench")
+                .arg(maximized ? "maximized" : "restored").arg(vertical).arg(orders[order])))
+                << floating << maximized << vertical << order;
 }
 
 void CaptionStripTest::maximizeEntireRectangleRetainsNativeSnapHitAndQtHover()
 {
-    QFETCH(bool, floating); QFETCH(bool, maximized); QFETCH(int, vertical);
+    QFETCH(bool, floating); QFETCH(bool, maximized); QFETCH(int, vertical); QFETCH(int, order);
     WindowManager manager; const auto id = createFixture(manager, floating);
+    // The Win11 Snap flyout follows the maximize button wherever the chosen
+    // order puts it: last but one, middle, or last.
+    auto behavior = manager.behavior(); behavior.captionButtonOrder = CaptionButtonOrder(order); manager.setBehavior(behavior);
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     if (maximized) { window->showMaximized(); QTRY_VERIFY(window->isMaximized()); }
@@ -676,7 +684,7 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     QVERIFY(manager.model().validate().ok);
 }
 
-void CaptionStripTest::reversedCaptionButtonsFollowTheBehavior()
+void CaptionStripTest::captionButtonOrderFollowsTheBehavior()
 {
     QFETCH(bool, floating);
     WindowManager manager; const auto id = createFixture(manager, floating);
@@ -685,26 +693,63 @@ void CaptionStripTest::reversedCaptionButtonsFollowTheBehavior()
     auto* controls = window->strips()->stripWidget("caption-controls"); QVERIFY(controls);
     const auto x = [window](const QString& role) { return captionButton(window, role)->mapTo(window, QPoint()).x(); };
     const auto settle = [] { QCoreApplication::processEvents(); };
+    QCOMPARE(manager.behavior().captionButtonOrder, CaptionButtonOrder::Windows);
     QVERIFY(x("minimize") < x("maximize") && x("maximize") < x("close"));
-    // Spare width stays on the inner side: normal order hugs the trailing edge.
+    // Spare width stays on the inner side: the Windows order hugs the
+    // trailing edge, the two close-first orders the leading edge.
     const int natural = controls->width();
     QVERIFY(window->strips()->setStripWidth("caption-controls", natural + 80)); settle();
     auto* close = captionButton(window, "close");
     QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
-    auto behavior = manager.behavior(); behavior.reverseCaptionButtons = true; manager.setBehavior(behavior); settle();
-    QVERIFY(x("close") < x("maximize") && x("maximize") < x("minimize"));
-    QCOMPARE(close->mapTo(controls, QPoint()).x(), 0);
-    // Persisted with the other window behavior and validated on restore.
-    const auto snapshot = manager.saveLayout();
-    QVERIFY(snapshot.value("behavior").toObject().value("reverseCaptionButtons").toBool());
-    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot).ok);
-    QVERIFY(restored.behavior().reverseCaptionButtons);
-    auto invalid = snapshot; auto settings = invalid.value("behavior").toObject();
-    settings.insert("reverseCaptionButtons", "yes"); invalid.insert("behavior", settings);
-    WindowManager rejected; QVERIFY(!rejected.restoreLayout(invalid).ok);
-    behavior.reverseCaptionButtons = false; manager.setBehavior(behavior); settle();
-    QVERIFY(x("minimize") < x("maximize") && x("maximize") < x("close"));
-    QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
+    const struct { CaptionButtonOrder order; const char* key; QStringList roles; } orders[] = {
+        {CaptionButtonOrder::Reversed, "reversed", {"close", "maximize", "minimize"}},
+        {CaptionButtonOrder::MacOS, "macos", {"close", "minimize", "maximize"}},
+        {CaptionButtonOrder::Windows, "windows", {"minimize", "maximize", "close"}}};
+    for (const auto& expected : orders) {
+        auto behavior = manager.behavior(); behavior.captionButtonOrder = expected.order; manager.setBehavior(behavior); settle();
+        QVERIFY2(x(expected.roles[0]) < x(expected.roles[1]) && x(expected.roles[1]) < x(expected.roles[2]), expected.key);
+        if (expected.order == CaptionButtonOrder::Windows)
+            QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
+        else QCOMPARE(close->mapTo(controls, QPoint()).x(), 0);
+        // Persisted with the other window behavior and restored exactly.
+        const auto snapshot = manager.saveLayout();
+        QCOMPARE(snapshot.value("behavior").toObject().value("captionButtonOrder").toString(), QString::fromLatin1(expected.key));
+        WindowManager restored; QVERIFY(restored.restoreLayout(snapshot).ok);
+        QCOMPARE(restored.behavior().captionButtonOrder, expected.order);
+    }
+    // Unknown names and non-string values are rejected, not silently defaulted.
+    for (const QJsonValue& value : {QJsonValue("mac"), QJsonValue(true), QJsonValue(2)}) {
+        auto invalid = manager.saveLayout(); auto settings = invalid.value("behavior").toObject();
+        settings.insert("captionButtonOrder", value); invalid.insert("behavior", settings);
+        WindowManager rejected; QVERIFY(!rejected.restoreLayout(invalid).ok);
+    }
+    // Layouts saved before the setting existed keep the Windows order.
+    auto legacy = manager.saveLayout(); auto settings = legacy.value("behavior").toObject();
+    settings.remove("captionButtonOrder"); legacy.insert("behavior", settings);
+    WindowManager restored; QVERIFY(restored.restoreLayout(legacy).ok);
+    QCOMPARE(restored.behavior().captionButtonOrder, CaptionButtonOrder::Windows);
+}
+
+void CaptionStripTest::restoredCaptionControlsTouchTheWindowBorder()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(!window->isMaximized() && !window->isFullScreen());
+    auto* close = captionButton(window, "close"); QVERIFY(close && close->isVisible());
+    // Like native caption buttons, only the restored window's one-pixel
+    // border separates the outermost button from the window edge.
+    QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width() - 1);
+    QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
+    auto behavior = manager.behavior(); behavior.captionButtonOrder = CaptionButtonOrder::MacOS; manager.setBehavior(behavior);
+    QVERIFY(window->strips()->moveStrip("caption-controls", CommandStripHost::Area::Top, 0, 0));
+    QTRY_COMPARE(close->mapTo(window, QPoint()).x(), 1);
+    QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
+    // Ordinary toolbars keep their gutter; only the caption controls move out.
+    auto* menu = window->strips()->stripWidget(floating ? "floating-menu" : "menu"); QVERIFY(menu);
+    QVERIFY(menu->mapTo(window, QPoint()).x() > close->mapTo(window, QPoint()).x());
+    QVERIFY(manager.model().validate().ok);
 }
 
 void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner_data()
@@ -723,9 +768,13 @@ void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
     QFETCH(bool, floating); QFETCH(bool, left); QFETCH(bool, bottom); QFETCH(bool, fullscreen);
     WindowManager manager; const auto id = createFixture(manager, floating);
     const auto tab = manager.addTab(id, new QLabel("Retained body"), {"Retained", "label", {}});
-    // The macOS-like arrangement: reversed order when the controls sit at the
-    // left, so close is the outermost button in every corner.
-    auto behavior = manager.behavior(); behavior.reverseCaptionButtons = left; manager.setBehavior(behavior);
+    // Close is the outermost button in every corner: the left corners use
+    // both close-first orders (reversed in the full window, macOS in the
+    // floating one).
+    auto behavior = manager.behavior();
+    behavior.captionButtonOrder = !left ? CaptionButtonOrder::Windows
+        : floating ? CaptionButtonOrder::MacOS : CaptionButtonOrder::Reversed;
+    manager.setBehavior(behavior);
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     QVERIFY(window->strips()->moveStrip("caption-controls",

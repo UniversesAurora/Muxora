@@ -71,7 +71,7 @@
 
 解锁拖动到最后一行时，工作区一侧出现一行投放预览；其他时候空行没有高度，移走最后一条后该行立即消失。上下区域共用锁定、弹性、压缩和溢出规则。`window.toolbar.move` 支持 `strip`、`area: "top" / "bottom"`、`row`、`index`；不带参数时提供工具条和区域／行的键盘选择菜单，位于“视图 → 工具条 → 移动工具条…”。区域随布局中的 `rows`／`bottomRows` 保存，旧快照沿用顶部区域。
 
-`WindowBehavior::reverseCaptionButtons` 默认 `false`，设置页使用 `window.reverseCaptionButtons`，Lua 中为 `reverse_caption_buttons`。开启后窗口控制按钮按“关闭、最大化、最小化”排列并靠左对齐。
+`WindowBehavior::captionButtonOrder` 默认 `CaptionButtonOrder::Windows`，设置页使用 `window.captionButtonOrder`，Lua 中为 `caption_button_order`（`windows`／`reversed`／`macos`）。三种顺序分别是“最小化、最大化、关闭”（靠右）、“关闭、最大化、最小化”（靠左）和“关闭、最小化、最大化”（靠左）。
 
 `WindowBehavior::hideToolbarOptionsWhenLocked` 默认 `false`，设置页使用 `window.hideToolbarOptionsWhenLocked`。开启后，锁定且无溢出的普通工具条隐藏选项尾部并释放宽度；溢出或解锁时恢复。禁用工具按钮不绘制高亮边框，只显示灰色图标。
 

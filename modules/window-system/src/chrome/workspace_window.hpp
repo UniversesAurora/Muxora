@@ -26,7 +26,7 @@ public:
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
     void syncCustomChrome();
-    void setCaptionButtonsReversed(bool reversed);
+    void setCaptionButtonOrder(CaptionButtonOrder order);
     void forgetCustomToolbarLayout(const QString& id);
     [[nodiscard]] QJsonObject saveStripLayout() const;
     [[nodiscard]] QJsonObject saveInactiveStripLayouts() const;

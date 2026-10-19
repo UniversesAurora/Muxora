@@ -12,7 +12,6 @@ constexpr std::array behaviorBooleans{
     std::pair{"reveal_during_drag", &WindowBehavior::revealDuringDrag},
     std::pair{"hide_single_tab_main", &WindowBehavior::hideSingleTabWorkbench},
     std::pair{"hide_toolbar_options_when_locked", &WindowBehavior::hideToolbarOptionsWhenLocked},
-    std::pair{"reverse_caption_buttons", &WindowBehavior::reverseCaptionButtons},
     std::pair{"hide_single_tab_floating", &WindowBehavior::hideSingleTabFloating}};
 constexpr std::array appearanceBooleans{std::pair{"multiline", &TabAppearance::multiline},
                                         std::pair{"wheel_expand_rows", &TabAppearance::wheelExpandRows},
@@ -70,6 +69,8 @@ constexpr std::array presetStates{std::pair{"group_active", &TabColorPreset::gro
                                   std::pair{"group_inactive", &TabColorPreset::groupInactive},
                                   std::pair{"sidebar_active", &TabColorPreset::autoHideActive},
                                   std::pair{"sidebar_inactive", &TabColorPreset::autoHideInactive}};
+// Indexed by CaptionButtonOrder.
+const QStringList captionOrders{"windows", "reversed", "macos"};
 QString mode(ViewMode value) {
     switch (value) {
     case ViewMode::Normal:
@@ -175,6 +176,7 @@ void ScriptHost::Private::installAppearanceApi() {
             behavior.dragOutsideKind == WindowKind::Floating ? "floating" : "workbench";
         const QStringList positions{"beginning", "before_active", "after_active", "end"};
         values["new_tab_position"] = positions[int(behavior.newTabPosition)];
+        values["caption_button_order"] = captionOrders[int(behavior.captionButtonOrder)];
         if (const auto *language = TranslationManager::applicationInstance())
             values["language"] = uiLanguageId(language->requestedLanguage());
         return result(values);
@@ -184,7 +186,7 @@ void ScriptHost::Private::installAppearanceApi() {
         auto behavior = manager->behavior();
         auto appearance = manager->tabAppearance();
         QSet<QString> known{"reveal_delay_ms", "zen_fullscreen", "drag_outside_kind",  "new_tab_position",
-                            "language",        "tab_position",   "pinned_tab_position"};
+                            "language",        "tab_position",   "pinned_tab_position", "caption_button_order"};
         for (const auto &[name, field] : behaviorBooleans) {
             known.insert(name);
             if (map.contains(name))
@@ -213,6 +215,12 @@ void ScriptHost::Private::installAppearanceApi() {
             if (index < 0)
                 throw std::runtime_error("Invalid new tab position");
             behavior.newTabPosition = NewTabPosition(index);
+        }
+        if (map.contains("caption_button_order")) {
+            const auto index = captionOrders.indexOf(text({map["caption_button_order"]}, 0));
+            if (index < 0)
+                throw std::runtime_error("Caption button order must be windows, reversed or macos");
+            behavior.captionButtonOrder = CaptionButtonOrder(index);
         }
         QPointer<TranslationManager> language = TranslationManager::applicationInstance();
         UiLanguage requested = UiLanguage::System;

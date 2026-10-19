@@ -2343,18 +2343,28 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>按“关闭、最大化、最小化”的顺序排列并靠左对齐</source>
-            <translation>按“关闭、最大化、最小化”的顺序排列并靠左对齐</translation>
+            <source>窗口控制按钮顺序</source>
+            <translation>窗口控制按钮顺序</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>反向排列窗口控制按钮</source>
-            <translation>反向排列窗口控制按钮</translation>
+            <source>Windows：最小化、最大化、关闭（靠右）</source>
+            <translation>Windows：最小化、最大化、关闭（靠右）</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_view_options.cpp" />
-            <source>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</source>
-            <translation>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</translation>
+            <source>反向：关闭、最大化、最小化（靠左）</source>
+            <translation>反向：关闭、最大化、最小化（靠左）</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>macOS：关闭、最小化、最大化（靠左）</source>
+            <translation>macOS：关闭、最小化、最大化（靠左）</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</source>
+            <translation>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</translation>
         </message>
     </context>
 </TS>
