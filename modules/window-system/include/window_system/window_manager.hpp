@@ -258,6 +258,9 @@ private:
     struct Private;
     std::unique_ptr<Private> d;
     void refresh(bool preserveDrag = false);
+    // saveLayout() without the model: window placement, options, toolbars,
+    // pane descriptors and profiles of the live (not drag-stable) state.
+    QJsonObject saveViewLayout() const;
     void registerWindowCommands();
     void registerTabGroupCommands();
     void registerHierarchyCommands();

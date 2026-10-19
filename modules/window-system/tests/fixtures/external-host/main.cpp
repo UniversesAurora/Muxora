@@ -161,6 +161,7 @@ int main(int argc, char** argv)
     if (!windows.requestCloseWindow(movementTarget)) return 17;
     if (!windows.model().validate()) return 4;
     const auto saved = windows.saveLayout();
+    const auto stateBeforeRestore = windows.model().stateId();
     QPointer<QLabel> restoredFirst, restoredSecond;
     windows.setContentFactory([&](const window_system::TabOptions& options, window_system::PaneId id) -> QWidget* {
         auto* label = new QLabel(options.title);
@@ -171,6 +172,8 @@ int main(int argc, char** argv)
     if (!windows.restoreLayout(saved) || !toolbar || !restoredFirst || !restoredSecond
         || findToolbar(root) != toolbar.data() || windows.paneWidget(pane) != restoredFirst.data()
         || windows.paneWidget(secondPane) != restoredSecond.data()) return 92;
+    // Restoring installs new records even when the content is identical.
+    if (windows.model().stateId() == 0 || windows.model().stateId() == stateBeforeRestore) return 97;
     if (toolbar->parentWidget()->parentWidget()->property("toolbarArea").toString() != "bottom") return 93;
     auto toolbarLayout = [](const QJsonObject& snapshot, window_system::WindowId id) {
         for (const auto& entry : snapshot.value("windows").toArray()) {

@@ -88,6 +88,9 @@ private slots:
     void closeAllHandlesManagerDestruction();
     void closeAllFromLayoutNotificationEmitsClosedOnce();
     void closeAllAllowsUnchangedFocusAfterApproval();
+    void closeAllRejectsModelChangeFromGuard_data();
+    void closeAllRejectsModelChangeFromGuard();
+    void closeAllRejectsToolbarEditFromGuard();
 };
 
 void WorkspaceTest::initTestCase()
@@ -980,6 +983,50 @@ void WorkspaceTest::closeAllAllowsUnchangedFocusAfterApproval()
     QJsonObject saved;
     QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] { saved = manager.saveLayout(); });
     QVERIFY(manager.requestCloseAllWindows()); QVERIFY(focused); QCOMPARE(saved, before);
+}
+
+void WorkspaceTest::closeAllRejectsModelChangeFromGuard_data()
+{
+    QTest::addColumn<bool>("notification");
+    QTest::newRow("approval") << false;
+    QTest::newRow("notification") << true;
+}
+void WorkspaceTest::closeAllRejectsModelChangeFromGuard()
+{
+    QFETCH(bool, notification);
+    WindowManager manager; const auto root = manager.createWindow();
+    QPointer<QWidget> content = editor("Original");
+    const auto tab = manager.addTab(root, content, editorOptions("Original", "Original"));
+    bool renamed = false;
+    manager.setCloseGuard([&](const QVector<TabId>&) {
+        if (!notification) renamed = manager.renameTab(tab, "Renamed");
+        return true;
+    });
+    QObject::connect(&manager, &WindowManager::lastWindowAboutToClose, &manager, [&] {
+        if (notification) renamed = manager.renameTab(tab, "Renamed");
+    });
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QVERIFY(!manager.requestCloseAllWindows()); QVERIFY(renamed); QCOMPARE(closed.count(), 0);
+    deliverDeferredDeletes(); QVERIFY(content); QVERIFY(manager.model().window(root));
+    QCOMPARE(manager.model().tab(tab)->title, QString("Renamed"));
+    QCOMPARE(manager.paneWidget(manager.model().tab(tab)->activePane), content.data());
+    QVERIFY(manager.model().validate().ok);
+}
+void WorkspaceTest::closeAllRejectsToolbarEditFromGuard()
+{
+    // The model-free view comparison still covers toolbar state.
+    WindowManager manager; const auto root = manager.createWindow();
+    QPointer<QWidget> content = editor("Original");
+    manager.addTab(root, content, editorOptions("Original", "Original"));
+    const auto before = manager.saveLayout();
+    bool edited = false;
+    manager.setCloseGuard([&](const QVector<TabId>&) {
+        edited = manager.setToolbarsLocked(root, false) && manager.saveLayout() != before;
+        return true;
+    });
+    QSignalSpy closed(&manager, &WindowManager::allWindowsClosed);
+    QVERIFY(!manager.requestCloseAllWindows()); QVERIFY(edited); QCOMPARE(closed.count(), 0);
+    deliverDeferredDeletes(); QVERIFY(content); QVERIFY(manager.model().window(root));
 }
 
 QTEST_MAIN(WorkspaceTest)

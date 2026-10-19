@@ -126,6 +126,7 @@ private slots:
     void validateReportsAStaleIndex();
     void activationFastPathMatchesTransaction();
     void ratioFastPathTouchesOnlyOwnerTree();
+    void stateIdChangesOnEveryCommit();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -1341,6 +1342,60 @@ void LayoutModelTest::ratioFastPathTouchesOnlyOwnerTree()
     QVERIFY(!model.setSplitRatio(QUuid::createUuid(), 0.5));
     QVERIFY(!model.setSplitRatio(model.tab(pinned)->panes->id, 0.5));
     QCOMPARE(model.revision(), revision);
+}
+
+void LayoutModelTest::stateIdChangesOnEveryCommit()
+{
+    LayoutModel model;
+    QCOMPARE(model.stateId(), quint64(0));
+    QSet<quint64> seen{0};
+    const auto committed = [&](const char* step) {
+        QVERIFY2(!seen.contains(model.stateId()), step);
+        seen.insert(model.stateId());
+    };
+    const auto root = model.createWindow();
+    committed("createWindow");
+    const auto a = model.addTab(root, "A");
+    committed("addTab");
+    const auto b = model.addTab(root, "B");
+    committed("addTab");
+    QVERIFY(model.moveTab(b, model.groupForTab(a), Placement::Right));
+    committed("moveTab");
+    QVERIFY(model.renameTab(a, "A"));
+    committed("renameTab without a visible change");
+    QVERIFY(model.activateTab(a));
+    committed("activateTab fast path");
+    QVERIFY(model.activateTab(a));
+    committed("activateTab of the active tab");
+    QVERIFY(model.activatePane(b, model.tab(b)->activePane));
+    committed("activatePane fast path");
+    QVERIFY(model.setSplitRatio(model.window(root)->central->id, 0.3));
+    committed("setSplitRatio fast path");
+    if (QTest::currentTestFailed()) return;
+
+    const LayoutModel copy = model;
+    QCOMPARE(copy.stateId(), model.stateId());
+    const auto state = model.stateId();
+    const auto revision = model.revision();
+    QVERIFY(!model.moveTab(a, QUuid::createUuid()));
+    QVERIFY(!model.activateTab(QUuid::createUuid()));
+    QVERIFY(!model.setSplitRatio(QUuid::createUuid(), 0.5));
+    QVERIFY(!model.fromJson(QJsonObject{}));
+    QCOMPARE(model.stateId(), state);
+    QCOMPARE(model.revision(), revision);
+
+    // Two loads of one snapshot hold equal records but are separate states,
+    // and a fresh model repeats revisions that the original already used.
+    const auto snapshot = model.toJson();
+    LayoutModel first, second;
+    QVERIFY(first.fromJson(snapshot));
+    QVERIFY(second.fromJson(snapshot));
+    QCOMPARE(first.revision(), second.revision());
+    QVERIFY(first.stateId() != second.stateId());
+    QVERIFY(first.stateId() != state);
+    QVERIFY(model.fromJson(snapshot));
+    QVERIFY(model.stateId() != state);
+    QCOMPARE(copy.stateId(), state);
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

@@ -5,6 +5,7 @@
 #include <QSet>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <utility>
 
@@ -12,6 +13,12 @@ namespace window_system {
 namespace {
 
 OperationResult success() { return {true, {}}; }
+// Process-wide, so models restored from the same snapshot never share an ID.
+quint64 nextStateId()
+{
+    static std::atomic<quint64> counter{0};
+    return ++counter;
+}
 OperationResult failure(QString message) { return {false, std::move(message)}; }
 
 LayoutTree leaf(QUuid itemId)
@@ -283,6 +290,7 @@ const TabRecord* LayoutModel::tab(TabId id) const noexcept
 }
 QVector<WindowId> LayoutModel::windowOrder() const { return windowOrder_; }
 quint64 LayoutModel::revision() const noexcept { return revision_; }
+quint64 LayoutModel::stateId() const noexcept { return stateId_; }
 GroupId LayoutModel::groupForTab(TabId id) const
 {
     if (indexValid_) return tabGroup_.value(id);
@@ -396,6 +404,7 @@ OperationResult LayoutModel::transact(const std::function<OperationResult(Layout
     result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;
+    candidate.stateId_ = nextStateId();
     *this = std::move(candidate);
     return success();
 }
@@ -521,6 +530,7 @@ bool LayoutModel::activateIndexed(TabId tabId, GroupId groupId, PaneId paneId)
     group.activeTab = tabId;
     windows_[group.windowId].activeGroup = groupId;
     ++revision_;
+    stateId_ = nextStateId();
     return true;
 }
 OperationResult LayoutModel::activateTab(TabId id)
@@ -1376,6 +1386,7 @@ OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
         tree = replaceRatio(tree, nodeId, ratio, found);
         Q_ASSERT(found);
         ++revision_;
+        stateId_ = nextStateId();
         return success();
     }
     return transact([&](LayoutModel& model) {
@@ -1795,6 +1806,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
     auto result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;
+    candidate.stateId_ = nextStateId();
     *this = std::move(candidate);
     return success();
 }

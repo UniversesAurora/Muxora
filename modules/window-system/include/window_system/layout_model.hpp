@@ -127,7 +127,14 @@ public:
     [[nodiscard]] QVector<PaneId> panes(TabId id) const;
     [[nodiscard]] TabId tabForPane(PaneId id) const;
     [[nodiscard]] bool familyHasTabs(FamilyId id) const;
+    // Counts committed changes of this model. A host that replaces the whole
+    // model (restoring a snapshot, rolling back a copy) can repeat a value.
     [[nodiscard]] quint64 revision() const noexcept;
+    // Identifies the committed records: copies share it, and every
+    // successful operation or fromJson() assigns a new process-wide value,
+    // so equal IDs mean identical records even when revisions repeat.
+    // A default-constructed model has 0. Not serialized.
+    [[nodiscard]] quint64 stateId() const noexcept;
 
     // Failed identifier-returning operations return a null UUID without changes.
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
@@ -264,6 +271,7 @@ private:
     quint64 orderCounter_ = 0;
     QVector<WindowId> windowOrder_;
     quint64 revision_ = 0;
+    quint64 stateId_ = 0;
     // Reverse lookups derived from the records above. They are not serialized.
     // transact() invalidates them on its candidate, so an operation in
     // progress falls back to scanning; every committed state rebuilds them

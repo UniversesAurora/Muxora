@@ -68,15 +68,17 @@ pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
-### 布局模型索引与快速路径（2026-10-19）
+### 布局模型索引、快速路径与重入检查（2026-10-19）
 
 阶段 1.1：`LayoutModel` 为“标签所在组”“窗格所在标签”“分割节点所在树”建立反向索引，`groupForTab()`、`tabForPane()` 从遍历全部记录改为查表。每次提交事务和读入快照后重建索引，`validate()` 会核对索引与记录一致。
 
 阶段 1.2：点击标签、焦点变化（`activateTab`、`activatePane`）和调整分隔条比例（`setSplitRatio`）不再复制整个模型并全量校验，只改相关记录；比例只路径复制所在的那一棵树。1000 个标签时模型内单次操作从约 0.65 ms 降到 0.1 µs；原来每次焦点变化要做两次完整事务。
 
-两步的应用行为、公开 API 与默认 Release 编译选项不变；`toJson()` 输出和 revision 经新旧代码对比逐字节相同。
+阶段 1.3：在相邻位置新建标签组（`addTabToNewGroup`）和关闭全部窗口时，原来为检测回调中的重入修改要序列化整个模型。现在先比较模型标识：`LayoutModel` 新增公开的 `stateId()`，副本共享、每次成功修改或读入快照都换新值，回调没有提交修改时不再序列化模型。只比 revision 不够：回调中恢复布局会得到 revision 相同、内容不同的新模型，现有用例覆盖了这种情况。关闭全部窗口时，窗口位置、选项、工具条这些窗口状态仍参与比较，回调改了它们照旧取消关闭；回调里激活已经活动的标签仍可照常关闭。
 
-验证：模型类套件与 `movement`、`focus-mode`、`shortcut-dispatch`、`tab-group` 全部通过（`model` 102 行，其中新增 5 个用例）。基准在 1000 个标签时关闭、移动、拆分仍约 4 s，没有可测的下降：耗时集中在每次布局变化都重建全部标签视图，要到 1.4–1.6 才处理；`layout.setRatio` 命令 p95 12 ms → 10 ms。数据见 [阶段 1 状态](../roadmap/implementation/phase-1-layout-performance.md#11-模型反向索引)。没有执行 Debug、独立模块或外部宿主夹具检查，也没有真实桌面试用。
+1.1 和 1.2 的 `toJson()` 输出与 revision 经新旧代码对比逐字节相同。默认 Release 编译选项不变；新增的公开 API 只有 `stateId()`，模块说明和外部宿主夹具已同步。
+
+验证：Release 全量 59 个套件中 58 个通过，2178 行通过、20 行失败。失败全部在 `native-frame`：检查点上的窗口是 Claude 桌面应用（`WindowFromPoint` 命中 `claude` 进程的窗口），测试窗口被遮住，不是代码缺陷，需要在没有遮挡的桌面上重跑确认。独立模块构建的同一套件同样被遮挡；该次 `chrome-interaction` 有 1 行失败，单独重跑 3 次均通过。安装后的外部宿主夹具通过。本工作区的固定 Release 已覆盖 `out/package/muxora-preview/`，`application-exit-test.ps1` 通过；主仓库检出中的部署目录没有改动。基准在 1000 个标签时关闭、移动、拆分仍约 4 s，没有可测的下降：耗时集中在每次布局变化都重建全部标签视图，要到 1.4–1.6 才处理；`layout.setRatio` 命令 p95 12 ms → 10 ms。数据见 [阶段 1 状态](../roadmap/implementation/phase-1-layout-performance.md#11-模型反向索引)。没有执行 Debug 矩阵、DPI、7-Zip 打包或真实桌面试用。
 
 ### 状态栏高度（2026-10-19）
 

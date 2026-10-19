@@ -168,24 +168,45 @@
 
 ## 1.3 去掉序列化比较（R5）
 
-**目标**：`addTabToNewGroup()`、`requestCloseAllWindows()` 不再为检测重入修改而序列化整个模型或布局。
+**目标**：`addTabToNewGroup()`、`requestCloseAllWindows()` 在回调没有修改模型时，不再为检测重入修改而序列化整个模型。
 
 **前置**：1.1（不依赖，但改同一文件，顺序执行避免冲突）。
 
-**涉及文件**：`window_manager.cpp`（`addTabToNewGroup` 约 178 行；`requestCloseAllWindows` 约 406–427 行）。
+**涉及文件**：`window_manager.cpp`（`addTabToNewGroup`、`requestCloseAllWindows`）、`window_manager.hpp`（私有 `saveViewLayout()`）、`layout_persistence.cpp`（`saveLayout()` 拆分）、`layout_model.{hpp,cpp}`（`stateId()`）、`modules/window-system/README.md`、外部宿主夹具、`layout_model_test.cpp`、`workspace_test.cpp`。
+
+**修订（2026-10-19，实施前核对）**：原方案假设“每条成功修改都递增 revision，所以只比 revision 就够”。核对结果是 `LayoutModel` 的公开修改确实都经过 `transact()` 或 `fromJson()` 并递增 revision，但 `WindowManager` 还会整体替换模型，revision 因此会回退或重复：
+
+- `restoreLayout()` 用新建的 `LayoutModel` 读入快照，revision 从 1 重新开始。现有用例 `tab_group_test` 的 `adjacentPreparationPreservesARestoredModelWithTheSameRevision` 正是在回调中恢复出 revision 相同、内容不同的模型，并断言 `addTabToNewGroup()` 必须放弃提交。只比 revision 会让这条用例失败。
+- `DragController::cancel()` 取消拖出时把模型赋回拖动开始时的副本，revision 回退到当时的值。
+
+另外，原第 2、4 条打算在 `requestCloseAllWindows()` 中只比较 `d->options` 的大小、不再比较工具条等窗口状态，这与现有用例 `closeAllRejectsChangesDuringCallbacks` 的 `options`（侧栏开关）和 `placement`（移动窗口）两行冲突：它们要求回调修改窗口状态后拒绝关闭；`closeAllAllowsUnchangedFocusAfterApproval` 又要求回调中激活已活动标签（revision 变化、内容不变）后照常关闭。按“不改现有预期”的规则，方案改为：
 
 **实现**：
 
-1. `addTabToNewGroup()`：删除 `originalModel = d->model.toJson()` 和 `d->model.toJson() != originalModel` 比较，只保留 `d->model.revision() != revision`。
-2. `requestCloseAllWindows()`：`unchanged()` 中的 `saveLayout() != before` 替换为：模型 `revision()` 未变、`d->options`／`d->viewStates` 的大小未变，以及原有的窗口和内容控件身份比较。
-3. **前提核对**：这两处比较存在，是因为担心回调改动了模型却没有递增 revision。实施前逐个检查 `LayoutModel` 的所有修改路径（1.1 中的 grep 结果），确认每条成功路径都递增 `revision_`。若发现不递增的路径，先修那条路径（单独提交并加测试），再做本步。
-4. 窗口级状态（`saveLayout()` 中除模型之外的部分：工具条、栏可见性、行为设置）在回调中变化，是否也应阻止关闭？阅读 `requestCloseAllWindows` 的注释与 `memory_lifecycle_test`、`application-exit-test.ps1` 的意图：关闭许可只需保证“被批准的内容就是将要关闭的内容”。工具条布局变化不影响这一点，因此可以不比较；在代码注释中写明这个判断。
+1. `LayoutModel` 增加 `stateId()`：进程内唯一的状态标识。副本共享同一个值；`transact()` 提交、`fromJson()` 成功以及 1.2 的快速路径都分配新值。标识相同说明记录完全相同，即使 revision 因整体替换而重复。它不进入 `toJson()`，也不参与 1.2 的逐字节比较。
+2. `addTabToNewGroup()`：删除 `originalModel = d->model.toJson()` 和对应比较，改为 `revision` 与 `stateId()` 都未变。
+3. `requestCloseAllWindows()`：
+   - 模型：保存一份隐式共享的副本（O(1)）。`stateId()` 未变即视为未变；只有在回调确实提交过修改时，才把当前模型与副本各序列化一次比较内容（保留“激活已活动标签仍可关闭”的行为）。
+   - 窗口状态：`saveLayout()` 拆出不含模型的部分 `saveViewLayout()`（窗口位置、选项、工具条、窗格描述、配置），回调前后比较它。工具条、侧栏开关和窗口位置的变化仍然阻止关闭，与现有用例一致。
+   - 原有的窗口与内容控件身份比较不变。
+4. `revision` 的语义不变：单个模型内的修改计数。`DragController::cancel()` 与 `restoreLayout()` 的回退行为不改（现有用例断言恢复后的 revision 为 1）。
+5. 行为差别：`addTabToNewGroup()` 原来在回调恢复出“revision 相同且内容相同”的模型时会继续提交，现在因为 `stateId()` 不同而放弃。恢复会重建内容控件，放弃提交更稳妥；没有现有用例依赖原行为。
 
-**测试**：在 `tab_creation_test.cpp` 和应用退出相关测试中已有重入用例；新增 `closeAllRejectsModelChangeFromGuard`：关闭许可回调中执行 `renameTab`，断言关闭被拒绝、窗口保留；以及 `closeAllIgnoresToolbarEditFromGuard`：回调中修改工具条宽度，断言关闭照常完成。
+**测试**：
 
-**验证**：`window-system.tab-creation`、`window-system.memory-lifecycle`、`window-system.widgets`、应用 `tools/tests/application-exit-test.ps1`。
+- `layout_model_test`：`stateIdChangesOnEveryCommit`：副本共享标识；每种成功修改（事务、`fromJson`、激活与比例快速路径）都换新值；失败操作不变；用同一份 JSON 读入两个模型得到不同标识。
+- `workspace_test`：`closeAllRejectsModelChangeFromGuard`：关闭许可回调中执行 `renameTab`，断言关闭被拒绝、窗口与标题保留；`closeAllRejectsToolbarEditFromGuard`：回调中解除工具条锁定，断言关闭被拒绝（窗口状态仍参与比较）。
+- 现有 `tab_group_test` 的回调恢复、修改、销毁用例和 `workspace_test` 的全部关闭用例保持通过。
 
-**状态**：未开始。
+**验证**：`window-system.tab-creation`、`window-system.tab-group`、`window-system.memory-lifecycle`、`window-system.widgets`、`window-system.window-placement`、应用 `tools/tests/application-exit-test.ps1`。
+
+**状态**：已完成（提交标题 “Compare model identity instead of serializing for reentrancy checks”）。实际结果：
+
+- 先验证修订的必要性：把 `addTabToNewGroup()` 临时改成只比 revision（原方案），现有用例 `adjacentPreparationPreservesARestoredModelWithTheSameRevision` 失败（`addTabToNewGroup` 提交了候选模型），记录在 `out/diagnostics/1.3-revision-only-check.txt`；恢复后通过。
+- 新增 `stateIdChangesOnEveryCommit`、`closeAllRejectsModelChangeFromGuard`（批准回调与关闭通知两行）、`closeAllRejectsToolbarEditFromGuard`。现有 `closeAllRejectsChangesDuringCallbacks`（12 行）、`closeAllAllowsUnchangedFocusAfterApproval`、`closeAllRejectsContentReplacementWithTheSameIds` 与 `tab_group_test` 的回调用例保持通过。
+- 验证：`model`（103 行）、`widgets`（57 行）、`tab-creation`、`tab-group`（101 行）、`memory-lifecycle`、`window-placement`、`drag-interaction` 全部通过。独立模块构建、安装和外部宿主夹具：独立构建的 52 个套件中 `native-frame`、`chrome-interaction` 失败；`native-frame` 的命中点落在 Claude 桌面应用窗口（`WindowFromPoint` 返回 0x1c005c4，进程 `claude`，矩形 402,6–1799,1032），属于遮挡；`chrome-interaction` 1 行（`overflowToggleRestoresHoverAndPressState`）单独重跑 3 次均 58 行全部通过，未能复现。安装后的外部宿主夹具（含新增的 `stateId()` 调用）通过。首次失败记录在 `out/diagnostics/1.3-standalone-*`。
+- 1.1–1.3 完成后的 Release 全量（`tools/build.ps1 -Configuration Release -Test`）：59 个套件中 58 个通过；2178 行通过、20 行失败，失败全部是 `native-frame`，原因同上（同一个 Claude 窗口遮挡），记录在 `out/diagnostics/1.3-full-release-native-frame-first.txt`。由于 `-Test` 失败时脚本不打包，随后单独运行 `-Package` 更新了本工作区的 `out/package/muxora-preview/`，`application-exit-test.ps1` 的三窗口退出、重启和保存失败检查通过。
+- 基准：`bench-1.3-before.json` 是 1.2-after 那次运行的副本（代码相同）。1000 个标签时各场景与之前相同（close p95 4.03 s → 3.92 s，属于波动）：基准里 `addTabToNewGroup` 只在创建时调用 40 次，`requestCloseAllWindows` 不在基准中。省下的是这两处在常见路径上对整个模型的两次 `toJson()`；作为量级参考，1000 个标签时 save 场景（`saveLayout()` + `toJson()`）约 11 ms。没有单独测这两个函数。
 
 ---
 

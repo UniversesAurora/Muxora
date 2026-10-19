@@ -155,7 +155,7 @@ TabId WindowManager::addTabToNewGroup(WindowId window, QWidget* content, const T
     if (!self || !observed) return {};
     const auto previousFocus = content->focusPolicy();
     const auto revision = d->model.revision();
-    const auto originalModel = d->model.toJson();
+    const auto state = d->model.stateId();
     auto candidate = d->model;
     const auto id = candidate.addTabToNewGroup(window, options.title, reference, placement);
     if (id.isNull()) return {};
@@ -170,12 +170,13 @@ TabId WindowManager::addTabToNewGroup(WindowId window, QWidget* content, const T
     // Attribute callbacks still observe the old model and caller ownership.
     // Discard the candidate if a callback destroys either participant or
     // changes the model; never overwrite a host's reentrant layout mutation.
+    // stateId() also catches a restored model whose revision repeats.
     content->setProperty("windowSystemManaged", true);
     if (!self || !observed) return {};
     content->setProperty("paneId", pane);
     if (!self || !observed) return {};
     if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
-    if (!self || !observed || d->model.revision() != revision || d->model.toJson() != originalModel) return {};
+    if (!self || !observed || d->model.revision() != revision || d->model.stateId() != state) return {};
     // Commit the model and ownership together before parent/refresh callbacks.
     d->model = std::move(candidate);
     d->panes.insert(pane, observed); d->descriptors.insert(pane, options);
@@ -414,11 +415,19 @@ bool WindowManager::requestCloseAllWindows()
     d->drag->cancel();
     if (!self) return false;
 
-    const auto before = saveLayout();
+    // Approval covers exactly the content that will close. The model is
+    // compared by identity (an implicitly shared copy costs O(1)); only when
+    // a callback committed something is its content compared, so a no-op
+    // such as activating the active tab still lets the close proceed. Window
+    // state stays part of the comparison: placement, options and toolbar
+    // edits from a callback cancel the close as before.
+    const auto modelBefore = d->model;
+    const auto viewBefore = saveViewLayout();
     const auto windows = d->windows;
     const auto panes = d->panes;
-    auto unchanged = [this, &before, &windows, &panes] {
-        if (saveLayout() != before || d->windows.size() != windows.size() || d->panes.size() != panes.size()) return false;
+    auto unchanged = [this, &modelBefore, &viewBefore, &windows, &panes] {
+        if (d->model.stateId() != modelBefore.stateId() && d->model.toJson() != modelBefore.toJson()) return false;
+        if (saveViewLayout() != viewBefore || d->windows.size() != windows.size() || d->panes.size() != panes.size()) return false;
         for (auto it = windows.cbegin(); it != windows.cend(); ++it)
             if (!it.value() || d->windows.value(it.key()) != it.value()) return false;
         for (auto it = panes.cbegin(); it != panes.cend(); ++it)

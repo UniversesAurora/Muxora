@@ -217,6 +217,12 @@ QJsonObject WindowManager::saveLayout() const
     // Persist the last committed view during a drag, never its carrier,
     // insertion gaps or transient edge presentation coordinates.
     if (d->drag && d->drag->hasStableLayout()) return d->drag->stableLayout();
+    auto layout = saveViewLayout();
+    layout.insert("model", d->model.toJson());
+    return layout;
+}
+QJsonObject WindowManager::saveViewLayout() const
+{
     QJsonArray windows, panes;
     for (const auto id : d->model.windowOrder()) {
         const auto widget = d->windows.value(id); if (!widget) continue;
@@ -243,7 +249,7 @@ QJsonObject WindowManager::saveLayout() const
     QJsonObject profiles;
     for (const auto kind : {WindowKind::Workbench, WindowKind::Floating})
         if (d->toolbarProfiles.contains(kind)) profiles.insert(toolbarKindKey(kind), d->toolbarProfiles.value(kind));
-    return {{"schemaVersion", 1}, {"model", d->model.toJson()}, {"windows", windows}, {"panes", panes},
+    return {{"schemaVersion", 1}, {"windows", windows}, {"panes", panes},
         {"toolbarProfiles", profiles},
         {"visibilityProfiles", visibilityProfilesToJson(d->visibilityProfiles)},
         {"tabAppearance", tabAppearanceToJson(d->appearance)},
