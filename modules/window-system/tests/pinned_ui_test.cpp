@@ -337,7 +337,8 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize_data()
     QTest::addColumn<int>("edge");
     QTest::addColumn<QString>("mutation");
     for (const auto edge : {Edge::Top, Edge::Left})
-        for (const auto& mutation : {QString("destroy-manager"), QString("rebuild-surface"), QString("close-window")})
+        for (const auto& mutation : {QString("destroy-manager"), QString("rebuild-surface"), QString("rebuild-tab"),
+                                     QString("close-window")})
             QTest::newRow(qPrintable(QString("edge-%1-%2").arg(int(edge)).arg(mutation))) << int(edge) << mutation;
 }
 
@@ -376,7 +377,11 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
         handled = true;
         if (mutation == "destroy-manager") manager.reset();
         else if (mutation == "close-window") changed = manager->requestCloseWindow(id);
-        else {
+        else if (mutation == "rebuild-tab") {
+            // Changes the resized tab's own pane tree, so its hosts are rebuilt.
+            created = manager->splitPane(tab, pane, label("Split during resize"), Placement::Bottom);
+            changed = !created.isNull();
+        } else {
             created = manager->addTabToNewGroup(id, label("Created during resize"),
                 {"Created during resize", "label", {}}, group, Placement::Right);
             changed = !created.isNull();
@@ -401,12 +406,24 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
     if (mutation == "close-window") {
         QVERIFY(!manager->model().window(id)); QVERIFY(manager->model().window(survivor));
         settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original); QVERIFY(!originalHost);
-    } else {
-        QVERIFY(manager->model().tab(created)); QVERIFY(manager->model().tab(central));
+    } else if (mutation == "rebuild-tab") {
+        // The replaced host is deleted only after Qt leaves the active layout.
+        QCOMPARE(manager->model().tabForPane(created), tab);
         QCOMPARE(manager->paneWidget(pane), original.data());
         QVERIFY(originalHost); QVERIFY(originalHost->isHidden());
         QVERIFY(original->parentWidget() != originalHost);
         settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(!region); QVERIFY(original); QVERIFY(!originalHost);
+        QCOMPARE(manager->model().toJson(), afterCallback);
+    } else {
+        QVERIFY(manager->model().tab(created)); QVERIFY(manager->model().tab(central));
+        QCOMPARE(manager->paneWidget(pane), original.data());
+        // A new neighbouring group leaves this tab's pane tree unchanged: its
+        // host and mounted content are kept (phase 1.5); the surface's own
+        // splitters are still replaced after the layout returns.
+        QVERIFY(originalHost); QVERIFY(!originalHost->isHidden());
+        QCOMPARE(original->parentWidget(), originalHost.data());
+        settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(!region); QVERIFY(original); QVERIFY(originalHost);
+        QCOMPARE(original->parentWidget(), originalHost.data());
         QCOMPARE(manager->model().toJson(), afterCallback);
         QCOMPARE(manager->model().group(manager->model().groupForTab(created))->location, GroupLocation::Pinned);
     }
