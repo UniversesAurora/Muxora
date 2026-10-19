@@ -32,7 +32,8 @@
 | 能力 | 方案要点 |
 | --- | --- |
 | 会话树 | 文件夹、标签、颜色、搜索；拖动排序；快速连接栏（`user@host:port`） |
-| 导入 | `~/.ssh/config`（V0 设计已定只读规则）、PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` |
+| SSH config | **不是导入**：按 [V0 设计 §5](../design/v0-design.md#5-会话管理与-ssh-config) 动态读取 `~/.ssh/config` 及其 `Include`，运行中监听变化，只读使用；Muxora 不修改该文件，也不用自己的设置覆盖其中的连接参数，只按“配置源 + 别名”附加界面设置（2026-10-19 更正：此前误写在“导入”一行） |
+| 导入（一次性） | PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` 导入为应用自建会话，导入后与原文件无关 |
 | 认证 | 密码（存 Windows 凭据管理器，只保存引用）、私钥、OpenSSH agent 与 Pageant、keyboard-interactive、多因素 |
 | 跳板 | `ProxyJump` 多级链；每一级单独显示状态和失败原因 |
 | 代理 | SOCKS4/5、HTTP CONNECT、`ProxyCommand` |
@@ -42,7 +43,7 @@
 | 自定义 shell | 登录后执行的命令、远端 shell 路径、环境变量、工作目录 |
 | 主机密钥 | `known_hosts` 管理界面；首次连接和密钥变化的明确提示 |
 | 会话操作 | 复制会话、在新标签／新窗口打开、批量连接文件夹 |
-| 本地终端 | ConPTY：PowerShell、cmd、WSL 发行版；串口和 Telnet 放在后续 |
+| 本地终端 | 见 [本地终端设计](../design/local-terminal-design.md)：ConPTY 运行 Windows PowerShell、PowerShell 7、cmd、各 WSL 发行版（不经过 SSH）、Git Bash、VS 开发者命令行；自动检测、自建配置、可选读取 Windows Terminal 配置（只读）；串口和 Telnet 放在后续 |
 
 ## 3. SFTP
 
