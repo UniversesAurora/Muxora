@@ -468,34 +468,53 @@
 
 ---
 
-## 1.8 延迟恢复内容
+## 1.8 启动时恢复会话对象，界面按需创建
 
-**目标**：恢复上百个标签的布局时，宿主只为活动标签创建内容；其他标签首次激活时再创建。
+> 2026-10-20 修订：原计划是“恢复时只为活动标签创建内容，其他标签首次激活时再创建”。用户明确要求恢复后所有连接都要在（[启动时恢复会话设计](../../design/session-restore-design.md) §3），因此改为：**会话对象（连接、终端状态）在恢复时为全部标签立即创建，只有界面控件按需创建。**
+
+**目标**：恢复布局时，窗口系统把全部标签的内容描述一次性交给宿主，宿主据此立即创建全部会话对象；每个窗格的界面控件在第一次显示时才通过工厂创建。
 
 **前置**：1.7。
 
-**涉及文件**：`window_manager.hpp`（新重载）、`layout_persistence.cpp`（`restoreLayout`）、`window_manager.cpp`（`createContent`、新增 `ensurePaneContent`）、`src/app/main.cpp`（启用）。
+**涉及文件**：`window_manager.hpp`（新类型与重载）、`layout_persistence.cpp`（`restoreLayout`）、`window_manager.cpp`（`createContent`、新增 `ensurePaneContent`）、`src/app/main.cpp`（启用）、`src/workspace_host/placeholder_content.cpp`（占位内容拆成“对象 + 视图”，用来验证路径）、外部宿主夹具。
 
 **实现**：
 
 1. 新增：
 
    ```cpp
-   struct RestoreOptions { bool deferInactiveContent = false; };
+   struct RestoredContent {
+       TabId tab; PaneId pane; TabOptions options;
+       bool visible = false;          // 恢复后是否立即显示（各窗口的活动标签、可见窗格）
+   };
+   struct RestoreOptions {
+       bool deferWidgets = false;     // true：界面控件在第一次显示时才创建
+       // 模型提交后、创建任何控件之前调用一次。顺序：可见的在前，其余按 visitedOrder 从近到远。
+       std::function<void(const QVector<RestoredContent>&)> contentRestored;
+   };
    OperationResult restoreLayout(const QJsonObject& snapshot, const RestoreOptions& options);
    ```
 
-   原 `restoreLayout(snapshot)` 等价于 `deferInactiveContent = false`。
+   原 `restoreLayout(snapshot)` 等价于 `deferWidgets = false` 且不调用 `contentRestored`，现有宿主行为不变。
 
-2. 推迟的窗格：`d->descriptors` 中保存描述，`d->panes` 中**没有**条目。新增私有 `QWidget* ensurePaneContent(PaneId)`：若没有内容，调用 `createContent(descriptor, pane)`，按 `addTab` 中的方式设置属性、焦点策略、parent，然后插入 `d->panes`。工厂返回空指针时，放一个显示“无法创建内容”的占位标签，并通过 `commandFailed` 报告，避免空窗格。
-3. `ensureTabView()`（1.7）在构建视图前，对该标签的每个窗格调用 `ensurePaneContent()`。
-4. `paneWidget(PaneId)` 的契约：启用延迟恢复时，未激活标签的窗格返回 `nullptr`。在头文件注释中写明；不改变默认行为。
-5. 关闭许可回调（`CloseGuard`）收到的标签可能包含尚未创建内容的窗格；`approveClose()` 中 `contents` 记录为空指针，比较逻辑不变。
-6. 应用 `main.cpp` 中恢复时传 `{.deferInactiveContent = true}`。占位内容很便宜，这一步对占位应用的意义在于验证路径；真正受益的是以后的终端和会话内容。
+2. `contentRestored` 的契约（写入头文件注释）：只调用一次；回调中宿主可以创建业务对象，但不能修改布局（检测到 `stateId()` 变化时恢复失败并回滚）；回调可能销毁管理器，按现有方式检查 `QPointer`。
+3. 推迟的窗格：`d->descriptors` 保存描述，`d->panes` 中没有条目。私有 `QWidget* ensurePaneContent(PaneId)`：没有控件时调用工厂 `ContentFactory(options, pane)`——宿主用 `pane` 找到恢复时已经创建的会话对象并返回它的视图；然后按 `addTab` 中的方式设置属性、焦点策略、parent，插入 `d->panes`。工厂返回空指针时放一个“无法创建内容”的占位并通过 `commandFailed` 报告。
+4. `ensureTabView()`（1.7）在构建视图前，对该标签的每个窗格调用 `ensurePaneContent()`。
+5. `paneWidget(PaneId)`：启用 `deferWidgets` 时，从未显示过的窗格返回 `nullptr`。宿主不能用它判断会话是否存在。
+6. 关闭许可回调收到的标签可能包含没有控件的窗格；`approveClose()` 中 `contents` 记录为空指针，比较逻辑不变。关闭从未显示的标签时工厂不被调用；宿主在关闭通知中按 `PaneId` 释放会话对象。
+7. 宿主获得优先级变化：1.7 的内容可见性通知（`setContentVisibilityHandler`）在窗格第一次显示时发出，宿主据此把该会话提到连接队列队首（阶段 7.10）。
+8. 应用 `main.cpp`：恢复时传 `{.deferWidgets = true, .contentRestored = ...}`。占位内容拆成一个轻量对象（保存标题、类型、可编辑文字）和一个视图，用来验证“对象先建、视图后建、内容身份稳定”的整条路径。
 
-**测试**：`deferredRestoreCreatesContentOnActivation`：保存含 50 个标签的布局，用计数工厂恢复，断言工厂只被调用“组数”次；逐个激活后调用次数增加、内容身份稳定；关闭从未激活的标签时工厂不被调用。
+**测试**：
 
-**验证**：`window-system.widgets`、`window-system.view-state`、`window-system.tab-creation`、应用部署夹具（重启恢复）。
+- `restoredContentIsReportedOnceInPriorityOrder`：保存含 50 个标签、两个窗口的布局，恢复时 `contentRestored` 被调用一次，包含 50 项，可见项在前，其余按访问顺序。
+- `widgetsAreCreatedOnFirstShow`：工厂只为可见窗格调用；逐个激活其他标签后调用次数增加，同一窗格只调用一次，内容身份稳定。
+- `closingNeverShownTabsSkipsTheFactory`：关闭从未显示的标签，工厂不被调用，关闭通知包含其 `PaneId`。
+- `layoutChangesInsideContentRestoredAreRejected`：回调中修改布局，恢复失败且模型回到恢复前。
+- `managerDestroyedInsideContentRestored`：回调中销毁管理器，不崩溃。
+- 外部宿主夹具使用新重载一次。
+
+**验证**：`window-system.widgets`、`window-system.view-state`、`window-system.tab-creation`、新测试、应用部署夹具（重启恢复）；基准 create 场景前后对比。
 
 **状态**：未开始。
 

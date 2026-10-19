@@ -15,6 +15,7 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [Lua 脚本与组件扩展](design/lua-scripting-design.md) | 运行时、脚本 API、资源预算及未来组件扩展 |
 | [终端 Normal / Visual 模式](design/terminal-mark-mode-design.md) | 本地键盘浏览、选择、搜索与复制 |
 | [SSH config 修改与同步](design/ssh-config-sync-design.md) | 默认只读；可选的写回原文件与应用会话双向同步，无损解析、最小修改、`Include` 接入、冲突与开关切换 |
+| [启动时恢复会话](design/session-restore-design.md) | 恢复布局、连接目标与终端历史，重新连接的顺序、限流与登录处理，tmux 选项 |
 | [本地终端](design/local-terminal-design.md) | WSL、Git Bash、cmd、PowerShell 等本机 shell 的配置来源、ConPTY 启动、目录跟随与界面入口 |
 | [主题系统](design/theme-system-design.md) | 颜色注册表、主题定义、与 VS Code 相同的深浅色设置和切换逻辑、深色配色方法 |
 | [界面设计规范](design/ui-design-system.md) | 以 VS / VS Code 为标准的尺寸、字体、交互规则与组件规格 |

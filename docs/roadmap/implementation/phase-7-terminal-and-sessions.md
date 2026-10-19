@@ -372,3 +372,74 @@ PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` 导入为应用自建
 ## 7.9 后续完善
 
 ZMODEM（`rz`／`sz`）、Kitty 图形协议显示、下拉终端（全局热键）、背景透明与亚克力、ConPTY 之外的串口与 Telnet。每项展开为子步骤后再实现。
+
+---
+
+## 7.10 启动时恢复会话
+
+设计见 [启动时恢复会话设计](../../design/session-restore-design.md)。要点：恢复的是布局、连接目标、终端历史和工作目录；连接**重新建立**；会话对象在启动时为全部标签创建，界面控件按需创建（[1.8](phase-1-layout-performance.md#18-启动时恢复会话对象界面按需创建)）。
+
+**前置**：1.8、7.3、7.4、7.5、7.6；阶段 4（设置注册表）、8.7（通知）。
+
+### 7.10a 窗口模块：标签状态标记
+
+**产出**：`WindowManager` 新增通用 API（不含业务含义）：
+
+```cpp
+enum class TabIndicator { None, Activity, Bell, Busy, NeedsAttention, Warning, Error, Exited };
+bool setTabIndicator(TabId tab, TabIndicator indicator, QString tooltip = {});
+```
+
+在中央标签、固定标签、收纳条标签和标签列表中以小标记显示（颜色来自主题颜色 ID `muxora.tabIndicator.*`，阶段 2）。宿主映射：等待连接、正在连接 → `Busy`；需要登录 → `NeedsAttention`；主机密钥变化 → `Warning`；失败 → `Error`；进程退出 → `Exited`；后台有新输出 → `Activity`。标签切到前台时 `Activity` 和 `Bell` 自动清除。
+
+**测试**：每种标记在四种标签呈现中显示与清除；标签移动到其他窗口后标记保留；外部宿主夹具调用一次。
+
+### 7.10b 会话描述的保存与读取
+
+**产出**：`src/sessions/restore/session_descriptor.{hpp,cpp}`。
+
+每个窗格的 `TabOptions::state`（已随布局保存）中记录：内容类型、会话配置 ID 或本地终端配置 ID、上次的终端尺寸、上次报告的工作目录、文件面板路径与跟随状态、tmux 会话名（§6）、历史文件 ID。不保存任何秘密和连接参数（连接参数在恢复时从会话配置重新读取；配置已删除时按 V0 设计 §5.4 不复活，标签显示“会话配置已不存在”并只保留历史）。
+
+**测试**：保存与读取往返；配置已删除的处理；状态中不出现密码类字段（扫描）。
+
+### 7.10c 恢复协调器
+
+**产出**：`src/sessions/restore/restore_coordinator.{hpp,cpp}`。
+
+1. 接收 1.8 的 `contentRestored` 列表，为每项创建会话对象（不连接），并按设置决定：`none` 不会走到这里（应用启动时直接用默认布局）；`layout` 全部置为“未连接”；`reconnect` 全部进入连接队列。
+2. 队列：优先级为“可见 > 访问时间”；用户切到某个标签（1.7 的可见性通知）或在其中按键时提到队首。
+3. 并发：全局 `ssh.restore.maxConcurrent`（默认 8）；同一主机、同一跳板机各 2；本地进程 4。
+4. 网络：监听 `QNetworkInformation::reachabilityChanged`；不可达时暂停队列，恢复后继续。
+5. 进度：状态栏项“正在恢复连接 n/m”，点击打开快速输入列表（每项状态、原因、重试）；完成后移除，失败项进入通知中心。
+6. 认证：需要交互输入的会话进入“需要登录”；状态栏项“k 个会话需要登录”，点击后依次弹出登录输入（统一对话框，一次一个，可跳过、全部跳过）；同主机同用户的其余会话询问一次是否使用同一密码（只在内存中，不保存，除非用户选择记住）。
+7. 主机密钥变化：停在警告状态，不重试。认证被拒绝：不重试。其他失败按自动重连策略退避。
+8. 共享跳板连接：同一跳板机的多个会话共用一条 libssh 会话（多个通道）；跳板连接断开时，依赖它的会话一起进入重连。
+
+**测试**（用可复现 SSH 测试服务，7.5）：200 个会话恢复时同时握手数不超过上限；同主机限制；可见标签先连；切到排队中的标签立即连接；需要密码的会话不弹窗、按状态栏逐个处理、复用密码询问；主机密钥变化不重试；断网暂停、恢复继续；`layout` 模式不发起任何连接（抓包或服务端日志确认）。
+
+### 7.10d 终端历史保存与显示
+
+**产出**：`src/terminal/history_store.{hpp,cpp}`、`src/platform/windows/dpapi.{hpp,cpp}`。
+
+1. 格式：终端核心的单元格格式（码点或字形簇、属性、颜色），每个终端一个文件 `sessions-history/<历史 ID>.bin`，内容用 `CryptProtectData`（当前用户）加密。
+2. 上限：每终端 `terminal.restoreHistoryLines`（默认 1000）行且 ≤ 512 KiB；全局 `terminal.restoreHistoryBudget`（默认 256 MiB），超出时按访问时间从旧到新截短。
+3. 写入：后台线程；正常退出时写全部；运行中每 60 秒写有新输出的终端；标签关闭时删除文件；关闭 `terminal.restoreHistory` 时删除全部。
+4. 显示：恢复后历史放在新连接上方，中间分隔线“以下为新连接 · <时间> 恢复”；历史只读，可滚动、搜索、复制、Normal 模式浏览。
+
+**测试**：往返（颜色、宽字符、组合字符）；单终端与全局上限；文件内容不是明文（扫描已知字符串）；关闭设置后文件被删除；崩溃模拟（强制结束）后重启最多缺 60 秒内容。
+
+### 7.10e 工作目录与 tmux 选项
+
+1. 本地终端在上次目录启动（ConPTY 工作目录；WSL `--cd`）。
+2. SSH：`ssh.restore.restoreDirectory` 打开且有 Shell 集成（OSC 133）时，在第一个提示符后发送安全引用的 `cd`；否则只在分隔线上显示上次目录。
+3. 会话选项“在 tmux 中运行”：连接后执行 `tmux new-session -A -s muxora-<标签 ID 短码>`；重连时重新接入；远端无 tmux 时提示并按普通 shell 打开。命令在会话设置中可见。
+
+**测试**：本地终端目录恢复（含空格、Unicode 路径、WSL）；SSH 有无 Shell 集成两种情况；tmux 重新接入后远端进程仍在（测试服务上运行 `sleep` 并检查 PID）。
+
+### 7.10f 设置与异常退出
+
+1. 声明设置：`workbench.restoreSessions`（`none`／`layout`／`reconnect`，默认 `reconnect`）、`terminal.restoreHistory`、`terminal.restoreHistoryLines`、`terminal.restoreHistoryBudget`、`ssh.restore.maxConcurrent`、`ssh.restore.restoreDirectory`；命令“重新连接全部已断开的会话”“断开全部会话”。
+2. 异常退出检测：启动时写入状态目录中的运行标记，正常退出时删除；启动时发现标记仍在，恢复后在状态栏提示一次“上次未正常退出，已恢复 n 个会话”。
+
+**测试**：三种模式各自的启动结果；异常退出提示只出现一次。
+
