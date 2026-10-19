@@ -1,6 +1,6 @@
 # 代码审查记录（2026-10）
 
-审查基线：提交 `89ef8d0`。行号指该提交或本轮修改后的位置，随代码变化可能偏移。
+审查基线：提交 `527d6c0`。行号指该提交或本轮修改后的位置，随代码变化可能偏移。
 
 严重程度：
 
@@ -53,7 +53,7 @@
 1. **快捷键候选索引（R7）**：`WindowManager::Private` 按首个按键缓存候选绑定（命令 ID、序列、参数、`enabled` 回调副本），在绑定或命令目录变化时（`bindingsRevision` 递增）惰性重建。分发时只取首键相同的候选，顺序与原来遍历“命令→绑定”一致；`enabled` 回调仍逐次调用，回调修改注册表时的中止规则不变。首键不同的绑定在 `QKeySequence::matches` 中必然是 `NoMatch`，所以过滤不改变结果。
 2. **焦点与右键查找（R8）**：`FocusIn`、`ContextMenu` 处理改用 `LayoutModel::tabForPane()`。一个 Pane 只属于一个 Tab（由 `validate()` 保证），遍历顺序相同，结果一致，省去每个标签生成窗格列表的分配。
 
-3. **侧栏重新显示（R16）**：隐藏状态下重建的收纳条留在 `DockSurface` 上，没有加入网格。重新显示时 `updateRailLayout()` 才把它加入网格，这一步会把控件改挂到 `DockSurfaceRoot`；Qt 改 parent 时会隐藏控件，只在下一轮事件循环补上显示。现在加入网格后立即显示应当可见的收纳条。原有 `SidebarPresentationTest::hidingKeepsPinnedContentAndCentralTabs` 的 8 行就是回归用例：修复前在基线提交 `89ef8d0` 和本轮修改上都稳定失败，修复后通过。
+3. **侧栏重新显示（R16）**：隐藏状态下重建的收纳条留在 `DockSurface` 上，没有加入网格。重新显示时 `updateRailLayout()` 才把它加入网格，这一步会把控件改挂到 `DockSurfaceRoot`；Qt 改 parent 时会隐藏控件，只在下一轮事件循环补上显示。现在加入网格后立即显示应当可见的收纳条。原有 `SidebarPresentationTest::hidingKeepsPinnedContentAndCentralTabs` 的 8 行就是回归用例：修复前在基线提交 `527d6c0` 和本轮修改上都稳定失败，修复后通过。
 
 新增回归 `ShortcutDispatchTest::dispatchFollowsCatalogAndBindingChanges`：先触发一次按键建立索引，再依次新增命令、改绑定为两段序列、同首键的第二个命令、删除命令，每一步用真实按键验证分发结果，最后确认没有绑定时按键回到编辑器。
 

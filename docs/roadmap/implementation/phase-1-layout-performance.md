@@ -11,7 +11,7 @@
 
 **步骤顺序**：1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8；1.9、1.10 与其余步骤独立。
 
-**基准的实际跑法（1.4–1.6）**：与 1.1–1.3 相同（`bench-release` 构建、offscreen、100／500／1000 档、每场景 30 次、不含 `cycle`），由临时脚本按 `bench.ps1` 的配置构建后运行。1.4-before 在合并后的 `main`（`2efe450`）上重新测量：1.3-after 那次运行之后 `main` 又合入了状态栏高度改动，模块代码不完全相同。之后每一步的 before 就是上一步的 after（代码相同，没有重跑）。运行期间不编译，其他工作只读写文件。1.6b 的最终 after 用 `pwsh ./tools/bench.ps1 -Name 1.6b-after` 跑完整基准（含 `cycle`），这时一次只要 30 分钟左右。
+**基准的实际跑法（1.4–1.6）**：与 1.1–1.3 相同（`bench-release` 构建、offscreen、100／500／1000 档、每场景 30 次、不含 `cycle`），由临时脚本按 `bench.ps1` 的配置构建后运行。1.4-before 在合并后的 `main`（`66a41cf`）上重新测量：1.3-after 那次运行之后 `main` 又合入了状态栏高度改动，模块代码不完全相同。之后每一步的 before 就是上一步的 after（代码相同，没有重跑）。运行期间不编译，其他工作只读写文件。1.6b 的最终 after 用 `pwsh ./tools/bench.ps1 -Name 1.6b-after` 跑完整基准（含 `cycle`），这时一次只要 30 分钟左右。
 
 **基准的实际跑法（1.1–1.3）**：完整的 `tools/bench.ps1` 一次约 3.4 小时，其中 1000 次“添加 + 关闭”的 `cycle` 场景在 1000 个标签时单独约 2.2 小时，而且不受 `-Repeat` 影响。1.1–1.3 不涉及这个场景，所以按 `bench.ps1` 相同的配置构建 `out/build/bench-release`，再直接运行基准程序：`--tabs 100,500,1000 --repeat 30`，场景为 create、close、move、split、ratio、keys、save（不含 cycle），平台 offscreen。每次约 37 分钟，前后两次在同一台机器上连续运行，运行期间不做大规模编译（1.1-before 期间编译过两次单文件的 `toJson()` 对比程序）。基准程序记录的提交标签是运行时工作区的状态，`-dirty` 表示当时步骤代码尚未提交，内容与随后的提交相同。
 
@@ -91,7 +91,7 @@
 - 第 4 条的 grep 结果：所有公开修改函数都经过 `transact()` 或 `fromJson()`；其余直接写记录的位置都在 `*Unchecked`、`synchronizePinnedLayouts()`、`reconcilePinnedRestoreLayouts()`、`nextTabOrder()` 等私有函数里，只在候选副本上调用。
 - 测试通过头文件中声明的 `friend struct LayoutModelTestAccess` 读取索引状态，宿主不定义这个类型。
 - 新增 `indexFollowsEveryMutation`、`failedTransactionKeepsIndex`、`validateReportsAStaleIndex`（人为写入错误索引后 `validate()` 返回 “The lookup index is stale.”）。
-- 验证：`model`（100 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model` 六个套件全部通过。`toJson()` 逐字节对比：用临时驱动程序分别链接 `ce8df81` 与本步的模型源码，读入同一份 24 个标签、两个窗口、含固定与自动隐藏组的布局，执行 180 次激活、分割比例、重命名、关闭操作并逐次输出 `toJson()` 与 revision，两份输出完全相同；把 `orderCounter` 改到 2^53 − 3 再跑一遍（经过计数回绕）也相同。
+- 验证：`model`（100 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model` 六个套件全部通过。`toJson()` 逐字节对比：用临时驱动程序分别链接 `94cc301` 与本步的模型源码，读入同一份 24 个标签、两个窗口、含固定与自动隐藏组的布局，执行 180 次激活、分割比例、重命名、关闭操作并逐次输出 `toJson()` 与 revision，两份输出完全相同；把 `orderCounter` 改到 2^53 − 3 再跑一遍（经过计数回绕）也相同。
 - 基准（`bench-1.1-before.json`／`-after.json`，100／500／1000 个标签，每场景 30 次，跳过 `cycle` 场景，见阶段说明）：1000 个标签时 close p95 3.99 s → 3.93 s、move 4.01 s → 4.07 s、split 3.95 s → 4.04 s，属于测量波动，**完成标准中“p95 下降”没有达到**。原因是这三项的耗时几乎全部在 `refresh()` 重建全部标签视图（1.4–1.6 处理），模型查询占比很小；100 个标签时三项 p95 从 89–100 ms 降到 68–71 ms，但前一次运行在构建后立即开始，这个差别同样可能是机器状态造成的。ratio、keys、save 无变化。
 
 ---
@@ -162,7 +162,7 @@
 - 第 4 条按原行为处理：激活已经活动的标签也递增 revision 并返回成功，没有提前返回。三条快速路径只在索引有效时使用；计数需要回绕时（`orderCounter_` 达到 2^53 − 1 且要写新的访问序号）退回事务路径。共用的私有函数 `activateIndexed()` 和头文件注释写明了“激活增加新状态时同时更新快速路径”。
 - 逐字节一致的依据：事务路径在提交前还会执行 `synchronizePinnedLayouts()` 与 `reconcilePinnedRestoreLayouts()`。核对两者的实现：对已经通过校验的模型，前者的 `prune()` 保留全部固定组且不插入新节点，后者的允许集合与 `validate()` 的条件相同，两者都返回原指针，因此快速路径不调用它们也得到相同结果。
 - 新增 `activationFastPathMatchesTransaction`（同组、跨组、固定组、跨窗口、已活动、窗格切换、错误窗格、空窗格、不存在的标签与窗格、计数回绕前后，每步比较 `toJson()` 字节、revision 和错误文本）与 `ratioFastPathTouchesOnlyOwnerTree`（标签树、中央树、固定树三种所有者，其他树的指针不变；越界、不存在、叶节点返回失败且 revision 不变）。测试通过 `LayoutModelTestAccess::invalidateIndex()` 让副本走原事务路径。
-- 验证：`model`（102 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model`、`movement`、`focus-mode`、`shortcut-dispatch`、`tab-group` 十个套件全部通过。1.1 的跨版本对比驱动对本步代码再跑一次，180 次操作的输出与 `ce8df81` 完全相同（含计数回绕）。
+- 验证：`model`（102 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model`、`movement`、`focus-mode`、`shortcut-dispatch`、`tab-group` 十个套件全部通过。1.1 的跨版本对比驱动对本步代码再跑一次，180 次操作的输出与 `94cc301` 完全相同（含计数回绕）。
 - 模型单独计时（临时驱动程序，-O2，1000 个标签、40 组、每个标签两个窗格，各 2000 次）：`activateTab` p50 0.65 ms → 0.1 µs，`activatePane` 0.65 ms → 0.1 µs，`setSplitRatio` 0.68 ms → 0.1 µs。原来每次焦点变化做两次事务，即约 1.3 ms。
 - 基准：`bench-1.2-before.json` 是 1.1-after 那次运行的副本（代码与本步之前相同，没有重跑）。ratio 场景 1000 个标签 p50 6.3 ms → 5.9 ms、p95 12.1 ms → 10.4 ms，100 个标签 p95 2.2 ms，处于同一数量级；剩下的耗时主要在 `layout.setRatio` 命令里对所有分割器的 `findChildren`（1.4 处理）。基准没有焦点切换场景，所以 R17 的收益只由上面的模型计时体现。close／move／split 无变化（约 4 s）。2000 个标签这一档没有运行。
 
@@ -234,7 +234,7 @@
 
 **验证**：`window-system.movement`、`window-system.pane-minimum`、`window-system.pinned-ui`；基准 ratio 场景。
 
-**状态**：已完成（提交 `799b125`）。实现与核对结果：
+**状态**：已完成（提交 `a86fce7`）。实现与核对结果：
 
 - 第 4 条按“公开最小查询”处理：`LayoutModel::NodeOwner` 与 `ownerOfNode()` 移到公开区，头文件注释写明只描述布局树、已提交模型上 O(1)。索引无效时（默认构造的模型、测试中作废索引的副本）改为扫描，不再直接返回空。模块 README 增加一段说明，外部宿主夹具在恢复布局后对未知 ID、各窗口中央树和各标签窗格树的分割节点各调用一次。
 - `layout.setRatio` 只查所属标签视图或窗口表面的映射，`isVisibleTo(owner)` 判断和 `QSignalBlocker` 保留。中央树、固定树的分割器都在 `buildTree()` 中登记；固定区域包装用的分割器没有分割节点，不登记。
@@ -295,7 +295,7 @@
 - 焦点投影（`FocusProjection`）在 `rebuild()` 开头 `restore()`；复用路径也必须先 `restore()` 再 `setFocusedPane()`，否则窗格全屏状态会残留。
 - `geometryUpdateDepth` 期间的延迟删除逻辑只在真正重建时需要，复用路径不涉及。
 
-**状态**：已完成（提交 `fbafdef`）。实现与核对结果：
+**状态**：已完成（提交 `dcb914c`）。实现与核对结果：
 
 - 记录的构建输入合成一个 `BuiltPane` 列表（窗格、内容、上栏、下栏，按叶子顺序），另记树指针和分割条宽度。`canReuse()` 还要求内容控件仍挂在原来的框里，被别处移走的内容会触发重建。
 - 复用路径先 `focusProjection_.restore()`（`rebuild()` 第一行，原样保留），再同步活动窗格和 `setFocusedPane()`。
@@ -359,7 +359,7 @@
 - `DragController` 持有对组控件或预览的引用。复用后 `releaseForMutation()` 的语义不变，但需要检查 `drag_controller.cpp` 中是否缓存了 `GroupTabs*`；若有，确认复用不会让它指向错误状态。
 - 焦点投影把非目标分支隐藏；复用的组可能处于被隐藏状态，重建后要通过 `applyFocusScope()` 重新计算，不能假设可见。
 
-**状态**：已完成。1.6a 提交 `16e7098`，1.6b 提交 `7c2ce8d`，另有一个测试修订提交 `0ece39a`（见下文，需要评审）。
+**状态**：已完成。1.6a 提交 `cc28424`，1.6b 提交 `97e30af`，另有一个测试修订提交 `5b7087c`（见下文，需要评审）。
 
 1.6a 实现与计划的差别：
 
@@ -371,7 +371,7 @@
 1.6b 实现与计划的差别（较大，需要评审）：
 
 - **组签名比计划多**：除标签列表、活动标签、位置、侧边外，还包括标题、颜色、图标开关、`TabAppearance` 和主题修订号。计划是复用后调用 `setTabMetadata()`、`setAppearance()` 更新元数据，但这两个函数每次都会触发 `updateBarGeometry()`，对 1000 个标签逐个调用正好抵消复用的收益。现在元数据变化（例如重命名、改颜色）只重建所在的组。`setTheme()` 原来不刷新视图，现在递增一个主题修订号，下一次刷新重建全部标签条。拖拽进行中一律重建（标签条上有拖动标签、插入预览、紧凑显示等临时状态）。
-- **按计划实现后 close 只降到 3.2 s**（`bench-1.6b-intermediate-b966355.json`，提交 `b966355` 后被并入 `7c2ce8d`）。临时计时显示：500 个标签时一次表面重建 730 ms，其中 633 ms 是把复用的 `GroupTabs` 加入新分割器。窗口设置了样式表，任何子树改挂都会让 Qt 为整棵子树重新解析样式、字体和调色板；即使在同一窗口内移动，每个标签的页面子树也要约 0.5 ms。这也是原来约 4 s 的主要来源：每次刷新都把全部 `TabContent` 从存储控件挂回窗口。
+- **按计划实现后 close 只降到 3.2 s**（`bench-1.6b-intermediate-b966355.json`，提交 `b966355` 后被并入 `97e30af`）。临时计时显示：500 个标签时一次表面重建 730 ms，其中 633 ms 是把复用的 `GroupTabs` 加入新分割器。窗口设置了样式表，任何子树改挂都会让 Qt 为整棵子树重新解析样式、字体和调色板；即使在同一窗口内移动，每个标签的页面子树也要约 0.5 ms。这也是原来约 4 s 的主要来源：每次刷新都把全部 `TabContent` 从存储控件挂回窗口。
 - **因此增加“结构不变时就地更新”**：表面记录分割结构（中央树和固定树的节点 ID、方向、叶子组，不含比例）。结构不变时保留根、全部分割器和未变化的标签条，变化的组新建后用 `QSplitter::replaceWidget()` 换入原位置，侧栏轨道照旧重建，比例变化的节点直接对现有分割器 `setSizes()`。结构变化（新建或删除组、固定／取消固定、移动组）时才构建新树，并把未变化的标签条移入，这条路径仍与标签总数成正比（见“发现”）。
 - **布局过程中的改挂**：宿主可能在内容的 resize 回调里修改布局，这时外层分割器正在遍历自己的子控件列表。把复用的标签条从这样的分割器中移走会改动它正在遍历的列表；`pinned-ui` 的 `restoringPinnedExtentsMayReplaceUiFromContentResize` 因此崩溃过（`out/diagnostics/1.6b-pinned-ui-first.txt`）。处理方式：就地更新只用 `replaceWidget()`（不改列表）；结构性重建时，若处于组分割器的布局过程中，复用的标签条先用 `replaceWidget()` 换出（留下空占位控件随旧根删除），否则直接移动。“布局过程”由新的 `SplitterLayoutPass` 计数：组分割器及其手柄在处理事件期间、`layout.setRatio`、固定区域恢复和焦点投影调用 `setSizes()` 期间计入，`WindowManager` 的几何更新深度也算在内。
 - 回调捕获的是组 ID、窗口 ID、表面和标签条自己的 `bar`，复用后不需要重设。`drag_controller.cpp` 不缓存 `GroupTabs*`，只通过表面的查询函数访问。
@@ -382,7 +382,7 @@
 - `mutationFromSplitterLayoutKeepsReusedStrip`：分别由 `layout.setRatio` 和 Qt 发出的分割器 resize 驱动，回调中“关闭另一组的一个标签”（就地替换）或“关闭另一组的最后一个标签”（结构变化）。去掉 `SplitterLayoutPass` 判断后，两个结构变化行和 `pinned-ui` 崩溃（`out/diagnostics/1.6b-*-without-layout-pass.txt`）。
 - `reusedStripFollowsMetadataAndTheme`：重命名只重建所在组，另一组的标签条不变；改主题后下一次刷新重建全部标签条，图标尺寸跟随新主题。
 
-现有用例修订（提交 `0ece39a`，需要评审）：`pinned_ui_test` 的 `restoringPinnedExtentsMayReplaceUiFromContentResize(rebuild-surface)` 在固定窗格的 resize 回调中新建相邻组，原断言该窗格的 `PaneHost` 被替换（隐藏、内容移出、稍后删除）。新建相邻组不改变这个标签的窗格树，而“无关操作不重建、不改挂内容”正是本阶段的目标，所以这三条断言测试的是旧的全量重建实现。依据：阶段目标和 1.5 的计划；首次失败记录 `out/diagnostics/1.6a-pinned-ui-first.txt`。保留覆盖的方式：新增 `rebuild-tab` 行，在同一回调中拆分该标签自己的窗格，原有的“几何更新期间延迟删除旧框”断言原样作用于这一行；`rebuild-surface` 行改为断言框保留、内容仍在其中，且表面的固定区域分割器仍在布局返回后被替换。1.6b 就地更新后，`rebuild-tab` 行的固定区域改为断言保留（只有窗格树变化，分割结构不变），这一行是本组新增的，`rebuild-surface` 行仍要求替换。其他行不变。
+现有用例修订（提交 `5b7087c`，需要评审）：`pinned_ui_test` 的 `restoringPinnedExtentsMayReplaceUiFromContentResize(rebuild-surface)` 在固定窗格的 resize 回调中新建相邻组，原断言该窗格的 `PaneHost` 被替换（隐藏、内容移出、稍后删除）。新建相邻组不改变这个标签的窗格树，而“无关操作不重建、不改挂内容”正是本阶段的目标，所以这三条断言测试的是旧的全量重建实现。依据：阶段目标和 1.5 的计划；首次失败记录 `out/diagnostics/1.6a-pinned-ui-first.txt`。保留覆盖的方式：新增 `rebuild-tab` 行，在同一回调中拆分该标签自己的窗格，原有的“几何更新期间延迟删除旧框”断言原样作用于这一行；`rebuild-surface` 行改为断言框保留、内容仍在其中，且表面的固定区域分割器仍在布局返回后被替换。1.6b 就地更新后，`rebuild-tab` 行的固定区域改为断言保留（只有窗格树变化，分割结构不变），这一行是本组新增的，`rebuild-surface` 行仍要求替换。其他行不变。
 
 验证：
 
