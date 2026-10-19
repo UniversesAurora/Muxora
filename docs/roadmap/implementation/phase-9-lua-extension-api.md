@@ -13,6 +13,7 @@
 
 | 步骤 | 内容 | 前置 |
 | --- | --- | --- |
+| 9.0 | 按需加载：没有脚本时不创建 Lua 线程和解释器 | 无 |
 | 9.1 | 运行时：多任务挂起与交互调用 | 无 |
 | 9.2 | 对话框、输入、选择、系统通知、状态栏消息 | 9.1；8.4（快速输入）、8.6（统一对话框）、8.7（系统通知） |
 | 9.3 | 自定义界面：描述、构建、事件、更新 | 9.1；2.4（颜色 ID）为佳 |
@@ -22,6 +23,38 @@
 | 9.7 | 会话、本地终端、SFTP 接口 | 9.1；7.4–7.7 |
 
 9.2、9.3、9.5 可以并行（改不同的文件）；9.6、9.7 等阶段 7 相应部分完成后进行。
+
+---
+
+## 9.0 按需加载
+
+**目标**：没有任何脚本需要运行时，Lua 的线程和解释器都不存在（[设计 §9](../../design/lua-extension-api-design.md#9-按需加载)）。
+
+**现状**：`AppScriptingSetup` 构造时创建 `ScriptHost`，后者在构造函数中创建 `ScriptRuntime`，`ScriptRuntime::Private` 构造时立即启动 `LuaScriptThread` 线程；`main.cpp` 调用 `scripting.start()` → `reload()` → `ScriptHost::initialize()`，即使没有 `init.lua` 也会创建解释器并执行引导脚本。另外，用户快捷键文件是在 `ScriptHost::initialized` 回调里才读取的（`scripting_setup.cpp` 中 `captureDefaultBindings`、`loadKeybindings`），`--command` 启动参数也等待这个信号。
+
+**涉及文件**：`modules/lua-runtime/src/script_runtime.cpp`（线程延迟启动）、`modules/window-system-lua/src/script_host.{hpp,cpp}`（运行时延迟创建、`ensureLoaded()`）、`src/app/scripting_setup.{hpp,cpp}`、`src/app/main.cpp`、测试 `src/app/tests/scripting_test.cpp`、`modules/window-system-lua/tests/script_host_test.cpp`、`modules/lua-runtime/tests/script_runtime_test.cpp`。
+
+**实现**：
+
+1. `ScriptRuntime`：线程在第一次 `execute()`／`invoke()`／`reset()` 时才启动；新增 `bool isLoaded() const` 和 `void releaseIfIdle()`（没有排队、挂起任务和保留回调时停止线程、释放解释器）。
+2. `ScriptHost`：`ScriptRuntime` 改为第一次需要时创建（`ensureLoaded()`）；`ready()` 在未加载时返回假，但 `run()`、`invokeCommand()`、`initialize()` 会先加载。
+3. `AppScriptingSetup::start()`：
+   - 先读取用户快捷键文件（不再等待 Lua 初始化），并发出 `initialized`，让 `--command` 等待者继续；
+   - 检查 `User/init.lua` 与启用的 `User/scripts/*`（阶段 5.5 之前只检查 `init.lua`），存在时才调用 `reload()` 加载 Lua；
+   - 布局中有 Lua 面板标签（阶段 9.4）时也加载。
+   - Lua 加载完成后，脚本注册的默认快捷键按现有流程登记，再重新应用用户快捷键规则（现有的 `captureDefaultBindings`／`loadKeybindings` 顺序保持，只是多了一次在 Lua 加载后的重新应用）。
+4. 卸载：脚本没有任何注册（`ScriptHost::resourceCounts()` 全为零）且空闲 5 分钟时，调用 `releaseIfIdle()`。有注册时不卸载。
+5. 测量：在预览说明中记录“无脚本启动”与“有 `init.lua` 启动”的线程数和私有内存差异，以及第一次加载的耗时。
+
+**测试**：
+
+- 没有 `init.lua` 启动：进程中不存在名为 `LuaScriptThread` 的线程（通过 `QThread` 对象名或运行时 `isLoaded()` 断言），用户快捷键照常生效，`--command` 执行内置命令正常。
+- 有 `init.lua`：照常加载，脚本命令和快捷键可用；用户快捷键覆盖脚本默认快捷键的顺序不变。
+- 没有脚本时执行“运行 Lua 脚本”：按需加载并执行。
+- 只在控制台临时运行一次代码后空闲：5 分钟后释放（测试中缩短空闲时间）；有注册时不释放。
+- 现有 `muxora.scripting`、`window-system.lua`、`window-system.lua-lifecycle`、`lua-runtime.runtime` 全部通过。
+
+**状态**：未开始。
 
 ---
 
