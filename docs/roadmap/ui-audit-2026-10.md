@@ -17,7 +17,7 @@
 | U6 | 运行 Lua 脚本 | `QInputDialog` 多行文本框（`scripting_setup.cpp` 201 行） | 没有输出区域，外观不统一 | 阶段 5.1 的 Lua 控制台 |
 | U7 | 浮动面板容器 | `FloatingPanel` 继承 `QDialog`，无边框，没有圆角和系统阴影（`floating_panel.cpp` 13 行） | 规范 §2.3：浮层圆角 6、系统阴影 | 8.3：统一浮层窗口基类 |
 | U8 | 关于对话框 | `QMessageBox::about`（`src/app/main.cpp`） | 规范 §4.3 | 8.6：统一对话框组件 |
-| U9 | 通知 | Lua `ui.notify` 有非模态通知，但没有通知中心，样式未统一 | 规范 §4.4 | 8.7 |
+| U9 | 临时提示 | Lua `ui.notify` 的非模态通知样式未统一（不需要通知中心，2026-10-20 修订） | 规范 §4.4 | 8.7 |
 
 ## 2. 页面
 

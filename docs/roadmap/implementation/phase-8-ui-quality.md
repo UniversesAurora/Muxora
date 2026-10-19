@@ -19,7 +19,7 @@
 | 8.4 | 快速输入组件并替换命令面板等 | 8.3 |
 | 8.5 | 标签行内重命名 | 8.4（侧栏标签用输入框模式） |
 | 8.6 | 统一对话框 | 8.3 |
-| 8.7 | 通知与通知中心 | 8.3 |
+| 8.7 | 统一临时提示（不做通知中心） | 8.3 |
 | 8.8 | 空工作区 | 2.4 |
 | 8.9 | 菜单结构、右键菜单顺序与文案 | 3.4（菜单 `when`）为佳，非硬性 |
 | 8.10 | 尺寸规格统一 | 用户确认 |
@@ -247,25 +247,19 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 ---
 
-## 8.7 通知与通知中心（U9）
+## 8.7 统一临时提示（U9）
 
-**涉及文件**：新建 `src/chrome/notifications.{hpp,cpp}`、公开 API；`window-system-lua/src/script_api.cpp`（`ui.notify` 改用新组件）；状态栏通知图标。
+> 2026-10-20 修订：不做通知中心和状态栏通知图标（[界面规范 §4.4](../../design/ui-design-system.md#44-临时提示)）。
+
+**涉及文件**：现有 Lua `ui.notify` 的实现（`window-system-lua/src/script_api.cpp` 及其使用的提示控件）；新建 `src/chrome/toast.{hpp,cpp}`。
 
 **实现**：
 
-```cpp
-struct Notification {
-    enum class Severity { Info, Warning, Error } severity;
-    QString message; QString source;                      // 来源，例如 "Lua" 或会话名
-    QVector<DialogButton> actions; int timeoutMs = 8000;  // 0 表示不自动消失
-};
-quint64 WindowManager::notify(WindowId window, Notification n, std::function<void(QString actionId)> onAction = {});
-void WindowManager::dismissNotification(quint64 id);
-```
+1. 把现有非模态通知改为规范 §4.4 的临时提示外观：基于 8.3 浮层，锚点右下角，宽 360，自动消失（默认 4 秒，悬停暂停），同时最多 2 条，多余的排队。
+2. API 保持小：`void WindowManager::showToast(WindowId window, QString text, int timeoutMs = 4000);`。不提供操作按钮、历史和未读计数。
+3. Lua `ui.notify` 的现有参数（`title`、`text`、`timeout_ms`）保持兼容。
 
-外观按规范 §4.4；同一窗口最多同时显示 3 条，其余排队；通知中心历史上限 100 条。状态栏右端图标显示未读数（`badge.*`）。`commandFailed` 信号产生的错误也进入通知中心（仍在状态栏显示一次）。
-
-**测试**：排队与上限、超时与悬停暂停、操作回调、历史上限、Lua `ui.notify` 兼容现有参数。
+**测试**：外观与位置、自动消失与悬停暂停、排队上限、Lua 参数兼容。
 
 **状态**：未开始。
 

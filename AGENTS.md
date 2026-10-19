@@ -24,9 +24,9 @@
 
 ## 界面标准
 
-- 界面按成熟软件的标准设计和实现，以 Visual Studio、VS Code 为参照：外观统一现代，交互符合常见使用习惯，布局合理，不做成原型式界面。具体规格见 [界面设计规范](docs/design/ui-design-system.md) 与 [主题系统设计](docs/design/theme-system-design.md)。
+- 界面按成熟软件的标准设计和实现，不做成原型式界面：视觉风格按 Visual Studio 2019 之后的风格（以后另有 Windows 7 Aero 风格版本）；页面和窗口的布局逻辑参考 VS Code 等现代软件；终端与会话的整体操作逻辑重点参考 Xshell，以及 Windows Terminal、Ghostty 等同类软件。参考前先确认 Muxora 是否真的需要该功能，不照搬编辑器专用的机制（例如通知中心）。具体规格见 [界面设计规范](docs/design/ui-design-system.md) 与 [主题系统设计](docs/design/theme-system-design.md)。
 - 颜色只通过主题颜色 ID 或主题令牌取得，不在界面代码中写具体颜色值；每个组件的各种状态在浅色、深色、黑色主题下都要协调。
-- 同类界面使用同一组件（快速输入、统一对话框、通知），不新建零散的 `QDialog`、`QInputDialog`、`QMessageBox`，不用 `exec()` 启动嵌套事件循环。
+- 同类界面使用同一组件（快速输入、统一对话框、临时提示），不新建零散的 `QDialog`、`QInputDialog`、`QMessageBox`，不用 `exec()` 启动嵌套事件循环。
 - 界面改动完成时按规范导出三套主题截图并逐条检查；截图与测试不等于真实桌面试用，未试用的部分如实记录。
 
 ## 构建与验证
