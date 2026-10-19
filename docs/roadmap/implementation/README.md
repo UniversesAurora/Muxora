@@ -14,7 +14,7 @@
 | 4 | [设置](phase-4-settings.md) | 设置 schema、生成式设置页、行为设置迁出布局、JSONC 写回、文件监听；配置文件在编辑器中的补全、悬停说明与诊断（4.7，需 5.2） | 3.6（共用 JSONC） |
 | 5 | [Lua 工具与内置编辑器](phase-5-lua-tools.md) | 控制台；基于 Scintilla 的内置编辑器（按需加载，标签页或弹窗，用于 Lua 和配置文件）；Lua 补全与悬停；API 单一来源；多脚本；脚本管理 | 5.1 无前置；5.2 起需要 3.5（编辑器的 `Ctrl+S` 等按键优先） |
 | 6 | [工程](phase-6-engineering.md) | 应用入口拆分、测试运行器合并、格式与静态检查、诊断构建、CI | 0.2 |
-| 7 | [终端与会话接入](phase-7-terminal-and-sessions.md) | 终端视图模块；本地终端（Windows PowerShell、PowerShell 7、cmd、WSL、Git Bash，ConPTY）；会话目录与 SSH config；SSH、SFTP、X11；启动时恢复会话 | 1.4–1.6、3.1–3.5 |
+| 7 | [终端与会话接入](phase-7-terminal-and-sessions.md) | 终端视图模块；本地终端（Windows PowerShell、PowerShell 7、cmd、WSL、Git Bash，ConPTY）；会话目录与 SSH config；SSH、SFTP、X11；启动时恢复会话；终端命令补全 | 1.4–1.6、3.1–3.5 |
 | 8 | [界面质量](phase-8-ui-quality.md) | 窗口外侧缩放边框、临时面板八向调整、浮层基类、快速输入（替换命令面板等全部选择器）、行内重命名、统一对话框、Windows 系统通知、空工作区、菜单与文案整理、尺寸统一 | 8.1／8.2 无前置；8.3 起建议在 2.4 之后 |
 | 9 | [Lua 扩展 API](phase-9-lua-extension-api.md) | 运行时多任务挂起与交互调用；Lua 对话框、输入、选择、系统通知；自定义界面（声明式控件树、面板标签、对话框）；存储、剪贴板、文件、网络、外部程序；终端读写与订阅；会话与 SFTP 接口 | 9.1 无前置；9.2 需 8.4／8.6／8.7；9.6、9.7 需阶段 7 |
 
