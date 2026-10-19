@@ -32,7 +32,7 @@
 | 能力 | 方案要点 |
 | --- | --- |
 | 会话树 | 文件夹、标签、颜色、搜索；拖动排序；快速连接栏（`user@host:port`） |
-| SSH config | **不是导入**：按 [V0 设计 §5](../design/v0-design.md#5-会话管理与-ssh-config) 动态读取 `~/.ssh/config` 及其 `Include`，运行中监听变化，只读使用；Muxora 不修改该文件，也不用自己的设置覆盖其中的连接参数，只按“配置源 + 别名”附加界面设置（2026-10-19 更正：此前误写在“导入”一行） |
+| SSH config | **不是导入**：按 [V0 设计 §5](../design/v0-design.md#5-会话管理与-ssh-config) 动态读取 `~/.ssh/config` 及其 `Include`，运行中监听变化，只读使用；Muxora 不修改该文件，也不用自己的设置覆盖其中的连接参数，只按“配置源 + 别名”附加界面设置（2026-10-19 更正：此前误写在“导入”一行）。同日新增两个可选开关：允许修改并写回原文件、应用会话与 SSH config 双向同步，见 [修改与同步设计](../design/ssh-config-sync-design.md) |
 | 导入（一次性） | PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` 导入为应用自建会话，导入后与原文件无关 |
 | 认证 | 密码（存 Windows 凭据管理器，只保存引用）、私钥、OpenSSH agent 与 Pageant、keyboard-interactive、多因素 |
 | 跳板 | `ProxyJump` 多级链；每一级单独显示状态和失败原因 |

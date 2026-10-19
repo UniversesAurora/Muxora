@@ -188,7 +188,7 @@ public:
 
 ## 7.4 会话目录与 SSH config
 
-**要求来源**：[V0 设计 §5](../../design/v0-design.md#5-会话管理与-ssh-config) 与 §15。核心是：**SSH config 不是导入，而是动态、只读的来源**。Muxora 不修改 `.ssh/config` 及其 `Include` 文件，不提供任何修改入口，也不用自己的设置覆盖其中的地址、用户、端口、密钥、代理或认证参数；只能按“配置源 ID + 原始别名”在 Muxora 自己的目录中附加界面设置。
+**要求来源**：[V0 设计 §5](../../design/v0-design.md#5-会话管理与-ssh-config) 与 §15，以及 2026-10-19 新增的 [SSH config 修改与同步设计](../../design/ssh-config-sync-design.md)。核心是：**SSH config 不是导入，而是动态读取的来源；默认只读**。7.4a–7.4f 实现默认的只读行为；7.4h–7.4m 实现两个可选开关 `ssh.config.allowEditing`、`ssh.config.syncAppSessions`。以下默认规则在两个开关都关闭时成立：Muxora 不修改 `.ssh/config` 及其 `Include` 文件，不提供任何修改入口，也不用自己的设置覆盖其中的地址、用户、端口、密钥、代理或认证参数；只能按“配置源 ID + 原始别名”在 Muxora 自己的目录中附加界面设置。
 
 **产出**：`src/sessions/`：`session_catalog`、`app_session_store`、`ssh_config_source`、`ssh_config_indexer`、`alias_overrides`、`session_tree_model`。
 
@@ -225,7 +225,7 @@ public:
 
 1. 代码层面：`ssh_config_source` 只以只读方式打开文件；会话详情页只读显示来源文件、别名和有效连接信息（由后端求值得到，只在用户打开详情或连接时求值）。
 2. 界面层面：SSH config 会话的设置页中没有地址、用户、端口、密钥、代理、认证字段的编辑控件；“复制为应用会话”可以生成一个可编辑的自建会话副本（与原文件从此无关）。
-3. **自动化检查**：对样例配置目录执行全部会话操作（浏览、搜索、附加设置、隐藏、删除附加设置、连接尝试、刷新）后，比较每个文件的字节和修改时间，必须完全不变。
+3. **自动化检查**：在两个开关都关闭时，对样例配置目录执行全部会话操作（浏览、搜索、附加设置、隐藏、删除附加设置、连接尝试、刷新）后，比较每个文件的字节和修改时间，必须完全不变。打开开关后，这项检查改为：只有用户发起的修改涉及的文件发生变化，其余文件不变（7.4j）。
 
 ### 7.4f 会话树与快速连接
 
@@ -234,6 +234,88 @@ public:
 ### 7.4g 一次性导入（后续）
 
 PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` 导入为应用自建会话；导入完成后与原文件无关。这与 SSH config 的动态只读来源是两回事，界面和文档中分开描述。
+
+### 7.4h 无损 ssh_config 语法树
+
+**产出**：`src/sessions/ssh_config/ssh_config_document.{hpp,cpp}`（只依赖 Qt Core，可单测）。
+
+**实现**：
+
+1. 按行解析，每行保存：原始文本（含换行符）、行类型（空行、注释、指令、块头 `Host`／`Match`、`Include`）、关键字原文与规范化名称、值的原文、分隔符原文（空格或 `=` 及其两侧空白）、行尾注释、缩进。续行与引号按 OpenSSH 的分词规则解析，但原文不变。
+2. 块：从一个 `Host`／`Match` 行开始，到下一个 `Host`／`Match` 行之前；文件开头到第一个块头之前是全局区。`Include` 行记录其所在位置（全局区或某个块内）。
+3. 文档级元数据：换行符风格（按出现最多的一种）、是否有 BOM、末尾是否有换行。
+4. `QString toText() const`：逐行拼回原文。
+
+**测试**：建立样例语料 `tests/fixtures/ssh-config/roundtrip/`（至少 40 个文件：各种注释位置、`=` 与空格分隔、混合大小写、引号与转义、续行、CRLF、BOM、无末尾换行、`Match` 与 `Include`、空文件、只有注释），断言 `parse(x).toText() == x` 逐字节相等。
+
+### 7.4i 修改操作与有效值分析
+
+**产出**：`src/sessions/ssh_config/ssh_config_edit.{hpp,cpp}`。
+
+**实现**：
+
+1. 操作类型：`SetOption{alias, keyword, values}`、`RemoveOption{alias, keyword}`、`AddHost{alias, options, file, position}`、`RenameHost{from, to, scope}`、`RemoveHost{alias}`、`SplitAlias{alias}`、`MoveBlockBefore{alias, blockIndex}`、`InsertInclude{path}`、`RemoveMuxoraInclude{}`。
+2. `analyze(document, alias, keyword)`：静态找出“当前生效的值来自哪个块”（`Host` 模式匹配、否定模式、文件顺序，跨 `Include` 文件按包含顺序展开），以及路径上是否有无法判断的 `Match` 块。不执行任何命令。
+3. `plan(documents, operation)` 返回一个修改计划：要写哪些文件、每个文件的新文本、需要提示用户的情况（通配块优先、多别名块、`Match` 不确定、受保护文件）以及备选操作（例如“拆出别名”“移动块”）。按 [设计 §3](../../design/ssh-config-sync-design.md#3-修改用户自己的-configallowediting) 的表格逐项实现。
+4. 新增行的格式跟随规则（缩进、关键字大小写、分隔符）按设计 §2 第 3 条。
+5. 计划是纯数据，界面负责展示和确认，写入器（7.4j）负责执行。
+
+**测试**（数据驱动，输入为样例文件加操作，输出与期望文本逐字节比较，即“黄金文件”测试）：原地替换；块内新增；通配块在前时返回“需要移动”且不修改；确认移动后的结果；多别名块的“同时修改”与“拆出”；`Match` 存在时的提示；重命名在多个块中出现时的两种范围；删除单别名块连同其块头注释、删除多别名块中的一项；新建主机插在 `Host *` 之前；`Include` 文件中的块只改该文件；受保护文件拒绝；每个用例都检查“除目标行外其余文本不变”。
+
+### 7.4j 安全写入器
+
+**产出**：`src/sessions/ssh_config/ssh_config_writer.{hpp,cpp}`、`src/platform/windows/file_replace.{hpp,cpp}`。
+
+**实现**：按 [设计 §5](../../design/ssh-config-sync-design.md#5-安全写入)：
+
+1. 写入前重新读取并重新解析目标文件；把计划中的语义操作重新应用到最新内容上（不是直接写计划时算好的文本）。如果外部修改触及同一个块的同一个参数，返回冲突。
+2. 写临时文件（同目录，`FILE_ATTRIBUTE_HIDDEN`），`FlushFileBuffers`，然后 `ReplaceFileW(target, temp, nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS, ...)`；目标不存在时用 `MoveFileExW(MOVEFILE_WRITE_THROUGH)`。符号链接先用 `GetFinalPathNameByHandleW` 解析到目标。
+3. 写后重新解析并校验（设计 §5 第 5 条），失败时用备份恢复。
+4. 备份到 Muxora 状态目录 `ssh-config-backups/`，每个文件保留 `ssh.config.backupCount` 份；命令 `ssh.config.undoLastWrite`。
+5. 写入期间暂停该文件的监听回调（写完后按新内容刷新一次索引），避免把自己的写入当成外部修改。
+
+**测试**：并发外部修改（不同块保留、同块同参数报冲突）；ACL 保留（测试中用 `SetNamedSecurityInfoW` 给目标设置一个特殊的 ACE，写入后读回仍在）；符号链接目标被写入而链接保持；CRLF、BOM 保持；写后校验失败时恢复（注入故障）；备份数量上限；撤销恢复原文；写入不会触发一次“外部修改”同步。
+
+### 7.4k 允许修改的界面（`allowEditing`）
+
+**产出**：SSH config 会话的设置页、`src/sessions/ui/ssh_config_diff_view.{hpp,cpp}`（差异视图，基于阶段 8.6 的对话框）。
+
+**实现**：
+
+1. 开关关闭时保持 7.4e 的只读界面。打开后，SSH config 会话的设置页显示设计 §3.4 中的参数编辑控件，旁边标注当前值来自哪个文件的哪个块（7.4i 的分析结果）。
+2. 保存时生成计划；有提示项时按提示让用户选择（多步快速输入或对话框）；`ssh.config.confirmWrites` 打开时显示差异视图，确认后写入。
+3. 会话树右键：新建主机（选择目标文件）、重命名、删除；SSH config 会话也有“复制为应用会话”。
+4. 受保护文件中的主机显示为只读，说明原因。
+5. 设置通过阶段 4 的注册表声明：`ssh.config.allowEditing`、`ssh.config.confirmWrites`、`ssh.config.protectedFiles`、`ssh.config.backupCount`。
+
+**测试**：开关关闭时不出现编辑控件、所有写入入口被禁用；打开后编辑端口、增加跳板、重命名、删除各一次并检查文件；取消预览时不写入；受保护文件只读。
+
+### 7.4l 应用会话同步（`syncAppSessions`）
+
+**产出**：`src/sessions/ssh_config/managed_config_sync.{hpp,cpp}`。
+
+**实现**：按 [设计 §4](../../design/ssh-config-sync-design.md#4-同步应用会话syncappsessions)：
+
+1. 管理文件格式：文件头说明注释；每个会话一个块，块头上方 `# muxora-session: <会话 ID>`；只写设计 §3.4 中的连接参数，绝不写秘密。
+2. 别名生成：由会话名生成合法主机名（小写、空格换成 `-`、去掉 `*?!,` 等字符），冲突时加 `-2`、`-3`；会话设置中可以修改别名；显示名与别名分开保存。
+3. Muxora → 文件：会话变化合并到下一个事件循环批量写入（7.4j 写入器，管理文件不需要确认预览）；只改变化的块，保留用户手写在管理文件中的其他内容。
+4. 文件 → Muxora：监听管理文件；按标记对应会话，更新连接参数；无标记的新块导入为新会话并补标记；消失的块对应的会话删除并进入“最近删除”。
+5. 三方合并：每个会话保存最近一次同步的参数快照（保存在会话文件中）；两边都改了同一项时以文件为准，并通过通知（8.7）列出被覆盖的 Muxora 修改，提供“恢复我的修改”。
+6. “最近删除”：保留 30 天，恢复时重新写入管理文件。
+
+**测试**：新增、修改、删除、重命名在两个方向上各同步一次；外部调整块顺序、删掉标记注释（按别名回退匹配并补回标记）；三方合并的三种情况；管理文件中的用户注释保留；秘密扫描（文件中不出现任何密码或凭据引用）；同一轮多次修改只写一次。
+
+### 7.4m 开关切换流程与 Lua 接口
+
+**实现**：
+
+1. 打开 `syncAppSessions`（设计 §4.4）：检查 `~/.ssh/config` 开头是否已有指向管理文件的 `Include`，没有时生成 `InsertInclude` 计划并单独确认（即使 `allowEditing` 关闭）；检查别名冲突，逐项让用户选择改名、不同步或以 Muxora 为准；确认后首次写入。任何一步取消都不写文件，开关保持关闭。
+2. 关闭 `syncAppSessions`（设计 §4.5）：保留文件（默认，更新说明注释）／移除 `Include` 与管理文件（先备份）／取消。
+3. 打开或关闭 `allowEditing` 不改变任何文件。
+4. 设置项 `ssh.config.managedFile` 修改时：迁移管理文件（新位置写入、更新 `Include`、旧文件删除前备份），整个过程预览并确认。
+5. Lua：`muxora.ssh.config.hosts()`、`.get(alias)`、`.set(alias, options)`、`.add(alias, options, file)`、`.remove(alias)`；受两个开关约束，修改经过同样的计划、确认（`confirmWrites` 打开时在界面中确认）和写入器。
+
+**测试**：打开流程中途取消不写任何文件；冲突三种选择的结果；关闭流程三种选择的结果；`Include` 插入位置在第一个 `Host` 之前且保留文件开头的注释；Lua 在开关关闭时返回错误。
 
 ---
 

@@ -91,7 +91,7 @@ KDDockWidgets 已有丰富的分割、标签、自动隐藏和跨窗口能力，
 | SSH 终端 | 连接、认证、主机密钥校验、断开、重连、调整尺寸、多个终端实例。 |
 | 本地终端 | 2026-10-19 新增：通过 ConPTY 运行本机 shell，包括 Windows PowerShell、PowerShell 7、cmd、各 WSL 发行版、Git Bash；自动检测与自建配置，外部来源只读。见 [本地终端设计](local-terminal-design.md)。 |
 | 会话管理 | 应用自建会话，以及从 SSH config 动态生成的会话；分组、搜索、收藏、排序。 |
-| SSH config | 只读使用，启动及运行中发现变化；按别名附加应用设置。 |
+| SSH config | 默认只读使用，启动及运行中发现变化；按别名附加应用设置。可选：允许修改并写回原文件、应用会话与 SSH config 双向同步（[设计](ssh-config-sync-design.md)）。 |
 | 工作区 | 所有功能内容统一为标签；四边收纳／固定、中央自由标签组、标签内递归窗格；轻量／完整窗口转换、整窗及单标签拖拽、遮挡目标唤起与图形投放辅助。 |
 | 键盘与命令 | 所有公共命令可绑定；命令面板、条件、参数、多键序列、冲突及默认解绑；标签组、标签、窗格及业务工作流都可键盘操作。 |
 | 终端本地 Normal 模式 | Vim 风格浏览、计数、查找、字符／整行／矩形 Visual 选择、端点切换与复制；模式内操作键不发送 SSH。 |
@@ -191,6 +191,8 @@ WindowSystem 在项目内有独立源码目录、构建目标、头文件、测�
 SSH config 会话不是一次性导入。应用设置中不保存一份可脱离原文件继续使用的连接配置。
 
 ### 5.2 只读规则
+
+> **2026-10-19 修订**：只读是默认行为。设置中新增两个独立选项：`ssh.config.allowEditing`（允许在 Muxora 中修改 SSH config 中的连接，修改写回原文件）和 `ssh.config.syncAppSessions`（应用会话实时同步到一个由 Muxora 管理、并通过 `Include` 接入 `~/.ssh/config` 的文件）。两个都关闭时，本节规则完全不变。打开后的写入方式、不破坏无关配置的规则、冲突与开关切换的处理见 [SSH config 修改与同步设计](ssh-config-sync-design.md)。
 
 Muxora 不提供通过会话设置修改 SSH config 的入口，也不通过自己的设置覆盖该来源的地址、用户、端口、密钥、代理或认证参数。详情页可以只读显示来源、别名和有效连接信息。
 
@@ -627,7 +629,7 @@ V0 的扩展先由项目内模块实现。第三方插件涉及版本、权限�
 
 全局设置和快捷键参考 VS Code：`settings.json`、`keybindings.json` 使用 JSONC，支持注释、尾逗号、默认值、schema 校验和运行中更新。图形设置和直接编辑共用一套定义，编辑保留用户注释与无关字段；错误文件保留原文和最近有效的显示设置，不自动覆盖。
 
-自建会话采用 `sessions/items/<稳定 ID>.json` 一会话一文件，分组／顺序放入 `sessions/catalog.json`；SSH config 不导入这些文件，别名附加设置单独保存在 `ssh-alias-overrides.json`。来源别名删除与同名重建仍遵循第 5 节，不从旧布局或备份复活设置。
+自建会话采用 `sessions/items/<稳定 ID>.json` 一会话一文件，分组／顺序放入 `sessions/catalog.json`；SSH config 不导入这些文件，别名附加设置单独保存在 `ssh-alias-overrides.json`。开启 `ssh.config.syncAppSessions` 时，应用会话的连接参数另外同步到 Muxora 管理的 ssh config 文件，Muxora 特有的设置和凭据引用仍只在会话文件中（[同步设计](ssh-config-sync-design.md#4-同步应用会话syncappsessions)）。来源别名删除与同名重建仍遵循第 5 节，不从旧布局或备份复活设置。
 
 窗口、标签、分割、侧边、条带及正常几何状态写入独立 `window-layout.json`，不由移动窗口去修改 settings。运行状态和任务记录也是独立、带版本的严格 JSON。路径通过平台标准位置服务取得，原子写入使用 `QSaveFile`，处理外部编辑冲突与并发窗口。具体文件组织及恢复语义见 [设置与命令设计](settings-and-commands-design.md)。[QSaveFile](https://doc.qt.io/qt-6/qsavefile.html)
 
