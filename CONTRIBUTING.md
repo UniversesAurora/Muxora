@@ -11,7 +11,43 @@
 
 ## 提交改动
 
-提交信息说明改动及原因。公开接口和行为变化同步更新文档；长期影响的架构决定写入 `docs/adr/`，说明问题、选择与代价，不为每个局部实现建立决定记录。
+提交信息说明改动及原因，格式见下一节。公开接口和行为变化同步更新文档；长期影响的架构决定写入 `docs/adr/`，说明问题、选择与代价，不为每个局部实现建立决定记录。
+
+### 提交信息格式
+
+参考 Linux 内核：标题以“改动范围”开头，后接冒号和一句祈使句英文摘要，标题尽量不超过 72 个字符；空一行后写多行正文，说明行为变化、原因和实际验证。
+
+```text
+window-system/chrome: Offer three caption button orders
+
+Body: what changed for the user, why, and which checks actually ran.
+```
+
+| 前缀 | 范围 |
+| --- | --- |
+| `window-system` | `modules/window-system/` 整体或跨多个部分的改动 |
+| `window-system/<部分>` | 只涉及其中一部分时使用：`model`（布局模型与事务）、`views`（标签组、分割、内容挂载等视图重建）、`chrome`（标题、工具条、窗口控制按钮、状态栏）、`frame`（Windows 原生窗口框架与命中）、`docking`（拖动、停靠与浮窗）、`tabs`（标签栏与标签列表）、`sidebar`（收纳条与临时面板）、`commands`（命令与快捷键）、`settings`（设置页）、`persistence`（布局保存与恢复） |
+| `lua` | `modules/lua-runtime/`、`modules/window-system-lua/` 和 Lua 接口 |
+| `app` | `src/app/` 与 `src/workspace_host/` |
+| `terminal`、`ssh`、`sftp`、`sessions`、`x11`、`editor`、`theme` | 对应的业务模块（实现后启用） |
+| `build` | CMake、构建、打包与部署脚本 |
+| `test` | 测试基础设施、测试脚本与基准测试（某个模块自己的测试随该模块的前缀） |
+| `third-party` | `third_party/` 中的依赖 |
+| `docs/design` | 设计文档 |
+| `docs/roadmap` | 规划与实现步骤文档 |
+| `docs/dev` | 开发说明：工程规范、测试要求、预览说明 |
+| `docs/manual` | 用户手册（以后） |
+| `docs` | 跨多类文档或文档入口 |
+| `repo` | 仓库规则与元数据：`AGENTS.md`、本文件、`.gitignore` 等 |
+| `release` | 版本发布准备 |
+| `treewide` | 涉及整个仓库、无法归入一个范围的改动 |
+
+规则：
+
+- 按改动的主要部分选一个前缀；代码改动连同它的测试和文档使用代码的前缀。两个范围同等重要时可写 `lua, window-system:`，不写三个以上，此时应拆分提交。
+- 子范围只在改动确实限于该部分时使用，拿不准就用上一级。
+- 新增业务模块时在上表中加入它的前缀，再开始使用。
+- 合并提交保留 Git 生成的 `Merge ...` 标题，不加前缀。
 
 评审说明应包括解决的问题、用户行为变化、验证命令和结果，以及尚未验证的范围。不得将未运行检查写为通过，也不得削弱测试标准以掩盖实现缺陷，详见 [测试要求](docs/development/testing-design.md)。
 

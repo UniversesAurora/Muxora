@@ -25,7 +25,7 @@
 
 ## 界面标准
 
-- 界面按成熟软件的标准设计和实现，不做成原型式界面：视觉风格按 Visual Studio 2019 之后的风格（以后另有 Windows 7 Aero 风格版本）；页面和窗口的布局参考 VS Code、Windows Terminal、Tabby 等现代软件；Xshell、MobaXterm 等老牌软件主要参考其功能（要实现全）和分类方式，不照搬其界面布局。参考前先确认 Muxora 是否真的需要该功能，不照搬编辑器专用的机制（例如通知中心）。具体规格见 [界面设计规范](docs/design/ui-design-system.md) 与 [主题系统设计](docs/design/theme-system-design.md)。
+- 界面按成熟软件的标准设计和实现，不做成原型式界面：视觉风格按 Visual Studio 2019 之后的风格（以后另有 Windows 7 Aero 风格版本）；页面和窗口的布局参考 VS Code、Windows Terminal、Tabby 等现代软件；Xshell、MobaXterm 等老牌软件主要参考其功能（要实现全）和分类方式，不照搬其界面布局；Termius 的会话管理和命令补全等功能也作为参考。参考前先确认 Muxora 是否真的需要该功能，不照搬编辑器专用的机制（例如通知中心）。具体规格见 [界面设计规范](docs/design/ui-design-system.md) 与 [主题系统设计](docs/design/theme-system-design.md)。
 - 颜色只通过主题颜色 ID 或主题令牌取得，不在界面代码中写具体颜色值；每个组件的各种状态在浅色、深色、黑色主题下都要协调。
 - 同类界面使用同一组件（快速输入、统一对话框；通知用 Windows 系统通知），不新建零散的 `QDialog`、`QInputDialog`、`QMessageBox`，不用 `exec()` 启动嵌套事件循环。
 - 界面改动完成时按规范导出三套主题截图并逐条检查；截图与测试不等于真实桌面试用，未试用的部分如实记录。
@@ -50,6 +50,7 @@
 - 常规 Release 预览始终覆盖 `out/package/muxora-preview/`，不另建按轮次或时间命名的部署目录。替换运行库、插件与许可证时保留 `data/` 和未知用户文件；发现部署程序占用时先核验绝对路径，正常关闭保存，不强杀或删除用户状态。
 - 用户目前不需要便携包，不主动运行打包。以后明确需要跨机交付时使用 `tools/package-portable.ps1`，覆盖固定的 7-Zip 文件，包含运行库和许可证并完成解压启动／布局恢复检查；结束后清理打包和解压检查的暂存副本，不累计历史部署。
 - 在改动完整、相关验证通过时自主提交 Git，不等待用户逐次提醒。提交说明使用清楚的标题和多行正文，说明行为变化、原因和实际验证；不能把未执行的检查写成通过。
+- 提交标题按 Linux 内核的方式以改动范围开头，例如 `window-system/chrome: ...`、`lua: ...`、`docs/roadmap: ...`；前缀表与规则见 [参与开发 · 提交信息格式](CONTRIBUTING.md#提交信息格式)。
 
 ## 文档文字
 
