@@ -151,6 +151,9 @@ public:
     OperationResult moveGroupToWindow(GroupId group, WindowId target, Placement placement = Placement::Right);
     OperationResult moveGroupToEdge(GroupId group, WindowId target, Edge edge, bool pinned);
     WindowId detachGroup(GroupId group, WindowKind kind = WindowKind::Floating);
+    // Activation and setSplitRatio() skip the full copy-and-validate
+    // transaction; they always advance the revision, even when nothing
+    // changes. Adding state to activation means updating that fast path too.
     OperationResult activateTab(TabId tabId);
     OperationResult activatePane(TabId tabId, PaneId paneId);
     OperationResult moveTab(TabId tabId, GroupId targetGroup,
@@ -230,6 +233,7 @@ private:
                    QHash<QUuid, NodeOwner>& nodeOwner) const;
     // Requires a valid index; nullopt for unknown nodes, leaves and restore trees.
     [[nodiscard]] std::optional<NodeOwner> ownerOfNode(QUuid node) const;
+    bool activateIndexed(TabId tabId, GroupId groupId, PaneId paneId);
     void synchronizePinnedLayouts(WindowId onlyWindow = {});
     void rememberPinnedLayoutUnchecked(WindowId window, Edge edge);
     void restorePinnedLayoutUnchecked(WindowId window, Edge edge, GroupId group);

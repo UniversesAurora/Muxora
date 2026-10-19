@@ -150,12 +150,19 @@
 
 **完成标准**：
 
-- [ ] 两条快速路径与事务路径结果逐字节一致。
-- [ ] 基准 ratio 场景在 2000 个标签下的 p95 与 100 个标签时处于同一数量级（写出数字）。
+- [x] 两条快速路径与事务路径结果逐字节一致。
+- [x] 基准 ratio 场景在 2000 个标签下的 p95 与 100 个标签时处于同一数量级（写出数字）。只测到 1000 个标签，见状态。
 
 **风险**：如果将来给激活增加新的副作用（例如历史记录），必须同时更新快速路径；在函数注释中写明“新增状态时同时检查 activateTab 快速路径”。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Skip the full transaction for activation and split ratios”）。实现与核对结果：
+
+- 第 4 条按原行为处理：激活已经活动的标签也递增 revision 并返回成功，没有提前返回。三条快速路径只在索引有效时使用；计数需要回绕时（`orderCounter_` 达到 2^53 − 1 且要写新的访问序号）退回事务路径。共用的私有函数 `activateIndexed()` 和头文件注释写明了“激活增加新状态时同时更新快速路径”。
+- 逐字节一致的依据：事务路径在提交前还会执行 `synchronizePinnedLayouts()` 与 `reconcilePinnedRestoreLayouts()`。核对两者的实现：对已经通过校验的模型，前者的 `prune()` 保留全部固定组且不插入新节点，后者的允许集合与 `validate()` 的条件相同，两者都返回原指针，因此快速路径不调用它们也得到相同结果。
+- 新增 `activationFastPathMatchesTransaction`（同组、跨组、固定组、跨窗口、已活动、窗格切换、错误窗格、空窗格、不存在的标签与窗格、计数回绕前后，每步比较 `toJson()` 字节、revision 和错误文本）与 `ratioFastPathTouchesOnlyOwnerTree`（标签树、中央树、固定树三种所有者，其他树的指针不变；越界、不存在、叶节点返回失败且 revision 不变）。测试通过 `LayoutModelTestAccess::invalidateIndex()` 让副本走原事务路径。
+- 验证：`model`（102 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model`、`movement`、`focus-mode`、`shortcut-dispatch`、`tab-group` 十个套件全部通过。1.1 的跨版本对比驱动对本步代码再跑一次，180 次操作的输出与 `ce8df81` 完全相同（含计数回绕）。
+- 模型单独计时（临时驱动程序，-O2，1000 个标签、40 组、每个标签两个窗格，各 2000 次）：`activateTab` p50 0.65 ms → 0.1 µs，`activatePane` 0.65 ms → 0.1 µs，`setSplitRatio` 0.68 ms → 0.1 µs。原来每次焦点变化做两次事务，即约 1.3 ms。
+- 基准：`bench-1.2-before.json` 是 1.1-after 那次运行的副本（代码与本步之前相同，没有重跑）。ratio 场景 1000 个标签 p50 6.3 ms → 5.9 ms、p95 12.1 ms → 10.4 ms，100 个标签 p95 2.2 ms，处于同一数量级；剩下的耗时主要在 `layout.setRatio` 命令里对所有分割器的 `findChildren`（1.4 处理）。基准没有焦点切换场景，所以 R17 的收益只由上面的模型计时体现。close／move／split 无变化（约 4 s）。2000 个标签这一档没有运行。
 
 ---
 

@@ -11,6 +11,8 @@ using namespace window_system;
 namespace window_system {
 struct LayoutModelTestAccess {
     static bool indexValid(const LayoutModel& model) { return model.indexValid_; }
+    // Without an index the operations take their original transaction path.
+    static void invalidateIndex(LayoutModel& model) { model.indexValid_ = false; }
     static void corruptTabGroup(LayoutModel& model, TabId tab, GroupId group) { model.tabGroup_.insert(tab, group); }
     // "<kind>:<owner>[:<edge>]", or empty when the index has no entry.
     static QString owner(const LayoutModel& model, QUuid node)
@@ -122,6 +124,8 @@ private slots:
     void indexFollowsEveryMutation();
     void failedTransactionKeepsIndex();
     void validateReportsAStaleIndex();
+    void activationFastPathMatchesTransaction();
+    void ratioFastPathTouchesOnlyOwnerTree();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -1220,6 +1224,123 @@ void LayoutModelTest::validateReportsAStaleIndex()
     QVERIFY(model.validate());
     LayoutModelTestAccess::corruptTabGroup(model, a, QUuid::createUuid());
     QCOMPARE(model.validate().error, QStringLiteral("The lookup index is stale."));
+}
+
+void LayoutModelTest::activationFastPathMatchesTransaction()
+{
+    LayoutModel fast;
+    const auto root = fast.createWindow();
+    const auto a = fast.addTab(root, "A");
+    const auto b = fast.addTab(root, "B");
+    const auto c = fast.addTab(root, "C");
+    const auto d = fast.addTab(root, "D");
+    QVERIFY(fast.moveTab(c, fast.groupForTab(a), Placement::Right));
+    QVERIFY(fast.moveTabToEdge(d, Edge::Left, true));
+    const auto split = fast.splitPane(a, fast.tab(a)->activePane, Placement::Bottom);
+    QVERIFY(!split.isNull());
+    const auto other = fast.createWindow();
+    const auto e = fast.addTab(other, "E");
+    const auto f = fast.addTab(other, "F");
+    LayoutModel forced = fast;
+    // Each step runs once on the indexed model and once on a copy whose index
+    // was invalidated, which takes the original transaction path.
+    const auto both = [&](const char* step, const auto& operation) {
+        LayoutModelTestAccess::invalidateIndex(forced);
+        const auto fastResult = operation(fast);
+        const auto forcedResult = operation(forced);
+        QVERIFY2(fastResult.ok == forcedResult.ok, step);
+        QCOMPARE(fastResult.error, forcedResult.error);
+        QCOMPARE(fast.revision(), forced.revision());
+        QCOMPARE(QJsonDocument(fast.toJson()).toJson(), QJsonDocument(forced.toJson()).toJson());
+        QVERIFY2(fast.validate(), step);
+        QVERIFY2(LayoutModelTestAccess::indexValid(fast), step);
+    };
+#define BOTH(step, call) do { both(step, [&](LayoutModel& model) { return call; }); if (QTest::currentTestFailed()) return; } while (false)
+    BOTH("same group", model.activateTab(b));
+    BOTH("already active", model.activateTab(b));
+    BOTH("other group", model.activateTab(c));
+    BOTH("pinned group", model.activateTab(d));
+    BOTH("other window", model.activateTab(e));
+    BOTH("same window again", model.activateTab(f));
+    BOTH("pane", model.activatePane(a, split));
+    BOTH("pane in active tab", model.activatePane(a, model.panes(a).first()));
+    BOTH("pane of another tab", model.activatePane(b, split));
+    BOTH("null pane", model.activatePane(b, {}));
+    BOTH("missing tab", model.activateTab(QUuid::createUuid()));
+    BOTH("missing pane", model.activatePane(a, QUuid::createUuid()));
+#undef BOTH
+    // Near the exact JSON integer limit the next visit compacts every rank,
+    // which must stay in the transaction path.
+    auto snapshot = fast.toJson();
+    snapshot.insert("orderCounter", double((quint64(1) << 53) - 2));
+    QVERIFY(fast.fromJson(snapshot));
+    QVERIFY(forced.fromJson(snapshot));
+#define BOTH(step, call) do { both(step, [&](LayoutModel& model) { return call; }); if (QTest::currentTestFailed()) return; } while (false)
+    BOTH("last order before rollover", model.activateTab(b));
+    QCOMPARE(fast.tab(b)->visitedOrder, (quint64(1) << 53) - 1);
+    BOTH("rollover", model.activateTab(a));
+    QVERIFY(fast.tab(a)->visitedOrder < 100);
+    BOTH("after rollover", model.activatePane(b, model.panes(b).first()));
+#undef BOTH
+}
+
+void LayoutModelTest::ratioFastPathTouchesOnlyOwnerTree()
+{
+    LayoutModel model;
+    const auto root = model.createWindow();
+    const auto a = model.addTab(root, "A");
+    const auto b = model.addTab(root, "B");
+    const auto pinned = model.addTab(root, "Pinned");
+    const auto pinnedNeighbor = model.addTab(root, "Pinned neighbor");
+    QVERIFY(model.moveTab(b, model.groupForTab(a), Placement::Right));
+    QVERIFY(!model.splitPane(a, model.tab(a)->activePane, Placement::Bottom).isNull());
+    QVERIFY(!model.splitPane(b, model.tab(b)->activePane, Placement::Right).isNull());
+    QVERIFY(model.moveTabToEdge(pinned, Edge::Left, true));
+    QVERIFY(model.moveTab(pinnedNeighbor, model.groupForTab(pinned), Placement::Bottom));
+    const auto pinnedTree = model.pinnedLayout(root, Edge::Left);
+    QVERIFY(pinnedTree && !pinnedTree->isLeaf());
+    LayoutModel forced = model;
+    const auto compareWithTransaction = [&](QUuid node, double ratio) {
+        LayoutModelTestAccess::invalidateIndex(forced);
+        QVERIFY(model.setSplitRatio(node, ratio));
+        QVERIFY(forced.setSplitRatio(node, ratio));
+        QCOMPARE(model.revision(), forced.revision());
+        QCOMPARE(QJsonDocument(model.toJson()).toJson(), QJsonDocument(forced.toJson()).toJson());
+        QVERIFY(model.validate());
+    };
+
+    auto central = model.window(root)->central;
+    auto treeA = model.tab(a)->panes;
+    auto treeB = model.tab(b)->panes;
+    compareWithTransaction(treeA->id, 0.25);
+    if (QTest::currentTestFailed()) return;
+    QCOMPARE(model.tab(a)->panes->ratio, 0.25);
+    QVERIFY(model.tab(a)->panes != treeA);
+    QCOMPARE(model.tab(b)->panes, treeB);
+    QCOMPARE(model.window(root)->central, central);
+    QCOMPARE(model.pinnedLayout(root, Edge::Left), pinnedTree);
+
+    treeA = model.tab(a)->panes;
+    compareWithTransaction(central->id, 0.7);
+    if (QTest::currentTestFailed()) return;
+    QCOMPARE(model.window(root)->central->ratio, 0.7);
+    QCOMPARE(model.tab(a)->panes, treeA);
+    QCOMPARE(model.tab(b)->panes, treeB);
+    QCOMPARE(model.pinnedLayout(root, Edge::Left), pinnedTree);
+
+    central = model.window(root)->central;
+    compareWithTransaction(pinnedTree->id, 0.4);
+    if (QTest::currentTestFailed()) return;
+    QCOMPARE(model.pinnedLayout(root, Edge::Left)->ratio, 0.4);
+    QCOMPARE(model.window(root)->central, central);
+    QCOMPARE(model.tab(a)->panes, treeA);
+    QCOMPARE(model.tab(b)->panes, treeB);
+
+    const auto revision = model.revision();
+    QVERIFY(!model.setSplitRatio(central->id, 0.999));
+    QVERIFY(!model.setSplitRatio(QUuid::createUuid(), 0.5));
+    QVERIFY(!model.setSplitRatio(model.tab(pinned)->panes->id, 0.5));
+    QCOMPARE(model.revision(), revision);
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

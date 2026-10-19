@@ -502,8 +502,34 @@ OperationResult LayoutModel::renameTab(TabId id, QString title)
         return success();
     });
 }
+// Activation fast path. It changes only the group's activeTab (a member of
+// that group), the window's activeGroup (a group of that window) and a fresh
+// visitedOrder below orderCounter_. Membership, trees and identities are
+// untouched, so validate() would reach the same verdict and the pinned trees
+// need no synchronization. Returns false without changes when the order
+// counter must be compacted, which renumbers every tab in a transaction.
+// When activation gains new state, update this path and the transaction
+// lambdas in activateTab()/activatePane() together.
+bool LayoutModel::activateIndexed(TabId tabId, GroupId groupId, PaneId paneId)
+{
+    auto& group = groups_[groupId];
+    const bool visit = group.activeTab != tabId;
+    if (visit && orderCounter_ >= maximumTabOrder) return false;
+    auto& tab = tabs_[tabId];
+    if (!paneId.isNull()) tab.activePane = paneId;
+    if (visit) tab.visitedOrder = nextTabOrder();
+    group.activeTab = tabId;
+    windows_[group.windowId].activeGroup = groupId;
+    ++revision_;
+    return true;
+}
 OperationResult LayoutModel::activateTab(TabId id)
 {
+    if (indexValid_) {
+        const auto groupId = tabGroup_.value(id);
+        if (groupId.isNull()) return failure("The tab does not exist.");
+        if (activateIndexed(id, groupId, {})) return success();
+    }
     return transact([&](LayoutModel& model) {
         const auto groupId = model.groupForTab(id);
         if (groupId.isNull()) return failure("The tab does not exist.");
@@ -516,6 +542,12 @@ OperationResult LayoutModel::activateTab(TabId id)
 }
 OperationResult LayoutModel::activatePane(TabId tabId, PaneId paneId)
 {
+    if (indexValid_) {
+        const auto owner = paneTab_.constFind(paneId);
+        if (owner == paneTab_.cend() || owner.value() != tabId)
+            return failure("The pane does not belong to the tab.");
+        if (activateIndexed(tabId, tabGroup_.value(tabId), paneId)) return success();
+    }
     return transact([&](LayoutModel& model) {
         if (!model.panes(tabId).contains(paneId)) return failure("The pane does not belong to the tab.");
         model.tabs_[tabId].activePane = paneId;
@@ -1330,6 +1362,22 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
 }
 OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
 {
+    if (indexValid_) {
+        // Only the owning tree is path-copied. Node identities, membership and
+        // the index stay the same, and a bounded ratio keeps the tree valid.
+        if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 0.95)
+            return failure("Split ratios must stay between 0.05 and 0.95.");
+        const auto owner = ownerOfNode(nodeId);
+        if (!owner) return failure("The split node does not exist.");
+        auto& tree = owner->kind == NodeOwner::Kind::Tab ? tabs_[owner->owner].panes
+            : owner->kind == NodeOwner::Kind::Central ? windows_[owner->owner].central
+            : windows_[owner->owner].pinnedLayouts[size_t(owner->edge)];
+        bool found = false;
+        tree = replaceRatio(tree, nodeId, ratio, found);
+        Q_ASSERT(found);
+        ++revision_;
+        return success();
+    }
     return transact([&](LayoutModel& model) {
         if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 0.95)
             return failure("Split ratios must stay between 0.05 and 0.95.");
