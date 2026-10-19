@@ -758,6 +758,7 @@ void WindowManager::setBehavior(const WindowBehavior& behavior)
 void WindowManager::setTheme(const Theme& theme)
 {
     d->theme = theme;
+    ++d->themeRevision;
     for (auto widget : d->windows) if (widget) applyTheme(widget, theme);
 }
 Theme WindowManager::theme() const { return d->theme; }

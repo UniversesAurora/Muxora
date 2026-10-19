@@ -4,6 +4,7 @@
 #include "edge_tab_button.hpp"
 #include "peek_metrics.hpp"
 #include "peek_resize_handle.hpp"
+#include "splitter_layout_pass.hpp"
 #include "tab_strip.hpp"
 #include "window_manager_p.hpp"
 #include "panes/tab_content.hpp"
@@ -19,6 +20,7 @@
 #include <QMouseEvent>
 #include <QScopeGuard>
 #include <QSplitter>
+#include <QSplitterHandle>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolButton>
@@ -49,6 +51,30 @@ protected:
 private:
     QPoint start_;
 };
+// Splitters that hold group strips report their synchronous geometry passes,
+// including handle drags, so a rebuild can tell when moving a strip out of
+// them is unsafe (see SplitterLayoutPass).
+class GroupSplitterHandle final : public QSplitterHandle {
+public:
+    using QSplitterHandle::QSplitterHandle;
+protected:
+    bool event(QEvent* event) override
+    {
+        const SplitterLayoutPass pass;
+        return QSplitterHandle::event(event);
+    }
+};
+class GroupSplitter final : public QSplitter {
+public:
+    using QSplitter::QSplitter;
+protected:
+    bool event(QEvent* event) override
+    {
+        const SplitterLayoutPass pass;
+        return QSplitter::event(event);
+    }
+    QSplitterHandle* createHandle() override { return new GroupSplitterHandle(orientation(), this); }
+};
 void configureSplitter(QSplitter* splitter, int width) {
     splitter->setChildrenCollapsible(false);
     splitter->setHandleWidth(qMax(1, width));
@@ -56,6 +82,18 @@ void configureSplitter(QSplitter* splitter, int width) {
 void configureGroupSplitter(QSplitter* splitter, const Theme& theme) {
     splitter->setProperty("windowSystemGroupSplitter", true);
     configureSplitter(splitter, theme.metrics.groupSplitterWidth);
+}
+// Takes a reused strip out of the previous tree without editing the item
+// list of its splitter, for a rebuild inside a splitter geometry pass.
+// replaceWidget() keeps the list intact and leaves an inert placeholder in
+// the old tree, which is deleted with the old root. It parents the strip to
+// nothing for a moment, so its style is resolved again when it returns to
+// the window; outside a pass the strip moves directly instead.
+void detachFromSplitter(QWidget* widget)
+{
+    auto* splitter = qobject_cast<QSplitter*>(widget->parentWidget());
+    const int index = splitter ? splitter->indexOf(widget) : -1;
+    if (index >= 0) splitter->replaceWidget(index, new QWidget);
 }
 int pinnedExtent(LayoutTree tree, const LayoutModel& model, Qt::Orientation axis, int gap) {
     if (!tree) return 0;
@@ -82,8 +120,10 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     ++rebuildGeneration_;
     restoreFocusScope();
     closePeek();
+    if (updateInPlace(contents)) return;
     const auto previousGroups = std::exchange(groups_, {});
-    edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); contents_ = contents;
+    const auto previousSignatures = std::exchange(builtGroups_, {});
+    edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); builtRatios_.clear(); contents_ = contents;
     const QPointer<QWidget> previousRoot = root_;
     if (previousRoot) {
         layout()->removeWidget(previousRoot);
@@ -93,11 +133,32 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     // old groups hold only pages of tabs that stay here. They move directly
     // into the new groups instead of through the manager's storage.
     QVector<QPointer<QWidget>> carried;
-    for (const auto& group : previousGroups) {
-        if (!group) continue;
+    const auto carryPages = [&carried](GroupTabs* group) {
         QVector<TabId> ids;
         for (int index = 0; index < group->tabBar()->count(); ++index) ids << group->tabBar()->tabData(index).toUuid();
         for (const auto id : ids) if (auto* page = group->takePage(id)) carried << page;
+    };
+    // A drag keeps transient state on the strips (dragged label, insertion
+    // preview, compact presentation); rebuild them while it lasts.
+    const bool dragging = manager_->d->drag->isActive();
+    // Inside a splitter geometry pass (or a guarded geometry update) the old
+    // splitters may still be iterating their children.
+    const bool layingOut = SplitterLayoutPass::active() || manager_->d->geometryUpdateDepth > 0;
+    reusableGroups_.clear();
+    for (auto it = previousGroups.cbegin(); it != previousGroups.cend(); ++it) {
+        auto* group = it.value().data();
+        if (!group) continue;
+        const auto* record = manager_->model().group(it.key());
+        const auto signature = previousSignatures.constFind(it.key());
+        if (!dragging && record && record->windowId == window_ && record->location != GroupLocation::AutoHide
+            && signature != previousSignatures.cend() && *signature == signatureOf(*record)
+            && holdsPages(*group, *record, contents)) {
+            if (layingOut) detachFromSplitter(group);
+            reusableGroups_.insert(it.key(), group);
+            builtGroups_.insert(it.key(), *signature);
+            continue;
+        }
+        carryPages(group);
     }
     root_ = new QWidget(this);
     root_->setObjectName("DockSurfaceRoot");
@@ -106,11 +167,11 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     outer->setRowStretch(2, 1); outer->setColumnStretch(2, 1);
     for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) buildEdge(edge, contents);
     updateRailLayout();
-    auto* vertical = new QSplitter(Qt::Vertical, root_);
+    auto* vertical = new GroupSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
     configureGroupSplitter(vertical, manager_->theme());
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
-    auto* horizontal = new QSplitter(Qt::Horizontal, vertical);
+    auto* horizontal = new GroupSplitter(Qt::Horizontal, vertical);
     horizontal_ = horizontal;
     configureGroupSplitter(horizontal, manager_->theme());
     if (auto* left = buildPinned(Edge::Left, contents)) horizontal->addWidget(left);
@@ -138,15 +199,25 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     vertical->setSizes(sizes);
     QObject::connect(vertical, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
     outer->addWidget(vertical, 1, 1, 3, 3);
+    // Every reusable group has a leaf in the new trees; release any other.
+    for (auto it = reusableGroups_.cbegin(); it != reusableGroups_.cend(); ++it) {
+        builtGroups_.remove(it.key());
+        if (!it.value()) continue;
+        carryPages(it.value());
+        it.value()->deleteLater();
+    }
+    reusableGroups_.clear();
     // A carried page without a group here belongs to an auto-hide tab. Park
-    // it as the manager would: deleting the old root must never delete a
-    // live view. Adopted pages already have a new parent.
+    // it as the manager would: deleting the old root or a released strip
+    // must never delete a live view.
     for (const auto& page : carried)
-        if (page && previousRoot && previousRoot->isAncestorOf(page)) {
+        if (page && !root_->isAncestorOf(page)) {
             page->setParent(manager_->d->storage);
             if (page) page->hide();
         }
     if (previousRoot) previousRoot->deleteLater();
+    builtStructure_ = structureSignature();
+    builtThemeRevision_ = manager_->d->themeRevision;
     layout()->addWidget(root_);
     // Layout insertion into an already visible parent defers the implicit show.
     // A completed API mutation must expose its replacement controls immediately,
@@ -161,6 +232,106 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     QTimer::singleShot(0, this, [this] { restorePinnedExtents(); });
     applyFocusScope();
     restoreStripScrollOffsets();
+}
+DockSurface::StructureSignature DockSurface::structureSignature() const
+{
+    StructureSignature result;
+    const auto* window = manager_->model().window(window_);
+    if (!window) return result;
+    const std::function<void(const LayoutTree&)> visit = [&](const LayoutTree& node) {
+        if (!node) { result.append({QUuid{}, -2}); return; }
+        if (node->isLeaf()) { result.append({node->itemId, -1}); return; }
+        result.append({node->id, int(node->orientation)});
+        visit(node->first);
+        visit(node->second);
+    };
+    visit(window->central);
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom})
+        visit(manager_->model().pinnedLayout(window_, edge));
+    return result;
+}
+bool DockSurface::updateInPlace(const QHash<TabId, QPointer<TabContent>>& contents)
+{
+    // Reparenting a strip makes Qt resolve style sheet, font and palette again
+    // for its whole subtree, all tab pages included. While the splitter
+    // structure is unchanged, keep the root, the splitters and every unchanged
+    // strip where they are, and swap only the changed strips in place.
+    if (!root_ || !vertical_ || !horizontal_ || !center_ || manager_->d->drag->isActive()
+        || builtThemeRevision_ != manager_->d->themeRevision || builtStructure_ != structureSignature()) return false;
+    QVector<QPair<GroupId, QPointer<GroupTabs>>> changed;
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        const auto* record = manager_->model().group(it.key());
+        auto* splitter = it.value() ? qobject_cast<QSplitter*>(it.value()->parentWidget()) : nullptr;
+        if (!record || !splitter || splitter->indexOf(it.value()) < 0) return false;
+        const auto signature = builtGroups_.constFind(it.key());
+        if (signature == builtGroups_.cend() || *signature != signatureOf(*record)
+            || !holdsPages(*it.value(), *record, contents)) changed.append({it.key(), it.value()});
+    }
+    contents_ = contents;
+    for (const auto& bar : std::as_const(edgeBars_))
+        if (bar) { root_->layout()->removeWidget(bar); bar->hide(); bar->deleteLater(); }
+    edgeBars_.clear();
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) buildEdge(edge, contents);
+    updateRailLayout();
+    QVector<QPointer<QWidget>> carried;
+    for (const auto& [id, old] : changed) {
+        if (!old) continue;
+        QVector<TabId> ids;
+        for (int index = 0; index < old->tabBar()->count(); ++index) ids << old->tabBar()->tabData(index).toUuid();
+        for (const auto tab : ids) if (auto* page = old->takePage(tab)) carried << page;
+        auto* fresh = buildGroup(id, contents);
+        auto* splitter = qobject_cast<QSplitter*>(old->parentWidget());
+        const int index = splitter ? splitter->indexOf(old) : -1;
+        if (!fresh || index < 0) continue;
+        {
+            // replaceWidget() keeps the splitter's item list intact, so it is
+            // safe even while that splitter is positioning its children.
+            const SplitterLayoutPass pass;
+            splitter->replaceWidget(index, fresh);
+        }
+        if (center_ == old) center_ = fresh;
+        old->deleteLater();
+    }
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        const auto* record = manager_->model().group(it.key());
+        if (it.value() && record) it.value()->setTabBarVisible(record->location != GroupLocation::Central
+            || centralTabBarVisible(manager_->tabBarsVisible(window_)));
+    }
+    // A page that no group adopted belongs to an auto-hide tab; never leave a
+    // live view inside a discarded strip.
+    for (const auto& page : carried)
+        if (page && !root_->isAncestorOf(page)) {
+            page->setParent(manager_->d->storage);
+            if (page) page->hide();
+        }
+    const auto* window = manager_->model().window(window_);
+    applyChangedRatios(window ? window->central : LayoutTree{});
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) {
+        const auto tree = manager_->model().pinnedLayout(window_, edge);
+        applyChangedRatios(tree);
+        if (const auto region = pinnedRegions_.value(edge))
+            region->setProperty("preferredExtent", pinnedExtent(tree, manager_->model(), region->orientation(), region->handleWidth()));
+    }
+    root_->layout()->activate();
+    restorePinnedExtents();
+    QTimer::singleShot(0, this, [this] { restorePinnedExtents(); });
+    applyFocusScope();
+    restoreStripScrollOffsets();
+    return true;
+}
+void DockSurface::applyChangedRatios(LayoutTree node)
+{
+    if (!node || node->isLeaf()) return;
+    const auto built = builtRatios_.constFind(node->id);
+    if (built == builtRatios_.cend() || *built != node->ratio) {
+        if (const auto splitter = splitters_.value(node->id)) {
+            const SplitterLayoutPass pass;
+            splitter->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
+        }
+        builtRatios_.insert(node->id, node->ratio);
+    }
+    applyChangedRatios(node->first);
+    applyChangedRatios(node->second);
 }
 void DockSurface::captureStripScrollOffsets()
 {
@@ -198,14 +369,27 @@ bool DockSurface::scrollStripAt(QPoint global, QPoint delta)
 QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<TabContent>>& contents)
 {
     if (!node) return nullptr;
-    if (node->isLeaf()) return buildGroup(node->itemId, contents);
-    auto* split = new QSplitter(node->orientation, this);
+    if (node->isLeaf()) {
+        if (const auto reused = reusableGroups_.take(node->itemId)) {
+            // Callbacks capture this surface, the group ID and the strip's
+            // own bar, all unchanged. Only the strip's visibility depends on
+            // window-wide state (single-tab hiding, bar preferences).
+            const auto* group = manager_->model().group(node->itemId);
+            reused->setTabBarVisible(group->location != GroupLocation::Central
+                || centralTabBarVisible(manager_->tabBarsVisible(window_)));
+            groups_.insert(node->itemId, reused);
+            return reused.data();
+        }
+        return buildGroup(node->itemId, contents);
+    }
+    auto* split = new GroupSplitter(node->orientation, this);
     split->setObjectName("GroupSplitter"); configureGroupSplitter(split, manager_->theme());
     split->addWidget(buildTree(node->first, contents));
     split->addWidget(buildTree(node->second, contents));
     split->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
     split->setProperty("splitNodeId", node->id);
     splitters_.insert(node->id, split);
+    builtRatios_.insert(node->id, node->ratio);
     const auto nodeId = node->id;
     QObject::connect(split, &QSplitter::splitterMoved, manager_, [this, split, nodeId] {
         const auto sizes = split->sizes();
@@ -234,6 +418,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupViewportStates_.contains(id));
     groups_.insert(id, tabs);
+    builtGroups_.insert(id, signatureOf(*group));
     tabs->newTabRequested = [manager = QPointer<WindowManager>(manager_), window = window_, id] {
         if (manager) manager->requestNewTab(window, id);
     };
@@ -268,6 +453,36 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         if (manager_) manager_->closeTab(bar->tabData(index).toUuid());
     };
     return tabs;
+}
+DockSurface::GroupSignature DockSurface::signatureOf(const GroupRecord& group) const
+{
+    GroupSignature result;
+    result.tabs = group.tabs;
+    result.activeTab = group.activeTab;
+    result.location = group.location;
+    result.edge = group.edge;
+    result.appearance = manager_->d->appearance;
+    result.themeRevision = manager_->d->themeRevision;
+    const auto& descriptors = manager_->d->descriptors;
+    for (const auto id : group.tabs) {
+        const auto* tab = manager_->model().tab(id);
+        result.titles << (tab ? tab->title : QString());
+        result.colorIds << (tab ? tab->colorId : QString());
+        const auto descriptor = tab ? descriptors.constFind(tab->activePane) : descriptors.cend();
+        result.icons << (descriptor != descriptors.cend() ? descriptor->showIcon : TabOptions{}.showIcon);
+    }
+    return result;
+}
+bool DockSurface::holdsPages(const GroupTabs& widget, const GroupRecord& group,
+                             const QHash<TabId, QPointer<TabContent>>& contents) const
+{
+    if (widget.count() != group.tabs.size() || widget.page(int(group.tabs.size()))) return false;
+    for (int index = 0; index < group.tabs.size(); ++index) {
+        const auto id = group.tabs.at(index);
+        const auto content = contents.value(id);
+        if (!content || widget.tabBar()->tabData(index).toUuid() != id || widget.page(index) != content.data()) return false;
+    }
+    return true;
 }
 QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabContent>>&)
 {
@@ -360,7 +575,7 @@ QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabCont
     auto* body = buildTree(tree, contents);
     auto* region = !tree->isLeaf() && tree->orientation == orientation ? qobject_cast<QSplitter*>(body) : nullptr;
     if (!region) {
-        region = new QSplitter(orientation, this);
+        region = new GroupSplitter(orientation, this);
         region->addWidget(body);
     }
     region->setObjectName("PinnedRegion");
@@ -431,7 +646,10 @@ void DockSurface::restorePinnedExtents()
             sizes << (splitter->widget(i) == flexible
                 ? qMax(1, available - fixed - (splitter->count() - 1) * splitter->handleWidth())
                 : requested(splitter->widget(i)));
-        splitter->setSizes(sizes);
+        {
+            const SplitterLayoutPass pass;
+            splitter->setSizes(sizes);
+        }
         return current() && splitter && flexible;
     };
     if (!restoreOuter(vertical, horizontal)) return;

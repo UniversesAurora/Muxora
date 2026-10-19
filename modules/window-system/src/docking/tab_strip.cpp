@@ -723,6 +723,7 @@ void GroupTabs::scrollByWheel(QPoint delta)
 }
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
+QWidget* GroupTabs::page(int index) const { return stack_->widget(index); }
 void GroupTabs::updateBarGeometry() {
     if (updatingBarGeometry_) return;
     QScopedValueRollback updating(updatingBarGeometry_, true);

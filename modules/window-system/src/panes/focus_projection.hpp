@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "docking/splitter_layout_pass.hpp"
 #include <QPointer>
 #include <QSplitter>
 #include <QVector>
@@ -15,6 +16,7 @@ class FocusProjection final {
 public:
     void restore()
     {
+        const SplitterLayoutPass pass;
         for (const auto& branch : branches_)
             if (branch.widget) branch.widget->setVisible(!branch.hidden);
         for (auto iterator = splitters_.crbegin(); iterator != splitters_.crend(); ++iterator)
@@ -27,6 +29,7 @@ public:
     {
         restore();
         if (!target || !boundary || !boundary->isAncestorOf(target)) return;
+        const SplitterLayoutPass pass;
         for (auto* branch = target; branch && branch != boundary; branch = branch->parentWidget()) {
             auto* splitter = qobject_cast<QSplitter*>(branch->parentWidget());
             if (!splitter) continue;

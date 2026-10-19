@@ -100,6 +100,8 @@ public:
     void scrollByWheel(QPoint delta);
     int currentIndex() const;
     int count() const;
+    // The page at a strip index, or null.
+    [[nodiscard]] QWidget* page(int index) const;
     QRect viewportRectGlobal() const;
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);

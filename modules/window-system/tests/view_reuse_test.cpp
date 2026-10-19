@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QPointer>
 #include <QSplitter>
+#include <QTabBar>
 #include <QTest>
 
 using namespace window_system;
@@ -68,6 +69,19 @@ void settle()
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
 }
+// Runs a host callback from the content's own resize event.
+class ResizeHook final : public QLabel {
+public:
+    using QLabel::QLabel;
+    std::function<void()> resized;
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QLabel::resizeEvent(event);
+        const auto callback = resized;
+        if (callback) callback();
+    }
+};
 // Records every parent a watched widget receives.
 class ParentRecorder final : public QObject {
 public:
@@ -103,6 +117,9 @@ private slots:
     void crossWindowMoveReparentsOnlyTheMovedTab();
     void deferredRootDeletionKeepsCarriedPages();
     void mountedRebuildIsVisibleImmediately();
+    void reusedStripFollowsMetadataAndTheme();
+    void mutationFromSplitterLayoutKeepsReusedStrip_data();
+    void mutationFromSplitterLayoutKeepsReusedStrip();
 };
 
 void ViewReuseTest::unrelatedTabsKeepTheirViewWidgets()
@@ -229,14 +246,19 @@ void ViewReuseTest::tabViewsStayInTheirWindow()
         QVERIFY(pages[tab]);
         recorder.watch(pages[tab]);
     }
+    const QPointer<QWidget> secondStrip = stripOf(manager, layout.window, layout.second);
+    QVERIFY(secondStrip);
     QVERIFY(manager.closeTab(layout.firstTabs[0]));
     settle();
+    QVERIFY(secondStrip);
+    QCOMPARE(stripOf(manager, layout.window, layout.second), secondStrip.data());
     for (const auto tab : remaining) {
         QVERIFY(pages[tab]);
         QCOMPARE(pageOf(manager, tab), pages[tab].data());
         QCOMPARE(pages[tab]->window(), manager.windowWidget(layout.window));
         QVERIFY(!recorder.everParkedIn(pages[tab], QStringLiteral("WindowSystemStorage")));
     }
+    for (const auto tab : layout.secondTabs) QCOMPARE(recorder.changes(pages[tab]), 0);
 }
 
 void ViewReuseTest::crossWindowMoveReparentsOnlyTheMovedTab()
@@ -262,8 +284,12 @@ void ViewReuseTest::crossWindowMoveReparentsOnlyTheMovedTab()
         contents.insert(pane, manager.paneWidget(pane));
         recorder.watch(contents[pane]);
     }
+    const QPointer<QWidget> unchangedStrip = stripOf(manager, source.window, source.second);
+    QVERIFY(unchangedStrip);
     QVERIFY(manager.moveTab(moved, targetGroup, Placement::Center));
     settle();
+    QCOMPARE(stripOf(manager, source.window, source.second), unchangedStrip.data());
+    for (const auto tab : source.secondTabs) QCOMPARE(recorder.changes(pages[tab]), 0);
     QCOMPARE(manager.model().group(manager.model().groupForTab(moved))->windowId, targetWindow);
     QVERIFY(pages[moved]);
     QCOMPARE(pageOf(manager, moved), pages[moved].data());
@@ -332,6 +358,101 @@ void ViewReuseTest::mountedRebuildIsVisibleImmediately()
     QVERIFY(manager.paneWidget(created)->isVisible());
     QVERIFY(original->isVisible());
     QVERIFY(frameOf(manager, created)->isVisible());
+}
+
+void ViewReuseTest::reusedStripFollowsMetadataAndTheme()
+{
+    WindowManager manager;
+    const auto layout = createTwoGroups(manager, manager.createWindow());
+    settle();
+    const auto labelOf = [&](GroupId group, int index) {
+        auto* strip = stripOf(manager, layout.window, group);
+        auto* bar = strip ? strip->findChild<QTabBar*>() : nullptr;
+        return bar ? bar->tabText(index) : QString();
+    };
+    QPointer<QWidget> strip = stripOf(manager, layout.window, layout.second);
+    // Renaming a tab rebuilds only its own group's strip.
+    QVERIFY(manager.renameTab(layout.secondTabs[1], "renamed"));
+    settle();
+    QCOMPARE(labelOf(layout.second, 1), QStringLiteral("renamed"));
+    QVERIFY(stripOf(manager, layout.window, layout.second) != strip.data());
+    strip = stripOf(manager, layout.window, layout.first);
+    QVERIFY(manager.closeTab(layout.secondTabs[2]));
+    settle();
+    QCOMPARE(stripOf(manager, layout.window, layout.first), strip.data());
+    // A new theme reaches every strip at the next refresh.
+    auto theme = manager.theme();
+    theme.metrics.iconSize += 4;
+    manager.setTheme(theme);
+    QVERIFY(manager.closeTab(layout.secondTabs[1]));
+    settle();
+    QVERIFY(stripOf(manager, layout.window, layout.first) != strip.data());
+    auto* bar = stripOf(manager, layout.window, layout.first)->findChild<QTabBar*>();
+    QCOMPARE(bar->iconSize(), QSize(theme.metrics.iconSize, theme.metrics.iconSize));
+}
+
+void ViewReuseTest::mutationFromSplitterLayoutKeepsReusedStrip_data()
+{
+    QTest::addColumn<bool>("command");
+    QTest::addColumn<bool>("removeGroup");
+    for (const bool command : {true, false})
+        for (const bool removeGroup : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(command ? "ratio-command" : "splitter-resize",
+                removeGroup ? "remove-group" : "close-tab"))) << command << removeGroup;
+}
+void ViewReuseTest::mutationFromSplitterLayoutKeepsReusedStrip()
+{
+    QFETCH(bool, command);
+    QFETCH(bool, removeGroup);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    auto* hook = new ResizeHook("hook");
+    const QPointer<QWidget> content(hook);
+    const auto left = manager.addTab(window, hook, {"left", "test.text", {}});
+    const auto right = add(manager, window, "right");
+    QVERIFY(manager.moveTab(right, manager.model().groupForTab(left), Placement::Right));
+    const auto extra = add(manager, window, "extra", manager.model().groupForTab(right));
+    if (removeGroup) QVERIFY(manager.closeTab(right));
+    QVERIFY(manager.activateTab(left));
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    const auto leftGroup = manager.model().groupForTab(left);
+    const QPointer<QWidget> leftStrip = stripOf(manager, window, leftGroup);
+    QVERIFY(leftStrip);
+    QVERIFY(hook->isVisible());
+    // The central splitter resizes its first child, the left strip, whose
+    // content closes a tab of the right group before the splitter reaches
+    // its second child. Closing the group's last tab changes the splitter
+    // structure, so the unchanged left strip moves to a new tree in the
+    // middle of that layout pass; otherwise the right strip is replaced in
+    // place.
+    bool fired = false;
+    hook->resized = [&] {
+        if (fired) return;
+        fired = true;
+        QVERIFY(manager.closeTab(extra));
+    };
+    const auto node = manager.model().window(window)->central->id;
+    if (command) {
+        QVERIFY(manager.execute("layout.setRatio", {{"node", node}, {"ratio", .3}}, window));
+    } else {
+        QPointer<QSplitter> central;
+        for (auto* splitter : manager.windowWidget(window)->findChildren<QSplitter*>())
+            if (splitter->property("splitNodeId").toUuid() == node) central = splitter;
+        QVERIFY(central);
+        // Qt delivers the resize; the splitter lays out its children in it.
+        central->resize(central->width() - 80, central->height());
+    }
+    QVERIFY(fired);
+    QVERIFY(!manager.model().tab(extra));
+    QCOMPARE(manager.model().window(window)->central->isLeaf(), removeGroup);
+    settle();
+    QVERIFY(content && leftStrip);
+    QCOMPARE(stripOf(manager, window, leftGroup), leftStrip.data());
+    QCOMPARE(manager.paneWidget(activePane(manager, left)), content.data());
+    QVERIFY(content->isVisible());
+    QVERIFY(manager.model().validate());
 }
 
 QTEST_MAIN(ViewReuseTest)

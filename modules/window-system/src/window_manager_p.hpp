@@ -37,6 +37,8 @@ struct WindowManager::Private {
     QString defaultTabCommand;
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();
+    // Incremented by setTheme(); views built for an older theme are rebuilt.
+    quint64 themeRevision = 0;
     TabAppearance appearance;
     QVector<CommandToolbar> customToolbars;
     QVector<StatusItem> customStatusItems;

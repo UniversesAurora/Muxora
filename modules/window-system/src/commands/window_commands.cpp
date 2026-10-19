@@ -532,6 +532,7 @@ void WindowManager::registerWindowCommands()
                 const auto sizes = splitter->sizes();
                 const int available = qMax(1000, sizes.value(0) + sizes.value(1));
                 const QSignalBlocker suppressFeedback(splitter);
+                const SplitterLayoutPass pass;
                 splitter->setSizes({qRound(available * ratio), qRound(available * (1. - ratio))});
             }
             emit layoutChanged();

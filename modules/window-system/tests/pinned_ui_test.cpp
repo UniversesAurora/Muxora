@@ -408,11 +408,14 @@ void PinnedUiTest::restoringPinnedExtentsMayReplaceUiFromContentResize()
         settle(); QVERIFY(!window); QVERIFY(!surface); QVERIFY(!region); QVERIFY(!original); QVERIFY(!originalHost);
     } else if (mutation == "rebuild-tab") {
         // The replaced host is deleted only after Qt leaves the active layout.
+        // The surface's splitter structure is unchanged, so its pinned region
+        // stays (phase 1.6b).
         QCOMPARE(manager->model().tabForPane(created), tab);
         QCOMPARE(manager->paneWidget(pane), original.data());
         QVERIFY(originalHost); QVERIFY(originalHost->isHidden());
         QVERIFY(original->parentWidget() != originalHost);
-        settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(!region); QVERIFY(original); QVERIFY(!originalHost);
+        settle(); QVERIFY(window); QVERIFY(surface); QVERIFY(region); QVERIFY(original); QVERIFY(!originalHost);
+        QVERIFY(region->isAncestorOf(original));
         QCOMPARE(manager->model().toJson(), afterCallback);
     } else {
         QVERIFY(manager->model().tab(created)); QVERIFY(manager->model().tab(central));
