@@ -71,6 +71,8 @@
 
 解锁拖动到最后一行时，工作区一侧出现一行投放预览；其他时候空行没有高度，移走最后一条后该行立即消失。上下区域共用锁定、弹性、压缩和溢出规则。`window.toolbar.move` 支持 `strip`、`area: "top" / "bottom"`、`row`、`index`；不带参数时提供工具条和区域／行的键盘选择菜单，位于“视图 → 工具条 → 移动工具条…”。区域随布局中的 `rows`／`bottomRows` 保存，旧快照沿用顶部区域。
 
+`WindowBehavior::reverseCaptionButtons` 默认 `false`，设置页使用 `window.reverseCaptionButtons`，Lua 中为 `reverse_caption_buttons`。开启后窗口控制按钮按“关闭、最大化、最小化”排列并靠左对齐。
+
 `WindowBehavior::hideToolbarOptionsWhenLocked` 默认 `false`，设置页使用 `window.hideToolbarOptionsWhenLocked`。开启后，锁定且无溢出的普通工具条隐藏选项尾部并释放宽度；溢出或解锁时恢复。禁用工具按钮不绘制高亮边框，只显示灰色图标。
 
 当前 API 为 0.1 初版，尚在交互迭代阶段，不承诺稳定二进制 ABI。完整 JSONC 用户键位、条件表达式和后续扩展仍按设计逐步接入。

@@ -51,6 +51,9 @@ struct WindowBehavior {
     bool hideSingleTabWorkbench = false;
     bool hideSingleTabFloating = true;
     bool hideToolbarOptionsWhenLocked = false;
+    // Close, maximize, minimize, aligned to the strip's leading edge, so the
+    // controls can sit in the top-left corner as on macOS.
+    bool reverseCaptionButtons = false;
     ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
 };
 

@@ -2336,5 +2336,25 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>当前窗格提取为本组独立标签</source>
             <translation>Extract current pane as a separate tab in this group</translation>
         </message>
+        <message>
+            <location filename="../src/layout_persistence.cpp" />
+            <source>窗口控制按钮顺序设置无效</source>
+            <translation>Invalid window control button order setting</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>按“关闭、最大化、最小化”的顺序排列并靠左对齐</source>
+            <translation>Order as Close, Maximize, Minimize and align to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>反向排列窗口控制按钮</source>
+            <translation>Reverse window control buttons</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</source>
+            <translation>Use this when the window controls toolbar is moved to the top-left corner, similar to macOS.</translation>
+        </message>
     </context>
 </TS>

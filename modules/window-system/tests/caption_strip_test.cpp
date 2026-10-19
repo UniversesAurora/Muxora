@@ -160,6 +160,10 @@ private slots:
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap();
     void maximizedCaptionControlsOwnTheActualScreenEdge_data();
     void maximizedCaptionControlsOwnTheActualScreenEdge();
+    void reversedCaptionButtonsFollowTheBehavior_data() { addWindowKinds(); }
+    void reversedCaptionButtonsFollowTheBehavior();
+    void expandedCaptionControlsReachEveryScreenCorner_data();
+    void expandedCaptionControlsReachEveryScreenCorner();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
     void fixedResizeAxesRemainRespected();
 #endif
@@ -669,6 +673,127 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     else if (role == "restore") QTRY_VERIFY(!window->isMaximized());
     else { QCOMPARE(closeRequests, QVector<TabId>{tab}); QVERIFY(window->isMaximized() && window->isVisible()); }
     QCOMPARE(window->effectiveWinId(), WId(handle)); QCOMPARE(manager.paneWidget(pane), body.data());
+    QVERIFY(manager.model().validate().ok);
+}
+
+void CaptionStripTest::reversedCaptionButtonsFollowTheBehavior()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* controls = window->strips()->stripWidget("caption-controls"); QVERIFY(controls);
+    const auto x = [window](const QString& role) { return captionButton(window, role)->mapTo(window, QPoint()).x(); };
+    const auto settle = [] { QCoreApplication::processEvents(); };
+    QVERIFY(x("minimize") < x("maximize") && x("maximize") < x("close"));
+    // Spare width stays on the inner side: normal order hugs the trailing edge.
+    const int natural = controls->width();
+    QVERIFY(window->strips()->setStripWidth("caption-controls", natural + 80)); settle();
+    auto* close = captionButton(window, "close");
+    QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
+    auto behavior = manager.behavior(); behavior.reverseCaptionButtons = true; manager.setBehavior(behavior); settle();
+    QVERIFY(x("close") < x("maximize") && x("maximize") < x("minimize"));
+    QCOMPARE(close->mapTo(controls, QPoint()).x(), 0);
+    // Persisted with the other window behavior and validated on restore.
+    const auto snapshot = manager.saveLayout();
+    QVERIFY(snapshot.value("behavior").toObject().value("reverseCaptionButtons").toBool());
+    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot).ok);
+    QVERIFY(restored.behavior().reverseCaptionButtons);
+    auto invalid = snapshot; auto settings = invalid.value("behavior").toObject();
+    settings.insert("reverseCaptionButtons", "yes"); invalid.insert("behavior", settings);
+    WindowManager rejected; QVERIFY(!rejected.restoreLayout(invalid).ok);
+    behavior.reverseCaptionButtons = false; manager.setBehavior(behavior); settle();
+    QVERIFY(x("minimize") < x("maximize") && x("maximize") < x("close"));
+    QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
+}
+
+void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner_data()
+{
+    QTest::addColumn<bool>("floating"); QTest::addColumn<bool>("left");
+    QTest::addColumn<bool>("bottom"); QTest::addColumn<bool>("fullscreen");
+    for (const bool floating : {false, true}) for (const bool fullscreen : {false, true})
+        for (const bool bottom : {false, true}) for (const bool left : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2-%3-%4").arg(floating ? "floating" : "workbench",
+                fullscreen ? "fullscreen" : "maximized", bottom ? "bottom" : "top", left ? "left" : "right")))
+                << floating << left << bottom << fullscreen;
+}
+
+void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
+{
+    QFETCH(bool, floating); QFETCH(bool, left); QFETCH(bool, bottom); QFETCH(bool, fullscreen);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    const auto tab = manager.addTab(id, new QLabel("Retained body"), {"Retained", "label", {}});
+    // The macOS-like arrangement: reversed order when the controls sit at the
+    // left, so close is the outermost button in every corner.
+    auto behavior = manager.behavior(); behavior.reverseCaptionButtons = left; manager.setBehavior(behavior);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(window->strips()->moveStrip("caption-controls",
+        bottom ? CommandStripHost::Area::Bottom : CommandStripHost::Area::Top, 0, left ? 0 : 1000)); // Out-of-range index appends.
+    // Alone in a new bottom row the strip starts at the leading edge; stretch
+    // it so its trailing (close) button reaches the right corner, as a user would.
+    if (bottom && !left) QVERIFY(window->strips()->setStripWidth("caption-controls", 4000));
+    // The global status bar lies below the bottom toolbars; the controls can
+    // only reach the bottom edge when nothing is between them and the edge.
+    if (bottom && !floating) QVERIFY(manager.setStatusBarVisible(id, false));
+    if (fullscreen) { QVERIFY(manager.setViewMode(id, ViewMode::WindowFullscreen)); QTRY_VERIFY(window->isFullScreen()); }
+    else { window->showMaximized(); QTRY_VERIFY(window->isMaximized()); }
+    auto* close = captionButton(window, "close"); QVERIFY(close && close->isVisible());
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
+    const RECT target = fullscreen ? monitor.rcMonitor : monitor.rcWork;
+    const auto clientFillsTarget = [handle, target] {
+        POINT origin{}; RECT client{};
+        return ClientToScreen(handle, &origin) && GetClientRect(handle, &client)
+            && origin.x == target.left && origin.y == target.top
+            && client.right - client.left == target.right - target.left
+            && client.bottom - client.top == target.bottom - target.top;
+    };
+    QTRY_VERIFY(clientFillsTarget());
+    // The actual last physical pixel of the screen (or work-area) corner.
+    const POINT corner{left ? target.left : target.right - 1, bottom ? target.bottom - 1 : target.top};
+    QPoint logical; QString diagnostic;
+    const auto containsCorner = [&] {
+        POINT client = corner;
+        if (!ScreenToClient(handle, &client)) return false;
+        const qreal ratio = window->devicePixelRatioF();
+        logical = QPoint(qFloor(client.x / ratio), qFloor(client.y / ratio));
+        const QRect area(close->mapTo(window, QPoint()), close->size());
+        diagnostic = QStringLiteral("corner=(%1,%2) logical=(%3,%4) close=(%5,%6,%7,%8) window=%9x%10")
+            .arg(corner.x).arg(corner.y).arg(logical.x()).arg(logical.y()).arg(area.x()).arg(area.y())
+            .arg(area.width()).arg(area.height()).arg(window->width()).arg(window->height());
+        return close->rect().contains(close->mapFrom(window, logical));
+    };
+    QTRY_VERIFY2(containsCorner(), qPrintable(diagnostic));
+    QVector<TabId> closeRequests;
+    manager.setCloseGuard([&closeRequests](const QVector<TabId>& tabs) { closeRequests = tabs; return false; });
+    int clicks = 0; QObject::connect(close, &QToolButton::clicked, window, [&clicks] { ++clicks; });
+    if (!fullscreen) {
+        // A maximized window routes caption buttons through the native hit test.
+        const LPARAM position = MAKELPARAM(corner.x, corner.y);
+        QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), LRESULT(HTCLOSE));
+        SendMessageW(handle, WM_NCLBUTTONDOWN, WPARAM(HTCLOSE), position);
+        SendMessageW(handle, WM_NCLBUTTONUP, WPARAM(HTCLOSE), position);
+    } else {
+        // Fullscreen keeps the controls in Qt's client hit testing. Deliver
+        // the press/release to the window like QTest does, but without its
+        // rule that a null (0, 0) position means "the window centre", which
+        // would miss the top-left corner.
+        const auto send = [window, logical](QEvent::Type type, Qt::MouseButtons buttons) {
+            QMouseEvent mouse(type, QPointF(logical), window->mapToGlobal(QPointF(logical)),
+                              Qt::LeftButton, buttons, Qt::NoModifier);
+            QApplication::sendEvent(window->windowHandle(), &mouse);
+        };
+        send(QEvent::MouseButtonPress, Qt::LeftButton);
+        send(QEvent::MouseButtonRelease, Qt::NoButton);
+    }
+    auto* hit = window->childAt(logical);
+    const auto hitName = hit ? QStringLiteral("%1#%2 role=%3").arg(hit->metaObject()->className(), hit->objectName(),
+        hit->property("role").toString()) : QStringLiteral("none");
+    QTRY_VERIFY2(clicks == 1, qPrintable(QStringLiteral("clicks=%1 childAt=%2 %3").arg(clicks).arg(hitName, diagnostic)));
+    QVERIFY(closeRequests.contains(tab));
+    QVERIFY(window->isVisible());
     QVERIFY(manager.model().validate().ok);
 }
 

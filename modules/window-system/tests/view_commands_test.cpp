@@ -413,6 +413,7 @@ void ViewCommandsTest::displaySettingsSearchKeepsExactRowsAndSectionHeadings()
     for (auto* row : page->findChildren<QWidget*>("SettingRow")) allRows.insert(row->property("settingId").toString());
     QCOMPARE(allRows, (QSet<QString>{"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench",
         "window.revealDuringDrag", "window.revealDelayMs", "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked",
+        "window.reverseCaptionButtons",
         "window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars",
         "window.hideSingleTabWorkbench", "window.hideSingleTabFloating", "tabs.centralPlacement", "tabs.pinnedPlacement",
         "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers",

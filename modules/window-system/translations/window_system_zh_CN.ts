@@ -2336,5 +2336,25 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>当前窗格提取为本组独立标签</source>
             <translation>当前窗格提取为本组独立标签</translation>
         </message>
+        <message>
+            <location filename="../src/layout_persistence.cpp" />
+            <source>窗口控制按钮顺序设置无效</source>
+            <translation>窗口控制按钮顺序设置无效</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>按“关闭、最大化、最小化”的顺序排列并靠左对齐</source>
+            <translation>按“关闭、最大化、最小化”的顺序排列并靠左对齐</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>反向排列窗口控制按钮</source>
+            <translation>反向排列窗口控制按钮</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_view_options.cpp" />
+            <source>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</source>
+            <translation>适合把窗口控制工具条移到左上角时使用，效果类似 macOS。</translation>
+        </message>
     </context>
 </TS>

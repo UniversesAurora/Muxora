@@ -258,6 +258,7 @@ QJsonObject WindowManager::saveViewLayout() const
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
             {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating},
             {"hideToolbarOptionsWhenLocked", d->behavior.hideToolbarOptionsWhenLocked},
+            {"reverseCaptionButtons", d->behavior.reverseCaptionButtons},
             {"zenFullscreenMode", int(d->behavior.zenFullscreenMode)}}}};
 }
 OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
@@ -290,6 +291,9 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     if (settings.contains("hideToolbarOptionsWhenLocked") && !settings.value("hideToolbarOptionsWhenLocked").isBool())
         return {false, QCoreApplication::translate("WindowSystem", "工具条选项显示设置无效")};
     restoredBehavior.hideToolbarOptionsWhenLocked = settings.value("hideToolbarOptionsWhenLocked").toBool(false);
+    if (settings.contains("reverseCaptionButtons") && !settings.value("reverseCaptionButtons").isBool())
+        return {false, QCoreApplication::translate("WindowSystem", "窗口控制按钮顺序设置无效")};
+    restoredBehavior.reverseCaptionButtons = settings.value("reverseCaptionButtons").toBool(false);
     const auto position = settings.value("newTabPosition");
     if (!position.isUndefined() && (!position.isDouble() || position.toDouble() != position.toInt(-1)
         || position.toInt(-1) < int(NewTabPosition::Beginning) || position.toInt(-1) > int(NewTabPosition::End)))

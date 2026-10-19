@@ -65,6 +65,15 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
         auto behavior = manager_->behavior(); behavior.hideToolbarOptionsWhenLocked = enabled;
         manager_->setBehavior(behavior);
     });
+    reverseCaptionButtons_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "按“关闭、最大化、最小化”的顺序排列并靠左对齐"), parent);
+    reverseCaptionButtons_->setObjectName("ReverseCaptionButtons");
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "反向排列窗口控制按钮"), "window.reverseCaptionButtons",
+        QCoreApplication::translate("WindowSystem", "适合把窗口控制工具条移到左上角时使用，效果类似 macOS。"), reverseCaptionButtons_));
+    connect(reverseCaptionButtons_, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (!manager_) return;
+        auto behavior = manager_->behavior(); behavior.reverseCaptionButtons = enabled;
+        manager_->setBehavior(behavior);
+    });
     zenFullscreenMode_ = new ThemedComboBox(parent); zenFullscreenMode_->setObjectName("ZenFullscreenMode");
     for (const auto& mode : modes) zenFullscreenMode_->addItem(QCoreApplication::translate("WindowSystem", mode.name), int(mode.mode));
     rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "禅模式默认全屏范围"), "window.zenFullscreenMode",
@@ -101,6 +110,8 @@ void SettingsPage::syncViewOptions()
     const auto behavior = manager_->behavior();
     const QSignalBlocker hideOptionsBlock(hideToolbarOptionsWhenLocked_);
     hideToolbarOptionsWhenLocked_->setChecked(behavior.hideToolbarOptionsWhenLocked);
+    const QSignalBlocker reverseCaptionBlock(reverseCaptionButtons_);
+    reverseCaptionButtons_->setChecked(behavior.reverseCaptionButtons);
     hideSingleWorkbench_->setChecked(behavior.hideSingleTabWorkbench);
     hideSingleFloating_->setChecked(behavior.hideSingleTabFloating);
     zenFullscreenMode_->setCurrentIndex(zenFullscreenMode_->findData(int(behavior.zenFullscreenMode)));

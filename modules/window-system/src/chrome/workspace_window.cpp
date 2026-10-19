@@ -344,6 +344,26 @@ void WorkspaceWindow::syncKind()
     updateCaption();
     committedStripLayout_ = saveStripLayout();
 }
+void WorkspaceWindow::setCaptionButtonsReversed(bool reversed)
+{
+    auto* row = captionControls_ ? qobject_cast<QHBoxLayout*>(captionControls_->layout()) : nullptr;
+    if (!row) return;
+    const auto current = captionControls_->property("captionButtonsReversed");
+    if (current.isValid() && current.toBool() == reversed) return;
+    captionControls_->setProperty("captionButtonsReversed", reversed);
+    QHash<QString, QWidget*> buttons;
+    while (auto* item = row->takeAt(0)) {
+        if (auto* widget = item->widget()) buttons.insert(widget->property("role").toString(), widget);
+        delete item; // Layout items only; the buttons stay owned by the controls widget.
+    }
+    // The spare width stays on the inner side, so the outermost button keeps
+    // the strip's outer edge (and the screen edge when the window is expanded).
+    const QStringList order = reversed ? QStringList{"close", "maximize", "minimize"}
+                                       : QStringList{"minimize", "maximize", "close"};
+    if (!reversed) row->addStretch();
+    for (const auto& role : order) if (auto* button = buttons.value(role)) row->addWidget(button);
+    if (reversed) row->addStretch();
+}
 void WorkspaceWindow::createChrome()
 {
     commandActions_.clear();
@@ -436,6 +456,8 @@ void WorkspaceWindow::createChrome()
         else isMaximized() ? showNormal() : showMaximized();
     });
     addCaption("close", QCoreApplication::translate("WindowSystem", "关闭窗口"), [this] { close(); });
+    captionControls_ = controls;
+    setCaptionButtonsReversed(manager_->behavior().reverseCaptionButtons);
     strips_->addStrip("caption-controls", QCoreApplication::translate("WindowSystem", "窗口控制"), controls, 0);
     strips_->setStripOptionsEnabled("caption-controls", false);
     strips_->setStripConstraints("caption-controls", {false, false});

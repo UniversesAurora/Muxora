@@ -12,6 +12,7 @@ constexpr std::array behaviorBooleans{
     std::pair{"reveal_during_drag", &WindowBehavior::revealDuringDrag},
     std::pair{"hide_single_tab_main", &WindowBehavior::hideSingleTabWorkbench},
     std::pair{"hide_toolbar_options_when_locked", &WindowBehavior::hideToolbarOptionsWhenLocked},
+    std::pair{"reverse_caption_buttons", &WindowBehavior::reverseCaptionButtons},
     std::pair{"hide_single_tab_floating", &WindowBehavior::hideSingleTabFloating}};
 constexpr std::array appearanceBooleans{std::pair{"multiline", &TabAppearance::multiline},
                                         std::pair{"wheel_expand_rows", &TabAppearance::wheelExpandRows},

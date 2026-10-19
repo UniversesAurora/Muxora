@@ -26,6 +26,7 @@ public:
     [[nodiscard]] DockSurface* surface() const;
     [[nodiscard]] CommandStripHost* strips() const;
     void syncCustomChrome();
+    void setCaptionButtonsReversed(bool reversed);
     void forgetCustomToolbarLayout(const QString& id);
     [[nodiscard]] QJsonObject saveStripLayout() const;
     [[nodiscard]] QJsonObject saveInactiveStripLayouts() const;
@@ -79,6 +80,7 @@ private:
     QPointer<QLabel> caption_;
     QPointer<QLabel> status_;
     QPointer<QToolButton> maximizeButton_;
+    QPointer<QWidget> captionControls_;
     QJsonObject savedStripLayout_;
     QJsonObject committedStripLayout_;
     QHash<WindowKind, QJsonObject> savedStripLayouts_;

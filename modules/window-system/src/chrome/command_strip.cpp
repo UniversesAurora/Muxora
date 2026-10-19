@@ -1042,11 +1042,14 @@ void CommandStripHost::arrange()
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
         // Expanded windows have no resize rim. When the caption controls are
-        // the last strip, their final pixel must reach the actual screen edge
-        // instead of leaving the ordinary toolbar's two-pixel outer gutter.
+        // the first or last strip, their outer pixel must reach the actual
+        // screen edge instead of leaving the ordinary toolbar's two-pixel gutter.
+        const bool expanded = window()->property("windowSystemExpanded").toBool();
+        const int leftMargin = !visible.isEmpty() && visible.first() == QStringLiteral("caption-controls")
+            && expanded ? 0 : rowMargin;
         const int rightMargin = !visible.isEmpty() && visible.last() == QStringLiteral("caption-controls")
-            && window()->property("windowSystemExpanded").toBool() ? 0 : rowMargin;
-        const int available = std::max(0, host->width() - rowMargin - rightMargin
+            && expanded ? 0 : rowMargin;
+        const int available = std::max(0, host->width() - leftMargin - rightMargin
             - std::max(0, int(visible.size()) - 1) * stripSpacing);
         const auto sizes = rowWidths(visible, available);
         const auto elasticId = std::find_if(visible.begin(), visible.end(), [this](const QString& id) {
@@ -1054,7 +1057,7 @@ void CommandStripHost::arrange()
         });
         const int elasticIndex = elasticId == visible.end() ? -1 : int(std::distance(visible.begin(), elasticId));
         QVector<int> positions(visible.size());
-        int x = rowMargin;
+        int x = leftMargin;
         for (int index = 0; index < visible.size(); ++index) {
             positions[index] = x;
             x += sizes[index] + stripSpacing;
