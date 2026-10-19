@@ -54,6 +54,16 @@ void TabContent::rebuild(const TabRecord& record,
     // The manager parks content and pane bars before rebuilding hosts. Sharing
     // policy changes only their presentation; the same widgets remain adopted.
     focusProjection_.restore();
+    if (canReuse(record, contents, paneTopBars, paneBottomBars)) {
+        // Nothing the splitters and frames were built from has changed; only
+        // the active pane can differ. A pane moved to another tab changes the
+        // tree of both tabs (a leaf is removed and added), so neither view
+        // reaches this path with the other tab's content.
+        const QPointer<TabContent> retained(this);
+        setActivePane(record.activePane);
+        if (retained) setFocusedPane(focusedPane_);
+        return;
+    }
     paneTopBars_.clear();
     paneBottomBars_.clear();
     for (const auto pane : manager_->model().panes(tab_)) {
@@ -61,8 +71,10 @@ void TabContent::rebuild(const TabRecord& record,
         if (auto bar = paneBottomBars.value(pane)) paneBottomBars_.insert(pane, bar);
     }
     activePane_ = record.activePane;
+    if (tree_) parkBuiltWidgets();
     frames_.clear();
     splitters_.clear();
+    builtPanes_.clear();
     if (tree_) {
         layout_->removeWidget(tree_);
         // A host can request a rebuild from a pane's resize callback. The old
@@ -74,6 +86,12 @@ void TabContent::rebuild(const TabRecord& record,
         } else delete tree_;
     }
     tree_ = buildNode(record.panes, record, contents);
+    builtTree_ = record.panes;
+    builtSplitterWidth_ = manager_->d->theme.metrics.splitterWidth;
+    for (auto& built : builtPanes_) {
+        built.topBar = paneTopBars.value(built.pane);
+        built.bottomBar = paneBottomBars.value(built.pane);
+    }
     const int topIndex = visibleTop_ ? layout_->indexOf(visibleTop_) : -1;
     if (tree_) layout_->insertWidget(topIndex >= 0 ? topIndex + 1 : 0, tree_, 1);
     updateBars();
@@ -115,7 +133,39 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
         content->show();
     }
     frames_.insert(node->itemId, frame);
+    builtPanes_.append({node->itemId, contents.value(node->itemId), {}, {}});
     return frame;
+}
+bool TabContent::canReuse(const TabRecord& record, const QHash<PaneId, QPointer<QWidget>>& contents,
+                          const QHash<PaneId, QPointer<QWidget>>& paneTopBars,
+                          const QHash<PaneId, QPointer<QWidget>>& paneBottomBars) const
+{
+    if (builtSplitterWidth_ < 0 || record.panes != builtTree_ || (builtTree_ && !tree_)) return false;
+    if (manager_->d->theme.metrics.splitterWidth != builtSplitterWidth_) return false;
+    for (const auto& built : builtPanes_) {
+        auto* content = contents.value(built.pane).data();
+        if (content != built.content.data()) return false;
+        // Content moved out by anything else is mounted again by a rebuild.
+        if (content && content->parentWidget() != frames_.value(built.pane)) return false;
+        if (paneTopBars.value(built.pane).data() != built.topBar.data()
+            || paneBottomBars.value(built.pane).data() != built.bottomBar.data()) return false;
+    }
+    return true;
+}
+void TabContent::parkBuiltWidgets()
+{
+    // Live content and pane bars are never deleted through an old frame. The
+    // manager parks them before a rebuild; this covers a view the manager
+    // judged reusable whose tree changed again before it was rebuilt.
+    const QPointer<TabContent> retained(this);
+    const auto built = builtPanes_;
+    for (const auto& pane : built)
+        for (const auto& widget : {pane.content, pane.topBar, pane.bottomBar}) {
+            if (!retained || !tree_ || !manager_) return;
+            if (!widget || !tree_->isAncestorOf(widget)) continue;
+            widget->setParent(manager_->d->storage);
+            if (widget) widget->hide();
+        }
 }
 void TabContent::setTopBar(QWidget* widget)
 {

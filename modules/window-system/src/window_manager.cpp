@@ -834,9 +834,19 @@ void WindowManager::refresh(bool preserveDrag)
     if (!preserveDrag) d->drag->releaseForMutation();
     for (auto window : d->windows) if (window) window->surface()->captureStripScrollOffsets();
     for (auto window : d->windows) if (window) window->surface()->closePeek();
-    for (auto pane : d->panes) if (pane) { pane->setParent(d->storage); pane->hide(); }
+    // A view whose pane tree, content, pane bars and splitter metric are all
+    // unchanged keeps its frames; its content and bars stay mounted there.
+    QSet<TabId> reusable;
+    for (auto it = d->tabs.cbegin(); it != d->tabs.cend(); ++it)
+        if (const auto* record = d->model.tab(it.key()); record && it.value()
+            && it.value()->canReuse(*record, d->panes, d->paneTopBars, d->paneBottomBars)) reusable.insert(it.key());
+    const auto mounted = [&](PaneId pane) { return reusable.contains(d->model.tabForPane(pane)); };
+    const auto panes = d->panes;
+    for (auto it = panes.cbegin(); it != panes.cend(); ++it)
+        if (it.value() && !mounted(it.key())) { it.value()->setParent(d->storage); it.value()->hide(); }
     for (const auto& bars : {d->paneTopBars, d->paneBottomBars})
-        for (auto bar : bars) if (bar) { bar->setParent(d->storage); bar->hide(); }
+        for (auto it = bars.cbegin(); it != bars.cend(); ++it)
+            if (it.value() && !mounted(it.key())) { it.value()->setParent(d->storage); it.value()->hide(); }
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->hide(); }
     QSet<PaneId> livePanes;
     for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it)
