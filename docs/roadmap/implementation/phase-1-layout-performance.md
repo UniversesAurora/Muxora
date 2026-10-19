@@ -11,6 +11,8 @@
 
 **步骤顺序**：1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8；1.9、1.10 与其余步骤独立。
 
+**基准的实际跑法（1.4–1.6）**：与 1.1–1.3 相同（`bench-release` 构建、offscreen、100／500／1000 档、每场景 30 次、不含 `cycle`），由临时脚本按 `bench.ps1` 的配置构建后运行。1.4-before 在合并后的 `main`（`2efe450`）上重新测量：1.3-after 那次运行之后 `main` 又合入了状态栏高度改动，模块代码不完全相同。之后每一步的 before 就是上一步的 after（代码相同，没有重跑）。运行期间不编译，其他工作只读写文件。1.6b 的最终 after 用 `pwsh ./tools/bench.ps1 -Name 1.6b-after` 跑完整基准（含 `cycle`），这时一次只要 30 分钟左右。
+
 **基准的实际跑法（1.1–1.3）**：完整的 `tools/bench.ps1` 一次约 3.4 小时，其中 1000 次“添加 + 关闭”的 `cycle` 场景在 1000 个标签时单独约 2.2 小时，而且不受 `-Repeat` 影响。1.1–1.3 不涉及这个场景，所以按 `bench.ps1` 相同的配置构建 `out/build/bench-release`，再直接运行基准程序：`--tabs 100,500,1000 --repeat 30`，场景为 create、close、move、split、ratio、keys、save（不含 cycle），平台 offscreen。每次约 37 分钟，前后两次在同一台机器上连续运行，运行期间不做大规模编译（1.1-before 期间编译过两次单文件的 `toJson()` 对比程序）。基准程序记录的提交标签是运行时工作区的状态，`-dirty` 表示当时步骤代码尚未提交，内容与随后的提交相同。
 
 ---
@@ -232,7 +234,13 @@
 
 **验证**：`window-system.movement`、`window-system.pane-minimum`、`window-system.pinned-ui`；基准 ratio 场景。
 
-**状态**：未开始。
+**状态**：已完成（提交 `799b125`）。实现与核对结果：
+
+- 第 4 条按“公开最小查询”处理：`LayoutModel::NodeOwner` 与 `ownerOfNode()` 移到公开区，头文件注释写明只描述布局树、已提交模型上 O(1)。索引无效时（默认构造的模型、测试中作废索引的副本）改为扫描，不再直接返回空。模块 README 增加一段说明，外部宿主夹具在恢复布局后对未知 ID、各窗口中央树和各标签窗格树的分割节点各调用一次。
+- `layout.setRatio` 只查所属标签视图或窗口表面的映射，`isVisibleTo(owner)` 判断和 `QSignalBlocker` 保留。中央树、固定树的分割器都在 `buildTree()` 中登记；固定区域包装用的分割器没有分割节点，不登记。
+- 新增 `ratioCommandUpdatesOnlyTheOwningSplitter`（标签节点、中央节点两行：被修改的分割器按比例变化且对象不变，另外两个分割器的 `sizes()` 不变）。
+- 验证：`model`（103 行）、`movement`（47 行）、`pane-minimum`、`pinned-ui` 通过。外部宿主夹具在 1.6 完成后与安装导出一起验证（见 1.6 状态）。
+- 基准（`bench-1.4-before.json`／`-after.json`）：1000 个标签时 ratio p50 6.2 ms → 5.1 ms、p95 11.3 ms → 9.8 ms；100 个标签 p95 2.3 ms → 2.1 ms。剩下的时间主要是 `setSizes()` 本身带来的子控件布局，不再随视图数查找。close／move／split 不变（约 4.0 s）。
 
 ---
 
@@ -278,16 +286,23 @@
 
 **完成标准**：
 
-- [ ] 新测试在本步实现前失败（框和分割器指针会变化），实现后通过。
-- [ ] 全量无新增失败。
-- [ ] 基准中 close／move 场景下降，或说明没有下降的原因（`TabContent` 仍在改挂，1.6 之后才见效）。
+- [x] 新测试在本步实现前失败（框和分割器指针会变化），实现后通过。
+- [x] 全量无新增失败。1.5 提交时漏跑了 `pinned-ui`，它的两行从本步起失败，见 1.6 状态中的用例修订。
+- [x] 基准中 close／move 场景下降，或说明没有下降的原因（`TabContent` 仍在改挂，1.6 之后才见效）。
 
 **风险**：
 
 - 焦点投影（`FocusProjection`）在 `rebuild()` 开头 `restore()`；复用路径也必须先 `restore()` 再 `setFocusedPane()`，否则窗格全屏状态会残留。
 - `geometryUpdateDepth` 期间的延迟删除逻辑只在真正重建时需要，复用路径不涉及。
 
-**状态**：未开始。
+**状态**：已完成（提交 `fbafdef`）。实现与核对结果：
+
+- 记录的构建输入合成一个 `BuiltPane` 列表（窗格、内容、上栏、下栏，按叶子顺序），另记树指针和分割条宽度。`canReuse()` 还要求内容控件仍挂在原来的框里，被别处移走的内容会触发重建。
+- 复用路径先 `focusProjection_.restore()`（`rebuild()` 第一行，原样保留），再同步活动窗格和 `setFocusedPane()`。
+- `refresh()` 先算出可复用的标签，再只收回其余标签的内容和窗格栏。如果判定可复用之后树又变了（回调中修改模型），`rebuild()` 在删除旧框之前把仍挂在其中的内容和栏收回存储控件，不会经由旧框删除活内容。
+- `view_reuse_test.cpp` 新套件标为 `desktop`（后续用例要显示窗口）。在上一提交上运行：`unrelatedTabsKeepTheirViewWidgets`、`changedTreeRebuildsOnlyThatTab` 失败，`themeMetricChangeRebuilds` 通过（它防止复用吞掉主题变化），记录在 `out/diagnostics/1.5-view-reuse-before.txt`。实现后 5 行通过。用例在失败时曾解引用已删除的框（比较 `QSet<QWidget*>` 时 QtTest 会打印对象名），改为通过 `QPointer` 比较。
+- 验证：`view-reuse`、`widgets`、`pane-settings`、`pane-bar-policy`、`pane-minimum`、`movement`、`focus-mode`、`tab-creation`、`tab-group`、`memory-lifecycle` 通过。`drag-interaction` 在 ctest 中有一行（`escapeCancelsBeforeAnyContentTransfer`）失败一次，单独重跑整套 3 次、该行 10 次均通过，记录在 `out/diagnostics/1.5-drag-interaction-first.txt`，按间歇性桌面用例处理。
+- 基准（`bench-1.5-after.json`）：1000 个标签 close p95 3.97 s → 3.94 s、move 3.96 s → 3.92 s、split 4.02 s → 3.81 s，没有明显下降。原因如计划所料：每次 `refresh()` 仍把全部 `TabContent` 收回存储控件再挂回、并重建全部 `GroupTabs`；1.6 的测量进一步表明，主要成本是这些子树在存储控件和窗口之间改挂（见 1.6 状态）。
 
 ---
 
@@ -344,7 +359,57 @@
 - `DragController` 持有对组控件或预览的引用。复用后 `releaseForMutation()` 的语义不变，但需要检查 `drag_controller.cpp` 中是否缓存了 `GroupTabs*`；若有，确认复用不会让它指向错误状态。
 - 焦点投影把非目标分支隐藏；复用的组可能处于被隐藏状态，重建后要通过 `applyFocusScope()` 重新计算，不能假设可见。
 
-**状态**：未开始。
+**状态**：已完成。1.6a 提交 `16e7098`，1.6b 提交 `7c2ce8d`，另有一个测试修订提交 `0ece39a`（见下文，需要评审）。
+
+1.6a 实现与计划的差别：
+
+- `takePage()` 从标签条移除标签时屏蔽 `currentChanged`（只在表面重建时使用，旧组随即丢弃），页面已经离开栈时返回空。`DragTabBar` 增加 `tabRemoved()`，让颜色装饰的下标跟随标签移动。
+- 第 3 条的判断用视图当前的顶层窗口与目标窗口控件比较（`view->window()`），不读属性。
+- 没有被新组接收的页面（标签移到了自动隐藏侧栏）在删除旧根之前收回存储控件，`deferredRootDeletionKeepsCarriedPages` 覆盖这种情况。
+- 视图保持挂载时，在可见状态下重建窗格树；`QLayout` 插入可见父控件会把新树的显示推迟到下一轮事件循环，所以 `TabContent::rebuild()` 在可见时立即显示新树（`mountedRebuildIsVisibleImmediately`）。
+
+1.6b 实现与计划的差别（较大，需要评审）：
+
+- **组签名比计划多**：除标签列表、活动标签、位置、侧边外，还包括标题、颜色、图标开关、`TabAppearance` 和主题修订号。计划是复用后调用 `setTabMetadata()`、`setAppearance()` 更新元数据，但这两个函数每次都会触发 `updateBarGeometry()`，对 1000 个标签逐个调用正好抵消复用的收益。现在元数据变化（例如重命名、改颜色）只重建所在的组。`setTheme()` 原来不刷新视图，现在递增一个主题修订号，下一次刷新重建全部标签条。拖拽进行中一律重建（标签条上有拖动标签、插入预览、紧凑显示等临时状态）。
+- **按计划实现后 close 只降到 3.2 s**（`bench-1.6b-intermediate-b966355.json`，提交 `b966355` 后被并入 `7c2ce8d`）。临时计时显示：500 个标签时一次表面重建 730 ms，其中 633 ms 是把复用的 `GroupTabs` 加入新分割器。窗口设置了样式表，任何子树改挂都会让 Qt 为整棵子树重新解析样式、字体和调色板；即使在同一窗口内移动，每个标签的页面子树也要约 0.5 ms。这也是原来约 4 s 的主要来源：每次刷新都把全部 `TabContent` 从存储控件挂回窗口。
+- **因此增加“结构不变时就地更新”**：表面记录分割结构（中央树和固定树的节点 ID、方向、叶子组，不含比例）。结构不变时保留根、全部分割器和未变化的标签条，变化的组新建后用 `QSplitter::replaceWidget()` 换入原位置，侧栏轨道照旧重建，比例变化的节点直接对现有分割器 `setSizes()`。结构变化（新建或删除组、固定／取消固定、移动组）时才构建新树，并把未变化的标签条移入，这条路径仍与标签总数成正比（见“发现”）。
+- **布局过程中的改挂**：宿主可能在内容的 resize 回调里修改布局，这时外层分割器正在遍历自己的子控件列表。把复用的标签条从这样的分割器中移走会改动它正在遍历的列表；`pinned-ui` 的 `restoringPinnedExtentsMayReplaceUiFromContentResize` 因此崩溃过（`out/diagnostics/1.6b-pinned-ui-first.txt`）。处理方式：就地更新只用 `replaceWidget()`（不改列表）；结构性重建时，若处于组分割器的布局过程中，复用的标签条先用 `replaceWidget()` 换出（留下空占位控件随旧根删除），否则直接移动。“布局过程”由新的 `SplitterLayoutPass` 计数：组分割器及其手柄在处理事件期间、`layout.setRatio`、固定区域恢复和焦点投影调用 `setSizes()` 期间计入，`WindowManager` 的几何更新深度也算在内。
+- 回调捕获的是组 ID、窗口 ID、表面和标签条自己的 `bar`，复用后不需要重设。`drag_controller.cpp` 不缓存 `GroupTabs*`，只通过表面的查询函数访问。
+
+测试：
+
+- `view-reuse` 共 14 行通过。计划中的 `tabViewsStayInTheirWindow` 要求“组 A、B 所有剩余 `TabContent` 的 `ParentChange` 计数为 0”。组 A 关闭了一个标签，签名变化，它的标签条要重建，剩余页面必然从旧标签条移到新标签条。现在的断言是：所有剩余视图从未以存储控件为 parent、对象不变；未变化的组 B 标签条对象不变、页面 `ParentChange` 为 0。`crossWindowMoveReparentsOnlyTheMovedTab` 同样处理：任何窗格内容控件都没有 `ParentChange`，只有被移动的标签视图跨窗口，未变化的组不受影响。
+- `mutationFromSplitterLayoutKeepsReusedStrip`：分别由 `layout.setRatio` 和 Qt 发出的分割器 resize 驱动，回调中“关闭另一组的一个标签”（就地替换）或“关闭另一组的最后一个标签”（结构变化）。去掉 `SplitterLayoutPass` 判断后，两个结构变化行和 `pinned-ui` 崩溃（`out/diagnostics/1.6b-*-without-layout-pass.txt`）。
+- `reusedStripFollowsMetadataAndTheme`：重命名只重建所在组，另一组的标签条不变；改主题后下一次刷新重建全部标签条，图标尺寸跟随新主题。
+
+现有用例修订（提交 `0ece39a`，需要评审）：`pinned_ui_test` 的 `restoringPinnedExtentsMayReplaceUiFromContentResize(rebuild-surface)` 在固定窗格的 resize 回调中新建相邻组，原断言该窗格的 `PaneHost` 被替换（隐藏、内容移出、稍后删除）。新建相邻组不改变这个标签的窗格树，而“无关操作不重建、不改挂内容”正是本阶段的目标，所以这三条断言测试的是旧的全量重建实现。依据：阶段目标和 1.5 的计划；首次失败记录 `out/diagnostics/1.6a-pinned-ui-first.txt`。保留覆盖的方式：新增 `rebuild-tab` 行，在同一回调中拆分该标签自己的窗格，原有的“几何更新期间延迟删除旧框”断言原样作用于这一行；`rebuild-surface` 行改为断言框保留、内容仍在其中，且表面的固定区域分割器仍在布局返回后被替换。1.6b 就地更新后，`rebuild-tab` 行的固定区域改为断言保留（只有窗格树变化，分割结构不变），这一行是本组新增的，`rebuild-surface` 行仍要求替换。其他行不变。
+
+验证：
+
+- 1.6a：全部 55 个窗口模块套件中 52 个通过；`native-frame` 被 Claude 桌面窗口遮挡（`WindowFromPoint` 命中 0x1c005c4，进程 `claude`，矩形 402,6–1799,1032）；`chrome-interaction` 的 `overflowToggleRestoresHoverAndPressState` 失败一次，单独重跑 58 行通过；`pinned-ui` 两行即上述修订。首次失败记录 `out/diagnostics/1.6a-*-first.txt`。
+- 1.6b：全部 55 个窗口模块套件通过（这次 `native-frame` 也通过）。
+- 本组完成后的 Release 全量（`tools/build.ps1 -Configuration Release -Test`）：60 个套件中 59 个通过，2195 行通过、20 行失败，失败全部在 `native-frame`，同样命中 Claude 窗口 0x1c005c4，记录在 `out/diagnostics/1.6-full-release-native-frame-first.txt` 与 `out/test-results/phase1-1.6-full-release-summary.json`。随后 `-Package` 覆盖了本工作区的 `out/package/muxora-preview/`，`application-exit-test.ps1` 通过。独立模块按 Release 构建（不含测试）并安装，外部宿主夹具（含 `ownerOfNode()` 调用）构建并通过。
+
+基准（1000 个标签 p50／p95；`bench-1.4-before.json` 为改动前）：
+
+| 场景 | 改动前 | 1.6a 后 | 1.6b 后 |
+| --- | --- | --- | --- |
+| 关闭中间一个标签 | 3.88 s／4.01 s | 3.60 s／3.63 s | 55 ms／65 ms |
+| 移动一个标签到另一组 | 3.91 s／4.00 s | 3.59 s／3.62 s | 80 ms／103 ms |
+| 拆分一个窗格 | 3.90 s／4.02 s | 3.63 s／3.74 s | 67 ms／89 ms |
+| 创建到 1000 个标签（1 次） | 1303 s | 1257 s | 92 s |
+| 一次“添加 + 关闭”（1000 次） | 8.04 s／8.28 s（阶段 0 基线） | 未测 | 97 ms／126 ms |
+
+- 100、500 个标签时 close p95 为 22 ms、46 ms（改动前 72 ms、972 ms）。1.6a 单独时 100 个标签反而略慢（close p95 72 ms → 84 ms），因为它仍重建全部标签条，又多了逐页取出的开销。
+- 1.6b 后 ratio 场景 1000 个标签 p50 2.2 ms、p95 17.4 ms（1.4 后为 5.1／9.8 ms），save 场景 p95 23 ms（之前约 12 ms，这部分代码没有改动）。两者只在这一次运行中出现，原因没有查明，记为待复测，不算作改进或退化。
+- 1000 个标签时每标签私有提交 122 KiB（改动前）→ 83 KiB，控件数不变（每标签 3.92 个）。
+- 完成标准中“close p95 显著低于基线”已达到；`ParentChange` 计数测试按上面的解释通过。结构变化（新建或删除组）的成本仍与标签总数成正比，没有单独计时。
+
+### 发现（1.4–1.6）
+
+- **改挂成本**：在设置了样式表的窗口里，任何控件子树改挂都会让 Qt 为整棵子树重新解析样式、字体和调色板。1.7 及以后修改视图时，避免为“暂存”而把控件移出窗口。结构变化时的整体重建仍按标签总数付这笔成本；如果“新建／删除组”在大量标签下仍然偏慢，可以把就地更新扩展到结构变化（只替换变化的分割子树）；[性能计划 §4](../performance-plan.md#4-主题从样式表转向调色板与-proxystyle) 的去样式表方案也会降低这笔成本。
+- **布局过程中的重入**：组分割器在布局子控件期间，宿主回调可能同步修改布局。`SplitterLayoutPass` 只覆盖组级分割器。标签内部的窗格分割器原来就存在同类风险：回调修改同一标签的窗格树时，`TabContent::rebuild()` 会在 `geometryUpdateDepth` 为 0 时同步删除旧树。这与本组改动无关，没有处理，也没有专门的用例。
+- **循环内存**：阶段 0 记录的“1000 个标签循环 1000 次后私有提交增加 37 MiB”不是泄漏，而是分配器保留。依据见 [性能计划 §6](../performance-plan.md#6-测量与预算)。
 
 ---
 
