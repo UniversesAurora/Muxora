@@ -28,8 +28,10 @@ public:
 
 protected:
     void contextMenuEvent(QContextMenuEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    void updateHeight();
     QPointer<WindowManager> manager_;
     WindowId window_;
     QLabel* message_;

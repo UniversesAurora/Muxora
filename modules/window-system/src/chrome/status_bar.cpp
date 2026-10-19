@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QSet>
 #include <QTimer>
+#include <algorithm>
 
 namespace window_system {
 
@@ -28,7 +29,20 @@ WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, 
     auto* row = new QHBoxLayout(this);
     row->setContentsMargins(10, 3, 10, 3); row->setSpacing(10);
     row->addWidget(message_, 1); row->addWidget(workspace_);
-    setMinimumHeight(fontMetrics().height() + 6);
+    updateHeight();
+}
+
+void WorkspaceStatusBar::updateHeight()
+{
+    // Matches VS Code's 22 px status bar; a larger font still expands it.
+    const int metric = manager_ ? manager_->theme().metrics.statusHeight : ThemeMetrics{}.statusHeight;
+    setFixedHeight(std::max(metric, fontMetrics().height() + 6));
+}
+
+void WorkspaceStatusBar::changeEvent(QEvent* event)
+{
+    QLabel::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) updateHeight();
 }
 
 QStringList WorkspaceStatusBar::itemIds() { return {QStringLiteral("message"), QStringLiteral("workspace")}; }

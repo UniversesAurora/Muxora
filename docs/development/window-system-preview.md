@@ -68,6 +68,16 @@ pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+### 状态栏高度（2026-10-19）
+
+全局状态栏按 VS Code 改为 22 个逻辑像素；字体更大时仍随字体撑高，不裁切文字。`ThemeMetrics::statusHeight`（Lua 中为 `status_height`）现在真正控制这个高度：此前它写的是 23 却没有被使用，实际高度由字体决定，默认字体下为 21。审查记录中“状态栏高 23”的说法有误，已更正。
+
+新增回归 `StatusBarTest::heightFollowsThemeMetricAndFont`：在旧代码上失败（默认值为 23），修改后连续 3 次通过。测试中发现给窗口设置更大字体时，字体不会传到状态栏，这是原有行为，本次没有改动，测试改为直接给状态栏设置字体。
+
+Release 全量运行一次（59 个套件）：57 个通过，2169 个实际测试行通过，21 行失败，集中在两个依赖真实桌面的套件，与上一次审查时的情况相同。`native-frame` 20 行：检查点上的窗口是 Claude 桌面应用（句柄 `0x1c005c4`），测试窗口被遮挡。`floating-panel` 1 行：窗口曝光等待超时，单独重跑 3 次均为 22 行全部通过。修改前另跑了状态栏和受纵向布局影响的 27 个相关套件，除上述两类外都通过。汇总为 `out/test-results/statusbar-22-summary.json`、`statusbar-22-full.xml`，失败记录为 `out/diagnostics/statusbar-22-*`。`native-frame` 仍需在没有遮挡的桌面上重跑确认。
+
+固定 Release 已覆盖 `out/package/muxora-preview/muxora.exe`，部署检查见提交说明。没有执行 Debug 矩阵、独立模块构建、外部宿主夹具、DPI 缩放检查。
+
 ### 基线与度量工具（2026-10-18）
 
 阶段 0 只增加测试与度量工具，应用行为、公开 API 和默认 Release 编译选项都没有变化。

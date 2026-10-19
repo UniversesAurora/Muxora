@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <QTest>
+#include <algorithm>
 #include <functional>
 #include <memory>
 
@@ -53,6 +54,7 @@ private slots:
     void statusContentReflectsMessagesAndCurrentTabs();
     void menuActionsDoNotOutliveTheManager();
     void controlVisibilityCallbacksMayDeferManagerDestruction();
+    void heightFollowsThemeMetricAndFont();
 };
 
 void StatusBarTest::contextMenuReflectsEachControlAndCommandsUpdateIt()
@@ -186,6 +188,26 @@ void StatusBarTest::controlVisibilityCallbacksMayDeferManagerDestruction()
     QVERIFY(!retained); QVERIFY(!retainedWindow); QVERIFY(!retainedBar); QVERIFY(!retainedMessage);
     QCOMPARE(managerDestroyed, 1); QCOMPARE(barDestroyed, 1);
     QCoreApplication::processEvents(); QCOMPARE(pendingCallbacks, 0);
+}
+
+void StatusBarTest::heightFollowsThemeMetricAndFont()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    auto* bar = status(manager, window); QVERIFY(bar);
+    // VS Code's 22 px bar is the default whenever the font fits inside it.
+    QCOMPARE(ThemeMetrics{}.statusHeight, 22);
+    QCOMPARE(bar->height(), std::max(22, bar->fontMetrics().height() + 6));
+    auto theme = manager.theme(); theme.metrics.statusHeight = 30; manager.setTheme(theme);
+    QTRY_COMPARE(bar->height(), 30);
+    theme.metrics.statusHeight = 22; manager.setTheme(theme);
+    QTRY_COMPARE(bar->height(), std::max(22, bar->fontMetrics().height() + 6));
+    // A larger font expands the bar instead of clipping its text.
+    auto font = bar->font(); font.setPointSizeF(std::max(qreal(24), font.pointSizeF() * 2));
+    bar->setFont(font);
+    QTRY_VERIFY(bar->fontMetrics().height() + 6 > 22);
+    QTRY_COMPARE(bar->height(), bar->fontMetrics().height() + 6);
 }
 
 QTEST_MAIN(StatusBarTest)

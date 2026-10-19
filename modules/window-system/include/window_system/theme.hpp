@@ -15,7 +15,7 @@ struct ThemeMetrics {
     int controlHeight = 24;
     int headerHeight = 32;
     int tabHeight = 27;
-    int statusHeight = 23;
+    int statusHeight = 22; // Minimum; larger fonts still expand the global status bar.
     int edgeThickness = 22;
     int paneHeaderHeight = 22;
     int splitterWidth = 1;
