@@ -11,6 +11,8 @@
 
 **步骤顺序**：1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8；1.9、1.10 与其余步骤独立。
 
+**基准的实际跑法（1.1–1.3）**：完整的 `tools/bench.ps1` 一次约 3.4 小时，其中 1000 次“添加 + 关闭”的 `cycle` 场景在 1000 个标签时单独约 2.2 小时，而且不受 `-Repeat` 影响。1.1–1.3 不涉及这个场景，所以按 `bench.ps1` 相同的配置构建 `out/build/bench-release`，再直接运行基准程序：`--tabs 100,500,1000 --repeat 30`，场景为 create、close、move、split、ratio、keys、save（不含 cycle），平台 offscreen。每次约 37 分钟，前后两次在同一台机器上连续运行，运行期间不做大规模编译（1.1-before 期间编译过两次单文件的 `toJson()` 对比程序）。基准程序记录的提交标签是运行时工作区的状态，`-dirty` 表示当时步骤代码尚未提交，内容与随后的提交相同。
+
 ---
 
 ## 1.1 模型反向索引
@@ -75,13 +77,20 @@
 
 **完成标准**：
 
-- [ ] 上述套件全部通过，新测试覆盖全部列出的操作。
-- [ ] 基准中 1000／2000 个标签的 close、move、split p95 下降（写出数字）。
-- [ ] `toJson()` 输出与改动前逐字节相同（用现有快照测试或一次手工对比确认）。
+- [x] 上述套件全部通过，新测试覆盖全部列出的操作。
+- [ ] 基准中 1000／2000 个标签的 close、move、split p95 下降（写出数字）。未达到，见状态。
+- [x] `toJson()` 输出与改动前逐字节相同（用现有快照测试或一次手工对比确认）。
 
 **风险**：遗漏某条直接修改路径会让索引过期。第 5 条的一致性检查能在测试中暴露这类遗漏；不要因为它“慢”而去掉。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Add LayoutModel reverse lookup indexes”）。实现与上面的差别和核对结果：
+
+- 三张表由同一个私有函数 `scanIndex()` 计算，`rebuildIndex()` 和 `validate()` 的一致性检查都调用它。`ownerOfNode()` 只覆盖中央树、固定树和窗格树的分割节点；固定侧的恢复骨架（`pinnedRestoreLayouts`）节点有独立标识，`setSplitRatio()` 原本就找不到它们，所以不进入索引。
+- 第 4 条的 grep 结果：所有公开修改函数都经过 `transact()` 或 `fromJson()`；其余直接写记录的位置都在 `*Unchecked`、`synchronizePinnedLayouts()`、`reconcilePinnedRestoreLayouts()`、`nextTabOrder()` 等私有函数里，只在候选副本上调用。
+- 测试通过头文件中声明的 `friend struct LayoutModelTestAccess` 读取索引状态，宿主不定义这个类型。
+- 新增 `indexFollowsEveryMutation`、`failedTransactionKeepsIndex`、`validateReportsAStaleIndex`（人为写入错误索引后 `validate()` 返回 “The lookup index is stale.”）。
+- 验证：`model`（100 行）、`tab-ordering-model`、`hierarchy-conversion`、`pinned-layout`、`pinned-positions`、`movement-model` 六个套件全部通过。`toJson()` 逐字节对比：用临时驱动程序分别链接 `ce8df81` 与本步的模型源码，读入同一份 24 个标签、两个窗口、含固定与自动隐藏组的布局，执行 180 次激活、分割比例、重命名、关闭操作并逐次输出 `toJson()` 与 revision，两份输出完全相同；把 `orderCounter` 改到 2^53 − 3 再跑一遍（经过计数回绕）也相同。
+- 基准（`bench-1.1-before.json`／`-after.json`，100／500／1000 个标签，每场景 30 次，跳过 `cycle` 场景，见阶段说明）：1000 个标签时 close p95 3.99 s → 3.93 s、move 4.01 s → 4.07 s、split 3.95 s → 4.04 s，属于测量波动，**完成标准中“p95 下降”没有达到**。原因是这三项的耗时几乎全部在 `refresh()` 重建全部标签视图（1.4–1.6 处理），模型查询占比很小；100 个标签时三项 p95 从 89–100 ms 降到 68–71 ms，但前一次运行在构建后立即开始，这个差别同样可能是机器状态造成的。ratio、keys、save 无变化。
 
 ---
 

@@ -285,6 +285,7 @@ QVector<WindowId> LayoutModel::windowOrder() const { return windowOrder_; }
 quint64 LayoutModel::revision() const noexcept { return revision_; }
 GroupId LayoutModel::groupForTab(TabId id) const
 {
+    if (indexValid_) return tabGroup_.value(id);
     for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator)
         if (iterator->tabs.contains(id)) return iterator.key();
     return {};
@@ -327,9 +328,16 @@ QVector<PaneId> LayoutModel::panes(TabId id) const
 TabId LayoutModel::tabForPane(PaneId id) const
 {
     if (id.isNull()) return {};
+    if (indexValid_) return paneTab_.value(id);
     for (auto it = tabs_.cbegin(); it != tabs_.cend(); ++it)
         if (findLeaf(it.value().panes, id)) return it.key();
     return {};
+}
+std::optional<LayoutModel::NodeOwner> LayoutModel::ownerOfNode(QUuid node) const
+{
+    const auto iterator = nodeOwner_.constFind(node);
+    if (!indexValid_ || iterator == nodeOwner_.cend()) return std::nullopt;
+    return iterator.value();
 }
 bool LayoutModel::familyHasTabs(FamilyId id) const
 {
@@ -338,13 +346,53 @@ bool LayoutModel::familyHasTabs(FamilyId id) const
     return false;
 }
 
+void LayoutModel::scanIndex(QHash<TabId, GroupId>& tabGroup, QHash<PaneId, TabId>& paneTab,
+                            QHash<QUuid, NodeOwner>& nodeOwner) const
+{
+    tabGroup.clear();
+    paneTab.clear();
+    nodeOwner.clear();
+    tabGroup.reserve(tabs_.size());
+    paneTab.reserve(tabs_.size());
+    for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator)
+        for (const auto tabId : iterator->tabs) tabGroup.insert(tabId, iterator.key());
+    const std::function<void(const LayoutTree&, const NodeOwner&)> splits = [&](const LayoutTree& tree,
+                                                                                 const NodeOwner& owner) {
+        if (!tree || tree->isLeaf()) return;
+        nodeOwner.insert(tree->id, owner);
+        splits(tree->first, owner);
+        splits(tree->second, owner);
+    };
+    QVector<PaneId> panes;
+    for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
+        panes.clear();
+        collect(iterator->panes, panes);
+        for (const auto pane : std::as_const(panes)) paneTab.insert(pane, iterator.key());
+        splits(iterator->panes, {NodeOwner::Kind::Tab, iterator.key()});
+    }
+    for (auto iterator = windows_.cbegin(); iterator != windows_.cend(); ++iterator) {
+        splits(iterator->central, {NodeOwner::Kind::Central, iterator.key()});
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom})
+            splits(iterator->pinnedLayouts[size_t(edge)], {NodeOwner::Kind::Pinned, iterator.key(), edge});
+    }
+}
+void LayoutModel::rebuildIndex()
+{
+    scanIndex(tabGroup_, paneTab_, nodeOwner_);
+    indexValid_ = true;
+}
+
 OperationResult LayoutModel::transact(const std::function<OperationResult(LayoutModel&)>& operation)
 {
     LayoutModel candidate = *this;
+    // Operations edit the candidate's records directly; lookups scan until
+    // the committed state rebuilds the index below.
+    candidate.indexValid_ = false;
     auto result = operation(candidate);
     if (!result) return result;
     candidate.synchronizePinnedLayouts();
     candidate.reconcilePinnedRestoreLayouts();
+    candidate.rebuildIndex();
     result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;
@@ -1480,6 +1528,15 @@ OperationResult LayoutModel::validate() const
     }
     for (auto id : treeIds)
         if (placedPanes.contains(id)) return failure("A pane identity collides with a tree node.");
+    if (indexValid_) {
+        // A mutation path that skipped rebuildIndex() leaves stale lookups.
+        QHash<TabId, GroupId> tabGroup;
+        QHash<PaneId, TabId> paneTab;
+        QHash<QUuid, NodeOwner> nodeOwner;
+        scanIndex(tabGroup, paneTab, nodeOwner);
+        if (tabGroup != tabGroup_ || paneTab != paneTab_ || nodeOwner != nodeOwner_)
+            return failure("The lookup index is stale.");
+    }
     return success();
 }
 
@@ -1686,6 +1743,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         candidate.tabs_[tab].openedOrder = candidate.tabs_[tab].visitedOrder = order;
     }
     for (const auto window : legacyPinnedLayouts) candidate.synchronizePinnedLayouts(window);
+    candidate.rebuildIndex();
     auto result = candidate.validate();
     if (!result) return result;
     candidate.revision_ = revision_ + 1;

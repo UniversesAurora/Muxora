@@ -8,6 +8,69 @@
 
 using namespace window_system;
 
+namespace window_system {
+struct LayoutModelTestAccess {
+    static bool indexValid(const LayoutModel& model) { return model.indexValid_; }
+    static void corruptTabGroup(LayoutModel& model, TabId tab, GroupId group) { model.tabGroup_.insert(tab, group); }
+    // "<kind>:<owner>[:<edge>]", or empty when the index has no entry.
+    static QString owner(const LayoutModel& model, QUuid node)
+    {
+        const auto owner = model.ownerOfNode(node);
+        if (!owner) return {};
+        switch (owner->kind) {
+        case LayoutModel::NodeOwner::Kind::Central: return "central:" + owner->owner.toString();
+        case LayoutModel::NodeOwner::Kind::Pinned:
+            return "pinned:" + owner->owner.toString() + ":" + QString::number(int(owner->edge));
+        case LayoutModel::NodeOwner::Kind::Tab: return "tab:" + owner->owner.toString();
+        }
+        return {};
+    }
+};
+} // namespace window_system
+
+namespace {
+
+void expectedOwners(const LayoutTree& tree, const QString& owner, QHash<QUuid, QString>& owners)
+{
+    if (!tree || tree->isLeaf()) return;
+    owners.insert(tree->id, owner);
+    expectedOwners(tree->first, owner, owners);
+    expectedOwners(tree->second, owner, owners);
+}
+
+// Compares every indexed lookup with a scan of the public records. Seen IDs
+// include removed tabs and panes, which must no longer resolve.
+QString indexMismatch(const LayoutModel& model, const QSet<TabId>& seenTabs, const QSet<PaneId>& seenPanes,
+                      const QSet<QUuid>& seenNodes)
+{
+    if (!LayoutModelTestAccess::indexValid(model)) return "index invalid";
+    QHash<TabId, GroupId> groups;
+    QHash<PaneId, TabId> panes;
+    QHash<QUuid, QString> owners;
+    for (const auto& group : model.groups())
+        for (const auto tab : group.tabs) groups.insert(tab, group.id);
+    for (const auto& tab : model.tabs()) {
+        for (const auto pane : model.panes(tab.id)) panes.insert(pane, tab.id);
+        expectedOwners(tab.panes, "tab:" + tab.id.toString(), owners);
+    }
+    for (const auto& window : model.windows()) {
+        expectedOwners(window.central, "central:" + window.id.toString(), owners);
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom})
+            expectedOwners(window.pinnedLayouts[size_t(edge)],
+                           "pinned:" + window.id.toString() + ":" + QString::number(int(edge)), owners);
+    }
+    for (const auto tab : seenTabs)
+        if (model.groupForTab(tab) != groups.value(tab)) return "groupForTab " + tab.toString();
+    for (const auto pane : seenPanes)
+        if (model.tabForPane(pane) != panes.value(pane)) return "tabForPane " + pane.toString();
+    for (const auto node : seenNodes)
+        if (LayoutModelTestAccess::owner(model, node) != owners.value(node)) return "ownerOfNode " + node.toString();
+    if (const auto result = model.validate(); !result) return result.error;
+    return {};
+}
+
+} // namespace
+
 class LayoutModelTest final : public QObject {
     Q_OBJECT
 
@@ -56,6 +119,9 @@ private slots:
     void malformedDirectionalPeekPoliciesAreAtomic();
     void directionalPeekPolicyBoundariesRoundTrip_data();
     void directionalPeekPolicyBoundariesRoundTrip();
+    void indexFollowsEveryMutation();
+    void failedTransactionKeepsIndex();
+    void validateReportsAStaleIndex();
 };
 
 void LayoutModelTest::recursiveGroupsKeepTabsAndCollapseEmptyBranches()
@@ -1030,6 +1096,130 @@ void LayoutModelTest::directionalPeekPolicyBoundariesRoundTrip()
     LayoutModel restored; QVERIFY(restored.fromJson(snapshot));
     QCOMPARE(restored.toJson(), snapshot); QCOMPARE(restored.peekSizePolicy(tab, Edge::Right), policy);
     QCOMPARE(restored.peekSizePolicy(tab, Edge::Bottom), policy); QVERIFY(restored.validate());
+}
+
+namespace {
+void collectSplits(const LayoutTree& tree, QSet<QUuid>& nodes)
+{
+    if (!tree || tree->isLeaf()) return;
+    nodes.insert(tree->id);
+    collectSplits(tree->first, nodes);
+    collectSplits(tree->second, nodes);
+}
+} // namespace
+
+void LayoutModelTest::indexFollowsEveryMutation()
+{
+    LayoutModel model;
+    QSet<TabId> seenTabs;
+    QSet<PaneId> seenPanes;
+    QSet<QUuid> seenNodes;
+    const auto check = [&](LayoutModel& checked, const char* step) {
+        for (const auto& tab : checked.tabs()) {
+            seenTabs.insert(tab.id);
+            for (const auto pane : checked.panes(tab.id)) seenPanes.insert(pane);
+            collectSplits(tab.panes, seenNodes);
+        }
+        for (const auto& window : checked.windows()) {
+            collectSplits(window.central, seenNodes);
+            for (const auto& tree : window.pinnedLayouts) collectSplits(tree, seenNodes);
+            // Restore skeletons have their own node identities and no owner.
+            for (const auto& tree : window.pinnedRestoreLayouts) collectSplits(tree, seenNodes);
+        }
+        const auto mismatch = indexMismatch(checked, seenTabs, seenPanes, seenNodes);
+        QVERIFY2(mismatch.isEmpty(), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(step), mismatch)));
+    };
+#define CHECK_INDEX(step) do { check(model, step); if (QTest::currentTestFailed()) return; } while (false)
+    const auto root = model.createWindow();
+    CHECK_INDEX("createWindow");
+    const auto a = model.addTab(root, "A");
+    const auto b = model.addTab(root, "B");
+    const auto c = model.addTab(root, "C");
+    const auto d = model.addTab(root, "D");
+    const auto e = model.addTab(root, "E");
+    CHECK_INDEX("addTab");
+    QVERIFY(model.moveTab(b, model.groupForTab(a), Placement::Right));
+    CHECK_INDEX("moveTab");
+    const auto split = model.splitPane(a, model.tab(a)->activePane, Placement::Bottom);
+    QVERIFY(!split.isNull());
+    CHECK_INDEX("splitPane");
+    QVERIFY(model.moveTabToEdge(c, Edge::Left, false));
+    CHECK_INDEX("moveTabToEdge auto-hide");
+    QVERIFY(model.moveTabToEdge(d, Edge::Right, true));
+    QVERIFY(model.moveTabToEdge(e, Edge::Right, true));
+    CHECK_INDEX("moveTabToEdge pinned");
+    QVERIFY(model.setTabPinned(d, false));
+    QVERIFY(model.setTabPinned(d, true));
+    CHECK_INDEX("setTabPinned");
+    QVERIFY(model.setSplitRatio(model.window(root)->central->id, 0.3));
+    CHECK_INDEX("setSplitRatio");
+    const auto other = model.createWindow();
+    const auto f = model.addTab(other, "F");
+    CHECK_INDEX("second window");
+    QVERIFY(model.movePane(a, split, f, {}, Placement::Right));
+    CHECK_INDEX("movePane");
+    const auto extracted = model.extractPane(f, split, model.groupForTab(f), Placement::Bottom);
+    QVERIFY(!extracted.isNull());
+    CHECK_INDEX("extractPane");
+    QVERIFY(model.mergeGroups(model.groupForTab(extracted), model.groupForTab(f)));
+    CHECK_INDEX("mergeGroups");
+    const auto retained = model.convertGroupToTab(model.groupForTab(f), Placement::Right);
+    QVERIFY(!retained.isNull());
+    CHECK_INDEX("convertGroupToTab");
+    QVERIFY(!model.convertTabToGroup(retained, Placement::Bottom).isNull());
+    CHECK_INDEX("convertTabToGroup");
+    QVERIFY(model.activatePane(a, model.panes(a).first()));
+    QVERIFY(model.activateTab(b));
+    CHECK_INDEX("activate");
+    const auto floating = model.detachTab(b);
+    QVERIFY(!floating.isNull());
+    CHECK_INDEX("detachTab");
+    QVERIFY(model.closeWindow(other));
+    CHECK_INDEX("closeWindow");
+    QVERIFY(model.removeTab(a));
+    CHECK_INDEX("removeTab");
+    const auto snapshot = model.toJson();
+    QVERIFY(model.fromJson(snapshot));
+    CHECK_INDEX("fromJson(toJson())");
+    LayoutModel restored;
+    QVERIFY(restored.fromJson(snapshot));
+    check(restored, "fromJson into a new model");
+#undef CHECK_INDEX
+}
+
+void LayoutModelTest::failedTransactionKeepsIndex()
+{
+    LayoutModel model;
+    const auto root = model.createWindow();
+    const auto a = model.addTab(root, "A");
+    const auto b = model.addTab(root, "B");
+    QVERIFY(model.moveTab(b, model.groupForTab(a), Placement::Right));
+    const auto pane = model.tab(a)->activePane;
+    const auto node = model.window(root)->central->id;
+    const auto groupA = model.groupForTab(a);
+    const auto groupB = model.groupForTab(b);
+    const auto owner = LayoutModelTestAccess::owner(model, node);
+    QVERIFY(!owner.isEmpty());
+    QVERIFY(!model.moveTab(a, QUuid::createUuid()));
+    QVERIFY(!model.movePane(a, pane, QUuid::createUuid()));
+    QVERIFY(!model.setSplitRatio(node, 2.0));
+    QVERIFY(!model.removeTab(QUuid::createUuid()));
+    QVERIFY(LayoutModelTestAccess::indexValid(model));
+    QCOMPARE(model.groupForTab(a), groupA);
+    QCOMPARE(model.groupForTab(b), groupB);
+    QCOMPARE(model.tabForPane(pane), a);
+    QCOMPARE(LayoutModelTestAccess::owner(model, node), owner);
+    QVERIFY(model.validate());
+}
+
+void LayoutModelTest::validateReportsAStaleIndex()
+{
+    LayoutModel model;
+    const auto root = model.createWindow();
+    const auto a = model.addTab(root, "A");
+    QVERIFY(model.validate());
+    LayoutModelTestAccess::corruptTabGroup(model, a, QUuid::createUuid());
+    QCOMPARE(model.validate().error, QStringLiteral("The lookup index is stale."));
 }
 
 QTEST_GUILESS_MAIN(LayoutModelTest)

@@ -214,7 +214,22 @@ public:
     [[nodiscard]] OperationResult validate() const;
 
 private:
+    // Model tests inspect and invalidate the lookup index; hosts never define it.
+    friend struct LayoutModelTestAccess;
+    // The tree that holds a split node: a window's central tree, one pinned
+    // side tree of a window, or a tab's pane tree.
+    struct NodeOwner {
+        enum class Kind : quint8 { Central, Pinned, Tab } kind = Kind::Central;
+        QUuid owner;            // WindowId (Central/Pinned) or TabId (Tab)
+        Edge edge = Edge::Left; // Pinned only
+        bool operator==(const NodeOwner&) const = default;
+    };
     OperationResult transact(const std::function<OperationResult(LayoutModel&)>& operation);
+    void rebuildIndex();
+    void scanIndex(QHash<TabId, GroupId>& tabGroup, QHash<PaneId, TabId>& paneTab,
+                   QHash<QUuid, NodeOwner>& nodeOwner) const;
+    // Requires a valid index; nullopt for unknown nodes, leaves and restore trees.
+    [[nodiscard]] std::optional<NodeOwner> ownerOfNode(QUuid node) const;
     void synchronizePinnedLayouts(WindowId onlyWindow = {});
     void rememberPinnedLayoutUnchecked(WindowId window, Edge edge);
     void restorePinnedLayoutUnchecked(WindowId window, Edge edge, GroupId group);
@@ -245,6 +260,14 @@ private:
     quint64 orderCounter_ = 0;
     QVector<WindowId> windowOrder_;
     quint64 revision_ = 0;
+    // Reverse lookups derived from the records above. They are not serialized.
+    // transact() invalidates them on its candidate, so an operation in
+    // progress falls back to scanning; every committed state rebuilds them
+    // before validate(), which also checks that they match the records.
+    QHash<TabId, GroupId> tabGroup_;
+    QHash<PaneId, TabId> paneTab_;
+    QHash<QUuid, NodeOwner> nodeOwner_;
+    bool indexValid_ = false;
 };
 
 } // namespace window_system
