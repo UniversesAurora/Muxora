@@ -24,6 +24,8 @@
 
 ## 2. 内置编辑器
 
+> 2026-10-20 修订：编辑器改用 Scintilla + Lexilla（成熟、宽松许可、自带 Qt 控件），按需加载，并同时用于编辑 `settings.json`、`keybindings.json` 等配置文件。以 [内置编辑器设计](../design/text-editor-design.md) 为准，下面 2.1–2.3 中与之冲突的内容（自写编辑器、`QCompleter` 补全）不再适用。
+
 ### 2.1 组件选型
 
 | 方案 | 结论 |

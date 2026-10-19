@@ -168,3 +168,26 @@
 在 4.1–4.5 稳定后再设计。要点：一个 Profile 是一组 `settings.json`、`keybindings.json`、`init.lua` 和布局的组合，位于 `User/profiles/<name>/`；切换时整体替换注册表值、绑定和脚本，窗口布局可选是否切换。写成独立设计文档后再拆步骤。
 
 **状态**：未开始（需要设计）。
+
+---
+
+## 4.7 配置文件的智能提示
+
+**目标**：在内置编辑器中编辑 `settings.json`、`keybindings.json`、主题文件时，像 VS Code 一样补全键和值、悬停显示说明、标出未知或错误的设置（[内置编辑器设计 §5](../../design/text-editor-design.md#5-编辑配置文件时的智能提示)）。
+
+**前置**：5.2（编辑器）、3.6（JSONC 解析，带节点位置）、4.1（设置注册表）、3.1（上下文键）、2.2（颜色主题与颜色注册表）。
+
+**涉及文件**：新建 `src/editor/plugin/json_language_service.{hpp,cpp}`、`src/app/config_schemas.{hpp,cpp}`（从注册表生成结构描述）、测试 `src/app/tests/json_language_service_test.cpp`。
+
+**实现**：
+
+1. **结构描述**：JSON Schema 的一个子集（`type`、`properties`、`enum` 加 `enumDescriptions`、`default`、`description`、`deprecationMessage`、`items`、`additionalProperties`）。`config_schemas` 在第一次需要时从设置注册表、命令注册表（含参数说明）、上下文键列表、颜色注册表生成，并在注册表变化时失效。
+2. **定位**：用 3.6 的 JSONC 解析器得到光标所在的路径（例如 `["window.newTabPosition"]` 或 `[3, "command"]`）以及光标处于键、值还是空位置。
+3. **补全**：按路径在结构描述中找到可用的键或值；插入完整的 `"键": 值`（值为默认值并选中）；`keybindings.json` 中 `command` 的值补全命令 ID（显示命令标题），`key` 的值补全按键名称，`when` 的值补全上下文键和运算符。
+4. **悬停说明**：键和值的标题、说明、类型、默认值、当前生效值、是否需要重启。
+5. **诊断**：未知设置 ID 以灰色样式加提示；类型或取值错误用波浪下划线；JSON 语法错误；废弃的设置用删除线并提示替代项。解析在停止输入 200 毫秒后进行，大文件在后台线程解析。
+6. **快速修复**：未知设置名按编辑距离给出最接近的已知名称，`Ctrl+.` 替换。
+
+**测试**：每个功能在三种文件上的数据驱动用例；注册表新增设置后补全立即包含它；诊断的出现与消失；10 MiB 的 JSON 文件中输入不卡顿（解析不在界面线程）。
+
+**状态**：未开始。

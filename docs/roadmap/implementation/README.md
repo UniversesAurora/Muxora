@@ -11,8 +11,8 @@
 | 1 | [布局性能](phase-1-layout-performance.md) | 模型索引、去掉序列化比较、分隔条快速路径、只重建变化的视图、视图按需创建、延迟恢复 | 0.1、0.2 |
 | 2 | [主题系统](phase-2-themes.md) | 按 VS Code 的颜色注册表与主题机制重做：颜色 ID、主题定义与继承、Muxora Dark／Black、对比度测试与组件画廊、`workbench.colorTheme` 等设置与切换命令、颜色覆盖、高对比 | 0.2 |
 | 3 | [快捷键](phase-3-keybindings.md) | 上下文键、`when` 表达式、分发与菜单接入、终端冲突默认值、JSONC、快捷键编辑器 | 0.2 |
-| 4 | [设置](phase-4-settings.md) | 设置 schema、生成式设置页、行为设置迁出布局、JSONC 写回、文件监听 | 3.6（共用 JSONC） |
-| 5 | [Lua 工具](phase-5-lua-tools.md) | 控制台、编辑器、补全、API 单一来源、多脚本、脚本管理 | 5.1 无前置；5.2 起需要 3.5（编辑器的 `Ctrl+S` 等按键优先） |
+| 4 | [设置](phase-4-settings.md) | 设置 schema、生成式设置页、行为设置迁出布局、JSONC 写回、文件监听；配置文件在编辑器中的补全、悬停说明与诊断（4.7，需 5.2） | 3.6（共用 JSONC） |
+| 5 | [Lua 工具与内置编辑器](phase-5-lua-tools.md) | 控制台；基于 Scintilla 的内置编辑器（按需加载，标签页或弹窗，用于 Lua 和配置文件）；Lua 补全与悬停；API 单一来源；多脚本；脚本管理 | 5.1 无前置；5.2 起需要 3.5（编辑器的 `Ctrl+S` 等按键优先） |
 | 6 | [工程](phase-6-engineering.md) | 应用入口拆分、测试运行器合并、格式与静态检查、诊断构建、CI | 0.2 |
 | 7 | [终端与会话接入](phase-7-terminal-and-sessions.md) | 终端视图模块；本地终端（Windows PowerShell、PowerShell 7、cmd、WSL、Git Bash，ConPTY）；会话目录与 SSH config；SSH、SFTP、X11；启动时恢复会话 | 1.4–1.6、3.1–3.5 |
 | 8 | [界面质量](phase-8-ui-quality.md) | 窗口外侧缩放边框、临时面板八向调整、浮层基类、快速输入（替换命令面板等全部选择器）、行内重命名、统一对话框、Windows 系统通知、空工作区、菜单与文案整理、尺寸统一 | 8.1／8.2 无前置；8.3 起建议在 2.4 之后 |

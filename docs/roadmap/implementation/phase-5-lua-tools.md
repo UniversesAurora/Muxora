@@ -6,7 +6,7 @@
 
 - 编辑器和控制台都是普通工作区内容（`TabOptions::contentType` 分别为 `lua.editor`、`lua.console`），通过窗口系统获得拆分、浮动、侧栏固定等能力，不另做标签控件。
 - 代码放在应用侧 `src/editor/`；只依赖 Qt Widgets 和 `lua_runtime`，不依赖 Muxora 的会话或终端。
-- 不引入 QScintilla、QtWebEngine。
+- 编辑器使用 Scintilla + Lexilla（宽松许可，见 [内置编辑器设计](../../design/text-editor-design.md)），编译为按需加载的插件 DLL；不引入 QScintilla（GPL）和 QtWebEngine。
 - 运行时的沙箱和预算不因编辑器而放宽。语法检查只编译、不执行。
 
 **依赖**：5.2 的编辑器快捷键（`Ctrl+S` 保存文件等）与全局 `Ctrl+S` 冲突，必须在 [3.5](phase-3-keybindings.md#35-内容优先按键与默认绑定调整) 之后进行，或者编辑器暂时在自己的 `event()` 中处理 `ShortcutOverride` 抢先接收这些键（现有 `ShortcutCapture` 用的就是这种方式）。推荐等 3.5 完成。
@@ -50,60 +50,60 @@
 
 ---
 
-## 5.2 代码编辑器
+## 5.2 内置编辑器
 
-**目标**：标签页式 Lua 编辑器：行号、高亮、括号匹配、查找替换、保存、外部修改检测、语法检查。
+> 2026-10-20 修订：改用成熟的编辑器内核 Scintilla + Lexilla，并按需加载；同一个编辑器用于 Lua 和配置文件（JSON），可以以标签页或弹窗打开。设计见 [内置编辑器设计](../../design/text-editor-design.md)。配置文件的智能提示在 [4.7](phase-4-settings.md#47-配置文件的智能提示)，Lua 的补全与提示在 5.3。
 
-**涉及文件**：新建 `src/editor/code_editor.{hpp,cpp}`、`lua_highlighter.{hpp,cpp}`、`find_bar.{hpp,cpp}`、`editor_document.{hpp,cpp}`、`editor_tab.{hpp,cpp}`（组合编辑器和查找栏）；`src/app/scripting_setup.cpp`（`lua.openConfig` 改为内置编辑器）；新测试 `src/app/tests/lua_highlighter_test.cpp`、`editor_document_test.cpp`、`code_editor_test.cpp`。
+### 5.2a 引入 Scintilla 与 Lexilla，编译为插件
+
+**产出**：`third_party/scintilla/CMakeLists.txt`（`FetchContent` 固定版本与 `URL_HASH`，构建 Scintilla 核心、Qt 平台层 `ScintillaEditBase` 和 Lexilla 中需要的词法器：Lua、JSON；其他词法器不编译）；`src/editor/plugin/`（插件工程，输出 `muxora-editor.dll`）；`src/editor/editor_factory.hpp`（应用侧接口）；`tools/build.ps1` 与部署清单加入该 DLL；`THIRD_PARTY_NOTICES.md` 与 `third_party/licenses/` 加入两个库的许可证。
 
 **实现**：
 
-1. **`EditorDocument`**（无界面）：
-   - `bool load(QString path, QString& error)`：大小 ≤ 1 MiB（与运行时上限一致），用无状态 UTF-8 解码器校验（复用 `scripting_setup.cpp` 中 `readScript()` 的规则）；记录文件的修改时间和大小。
-   - `bool save(QString text, QString& error)`：`QSaveFile` 写入；写入前检查磁盘文件是否被外部修改（修改时间或大小变化），变化时返回冲突，由界面询问覆盖还是重新加载。
-   - `QFileSystemWatcher` 监听文件，外部修改时发信号；自己保存引起的通知忽略。
-2. **`LuaHighlighter`**（`QSyntaxHighlighter`）：
-   - 词法类别：关键字（Lua 5.5 全部保留字）、内置全局（`muxora`、`string`、`table`、`math`、`utf8`、`print`、`pairs` 等）、字符串（单双引号，含转义）、长括号字符串 `[[ ]]`、`[==[ ]==]`、注释 `--`、长注释 `--[[ ]]`、`--[==[ ]==]`、数字（十进制、十六进制、浮点、指数）、运算符。
-   - 跨行状态用 `setCurrentBlockState()` 编码：0 普通；`1 + 等号数` 表示处于长字符串中；`1001 + 等号数` 表示处于长注释中。等号数上限 16，超过时按 16 处理（只影响高亮，不影响执行）。
-   - 颜色来自主题：在 `Theme` 中不增加编辑器令牌，而是由应用定义一张“编辑器配色”表，按 `theme.dark` 选择浅色或深色版本（与阶段 2 一致）。
-3. **`CodeEditor`**（`QPlainTextEdit` 子类）：
-   - 行号栏（Qt Code Editor 示例的做法：`viewportMargins` + 侧边控件 + `updateRequest` 信号），当前行高亮；
-   - 括号匹配：光标旁的括号与其配对括号高亮，用 `QTextEdit::ExtraSelection`，跳过字符串和注释（读取高亮器的块状态和格式范围判断）；
-   - 自动缩进：回车保持上一行缩进；上一行以 `then`、`do`、`function(...)`、`{`、`repeat` 结尾时增加一级；输入 `end`、`}`、`until`、`else`、`elseif` 时回退一级；缩进单位为两个空格（设置项 `editor.tabSize`，阶段 4 之后接入设置页）；
-   - `Ctrl+/` 切换行注释、`Ctrl+G` 转到行、`Tab`／`Shift+Tab` 调整选中行缩进、`Ctrl+D` 选中下一个相同文字（可选，放在最后）；
-   - 控件声明 `windowSystemCapturesKeys = true` 和上下文键 `{"editorFocus": true, "editorLanguage": "lua"}`（阶段 3）。
-4. **`FindBar`**：`Ctrl+F` 查找、`Ctrl+H` 替换、`F3`／`Shift+F3`、`Esc` 关闭；选项：区分大小写、整词、正则；替换全部时用 `QTextCursor::beginEditBlock()`／`endEditBlock()` 合并为一次撤销；显示“第 n 个，共 m 个”（m 超过 10000 时显示“10000+”并停止计数）。
-5. **语法检查**：编辑停止 500 ms 后，把全文交给 `ScriptHost` 的新方法 `quint64 checkSyntax(QString source, QString name)`。实现为运行时中执行一段固定的检查脚本：`local f, err = muxora._compile(source, name); return err`（`_compile` 只调用 `luaL_loadbufferx`，不执行）。返回的错误信息解析出行号，在行号栏标红并在悬停时显示。检查任务受运行时的待处理任务上限约束；同一文档同时只保留一个待完成的检查，新的请求取消旧的（丢弃旧结果）。
-6. **`EditorTab`**：组合编辑器、查找栏和状态（文件名、修改标记、光标行列）。修改时标签标题加 `●`（通过 `WindowManager::renameTab`）。关闭时有未保存修改：应用的 `CloseGuard` 弹出“保存／不保存／取消”——注意 `CloseGuard` 是全局唯一的，应用需要把编辑器的判断合并进现有守卫中，而不是覆盖它。
-7. **命令**（注册到“工具 → Lua”，并在编辑器获得焦点时生效）：`lua.editor.open`（文件对话框，限定 `User/` 目录下）、`lua.editor.openConfig`（打开 `init.lua`）、`lua.editor.save`（`Ctrl+S`，`when: editorFocus`）、`lua.editor.saveAndReload`、`lua.editor.runFile`、`lua.editor.runSelection`（输出到控制台）。
-8. 设置项 `lua.reloadOnSave`（默认关闭）：保存 `init.lua` 或 `User/lua/` 下的模块后自动执行 `lua.reload`。
+1. Scintilla 的 Qt 平台层自带的是 qmake 工程（`qt/ScintillaEditBase/ScintillaEditBase.pro`），改写成 CMake target；只编译 `ScintillaEditBase`（不需要代码生成步骤），不编译需要 Python 生成的 `ScintillaEdit`。
+2. 第一步先确认它在 Qt 6.12 + MinGW GCC 15.1 下能编译并运行一个最小窗口；失败时在 ADR 中记录原因，回到 `QPlainTextEdit` 方案，后续步骤相应调整。
+3. 插件：`muxora-editor.dll` 实现 `EditorFactory`（设计 §7），用 `Q_PLUGIN_METADATA` 导出；应用在第一次需要编辑器时用 `QPluginLoader` 加载，之后不卸载。
+4. 应用测试：启动、打开设置、运行占位标签等普通操作后，进程模块列表中没有 `muxora-editor.dll`（`EnumProcessModules` 检查）；打开编辑器后才出现。
 
-**测试**：
+### 5.2b 编辑器控件与基础功能
 
-- `lua_highlighter_test`：对固定文本断言每个范围的格式类别；跨行长字符串和长注释的块状态；等号数不同的长括号不会互相结束。
-- `editor_document_test`：UTF-8 校验、大小上限、外部修改冲突、自己保存不触发外部修改通知。
-- `code_editor_test`：自动缩进各规则、注释切换、括号匹配跳过字符串、查找替换（含正则捕获组）后一次撤销恢复原文。
-- 应用级：打开 `init.lua` 修改、`Ctrl+S` 保存、外部修改提示、关闭询问。
+**产出**：`src/editor/plugin/code_editor.{hpp,cpp}`（包装 `ScintillaEditBase`）、`editor_document.{hpp,cpp}`（文件读写）、`editor_theme.{hpp,cpp}`（主题颜色 ID → Scintilla 样式）。
+
+**实现**：
+
+1. 设计 §4 的全部基础功能，使用 Scintilla 自带能力：行号边栏、折叠边栏、括号匹配、缩进参考线、多选区、按行移动、注释切换（按语言的注释符号）。
+2. 颜色：从主题颜色 ID 设置 Scintilla 样式（`SCI_STYLESETFORE`／`SETBACK` 等）；主题变化时重新设置。阶段 2 完成前先用 `Theme` 令牌。
+3. 文件：UTF-8（无状态解码校验，沿用 `scripting_setup.cpp` 中 `readScript()` 的规则）；`QSaveFile` 保存；`QFileSystemWatcher` 检测外部修改并提示重新加载；自己保存引起的通知忽略。
+4. 快捷键：控件声明 `windowSystemCapturesKeys = true` 和上下文键 `editorFocus`、`editorLanguage`；编辑器命令（保存、查找、替换、转到行等）以 `when: editorFocus` 注册到命令注册表，因而出现在命令面板和快捷键编辑器中。阶段 3.5 完成前，先在控件的 `ShortcutOverride` 中抢先接收这些键。
+
+### 5.2c 查找与替换
+
+查找栏使用 Muxora 自己的控件（遵守界面规范），用 Scintilla 的搜索接口实现：区分大小写、整词、正则；`F3`／`Shift+F3`；全部替换包在 `SCI_BEGINUNDOACTION`／`SCI_ENDUNDOACTION` 中，一次撤销；计数超过 10000 时显示“10000+”。
+
+### 5.2d 打开方式：标签页与弹窗
+
+1. 标签页：内容类型 `editor.file`，`TabOptions::state` 保存文件路径和光标位置；同一文件只开一个标签；修改时标题加 `●`；关闭时询问未保存修改（合并进应用的关闭许可）。
+2. 弹窗：统一对话框（阶段 8.6）中放入编辑器，非模态；用于快捷键“编辑参数…”、Lua 控制台多行输入等（设计 §3）。
+3. 命令：`editor.openFile`、`editor.openSettingsJson`、`editor.openKeybindingsJson`、`editor.openDefaultSettings`（只读）、`editor.openDefaultKeybindings`（只读）、`lua.editor.openConfig`；`editor.revealSetting`（在 settings.json 中定位或插入某个设置，供设置页齿轮菜单使用）。
+
+**测试**（5.2 整体）：插件只在打开编辑器时加载；基础编辑操作；三套主题下的颜色；外部修改提示；未保存修改的关闭询问；同一文件只开一个标签；弹窗模式保存与取消；`editor.revealSetting` 在已有和缺失两种情况下的结果（缺失时插入，其余文本不变）。
 
 **状态**：未开始。
 
 ---
 
-## 5.3 静态补全
+## 5.3 Lua 补全与悬停说明
 
-**目标**：输入时提示 Lua 关键字、当前文件中的标识符和 `muxora.*` API。
-
-**涉及文件**：新建 `src/editor/lua_completion.{hpp,cpp}`；`code_editor.cpp`；测试 `src/app/tests/lua_completion_test.cpp`。
+**前置**：5.2；补全数据在 5.4 完成前从运行时读取，5.4 完成后改用 API 描述。
 
 **实现**：
 
-1. 数据源接口：`QVector<CompletionItem> complete(const QString& text, int cursor)`，`CompletionItem{label, kind, detail}`。纯函数，可单测。
-2. 规则：光标前的“限定名”（`a.b.c` 形式，忽略字符串和注释内）决定范围：没有点时给关键字、局部和全局标识符、顶层 API 表名；`muxora.` 后给 API 分组；`muxora.tabs.` 后给该分组的函数。
-3. API 名称在 5.4 完成前，从运行时取：应用启动后执行一次 `return (function() local r = {} for k, v in pairs(muxora) do if type(v) == "table" then local f = {} for n in pairs(v) do f[#f+1] = n end r[k] = f end end return r end)()`，结果缓存；Lua 重载后刷新。这样不需要在 C++ 中重复维护名称表。
-4. 界面：`QCompleter` 配合 `QStringListModel`；`Ctrl+Space` 主动触发；输入 `.` 后自动触发；`Tab`／`Enter` 接受；按标签前缀匹配，次序为“精确前缀 > 子串”。
-5. 性能：标识符扫描只在文档变化后的空闲时（200 ms 去抖动）进行，结果缓存；补全列表最多 200 项。
+1. 数据源（纯函数，可单测）：`QVector<CompletionItem> complete(const QString& text, int cursor)`。光标前的限定名（`a.b.c`，忽略字符串和注释内）决定范围：没有点时给 Lua 关键字、当前文件的标识符、顶层 API 表名；`muxora.` 后给 API 分组；`muxora.tabs.` 后给该分组的函数。
+2. 5.4 之前的 API 名称：Lua 加载后执行一次只读查询（遍历 `muxora` 表），结果缓存，重载后刷新；Lua 未加载时（阶段 9.0 的按需加载）不为了补全而加载 Lua，只提供关键字和当前文件的标识符。
+3. 显示：用 Scintilla 的补全列表（`SCI_AUTOCSHOW`）；`Ctrl+Space` 触发，输入 `.` 后自动触发；悬停说明和参数提示用 Scintilla 的提示框（`SCN_DWELLSTART` + `SCI_CALLTIPSHOW`）。
+4. 语法检查：编辑停止 500 毫秒后在沙箱中只编译（`muxora._compile`），错误用波浪下划线指示器标出并在悬停时显示。Lua 未加载时，检查请求会触发按需加载（这是用户主动在编辑 Lua，属于“需要时才加载”）。
 
-**测试**：各上下文的补全结果；字符串和注释中不触发；API 缓存刷新。
+**测试**：各上下文的补全结果；字符串和注释中不触发；悬停与参数提示；语法错误标记与清除；API 缓存刷新。
 
 **状态**：未开始。
 
