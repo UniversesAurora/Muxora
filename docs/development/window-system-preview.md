@@ -126,6 +126,8 @@ pwsh ./tools/verify.ps1
 
 ## 最近一次验证
 
+2026-10-20，Codex 接手核对：Release 使用现有 MSVC 缓存构建通过；经 `quiet-desktop.ps1` 运行模型、视图复用、标题栏及其缩放、原生窗口框架、Lua 运行时／宿主／生命周期共 8 个相关 CTest 条目，全部通过。报告为 `out/test-results/codex-handoff-baseline.xml`。没有修改实现或测试，没有执行全量、Debug、部署、便携或真实桌面试用；9.8 仍待方案确认后实施。首次本机构建环境问题及核对细节见 [验证日志](verification-log/2026-10.md#codex-接手核对2026-10-20)。
+
 2026-10-20，改用 MSVC 工具链之后：
 
 - Release（MSVC 19.44.35229）全量 CTest 61 个条目：60 个首次通过；`window-system.lua` 的一行因测试写法在 MSVC 下有歧义而失败，修正写法后该套件连续 3 次通过。在 `tools/tests/quiet-desktop.ps1` 下运行。
