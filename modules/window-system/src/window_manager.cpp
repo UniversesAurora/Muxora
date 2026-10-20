@@ -1004,7 +1004,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     // Stateless value-control rules apply even while the layout refreshes:
     // controls created then are polished and scrolled over like any other.
     removeValueControlWheelFocus(watched, event);
-    limitToolTipWidth(watched, event);
+    balanceToolTipShape(watched, event);
     if (redirectValueControlWheel(watched, event)) return true;
     if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);

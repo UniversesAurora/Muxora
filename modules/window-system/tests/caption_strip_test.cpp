@@ -899,27 +899,44 @@ void CaptionStripTest::longToolTipsWrapAtAReadableWidth()
         QHelpEvent help(QEvent::ToolTip, button->rect().center(), button->mapToGlobal(button->rect().center()));
         QApplication::sendEvent(button, &help);
     };
+    const auto shown = [&show](QWidget* button) -> QWidget* {
+        QToolTip::hideText();
+        if (!QTest::qWaitFor([] { return !visibleToolTip(); })) return nullptr;
+        show(button);
+        QTest::qWaitFor([] { return visibleToolTip() != nullptr; });
+        return visibleToolTip();
+    };
     auto* shortButton = captionButton(window, "close");
-    auto* longButton = captionButton(window, "minimize"); // Next to the screen edge in its row.
-    longButton->setToolTip(QStringLiteral("这是一段很长的提示文字，用来检查提示气泡不会被拉成细长的一整行，"
-        "而是在可读的宽度处自动换行；This long tooltip must wrap at a readable width instead of one thin line."));
-    show(shortButton);
-    QTRY_VERIFY(visibleToolTip());
-    auto* tip = visibleToolTip(); QVERIFY(tip);
+    auto* longButton = captionButton(window, "minimize");
+    const QString sentence = QStringLiteral("这是一段很长的提示文字，用来检查提示气泡不会被拉成细长的一整行；"
+        "This long tooltip must wrap into a balanced card instead of one thin line. ");
+    auto* tip = shown(shortButton); QVERIFY(tip);
     const int lineHeight = tip->height();
-    QVERIFY(tip->width() < maximumToolTipWidth);
-    // A new long tip and a reused one both wrap.
-    for (int pass = 0; pass < 2; ++pass) {
-        if (pass) { QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip()); }
-        show(longButton); QCoreApplication::processEvents();
-        QTRY_VERIFY(visibleToolTip());
-        tip = visibleToolTip(); QVERIFY(tip);
-        QVERIFY2(tip->width() <= maximumToolTipWidth, qPrintable(QString::number(tip->width())));
-        QVERIFY2(tip->height() >= 2 * lineHeight - 4, qPrintable(QStringLiteral("%1 vs %2").arg(tip->height()).arg(lineHeight)));
-        QVERIFY(tip->screen()->availableGeometry().contains(tip->geometry()));
-        // Every word is still shown: the label's own height covers the text.
-        QVERIFY(tip->height() >= tip->heightForWidth(tip->width()));
-    }
+    QVERIFY(tip->width() <= singleLineToolTipWidth);
+    // A long text wraps into a wide, balanced card: wider than tall and not
+    // stretched beyond the aspect ratio.
+    longButton->setToolTip(sentence);
+    tip = shown(longButton); QVERIFY(tip);
+    const QSize longSize = tip->size();
+    QVERIFY2(longSize.height() >= 2 * lineHeight - 4, qPrintable(QStringLiteral("%1x%2").arg(longSize.width()).arg(longSize.height())));
+    QVERIFY(longSize.width() > longSize.height());
+    QVERIFY(longSize.width() <= (maximumToolTipAspectRatio + 1) * longSize.height());
+    QVERIFY(tip->height() >= tip->heightForWidth(tip->width())); // Every line fits.
+    QVERIFY(tip->screen()->availableGeometry().contains(tip->geometry()));
+    // Six times the text grows the card wider instead of into a tall strip.
+    longButton->setToolTip(sentence.repeated(6));
+    tip = shown(longButton); QVERIFY(tip);
+    const QSize longerSize = tip->size();
+    QVERIFY2(longerSize.width() > longSize.width(), qPrintable(QStringLiteral("%1 vs %2").arg(longerSize.width()).arg(longSize.width())));
+    QVERIFY(longerSize.width() > longerSize.height());
+    QVERIFY(longerSize.width() <= (maximumToolTipAspectRatio + 1) * longerSize.height());
+    QVERIFY(tip->height() >= tip->heightForWidth(tip->width()));
+    QVERIFY(tip->screen()->availableGeometry().contains(tip->geometry()));
+    // Reusing the visible tip for the long text wraps it the same way.
+    show(shortButton); QCoreApplication::processEvents();
+    show(longButton); QCoreApplication::processEvents();
+    tip = visibleToolTip(); QVERIFY(tip);
+    QCOMPARE(tip->size(), longerSize);
     // Back to a short tip: one line again.
     show(shortButton); QCoreApplication::processEvents();
     tip = visibleToolTip(); QVERIFY(tip);
@@ -974,8 +991,9 @@ void CaptionStripTest::maximizedCaptionButtonsShowThemedToolTips()
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     window->showMaximized(); QTRY_VERIFY(window->isMaximized());
-    // Qt closes a tip as soon as its window is not the active one.
-    window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
+    // Qt closes a tip as soon as its window is not the active one. Earlier
+    // windows of the run can leave this one below other programs: raise it.
+    window->raise(); window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
     const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
     QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip());
     const auto location = [window](QWidget* button) { return nativePoint(window, button, button->rect().center()); };
