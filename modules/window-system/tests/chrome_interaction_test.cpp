@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "native_input.hpp"
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
 
@@ -188,42 +189,10 @@ void startDrag(CommandStripHost& host, QWidget* handle, QPoint destination)
     QVERIFY(host.isDragging());
 }
 
-// Convert through the target HWND, rather than using the primary screen's
-// scale. These tests exercise native popup capture and its outside release.
-void nativeMouse(QWidget* target, QPoint local, bool click = false)
-{
-#ifdef Q_OS_WIN
-    auto* window = target->window();
-    const QPoint client = target->mapTo(window, local);
-    const qreal ratio = window->devicePixelRatioF();
-    POINT point{qRound(client.x() * ratio), qRound(client.y() * ratio)};
-    QVERIFY(ClientToScreen(reinterpret_cast<HWND>(window->winId()), &point));
-    QVERIFY(SetCursorPos(point.x, point.y));
-    if (click) {
-        INPUT events[2]{};
-        events[0].type = events[1].type = INPUT_MOUSE;
-        events[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-        events[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-        QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
-    }
-#else
-    if (click) QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, local);
-    else QTest::mouseMove(target, local);
-#endif
-}
-
-void nativeEscape(QMenu* menu)
-{
-#ifdef Q_OS_WIN
-    INPUT events[2]{};
-    events[0].type = events[1].type = INPUT_KEYBOARD;
-    events[0].ki.wVk = events[1].ki.wVk = VK_ESCAPE;
-    events[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
-#else
-    QTest::keyClick(menu, Qt::Key_Escape);
-#endif
-}
+// Real input through the target HWND (native popup capture and its outside
+// release), refused unless this process owns the receiving window.
+void nativeMouse(QWidget* target, QPoint local, bool click = false) { native_input::mouse(target, local, click); }
+void nativeEscape(QMenu* menu) { native_input::key(menu, Qt::Key_Escape); }
 
 int pixelsOfColor(const QImage& image, QColor expected)
 {
