@@ -682,21 +682,37 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     auto* close = captionButton(window, "close"); QVERIFY(close);
     QCOMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());
     const LPARAM position = MAKELPARAM(edge.x, edge.y);
-    const LRESULT expectedHit = role == "close" ? HTCLOSE : role == "minimize" ? HTMINBUTTON : HTMAXBUTTON;
-    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), expectedHit);
-    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
-    CaptionHoverProbe hover(button);
-    SendMessageW(handle, WM_NCMOUSEMOVE, WPARAM(expectedHit), position);
-    QVERIFY(button->underMouse()); QCOMPARE(hover.enters, 1);
-    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
-    QVERIFY(!button->underMouse()); QCOMPARE(hover.leaves, 1);
     int clicks = 0; QVector<TabId> closeRequests;
     QObject::connect(button, &QToolButton::clicked, window, [&clicks] { ++clicks; });
     manager.setCloseGuard([&closeRequests](const QVector<TabId>& tabs) { closeRequests = tabs; return false; });
-    SendMessageW(handle, WM_NCLBUTTONDOWN, WPARAM(expectedHit), position);
-    QVERIFY(button->isDown()); QCOMPARE(GetCapture(), handle);
-    SendMessageW(handle, WM_NCLBUTTONUP, WPARAM(expectedHit), position);
-    QCOMPARE(clicks, 1); QVERIFY(!button->isDown()); QVERIFY(GetCapture() != handle);
+    if (role == "restore") {
+        // Restore is the one native caption hit, for the Win11 Snap flyout.
+        QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), LRESULT(HTMAXBUTTON));
+        SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+        CaptionHoverProbe hover(button);
+        SendMessageW(handle, WM_NCMOUSEMOVE, WPARAM(HTMAXBUTTON), position);
+        QVERIFY(button->underMouse()); QCOMPARE(hover.enters, 1);
+        SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+        QVERIFY(!button->underMouse()); QCOMPARE(hover.leaves, 1);
+        SendMessageW(handle, WM_NCLBUTTONDOWN, WPARAM(HTMAXBUTTON), position);
+        QVERIFY(button->isDown()); QCOMPARE(GetCapture(), handle);
+        SendMessageW(handle, WM_NCLBUTTONUP, WPARAM(HTMAXBUTTON), position);
+        QCOMPARE(clicks, 1); QVERIFY(!button->isDown()); QVERIFY(GetCapture() != handle);
+    } else {
+        // Minimize and close stay Qt client hits, so Windows shows no caption
+        // tooltip of its own; the edge pixel still lies in the Qt button.
+        QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), LRESULT(HTCLIENT));
+        POINT client = edge; QVERIFY(ScreenToClient(handle, &client));
+        const qreal ratio = window->devicePixelRatioF();
+        const QPoint logical(qFloor(client.x / ratio), qFloor(client.y / ratio));
+        QCOMPARE(window->childAt(logical), static_cast<QWidget*>(button));
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent mouse(type, QPointF(logical), window->mapToGlobal(QPointF(logical)), Qt::LeftButton,
+                type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(window->windowHandle(), &mouse);
+        }
+        QTRY_COMPARE(clicks, 1);
+    }
     if (role == "minimize") QTRY_VERIFY(window->isMinimized());
     else if (role == "restore") QTRY_VERIFY(!window->isMaximized());
     else { QCOMPARE(closeRequests, QVector<TabId>{tab}); QVERIFY(window->isMaximized() && window->isVisible()); }
@@ -991,53 +1007,42 @@ void CaptionStripTest::maximizedCaptionButtonsShowThemedToolTips()
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     window->showMaximized(); QTRY_VERIFY(window->isMaximized());
-    // Qt closes a tip as soon as its window is not the active one. Earlier
-    // windows of the run can leave this one below other programs: raise it.
+    // Qt closes a tip as soon as its window is not the active one.
     window->raise(); window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
     const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
-    QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip());
-    const auto location = [window](QWidget* button) { return nativePoint(window, button, button->rect().center()); };
     auto* close = captionButton(window, "close");
     auto* minimize = captionButton(window, "minimize");
-    QVERIFY(close && minimize);
+    auto* restore = captionButton(window, "restore");
+    QVERIFY(close && minimize && restore);
     // Qt reports the maximized state before the native resize settles: wait
     // until the close button reaches the work area's right edge.
     QTRY_COMPARE(window->geometry(), window->screen()->availableGeometry());
     QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());
-    // Maximized, the controls are native caption hits. The system's own
-    // hover handling (classic yellow tooltip) is not used for them...
-    // The native leave tracking follows the real cursor, so place it on the
-    // control (no click or key is sent).
-    // Another program's always-on-top window over the control would receive
-    // the real cursor and end the hover: report that as occlusion.
-    const auto pointAt = [handle](LPARAM where) {
-        const POINT point{GET_X_LPARAM(where), GET_Y_LPARAM(where)};
-        if (!SetCursorPos(point.x, point.y)) return QStringLiteral("SetCursorPos failed");
-        const HWND under = GetAncestor(WindowFromPoint(point), GA_ROOT);
-        if (under == handle) return QString();
-        wchar_t name[128]{}; GetClassNameW(under, name, 128);
-        DWORD process = 0; GetWindowThreadProcessId(under, &process);
-        return QStringLiteral("Control occluded by window class %1 of process %2")
-            .arg(QString::fromWCharArray(name)).arg(process);
+    const auto location = [window](QWidget* button) { return nativePoint(window, button, button->rect().center()); };
+    // Windows shows its classic caption tooltip for any native caption hit,
+    // whatever the window does with the hover messages. Minimize and close
+    // are therefore client hits: only Qt's themed tooltip can appear.
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location(close)), LRESULT(HTCLIENT));
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location(minimize)), LRESULT(HTCLIENT));
+    // Restore stays native for the Snap flyout, as maximize does in a
+    // restored window.
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location(restore)), LRESULT(HTMAXBUTTON));
+    // Qt's own tooltip path for the client buttons, and an immediate switch
+    // between neighbours at the same size.
+    const auto show = [](QWidget* button) {
+        QHelpEvent help(QEvent::ToolTip, button->rect().center(), button->mapToGlobal(button->rect().center()));
+        QApplication::sendEvent(button, &help);
     };
-    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location(close)), LRESULT(HTCLOSE));
-    { const auto occluded = pointAt(location(close)); QVERIFY2(occluded.isEmpty(), qPrintable(occluded)); }
-    SendMessageW(handle, WM_NCMOUSEMOVE, HTCLOSE, location(close));
-    QCOMPARE(SendMessageW(handle, WM_NCMOUSEHOVER, HTCLOSE, location(close)), LRESULT(0));
-    // ...the Qt button shows its themed tooltip after Qt's wake-up delay.
-    QTRY_VERIFY_WITH_TIMEOUT(visibleToolTip(), 3000);
+    QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip());
+    show(close);
+    QTRY_VERIFY(visibleToolTip());
     QCOMPARE(QToolTip::text(), close->toolTip());
     auto* closeTip = visibleToolTip(); QVERIFY(closeTip);
     const int height = closeTip->height();
-    // Moving straight to the next control switches the tip at once and
-    // keeps its size.
-    { const auto occluded = pointAt(location(minimize)); QVERIFY2(occluded.isEmpty(), qPrintable(occluded)); }
-    SendMessageW(handle, WM_NCMOUSEMOVE, HTMINBUTTON, location(minimize));
-    QTRY_COMPARE_WITH_TIMEOUT(QToolTip::text(), minimize->toolTip(), 500);
+    show(minimize); QCoreApplication::processEvents();
+    QCOMPARE(QToolTip::text(), minimize->toolTip());
     QVERIFY(visibleToolTip()); QCOMPARE(visibleToolTip()->height(), height);
-    // Leaving the controls hides it.
-    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
-    QTRY_VERIFY_WITH_TIMEOUT(!visibleToolTip(), 2000);
+    QToolTip::hideText();
 }
 #endif
 
@@ -1107,14 +1112,9 @@ void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
     QVector<TabId> closeRequests;
     manager.setCloseGuard([&closeRequests](const QVector<TabId>& tabs) { closeRequests = tabs; return false; });
     int clicks = 0; QObject::connect(close, &QToolButton::clicked, window, [&clicks] { ++clicks; });
-    if (!fullscreen) {
-        // A maximized window routes caption buttons through the native hit test.
-        const LPARAM position = MAKELPARAM(corner.x, corner.y);
-        QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), LRESULT(HTCLOSE));
-        SendMessageW(handle, WM_NCLBUTTONDOWN, WPARAM(HTCLOSE), position);
-        SendMessageW(handle, WM_NCLBUTTONUP, WPARAM(HTCLOSE), position);
-    } else {
-        // Fullscreen keeps the controls in Qt's client hit testing. Deliver
+    {
+        // Close is a Qt client hit, maximized and fullscreen alike (the
+        // native hit test leaves it to Qt). Deliver
         // the press/release to the window like QTest does, but without its
         // rule that a null (0, 0) position means "the window centre", which
         // would miss the top-left corner.
@@ -1123,6 +1123,7 @@ void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
                               Qt::LeftButton, buttons, Qt::NoModifier);
             QApplication::sendEvent(window->windowHandle(), &mouse);
         };
+        if (!fullscreen) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(corner.x, corner.y)), LRESULT(HTCLIENT));
         send(QEvent::MouseButtonPress, Qt::LeftButton);
         send(QEvent::MouseButtonRelease, Qt::NoButton);
     }
