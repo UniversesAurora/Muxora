@@ -1,6 +1,6 @@
 # Qt Widgets 经验
 
-适用于 Qt 6.12（MinGW，Windows）。
+适用于 Qt 6.12（Windows）。以下问题都是在 MinGW 构建下发现的，与 Qt 自身的行为有关，改用 MSVC 后同样适用。
 
 ## 原生窗口
 

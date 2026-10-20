@@ -9,7 +9,7 @@
 
 ## 开发环境
 
-首个预览针对 Windows x64，采用 C++20、Qt 6.12 Widgets 和匹配的 MinGW 工具链。当前 kit 所需的 GCC 15.1 工具链已对齐，原有编译器保留；脚本检查 Qt 编译元数据与实际编译器版本，避免误用不匹配工具。`-QtRoot` 指向具体 kit，例如 `E:/develop/sdk/Qt/6.12.0/mingw_64`。
+首个预览针对 Windows x64，采用 C++20、Qt 6.12 Widgets，使用 Qt 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](../adr/0009-msvc-toolchain.md)）。脚本自动载入 Visual Studio 的编译环境，并检查编译器不低于 Qt 套件构建时的版本。`-QtRoot` 指向具体套件，例如 `E:/develop/sdk/Qt/6.12.0/msvc2022_64`。
 
 ```powershell
 pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
@@ -18,7 +18,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 脚本通过 `-QtRoot` 或 `QT_ROOT` 绑定 kit，也会发现仓库旁的 SDK 和忽略提交的 `.local/sdk.json`。使用显式路径时，例如：
 
 ```powershell
-pwsh ./tools/build.ps1 -Configuration Debug -QtRoot E:/develop/sdk/Qt/6.12.0/mingw_64 -Test -Run
+pwsh ./tools/build.ps1 -Configuration Debug -QtRoot E:/develop/sdk/Qt/6.12.0/msvc2022_64 -Test -Run
 ```
 
 | 参数 | 作用 |
@@ -126,11 +126,11 @@ pwsh ./tools/verify.ps1
 
 ## 最近一次验证
 
-2026-10-20，提交 `405850a`（之后只有文档改动）：
+2026-10-20，改用 MSVC 工具链之后：
 
-- Release 全量 CTest 61 个条目全部通过，在 `tools/tests/quiet-desktop.ps1` 下运行（先最小化其他应用窗口，结束后恢复），其中包括以 `QT_SCALE_FACTOR=0.75` 模拟 1.5 倍率的 `window-system.caption-strip-scaled`。
-- 固定 Release 部署 `out/package/muxora-preview/` 已更新，`tools/tests/application-exit-test.ps1` 的三窗口退出、重启和保存失败检查通过。
-- 没有执行：Debug 矩阵、独立模块构建、安装后的外部宿主夹具、真实混合 DPI 和多屏切换、7-Zip 便携包。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。
+- Release（MSVC 19.44.35229）全量 CTest 61 个条目：60 个首次通过；`window-system.lua` 的一行因测试写法在 MSVC 下有歧义而失败，修正写法后该套件连续 3 次通过。在 `tools/tests/quiet-desktop.ps1` 下运行。
+- 固定 Release 部署 `out/package/muxora-preview/` 已更新为 MSVC 版，带 Visual C++ 运行库；`deployment-test.ps1`、`application-exit-test.ps1`、`application-view-test.ps1` 全部通过，后两项在去掉 SDK 路径的环境中运行。
+- 没有执行：Debug 构建与测试、独立模块构建和安装后的外部宿主夹具、真实混合 DPI 和多屏切换、7-Zip 便携包、MSVC 版的真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。
 
 每一轮的详细记录见 [验证日志](verification-log/2026-10.md)。
 

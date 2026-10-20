@@ -222,7 +222,7 @@ V0 只要求 Windows 客户端构建与验收。测试服务可以使用专用 L
 
 自动化覆盖 100%、125%、150%、175%、200%、250%，以及工作区、独立窗口、菜单、拖拽浮层、侧栏和输入法的混合 DPI 变化。验证逻辑尺寸、物理像素、命中位置、文字裁切、焦点、可访问性语义、负坐标屏幕和屏幕移除。
 
-组件缩放回归可在仓库根目录的 `pwsh` 中复现。先用 `tools/build.ps1 -Configuration Debug` 完成构建，并在当前终端将同一 Qt kit 的 `bin`、匹配的 MinGW 运行库目录及 CMake 的 `bin` 加入 `PATH`。构建脚本结束会恢复原 `PATH`，不能假定它已经为后续命令保留环境。然后执行：
+组件缩放回归可在仓库根目录的 `pwsh` 中复现。先用 `tools/build.ps1 -Configuration Debug` 完成构建，并在当前终端准备同一套工具链的环境：`. ./tools/toolchain.ps1; $tc = Enter-Toolchain <Qt 套件目录>`（把 Qt 的 `bin`、编译器运行环境和 Ninja 加入当前进程，用完调用 `Exit-Toolchain $tc` 恢复），再把 CMake 的 `bin` 加入 `PATH`。构建脚本结束会恢复原环境，不能假定它已经为后续命令保留。然后执行：
 
 ```powershell
 New-Item -ItemType Directory -Force out/test-results | Out-Null

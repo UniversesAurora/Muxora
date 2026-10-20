@@ -153,14 +153,14 @@
 
 **目标**：有一个可以检测越界、释放后使用和未定义行为的构建，用于 `model` 与 `widget` 层测试。
 
-**实现**（两条路线，按本机条件选一条，并在 ADR 0004 中记录选择）：
+**实现**（2026-10-20 修订：Release 已改用 MSVC（[ADR 0009](../../adr/0009-msvc-toolchain.md)），诊断构建直接走 MSVC，不再需要另一套 Qt）：
 
-- **路线 A：MSVC**。需要 Qt 的 `msvc2022_64` kit。新增用户预设 `diag-msvc-asan`：`CMAKE_CXX_COMPILER=cl`、`CMAKE_BUILD_TYPE=RelWithDebInfo`、`CMAKE_CXX_FLAGS=/fsanitize=address /Zi`。MSVC 的 ASan 不包含泄漏检测，泄漏仍靠现有的对象与句柄回落测试。
-- **路线 B：llvm-mingw**。需要与 Qt MinGW kit ABI 兼容的 llvm-mingw 工具链；确认 Qt 的 MinGW 二进制能与 clang 编译的代码链接（libstdc++ 与 libc++ 的选择必须与 Qt 一致，通常不兼容——实测确认）。可行时用 `-fsanitize=address,undefined`。
+- 新增用户预设 `diag-msvc-asan`，与 Release 共用 `msvc2022_64` 套件和 `tools/toolchain.ps1` 载入的编译环境：`CMAKE_BUILD_TYPE=RelWithDebInfo`、对本项目目标加 `/fsanitize=address /Zi`（目标级选项，不改全局）。Qt 本身不带 ASan 插桩，越界检查覆盖本项目的代码。MSVC 的 ASan 不包含泄漏检测，泄漏仍靠现有的对象与句柄回落测试。
+- UBSan：MSVC 没有对应功能。可选用 clang-cl（使用 MSVC 的 ABI 和标准库，能链接同一套 Qt）加 `-fsanitize=undefined`，作为第二条诊断构建；不可用时记录“环境阻塞”。
 
 `tools/diagnose.ps1`：选择可用路线、配置到 `out/build/diag-*`、构建、运行 `ctest -L "model|widget"`，结果写入 `out/test-results/diag-*.xml`。工具链不存在时明确报告“环境阻塞”，不能写成通过。
 
-**完成标准**：至少一条路线可用并完成一次运行；发现的问题逐个登记到审查记录，修复各自单独提交并附回归测试。
+**完成标准**：MSVC ASan 构建可用并完成一次运行；发现的问题逐个登记到审查记录，修复各自单独提交并附回归测试。
 
 **状态**：未开始。
 

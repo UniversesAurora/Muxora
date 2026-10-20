@@ -185,11 +185,13 @@ Ghostty 官方 CMake wrapper 调用 Zig，并支持 Windows DLL／import library
 
 ### 6.1 Qt SDK 的安装、版本绑定与升级
 
-开发机使用官方 Qt Online Installer 安装 Qt 6.12 的 MinGW 套件（`mingw_64`）及其配套的 MinGW 编译器（当前为 GCC 15.1），并按需安装 Qt 基础模块、SVG 和测试组件；CMake 与 Ninja 也取自 Qt 安装目录下的 `Tools`。Release 预览和全部自动化测试都用这套工具链；MSVC 版 Qt 只用于 ASan 等诊断构建，单独安装、单独构建目录，不参与 Release。选择原因与约束见 [ADR 0004](../adr/0004-windows-toolchain.md)。Qt Creator 为可选开发工具。官方安装器及 Maintenance Tool 当前需要 Qt 账号，开源许可组件可以免费取得。
+开发机使用官方 Qt Online Installer 安装 Qt 6.12 的 **MSVC 2022 64-bit** 套件（`msvc2022_64`），并按需安装 Qt 基础模块和测试组件；编译器来自本机 Visual Studio 2022（C++ 桌面开发工作负载），Qt 不提供 MSVC 编译器。CMake 与 Ninja 取自 Qt 安装目录下的 `Tools`。Release 预览和全部自动化测试都用这套工具链，选择原因与约束见 [ADR 0009](../adr/0009-msvc-toolchain.md)。Qt Creator 为可选开发工具。官方安装器及 Maintenance Tool 当前需要 Qt 账号，开源许可组件可以免费取得。
 
-Qt SDK 放在项目外的版本化目录，例如仓库旁边的 `..\sdk\Qt\<版本>\mingw_64`，多个项目共用；不把 SDK 提交进仓库。初版无需从源码编译 Qt。
+Qt SDK 放在项目外的版本化目录，例如仓库旁边的 `..\sdk\Qt\<版本>\msvc2022_64`，多个项目共用；不把 SDK 提交进仓库。初版无需从源码编译 Qt。
 
-`tools/build.ps1` 按顺序查找 Qt 套件：`-QtRoot` 参数、环境变量 `QT_ROOT`、不提交的 `.local/sdk.json`、仓库旁边的 `..\sdk\Qt` 中最新的版本。它从套件的 `mkspecs/qconfig.pri` 读出 Qt 构建时用的 GCC 版本，只接受 Qt 安装目录 `Tools/mingw*` 中同版本的编译器，找不到就报错，不用其他 GCC 凑合。提交的 `mise.toml` 只定义 `build`、`test`、`verify`、`run`、`package` 等任务入口，不负责安装或固定工具版本；本机绝对路径放在不提交的 `.local/sdk.json`、`.mise.local.toml`、环境变量或 `CMakeUserPresets.json`。不依赖机器全局 PATH 恰好找到某个版本。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
+`tools/toolchain.ps1` 统一处理套件与编译器，`build.ps1`、`verify.ps1`、`bench.ps1` 共用：按顺序查找 Qt 套件（`-QtRoot` 参数、环境变量 `QT_ROOT`、仓库旁边 `..\sdk\Qt` 中最新版本的 MSVC 套件、再其次 MinGW 套件，最后是不提交的 `.local/sdk.json`），从套件的 `mkspecs/qconfig.pri` 判断它是用 MSVC 还是 MinGW 构建的。MSVC 套件通过 `vswhere` 找到装有 x64 C++ 工具的最新 Visual Studio，载入 `vcvars64` 环境，并要求 `cl` 的版本不低于套件记录的 `QT_MSVC_*_VERSION`；MinGW 套件只接受 Qt 安装目录 `Tools/mingw*` 中同版本的编译器。构建目录的 CMake 缓存记录的编译器与本次不同时，脚本先清空该构建目录。提交的 `mise.toml` 只定义 `build`、`test`、`verify`、`run`、`package` 等任务入口，不负责安装或固定工具版本；本机绝对路径放在不提交的 `.local/sdk.json`、`.mise.local.toml`、环境变量或 `CMakeUserPresets.json`。不依赖机器全局 PATH 恰好找到某个版本。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
+
+所有目标在 MSVC 下加 `/utf-8`：源码是 UTF-8，MSVC 默认按系统代码页读源文件，中文字符串会悄悄变成乱码而不一定报警告。各目录的 CMakeLists 末尾为本目录内实际编译源码的目标统一添加，新增目标自动覆盖。
 
 官方 Maintenance Tool 提供添加／删除组件、检查更新、更新已安装包以及安装新 Qt 版本的图形和命令行入口。新 Qt 版本优先并行安装，使用独立构建目录验证，全部相关测试通过后再切换项目绑定；保留旧版本用于回退。升级 SDK 不代表项目自动改用新版。[Qt 安装与维护](https://doc.qt.io/qt-6/get-and-install-qt.html)、[命令行管理](https://doc.qt.io/qt-6/get-and-install-qt-cli.html)
 

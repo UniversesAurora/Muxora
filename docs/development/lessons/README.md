@@ -19,6 +19,7 @@
 | [Qt Widgets](qt-widgets.md) | 技术 | 原生子窗口、弹出菜单、滚轮事件、工具提示、样式表 |
 | [Windows 平台](windows-platform.md) | 技术 | 非客户区命中测试、Snap 浮窗、系统提示、DPI 虚拟化、窗口句柄 |
 | [桌面测试](desktop-testing.md) | 流程 | 遮挡与前台锁、真实输入的风险、回归用例必须先在旧代码上失败 |
+| [构建与工具链](build-toolchain.md) | 技术 | MSVC 的源码编码与版本兼容、换编译器时的 CMake 缓存 |
 | [调试方法](debugging.md) | 流程 | 用 gdb 抓事件调用栈、枚举原生子窗口、隔离复现条件 |
 | [版本控制](version-control.md) | 流程 | 改写历史、署名尾注、备份分支 |
 

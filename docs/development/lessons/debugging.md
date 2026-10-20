@@ -20,6 +20,14 @@
    ```
 3. Qt 的发布版 DLL 带导出符号，调用栈能看到 `QWidget::winId()`、`QWidget::setAttribute()` 等函数名，往上找第一个属于本项目的帧。
 
+上面是 MinGW 构建时的做法。2026-10-20 改用 MSVC（[ADR 0009](../../adr/0009-msvc-toolchain.md)）后，gdb 读不了 MSVC 的调试信息，改用 Visual Studio 调试器，或 Windows SDK 调试工具中的 `cdb`：
+
+```
+cdb -g -c "k 40; q" <测试程序> <测试函数名>
+```
+
+`DebugBreak()` 处停下后 `k` 打印调用栈。Qt 安装时勾选了 MSVC 套件的调试符号（Qt Debug Information Files），调用栈能显示 Qt 内部函数名和源码行；Release 构建需要带 `/Zi` 和 `/DEBUG` 才有本项目的源码行。
+
 这次的调用栈直接指向 `preparePopupFrame()` 在 `aboutToShow` 里调用的 `winId()`。
 
 ### 把真实操作改写成可重复的实验
