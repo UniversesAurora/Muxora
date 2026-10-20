@@ -453,11 +453,11 @@ void WorkspaceWindow::syncCustomChrome() {
                     commands.append(action->data().toString());
             if (commands == definition.commands && strips_->stripTitle(definition.id) == definition.title)
                 continue;
-            const auto previous = customActions_.take(definition.id);
+            const auto replaced = customActions_.take(definition.id);
             strips_->removeStrip(definition.id);
             if (!retained || !manager_ || !strips_)
                 return;
-            for (const auto &action : previous)
+            for (const auto &action : replaced)
                 if (action)
                     delete action.data();
         }

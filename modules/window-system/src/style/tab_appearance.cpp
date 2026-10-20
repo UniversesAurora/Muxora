@@ -175,9 +175,9 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
     if (!palette.isUndefined()) {
         if (!palette.isArray() || palette.toArray().size() > 128) return {false, QCoreApplication::translate("WindowSystem", "标签颜色列表无效")};
         candidate.colors.clear();
-        for (const auto& value : palette.toArray()) {
-            if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "标签颜色定义无效")};
-            const auto definition = value.toObject();
+        for (const auto& color : palette.toArray()) {
+            if (!color.isObject()) return {false, QCoreApplication::translate("WindowSystem", "标签颜色定义无效")};
+            const auto definition = color.toObject();
             TabColorPreset preset;
             if (definition.size() != 6 || !definition.value("id").isString() || !definition.value("name").isString()
                 || !parseColors(definition.value("groupActive"), preset.groupActive)

@@ -227,9 +227,9 @@ public:
         if (content) {
             // Menu actions retain natural geometry for our overflow menu;
             // ordinary content paints against the actual available viewport.
-            const int contentWidth = qobject_cast<QMenuBar*>(content.data())
+            const int contentGeometryWidth = qobject_cast<QMenuBar*>(content.data())
                 ? std::max(viewport->width(), content->sizeHint().width()) : viewport->width();
-            content->setGeometry(0, 0, contentWidth, height());
+            content->setGeometry(0, 0, contentGeometryWidth, height());
             if (auto* menu = qobject_cast<QMenuBar*>(content.data())) {
                 for (const auto& item : items) {
                     if (!item.action) continue;

@@ -1122,9 +1122,6 @@ LayoutTree LayoutModel::takeWindowTreeUnchecked(WindowId sourceWindow, WindowId 
             for (auto groupId : edgeGroups) {
                 auto& record = groups_[groupId];
                 if (record.edge != edge || record.location != location) continue;
-                const auto direction = edge == Edge::Top ? Placement::Top
-                    : edge == Edge::Right ? Placement::Right
-                    : edge == Edge::Bottom ? Placement::Bottom : Placement::Left;
                 carried = carried ? split(carried, leaf(groupId), direction) : leaf(groupId);
                 carriedGroups.append(groupId);
             }
@@ -1751,11 +1748,11 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             return failure("Tab ordering values must be provided together.");
         for (auto key : {"openedOrder", "visitedOrder"}) {
             if (!object.contains(key)) continue;
-            const auto value = object.value(key);
-            if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > double(maximumTabOrder)
-                || std::floor(value.toDouble()) != value.toDouble()) return failure("Invalid tab ordering value.");
-            (QLatin1String(key) == QLatin1String("openedOrder") ? record.openedOrder : record.visitedOrder) = quint64(value.toDouble());
-            candidate.orderCounter_ = std::max(candidate.orderCounter_, quint64(value.toDouble()));
+            const auto order = object.value(key);
+            if (!order.isDouble() || order.toDouble() < 0 || order.toDouble() > double(maximumTabOrder)
+                || std::floor(order.toDouble()) != order.toDouble()) return failure("Invalid tab ordering value.");
+            (QLatin1String(key) == QLatin1String("openedOrder") ? record.openedOrder : record.visitedOrder) = quint64(order.toDouble());
+            candidate.orderCounter_ = std::max(candidate.orderCounter_, quint64(order.toDouble()));
         }
         if (!object.contains("openedOrder")) legacyOrdering.append(record.id);
         if (object.contains("peekSize")) {
@@ -1789,9 +1786,9 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             saved.edge = edge == "left" ? Edge::Left : edge == "right" ? Edge::Right
                 : edge == "top" ? Edge::Top : Edge::Bottom;
             for (const auto* key : {"groupIndex", "tabIndex"}) {
-                const auto value = savedObject.value(QLatin1String(key));
-                if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > maximumRecords
-                    || std::floor(value.toDouble()) != value.toDouble())
+                const auto index = savedObject.value(QLatin1String(key));
+                if (!index.isDouble() || index.toDouble() < 0 || index.toDouble() > maximumRecords
+                    || std::floor(index.toDouble()) != index.toDouble())
                     return failure("Pinned position indices must be bounded integers.");
             }
             saved.groupIndex = savedObject.value("groupIndex").toInt();

@@ -933,7 +933,8 @@ void CaptionStripTest::longToolTipsWrapAtAReadableWidth()
         QToolTip::hideText();
         if (!QTest::qWaitFor([] { return !visibleToolTip(); })) return nullptr;
         show(button);
-        QTest::qWaitFor([] { return visibleToolTip() != nullptr; });
+        // The caller checks the result; a tip that never appears returns null.
+        static_cast<void>(QTest::qWaitFor([] { return visibleToolTip() != nullptr; }));
         return visibleToolTip();
     };
     auto* shortButton = captionButton(window, "close");
