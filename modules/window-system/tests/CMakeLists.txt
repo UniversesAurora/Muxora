@@ -68,6 +68,14 @@ foreach(label model widget desktop)
         window_system_add_suite(${suite} ${label})
     endforeach()
 endforeach()
+# Screen-edge pixels at a second, fractional scale: QT_SCALE_FACTOR=0.75 turns
+# a 200 % monitor into 1.5 (the last physical column maps to x.33 instead of
+# x.5), as on a 150 % laptop panel.
+add_test(NAME window-system.caption-strip-scaled COMMAND window-system-caption-strip-test
+    expandedCaptionControlsReachEveryScreenCorner maximizedCaptionControlsOwnTheActualScreenEdge
+    -o ${CMAKE_CURRENT_BINARY_DIR}/caption-strip-scaled-results.txt,txt)
+set_tests_properties(window-system.caption-strip-scaled PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS desktop
+    ENVIRONMENT QT_SCALE_FACTOR=0.75)
 qt_add_executable(window-system-tab-ordering-model-test tab_ordering_model_test.cpp)
 target_link_libraries(window-system-tab-ordering-model-test PRIVATE WindowSystem::Model Qt6::Test)
 set_target_properties(window-system-tab-ordering-model-test PROPERTIES AUTOMOC ON)

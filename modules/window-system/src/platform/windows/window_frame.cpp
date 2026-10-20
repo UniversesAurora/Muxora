@@ -174,11 +174,12 @@ POINT screenPosition(LPARAM position)
 }
 
 // Maximized or full screen, the client reaches the screen edge, but at a
-// fractional scale its last physical column or row maps to a half logical
-// pixel (3839 / 2 = 1919.5 at 200 %). Qt rounds that to the first point
-// outside the window and delivers the event to no child: a caption button or
-// toolbar against the edge would miss the pixel the pointer stops at. Move
-// such a client mouse position inward to the last pixel inside the window.
+// fractional scale its last physical column or row maps past the last whole
+// logical pixel: 3839 / 2 = 1919.5 at 200 %, 3839 / 1.5 = 2559.33 at 150 %.
+// Qt then finds no child at that position and delivers the event to the
+// window itself, so a caption button or toolbar against the right or bottom
+// edge misses the pixel the pointer stops at. Move such a client mouse
+// position inward until it maps to the last whole logical pixel or before.
 void keepEdgePointerInside(QWidget* window, MSG* msg)
 {
     if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) return;
@@ -186,8 +187,8 @@ void keepEdgePointerInside(QWidget* window, MSG* msg)
     int x = GET_X_LPARAM(msg->lParam);
     int y = GET_Y_LPARAM(msg->lParam);
     const int originalX = x, originalY = y;
-    while (x > 0 && qRound(x / ratio) >= window->width()) --x;
-    while (y > 0 && qRound(y / ratio) >= window->height()) --y;
+    while (x > 0 && x / ratio > window->width() - 1) --x;
+    while (y > 0 && y / ratio > window->height() - 1) --y;
     if (x != originalX || y != originalY) msg->lParam = MAKELPARAM(x, y);
 }
 
