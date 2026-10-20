@@ -163,6 +163,10 @@ void PopupMenuTest::comboDropdownUsesTheSameSquareAnchoredPopupPolicy()
     root.move(available.right() + 1 - root.width(), available.bottom() + 1 - root.height());
     root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
     combo.showPopup(); QVERIFY(QTest::qWaitForWindowExposed(popup));
+    // The list's window is a child of the combo box: preparing its frame must
+    // not turn the combo box or its siblings into native child windows.
+    for (auto* child : root.findChildren<QWidget*>())
+        if (!child->isWindow()) QVERIFY2(!child->internalWinId() && !child->testAttribute(Qt::WA_NativeWindow), child->metaObject()->className());
     const QRect trigger(combo.mapToGlobal(QPoint()), combo.size());
     QVERIFY(popup->width() > trigger.width()); QVERIFY(popup->height() > available.bottom() - trigger.bottom());
     QCOMPARE(popup->pos(), QPoint(trigger.right() + 1 - popup->width(), trigger.top() - popup->height()));

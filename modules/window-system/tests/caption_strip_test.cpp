@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "menu_hover.hpp"
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
 #include "style/tooltip_layout.hpp"
@@ -85,6 +86,18 @@ QVector<QPair<LPARAM, LRESULT>> resizeHits(const RECT& bounds)
             {MAKELPARAM(bounds.right - 2, bounds.top + 1), HTTOPRIGHT},
             {MAKELPARAM(bounds.left + 1, bounds.bottom - 2), HTBOTTOMLEFT},
             {MAKELPARAM(bounds.right - 2, bounds.bottom - 2), HTBOTTOMRIGHT}};
+}
+#endif
+
+#ifdef Q_OS_WIN
+// The client mouse messages of a left click, as Windows delivers them to the
+// window procedure (no real input; Qt translates the physical position).
+void sendClientClick(HWND handle, POINT client)
+{
+    const LPARAM position = MAKELPARAM(client.x, client.y);
+    SendMessageW(handle, WM_MOUSEMOVE, 0, position);
+    SendMessageW(handle, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(handle, WM_LBUTTONUP, 0, position);
 }
 #endif
 
@@ -177,6 +190,7 @@ private slots:
     void captionOrderChangesKeepAllButtonsWhileMaximized_data() { addWindowKinds(); }
     void captionOrderChangesKeepAllButtonsWhileMaximized();
     void reusedToolTipsKeepTheThemedSize();
+    void compressedMenuStripMovedUpKeepsTheWindowAlien();
     void longToolTipsWrapAtAReadableWidth();
 #ifdef Q_OS_WIN
     void maximizedCaptionButtonsShowThemedToolTips();
@@ -647,12 +661,16 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
     MONITORINFO monitor{sizeof(MONITORINFO)};
     QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
-    // Sample the actual last physical pixel, not a logical point inset from
-    // the button. The top row is the screen's work-area edge for all controls;
-    // close additionally owns its upper-right corner.
+    // Sample the actual last physical row of the work area. The top row is
+    // the screen's edge for all controls; close additionally owns the upper-
+    // right corner pixel. The other buttons are sampled at their horizontal
+    // middle: at 200 % the last physical column of a button maps to a half
+    // logical pixel that Qt rounds into its right neighbour, a boundary that
+    // every pair of adjacent widgets shares and that says nothing about the edge.
     const int indexFromRight = role == "close" ? 0 : role == "restore" ? 1 : 2;
     const int nativeWidth = qRound(42 * window->devicePixelRatioF());
-    const POINT edge{monitor.rcWork.right - 1 - indexFromRight * nativeWidth, monitor.rcWork.top};
+    const int inset = indexFromRight == 0 ? 0 : indexFromRight * nativeWidth + nativeWidth / 2;
+    const POINT edge{monitor.rcWork.right - 1 - inset, monitor.rcWork.top};
     const auto nativeClientFillsWorkArea = [handle, monitor] {
         POINT origin{}; RECT client{};
         return ClientToScreen(handle, &origin) && GetClientRect(handle, &client)
@@ -701,16 +719,12 @@ void CaptionStripTest::maximizedCaptionControlsOwnTheActualScreenEdge()
     } else {
         // Minimize and close stay Qt client hits, so Windows shows no caption
         // tooltip of its own; the edge pixel still lies in the Qt button.
+        // Deliver the client messages Windows sends, so Qt converts the
+        // physical edge pixel itself (the last column maps to a half logical
+        // pixel at 200 %).
         QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, position), LRESULT(HTCLIENT));
         POINT client = edge; QVERIFY(ScreenToClient(handle, &client));
-        const qreal ratio = window->devicePixelRatioF();
-        const QPoint logical(qFloor(client.x / ratio), qFloor(client.y / ratio));
-        QCOMPARE(window->childAt(logical), static_cast<QWidget*>(button));
-        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
-            QMouseEvent mouse(type, QPointF(logical), window->mapToGlobal(QPointF(logical)), Qt::LeftButton,
-                type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
-            QApplication::sendEvent(window->windowHandle(), &mouse);
-        }
+        sendClientClick(handle, client);
         QTRY_COMPARE(clicks, 1);
     }
     if (role == "minimize") QTRY_VERIFY(window->isMinimized());
@@ -961,6 +975,60 @@ void CaptionStripTest::longToolTipsWrapAtAReadableWidth()
     QToolTip::hideText();
 }
 
+void CaptionStripTest::compressedMenuStripMovedUpKeepsTheWindowAlien()
+{
+    // Asking a popup for its native handle before Qt creates it marks every
+    // child of the popup's parent as a native window. A compressed menu strip
+    // in the bottom area shows the menu bar's extension button; after moving
+    // the strip up, hovering clipped menus in the overflow menu (each opens,
+    // closes and opens again) turned the bar, its ancestors and all their
+    // siblings into native child windows. The window then lost painting (a blank status bar), hover
+    // feedback and the Snap flyout of its native caption hit test.
+    WindowManager manager; const auto id = createFixture(manager, false);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    window->resize(1100, 700);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->raise(); window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
+    const auto natives = [window] {
+        QStringList result;
+        for (auto* widget : window->findChildren<QWidget*>())
+            if (!widget->isWindow() && (widget->internalWinId() || widget->testAttribute(Qt::WA_NativeWindow)))
+                result << widget->objectName() + QLatin1Char(':') + QString::fromLatin1(widget->metaObject()->className());
+        return result;
+    };
+    auto* strips = window->strips();
+    strips->setLocked(false);
+    QVERIFY(strips->moveStrip("menu", CommandStripHost::Area::Bottom, 0, 0));
+    QVERIFY(strips->setStripWidth("menu", 150));
+    QTRY_VERIFY(!strips->overflowItems("menu").isEmpty());
+    QVERIFY(strips->moveStrip("menu", CommandStripHost::Area::Top, 0, 0));
+    QTRY_VERIFY(!strips->overflowItems("menu").isEmpty());
+    QCOMPARE(natives(), QStringList{});
+    auto* tail = strips->stripWidget("menu")->findChild<QToolButton*>("StripOverflowButton");
+    QVERIFY(tail && tail->menu());
+    auto* overflow = tail->menu();
+    overflow->popup(tail->mapToGlobal(QPoint(0, tail->height())));
+    QVERIFY(QTest::qWaitForWindowExposed(overflow));
+    // Qt destroys a menu's handle when it closes, so moving back to a menu
+    // opened before announces it again while it has no handle.
+    int opened = 0;
+    for (int round = 0; round < 2; ++round) for (auto* action : overflow->actions()) {
+        auto* submenu = action->menu();
+        if (!submenu || submenu->objectName() == QStringLiteral("StripCustomizeMenu")) continue;
+        hoverMenuItem(overflow, action);
+        QTRY_VERIFY(submenu->isVisible());
+        QCOMPARE(natives(), QStringList{});
+        ++opened;
+    }
+    QVERIFY(opened >= 4);
+    overflow->close();
+    // The status bar still paints its own background.
+    auto* status = window->findChild<QWidget*>("StatusBar"); QVERIFY(status);
+    const auto image = window->grab().toImage();
+    const QPoint sample = status->mapTo(window, QPoint(status->width() - 6, status->height() / 2));
+    QCOMPARE(image.pixelColor(sample * image.devicePixelRatio()), manager.theme().statusBackground);
+}
+
 void CaptionStripTest::reusedToolTipsKeepTheThemedSize()
 {
     // A host's own application style sheet survives the window theme.
@@ -1114,18 +1182,12 @@ void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
     int clicks = 0; QObject::connect(close, &QToolButton::clicked, window, [&clicks] { ++clicks; });
     {
         // Close is a Qt client hit, maximized and fullscreen alike (the
-        // native hit test leaves it to Qt). Deliver
-        // the press/release to the window like QTest does, but without its
-        // rule that a null (0, 0) position means "the window centre", which
-        // would miss the top-left corner.
-        const auto send = [window, logical](QEvent::Type type, Qt::MouseButtons buttons) {
-            QMouseEvent mouse(type, QPointF(logical), window->mapToGlobal(QPointF(logical)),
-                              Qt::LeftButton, buttons, Qt::NoModifier);
-            QApplication::sendEvent(window->windowHandle(), &mouse);
-        };
+        // native hit test leaves it to Qt). Deliver the client messages
+        // Windows sends for the corner pixel, so Qt converts it itself: the
+        // right and bottom corners map to half logical pixels at 200 %.
         if (!fullscreen) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(corner.x, corner.y)), LRESULT(HTCLIENT));
-        send(QEvent::MouseButtonPress, Qt::LeftButton);
-        send(QEvent::MouseButtonRelease, Qt::NoButton);
+        POINT client = corner; QVERIFY(ScreenToClient(handle, &client));
+        sendClientClick(handle, client);
     }
     auto* hit = window->childAt(logical);
     const auto hitName = hit ? QStringLiteral("%1#%2 role=%3").arg(hit->metaObject()->className(), hit->objectName(),

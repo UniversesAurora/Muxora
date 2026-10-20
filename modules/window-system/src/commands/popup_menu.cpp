@@ -61,7 +61,14 @@ void preparePopupFrame(QWidget* popup)
     // A square stylesheet changes client painting, but Win11 can still round
     // the native popup HWND. Apply the policy before first exposure and when
     // Qt replaces a handle. Earlier Windows keeps its ordinary square popup.
-    const auto handle = reinterpret_cast<HWND>(popup->winId());
+    // Never create the handle here: winId() on a popup whose parent is an
+    // ordinary child widget (a menu bar's menu, a combo box's list) forces
+    // native windows on that parent's children and, from there, up and across
+    // the whole window, which then breaks painting, hover and the native hit
+    // test. Callers apply this again on Show, which Qt sends after it creates
+    // the handle and before the native window appears.
+    if (!popup->internalWinId()) return;
+    const auto handle = reinterpret_cast<HWND>(popup->internalWinId());
     // QSS supplies the single client border. A native edge or Win11's DWM
     // outline would otherwise add a second rim (often white under a different
     // system palette). Keep the compositor's shadow while removing only rims.

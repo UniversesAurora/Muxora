@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "chrome/command_strip.hpp"
 #include "commands/popup_menu.hpp"
+#include "native_input.hpp"
+#include "menu_hover.hpp"
 
 #include <window_system/theme.hpp>
 
@@ -19,6 +21,7 @@
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <dwmapi.h>
 #endif
 
 using namespace window_system;
@@ -36,44 +39,8 @@ QList<QAction*> commands(QWidget* owner)
     return result;
 }
 
-// Use the target window's HWND and scale. Direct QWidget notification bypasses
-// native popup routing and does not reproduce focus restoration on dismissal.
-void nativeMouse(QWidget* target, QPoint local, bool click = false)
-{
-#ifdef Q_OS_WIN
-    auto* window = target->window();
-    const QPoint client = target->mapTo(window, local);
-    const qreal ratio = window->devicePixelRatioF();
-    POINT point{qRound(client.x() * ratio), qRound(client.y() * ratio)};
-    QVERIFY(ClientToScreen(reinterpret_cast<HWND>(window->winId()), &point));
-    QVERIFY(SetCursorPos(point.x, point.y));
-    if (click) {
-        INPUT events[2]{};
-        events[0].type = events[1].type = INPUT_MOUSE;
-        events[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-        events[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-        QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
-    }
-#else
-    if (click) QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, local);
-    else QTest::mouseMove(target, local);
-#endif
-}
-
-void nativeKey(QWidget* target, Qt::Key key)
-{
-#ifdef Q_OS_WIN
-    Q_UNUSED(target);
-    const WORD virtualKey = key == Qt::Key_Escape ? VK_ESCAPE : key == Qt::Key_Tab ? VK_TAB : VK_SPACE;
-    INPUT events[2]{};
-    events[0].type = events[1].type = INPUT_KEYBOARD;
-    events[0].ki.wVk = events[1].ki.wVk = virtualKey;
-    events[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    QCOMPARE(SendInput(2, events, sizeof(INPUT)), UINT(2));
-#else
-    QTest::keyClick(target, key);
-#endif
-}
+void nativeMouse(QWidget* target, QPoint local, bool click = false) { native_input::mouse(target, local, click); }
+void nativeKey(QWidget* target, Qt::Key key) { native_input::key(target, key); }
 
 int pixelsOfColor(const QImage& image, QColor color)
 {
@@ -94,6 +61,7 @@ private slots:
     void keyboardFocusRemainsVisibleAfterMenuDismissal();
     void clippedMenusDoNotOpenFromThePointer();
     void clippedMenusOpenBesideTheOverflowMenu();
+    void hoveredOverflowMenusKeepTheWindowAlien();
 };
 
 namespace {
@@ -302,6 +270,52 @@ void ToolbarPopupTest::clippedMenusOpenBesideTheOverflowMenu()
         qPrintable(QStringLiteral("submenu %1,%2 overflow %3..%4").arg(sub.left()).arg(sub.top()).arg(outer.left()).arg(outer.right())));
     QCOMPARE(sub.top(), overflow->mapToGlobal(overflow->actionGeometry(hidden).topLeft()).y());
     submenu->close(); overflow->close();
+}
+
+void ToolbarPopupTest::hoveredOverflowMenusKeepTheWindowAlien()
+{
+    // Clipped menus opened by hovering the overflow menu get the square popup
+    // frame on their own handle, and preparing it leaves every child of the
+    // strip an alien widget (see CaptionStripTest for the full window case).
+    CompressedMenuStrip strip; QVERIFY(strip.show());
+    const auto natives = [&strip] {
+        QStringList result;
+        for (auto* widget : strip.host.findChildren<QWidget*>())
+            if (!widget->isWindow() && (widget->internalWinId() || widget->testAttribute(Qt::WA_NativeWindow)))
+                result << widget->objectName() + QLatin1Char(':') + QString::fromLatin1(widget->metaObject()->className());
+        return result;
+    };
+    QCOMPARE(natives(), QStringList{});
+    std::unique_ptr<QMenu> overflow(strip.host.createOverflowMenu("menu", &strip.host)); QVERIFY(overflow);
+    overflow->popup(strip.host.mapToGlobal(QPoint(0, strip.host.height())));
+    QVERIFY(QTest::qWaitForWindowExposed(overflow.get()));
+    // Qt destroys a menu's handle when it closes: the second round announces
+    // each menu again before Qt creates its new handle.
+    int opened = 0;
+    for (int round = 0; round < 2; ++round) for (auto* action : overflow->actions()) {
+        auto* submenu = action->menu();
+        if (!submenu || !strip.menus.contains(submenu)) continue;
+        hoverMenuItem(overflow.get(), action);
+        QTRY_VERIFY(submenu->isVisible());
+        QCOMPARE(natives(), QStringList{});
+#ifdef Q_OS_WIN
+        // The square frame policy still reaches the menu's own handle.
+        DWORD corner = 0;
+        const auto result = DwmGetWindowAttribute(reinterpret_cast<HWND>(submenu->internalWinId()), DWORD(33), &corner, sizeof(corner));
+        if (result == S_OK) QCOMPARE(corner, DWORD(1));
+        else QCOMPARE(result, E_INVALIDARG);
+#endif
+        ++opened;
+    }
+    QVERIFY(opened >= 4);
+    overflow->close();
+    // A visible menu opened from the bar itself, again after closing.
+    for (int round = 0; round < 2; ++round) {
+        strip.bar->setActiveAction(strip.bar->actions().first());
+        QTRY_VERIFY(strip.menus.first()->isVisible());
+        QCOMPARE(natives(), QStringList{});
+        strip.menus.first()->close(); QTRY_VERIFY(!strip.menus.first()->isVisible());
+    }
 }
 
 QTEST_MAIN(ToolbarPopupTest)

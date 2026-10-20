@@ -173,6 +173,24 @@ POINT screenPosition(LPARAM position)
     return {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
 }
 
+// Maximized or full screen, the client reaches the screen edge, but at a
+// fractional scale its last physical column or row maps to a half logical
+// pixel (3839 / 2 = 1919.5 at 200 %). Qt rounds that to the first point
+// outside the window and delivers the event to no child: a caption button or
+// toolbar against the edge would miss the pixel the pointer stops at. Move
+// such a client mouse position inward to the last pixel inside the window.
+void keepEdgePointerInside(QWidget* window, MSG* msg)
+{
+    if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) return;
+    const qreal ratio = std::max<qreal>(1.0, window->devicePixelRatioF());
+    int x = GET_X_LPARAM(msg->lParam);
+    int y = GET_Y_LPARAM(msg->lParam);
+    const int originalX = x, originalY = y;
+    while (x > 0 && qRound(x / ratio) >= window->width()) --x;
+    while (y > 0 && qRound(y / ratio) >= window->height()) --y;
+    if (x != originalX || y != originalY) msg->lParam = MAKELPARAM(x, y);
+}
+
 QPoint logicalClientPosition(QWidget* window, HWND handle, POINT point, bool fromScreen)
 {
     if (fromScreen) ScreenToClient(handle, &point);
@@ -376,6 +394,10 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
     if (!window || !message || !result || !window->isWindow()
         || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return false;
     auto* msg = static_cast<MSG*>(message);
+    // Client mouse messages carry client coordinates; the wheel messages carry
+    // screen coordinates. Qt goes on to translate this same message.
+    if (msg->message >= WM_MOUSEFIRST && msg->message <= WM_MOUSELAST
+        && msg->message != WM_MOUSEWHEEL && msg->message != WM_MOUSEHWHEEL) keepEdgePointerInside(window, msg);
     switch (msg->message) {
     case WM_STYLECHANGING:
         if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam && !fullScreenRequested(window)) {
