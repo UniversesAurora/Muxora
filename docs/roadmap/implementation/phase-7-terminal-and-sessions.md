@@ -63,7 +63,14 @@ public:
 
 **必须具备的显示能力**：字形回退链与宽字符；可选连字（默认关闭）；光标样式；选区；超链接下划线；按 DPR 渲染（每个屏幕各自的 DPR，不按主屏处理）；不可见时（1.7 可见性通知）释放渲染资源。
 
-**完成标准**：基准结果与 ADR；在 1.5 倍、2 倍缩放下像素对齐测试通过。
+**抗锯齿方式**（2026-10-20 加入，参照 Windows Terminal 的 `antialiasingMode`）：设置项 `terminal.antialiasingMode`，取值 `grayscale`（默认，与 Windows Terminal 一致）、`cleartype`、`aliased`，可按会话或配置覆盖，切换后立即重绘，不重建连接。两种渲染方案都要从设计上支持三种方式：
+
+- 字形光栅化用 DirectWrite（`IDWriteGlyphRunAnalysis`：灰度用 `DWRITE_TEXTURE_ALIASED_1x1` 配合抗锯齿渲染模式；ClearType 用 `DWRITE_TEXTURE_CLEARTYPE_3x1`），遵守系统的 ClearType 伽马、对比度和像素排列（RGB／BGR）设置，不自己猜。
+- 方案 R 的字形图集要能存放三通道覆盖率，ClearType 用双源混合（dual-source blending）或在已知不透明背景色上合成；方案 P 用 `QPainter` 时要确认 Qt 在目标上确实输出子像素结果。
+- 背景透明或亚克力（7.9）时 ClearType 无法正确合成，自动退回灰度，与 Windows Terminal 的行为一致，并在设置说明中写明。
+- 基准程序对三种方式分别测吞吐和帧时间；像素测试分别检查三种方式的输出（灰度无彩色像素、ClearType 有子像素彩边、无抗锯齿只有前景和背景两种颜色）。
+
+**完成标准**：基准结果与 ADR；在 1.5 倍、2 倍缩放下像素对齐测试通过；三种抗锯齿方式都能切换并通过各自的像素检查。
 
 ---
 
