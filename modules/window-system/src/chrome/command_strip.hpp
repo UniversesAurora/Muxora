@@ -28,6 +28,9 @@ public:
         // A required elastic strip owns its row's spare space. Moving an
         // ordinary elastic strip into that row makes the latter content-sized.
         bool elasticRequired = false;
+        // Always exactly its natural width: it never absorbs a neighbour's
+        // width, takes a dragged or saved width, or leaves blank space.
+        bool fixedWidth = false;
     };
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;

@@ -119,14 +119,18 @@ void doubleClickCaption(QLabel* caption)
     QCoreApplication::sendEvent(caption, &release);
 }
 
+constexpr int stripSpacingForTest = 4; // CommandStripHost spacing between strips of a row.
+
 bool reserveTitleWidth(WorkspaceWindow* window, int contentWidth)
 {
     // The title is now required to remain elastic. Reserve the rest of the
-    // row with its right neighbour, exercising the actual elastic layout.
+    // row with its left neighbour (the menu; caption controls have a fixed
+    // width), exercising the actual elastic layout.
     auto* caption = window->findChild<QLabel*>("CaptionTitle");
-    auto* controls = window->strips()->stripWidget("caption-controls");
-    return caption && controls && window->strips()->setStripWidth("caption-controls",
-        controls->width() + caption->width() - contentWidth);
+    const auto menuId = window->strips()->stripIds().contains("menu") ? QStringLiteral("menu") : QStringLiteral("floating-menu");
+    auto* menu = window->strips()->stripWidget(menuId);
+    return caption && menu && window->strips()->setStripWidth(menuId,
+        menu->width() + caption->width() - contentWidth);
 }
 
 } // namespace
@@ -164,6 +168,8 @@ private slots:
     void captionButtonOrderFollowsTheBehavior();
     void restoredCaptionControlsTouchTheWindowBorder_data() { addWindowKinds(); }
     void restoredCaptionControlsTouchTheWindowBorder();
+    void captionControlsNeverTakeExtraWidth_data() { addWindowKinds(); }
+    void captionControlsNeverTakeExtraWidth();
     void expandedCaptionControlsReachEveryScreenCorner_data();
     void expandedCaptionControlsReachEveryScreenCorner();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
@@ -189,9 +195,12 @@ void CaptionStripTest::controlsCanGrowAndMoveButNeverCompressOrBecomeElastic()
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     const int naturalWidth = controls->width();
     QCOMPARE(naturalWidth, 126);
+    // A fixed width: no narrower, no wider, and no saved width.
+    QVERIFY(strips->stripConstraints("caption-controls").fixedWidth);
     QVERIFY(!strips->setStripWidth("caption-controls", naturalWidth - 1));
-    QVERIFY(strips->setStripWidth("caption-controls", naturalWidth + 80));
-    QCOMPARE(controls->width(), naturalWidth + 80);
+    QVERIFY(!strips->setStripWidth("caption-controls", naturalWidth + 80));
+    QCOMPARE(controls->width(), naturalWidth);
+    QCOMPARE(window->saveStripLayout().value("strips").toObject().value("caption-controls").toObject().value("width").toInt(), -1);
     QVERIFY(strips->overflowItems("caption-controls").isEmpty());
     for (const auto& role : {QStringLiteral("minimize"), QStringLiteral("maximize"), QStringLiteral("close")}) {
         auto* button = captionButton(window, role); QVERIFY(button);
@@ -307,7 +316,7 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     QVERIFY(!window->saveStripLayout().value("strips").toObject().contains("workspace"));
     QVERIFY(window->findChild<QMenuBar*>("MenuStrip"));
     QVERIFY(!window->findChild<QWidget*>("StatusBar"));
-    QVERIFY(strips->setStripWidth("caption-controls", 206));
+    QVERIFY(strips->setStripWidth("floating-menu", 206));
     QVERIFY(strips->moveStrip("caption-controls", 1, 0));
     const auto changed = window->saveStripLayout();
     QCOMPARE(window->saveInactiveStripLayouts().value("workbench").toObject(), complete);
@@ -695,12 +704,18 @@ void CaptionStripTest::captionButtonOrderFollowsTheBehavior()
     const auto settle = [] { QCoreApplication::processEvents(); };
     QCOMPARE(manager.behavior().captionButtonOrder, CaptionButtonOrder::Windows);
     QVERIFY(x("minimize") < x("maximize") && x("maximize") < x("close"));
-    // Spare width stays on the inner side: the Windows order hugs the
-    // trailing edge, the two close-first orders the leading edge.
+    // The strip is exactly as wide as its three buttons in every order:
+    // the outermost button is the strip's edge on both sides.
     const int natural = controls->width();
-    QVERIFY(window->strips()->setStripWidth("caption-controls", natural + 80)); settle();
+    QCOMPARE(natural, 3 * 42);
     auto* close = captionButton(window, "close");
-    QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
+    const auto fills = [controls, window](const QStringList& roles) {
+        const auto* first = captionButton(window, roles.first());
+        const auto* last = captionButton(window, roles.last());
+        return first->mapTo(controls, QPoint()).x() == 0
+            && last->mapTo(controls, QPoint(last->width(), 0)).x() == controls->width();
+    };
+    QVERIFY(fills({"minimize", "maximize", "close"}));
     const struct { CaptionButtonOrder order; const char* key; QStringList roles; } orders[] = {
         {CaptionButtonOrder::Reversed, "reversed", {"close", "maximize", "minimize"}},
         {CaptionButtonOrder::MacOS, "macos", {"close", "minimize", "maximize"}},
@@ -708,6 +723,8 @@ void CaptionStripTest::captionButtonOrderFollowsTheBehavior()
     for (const auto& expected : orders) {
         auto behavior = manager.behavior(); behavior.captionButtonOrder = expected.order; manager.setBehavior(behavior); settle();
         QVERIFY2(x(expected.roles[0]) < x(expected.roles[1]) && x(expected.roles[1]) < x(expected.roles[2]), expected.key);
+        QCOMPARE(controls->width(), natural);
+        QVERIFY2(fills(expected.roles), expected.key);
         if (expected.order == CaptionButtonOrder::Windows)
             QCOMPARE(close->mapTo(controls, QPoint(close->width(), 0)).x(), controls->width());
         else QCOMPARE(close->mapTo(controls, QPoint()).x(), 0);
@@ -742,13 +759,59 @@ void CaptionStripTest::restoredCaptionControlsTouchTheWindowBorder()
     // border separates the outermost button from the window edge.
     QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width() - 1);
     QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
+    // Ordinary toolbars touch the border as well: the menu is the first
+    // strip of the default row.
+    auto* strips = window->strips();
+    const auto menuId = floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
+    auto* menu = strips->stripWidget(menuId); QVERIFY(menu);
+    QCOMPARE(strips->stripOrder(0).first(), menuId);
+    QCOMPARE(menu->mapTo(window, QPoint()).x(), 1);
     auto behavior = manager.behavior(); behavior.captionButtonOrder = CaptionButtonOrder::MacOS; manager.setBehavior(behavior);
-    QVERIFY(window->strips()->moveStrip("caption-controls", CommandStripHost::Area::Top, 0, 0));
+    QVERIFY(strips->moveStrip("caption-controls", CommandStripHost::Area::Top, 0, 0));
     QTRY_COMPARE(close->mapTo(window, QPoint()).x(), 1);
     QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
-    // Ordinary toolbars keep their gutter; only the caption controls move out.
-    auto* menu = window->strips()->stripWidget(floating ? "floating-menu" : "menu"); QVERIFY(menu);
+    // The menu follows directly after the three buttons.
+    auto* controls = strips->stripWidget("caption-controls"); QVERIFY(controls);
+    QCOMPARE(controls->width(), 3 * 42);
     QVERIFY(menu->mapTo(window, QPoint()).x() > close->mapTo(window, QPoint()).x());
+    QVERIFY(manager.model().validate().ok);
+}
+
+void CaptionStripTest::captionControlsNeverTakeExtraWidth()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto* strips = window->strips();
+    auto* controls = strips->stripWidget("caption-controls"); QVERIFY(controls);
+    const int natural = controls->width();
+    QCOMPARE(natural, 3 * 42);
+    // Removing the strip after the controls normally hands its width to the
+    // previous strip, so the others keep their place. Fixed-width controls
+    // do not absorb it: no blank space opens beside the buttons.
+    auto* action = new QAction("Custom command", strips);
+    strips->addActionStrip("custom", "Custom strip", {action}, 0);
+    QVERIFY(strips->moveStrip("caption-controls", CommandStripHost::Area::Top, 0, 0));
+    QVERIFY(strips->moveStrip("custom", CommandStripHost::Area::Top, 0, 1));
+    const auto menuId = floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
+    QCOMPARE(strips->stripOrder(0).mid(0, 3), (QStringList{"caption-controls", "custom", menuId}));
+    QVERIFY(strips->moveStrip("custom", CommandStripHost::Area::Bottom, 0, 0));
+    QCoreApplication::processEvents();
+    QCOMPARE(controls->width(), natural);
+    // The next strip follows after the ordinary strip spacing only.
+    auto* menu = strips->stripWidget(menuId);
+    QCOMPARE(menu->mapTo(window, QPoint()).x() - controls->mapTo(window, QPoint(controls->width(), 0)).x(), stripSpacingForTest);
+    QCOMPARE(window->saveStripLayout().value("strips").toObject().value("caption-controls").toObject().value("width").toInt(), -1);
+    // Layouts saved by earlier versions may carry a widened width: ignore it.
+    auto layout = window->saveStripLayout();
+    auto settings = layout.value("strips").toObject();
+    auto entry = settings.value("caption-controls").toObject();
+    entry.insert("width", 349); settings.insert("caption-controls", entry); layout.insert("strips", settings);
+    window->restoreStripLayout(layout); QCoreApplication::processEvents();
+    controls = strips->stripWidget("caption-controls"); QVERIFY(controls);
+    QCOMPARE(controls->width(), natural);
+    QCOMPARE(window->saveStripLayout().value("strips").toObject().value("caption-controls").toObject().value("width").toInt(), -1);
     QVERIFY(manager.model().validate().ok);
 }
 
@@ -779,9 +842,9 @@ void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner()
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     QVERIFY(window->strips()->moveStrip("caption-controls",
         bottom ? CommandStripHost::Area::Bottom : CommandStripHost::Area::Top, 0, left ? 0 : 1000)); // Out-of-range index appends.
-    // Alone in a new bottom row the strip starts at the leading edge; stretch
-    // it so its trailing (close) button reaches the right corner, as a user would.
-    if (bottom && !left) QVERIFY(window->strips()->setStripWidth("caption-controls", 4000));
+    // Alone in a new bottom row the strip starts at the leading edge. Put the
+    // elastic title before it, as a user would, so it reaches the right corner.
+    if (bottom && !left) QVERIFY(window->strips()->moveStrip("title", CommandStripHost::Area::Bottom, 0, 0));
     // The global status bar lies below the bottom toolbars; the controls can
     // only reach the bottom edge when nothing is between them and the edge.
     if (bottom && !floating) QVERIFY(manager.setStatusBarVisible(id, false));

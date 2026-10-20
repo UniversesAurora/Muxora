@@ -494,8 +494,8 @@ void ChromeInteractionTest::titleFirstFillsTheRowAndIsAWindowDragArea()
     QVERIFY(host.moveStrip("title", 0, 1));
     // Elastic sizing supersedes the former "only when first" condition.
     QCOMPARE(host.stripWidget("title")->width(), titleWidth);
-    QCOMPARE(host.stripWidget("tools")->geometry().left(), 2);
-    QCOMPARE(host.stripWidget("title")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("tools")->geometry().left(), 0); // No outer row gutter.
+    QCOMPARE(host.stripWidget("title")->geometry().right(), host.width() - 1); // No outer row gutter.
     host.setLocked(false);
     auto* handle = host.stripWidget("title")->findChild<QWidget*>("StripHandle");
     QVERIFY(handle); QCOMPARE(handle->cursor().shape(), Qt::SizeAllCursor);
@@ -513,18 +513,18 @@ void ChromeInteractionTest::oneElasticStripOwnsEachRowAndRestoresLegacyDefaults(
     const int beforeWidth = host.stripWidget("before")->width();
     const int afterWidth = host.stripWidget("after")->width();
     const int elasticWidth = host.stripWidget("elastic")->width();
-    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 1); // No outer row gutter.
     host.resize(1000, host.height());
     QCOMPARE(host.stripWidget("before")->width(), beforeWidth);
     QCOMPARE(host.stripWidget("after")->width(), afterWidth);
     QCOMPARE(host.stripWidget("elastic")->width(), elasticWidth + 150);
-    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 1); // No outer row gutter.
     QVERIFY(host.setStripSizing("before", CommandStripHost::StripSizing::Elastic));
     QCOMPARE(host.stripSizing("before"), CommandStripHost::StripSizing::Elastic);
     QCOMPARE(host.stripSizing("elastic"), CommandStripHost::StripSizing::Content);
     QVERIFY(host.stripWidget("before")->width() > host.stripWidget("elastic")->width());
     QCOMPARE(host.stripWidget("after")->width(), afterWidth);
-    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 1); // No outer row gutter.
     const auto snapshot = host.saveLayout();
     auto legacy = snapshot;
     auto settings = legacy.value("strips").toObject();
@@ -600,7 +600,7 @@ void ChromeInteractionTest::movingElasticStripClaimsTheTargetRowAndEscRestoresTh
     QCOMPARE(host.stripOrder(1), QStringList({"target", "source"}));
     QCOMPARE(host.stripSizing("target"), CommandStripHost::StripSizing::Content);
     QCOMPARE(host.stripSizing("source"), CommandStripHost::StripSizing::Elastic);
-    QCOMPARE(host.stripWidget("source")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("source")->geometry().right(), host.width() - 1); // No outer row gutter.
 }
 
 void ChromeInteractionTest::customizationUpdatesMenuAndActionGeometryImmediately()
@@ -958,7 +958,7 @@ void ChromeInteractionTest::removingFollowingStripsRepairsTheVacatedBoundary()
     QVERIFY(host.moveStrip("moved", 1, 0));
     QCOMPARE(before->width(), nextKind == "content" ? previousWidth + vacatedWidth + 4 : natural);
     if (nextKind == "content") QCOMPARE(host.stripWidget("next")->x(), followingLeft);
-    if (nextKind == "elastic") QCOMPARE(host.stripWidget("next")->geometry().right(), host.width() - 3);
+    if (nextKind == "elastic") QCOMPARE(host.stripWidget("next")->geometry().right(), host.width() - 1); // No outer row gutter.
     QCOMPARE(host.stripOrder(1), QStringList({"moved"}));
     host.restoreLayout(snapshot);
     QCOMPARE(host.saveLayout(), snapshot);
@@ -1129,7 +1129,7 @@ void ChromeInteractionTest::extremeRequestedWidthsRemainBoundedAndRestorable()
     QVERIFY(host.moveStrip("second", 1, 0));
     host.restoreLayout(saved);
     QCOMPARE(host.saveLayout(), saved);
-    QCOMPARE(host.stripWidget("elastic")->geometry().right(), host.width() - 3);
+    QCOMPARE(host.stripWidget("elastic")->geometry().right(), host.width() - 1); // No outer row gutter.
 }
 
 void ChromeInteractionTest::resettingWidthsKeepsTheCorrectAnchorAndOtherRequests_data()
@@ -1376,7 +1376,7 @@ void ChromeInteractionTest::rightBlockTracksTheWindowEdgeAndRecoversRequestedWid
     const auto lastId = hiddenTrailing ? "right-first" : "right-last";
     for (const int width : {800, 500, host.minimumSizeHint().width(), 1300, 1200}) {
         host.resize(width, host.height());
-        QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 2);
+        QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 0); // No outer row gutter.
         if (!hiddenTrailing) QCOMPARE(host.stripWidget("right-last")->x() - host.stripWidget("right-first")->geometry().right() - 1, 4);
         QCOMPARE(host.saveLayout(), saved);
         if (width >= 500) {
@@ -1386,7 +1386,7 @@ void ChromeInteractionTest::rightBlockTracksTheWindowEdgeAndRecoversRequestedWid
     }
     host.restoreLayout(saved);
     QCOMPARE(host.stripWidget("right-first")->width(), 130);
-    QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 2);
+    QCOMPARE(host.width() - host.stripWidget(lastId)->geometry().right() - 1, 0); // No outer row gutter.
 }
 
 void ChromeInteractionTest::contextMenuListsEveryStripAndOmitsUnrelatedWindowKinds()

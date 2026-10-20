@@ -60,20 +60,30 @@ void ToolbarResetTest::publicApiAndExplicitCommandRestoreNaturalWidth()
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* strips = window->strips(); QVERIFY(strips);
+    // Caption controls have a fixed width; the menu strip carries the edit.
+    const auto menuId = floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
+    auto* menu = strips->stripWidget(menuId); QVERIFY(menu);
     auto* controls = strips->stripWidget("caption-controls"); QVERIFY(controls);
-    const int natural = controls->width();
+    const int natural = menu->width();
+    const int controlsWidth = controls->width();
     const auto order = strips->stripOrder(0);
-    QVERIFY(strips->setStripWidth("caption-controls", natural + 70));
-    QVERIFY(manager.resetToolbarWidth(id, "caption-controls"));
-    QCOMPARE(controls->width(), natural);
+    QVERIFY(strips->setStripWidth(menuId, natural + 70));
+    QCOMPARE(menu->width(), natural + 70);
+    QVERIFY(manager.resetToolbarWidth(id, menuId));
+    QCOMPARE(menu->width(), natural);
     QCOMPARE(strips->stripOrder(0), order);
-    QCOMPARE(stripState(window, "caption-controls").value("width").toInt(), -1);
-    QVERIFY(strips->setStripWidth("caption-controls", natural + 90));
-    QVERIFY(manager.execute("window.toolbar.resetSize", {{"strip", "caption-controls"}}, id));
-    QCOMPARE(controls->width(), natural);
+    QCOMPARE(stripState(window, menuId).value("width").toInt(), -1);
+    QVERIFY(strips->setStripWidth(menuId, natural + 90));
+    QVERIFY(manager.execute("window.toolbar.resetSize", {{"strip", menuId}}, id));
+    QCOMPARE(menu->width(), natural);
     QCOMPARE(strips->stripOrder(0), order);
     QCOMPARE(strips->stripSizing("title"), CommandStripHost::StripSizing::Elastic);
     QVERIFY(!strips->isStripOptionsEnabled("caption-controls"));
+    // The caption controls refuse any width, and resetting them is harmless.
+    QVERIFY(!strips->setStripWidth("caption-controls", controlsWidth + 70));
+    QVERIFY(manager.resetToolbarWidth(id, "caption-controls"));
+    QCOMPARE(controls->width(), controlsWidth);
+    QCOMPARE(stripState(window, "caption-controls").value("width").toInt(), -1);
 }
 
 void ToolbarResetTest::optionsMenuDispatchesTheRegisteredCommand()

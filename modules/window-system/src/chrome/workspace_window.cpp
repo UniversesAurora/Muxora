@@ -462,7 +462,7 @@ void WorkspaceWindow::createChrome()
     setCaptionButtonOrder(manager_->behavior().captionButtonOrder);
     strips_->addStrip("caption-controls", QCoreApplication::translate("WindowSystem", "窗口控制"), controls, 0);
     strips_->setStripOptionsEnabled("caption-controls", false);
-    strips_->setStripConstraints("caption-controls", {false, false});
+    strips_->setStripConstraints("caption-controls", {false, false, 12, false, true});
     for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
     row->addWidget(strips_, 1);
     column_->insertWidget(0, chrome_);

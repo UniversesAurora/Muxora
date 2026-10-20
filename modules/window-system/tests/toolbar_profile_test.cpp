@@ -67,6 +67,12 @@ private slots:
     void synchronousSavingObservesOnlyTheCompletedRestore();
 };
 
+// Caption controls have a fixed width; width edits use the window's menu strip.
+QString menuStrip(WorkspaceWindow* window)
+{
+    return window->strips()->stripIds().contains("menu") ? QStringLiteral("menu") : QStringLiteral("floating-menu");
+}
+
 void ToolbarProfileTest::latestEditSurvivesSavingOlderWindows()
 {
     QFETCH(bool, floating);
@@ -76,7 +82,7 @@ void ToolbarProfileTest::latestEditSurvivesSavingOlderWindows()
     const auto second = manager.createWindow(floating ? WindowKind::Floating : WindowKind::Workbench, {}, root);
     const auto opposite = manager.createWindow(floating ? WindowKind::Workbench : WindowKind::Floating, {}, root);
     if (!floating) QVERIFY(!manager.createWindow(WindowKind::Floating, {}, root).isNull());
-    QVERIFY(view(manager, opposite)->strips()->setStripWidth("caption-controls", 211));
+    QVERIFY(view(manager, opposite)->strips()->setStripWidth(menuStrip(view(manager, opposite)), 211));
     const auto oppositeEdit = view(manager, opposite)->saveStripLayout();
     auto* older = view(manager, first); auto* newer = view(manager, second);
     QVERIFY(older && newer);
@@ -84,7 +90,7 @@ void ToolbarProfileTest::latestEditSurvivesSavingOlderWindows()
     QVERIFY(older->strips()->moveStrip("caption-controls", 0, 0));
     const auto firstEdit = older->saveStripLayout();
     QCOMPARE(profile(manager.saveLayout(), floating), firstEdit);
-    QVERIFY(newer->strips()->setStripWidth("caption-controls", 236));
+    QVERIFY(newer->strips()->setStripWidth(menuStrip(newer), 236));
     QVERIFY(newer->strips()->moveStrip("caption-controls", CommandStripHost::Area::Bottom, 0, 0));
     const auto newestEdit = newer->saveStripLayout();
     QVERIFY(newestEdit != firstEdit);
@@ -112,11 +118,11 @@ void ToolbarProfileTest::latestEditSurvivesSavingOlderWindows()
     QCOMPARE(profile(restarted.saveLayout(), !floating), oppositeEdit);
 
     // A later width edit updates that field without restoring the old order.
-    QVERIFY(older->strips()->setStripWidth("caption-controls", 244));
+    QVERIFY(older->strips()->setStripWidth(menuStrip(older), 244));
     const auto latest = profile(manager.saveLayout(), floating);
     QCOMPARE(latest.value("rows"), newestEdit.value("rows"));
     QCOMPARE(latest.value("bottomRows"), newestEdit.value("bottomRows"));
-    QCOMPARE(latest.value("strips").toObject().value("caption-controls").toObject().value("width"), QJsonValue(244));
+    QCOMPARE(latest.value("strips").toObject().value(menuStrip(older)).toObject().value("width"), QJsonValue(244));
 }
 
 void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
@@ -128,7 +134,7 @@ void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
     auto* newer = view(manager, first); auto* older = view(manager, second);
     const auto oldOrder = older->saveStripLayout().value("rows");
     QVERIFY(newer->strips()->moveStrip("caption-controls", 0, 0));
-    QVERIFY(newer->strips()->setStripWidth("caption-controls", 232));
+    QVERIFY(newer->strips()->setStripWidth(menuStrip(newer), 232));
     const auto sorted = newer->saveStripLayout();
     QVERIFY(sorted.value("rows") != oldOrder);
 
@@ -139,7 +145,7 @@ void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
     QCOMPARE(updated.value("rows"), sorted.value("rows"));
     QCOMPARE(updated.value("locked"), QJsonValue(false));
     const auto settings = updated.value("strips").toObject();
-    QCOMPARE(settings.value("caption-controls").toObject().value("width"), QJsonValue(232));
+    QCOMPARE(settings.value(menu).toObject().value("width"), QJsonValue(232));
     QVERIFY(settings.value(menu).toObject().value("excluded").toArray().contains(QStringLiteral("视图")));
     // The old window can keep its displayed order without publishing it.
     QCOMPARE(older->saveStripLayout().value("rows"), oldOrder);
@@ -156,7 +162,7 @@ void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
     const auto moved = profile(manager.saveLayout(), floating);
     QCOMPARE(moved.value("rows"), older->saveStripLayout().value("rows"));
     QCOMPARE(moved.value("bottomRows"), older->saveStripLayout().value("bottomRows"));
-    QCOMPARE(moved.value("strips").toObject().value("caption-controls").toObject().value("width"), QJsonValue(232));
+    QCOMPARE(moved.value("strips").toObject().value(menu).toObject().value("width"), QJsonValue(232));
 }
 
 void ToolbarProfileTest::windowKindsRestoreTheirOwnLayoutAndLiveContent()
@@ -175,7 +181,7 @@ void ToolbarProfileTest::windowKindsRestoreTheirOwnLayoutAndLiveContent()
     auto* strips = window->strips();
     QVERIFY(strips->moveStrip("caption-controls", 0, 1));
     QVERIFY(strips->moveStrip("title", 0, 0));
-    QVERIFY(strips->setStripWidth("caption-controls", 214));
+    QVERIFY(strips->setStripWidth("floating-menu", 214));
     const auto floating = window->saveStripLayout();
     QCOMPARE(strips->stripOrder(0), (QStringList{"title", "floating-menu", "caption-controls"}));
     QVERIFY(!floating.value("strips").toObject().contains("menu"));
@@ -205,7 +211,7 @@ void ToolbarProfileTest::closingEveryFloatingWindowKeepsItsDefault()
     const auto floating = manager.createWindow(WindowKind::Floating, {}, root);
     auto* window = view(manager, floating);
     QVERIFY(window->strips()->moveStrip("caption-controls", 0, 0));
-    QVERIFY(window->strips()->setStripWidth("caption-controls", 221));
+    QVERIFY(window->strips()->setStripWidth("floating-menu", 221));
     const auto customized = window->saveStripLayout();
     QVERIFY(manager.requestCloseWindow(floating));
     QVERIFY(!manager.model().window(floating));
@@ -262,7 +268,7 @@ void ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched()
     QPointer<QWidget> content = new QLabel("not replaced");
     const auto tab = manager.addTab(root, content, {"content", "label", {}});
     const auto pane = manager.model().tab(tab)->activePane;
-    auto* window = view(manager, root); QVERIFY(window->strips()->setStripWidth("caption-controls", 224));
+    auto* window = view(manager, root); QVERIFY(window->strips()->setStripWidth("workspace", 224));
     int created = 0;
     manager.setContentFactory([&created](const TabOptions& options, PaneId) { ++created; return new QLabel(options.title); });
     const auto before = manager.saveLayout(); auto malformed = before;

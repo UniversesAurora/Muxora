@@ -31,7 +31,9 @@ namespace window_system {
 namespace {
 
 constexpr int compactRowHeight = 28;
-constexpr int rowMargin = 2;
+// Rows have no outer gutter: like native caption buttons and VS Code's menu,
+// the first and last strips touch the window border (or the screen edge).
+constexpr int rowMargin = 0;
 constexpr int stripSpacing = 4;
 constexpr int handleWidth = 12;
 constexpr int tailWidth = 12;
@@ -579,6 +581,7 @@ bool CommandStripHost::setStripConstraints(const QString& id, StripConstraints c
     strip->constraints = constraints;
     if (!constraints.elasticAllowed) strip->sizing = StripSizing::Content;
     for (int row = 0; row < d->rows.size(); ++row) if (d->rows[row].contains(id)) normalizeElastic(row);
+    if (constraints.fixedWidth) strip->requestedWidth = -1;
     if (strip->requestedWidth >= 0)
         strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());
     arrange();
@@ -631,7 +634,7 @@ void CommandStripHost::removeFromRows(const QString& id)
             auto* candidate = d->strips.value(d->rows[row][after]);
             if (candidate->visible) { next = candidate; break; }
         }
-        if (removed->visible && previous && previous->sizing == StripSizing::Content) {
+        if (removed->visible && previous && previous->sizing == StripSizing::Content && !previous->constraints.fixedWidth) {
             if (!next || next->sizing == StripSizing::Elastic) previous->requestedWidth = -1;
             else {
                 const int previousWidth = isDragging() ? d->originalBounds.value(previous->id).width() : previous->width();
@@ -773,7 +776,7 @@ bool CommandStripHost::moveStrip(const QString& id, Area area, int row, int inde
 bool CommandStripHost::setStripWidth(const QString& id, int width)
 {
     auto* strip = d->strips.value(id);
-    if (!strip || width < strip->minimumWidthForLayout()) return false;
+    if (!strip || strip->constraints.fixedWidth || width < strip->minimumWidthForLayout()) return false;
     if (isDragging()) finishDrag(false);
     for (int row = 0; row < d->rows.size(); ++row) if (d->rows[row].contains(id)) clearWidthPriority(row);
     strip->requestedWidth = width; arrange(); changed(); return true;
@@ -946,7 +949,8 @@ QVector<int> CommandStripHost::rowWidths(const QStringList& visible, int availab
     for (int index = 0; index < visible.size(); ++index) {
         const auto* strip = d->strips.value(visible[index]);
         const bool isElastic = strip->sizing == StripSizing::Elastic;
-        const int preferred = strip->requestedWidth < 0 ? strip->naturalWidth() : strip->requestedWidth;
+        const int preferred = strip->requestedWidth < 0 || strip->constraints.fixedWidth
+            ? strip->naturalWidth() : strip->requestedWidth;
         const int value = isElastic ? strip->minimumWidthForLayout() : std::max(strip->minimumWidthForLayout(), preferred);
         sizes.append(value); total += value;
         if (isElastic) elastic = index;
@@ -1041,13 +1045,7 @@ void CommandStripHost::arrange()
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
-        // As with native Windows caption buttons, caption controls that are
-        // the first or last strip skip the ordinary toolbar's two-pixel
-        // gutter: they touch the restored window's border, and an expanded
-        // window's actual screen edge.
-        const int leftMargin = !visible.isEmpty() && visible.first() == QStringLiteral("caption-controls") ? 0 : rowMargin;
-        const int rightMargin = !visible.isEmpty() && visible.last() == QStringLiteral("caption-controls") ? 0 : rowMargin;
-        const int available = std::max(0, host->width() - leftMargin - rightMargin
+        const int available = std::max(0, host->width() - 2 * rowMargin
             - std::max(0, int(visible.size()) - 1) * stripSpacing);
         const auto sizes = rowWidths(visible, available);
         const auto elasticId = std::find_if(visible.begin(), visible.end(), [this](const QString& id) {
@@ -1055,12 +1053,12 @@ void CommandStripHost::arrange()
         });
         const int elasticIndex = elasticId == visible.end() ? -1 : int(std::distance(visible.begin(), elasticId));
         QVector<int> positions(visible.size());
-        int x = leftMargin;
+        int x = rowMargin;
         for (int index = 0; index < visible.size(); ++index) {
             positions[index] = x;
             x += sizes[index] + stripSpacing;
         }
-        int right = host->width() - rightMargin;
+        int right = host->width() - rowMargin;
         for (int index = int(visible.size()) - 1; elasticIndex >= 0 && index > elasticIndex; --index) {
             positions[index] = right - sizes[index];
             right = positions[index] - stripSpacing;
@@ -1194,6 +1192,7 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         const auto excluded = value.value("excluded").toArray();
         for (auto& item : strip->items) item.included = !excluded.contains(item.id);
         if (strip->content && strip->items.isEmpty()) strip->content->setVisible(value.value("contentVisible").toBool(true));
+        if (strip->constraints.fixedWidth) strip->requestedWidth = -1;
         if (strip->requestedWidth >= 0)
             strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());
     }
@@ -1282,7 +1281,7 @@ bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
             if (candidate->visible) { next = candidate; break; }
         }
     }
-    const bool adjustBoundary = previous
+    const bool adjustBoundary = previous && !previous->constraints.fixedWidth
         && requestedLeft >= d->originalBounds.value(previous->id).left() + previous->minimumWidthForLayout() / 2
         && (!next || requestedLeft < d->originalBounds.value(next->id).left() + next->minimumWidthForLayout() / 2);
     if (!adjustBoundary) return false;
@@ -1294,7 +1293,7 @@ bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
     if (elasticBefore && dragged->sizing == StripSizing::Content) {
         const auto ownBounds = d->originalBounds.value(d->dragging);
         left = std::min(left, ownBounds.right() - dragged->minimumWidthForLayout() + 1);
-        dragged->requestedWidth = ownBounds.right() - left + 1;
+        if (!dragged->constraints.fixedWidth) dragged->requestedWidth = ownBounds.right() - left + 1;
     } else {
         int trailingMinimum = dragged->minimumWidthForLayout();
         for (int after = originalIndex + 1; after < d->rows[row].size(); ++after) {
@@ -1329,7 +1328,7 @@ void CommandStripHost::insertDraggedStrip(int row, QPoint position)
     for (int previous = index - 1; previous >= 0; --previous) {
         auto* strip = d->strips.value(d->rows[row][previous]);
         if (!strip->visible) continue;
-        if (strip->sizing == StripSizing::Content) {
+        if (strip->sizing == StripSizing::Content && !strip->constraints.fixedWidth) {
             strip->requestedWidth = std::max(strip->minimumWidthForLayout(),
                 position.x() - d->pressOffset.x() - strip->geometry().left() - stripSpacing);
         }
