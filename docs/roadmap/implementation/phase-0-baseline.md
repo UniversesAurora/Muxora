@@ -135,7 +135,7 @@ pwsh ./tools/bench.ps1 -Name baseline
 
 验证：
 
-- 基线：`pwsh ./tools/bench.ps1 -Name baseline -Tabs '100,500,1000'`，`complete: true`，三个规模的八个场景都有数据，另有 `memory`、`cycle`、`save` 各三组。提交标记为 `e78cf23-dirty`：窗口模块库代码与 `e3fcf26` 相同，未提交的只有本步骤的基准文件。
+- 基线：`pwsh ./tools/bench.ps1 -Name baseline -Tabs '100,500,1000'`，`complete: true`，三个规模的八个场景都有数据，另有 `memory`、`cycle`、`save` 各三组。提交标记为 `dae64b0-dirty`：窗口模块库代码与 `01df918` 相同，未提交的只有本步骤的基准文件。
 - 冒烟：修正后 `-Tabs 100 -Repeat 3` 一次通过（`out/test-results/bench-smoke.json`）。
 - `window-system.benchmark-support`：在临时目录（`BUILD_TESTING=ON`、`WINDOW_SYSTEM_BUILD_BENCHMARKS=ON`）中构建运行，2 行通过，带 `model` 标签；开启基准选项时 CTest 共 60 个，临时目录已删除。
 - 默认构建：`tools/build.ps1 -Configuration Release` 重新配置后 `WINDOW_SYSTEM_BUILD_BENCHMARKS=OFF`，`build.ninja` 中没有基准目标，`muxora.exe` 没有重新链接；CTest 仍为 59 个。
@@ -184,7 +184,7 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **风险**：有些套件在构造函数里创建窗口但不显示，可能仍依赖焦点。以并行实测为准。
 
-**状态**：已完成（提交 `dd1c3fe`）。实际分类：
+**状态**：已完成（提交 `530eede`）。实际分类：
 
 | 标签 | 数量 | 套件 |
 | --- | --- | --- |
@@ -213,7 +213,7 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **验证**：对当前构建目录运行，结果应与审查记录中的数字一致（最近一次全量为 2168 个通过行；失败行按去重规则计算）。
 
-**状态**：已完成（提交 `e78cf23`）。实现与上面的差别：
+**状态**：已完成（提交 `dae64b0`）。实现与上面的差别：
 
 - 数据标签改为懒惰匹配，取到后面跟空白或行尾的 `)` 为止（`\((.*?)\)(?=\s|$)`）。按原写法的贪婪匹配，`FAIL!  : T::f(row) 'x' returned FALSE. ()` 会把失败消息算进数据标签，同一行的 `PASS` 与 `FAIL!` 就无法合并。
 - `XPASS` 与 `FAIL!` 一样算失败，`XFAIL` 算通过，`BLACKLIST` 算跳过。
