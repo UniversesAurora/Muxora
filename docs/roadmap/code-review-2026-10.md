@@ -57,4 +57,4 @@
 
 新增回归 `ShortcutDispatchTest::dispatchFollowsCatalogAndBindingChanges`：先触发一次按键建立索引，再依次新增命令、改绑定为两段序列、同首键的第二个命令、删除命令，每一步用真实按键验证分发结果，最后确认没有绑定时按键回到编辑器。
 
-验证情况见 [预览说明](../development/window-system-preview.md) 中“审查与热路径修订”一节。
+验证情况见 [验证日志](../development/verification-log/2026-10.md) 中“审查与热路径修订（2026-10-18）”一节。

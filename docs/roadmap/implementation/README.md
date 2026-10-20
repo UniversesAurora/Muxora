@@ -115,7 +115,7 @@ $env:PATH = "$($qt.qtRoot)\bin;$(Split-Path $qt.compiler);$tools\Tools\Ninja;$en
 ### 完成后
 
 1. 在阶段文档中把该步骤的“状态”改为“已完成（提交 `<hash>`）”，写一行实际验证结果。
-2. 在 [预览说明](../../development/window-system-preview.md) 最上方的“当前可试用的功能”中加一节，写行为变化和真实验证范围；未执行的检查写明未执行。
+2. 在 [验证日志](../../development/verification-log/2026-10.md) 最上面加一节（带日期的三级标题），写行为变化和真实验证范围，未执行的检查写明未执行；再更新 [预览说明](../../development/window-system-preview.md)：功能有变化时改“当前可试用的功能”表格，并改写“最近一次验证”。预览说明只写当前状态，不追加带日期的叙述。
 3. 提交说明：标题一行；正文写行为变化、原因、实际验证（套件数、测试行数、失败及原因）；结尾附 `Co-Authored-By` 行（见会话中的要求）。分支只用 rebase 或快进整合，不产生合并提交。
 
 ## 步骤文档的格式

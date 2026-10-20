@@ -29,10 +29,17 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | --- | --- |
 | [工程、资源与依赖](development/engineering-design.md) | 所有权、模块目录、资源约束、SDK 与依赖升级 |
 | [自动化测试要求](development/testing-design.md) | 测试链路、场景矩阵、证据与失败处理 |
-| [Muxora 窗口系统预览](development/window-system-preview.md) | 当前实现范围、构建、运行、快捷键试用与验证记录 |
+| [Muxora 窗口系统预览](development/window-system-preview.md) | 当前实现范围、构建、运行、快捷键试用与最近一次验证 |
+| [验证日志](development/verification-log/2026-10.md) | 每一轮修订说明与验证记录，按月分文件、按日期倒序 |
 | [Lua 使用说明](development/lua-guide.md) | 用户配置、脚本命令、API 分组、重载与宿主扩展 |
 | [开发经验](development/lessons/README.md) | 踩过的坑和有效的排查方法，按技术、模块和流程分类，随模块增加扩展 |
 | [WindowSystem 模块入口](../modules/window-system/README.md) | 模块构建与宿主使用方式 |
+
+## 架构决定
+
+| 文档 | 内容 |
+| --- | --- |
+| [架构决定记录](adr/README.md) | 自研停靠、Lua 编译方式与沙箱、Windows 工具链、标题按钮命中、组件按需加载、系统通知等已做出决定的背景、取舍与后果 |
 
 ## 审查与路线
 
@@ -41,4 +48,4 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [未来规划](roadmap/future-plans.md) | Windows 7 Aero 风格外观、AI 接入等以后要做的事项（只记录需求与约束） |
 | [审查结论与后续路线](roadmap/README.md) | 2026-10 整体代码审查、优先级，以及性能、交互、Lua、工程和业务对标的实现方案 |
 
-设计文档使用小写英文加连字符命名。产品与接口设计放在 `design/`，开发规范和操作说明放在 `development/`；审查结论和按优先级排列的实现方案放在 `roadmap/`；后续需要长期记录的架构决定放在 `adr/`。引用仓库文件使用相对路径，机器 SDK 路径只作为本地示例出现。
+设计文档使用小写英文加连字符命名。产品与接口设计放在 `design/`，开发规范和操作说明放在 `development/`；审查结论和按优先级排列的实现方案放在 `roadmap/`；长期有效的架构决定放在 `adr/`，每轮修订与验证记录放在 `development/verification-log/`。引用仓库文件使用相对路径，机器 SDK 路径只作为本地示例出现。

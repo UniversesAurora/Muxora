@@ -285,7 +285,7 @@ Windows 的 `WindowFrameAdapter` 统一处理原生命中和窗口行为。Qt 6.
 
 标题按钮和拖窗区域的几何由壳显式管理，不能只依赖 safe-area 边距猜完整区域。自定义最大化按钮按 Windows 要求处理命中与默认窗口过程，验收悬停 Snap 菜单；不靠不断设置窗口坐标模拟系统移动缩放。[Windows 自定义窗框](https://learn.microsoft.com/en-us/windows/win32/dwm/customframe)、[Snap 布局](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-snap-layout-menu)
 
-普通窗口和最大化窗口的最大化／恢复按钮使用相同命中规则。可见且启用的按钮矩形优先于顶部缩放区域，包括按钮的上沿；其他边缘和角仍保留原生缩放命中。全屏、紧凑拖拽预览及隐藏／禁用按钮不提供该命中。原生命中和 Qt 悬停回归可自动检查，Windows 11 实际 Snap 弹窗仍需在系统设置启用时验证。
+普通窗口和最大化窗口的最大化／恢复按钮使用相同命中规则。可见且启用的按钮矩形优先于顶部缩放区域，包括按钮的上沿；其他边缘和角仍保留原生缩放命中。最小化和关闭始终是 Qt 客户区命中，避免 Windows 显示自己的经典标题按钮提示；最大化或全屏时，平台层保证屏幕最后一列、一行像素的点击仍落在贴边的控件上。理由与取舍见 [ADR 0005](../adr/0005-caption-button-hit-testing.md)。全屏、紧凑拖拽预览及隐藏／禁用按钮不提供该命中。原生命中和 Qt 悬停回归可自动检查，Windows 11 实际 Snap 弹窗仍需在系统设置启用时验证。
 
 关闭按钮、Alt+F4、系统菜单和命令入口走同一关闭协调流程。标准控件保留键盘与可访问信息，完全自绘的按钮或区域补足名称、角色、动作和状态。[Qt 无障碍支持](https://doc.qt.io/qt-6/accessible-qwidget.html)
 

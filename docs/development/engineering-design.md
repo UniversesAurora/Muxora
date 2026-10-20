@@ -20,7 +20,7 @@ macOS、Linux 是确定的后续目标，但 V0 不要求编译它们，也不�
 
 采用 C++20、Qt Widgets 和传统头文件／源文件。工程模块与 CMake target 按职责拆分；V0 不要求使用 C++20 Modules。
 
-窗口系统是 `modules/window-system/` 中的独立公开 API 模块，可独立配置并用于其他宿主；`src/workspace_host/` 只承担 Muxora 接入。V0 采用自有窗口、停靠与拖拽实现，复用合适的 Qt 基础组件，不引入 KDDockWidgets；具体 Qt 控件不属于强制依赖。
+窗口系统是 `modules/window-system/` 中的独立公开 API 模块，可独立配置并用于其他宿主；`src/workspace_host/` 只承担 Muxora 接入。V0 采用自有窗口、停靠与拖拽实现，复用合适的 Qt 基础组件，不引入 KDDockWidgets（[ADR 0001](../adr/0001-own-docking-implementation.md)）；具体 Qt 控件不属于强制依赖。
 
 ### 2.1 可读性与依赖
 
@@ -105,7 +105,7 @@ Ghostty 当前历史限制按 page 裁剪，属于近似限额，不等于整个
 
 ### 3.4 不用的组件不加载
 
-（2026-10-20 新增）功能组件在第一次真正需要时才加载，没用到就不占内存：
+（2026-10-20 新增，[ADR 0006](../adr/0006-load-components-on-demand.md)）功能组件在第一次真正需要时才加载，没用到就不占内存：
 
 - **默认按需**：Lua 运行时（没有脚本时不创建线程和解释器）、内置编辑器（Scintilla 编译为插件 DLL，第一次打开编辑器时加载）、SFTP 辅助程序、X11 显示服务、语言服务进程、结构描述（JSON Schema）等派生数据，都在第一次使用时创建。
 - **可以常驻的例外**：使用非常频繁、加载代价会影响交互的部分，例如窗口系统本身、终端核心与渲染（打开终端就要用）、命令注册表。
@@ -185,11 +185,11 @@ Ghostty 官方 CMake wrapper 调用 Zig，并支持 Windows DLL／import library
 
 ### 6.1 Qt SDK 的安装、版本绑定与升级
 
-开发机首选官方 Qt Online Installer，使用与 Windows x64 工具链匹配的 MSVC 2022 预编译包。按需安装 Qt 基础模块、SVG 和测试组件，编译器、Windows SDK、CMake 与 Ninja 分别确认来源；Qt Creator 为可选开发工具。官方安装器及 Maintenance Tool 当前需要 Qt 账号，开源许可组件可以免费取得。
+开发机使用官方 Qt Online Installer 安装 Qt 6.12 的 MinGW 套件（`mingw_64`）及其配套的 MinGW 编译器（当前为 GCC 15.1），并按需安装 Qt 基础模块、SVG 和测试组件；CMake 与 Ninja 也取自 Qt 安装目录下的 `Tools`。Release 预览和全部自动化测试都用这套工具链；MSVC 版 Qt 只用于 ASan 等诊断构建，单独安装、单独构建目录，不参与 Release。选择原因与约束见 [ADR 0004](../adr/0004-windows-toolchain.md)。Qt Creator 为可选开发工具。官方安装器及 Maintenance Tool 当前需要 Qt 账号，开源许可组件可以免费取得。
 
-Qt SDK 放在项目外的版本化目录，例如 `E:\SDKs\Qt\<版本>\msvc2022_64`，多个项目共用。项目内 `.deps/qt/` 也可使用，但必须排除出版本控制，并承担重复磁盘占用；不把 SDK 提交进仓库。初版无需从源码编译 Qt。
+Qt SDK 放在项目外的版本化目录，例如仓库旁边的 `..\sdk\Qt\<版本>\mingw_64`，多个项目共用；不把 SDK 提交进仓库。初版无需从源码编译 Qt。
 
-mise 管理 CMake、Ninja 等工具、任务和项目环境。提交的 `mise.toml`、CMake presets 与依赖记录固定版本及构建选项；本机绝对路径放在不提交的 `.mise.local.toml`、环境或 `CMakeUserPresets.json`，通过 `Qt6_ROOT` 指向 Qt SDK。不依赖机器全局 PATH 恰好找到某个版本，也不假设 mise 有内置 Qt SDK 安装器。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
+`tools/build.ps1` 按顺序查找 Qt 套件：`-QtRoot` 参数、环境变量 `QT_ROOT`、不提交的 `.local/sdk.json`、仓库旁边的 `..\sdk\Qt` 中最新的版本。它从套件的 `mkspecs/qconfig.pri` 读出 Qt 构建时用的 GCC 版本，只接受 Qt 安装目录 `Tools/mingw*` 中同版本的编译器，找不到就报错，不用其他 GCC 凑合。提交的 `mise.toml` 只定义 `build`、`test`、`verify`、`run`、`package` 等任务入口，不负责安装或固定工具版本；本机绝对路径放在不提交的 `.local/sdk.json`、`.mise.local.toml`、环境变量或 `CMakeUserPresets.json`。不依赖机器全局 PATH 恰好找到某个版本。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
 
 官方 Maintenance Tool 提供添加／删除组件、检查更新、更新已安装包以及安装新 Qt 版本的图形和命令行入口。新 Qt 版本优先并行安装，使用独立构建目录验证，全部相关测试通过后再切换项目绑定；保留旧版本用于回退。升级 SDK 不代表项目自动改用新版。[Qt 安装与维护](https://doc.qt.io/qt-6/get-and-install-qt.html)、[命令行管理](https://doc.qt.io/qt-6/get-and-install-qt-cli.html)
 
@@ -288,7 +288,10 @@ Muxora/
 │   ├── development/           # 开发规范与实际操作说明
 │   │   ├── engineering-design.md
 │   │   ├── testing-design.md
-│   │   └── window-system-preview.md
+│   │   ├── window-system-preview.md   # 当前状态与最近一次验证
+│   │   ├── verification-log/  # 按月的修订与验证记录
+│   │   └── lessons/           # 开发经验
+│   ├── roadmap/               # 审查结论与实现计划
 │   └── adr/                   # 有长期影响的决定及理由
 ├── third_party/
 │   ├── overlays/              # 必要 vcpkg overlay

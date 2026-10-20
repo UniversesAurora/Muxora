@@ -238,7 +238,12 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 `docs/README.md` 的表格中加入 ADR 目录入口。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “docs: Record architecture decisions and split the preview log”）。实现与上面的差别：
+
+- 除计划的 0001–0004 外，另记三项在本计划写成之后才定下、只散落在设计文档里的决定：0005 标题按钮命中（只有最大化／还原走原生命中）、0006 组件按需加载、0007 改用 Windows 系统通知。仍然不新增决定。
+- 0003 按当前代码记录：没有打开 `coroutine` 与 `package`，因此也没有 `require`；设计文档中的受限 `require` 尚未实现，ADR 中写明。
+- 0004 与 `engineering-design.md` §6.1 一起按实际改正：Qt MinGW 套件及其配套编译器、`build.ps1` 查找 Qt 的顺序、`mise.toml` 只提供任务入口。另在 `docs/adr/README.md` 写明编号、五节结构和“被取代”时的处理。
+- 窗口系统设计、Lua 设计、界面规范、工程设计在对应位置链接到 ADR。
 
 ---
 
@@ -254,4 +259,9 @@ ctest --test-dir out/build/dev-release -N            # 总数仍为 59
 
 **完成标准**：移动前后用 `git diff --stat` 确认总行数基本守恒；所有原有链接仍然有效（用 `grep -rn "window-system-preview.md#" docs` 检查锚点引用）。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “docs: Record architecture decisions and split the preview log”）。实际结果：
+
+- 原文 587 行中两段带日期的连续区域（原第 71–294 行、第 330–572 行，共 467 行）原样移入 `verification-log/2026-10.md`，它们原本就按日期倒序排列；只把相对链接改为从新目录出发的路径。预览说明剩 156 行。
+- 原“当前可试用的功能”下面实际是 2026-10-18 至 10-20 的修订叙述，现状只体现在 10-18 那一节里的表格和段落中。预览说明改写为一张按当前代码更新的功能表，不带日期；“最近一次验证”写 2026-10-20 的全量结果；“待完成与验证范围”增加仍未查明的三个问题。
+- 没有文档用锚点链接预览说明；`code-review-2026-10.md` 中按标题文字引用的一处改指日志。实现计划 README 的“完成后”第 2 条改为写日志并更新预览说明的表格和最近一次验证。
+- 用脚本检查了改动过的文档、ADR、经验文档和日志中的全部相对链接与锚点，均有效。
