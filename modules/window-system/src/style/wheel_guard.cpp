@@ -30,6 +30,14 @@ QWidget* valueControlFor(QWidget* widget)
 }
 } // namespace
 
+void removeValueControlWheelFocus(QObject* watched, QEvent* event)
+{
+    if (event->type() != QEvent::Polish) return;
+    auto* widget = qobject_cast<QWidget*>(watched);
+    if (!widget || !isValueControl(widget) || widget->focusPolicy() != Qt::WheelFocus) return;
+    widget->setFocusPolicy(Qt::StrongFocus);
+}
+
 bool redirectValueControlWheel(QObject* watched, QEvent* event)
 {
     if (event->type() != QEvent::Wheel) return false;

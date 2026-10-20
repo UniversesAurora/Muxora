@@ -1000,8 +1000,11 @@ void WindowManager::cancelPendingShortcut()
 
 bool WindowManager::eventFilter(QObject* watched, QEvent* event)
 {
-    if (d->destroying || d->refreshing) return false;
+    // Stateless value-control rules apply even while the layout refreshes:
+    // controls created then are polished and scrolled over like any other.
+    removeValueControlWheelFocus(watched, event);
     if (redirectValueControlWheel(watched, event)) return true;
+    if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);
     const auto cancelChord = [this] { cancelPendingShortcut(); };
     if (!d->pendingKeys.isEmpty()

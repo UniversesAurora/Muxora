@@ -949,15 +949,19 @@ void PaneSettingsTest::singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWin
 
 QTEST_MAIN(PaneSettingsTest)
 namespace {
-// A real-looking wheel notch, delivered like the platform does: to the
-// widget under the cursor, which is the control (or its inner editor).
+// A real wheel notch takes the platform path: it reaches the top-level
+// QWindow, and Qt finds the widget under the cursor, gives Qt::WheelFocus
+// widgets focus and propagates the event, as for a physical mouse.
 bool sendWheel(QWidget* target, int notches = -1)
 {
-    const QPointF local = QPointF(target->rect().center());
-    QWheelEvent wheel(local, QPointF(target->mapToGlobal(target->rect().center())), QPoint(),
+    auto* window = target->window()->windowHandle();
+    if (!window) return false;
+    const QPoint local = target->rect().center();
+    const QPointF inWindow = QPointF(target->mapTo(target->window(), local));
+    QWheelEvent wheel(inWindow, QPointF(target->mapToGlobal(local)), QPoint(),
         QPoint(0, 120 * notches), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    QSpontaneKeyEvent::setSpontaneous(&wheel); // Propagates to parents like platform input.
-    return QApplication::sendEvent(target, &wheel);
+    QSpontaneKeyEvent::setSpontaneous(&wheel);
+    return QApplication::sendEvent(window, &wheel);
 }
 } // namespace
 
@@ -1015,12 +1019,22 @@ void PaneSettingsTest::wheelNeverEditsAnyValueControl()
     column->addSpacing(1200);
     area.setWidget(content); area.show();
     QVERIFY(QTest::qWaitForWindowExposed(&area));
+    // Qt only gives wheel focus inside the active window, as for the user.
+    area.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&area));
+    // Activation focuses the first control; start from the scroll area.
+    area.setFocus(); QCOMPARE(area.focusWidget(), &area);
     for (QWidget* control : std::initializer_list<QWidget*>{combo, editable, spin, real, time, slider}) {
         area.verticalScrollBar()->setValue(0);
         auto* target = control->childAt(control->rect().center()) ? control->childAt(control->rect().center()) : control;
         sendWheel(target, -1);
         QVERIFY2(area.verticalScrollBar()->value() > 0, control->metaObject()->className());
+        // The wheel neither focuses the control nor its inner editor (no
+        // text cursor appears); a click or Tab still can.
+        QVERIFY2(control->focusPolicy() != Qt::WheelFocus, control->metaObject()->className());
+        QVERIFY2(area.focusWidget() == &area, control->metaObject()->className());
     }
+    spin->setFocus(); QCOMPARE(area.focusWidget(), spin->focusProxy() ? spin->focusProxy() : spin);
     QCOMPARE(combo->currentIndex(), 1); QCOMPARE(editable->currentIndex(), 1);
     QCOMPARE(spin->value(), 50); QCOMPARE(real->value(), 5.0);
     QCOMPARE(time->dateTime(), QDateTime(QDate(2026, 10, 20), QTime(12, 0)));
