@@ -8,11 +8,12 @@
 | --- | --- | --- |
 | [0001](0001-own-docking-implementation.md) | 自研停靠与窗口实现，不引入 KDDockWidgets | 采用 |
 | [0002](0002-lua-as-cxx-with-gc-hook.md) | Lua 按 C++ 编译，`__gc` 期间保留指令钩子 | 采用 |
-| [0003](0003-lua-sandbox-scope.md) | Lua 沙箱只开放纯计算库，能力经宿主接口提供 | 采用 |
+| [0003](0003-lua-sandbox-scope.md) | Lua 沙箱只开放纯计算库，能力经宿主接口提供 | 已被 0008 取代 |
 | [0004](0004-windows-toolchain.md) | Release 用 Qt MinGW 工具链，MSVC 只用于诊断构建 | 采用 |
 | [0005](0005-caption-button-hit-testing.md) | 只有最大化／还原走原生标题按钮命中 | 采用 |
 | [0006](0006-load-components-on-demand.md) | 可选组件按需加载，用完销毁 | 采用 |
 | [0007](0007-windows-system-notifications.md) | 消息通知使用 Windows 系统通知，不做通知中心 | 采用 |
+| [0008](0008-full-standard-library-for-local-scripts.md) | 本地脚本使用完整 Lua 标准库，与 Neovim 一致 | 采用（实现见阶段 9.8） |
 
 ## 写法
 

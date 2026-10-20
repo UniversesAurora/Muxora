@@ -1,6 +1,6 @@
 # 阶段 9：Lua 扩展 API
 
-**目的**：按 [Lua 扩展 API 设计](../../design/lua-extension-api-design.md) 让 Lua 能弹出各种对话框和系统通知、创建自定义界面、读写终端，以及操作会话、文件、剪贴板、存储和网络。
+**目的**：按 [Lua 扩展 API 设计](../../design/lua-extension-api-design.md) 让本地脚本像 Neovim 一样使用完整的 Lua 标准库（9.8），并让 Lua 能弹出各种对话框和系统通知、创建自定义界面、读写终端，以及操作会话、剪贴板、存储和网络。文件读写、执行命令、加载模块直接用标准库，不另造接口。
 
 **阶段约束**：
 
@@ -21,8 +21,9 @@
 | 9.5 | 存储、剪贴板、文件、网络、外部程序输出 | 9.1 |
 | 9.6 | 终端读取、写入与订阅 | 9.1；7.3、7.6 |
 | 9.7 | 会话、本地终端、SFTP 接口 | 9.1；7.4–7.7 |
+| 9.8 | 本地脚本使用完整标准库（与 Neovim 一致），预算只防失控 | 无；建议在 9.1 之前 |
 
-9.2、9.3、9.5 可以并行（改不同的文件）；9.6、9.7 等阶段 7 相应部分完成后进行。
+9.8 没有前置，建议最先做（它决定了 9.1 要沿用的宿主让出方式）。9.2、9.3、9.5 可以并行（改不同的文件）；9.6、9.7 等阶段 7 相应部分完成后进行。
 
 ---
 
@@ -141,7 +142,9 @@
 
 ---
 
-## 9.5 存储、剪贴板、文件、网络、外部程序输出
+## 9.5 存储、剪贴板、文件监听、网络、外部程序输出
+
+> 2026-10-20 修订：文件读写、列目录改用标准库 `io`／`os`（9.8），本步不再提供 `files.read/write/list/stat`，只保留标准库没有的文件监听。
 
 **涉及文件**：`src/app/script_services.cpp`（这些属于应用服务）、新建 `src/app/script_services/` 下按分组拆分的文件、测试 `src/app/tests/scripting_test.cpp` 或新测试。
 
@@ -149,9 +152,9 @@
 
 1. `storage.get/set/remove/keys`：每脚本一个 JSON 文件，`QSaveFile` 写入，合并到下一事件循环批量保存；每脚本上限 10 MiB。
 2. `clipboard.text()`／`clipboard.set_text(text)`：`QGuiApplication::clipboard()`，大小上限与值传输一致。
-3. `files.read/write/list/stat/watch`：文本（UTF-8）与二进制（Base64）；单次读写上限 16 MiB；`watch` 基于 `QFileSystemWatcher` 并去抖动，每脚本最多 64 个监听。
+3. `files.watch(path, fn)`／`files.unwatch(id)`：基于 `QFileSystemWatcher` 并去抖动，每脚本最多 64 个监听；文件读写用标准库 `io`。
 4. `http.request{ method, url, headers, body, timeout_ms }`：`QNetworkAccessManager`，异步（普通宿主调用，不是交互调用），响应体上限 16 MiB，超时默认 30 秒。
-5. `app.run{ program, args, cwd, timeout_ms }`：启动进程并在结束后返回退出码与输出（标准输出和错误合计上限 16 MiB）；与现有 `app.launch`（不等待）共用参数校验。
+5. `app.run{ program, args, cwd, timeout_ms }`：启动进程并在结束后返回退出码与输出（标准输出和错误合计上限 16 MiB）；与现有 `app.launch`（不等待）共用参数校验。它和标准库的 `io.popen` 的区别是：按参数数组启动、不经过 shell，等待期间任务挂起而不阻塞其他脚本（需要 9.1）。
 
 **测试**：每项的正常与上限情况；存储在重载后保留、卸载脚本后文件保留；`http` 使用本地 `QTcpServer` 测试桩；`app.run` 使用现有的测试子程序。
 
@@ -186,5 +189,67 @@
 **实现**：按设计 §7 实现 `sessions`、`local_terminals`、`sftp` 分组。修改 SSH config 会话的接口受 `ssh.config.allowEditing` 约束（阶段 7.4m 已规划 `muxora.ssh.config`，在此并入 `sessions`）；连接相关事件与阶段 7.10 的状态一致；SFTP 传输复用阶段 7.7 的传输队列，进度事件按每秒最多 10 次合并。
 
 **测试**：在可复现 SSH 测试服务上完成：列出、新建、连接、断开、重连；SFTP 列目录、上传、下载、进度事件；开关关闭时修改 SSH config 的调用返回错误。
+
+**状态**：未开始。
+
+---
+
+## 9.8 本地脚本使用完整标准库（与 Neovim 一致）
+
+**目标**：`User/` 下的脚本像 Neovim 的 Lua 一样直接使用完整的 Lua 标准库：`io`、`os`、`debug`、`package`／`require`、`coroutine`、`load`（含二进制块）、`string.dump`、`collectgarbage` 全部可用；文件、命令、模块这类能力用标准库，不另造 `muxora.*` 接口；不做权限管理。运行时只保留防止失控的预算，不限制正常用途。决定见 [ADR 0008](../../adr/0008-full-standard-library-for-local-scripts.md)。
+
+**前置**：无。建议在 9.1 之前做：9.1 改造宿主让出与挂起，需要沿用这里的让出标记。
+
+**现状**：
+
+- `modules/lua-runtime/src/script_worker.cpp` 的 `initialize()` 只打开基础库、`string`、`table`、`math`、`utf8`，并移除 `load`、`loadfile`、`dofile`、`collectgarbage`、`string.dump`；`print` 由宿主实现、写入脚本日志；`pcall`／`xpcall` 包装为调用后检查预算（`guardedCalls`）。
+- 每个任务在独立协程中运行，`prepare()` 用 `lua_sethook` 给它装计数钩子（每 1000 条指令检查一次）。钩子按线程（协程）生效；`lua_newthread` 会把创建者的钩子复制给新协程，所以用户自建的协程也受预算约束。
+- `hostCall()` 用 `lua_yieldk(state, 0, ...)` 让出，等宿主回复后由运行时恢复任务协程。用户在自己的协程里调用 `muxora.*` 时，这次让出会被用户的 `coroutine.resume` 接住，运行时看不到，宿主调用因此失效。
+- `require` 是 `modules/window-system-lua/src/script_host.cpp` 引导脚本里自己写的：经宿主方法 `module.read`（`script_api.cpp`）读取模块目录下的文件，限制路径必须在目录内、严格 UTF-8、不超过 1 MiB，并检测循环依赖。
+- 默认预算（`RuntimeLimits`）：每次运行 100 ms 执行时间（按墙钟计）、200 万条指令、32 MiB 内存。阻塞的 `io` 调用和 `os.execute`、`io.popen` 等待外部程序的时间也会计入，一次普通的 `git status` 就会超时。
+
+**涉及文件**：`modules/lua-runtime/src/script_worker.{hpp,cpp}`、`modules/lua-runtime/include/lua_runtime/script_runtime.hpp`（`RuntimeLimits`）、`modules/window-system-lua/src/script_host.cpp`（引导脚本、`require`）、`modules/window-system-lua/src/script_api.cpp`（`module.read`）、`src/app/script_services.cpp`（`app.exit`）、`src/app/CMakeLists.txt` 与新建 `src/app/muxora.manifest`、`muxora.rc`、设置注册（预算设置项）、测试 `modules/lua-runtime/tests/script_runtime_test.cpp`、`modules/window-system-lua/tests/script_host_test.cpp`、`src/app/tests/scripting_test.cpp`，文档 `docs/development/lua-guide.md`、`docs/design/lua-scripting-design.md`。
+
+**实现**：
+
+1. **打开全部标准库**：`initialize()` 改用 `luaL_openlibs`（基础库、`package`、`coroutine`、`table`、`io`、`os`、`string`、`math`、`utf8`、`debug`），不再移除任何函数。`print` 仍写入脚本日志，`pcall`／`xpcall` 的预算检查包装保留。
+2. **宿主让出带标记**：`hostCall()` 改为让出一个只有运行时持有的标记值（私有 `lightuserdata`），即 `lua_yieldk(state, 1, ...)`。`resume()` 在任务因宿主调用挂起时，先把协程栈上让出的值弹掉，再在回复到达时恢复。钩子因预算让出时只能不带值（Lua 规定钩子只能 `lua_yield(L, 0)`），这种情况由下一条的预算检查处理。
+3. **协程包装**：像 `guardedCalls` 一样用一段私有引导代码替换 `coroutine.resume` 和 `coroutine.wrap`，原函数、标记和预算检查函数作为上值，脚本拿不到：
+   - `resume(co, ...)`：调用原 `resume` 后先检查预算（中止状态是粘滞的，超出时在外层继续让出或报错，与 `pcall` 包装相同）；若内层让出的第一个值是标记，说明内层发起了宿主调用：外层用原 `yield` 把标记继续往外传，被恢复后再用原 `resume` 恢复内层，直到内层不再让出标记，最后把结果按标准语义返回。嵌套多层协程时每层都这样转发。
+   - `wrap(f)`：基于上面的 `resume` 实现，出错时按标准语义关闭协程并抛出错误。
+   - `coroutine.yield`、`status`、`running`、`isyieldable`、`close`、`create` 保持原样。
+4. **`debug.sethook`／`debug.gethook` 与预算钩子共存**：脚本或第三方库（例如覆盖率工具）调用 `debug.sethook` 会替换掉线程上的预算钩子，导致死循环停不下来。用 C 实现替换这两个函数，其余 `debug` 函数原样：
+   - 用户的钩子（函数、事件掩码、计数）按线程保存在注册表中一张弱键表里，协程被回收时条目自动消失。
+   - 线程上始终安装运行时的 C 钩子：掩码为“计数 | 用户请求的事件”，计数间隔取运行时间隔与用户计数中较小的一个。
+   - 运行时钩子先按实际间隔累计指令并检查预算，需要停止时立即让出或报错，不再调用用户钩子；否则按用户请求的事件调用用户钩子（`call`、`tail call`、`return`、`line`，以及按用户自己的计数递减触发的 `count`），参数与标准 `debug.sethook` 相同。清理阶段（`cleanup_`）不调用用户钩子。
+   - `debug.gethook` 返回用户设置的钩子、掩码和计数；`debug.sethook()` 不带参数时只清除用户钩子。
+5. **预算只防失控**：
+   - 执行时间改为按 Lua 线程的 CPU 时间计算（Windows `GetThreadTimes`，其他平台 `clock_gettime(CLOCK_THREAD_CPUTIME_ID)`），阻塞在文件读写、等待外部程序时不计入；默认每次运行 10 秒 CPU 时间。
+   - 去掉单独的指令数上限（钩子仍按间隔触发，用于检查时间和取消）。
+   - 内存上限默认改为 512 MiB。
+   - 三项都可在设置中调整（`lua.limits.timeoutMs`、`lua.limits.memoryMiB`），`0` 表示不限制时间。宿主回复超时不在本步调整，由 9.1 处理交互调用。
+   - 以上默认值实现前再与用户确认一次。
+6. **标准 `require`**：删除引导脚本中自写的 `require` 和宿主方法 `module.read`，使用标准 `package`：
+   - 初始化时由宿主提供用户 Lua 目录，引导脚本把 `package.path` 设为 `<目录>/?.lua;<目录>/?/init.lua`，放在默认路径之前。
+   - `package.cpath` 设为空字符串：**不支持 C 模块（DLL）**。Lua 按 C++ 编译后静态链接在程序中（[ADR 0002](../../adr/0002-lua-as-cxx-with-gc-hook.md)），没有 Lua DLL 供外部模块链接，按 C 编译的模块也不能和它混用；`package.loadlib` 保留，调用时返回标准的错误。
+   - 取消原来的路径限制、严格 UTF-8 检查和 1 MiB 上限，与 Neovim 一致；内存预算仍然有效。
+7. **中文路径**：Lua 标准库在 Windows 上通过 C 运行库的 `fopen`、`getenv`、`system`、`_popen` 访问系统，路径和环境变量按进程的 ANSI 代码页解释，用户名或目录含中文时打不开文件。给 `muxora.exe` 加应用清单，声明 `<activeCodePage>UTF-8</activeCodePage>`（Windows 10 1903 起支持；更早的系统忽略该项，仍按 ANSI 处理），清单通过 `muxora.rc` 以 `RT_MANIFEST` 嵌入。先确认 MinGW 工具链没有已经嵌入的默认清单，避免出现两份；同时核对 Qt 的界面字体、文件对话框与 `QProcess` 在 UTF-8 代码页下行为不变。
+8. **`os.exit`**：引导脚本把 `os.exit` 改为调用宿主方法 `app.exit`；应用侧在 `script_services.cpp` 中实现，执行现有命令 `application.exit`（先保存工作区、按窗口族申请关闭许可）。被关闭许可拒绝时返回 `false`，程序继续运行；退出码参数忽略并在文档中写明。没有实现该方法的宿主（独立模块的外部宿主）调用时报“未知宿主方法”。直接调用 C 的 `exit()` 会跳过保存，并在其他线程仍在工作时结束整个进程。
+9. **标准输入输出**：Muxora 是窗口程序，没有控制台：`io.read` 读不到输入，`io.write` 写到进程的标准输出，界面中看不到。不重定向，在 Lua 指南中写明“看输出请用 `print`，它写入脚本日志”。
+10. **文档**：`lua-guide.md` 写明可用的标准库、`require` 的搜索路径、不支持 C 模块、`os.exit` 的行为、`print` 与 `io.write` 的区别、预算的含义和设置项；`lua-scripting-design.md` 的沙箱描述改为指向 ADR 0008。
+
+**测试**：
+
+- 运行时：全部标准库和函数存在（替换 `script_runtime_test.cpp` 中断言“这些库为 nil”的那一行，按用户 2026-10-20 的决定修改）；`io` 在临时目录中写入、读回；`string.dump` 生成的二进制块可以用 `load` 加载执行；`collectgarbage("count")` 返回数值。
+- 预算：用户协程里的死循环、`coroutine.wrap` 里的死循环、三层嵌套协程里的死循环都在时间预算内被中止；循环中反复 `pcall` 也被中止；中止后同一运行时能继续执行新任务。
+- 宿主调用：在用户协程中、嵌套协程中、协程内的 `pcall` 中调用 `muxora.*` 都得到正确结果；协程中等待宿主回复时取消任务，任务以取消结束、协程被清理。
+- 钩子：用户 `debug.sethook` 设置 `line` 钩子和 `count` 钩子后照常触发，死循环仍被中止；`debug.gethook` 返回用户设置；`debug.sethook()` 只清除用户钩子，预算仍有效；对另一个协程设置钩子；带 `__gc` 的对象在关闭解释器时不会调用用户钩子（沿用 `cleanupCannotExecuteUnboundedFinalizers` 的场景）。
+- 时间预算按 CPU 计：`os.execute` 运行一个耗时 1 秒的测试子程序不被中止；纯 Lua 忙循环在设定的 CPU 时间后中止（测试中把上限调小）。
+- `require`：从用户目录加载 `a`、`a.b`、`a/init.lua`，结果被 `package.loaded` 缓存；不存在的模块报标准错误；`package.cpath` 为空，`package.loadlib` 返回错误。`script_host_test.cpp` 中原有的“目录外路径、无效 UTF-8、截断 UTF-8 必须失败”三组断言按本次决定删除，在提交说明中写明原因。
+- 中文路径（`muxora-scripting-test`，该测试程序同样嵌入 UTF-8 清单）：在名称含中文的临时目录中 `io.open` 读写、`require` 模块、`os.rename`、`os.getenv` 读取含中文的环境变量。
+- `os.exit`：应用测试中调用后执行一次 `application.exit`；关闭许可拒绝时返回 `false`，测试进程不退出。
+- `window-system.lua-lifecycle` 的重载循环与资源归零检查照常通过；运行时原有的 OOM、取消、洪泛、终结函数用例全部通过（只按新的默认值调整构造参数，断言不放宽）。
+
+**完成标准**：上述测试通过；Release 全量测试通过；部署后的程序中，一个 `init.lua` 用 `io` 读写含中文路径的文件、用 `os.execute` 运行命令、`require` 一个用户模块，都能正常工作（真实桌面试用，结果写入验证日志）。
 
 **状态**：未开始。
