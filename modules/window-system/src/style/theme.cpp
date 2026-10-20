@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "window_system/theme.hpp"
 
+#include <QApplication>
 #include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
@@ -364,6 +365,31 @@ QProgressBar::chunk { background: @accent; }
     return rules;
 }
 
+namespace {
+// Qt reuses a visible tooltip for the next widget and re-polishes it without
+// the window style sheet, dropping its padding and border, so a tip shown
+// right after another one is smaller. Keep the tooltip rule in a marked block
+// of the application style sheet as well; reused tips then keep the same
+// style. Host rules outside the block are left untouched.
+void applyApplicationToolTipStyle(const Theme& theme)
+{
+    if (!qApp) return;
+    QString rule;
+    for (const auto& line : styleSheet(theme).split(QLatin1Char('\n')))
+        if (line.startsWith(QStringLiteral("QToolTip "))) { rule = line; break; }
+    const QString begin = QStringLiteral("\n/* window_system tooltip */\n");
+    const QString end = QStringLiteral("\n/* window_system tooltip end */");
+    QString sheet = qApp->styleSheet();
+    const auto first = sheet.indexOf(begin);
+    const auto last = first < 0 ? -1 : sheet.indexOf(end, first);
+    if (first >= 0 && last >= 0) sheet.remove(first, last + end.size() - first);
+    sheet += begin + rule + end;
+    // Setting the application style sheet re-polishes every widget: only do
+    // it when the tooltip theme actually changed.
+    if (sheet != qApp->styleSheet()) qApp->setStyleSheet(sheet);
+}
+} // namespace
+
 void applyTheme(QWidget* root, const Theme& theme)
 {
     if (!root) return;
@@ -400,6 +426,7 @@ void applyTheme(QWidget* root, const Theme& theme)
     root->setPalette(palette);
     root->setAutoFillBackground(true);
     root->setStyleSheet(styleSheet(theme));
+    applyApplicationToolTipStyle(theme);
     const auto updateSplitter = [&](QSplitter* splitter) {
         if (splitter && splitter->property("windowSystemGroupSplitter").toBool())
             splitter->setHandleWidth(std::max(1, theme.metrics.groupSplitterWidth));

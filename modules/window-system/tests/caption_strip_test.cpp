@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
+#include "style/tooltip_layout.hpp"
 
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
+#include <QHelpEvent>
+#include <QToolTip>
 #include <QFontMetrics>
 #include <QImage>
 #include <QJsonArray>
@@ -19,6 +22,7 @@
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <windowsx.h>
 #endif
 
 using namespace window_system;
@@ -172,6 +176,11 @@ private slots:
     void captionControlsNeverTakeExtraWidth();
     void captionOrderChangesKeepAllButtonsWhileMaximized_data() { addWindowKinds(); }
     void captionOrderChangesKeepAllButtonsWhileMaximized();
+    void reusedToolTipsKeepTheThemedSize();
+    void longToolTipsWrapAtAReadableWidth();
+#ifdef Q_OS_WIN
+    void maximizedCaptionButtonsShowThemedToolTips();
+#endif
     void expandedCaptionControlsReachEveryScreenCorner_data();
     void expandedCaptionControlsReachEveryScreenCorner();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
@@ -854,6 +863,165 @@ void CaptionStripTest::captionOrderChangesKeepAllButtonsWhileMaximized()
     QVERIFY(check({"close", "minimize", "maximize"}));
     QCOMPARE(controls->findChildren<QToolButton*>("CaptionButton").size(), 3);
 }
+
+namespace {
+QWidget* visibleToolTip()
+{
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (widget->inherits("QTipLabel") && widget->isVisible()) return widget;
+    return nullptr;
+}
+
+// Windows' tooltip fade shows the tip through a separate effect window; in a
+// test that window's activation closes the tip before it appears. Tip sizes
+// and styling do not depend on the effect, so tests show tips directly.
+[[nodiscard]] auto withoutToolTipEffects()
+{
+    const bool fade = QApplication::isEffectEnabled(Qt::UI_FadeTooltip);
+    const bool animate = QApplication::isEffectEnabled(Qt::UI_AnimateTooltip);
+    QApplication::setEffectEnabled(Qt::UI_FadeTooltip, false);
+    QApplication::setEffectEnabled(Qt::UI_AnimateTooltip, false);
+    return qScopeGuard([fade, animate] {
+        QApplication::setEffectEnabled(Qt::UI_FadeTooltip, fade);
+        QApplication::setEffectEnabled(Qt::UI_AnimateTooltip, animate);
+    });
+}
+} // namespace
+
+void CaptionStripTest::longToolTipsWrapAtAReadableWidth()
+{
+    const auto effects = withoutToolTipEffects();
+    WindowManager manager; const auto id = createFixture(manager, false);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
+    const auto show = [](QWidget* button) {
+        QHelpEvent help(QEvent::ToolTip, button->rect().center(), button->mapToGlobal(button->rect().center()));
+        QApplication::sendEvent(button, &help);
+    };
+    auto* shortButton = captionButton(window, "close");
+    auto* longButton = captionButton(window, "minimize"); // Next to the screen edge in its row.
+    longButton->setToolTip(QStringLiteral("这是一段很长的提示文字，用来检查提示气泡不会被拉成细长的一整行，"
+        "而是在可读的宽度处自动换行；This long tooltip must wrap at a readable width instead of one thin line."));
+    show(shortButton);
+    QTRY_VERIFY(visibleToolTip());
+    auto* tip = visibleToolTip(); QVERIFY(tip);
+    const int lineHeight = tip->height();
+    QVERIFY(tip->width() < maximumToolTipWidth);
+    // A new long tip and a reused one both wrap.
+    for (int pass = 0; pass < 2; ++pass) {
+        if (pass) { QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip()); }
+        show(longButton); QCoreApplication::processEvents();
+        QTRY_VERIFY(visibleToolTip());
+        tip = visibleToolTip(); QVERIFY(tip);
+        QVERIFY2(tip->width() <= maximumToolTipWidth, qPrintable(QString::number(tip->width())));
+        QVERIFY2(tip->height() >= 2 * lineHeight - 4, qPrintable(QStringLiteral("%1 vs %2").arg(tip->height()).arg(lineHeight)));
+        QVERIFY(tip->screen()->availableGeometry().contains(tip->geometry()));
+        // Every word is still shown: the label's own height covers the text.
+        QVERIFY(tip->height() >= tip->heightForWidth(tip->width()));
+    }
+    // Back to a short tip: one line again.
+    show(shortButton); QCoreApplication::processEvents();
+    tip = visibleToolTip(); QVERIFY(tip);
+    QCOMPARE(QToolTip::text(), shortButton->toolTip());
+    QCOMPARE(tip->height(), lineHeight);
+    QToolTip::hideText();
+}
+
+void CaptionStripTest::reusedToolTipsKeepTheThemedSize()
+{
+    // A host's own application style sheet survives the window theme.
+    const QString hostRule = QStringLiteral("QLabel#HostRule { color: red; }");
+    qApp->setStyleSheet(hostRule);
+    const auto restoreSheet = qScopeGuard([] { qApp->setStyleSheet(QString()); });
+    const auto effects = withoutToolTipEffects();
+    WindowManager manager; const auto id = createFixture(manager, false);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    // Qt closes a tip as soon as its window is not the active one.
+    window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
+    manager.setTheme(manager.theme()); // A second application must not duplicate the block.
+    const auto sheet = qApp->styleSheet();
+    QVERIFY(sheet.startsWith(hostRule));
+    QCOMPARE(sheet.count(QStringLiteral("/* window_system tooltip */")), 1);
+    QCOMPARE(sheet.count(QStringLiteral("QToolTip ")), 1);
+    const auto show = [](QWidget* button) {
+        QHelpEvent help(QEvent::ToolTip, button->rect().center(), button->mapToGlobal(button->rect().center()));
+        QApplication::sendEvent(button, &help);
+    };
+    // The first tip is created with the theme; moving straight to another
+    // control reuses the visible tip, which must keep the same height.
+    show(captionButton(window, "minimize"));
+    QTRY_VERIFY(visibleToolTip());
+    QTest::qWait(300); // Let the first tip finish showing.
+    auto* first = visibleToolTip(); QVERIFY(first);
+    const int height = first->height(); QVERIFY(height > 0);
+    for (const auto* role : {"maximize", "close", "minimize"}) {
+        show(captionButton(window, role));
+        QCoreApplication::processEvents();
+        auto* tip = visibleToolTip(); QVERIFY2(tip, role);
+        QCOMPARE(QToolTip::text(), captionButton(window, role)->toolTip());
+        QCOMPARE(tip->height(), height);
+    }
+    QToolTip::hideText();
+}
+
+#ifdef Q_OS_WIN
+void CaptionStripTest::maximizedCaptionButtonsShowThemedToolTips()
+{
+    const auto effects = withoutToolTipEffects();
+    WindowManager manager; const auto id = createFixture(manager, false);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->showMaximized(); QTRY_VERIFY(window->isMaximized());
+    // Qt closes a tip as soon as its window is not the active one.
+    window->activateWindow(); QVERIFY(QTest::qWaitForWindowActive(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    QToolTip::hideText(); QTRY_VERIFY(!visibleToolTip());
+    const auto location = [window](QWidget* button) { return nativePoint(window, button, button->rect().center()); };
+    auto* close = captionButton(window, "close");
+    auto* minimize = captionButton(window, "minimize");
+    QVERIFY(close && minimize);
+    // Qt reports the maximized state before the native resize settles: wait
+    // until the close button reaches the work area's right edge.
+    QTRY_COMPARE(window->geometry(), window->screen()->availableGeometry());
+    QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());
+    // Maximized, the controls are native caption hits. The system's own
+    // hover handling (classic yellow tooltip) is not used for them...
+    // The native leave tracking follows the real cursor, so place it on the
+    // control (no click or key is sent).
+    // Another program's always-on-top window over the control would receive
+    // the real cursor and end the hover: report that as occlusion.
+    const auto pointAt = [handle](LPARAM where) {
+        const POINT point{GET_X_LPARAM(where), GET_Y_LPARAM(where)};
+        if (!SetCursorPos(point.x, point.y)) return QStringLiteral("SetCursorPos failed");
+        const HWND under = GetAncestor(WindowFromPoint(point), GA_ROOT);
+        if (under == handle) return QString();
+        wchar_t name[128]{}; GetClassNameW(under, name, 128);
+        DWORD process = 0; GetWindowThreadProcessId(under, &process);
+        return QStringLiteral("Control occluded by window class %1 of process %2")
+            .arg(QString::fromWCharArray(name)).arg(process);
+    };
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, location(close)), LRESULT(HTCLOSE));
+    { const auto occluded = pointAt(location(close)); QVERIFY2(occluded.isEmpty(), qPrintable(occluded)); }
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTCLOSE, location(close));
+    QCOMPARE(SendMessageW(handle, WM_NCMOUSEHOVER, HTCLOSE, location(close)), LRESULT(0));
+    // ...the Qt button shows its themed tooltip after Qt's wake-up delay.
+    QTRY_VERIFY_WITH_TIMEOUT(visibleToolTip(), 3000);
+    QCOMPARE(QToolTip::text(), close->toolTip());
+    auto* closeTip = visibleToolTip(); QVERIFY(closeTip);
+    const int height = closeTip->height();
+    // Moving straight to the next control switches the tip at once and
+    // keeps its size.
+    { const auto occluded = pointAt(location(minimize)); QVERIFY2(occluded.isEmpty(), qPrintable(occluded)); }
+    SendMessageW(handle, WM_NCMOUSEMOVE, HTMINBUTTON, location(minimize));
+    QTRY_COMPARE_WITH_TIMEOUT(QToolTip::text(), minimize->toolTip(), 500);
+    QVERIFY(visibleToolTip()); QCOMPARE(visibleToolTip()->height(), height);
+    // Leaving the controls hides it.
+    SendMessageW(handle, WM_NCMOUSELEAVE, 0, 0);
+    QTRY_VERIFY_WITH_TIMEOUT(!visibleToolTip(), 2000);
+}
+#endif
 
 void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner_data()
 {

@@ -6,7 +6,11 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QPointer>
+#include <QHelpEvent>
 #include <QScopeGuard>
+#include <QStyle>
+#include <QTimer>
+#include <QToolTip>
 #include <QVariant>
 #include <QWidget>
 #include <QWindow>
@@ -58,11 +62,16 @@ public:
     {
         setObjectName(QString::fromLatin1(frameStateName));
         window->installEventFilter(this);
+        tipTimer_.setSingleShot(true);
+        connect(&tipTimer_, &QTimer::timeout, this, [this] { showHoveredTip(); });
     }
 
     void setHovered(QAbstractButton* button, const QPoint& clientPosition = {})
     {
         if (hovered == button) return;
+        tipTimer_.stop();
+        if (tipShownFor_ && tipShownFor_ == hovered) QToolTip::hideText();
+        tipShownFor_.clear();
         if (hovered) {
             hovered->setAttribute(Qt::WA_UnderMouse, false);
             QEvent leave(QEvent::Leave);
@@ -77,7 +86,26 @@ public:
             QEnterEvent enter{QPointF(local), QPointF(clientPosition), QPointF(global)};
             QApplication::sendEvent(hovered, &enter);
             if (hovered) hovered->update();
+            // Native caption hits get no Qt mouse moves, so Qt never starts
+            // its tooltip timer. Use Qt's own timing: immediately while a tip
+            // is already showing, otherwise after the style's wake-up delay.
+            // Maximize/restore keep the native hover for the Snap flyout.
+            const auto role = hovered ? hovered->property("role").toString() : QString();
+            if (hovered && role != QStringLiteral("maximize") && role != QStringLiteral("restore")) {
+                tipPosition_ = clientPosition;
+                tipTimer_.start(QToolTip::isVisible() ? 20
+                    : hovered->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, hovered));
+            }
         }
+    }
+
+    void showHoveredTip()
+    {
+        if (!hovered || !window_) return;
+        const QPoint local = hovered->mapFrom(window_, tipPosition_);
+        QHelpEvent help(QEvent::ToolTip, local, hovered->mapToGlobal(local));
+        tipShownFor_ = hovered;
+        QApplication::sendEvent(hovered, &help);
     }
 
     void cancelPress()
@@ -98,6 +126,7 @@ public:
     bool attributesReady = false;
     bool configuring = false;
     bool extending = false;
+
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
@@ -123,6 +152,9 @@ protected:
 
 private:
     QPointer<QWidget> window_;
+    QTimer tipTimer_;
+    QPoint tipPosition_;
+    QPointer<QAbstractButton> tipShownFor_;
 };
 
 NativeFrameState* findFrameState(QWidget* window)
@@ -560,6 +592,12 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             ? DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam) : 0;
         return true;
     }
+    case WM_NCMOUSEHOVER:
+        // Default processing shows the classic system caption tooltip for
+        // the native minimize/close hits; the Qt button shows the themed one
+        // (see setHovered). Maximize keeps the native hover for Snap.
+        if (msg->wParam == HTMINBUTTON || msg->wParam == HTCLOSE) { *result = 0; return true; }
+        return false;
     case WM_NCMOUSELEAVE: {
         auto* state = frameState(window);
         state->trackingNonClient = false;
