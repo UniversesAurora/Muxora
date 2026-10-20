@@ -17,7 +17,7 @@
 | [主题系统设计](../design/theme-system-design.md) | 按 VS Code 的颜色注册表、主题与设置逻辑；深色配色方法 |
 | [界面设计规范](../design/ui-design-system.md) | 尺寸、字体、圆角阴影、交互规则和各组件规格 |
 | [未来规划](future-plans.md) | 以后要做、现在不设计实现的事项：Windows 7 Aero 风格外观、AI 接入，以及其他已推迟的事项 |
-| [实现计划](implementation/README.md) | 按阶段拆分的逐步实现说明：改哪些文件、怎么改、加什么测试、怎么验证、完成标准；供 Agent 按步骤执行 |
+| [实现计划](implementation/README.md) | 按阶段拆分的逐步实现说明：改哪些文件、怎么改、加什么测试、怎么验证、完成标准；供 Agent 按步骤执行。执行先后见其中的 [推荐执行顺序](implementation/README.md#推荐执行顺序) |
 
 ## 优先级
 
