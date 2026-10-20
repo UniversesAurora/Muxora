@@ -369,6 +369,9 @@ void CommandStripHost::addStrip(QString id, QString title, QWidget* content, int
             connect(action, &QAction::changed, this, [this] { if (!d->arranging) arrange(); });
             ++index;
         }
+        // See eventFilter(): the clipped part of a compressed menu bar must
+        // not open the menus hidden there.
+        menu->installEventFilter(this);
     }
     strip->handle->installEventFilter(this);
     strip->setLocked(d->locked);
@@ -1224,6 +1227,20 @@ bool CommandStripHost::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == d->bottom && (event->type() == QEvent::Resize || event->type() == QEvent::FontChange
         || event->type() == QEvent::StyleChange)) arrange();
+    if (auto* bar = qobject_cast<QMenuBar*>(watched)) {
+        // A compressed strip clips its menu bar; the clipped menus are listed
+        // in the strip's overflow menu instead. While one menu is open, Qt
+        // forwards pointer moves to the bar by position alone, so moving
+        // across the clipped area would open an invisible menu. Only the
+        // visible part of the bar reacts to the pointer.
+        const auto type = event->type();
+        if (type == QEvent::MouseMove || type == QEvent::MouseButtonPress
+            || type == QEvent::MouseButtonRelease || type == QEvent::MouseButtonDblClick) {
+            const QPoint position = static_cast<QMouseEvent*>(event)->position().toPoint();
+            if (bar->rect().contains(position) && !bar->visibleRegion().contains(position)) return true;
+        }
+        return false; // Including its context menu, which the window handles.
+    }
     if (event->type() == QEvent::ContextMenu) {
         contextMenuEvent(static_cast<QContextMenuEvent*>(event)); return true;
     }

@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
 #include "chrome/command_strip.hpp"
+#include "commands/popup_menu.hpp"
 
 #include <window_system/theme.hpp>
 
 #include <QAction>
 #include <QApplication>
 #include <QImage>
+#include <QLabel>
+#include <QMenuBar>
+#include <QMouseEvent>
 #include <QMenu>
 #include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
+#include <memory>
 #include <QToolButton>
 
 #ifdef Q_OS_WIN
@@ -87,7 +92,46 @@ private slots:
     void mouseOpenedMenuDoesNotLeaveAnOutline_data();
     void mouseOpenedMenuDoesNotLeaveAnOutline();
     void keyboardFocusRemainsVisibleAfterMenuDismissal();
+    void clippedMenusDoNotOpenFromThePointer();
+    void clippedMenusOpenBesideTheOverflowMenu();
 };
+
+namespace {
+// A compressed menu strip: the last menus are clipped and listed in the
+// strip's overflow menu instead.
+struct CompressedMenuStrip {
+    CommandStripHost host;
+    QMenuBar* bar = new QMenuBar;
+    QList<QMenu*> menus;
+    CompressedMenuStrip()
+    {
+        applyTheme(&host, defaultTheme());
+        bar->setNativeMenuBar(false);
+        for (int index = 0; index < 6; ++index) {
+            auto* menu = new DismissOnlyMenu(QStringLiteral("Menu %1").arg(index), bar);
+            menu->addAction(QStringLiteral("Item %1").arg(index));
+            bar->addMenu(menu); menus.append(menu);
+        }
+        host.addStrip("menu", "Menu", bar, 0);
+        host.addStrip("title", "Title", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    }
+    bool show()
+    {
+        if (!host.setStripWidth("menu", 150)) return false;
+        host.move(160, 160); host.resize(600, host.height()); host.show();
+        if (!QTest::qWaitForWindowExposed(&host)) return false;
+        host.raise(); host.activateWindow();
+        return QTest::qWaitForWindowActive(&host) && !host.overflowItems("menu").isEmpty();
+    }
+    bool visible(QAction* action) const { return bar->visibleRegion().contains(bar->actionGeometry(action).center()); }
+    void pointerTo(QAction* action) const
+    {
+        const QPointF local(bar->actionGeometry(action).center());
+        QMouseEvent move(QEvent::MouseMove, local, bar->mapToGlobal(local), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(bar, &move);
+    }
+};
+} // namespace
 
 void ToolbarPopupTest::mouseOpenedMenuDoesNotLeaveAnOutline_data()
 {
@@ -205,6 +249,59 @@ void ToolbarPopupTest::keyboardFocusRemainsVisibleAfterMenuDismissal()
     QVERIFY(!tail->isDown());
     QVERIFY(!QApplication::activePopupWidget());
     QTRY_COMPARE(tail->grab().toImage(), focused);
+}
+
+void ToolbarPopupTest::clippedMenusDoNotOpenFromThePointer()
+{
+    CompressedMenuStrip strip; QVERIFY(strip.show());
+    const auto actions = strip.bar->actions();
+    QVERIFY(strip.visible(actions[0]) && strip.visible(actions[1]));
+    QVERIFY(!strip.visible(actions.last()));
+    // With a menu open, Qt forwards pointer moves to the bar: moving over the
+    // clipped part must not open the menu hidden there...
+    strip.bar->setActiveAction(actions[0]);
+    QTRY_VERIFY(strip.menus[0]->isVisible());
+    strip.pointerTo(actions.last());
+    QCoreApplication::processEvents();
+    QVERIFY(!strip.menus.last()->isVisible());
+    QCOMPARE(strip.bar->activeAction(), actions[0]);
+    QVERIFY(strip.menus[0]->isVisible());
+    // ...while a visible neighbour still takes over as usual.
+    strip.pointerTo(actions[1]);
+    QTRY_VERIFY(strip.menus[1]->isVisible());
+    strip.menus[1]->close();
+    // Keyboard navigation can still reach a clipped item; it then opens at
+    // the visible end of the bar instead of out of sight.
+    strip.bar->setActiveAction(actions.last());
+    QTRY_VERIFY(strip.menus.last()->isVisible());
+    const QRect visible = strip.bar->visibleRegion().boundingRect();
+    const int visibleRight = strip.bar->mapToGlobal(visible.topRight()).x();
+    QVERIFY2(strip.menus.last()->x() <= visibleRight,
+        qPrintable(QStringLiteral("menu x %1, visible bar ends at %2").arg(strip.menus.last()->x()).arg(visibleRight)));
+    strip.menus.last()->close();
+}
+
+void ToolbarPopupTest::clippedMenusOpenBesideTheOverflowMenu()
+{
+    CompressedMenuStrip strip; QVERIFY(strip.show());
+    auto* hidden = strip.bar->actions().last();
+    QVERIFY(!strip.visible(hidden));
+    std::unique_ptr<QMenu> overflow(strip.host.createOverflowMenu("menu", &strip.host)); QVERIFY(overflow);
+    QVERIFY(overflow->actions().contains(hidden));
+    overflow->popup(strip.host.mapToGlobal(QPoint(300, strip.host.height())));
+    QTRY_VERIFY(overflow->isVisible());
+    overflow->setActiveAction(hidden);
+    QTest::keyClick(overflow.get(), Qt::Key_Right);
+    auto* submenu = strip.menus.last();
+    QTRY_VERIFY(submenu->isVisible());
+    // Beside the overflow menu at the item's row, like any submenu, not under
+    // the clipped position in the menu bar.
+    const QRect outer = overflow->frameGeometry();
+    const QRect sub = submenu->frameGeometry();
+    QVERIFY2(sub.left() == outer.right() + 1 || sub.right() + 1 == outer.left(),
+        qPrintable(QStringLiteral("submenu %1,%2 overflow %3..%4").arg(sub.left()).arg(sub.top()).arg(outer.left()).arg(outer.right())));
+    QCOMPARE(sub.top(), overflow->mapToGlobal(overflow->actionGeometry(hidden).topLeft()).y());
+    submenu->close(); overflow->close();
 }
 
 QTEST_MAIN(ToolbarPopupTest)

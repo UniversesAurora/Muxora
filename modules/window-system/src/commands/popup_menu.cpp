@@ -102,11 +102,27 @@ void DismissOnlyMenu::showEvent(QShowEvent* event)
         if (const auto* screen = anchorScreen(anchor, this)) move(popupMenuPosition(anchor, size(), screen->availableGeometry()));
         return;
     }
-    if (auto* bar = qobject_cast<QMenuBar*>(parentWidget())) {
-        const auto anchor = QRect(bar->mapToGlobal(bar->actionGeometry(menuAction()).topLeft()),
-                                  bar->actionGeometry(menuAction()).size());
+    // A menu bar's menu can also be opened from another menu: a compressed
+    // menu strip lists its clipped menus in its overflow menu. Place it by the
+    // menu that actually opened it, like any submenu, not under the bar.
+    QMenu* opener = nullptr;
+    for (auto* object : menuAction()->associatedObjects()) {
+        auto* candidate = qobject_cast<QMenu*>(object);
+        if (candidate && candidate != this && candidate->isVisible() && candidate->activeAction() == menuAction()) {
+            opener = candidate; break;
+        }
+    }
+    auto* bar = opener ? nullptr : qobject_cast<QMenuBar*>(parentWidget());
+    if (bar) {
+        QRect item = bar->actionGeometry(menuAction());
+        // Keyboard navigation can reach an item clipped by a compressed
+        // strip: open it at the visible end of the bar, not out of sight.
+        const QRect visible = bar->visibleRegion().boundingRect();
+        if (!visible.isEmpty() && !visible.intersects(item))
+            item.moveLeft(std::max(visible.left(), visible.right() + 1 - item.width()));
+        const auto anchor = QRect(bar->mapToGlobal(item.topLeft()), item.size());
         if (const auto* screen = anchorScreen(anchor, this)) move(popupMenuPosition(anchor, size(), screen->availableGeometry()));
-    } else if (auto* parent = qobject_cast<QMenu*>(parentWidget())) {
+    } else if (auto* parent = opener ? opener : qobject_cast<QMenu*>(parentWidget())) {
         const auto item = parent->actionGeometry(menuAction());
         const auto anchor = QRect(parent->mapToGlobal(item.topLeft()), item.size());
         const auto* screen = anchorScreen(anchor, this);
