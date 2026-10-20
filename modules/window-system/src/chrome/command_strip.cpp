@@ -634,13 +634,25 @@ void CommandStripHost::removeFromRows(const QString& id)
             auto* candidate = d->strips.value(d->rows[row][after]);
             if (candidate->visible) { next = candidate; break; }
         }
-        if (removed->visible && previous && previous->sizing == StripSizing::Content && !previous->constraints.fixedWidth) {
-            if (!next || next->sizing == StripSizing::Elastic) previous->requestedWidth = -1;
+        // The neighbour on the row's anchored side fills the vacated slot,
+        // so the strips on the free side keep their places: the previous one
+        // left of the elastic strip (anchored to the left edge), the next one
+        // right of it (anchored to the right edge). Next to the elastic strip
+        // the gap simply goes to the elastic strip.
+        bool rightOfElastic = false;
+        for (int before = 0; before < index; ++before) {
+            const auto* candidate = d->strips.value(d->rows[row][before]);
+            rightOfElastic |= candidate->visible && candidate->sizing == StripSizing::Elastic;
+        }
+        auto* filler = rightOfElastic ? next : previous;
+        auto* across = rightOfElastic ? previous : next;
+        if (removed->visible && filler && filler->sizing == StripSizing::Content && !filler->constraints.fixedWidth) {
+            if (!across || across->sizing == StripSizing::Elastic) filler->requestedWidth = -1;
             else {
-                const int previousWidth = isDragging() ? d->originalBounds.value(previous->id).width() : previous->width();
+                const int fillerWidth = isDragging() ? d->originalBounds.value(filler->id).width() : filler->width();
                 const int removedWidth = isDragging() ? d->originalBounds.value(id).width() : removed->width();
-                previous->requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
-                    qint64(previousWidth) + removedWidth + stripSpacing));
+                filler->requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
+                    qint64(fillerWidth) + removedWidth + stripSpacing));
             }
         }
         d->rows[row].removeAt(index);
@@ -1281,29 +1293,38 @@ bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
             if (candidate->visible) { next = candidate; break; }
         }
     }
-    const bool adjustBoundary = previous && !previous->constraints.fixedWidth
+    // Dragging a handle moves the boundary at the strip's left edge. The strip
+    // on the row's anchored side of that boundary changes width; the strips on
+    // the free side keep theirs and move, and the elastic strip absorbs the
+    // difference. Left of the elastic strip (anchored to the left edge) that is
+    // the previous strip, and the dragged one moves with the pointer. Right of
+    // it (anchored to the right edge) it is the dragged strip itself: its left
+    // edge follows the pointer, its right edge stays, and the strips before it
+    // only move. A fixed-width strip on the anchored side cannot change, so the
+    // boundary stays and the drag can only reorder.
+    const bool rightOfElastic = elasticBefore && dragged->sizing == StripSizing::Content;
+    auto* resized = rightOfElastic ? dragged : previous;
+    const bool adjustBoundary = previous && resized && resized->sizing == StripSizing::Content
+        && !resized->constraints.fixedWidth
         && requestedLeft >= d->originalBounds.value(previous->id).left() + previous->minimumWidthForLayout() / 2
         && (!next || requestedLeft < d->originalBounds.value(next->id).left() + next->minimumWidthForLayout() / 2);
     if (!adjustBoundary) return false;
-    // On the right of the elastic owner, resizing transfers width between
-    // adjacent strips while the right edge and all following strips stay put.
     d->reserveDragSlot = true;
+    if (rightOfElastic) {
+        const auto ownBounds = d->originalBounds.value(d->dragging);
+        const int left = std::min(requestedLeft, ownBounds.right() - dragged->minimumWidthForLayout() + 1);
+        dragged->requestedWidth = ownBounds.right() - left + 1;
+        return true;
+    }
     const auto previousBounds = d->originalBounds.value(previous->id);
     int left = std::max(requestedLeft, previousBounds.left() + previous->minimumWidthForLayout() + stripSpacing);
-    if (elasticBefore && dragged->sizing == StripSizing::Content) {
-        const auto ownBounds = d->originalBounds.value(d->dragging);
-        left = std::min(left, ownBounds.right() - dragged->minimumWidthForLayout() + 1);
-        if (!dragged->constraints.fixedWidth) dragged->requestedWidth = ownBounds.right() - left + 1;
-    } else {
-        int trailingMinimum = dragged->minimumWidthForLayout();
-        for (int after = originalIndex + 1; after < d->rows[row].size(); ++after) {
-            const auto* candidate = d->strips.value(d->rows[row][after]);
-            if (candidate->visible) trailingMinimum += candidate->minimumWidthForLayout() + stripSpacing;
-        }
-        left = std::min(left, areaWidget(d->rowAreas[row])->width() - rowMargin - trailingMinimum);
+    int trailingMinimum = dragged->minimumWidthForLayout();
+    for (int after = originalIndex + 1; after < d->rows[row].size(); ++after) {
+        const auto* candidate = d->strips.value(d->rows[row][after]);
+        if (candidate->visible) trailingMinimum += candidate->minimumWidthForLayout() + stripSpacing;
     }
-    if (previous->sizing == StripSizing::Content)
-        previous->requestedWidth = std::max(previous->minimumWidthForLayout(), left - previousBounds.left() - stripSpacing);
+    left = std::min(left, areaWidget(d->rowAreas[row])->width() - rowMargin - trailingMinimum);
+    previous->requestedWidth = std::max(previous->minimumWidthForLayout(), left - previousBounds.left() - stripSpacing);
     return true;
 }
 
@@ -1323,19 +1344,38 @@ void CommandStripHost::insertDraggedStrip(int row, QPoint position)
         index = itemIndex + 1;
         if (position.x() < bounds.right()) break;
     }
-    // At a new insertion point, the handle becomes the left neighbour's
-    // boundary. Other rows already received the vacated source slot above.
-    for (int previous = index - 1; previous >= 0; --previous) {
-        auto* strip = d->strips.value(d->rows[row][previous]);
-        if (!strip->visible) continue;
-        if (strip->sizing == StripSizing::Content && !strip->constraints.fixedWidth) {
-            strip->requestedWidth = std::max(strip->minimumWidthForLayout(),
-                position.x() - d->pressOffset.x() - strip->geometry().left() - stripSpacing);
+    // At a new insertion point the handle becomes the boundary with the left
+    // neighbour, resized as in resizeDragBoundary(): left of the elastic strip
+    // the left neighbour reaches the pointer and the inserted strip keeps its
+    // width; right of it the inserted strip spans from the pointer to its
+    // right neighbour, and the left neighbour keeps its width. Other rows
+    // already received the vacated source slot above.
+    auto* dragged = d->strips.value(d->dragging);
+    const int handle = position.x() - d->pressOffset.x();
+    bool rightOfElastic = false;
+    for (int before = 0; before < index; ++before) {
+        const auto* strip = d->strips.value(d->rows[row][before]);
+        rightOfElastic |= strip->visible && strip->sizing == StripSizing::Elastic;
+    }
+    if (rightOfElastic && dragged->sizing == StripSizing::Content) {
+        if (!dragged->constraints.fixedWidth) {
+            int boundary = areaWidget(d->rowAreas[row])->width() - rowMargin;
+            for (int after = index; after < d->rows[row].size(); ++after) {
+                const auto* strip = d->strips.value(d->rows[row][after]);
+                if (strip->visible) { boundary = strip->geometry().left() - stripSpacing; break; }
+            }
+            dragged->requestedWidth = std::max(dragged->minimumWidthForLayout(), boundary - handle);
         }
-        break;
+    } else {
+        for (int previous = index - 1; previous >= 0; --previous) {
+            auto* strip = d->strips.value(d->rows[row][previous]);
+            if (!strip->visible) continue;
+            if (strip->sizing == StripSizing::Content && !strip->constraints.fixedWidth)
+                strip->requestedWidth = std::max(strip->minimumWidthForLayout(), handle - strip->geometry().left() - stripSpacing);
+            break;
+        }
     }
     d->rows[row].insert(index, d->dragging);
-    auto* dragged = d->strips.value(d->dragging);
     normalizeElastic(row, dragged->sizing == StripSizing::Elastic ? d->dragging : QString{});
     d->reserveDragSlot = true;
 }

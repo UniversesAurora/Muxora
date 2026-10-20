@@ -264,6 +264,9 @@ private slots:
     void movingFollowingStripsRepairsLiveAndEscRestores();
     void rightOfElasticStripsResizeAgainstAnAnchoredRightEdge_data();
     void rightOfElasticStripsResizeAgainstAnAnchoredRightEdge();
+    void fixedWidthStripRightOfElasticOnlyReorders();
+    void insertionRightOfElasticSpansToTheRightNeighbour();
+    void removalRightOfElasticKeepsTheStripsBeforeInPlace();
     void stripConstraintsProtectContentThroughSizingAndRestore();
     void partialRestoreIgnoresUnavailableStripsButRejectsMalformedKnownRows();
     void extremeRequestedWidthsRemainBoundedAndRestorable();
@@ -1025,17 +1028,26 @@ void ChromeInteractionTest::rightOfElasticStripsResizeAgainstAnAnchoredRightEdge
     QVERIFY(QTest::qWaitForWindowExposed(&host));
     auto* resized = host.stripWidget("resized");
     auto* before = host.stripWidget(ordinaryBefore ? "before" : "elastic");
+    auto* elastic = host.stripWidget("elastic");
     const int originalWidth = resized->width();
     const int originalRight = resized->geometry().right();
     const QRect followingBounds = ordinaryAfter ? host.stripWidget("after")->geometry() : QRect{};
-    const int beforeWidth = before->width();
+    const QRect beforeBounds = before->geometry();
+    const int elasticWidth = elastic->width();
+    // The boundary at the handle moves; the dragged strip is on the anchored
+    // (right) side, so it alone changes width. An ordinary strip before it
+    // keeps its width and moves with the boundary; the elastic strip absorbs.
+    const auto checkBefore = [&](int shift) {
+        QCOMPARE(elastic->width(), elasticWidth + shift);
+        if (ordinaryBefore) QCOMPARE(before->geometry(), beforeBounds.translated(shift, 0));
+    };
     auto* handle = resized->findChild<QWidget*>("StripHandle");
     const int handleOffset = handle->rect().center().x();
     auto destination = host.mapToGlobal(QPoint(resized->x() + handleOffset + 50, 12));
     startDrag(host, handle, destination);
     QCOMPARE(resized->width(), originalWidth - 50);
     QCOMPARE(resized->geometry().right(), originalRight);
-    QCOMPARE(before->width(), beforeWidth + 50);
+    checkBefore(50);
     if (ordinaryAfter) QCOMPARE(host.stripWidget("after")->geometry(), followingBounds);
     QVERIFY(!resized->isVisible());
     mouse(&host, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
@@ -1045,7 +1057,7 @@ void ChromeInteractionTest::rightOfElasticStripsResizeAgainstAnAnchoredRightEdge
     startDrag(host, handle, destination);
     QCOMPARE(resized->width(), originalWidth + 25);
     QCOMPARE(resized->geometry().right(), originalRight);
-    QCOMPARE(before->width(), beforeWidth - 25);
+    checkBefore(-25);
     if (ordinaryAfter) QCOMPARE(host.stripWidget("after")->geometry(), followingBounds);
     mouse(&host, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
     const auto stretched = host.saveLayout();
@@ -1056,6 +1068,98 @@ void ChromeInteractionTest::rightOfElasticStripsResizeAgainstAnAnchoredRightEdge
     QCOMPARE(host.saveLayout(), stretched);
     QCOMPARE(resized->geometry(), stretchedGeometry);
     if (ordinaryAfter) QCOMPARE(host.stripWidget("after")->geometry(), followingBounds);
+}
+
+void ChromeInteractionTest::fixedWidthStripRightOfElasticOnlyReorders()
+{
+    // A fixed-width strip on the anchored side of its handle cannot change
+    // width, so dragging its handle moves no boundary: no other strip may
+    // shrink or grow while it stays put.
+    CommandStripHost host;
+    host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("before", "Before", actions(&host, 6), 0);
+    host.addActionStrip("fixed", "Fixed", actions(&host, 3), 0);
+    QVERIFY(host.setStripConstraints("fixed", {false, false, 12, false, true}));
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* fixed = host.stripWidget("fixed");
+    auto* before = host.stripWidget("before");
+    auto* elastic = host.stripWidget("elastic");
+    const QRect fixedBounds = fixed->geometry(), beforeBounds = before->geometry(), elasticBounds = elastic->geometry();
+    const auto layout = host.saveLayout();
+    auto* handle = fixed->findChild<QWidget*>("StripHandle"); QVERIFY(handle);
+    const int offset = handle->rect().center().x();
+    for (const int shift : {-60, -20, 25}) {
+        const auto destination = host.mapToGlobal(QPoint(fixedBounds.x() + offset + shift, 12));
+        startDrag(host, handle, destination);
+        QCOMPARE(before->geometry(), beforeBounds);
+        QCOMPARE(elastic->geometry(), elasticBounds);
+        mouse(&host, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+        QCOMPARE(fixed->geometry(), fixedBounds);
+        QCOMPARE(before->geometry(), beforeBounds);
+        QCOMPARE(host.saveLayout().value("strips"), layout.value("strips"));
+    }
+}
+
+void ChromeInteractionTest::insertionRightOfElasticSpansToTheRightNeighbour()
+{
+    // Dropped right of the elastic strip, the inserted strip starts at the
+    // pointer and reaches its right neighbour; the strip before it keeps its
+    // width and the strip after it stays where it is.
+    CommandStripHost host;
+    host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("before", "Before", actions(&host, 6), 0);
+    host.addActionStrip("after", "After", actions(&host, 3), 0);
+    host.addStrip("other-row", "Other row", new QLabel("Other row"), 1, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("moved", "Moved", actions(&host, 2), 1);
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* before = host.stripWidget("before");
+    auto* after = host.stripWidget("after");
+    auto* moved = host.stripWidget("moved");
+    const int beforeWidth = before->width();
+    const QRect afterBounds = after->geometry();
+    auto* handle = moved->findChild<QWidget*>("StripHandle"); QVERIFY(handle);
+    const int offset = handle->rect().center().x();
+    for (const int inset : {before->width() / 2 + 10, before->width() / 2 + 30}) {
+        const int pointer = before->geometry().left() + inset;
+        const auto destination = host.mapToGlobal(QPoint(pointer, 12));
+        startDrag(host, handle, destination);
+        QCOMPARE(host.stripOrder(0), (QStringList{"elastic", "before", "moved", "after"}));
+        QCOMPARE(moved->x(), pointer - offset);
+        QCOMPARE(moved->geometry().right() + 1 + 4, afterBounds.left());
+        QCOMPARE(after->geometry(), afterBounds);
+        QCOMPARE(before->width(), beforeWidth);
+        QTest::keyClick(&host, Qt::Key_Escape);
+    }
+}
+
+void ChromeInteractionTest::removalRightOfElasticKeepsTheStripsBeforeInPlace()
+{
+    // Right of the elastic strip the row is anchored to the right edge: the
+    // right neighbour fills a vacated slot, so the strips before it stay put.
+    CommandStripHost host;
+    host.addStrip("elastic", "Elastic", new QLabel("Title"), 0, CommandStripHost::StripSizing::Elastic);
+    host.addActionStrip("left", "Left", actions(&host, 3), 0);
+    host.addActionStrip("removed", "Removed", actions(&host, 3), 0);
+    host.addActionStrip("right", "Right", actions(&host, 3), 0);
+    host.addStrip("other-row", "Other row", new QLabel("Other row"), 1, CommandStripHost::StripSizing::Elastic);
+    host.setLocked(false); host.resize(1200, host.height()); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host));
+    auto* left = host.stripWidget("left");
+    auto* right = host.stripWidget("right");
+    const QRect leftBounds = left->geometry(), rightBounds = right->geometry();
+    const int removedWidth = host.stripWidget("removed")->width();
+    auto* handle = host.stripWidget("removed")->findChild<QWidget*>("StripHandle"); QVERIFY(handle);
+    const auto destination = host.mapToGlobal(QPoint(200, 48));
+    startDrag(host, handle, destination);
+    QCOMPARE(left->geometry(), leftBounds);
+    QCOMPARE(right->geometry().right(), rightBounds.right());
+    QCOMPARE(right->width(), rightBounds.width() + removedWidth + 4);
+    mouse(&host, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(host.stripOrder(0), (QStringList{"elastic", "left", "right"}));
+    QCOMPARE(left->geometry(), leftBounds);
+    QCOMPARE(right->geometry().right(), rightBounds.right());
 }
 
 void ChromeInteractionTest::stripConstraintsProtectContentThroughSizingAndRestore()
