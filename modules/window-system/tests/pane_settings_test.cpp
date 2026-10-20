@@ -25,8 +25,15 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScopeGuard>
+#include <QSlider>
+#include <QAbstractItemView>
+#include <QDateTimeEdit>
+#include <QDoubleSpinBox>
+#include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QSet>
 #include <QTest>
+#include <QtTest/qtestspontaneevent.h>
 #include <QTreeWidget>
 #include <QtMath>
 #include <memory>
@@ -118,6 +125,8 @@ class PaneSettingsTest final : public QObject {
 private slots:
     void initTestCase();
     void cleanup();
+    void wheelOverValueControlsScrollsThePageWithoutEditing();
+    void wheelNeverEditsAnyValueControl();
     void paneBarsShareCompactSlotsAndFollowFocus();
     void extractedPaneCarriesItsOwnBarsAndPreservesTabFallback();
     void paneBarAdoptionRejectsInvalidAndAlreadyManagedWidgets();
@@ -939,4 +948,97 @@ void PaneSettingsTest::singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWin
 }
 
 QTEST_MAIN(PaneSettingsTest)
+namespace {
+// A real-looking wheel notch, delivered like the platform does: to the
+// widget under the cursor, which is the control (or its inner editor).
+bool sendWheel(QWidget* target, int notches = -1)
+{
+    const QPointF local = QPointF(target->rect().center());
+    QWheelEvent wheel(local, QPointF(target->mapToGlobal(target->rect().center())), QPoint(),
+        QPoint(0, 120 * notches), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QSpontaneKeyEvent::setSpontaneous(&wheel); // Propagates to parents like platform input.
+    return QApplication::sendEvent(target, &wheel);
+}
+} // namespace
+
+void PaneSettingsTest::wheelOverValueControlsScrollsThePageWithoutEditing()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    auto* scroll = page->findChild<QScrollArea*>(QStringLiteral("SettingsScrollArea")); QVERIFY(scroll);
+    manager.windowWidget(window)->resize(780, 480);
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
+    auto* zen = page->findChild<QComboBox*>(QStringLiteral("ZenFullscreenMode")); QVERIFY(zen);
+    auto* delay = page->findChild<QSpinBox*>(QStringLiteral("RevealDelayMs")); QVERIFY(delay);
+    auto* order = page->findChild<QComboBox*>(QStringLiteral("CaptionButtonOrder")); QVERIFY(order);
+    const auto before = manager.saveLayout().value("behavior");
+    for (QWidget* control : {static_cast<QWidget*>(zen), static_cast<QWidget*>(delay), static_cast<QWidget*>(order)}) {
+        scroll->ensureWidgetVisible(control);
+        QCoreApplication::processEvents();
+        const int zenIndex = zen->currentIndex(), delayValue = delay->value(), orderIndex = order->currentIndex();
+        // Scroll down, then up, over the control: the page moves both ways.
+        const int top = scroll->verticalScrollBar()->value();
+        auto* target = control->childAt(control->rect().center()) ? control->childAt(control->rect().center()) : control;
+        sendWheel(target, -1);
+        const int down = scroll->verticalScrollBar()->value();
+        sendWheel(target, 1);
+        const int up = scroll->verticalScrollBar()->value();
+        QVERIFY2(down != top || up != down, qPrintable(control->objectName()));
+        QCOMPARE(zen->currentIndex(), zenIndex);
+        QCOMPARE(delay->value(), delayValue);
+        QCOMPARE(order->currentIndex(), orderIndex);
+    }
+    QCOMPARE(manager.saveLayout().value("behavior"), before);
+    // The keyboard still changes values: only the wheel is redirected.
+    delay->setFocus(); const int value = delay->value();
+    QTest::keyClick(delay, Qt::Key_Up);
+    QVERIFY(delay->value() > value);
+}
+
+void PaneSettingsTest::wheelNeverEditsAnyValueControl()
+{
+    WindowManager manager; // Installs the application-wide wheel rule.
+    QScrollArea area; area.resize(300, 200);
+    auto* content = new QWidget; auto* column = new QVBoxLayout(content);
+    auto* combo = new QComboBox; combo->addItems({"a", "b", "c"}); combo->setCurrentIndex(1);
+    auto* editable = new QComboBox; editable->setEditable(true); editable->addItems({"x", "y", "z"}); editable->setCurrentIndex(1);
+    auto* spin = new QSpinBox; spin->setRange(0, 100); spin->setValue(50);
+    auto* real = new QDoubleSpinBox; real->setRange(0, 10); real->setValue(5);
+    auto* time = new QDateTimeEdit(QDateTime(QDate(2026, 10, 20), QTime(12, 0)));
+    auto* slider = new QSlider(Qt::Horizontal); slider->setRange(0, 100); slider->setValue(50);
+    auto* bar = new QScrollBar(Qt::Horizontal); bar->setRange(0, 100); bar->setValue(50);
+    for (QWidget* widget : std::initializer_list<QWidget*>{combo, editable, spin, real, time, slider, bar}) column->addWidget(widget);
+    column->addSpacing(1200);
+    area.setWidget(content); area.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&area));
+    for (QWidget* control : std::initializer_list<QWidget*>{combo, editable, spin, real, time, slider}) {
+        area.verticalScrollBar()->setValue(0);
+        auto* target = control->childAt(control->rect().center()) ? control->childAt(control->rect().center()) : control;
+        sendWheel(target, -1);
+        QVERIFY2(area.verticalScrollBar()->value() > 0, control->metaObject()->className());
+    }
+    QCOMPARE(combo->currentIndex(), 1); QCOMPARE(editable->currentIndex(), 1);
+    QCOMPARE(spin->value(), 50); QCOMPARE(real->value(), 5.0);
+    QCOMPARE(time->dateTime(), QDateTime(QDate(2026, 10, 20), QTime(12, 0)));
+    QCOMPARE(slider->value(), 50);
+    // Scroll bars are for scrolling: the wheel still moves them.
+    sendWheel(bar, -1);
+    QVERIFY(bar->value() != 50);
+    // An open combo popup is its own window: its list keeps scrolling.
+    auto* longCombo = new QComboBox(content);
+    for (int i = 0; i < 200; ++i) longCombo->addItem(QString::number(i));
+    longCombo->show(); longCombo->showPopup();
+    auto* view = longCombo->view(); QVERIFY(view);
+    QTRY_VERIFY(view->isVisible());
+    QTRY_VERIFY(view->verticalScrollBar()->maximum() > 0);
+    const int listTop = view->verticalScrollBar()->value();
+    sendWheel(view->viewport(), -1);
+    QVERIFY(view->verticalScrollBar()->value() > listTop);
+    longCombo->hidePopup();
+}
+
 #include "pane_settings_test.moc"

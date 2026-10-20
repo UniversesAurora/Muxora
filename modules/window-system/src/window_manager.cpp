@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include "style/wheel_guard.hpp"
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
@@ -1000,6 +1001,7 @@ void WindowManager::cancelPendingShortcut()
 bool WindowManager::eventFilter(QObject* watched, QEvent* event)
 {
     if (d->destroying || d->refreshing) return false;
+    if (redirectValueControlWheel(watched, event)) return true;
     auto* widget = qobject_cast<QWidget*>(watched);
     const auto cancelChord = [this] { cancelPendingShortcut(); };
     if (!d->pendingKeys.isEmpty()

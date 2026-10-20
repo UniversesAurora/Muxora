@@ -56,6 +56,7 @@ add_library(WindowSystemWidgets STATIC
     src/style/theme.cpp
     src/style/tab_appearance.cpp
     src/style/themed_controls.cpp
+    src/style/wheel_guard.cpp
     src/settings/settings_page.cpp
     src/settings/shortcuts_page.cpp
     src/settings/settings_view_options.cpp
