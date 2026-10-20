@@ -170,6 +170,8 @@ private slots:
     void restoredCaptionControlsTouchTheWindowBorder();
     void captionControlsNeverTakeExtraWidth_data() { addWindowKinds(); }
     void captionControlsNeverTakeExtraWidth();
+    void captionOrderChangesKeepAllButtonsWhileMaximized_data() { addWindowKinds(); }
+    void captionOrderChangesKeepAllButtonsWhileMaximized();
     void expandedCaptionControlsReachEveryScreenCorner_data();
     void expandedCaptionControlsReachEveryScreenCorner();
     void fixedResizeAxesRemainRespected_data() { addWindowKinds(); }
@@ -813,6 +815,44 @@ void CaptionStripTest::captionControlsNeverTakeExtraWidth()
     QCOMPARE(controls->width(), natural);
     QCOMPARE(window->saveStripLayout().value("strips").toObject().value("caption-controls").toObject().value("width").toInt(), -1);
     QVERIFY(manager.model().validate().ok);
+}
+
+void CaptionStripTest::captionOrderChangesKeepAllButtonsWhileMaximized()
+{
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->showMaximized(); QTRY_VERIFY(window->isMaximized());
+    auto* controls = window->strips()->stripWidget("caption-controls"); QVERIFY(controls);
+    // Maximized, the middle button carries the "restore" role. Every order
+    // change must keep all three buttons laid out side by side.
+    const auto check = [&](const QStringList& roles) {
+        QCoreApplication::processEvents();
+        QList<QRect> rects;
+        for (const auto& role : roles) {
+            auto* button = captionButton(window, role);
+            if (!button || !button->isVisible()) return false;
+            rects.append(QRect(button->mapTo(controls, QPoint()), button->size()));
+        }
+        for (int i = 0; i + 1 < rects.size(); ++i)
+            if (rects[i].right() + 1 != rects[i + 1].left() || rects[i].top() != rects[i + 1].top()) return false;
+        return rects.first().left() == 0 && rects.last().right() + 1 == controls->width() && controls->width() == 3 * 42;
+    };
+    QVERIFY(check({"minimize", "restore", "close"}));
+    const struct { CaptionButtonOrder order; QStringList roles; } orders[] = {
+        {CaptionButtonOrder::Reversed, {"close", "restore", "minimize"}},
+        {CaptionButtonOrder::MacOS, {"close", "minimize", "restore"}},
+        {CaptionButtonOrder::Windows, {"minimize", "restore", "close"}},
+        {CaptionButtonOrder::MacOS, {"close", "minimize", "restore"}}};
+    for (const auto& expected : orders) {
+        auto behavior = manager.behavior(); behavior.captionButtonOrder = expected.order; manager.setBehavior(behavior);
+        QVERIFY2(check(expected.roles), qPrintable(expected.roles.join(',')));
+    }
+    // Restoring the window keeps the chosen order with the maximize role.
+    window->showNormal(); QTRY_VERIFY(!window->isMaximized());
+    QVERIFY(check({"close", "minimize", "maximize"}));
+    QCOMPARE(controls->findChildren<QToolButton*>("CaptionButton").size(), 3);
 }
 
 void CaptionStripTest::expandedCaptionControlsReachEveryScreenCorner_data()

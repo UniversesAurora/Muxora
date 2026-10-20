@@ -353,7 +353,11 @@ void WorkspaceWindow::setCaptionButtonOrder(CaptionButtonOrder order)
     captionControls_->setProperty("captionButtonOrder", int(order));
     QHash<QString, QWidget*> buttons;
     while (auto* item = row->takeAt(0)) {
-        if (auto* widget = item->widget()) buttons.insert(widget->property("role").toString(), widget);
+        if (auto* widget = item->widget()) {
+            // A maximized window's maximize button carries the "restore" role.
+            const auto role = widget->property("role").toString();
+            buttons.insert(role == QStringLiteral("restore") ? QStringLiteral("maximize") : role, widget);
+        }
         delete item; // Layout items only; the buttons stay owned by the controls widget.
     }
     // The spare width stays on the inner side, so the outermost button keeps
@@ -363,7 +367,9 @@ void WorkspaceWindow::setCaptionButtonOrder(CaptionButtonOrder order)
         : order == CaptionButtonOrder::MacOS ? QStringList{"close", "minimize", "maximize"}
         : QStringList{"minimize", "maximize", "close"};
     if (!leading) row->addStretch();
-    for (const auto& role : roles) if (auto* button = buttons.value(role)) row->addWidget(button);
+    for (const auto& role : roles) if (auto* button = buttons.take(role)) row->addWidget(button);
+    // Never leave a button outside the layout, where it would overlap others.
+    for (auto* button : std::as_const(buttons)) row->addWidget(button);
     if (leading) row->addStretch();
 }
 void WorkspaceWindow::createChrome()
