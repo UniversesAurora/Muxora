@@ -65,6 +65,7 @@ public:
 
 **抗锯齿方式**（2026-10-20 加入，参照 Windows Terminal 的 `antialiasingMode`）：设置项 `terminal.antialiasingMode`，取值 `grayscale`（默认，与 Windows Terminal 一致）、`cleartype`、`aliased`，可按会话或配置覆盖，切换后立即重绘，不重建连接。两种渲染方案都要从设计上支持三种方式：
 
+- 对照：Xshell 的“字体质量”列出 GDI 的七个 `lfQuality` 值（Default、Draft、Proof、NonAntiAliased、AntiAliased、ClearType、Natural ClearType）。其中 Default 跟随系统；Draft、Proof 只影响旧式点阵字体，对 TrueType 字体与 Default 相同；其余四个归并为这里的三种方式。ClearType 与 Natural ClearType 的区别是字宽：前者按整像素对齐字宽（与老程序兼容），后者保留字体设计的字宽。这里的 `cleartype` 用 DirectWrite 的自然模式（`DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC`），相当于 Natural ClearType；终端是等宽网格，不需要另设整像素字宽的 GDI 兼容模式。
 - 字形光栅化用 DirectWrite（`IDWriteGlyphRunAnalysis`：灰度用 `DWRITE_TEXTURE_ALIASED_1x1` 配合抗锯齿渲染模式；ClearType 用 `DWRITE_TEXTURE_CLEARTYPE_3x1`），遵守系统的 ClearType 伽马、对比度和像素排列（RGB／BGR）设置，不自己猜。
 - 方案 R 的字形图集要能存放三通道覆盖率，ClearType 用双源混合（dual-source blending）或在已知不透明背景色上合成；方案 P 用 `QPainter` 时要确认 Qt 在目标上确实输出子像素结果。
 - 背景透明或亚克力（7.9）时 ClearType 无法正确合成，自动退回灰度，与 Windows Terminal 的行为一致，并在设置说明中写明。
