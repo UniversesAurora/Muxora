@@ -17,14 +17,13 @@ $taskReleaseArguments = $taskBuildArguments.Clone()
 if ($PackageDirectory) { $taskReleaseArguments.PackageDirectory = $taskPackage }
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskReleaseArguments
+. (Join-Path $PSScriptRoot 'toolchain.ps1')
 $taskSdk = Get-Content -LiteralPath (Join-Path $taskRepository '.local/sdk.json') -Raw | ConvertFrom-Json
 $taskQt = $taskSdk.qtRoot
-$taskTools = Join-Path (Split-Path -Parent (Split-Path -Parent $taskQt)) 'Tools'
-$taskCmake = Join-Path $taskTools 'CMake_64/bin/cmake.exe'
-$taskCtest = Join-Path $taskTools 'CMake_64/bin/ctest.exe'
-$taskNinja = Join-Path $taskTools 'Ninja/ninja.exe'
-$taskOriginalPath = $env:PATH
-$env:PATH = "$taskQt\bin;$(Split-Path -Parent $taskSdk.compiler);$taskOriginalPath"
+$taskToolchain = Enter-Toolchain $taskQt
+$taskCmake = $taskToolchain.Cmake
+$taskCtest = $taskToolchain.Ctest
+$taskNinja = $taskToolchain.Ninja
 function Invoke-Verification([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Verification failed ($LASTEXITCODE): $Program" }
@@ -33,7 +32,7 @@ try {
     $taskStandalone = Join-Path $taskRepository 'out/build/standalone'
     $taskInstall = Join-Path $taskRepository 'out/install/window-system'
     $taskExternal = Join-Path $taskRepository 'out/build/external-host'
-    $taskCommon = @('-G', 'Ninja', "-DCMAKE_CXX_COMPILER=$($taskSdk.compiler)",
+    $taskCommon = @('-G', 'Ninja', "-DCMAKE_CXX_COMPILER=$($taskToolchain.Compiler)",
         "-DCMAKE_MAKE_PROGRAM=$taskNinja", '-DCMAKE_BUILD_TYPE=Release')
     Invoke-Verification $taskCmake (@('-S', (Join-Path $taskRepository 'modules/window-system'),
         '-B', $taskStandalone, "-DCMAKE_PREFIX_PATH=$taskQt", '-DWINDOW_SYSTEM_BUILD_TESTS=ON') + $taskCommon)
@@ -70,4 +69,4 @@ try {
     & (Join-Path $PSScriptRoot 'tests/application-exit-test.ps1') -PackageDirectory $taskPackage
     & (Join-Path $PSScriptRoot 'tests/application-view-test.ps1') -PackageDirectory $taskPackage
     Write-Host 'Verification passed: debug, release, standalone, installed API, deployed application, exit/restart and view-state restart.'
-} finally { $env:PATH = $taskOriginalPath }
+} finally { Exit-Toolchain $taskToolchain }

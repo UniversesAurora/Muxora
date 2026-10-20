@@ -39,7 +39,10 @@ function Get-ManagedDeploymentItems([string]$Directory) {
         if (($taskItem.PSIsContainer -and $taskItem.Name -in $taskDirectories) -or
             (!$taskItem.PSIsContainer -and ($taskItem.Name -in @('muxora.exe', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
                 'build-info.json', 'deployment-files.json', 'opengl32sw.dll', 'D3Dcompiler_47.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll') -or
-                $taskItem.Name -like 'Qt6*.dll' -or $taskItem.Name -like 'libgcc_s_*.dll'))) {
+                $taskItem.Name -like 'Qt6*.dll' -or $taskItem.Name -like 'libgcc_s_*.dll' -or
+                # Visual C++ runtime copied app-local by an MSVC build.
+                $taskItem.Name -like 'msvcp140*.dll' -or $taskItem.Name -like 'vcruntime140*.dll' -or
+                $taskItem.Name -in @('concrt140.dll', 'vccorlib140.dll', 'dxcompiler.dll', 'dxil.dll')))) {
             $taskItem
         }
     }

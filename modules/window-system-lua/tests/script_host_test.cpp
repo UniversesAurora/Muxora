@@ -319,7 +319,9 @@ void ScriptHostTest::sharedShortcutContinuationsRemainReachable() {
     QTest::keyClick(editor, Qt::Key_X);
     const auto reply = run(host, "return seen");
     QVERIFY2(reply.ok, qPrintable(reply.error));
-    QCOMPARE(reply.values, QVariantList({QVariantList{1, 1, 1, 1}}));
+    // One returned value, the table {1, 1, 1, 1}. Spelled out: QVariantList({list})
+    // picks the copy constructor on MSVC and the initializer list on GCC.
+    QCOMPARE(reply.values, QVariantList{QVariant(QVariantList{1, 1, 1, 1})});
     QVERIFY(editor->toPlainText().isEmpty());
 }
 void ScriptHostTest::explicitCommandContextDoesNotFollowLaterFocus() {

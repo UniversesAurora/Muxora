@@ -15,3 +15,15 @@ if(BUILD_TESTING)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
     add_subdirectory(tests)
 endif()
+
+# MSVC reads sources in the system code page unless told otherwise; these
+# sources are UTF-8 (Chinese interface text and test data).
+if(MSVC)
+    get_property(_utf8_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_utf8_target IN LISTS _utf8_targets)
+        get_target_property(_utf8_type ${_utf8_target} TYPE)
+        if(_utf8_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
+            target_compile_options(${_utf8_target} PRIVATE /utf-8)
+        endif()
+    endforeach()
+endif()
