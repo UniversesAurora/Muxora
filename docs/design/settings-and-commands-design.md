@@ -219,7 +219,7 @@ WindowSystem 提供通用命令注册、上下文及路由 API 和自己的窗�
 
 窗口命令通过参数表达 `scope: family / all / workbenches`、新建 `kind: floating / workbench` 和中心／方向／边缘落点；缺参显示键盘选择器。`window.promote/demote`、`window.reassignFamily`、`window.moveAllTabs`、`window.redock` 和 `window.drag.selectTarget` 等均在命令目录中。具体 ID、默认键和焦点规则见双窗口设计；标题栏与鼠标拖拽复用其布局事务。
 
-`window.toolbar.move` 接受 `strip`、`area: "top" / "bottom"`、`row` 和 `index`；缺参可用键盘依次选择工具条、区域和行。`window.toolbars.toggle`、`window.statusBar.toggle` 与原有标签栏／侧栏命令控制独立显隐。三个全屏命令与 `window.zen.toggle`、`window.fullscreen.exit` 使用同一目录，菜单勾选显示当前有效状态；设置页只提供行为偏好，不提供当前模式的持久化开关。具体默认键位见 [交互修订](window-interaction-design.md#独立显隐与全屏)。
+`window.toolbar.move` 接受 `strip`、`area: "top" / "bottom"`、`row` 和 `index`；缺参可用键盘依次选择工具条、区域和行。`window.toolbars.toggle`、`window.statusBar.toggle` 与原有标签栏／侧栏命令控制独立显隐。三个全屏命令与 `window.zen.toggle`、`window.fullscreen.exit` 使用同一目录，菜单勾选显示当前有效状态；设置页只提供行为偏好，不提供当前模式的持久化开关。具体默认键位见 [交互细则](window-interaction-design.md#独立显隐与全屏)。
 
 ## 8. VS Code 风格快捷键
 

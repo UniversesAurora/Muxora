@@ -1,6 +1,6 @@
 # 阶段 8：界面质量
 
-**目的**：让所有临时界面、页面和窗口交互达到 [界面设计规范](../../design/ui-design-system.md) 的标准，解决 [界面审查](../review-2026-10/ui-audit.md) 中的问题，并实现侧栏临时面板的八向调整和窗口外侧缩放边框（[窗口交互设计](../../design/window-interaction-design.md#窗口缩放边框)）。
+**目的**：让所有临时界面、页面和窗口交互达到 [界面设计规范](../../design/ui-design-system.md) 的标准，解决 [界面审查](../review-2026-10/ui-audit.md) 中的问题，并实现侧栏临时面板的八向调整和窗口外侧缩放边框（[窗口交互细则](../../design/window-interaction-design.md#窗口缩放边框)）。
 
 **阶段约束**：
 

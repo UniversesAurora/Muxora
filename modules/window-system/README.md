@@ -27,7 +27,7 @@
 
 `setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
-达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互修订](../../docs/design/window-interaction-design.md)。
+达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互细则](../../docs/design/window-interaction-design.md)。
 
 侧栏同样按释放位置插入。`moveTabToEdgeBar(tab, targetWindow, edge, index)` 和 `moveAllTabsToEdgeBar(sourceWindow, targetWindow, edge, index)` 操作该侧可见的自动隐藏标签序列，内部标签组边界不影响视觉顺序。`index` 为排除待移动内容后的最终索引，`-1` 追加到末尾；整窗移动保留载荷顺序。模型可通过 `autoHiddenTabs()` 查询这一序列，普通组与侧栏都可使用 `workspace.reorderTab.previous` / `workspace.reorderTab.next` 命令和默认 `Ctrl+Shift+PgUp` / `Ctrl+Shift+PgDown` 调整顺序。
 
