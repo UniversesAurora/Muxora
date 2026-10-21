@@ -9,7 +9,7 @@
 - **现象**：跑 `window-system.toolbar-popup` 时，Claude Code 的当前任务和远程控制被中断。
 - **原因**：测试用 `SendInput` 发送 Esc / Tab / 空格和鼠标点击，以复现原生弹窗的捕获和焦点恢复。`SendInput` 发给当时的前台窗口或指针下的窗口；测试窗口因前台锁没抢到前台时，Esc 落到了别的程序上。
 - **做法**：
-  - 桌面测试和全量测试用 `pwsh tools/tests/quiet-desktop.ps1 <命令>` 运行。它先记下所有可见的应用窗口并全部最小化（包括 Claude 等正在使用的程序），命令结束后在 `finally` 里按原来的层叠顺序和状态恢复；窗口列表存在 `out/test-results/quiet-desktop-windows.json`，运行被意外打断时用 `-Restore` 恢复，`-List` 只列出将被最小化的窗口。
+  - 桌面测试和全量测试用 `pwsh tools/tests/quiet-desktop.ps1 -Elevate <命令>` 运行（收起和恢复窗口的部分经 UAC 提权，测试本身仍是普通权限）。它先记下所有可见的应用窗口并全部最小化（包括 Claude 等正在使用的程序），命令结束后在 `finally` 里按原来的层叠顺序和状态恢复；窗口列表存在 `out/test-results/quiet-desktop-windows.json`，运行被意外打断时用 `-Restore` 恢复，`-List` 只列出将被最小化的窗口。
   - 真实输入统一走 `modules/window-system/tests/native_input.hpp`。按键前检查前台窗口、点击前检查指针下的顶层窗口属于本测试进程，否则判测试失败，不发送。
   - 能用 Qt 合成事件验证的行为就不用真实输入。
 - **出处**：2026-10-20。

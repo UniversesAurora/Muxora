@@ -9,32 +9,38 @@
 
 ## 开发环境
 
-首个预览针对 Windows x64，采用 C++20、Qt 6.12 Widgets，使用 Qt 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](../adr/0009-msvc-toolchain.md)）。脚本自动载入 Visual Studio 的编译环境，并检查编译器不低于 Qt 套件构建时的版本。`-QtRoot` 指向具体套件，例如 `E:/develop/sdk/Qt/6.12.0/msvc2022_64`。
+首个预览针对 Windows x64，采用 C++20、Qt 6.12 Widgets，使用 Qt 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](../adr/0009-msvc-toolchain.md)）。脚本自动载入 Visual Studio 的编译环境，并检查编译器不低于 Qt 套件构建时的版本。`-QtRoot` 指向具体套件，例如 `<Qt 安装目录>/6.12.0/msvc2022_64`。
 
 ```powershell
-pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
+pwsh ./tools/build.ps1 -Configuration Debug -Run
 ```
 
 脚本通过 `-QtRoot` 或 `QT_ROOT` 绑定 kit，也会发现仓库旁的 SDK 和忽略提交的 `.local/sdk.json`。使用显式路径时，例如：
 
 ```powershell
-pwsh ./tools/build.ps1 -Configuration Debug -QtRoot E:/develop/sdk/Qt/6.12.0/msvc2022_64 -Test -Run
+pwsh ./tools/build.ps1 -Configuration Debug -QtRoot <Qt 安装目录>/6.12.0/msvc2022_64 -Run
 ```
 
 | 参数 | 作用 |
 | --- | --- |
 | `-Configuration Debug` / `Release` | 选择构建类型 |
 | `-QtRoot <path>` | 指定本机 Qt kit 目录，覆盖自动发现 |
-| `-Test` | 构建后运行自动化测试 |
+| `-Test` | 构建后运行自动化测试；包含桌面层时按下文经 `quiet-desktop.ps1 -Elevate` 运行 |
 | `-TestLabel <regex>` | 与 `-Test` 一起使用，只运行指定层：`model`、`widget`、`desktop` 或 `model\|widget` |
 | `-Run` | 构建后启动 Muxora |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
 | `-IncludeHashes` | 显式记录部署程序的 SHA-256；默认不计算 |
 
+运行全部自动化测试（桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复）：
+
+```powershell
+pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/build.ps1 -Configuration Release -Test
+```
+
 需要单独试用 Release 部署目录时：
 
 ```powershell
-pwsh ./tools/build.ps1 -Configuration Release -Test -Package
+pwsh ./tools/build.ps1 -Configuration Release -Package
 ./out/package/muxora-preview/muxora.exe
 ```
 
