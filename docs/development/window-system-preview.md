@@ -126,19 +126,11 @@ pwsh ./tools/verify.ps1
 
 ## 最近一次验证
 
-2026-10-21，阶段 9.8 的实现与自动化检查完成：完整 Lua 标准库、标准模块加载、用户协程、debug 钩子、显式停止、UTF-8 清单及正常退出已接入。首次 Release 全量 57/61 通过，后续只对失败项和相关改动补测；当前 61 套件最新报告为 2343 个实际数据行通过、零失败。独立构建、安装后的两个宿主、中文脚本部署和退出／重启检查通过，固定预览目录已更新，用户真实试用待确认。
+这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-桌面准备脚本随后按用户要求改为严格三阶段和仅窗口控制提权：最终修改通过无窗口生命周期回归和静态检查，没有再次创建桌面夹具；不能把之前原生回归的通过算作最终入口验收。详见 [验证日志](verification-log/2026-10.md#完整-lua-标准库与协作停止2026-10-2021)。本轮没有执行 Debug、7-Zip 打包、混合 DPI、长期资源或真实桌面试用。
+2026-10-21（9.8 首轮实现之后，提交 `0966631`）：Release 构建通过，全量 CTest 61/61 通过，经 `quiet-desktop.ps1 -Elevate` 运行。固定预览目录 `out/package/muxora-preview/` 是 9.8 首轮实现的 MSVC 版，部署检查（中文路径脚本、退出保存、重启恢复）在上一轮通过。9.8 还要返工两处，见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
 
-2026-10-20，Codex 接手核对：Release 使用现有 MSVC 缓存构建通过；经 `quiet-desktop.ps1` 运行模型、视图复用、标题栏及其缩放、原生窗口框架、Lua 运行时／宿主／生命周期共 8 个相关 CTest 条目，全部通过。报告为 `out/test-results/codex-handoff-baseline.xml`。没有修改实现或测试，没有执行全量、Debug、部署、便携或真实桌面试用；9.8 仍待方案确认后实施。首次本机构建环境问题及核对细节见 [验证日志](verification-log/2026-10.md#codex-接手核对2026-10-20)。
-
-2026-10-20，改用 MSVC 工具链之后：
-
-- Release（MSVC 19.44.35229）全量 CTest 61 个条目：60 个首次通过；`window-system.lua` 的一行因测试写法在 MSVC 下有歧义而失败，修正写法后该套件连续 3 次通过。在 `tools/tests/quiet-desktop.ps1` 下运行。
-- 固定 Release 部署 `out/package/muxora-preview/` 已更新为 MSVC 版，带 Visual C++ 运行库；`deployment-test.ps1`、`application-exit-test.ps1`、`application-view-test.ps1` 全部通过，后两项在去掉 SDK 路径的环境中运行。
-- 没有执行：Debug 构建与测试、独立模块构建和安装后的外部宿主夹具、真实混合 DPI 和多屏切换、7-Zip 便携包、MSVC 版的真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。
-
-每一轮的详细记录见 [验证日志](verification-log/2026-10.md)。
+没有执行：Debug、7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
 ## 待完成与验证范围
 
