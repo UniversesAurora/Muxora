@@ -117,7 +117,7 @@
 
 **目标**：快速输入、菜单、下拉列表、工具提示、对话框共用同一种顶层窗口外观：圆角、系统阴影、主题颜色、深色边框、焦点返回。
 
-**涉及文件**：新建 `src/chrome/overlay_window.{hpp,cpp}`；`src/platform/windows/window_frame.{hpp,cpp}`（新增 `applyOverlayFrame(QWidget*)`）；`src/commands/floating_panel.cpp`（改为基于新基类）；`src/commands/popup_menu.cpp`（`DismissOnlyMenu` 显示前调用平台函数）；测试 `tests/floating_panel_test.cpp`、新 `tests/overlay_window_test.cpp`。
+**涉及文件**：新建 `src/chrome/overlay_window.{hpp,cpp}`；`src/platform/windows/window_frame.{hpp,cpp}`（新增 `applyOverlayFrame(QWidget*)`）；`src/floating_panel.cpp`（改为基于新基类）；`src/commands/popup_menu.cpp`（`DismissOnlyMenu` 显示前调用平台函数）；测试 `tests/floating_panel_test.cpp`、新 `tests/overlay_window_test.cpp`。
 
 **实现**：
 

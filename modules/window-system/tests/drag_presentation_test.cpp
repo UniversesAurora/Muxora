@@ -4,7 +4,7 @@
 #include "docking/edge_strip.hpp"
 #include "docking/dock_guides.hpp"
 #include "docking/tab_strip.hpp"
-#include "fixtures/authored_mouse_input.hpp"
+#include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 #include <QApplication>
 #include <QDir>

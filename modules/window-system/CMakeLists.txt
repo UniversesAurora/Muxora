@@ -33,6 +33,7 @@ add_library(WindowSystemWidgets STATIC
     src/chrome/command_strip.cpp
     src/chrome/toolbar_api.cpp
     src/custom_chrome.cpp
+    src/floating_panel.cpp
     src/commands/command_registry.cpp
     src/commands/command_menus.cpp
     src/commands/popup_menu.cpp
@@ -45,7 +46,6 @@ add_library(WindowSystemWidgets STATIC
     src/commands/toolbar_move_command.cpp
     src/commands/peek_size_command.cpp
     src/commands/command_dialogs.cpp
-    src/commands/floating_panel.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
     src/docking/edge_strip.cpp

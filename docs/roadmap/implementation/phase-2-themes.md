@@ -215,7 +215,7 @@
 
 ## 2.7 系统检测与原生深色
 
-**涉及文件**：`src/platform/windows/window_frame.{hpp,cpp}`、新建 `src/platform/windows/system_appearance.{hpp,cpp}`（非 Windows 提供空实现）、`src/commands/floating_panel.cpp`、`src/commands/popup_menu.cpp`、`tests/native_frame_test.cpp`。
+**涉及文件**：`src/platform/windows/window_frame.{hpp,cpp}`、新建 `src/platform/windows/system_appearance.{hpp,cpp}`（非 Windows 提供空实现）、`src/floating_panel.cpp`、`src/commands/popup_menu.cpp`、`tests/native_frame_test.cpp`。
 
 **实现**：
 

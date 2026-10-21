@@ -3,7 +3,7 @@
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "docking/dock_surface.hpp"
-#include "fixtures/authored_mouse_input.hpp"
+#include "authored_mouse_input.hpp"
 
 #include <window_system/window_manager.hpp>
 
