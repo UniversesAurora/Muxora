@@ -30,6 +30,8 @@ macOS、Linux 是确定的后续目标，但 V0 不要求编译它们，也不�
 - 高层依赖接口，第三方适配实现接口；libssh、Ghostty、停靠库类型不暴露到不相关模块。
 - 用返回值或明确的错误对象表达失败，包含足以诊断的上下文；不以日志替代错误处理。
 - 注释解释理由、约束与第三方行为，不逐行复述代码。
+- 新增公开操作同时提供统一命令入口、必要的键盘方式和有意义的自动化验证。
+- Qt 布局使用逻辑像素；平台命中与坐标转换集中在平台适配层，不按主屏 DPR 处理所有屏幕（[High DPI](../design/window-system-design.md#10-high-dpi-与清晰度)）。
 - 统一格式、命名和静态分析规则。头文件自包含，模块只公开需要的头文件。
 
 采用 target 级别的 include、编译选项和 PRIVATE／PUBLIC 依赖，不向整个工程开放所有内部目录。共享构建配置放在 `CMakePresets.json`，个人路径放在不提交的 `CMakeUserPresets.json`。[CMake 构建系统](https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html)、[CMake Presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html)
