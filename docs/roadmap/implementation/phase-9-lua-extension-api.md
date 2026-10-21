@@ -235,7 +235,7 @@
    - `package.cpath` 设为空字符串：**不支持 Lua C 模块（DLL）的 ABI**。Lua 按 C++ 编译后静态链接在程序中（[ADR 0002](../../adr/0002-lua-as-cxx-with-gc-hook.md)），没有 Lua DLL 供外部模块链接，按 C 编译的模块也不能和它混用。`package.loadlib` 保留标准行为，不把它描述成任意 DLL 的安全隔离或保证调用失败。
    - 标准 `require` 取消原来的路径限制、严格 UTF-8 检查和 1 MiB 上限，支持 Lua 二进制块。应用直接运行文件和 `execute(QString)` 仍接收严格 UTF-8 文本，源码上限为 64 MiB，与标准加载入口分别说明。
    - ~~标准 `require` 的 C 加载器不能让出；模块返回初始化函数，在 `require` 返回后调用 `muxora.*`。~~ 这一限制不符合 ADR 0008，按下文返工 R2 改为可让出的 `require`。不能让出的调用（例如在元方法中）在提交宿主请求前拒绝，不能先产生 GUI 副作用再报错。
-7. **中文路径**：Lua 标准库在 Windows 上通过 C 运行库的 `fopen`、`getenv`、`system`、`_popen` 访问系统，路径和环境变量按进程的 ANSI 代码页解释。给应用和相应测试程序添加 `<activeCodePage>UTF-8</activeCodePage>`（Windows 10 1903 起支持；更早系统忽略该项）。当前按 [ADR 0009](../../adr/0009-msvc-toolchain.md) 使用 MSVC，由链接器嵌入唯一清单并保留原有 UAC、兼容性和长路径声明；`.rc` 仅用于兼容的其他工具链。不更改用户系统代码页或字体设置，中文路径、Qt 窗口和 `QProcess` 通过相关自动化检查，真实字体与文件对话框试用单独记录。
+7. **中文路径**：Lua 标准库在 Windows 上通过 C 运行库的 `fopen`、`getenv`、`system`、`_popen` 访问系统，路径和环境变量按进程的 ANSI 代码页解释。给应用和相应测试程序添加 `<activeCodePage>UTF-8</activeCodePage>`（Windows 10 1903 起支持；更早系统忽略该项）。按 [ADR 0009](../../adr/0009-msvc-toolchain.md) 使用 MSVC，由链接器嵌入唯一清单并保留原有 UAC、兼容性和长路径声明。不更改用户系统代码页或字体设置，中文路径、Qt 窗口和 `QProcess` 通过相关自动化检查，真实字体与文件对话框试用单独记录。
 8. **`os.exit`**：引导脚本把 `os.exit` 改为调用宿主方法 `app.exit`；应用侧在 `script_services.cpp` 中实现，执行现有命令 `application.exit`（先保存工作区、按窗口族申请关闭许可）。被关闭许可拒绝时返回 `false`，程序继续运行；退出码参数忽略并在文档中写明。没有实现该方法的宿主（独立模块的外部宿主）调用时报“未知宿主方法”。直接调用 C 的 `exit()` 会跳过保存，并在其他线程仍在工作时结束整个进程。
 9. **标准输入输出**：Muxora 是窗口程序，没有控制台：`io.read` 读不到输入，`io.write` 写到进程的标准输出，界面中看不到。不重定向，在 Lua 指南中写明“看输出请用 `print`，它写入脚本日志”。
 10. **文档**：`lua-guide.md` 写明完整标准库、`require` 的搜索与初始化方式、不支持的 C 模块 ABI、`os.exit`、标准输入输出、停止边界和保留的传输／队列限制；删除已不存在的执行预算描述。`lua-scripting-design.md` 的沙箱描述改为指向 ADR 0008。

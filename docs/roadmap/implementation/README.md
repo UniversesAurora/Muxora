@@ -150,25 +150,11 @@ M5 与 M4 改的是不同模块，可以各用一条线同时推进；如果只�
 | --- | --- |
 | 每个步骤 | 步骤中列出的“相关套件”；新增测试在修复前失败（缺陷修复类）或覆盖新行为 |
 | 性能类步骤 | 阶段 0.1 基准在改动前后各跑一次，结果写入 `out/test-results/bench-<步骤>-before.json`、`-after.json` |
-| 一组步骤集中完成后 | 一次 Release 全量：`pwsh ./tools/build.ps1 -Configuration Release -Test` |
-| 改了公开 API 或安装导出 | `pwsh ./tools/verify.ps1` 中的独立模块与外部宿主部分 |
-| 改了应用行为 | `-Package` 更新固定部署目录，再运行 `tools/tests/application-exit-test.ps1 -PackageDirectory <固定目录>` |
+| 一组步骤集中完成后 | 一次 Release 全量，使用 [测试要求 §3](../../development/testing-design.md#3-工具与统一入口) 的桌面隔离入口 |
+| 改了公开 API 或安装导出 | [完整验证入口](../../development/window-system-preview.md#开发环境) 中的独立模块与外部宿主部分 |
+| 改了应用行为 | `-Package` 更新固定部署目录，再经桌面隔离运行 `tools/tests/application-exit-test.ps1 -PackageDirectory <固定目录>` |
 
-测试命令的常用写法（PowerShell 7）：
-
-```powershell
-$qt = Get-Content .local/sdk.json -Raw | ConvertFrom-Json
-$tools = Split-Path (Split-Path $qt.qtRoot)
-$env:PATH = "$($qt.qtRoot)\bin;$(Split-Path $qt.compiler);$tools\Tools\Ninja;$env:PATH"
-& "$tools/Tools/CMake_64/bin/cmake.exe" --build out/build/dev-release --parallel 4
-& "$tools/Tools/CMake_64/bin/ctest.exe" --test-dir out/build/dev-release --output-on-failure -R "shortcut|sidebar"
-```
-
-单个 Qt 测试程序可以直接运行并写文本结果，例如：
-
-```powershell
-& out/build/dev-release/modules/window-system/tests/window-system-sidebar-presentation-test.exe -o "out/diagnostics/<名字>.txt,txt"
-```
+构建与完整验证命令见 [预览说明 · 开发环境](../../development/window-system-preview.md#开发环境)，筛选套件与直接使用 CTest 的方式见 [测试要求 §3](../../development/testing-design.md#3-工具与统一入口)。需要自行准备环境时，共用 [工程设计 §6.1](../../development/engineering-design.md#61-qt-sdk-的安装版本绑定与升级) 中的 `tools/toolchain.ps1`，不手工拼接 Qt 或编译器路径。单独运行会显示窗口的 Qt 测试程序也通过桌面隔离入口；其 `-o` 可将文本报告写到本次排查的主题目录。
 
 **失败处理**：按 [测试要求](../../development/testing-design.md)：不删用例、不跳过、不改预期、不放宽阈值。先判断是否与本步骤有关：
 
@@ -177,7 +163,7 @@ $env:PATH = "$($qt.qtRoot)\bin;$(Split-Path $qt.compiler);$tools\Tools\Ninja;$en
 3. 只在本步骤失败：修复实现，直到原有断言通过。
 4. 依赖真实桌面的套件（`native-frame`、`chrome-interaction`、`floating-panel` 等）失败时，先检查测试窗口是否被其他程序遮挡（`WindowFromPoint` 命中的窗口标题和进程），不能把遮挡造成的失败写成通过，也不能写成代码缺陷。
 
-首次失败记录保存到 `out/diagnostics/<步骤>-*.txt`，不要覆盖。
+首次失败记录保存到 `out/diagnostics/<步骤>/`，不要覆盖。
 
 ### 完成后
 

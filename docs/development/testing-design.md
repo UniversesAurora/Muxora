@@ -53,7 +53,7 @@
 
 测试中的真实输入（`SendInput`、`SetCursorPos`）只通过 `modules/window-system/tests/native_input.hpp` 发送；它在发送前确认目标窗口属于本测试进程。窗口模型、公开 API 和真实交互分别验证，不能用其中一层代替另一层。
 
-清理或恢复失败必须报错，恢复未完成时保留快照，不能忽略遮挡继续发送真实输入。桌面和全量检查一律带 `-Elevate` 运行，整批以管理员权限执行：权限更高的应用会拒绝普通权限的窗口控制；权限更高的程序窗口停在前台时，普通权限的测试也无法移动鼠标或发送输入（`SetCursorPos` 返回失败），悬停类用例会失败或等到超时。`-Elevate` 通过 Windows 原生 UAC 一次确认，收起窗口、测试命令及其子进程、恢复窗口都在提权后的进程中进行。测试进程确认全部结束后才恢复；主进程异常退出时不猜测测试是否已结束，保留快照，不擅自恢复。不依赖第三方提权程序，不针对本机应用写例外。已经是管理员的会话可以省略 `-Elevate`。（2026-10-21 用户决定；此前的“只提权窗口控制、测试保持普通权限”同日取代。）
+清理或恢复失败必须报错，恢复未完成时保留快照，不能忽略遮挡继续发送真实输入。桌面和全量检查一律带 `-Elevate` 运行，整批以管理员权限执行：权限更高的应用会拒绝普通权限的窗口控制；权限更高的程序窗口停在前台时，普通权限的测试也无法移动鼠标或发送输入（`SetCursorPos` 返回失败），悬停类用例会失败或等到超时。`-Elevate` 通过 Windows 原生 UAC 一次确认，收起窗口、测试命令及其子进程、恢复窗口都在提权后的进程中进行。测试进程确认全部结束后才恢复；主进程异常退出时不猜测测试是否已结束，保留快照，不擅自恢复。不依赖第三方提权程序，不针对本机应用写例外。已经是管理员的会话可以省略 `-Elevate`。
 
 脚本自己的选项（`-Elevate`、`-Restore`、`-List` 等）按全名匹配，只能写在被测命令之前；从第一个不是选项的参数起全部原样交给被测命令，所以被测命令可以带 `-Test` 这类参数。被测命令本身以 `-` 开头时，在它前面加 `--`。PATH 中有同名程序时执行第一个。
 
@@ -81,9 +81,13 @@ grep -lE "showWindow|\.show\(\)|qWaitForWindowExposed|QTest::mouse|QCursor::setP
 `pinned-layout`、`pinned-positions` 写在控件套件的同一个循环中、链接控件库，但只调用 `LayoutModel`，标为 `model`。并行运行中失败而串行通过的套件说明分类有误，应改回 `desktop`，不改测试本身。
 
 ```powershell
-ctest --test-dir out/build/dev-release -N -L model          # 只列出
-ctest --test-dir out/build/dev-release -L "model|widget" -j 8
-ctest --test-dir out/build/dev-release -L desktop
+. ./tools/toolchain.ps1
+$tc = Enter-Toolchain (Resolve-QtKit "" (Get-Location).Path)
+try {
+    & $tc.Ctest --test-dir out/build/dev-release -N -L model # 只列出
+    & $tc.Ctest --test-dir out/build/dev-release -L "model|widget" -j 8
+} finally { Exit-Toolchain $tc }
+pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/build.ps1 -Configuration Release -Test -TestLabel desktop
 pwsh ./tools/build.ps1 -Configuration Release -Test -TestLabel "model|widget"
 ```
 
@@ -234,15 +238,23 @@ V0 只要求 Windows 客户端构建与验收。测试服务可以使用专用 L
 
 自动化覆盖 100%、125%、150%、175%、200%、250%，以及工作区、独立窗口、菜单、拖拽浮层、侧栏和输入法的混合 DPI 变化。验证逻辑尺寸、物理像素、命中位置、文字裁切、焦点、可访问性语义、负坐标屏幕和屏幕移除。
 
-组件缩放回归可在仓库根目录的 `pwsh` 中复现。先用 `tools/build.ps1 -Configuration Debug` 完成构建，并在当前终端准备同一套工具链的环境：`. ./tools/toolchain.ps1; $tc = Enter-Toolchain <Qt 套件目录>`（把 Qt 的 `bin`、编译器运行环境和 Ninja 加入当前进程，用完调用 `Exit-Toolchain $tc` 恢复），再把 CMake 的 `bin` 加入 `PATH`。构建脚本结束会恢复原环境，不能假定它已经为后续命令保留。然后执行：
+组件缩放回归可在仓库根目录的 `pwsh` 中复现。先用 `pwsh tools/build.ps1 -Configuration Debug` 完成构建，再运行下例。桌面隔离后的子进程通过 `tools/toolchain.ps1` 准备同一套工具链，Qt 查找方式见 [工程设计 §6.1](engineering-design.md#61-qt-sdk-的安装版本绑定与升级)。构建脚本结束会恢复原环境，不能假定它已为后续命令保留。
 
 ```powershell
-New-Item -ItemType Directory -Force out/test-results | Out-Null
-$env:QT_SCALE_FACTOR = '1.5'
-ctest --test-dir out/build/dev-debug --no-tests=error --output-on-failure --output-junit out/test-results/ui-scale-1.5.xml -R '^window-system\.(tab-bar-presentation|tab-viewport|tab-strip-layout|tab-appearance|edge-tab-interaction|caption-strip|native-frame|popup-menu|pane-settings|compact-ui|menu-structure|tab-group)$'
+pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh -NoProfile -Command '
+    . ./tools/toolchain.ps1
+    $tc = Enter-Toolchain (Resolve-QtKit "" (Get-Location).Path)
+    try {
+        New-Item -ItemType Directory -Force out/test-results | Out-Null
+        $env:QT_SCALE_FACTOR = "1.5"
+        & $tc.Ctest --test-dir out/build/dev-debug --no-tests=error --output-on-failure --output-junit out/test-results/ui-scale-1.5.xml -R "^window-system\.(tab-bar-presentation|tab-viewport|tab-strip-layout|tab-appearance|edge-tab-interaction|caption-strip|native-frame|popup-menu|pane-settings|compact-ui|menu-structure|tab-group)$"
+        $taskExitCode = $LASTEXITCODE
+    } finally { Exit-Toolchain $tc }
+    exit $taskExitCode
+'
 ```
 
-将倍率改为 `'2'`、报告文件改为 `ui-scale-2.xml` 后再运行一次；每次都检查 CTest 的通过／失败结果及退出码。`QT_SCALE_FACTOR` 作用于当前进程环境，会叠加系统缩放，不能把 `1.5` / `2` 直接当作最终屏幕 DPR。这十二套程序判定的组件检查不代表混合 DPI、跨屏原生交互或完整倍率矩阵已经验收。结束后关闭这次终端，避免后续 Qt 程序继续继承测试倍率。
+将倍率改为 `"2"`、报告文件改为 `ui-scale-2.xml` 后再运行一次；每次都检查 CTest 的通过／失败结果及退出码。`QT_SCALE_FACTOR` 只在该测试子进程中设置，会叠加系统缩放，不能把 `1.5` / `2` 直接当作最终屏幕 DPR。这十二套程序判定的组件检查不代表混合 DPI、跨屏原生交互或完整倍率矩阵已经验收。
 
 视觉回归使用固定 Windows／Qt／字体版本及有理由的局部像素容差，由程序检查原分辨率图像。不能为消除失败而扩大容差、遮掉变化区域或自动更新截图基线。合法视觉变更附需求依据和程序差异报告，经审阅后更新；图像只作为问题分析的辅助材料。
 

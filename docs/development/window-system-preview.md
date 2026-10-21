@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-2026-10-21（仓库整理之后）：经改造后的 `quiet-desktop.ps1 -Elevate` 整批以管理员权限运行，Release 构建通过，全量 CTest 61/61 通过。固定预览目录 `out/package/muxora-preview/` 已用整理后的代码重新部署，部署检查、应用退出、视图恢复、Lua 部署检查和 C++／Lua 外部宿主通过。Debug 全量 51/61（9 个超时、1 个失败），见下文“已知问题”。9.8 还要返工两处，见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
+接手核对：Release 构建及 Lua 相关套件通过，代码版本和用时见 [验证日志](verification-log/2026-10.md#codex-接手核对2026-10-21)。本次没有更新部署目录或重跑全量；上一轮全量、部署及外部宿主结果见 [此前记录](verification-log/2026-10.md#claude-接手审查2026-10-21)。9.8 返工要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
