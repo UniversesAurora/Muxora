@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-R2：模块顶层宿主调用在旧实现失败，修复后 Lua 相关套件通过，代码版本与运行结果见 [验证日志](verification-log/2026-10.md#lua-98-r2-可让出的模块加载2026-10-21)。该批次曾因编译器遥测子进程需要人工收尾，不能写作隔离脚本自然收尾通过。尚未更新部署目录或重跑全量；9.8 后续要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工)。
+R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向重跑通过，不能写作首次全量全绿。固定预览已更新，部署检查与模块顶层调用宿主、中文读写、退出保存和重启恢复检查通过；代码版本与完整结果见 [验证日志](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)。Debug 构建通过，本轮诊断待进行；9.8 状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
