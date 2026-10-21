@@ -24,23 +24,27 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
   - 接手核对：Release 构建通过；在提交 `0966631` 上经 `quiet-desktop.ps1 -Elevate` 重跑 Release 全量，结果见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
   - 审查上一轮的全部提交。9.8 需要返工两处（R1 常驻调用钩子、R2 可让出的 `require`），要求、测试和完成条件写在 [9.8 · 返工](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。审查发现的协作问题写进 [助手协作经验](lessons/collaboration.md)，对应规则写进 AGENTS.md。
   - 整理仓库：2026-10 审查文档移到 `docs/roadmap/review-2026-10/` 作为快照，`docs/roadmap/README.md` 只列持续维护的计划；变更记录分成“未发布”和 `0.1.0-preview.1`；工程设计 §8 的目录规划改为只列目录；预览说明“最近一次验证”只保留最新一次。
+  - 按完整文件清单再整理一轮（[经验](lessons/collaboration.md#仓库整理)）：删除 MinGW 构建分支和 `muxora.rc`、无人使用的 `mise.toml`；`verify.ps1`／`bench.ps1` 改用与 `build.ps1` 相同的 Qt 查找，`verify.ps1` 增加 Lua 外部宿主和 Lua 部署检查；删除无调用者的 `ScriptHost::affectedCommands`；`FloatingPanel` 的实现移到模块 `src/` 根目录，`authored_mouse_input.hpp` 移出 `tests/fixtures/`；更正 Lua 预算、`debug` 库等过时说法和预览说明里的本机路径；清理 `out/` 下的排查残留。
+  - 改造 `tools/tests/quiet-desktop.ps1`（用户要求由 Claude 直接改）：自己解析参数，选项按全名匹配且只在被测命令之前，被测命令里的 `-Test` 等原样传递；同名程序取第一个；整批以管理员权限运行（`-Elevate` 用一次 UAC 启动管理员会话并转回输出和退出码），删除只控制窗口的代理进程。自测相应补充，结果见验证日志。
 - **进行中**：无。
 - **下一步**（按顺序）：
-  1. **修 `tools/tests/quiet-desktop.ps1` 的两个入口缺陷**（先修，后面的全量要用它）：
-     - **参数**：脚本用 PowerShell 参数绑定，按前缀匹配，被测命令里的 `-Test` 会被当成脚本自己的 `-TestCommand`，文档写的 `quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test` 跑不起来。改成：脚本自己的选项只在被测命令之前出现、按全名精确匹配，第一个不是脚本选项的参数起全部原样交给被测命令（可以用 `--` 显式分隔）。
-     - **程序解析**：第 104 行 `Get-Command -Name $TestCommand[0] -CommandType Application` 找到多个同名程序时返回数组，第 112 行把它拼成一个路径执行。取第一个结果（与 PowerShell 自己执行命令时的选择一致）。
-     - **自测**：在 `quiet-desktop-test.ps1` 的无窗口部分加两组：被测命令带 `-Test`、`-Elevate`、`-Restore` 等与脚本选项同名或前缀相同的参数时原样传到子进程；`PATH` 中有两个同名程序时只执行第一个。修好后按文档的写法（不经包装脚本）真正跑一次。
-  2. **9.8 返工 R1、R2**，见上面的链接。R1 先在改动前测一次基准，改完再测，数字写进验证日志。
-  3. 重跑 Release 全量（`pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test`），刷新固定预览目录，更新 9.8 状态、实现计划当前位置、预览说明和本节。
+  1. **9.8 返工 R1、R2**，见上面的链接。R1 先在改动前测一次基准，改完再测，数字写进验证日志。
+  2. 重跑 Release 全量（`pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test`），刷新固定预览目录，更新 9.8 状态、实现计划当前位置、预览说明和本节。
+  3. **排查 MSVC Debug 全量**（用户 2026-10-21 指定交给 Codex）。改用 MSVC 后 Debug 第一次完整跑全量（管理员权限，排除了前台窗口的干扰）：61 个套件 51 个通过，9 个超时，`peek-size` 失败。数据见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
+     - **超时**：同一批套件 Debug 比 Release 慢约 5～8 倍（中位数 5 倍），Release 下超过约 8 秒的桌面套件在 Debug 下就超过 CTest 的 60 秒上限。先逐个单独运行这 9 个套件（`ctest --test-dir out/build/dev-debug -R <名字> --timeout 600`，经桌面隔离），确认它们只是慢、最终能通过，并记录用时；如果有卡住的，按缺陷处理。
+     - 确认只是慢之后，再提出按构建类型设置超时的方案（例如 Debug 用更长的上限），写明依据，交给 Claude 评审后再改；不能直接调大或删掉超时。
+     - **`peek-size` 失败**：`shortcutOpensAKeyboardEditableSizeDialog` 在 Debug 下 `height->hasFocus()` 为 false，随后等待超时（`peek_size_test.cpp:518`、`:530`），Release 下通过。按真实缺陷排查（焦点时序或等待条件），修复后保留回归。
+     - 结果写进验证日志和预览说明“已知问题”；完成后 `verify.ps1` 应能完整跑通。
   4. 之后按推荐顺序进行 1.7。
 - **待用户决定**：原发布标签 `v0.1.0-preview.1` 的处理；8.10 尺寸规格统一。
 - **本轮新决定**：
-  - 桌面测试和全量测试一律带 `-Elevate` 运行，不先用普通权限试一次（AGENTS.md、[测试要求](testing-design.md)）。
+  - 桌面测试和全量测试一律带 `-Elevate` 运行，不先用普通权限试一次，并且整批以管理员权限运行：权限更高的前台窗口会让普通权限的测试无法移动鼠标（AGENTS.md、[测试要求](testing-design.md)、[桌面测试经验](lessons/desktop-testing.md)）。
   - 9.8 中被 `require` 的模块必须能在顶层调用 `muxora.*`，与 Neovim 一致（用户此前“按 Neovim 的方式处理”的要求，写在 9.8 返工 R2）。
   - 改动热路径要附前后耗时；达不到设计或 ADR 要求时交给用户决定，不写成“用法”；交出前按文档的写法跑一遍改过的入口脚本；验证结论写清每个数字对应的运行和提交（AGENTS.md、[助手协作经验](lessons/collaboration.md)）。
+  - 项目只支持 MSVC 构建（ADR 0009 补记）；开发入口只有 `tools/` 下的脚本，不再有 `mise.toml`。
+  - 排查用的临时文件放系统临时目录或 `out/diagnostics/<主题>/`，用完删除（AGENTS.md“交出时”）。
   - “默认用 pwsh”“提权优先用 gsudo”“git 只用 rebase 或快进”属于这台电脑的约定，已同步写进两位助手各自的全局配置，不在仓库里。
 - **环境与注意事项**：
-  - 修好入口前如果要跑 `quiet-desktop.ps1`：把被测命令写进一个临时 `.ps1`，只传 `-Elevate <pwsh 的绝对路径> <临时脚本>`。
   - 已知偶发问题见 [预览说明](window-system-preview.md#待完成与验证范围)。
 
 ---

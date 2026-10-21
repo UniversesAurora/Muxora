@@ -134,9 +134,9 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-2026-10-21（9.8 首轮实现之后，提交 `0966631`）：Release 构建通过，全量 CTest 61/61 通过，经 `quiet-desktop.ps1 -Elevate` 运行。固定预览目录 `out/package/muxora-preview/` 是 9.8 首轮实现的 MSVC 版，部署检查（中文路径脚本、退出保存、重启恢复）在上一轮通过。9.8 还要返工两处，见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
+2026-10-21（仓库整理之后）：经改造后的 `quiet-desktop.ps1 -Elevate` 整批以管理员权限运行，Release 构建通过，全量 CTest 61/61 通过。固定预览目录 `out/package/muxora-preview/` 已用整理后的代码重新部署，部署检查、应用退出、视图恢复、Lua 部署检查和 C++／Lua 外部宿主通过。Debug 全量 51/61（9 个超时、1 个失败），见下文“已知问题”。9.8 还要返工两处，见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
 
-没有执行：Debug、7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
+没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
 ## 待完成与验证范围
 
@@ -152,6 +152,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 - 工具条原生菜单的真实输入用例偶发“第二次点击前菜单已不可见”，原因未查明（2026-10-15、10-16）。
 - `window-system.lua` 的 `panelPoliciesCanBeConfiguredWithoutNestedExecution` 偶发失败，在改动前的代码上同样出现，原因未查明（2026-10-20）。
 - 用户报告过悬停最大化按钮不出现贴靠布局，本机未复现，触发条件待确认（2026-10-20）。
+- MSVC Debug 全量 61 个套件中 9 个超过 60 秒上限、`peek-size` 一项失败；Release 全部通过。超时与 Debug 版慢 5～8 倍有关，失败原因未查明，已列入交接记录（2026-10-21）。
 
 ## 试用时记录
 
