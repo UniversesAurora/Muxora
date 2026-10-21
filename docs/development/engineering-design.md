@@ -280,20 +280,15 @@ Muxora/
 ├── ci/                        # 检查编排及可复现测试环境说明
 ├── docs/
 │   ├── README.md              # 文档入口
-│   ├── design/                # 产品与接口设计
-│   │   ├── v0-design.md
-│   │   ├── workspace-design.md
-│   │   ├── window-system-design.md
-│   │   ├── floating-window-design.md
-│   │   ├── settings-and-commands-design.md
-│   │   └── terminal-mark-mode-design.md
+│   ├── design/                # 产品、界面与接口设计，每个主题一个文件
 │   ├── development/           # 开发规范与实际操作说明
-│   │   ├── engineering-design.md
-│   │   ├── testing-design.md
+│   │   ├── handoff.md         # 助手之间的交接记录
 │   │   ├── window-system-preview.md   # 当前状态与最近一次验证
 │   │   ├── verification-log/  # 按月的修订与验证记录
 │   │   └── lessons/           # 开发经验
-│   ├── roadmap/               # 审查结论与实现计划
+│   ├── roadmap/
+│   │   ├── implementation/    # 分阶段实现计划与推荐执行顺序
+│   │   └── review-2026-10/    # 整体审查快照，不再更新
 │   └── adr/                   # 有长期影响的决定及理由
 ├── third_party/
 │   ├── overlays/              # 必要 vcpkg overlay
