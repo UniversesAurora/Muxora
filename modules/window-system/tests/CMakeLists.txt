@@ -104,6 +104,23 @@ endif()
 # This matrix constructs a real Qt window for each drag/geometry scenario.
 set_tests_properties(window-system.pinned-ui PROPERTIES TIMEOUT 120)
 
+# Suite-total hang guards for measured MSVC Debug workloads, not product
+# performance targets. See docs/development/testing-design.md, CTest limits.
+if(MSVC)
+    set_tests_properties(
+        window-system.custom-chrome window-system.pane-settings
+        window-system.drag-presentation window-system.view-state
+        window-system.tab-viewport window-system.tab-group
+        window-system.memory-lifecycle
+        PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,300,60>")
+    if(TEST window-system.native-frame)
+        set_tests_properties(window-system.native-frame
+            PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,300,60>")
+    endif()
+    set_tests_properties(window-system.strip-drag
+        PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,600,60>")
+endif()
+
 # Benchmark statistics only exist when the opt-in benchmark build is enabled.
 if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
     qt_add_executable(window-system-benchmark-support-test benchmark_support_test.cpp

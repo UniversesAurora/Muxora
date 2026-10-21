@@ -103,6 +103,12 @@ pwsh ./tools/test-summary.ps1 -BuildDirectory out/build/dev-release -Output out/
 
 Qt 生命周期夹具须遵循对象销毁契约。控件正在处理 Show、Hide 等通知时，宿主请求销毁该控件或其所有者，应使用 `deleteLater()`。事件过滤器返回 `true` 只能停止事件继续分发；Qt 的 `show()` / `hide()` 调用栈还可能继续访问控件的私有状态，不能把这一返回值当成同步删除窗口的保证。[QObject 析构与延迟删除说明](https://github.com/qt/qtbase/blob/6.12/src/corelib/kernel/qobject.cpp)、[QWidget 显隐实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/kernel/qwidget.cpp)
 
+### CTest 套件总时限
+
+CTest 的套件总时限用于防止整套测试挂起，不替代单次操作的响应断言。MSVC Debug 下，`custom-chrome`、`pane-settings`、`drag-presentation`、`view-state`、`tab-viewport`、`tab-group`、`memory-lifecycle`、`native-frame` 使用 300 秒，`strip-drag` 使用 600 秒；这些套件在其他配置中仍为 60 秒。其余套件保持各自的时限，内部等待、watchdog、数据行和循环次数不变。
+
+其他套件出现超时时，先按原负载逐个确认是否能完成，记录实际耗时并评审方案，不能套用以上数值。配置改动前后比较 Debug／Release 的完整测试属性，只允许已批准的总时限字段变化。诊断清单和正式验收分别记录；显式 `TIMEOUT` 属性不受 CTest 的 `--timeout` 默认值覆盖。测量和评审见 [验证日志](verification-log/2026-10.md#msvc-debug-套件总时限诊断与评审2026-10-21)。
+
 ## 4. 分层覆盖
 
 | 层级 | 必须覆盖 | 不能替代的证据 |
