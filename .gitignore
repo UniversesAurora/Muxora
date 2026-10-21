@@ -1,7 +1,6 @@
 /out/
 /.deps/
 /CMakeUserPresets.json
-/.mise.local.toml
 /.local/
 /.vs/
 /.idea/

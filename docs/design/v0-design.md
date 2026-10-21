@@ -70,7 +70,7 @@ V0 窗口壳与全部应用内控件的视觉以用户提供的 Visual Studio 20
 | OpenSSH 后端下的 SFTP | 外部字节流 SFTP 适配，优先评估 `pkg/sftp` 小型辅助程序 | 用 OpenSSH 建立 SFTP subsystem 字节流，再交给现成 SFTP 库；避免自己实现协议或解析 `sftp ls` 文本。此组合尚需验证。 |
 | 本地 X11 显示服务 | Windows：验收过的 VcXsrv 或 Cygwin/X；macOS：XQuartz；Linux：现有 Xorg/Xwayland | 图形窗口由系统桌面与本地 X server 管理。 |
 | 应用设置 | VS Code 风格 JSONC 用户文件、schema 与统一设置服务 | `settings.json` 和 `keybindings.json` 支持注释、校验及运行中更新；状态使用独立严格 JSON，秘密进入系统凭据库。 |
-| 构建与升级 | CMake、官方 Qt SDK、mise 环境、固定源码依赖与二进制缓存 | Qt 版本并行安装，项目固定使用版本；Ghostty 固定提交及 Zig，升级后重建、回归并发行。Go 仅在采用兼容 SFTP 辅助程序时需要。 |
+| 构建与升级 | CMake、官方 Qt SDK、`tools/` 下的构建脚本、固定源码依赖与二进制缓存 | Qt 版本并行安装，项目固定使用版本；Ghostty 固定提交及 Zig，升级后重建、回归并发行。Go 仅在采用兼容 SFTP 辅助程序时需要。 |
 | 自动化验证 | CTest、Qt Test、可复现服务与 Windows 桌面测试环境 | 覆盖独立窗口模块、真实 SSH／SFTP／X11、显示与输入、资源和最终包；失败不以删用例或放宽标准解决。 |
 
 KDDockWidgets 已有丰富的分割、标签、自动隐藏和跨窗口能力，能够减少停靠交互工作，但不是必要依赖。我们仍需要自有两层布局、边缘固定语义、焦点导航和完整窗口壳；其深度定制还可能涉及私有 API。结合 MIT 与复用方向，V0 采用自有窗口实现，KDDockWidgets 保留为选型调查记录。自研意味着承担布局状态机、拖拽、DPI 和生命周期的测试与维护成本，不表示这些工作简单。[官方功能](https://kdab.github.io/KDDockWidgets/)、[私有 API 边界](https://kdab.github.io/KDDockWidgets/private_api.html)
