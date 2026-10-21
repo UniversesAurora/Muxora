@@ -81,7 +81,8 @@ try {
             $taskPackagedExe = Join-Path $taskPackageDirectory 'muxora.exe'
             Invoke-Checked (Join-Path $QtRoot 'bin/windeployqt.exe') @(
                 '--dir', $taskPackageDirectory, '--no-translations',
-                $(if ($taskToolchain.Kind -eq 'mingw') { '--compiler-runtime' } else { '--no-compiler-runtime' }),
+                # The Visual C++ runtime is copied below from Visual Studio's redist directory.
+                '--no-compiler-runtime',
                 # DirectX Shader Compiler serves Qt's D3D12 rendering, which the
                 # preview does not use yet (GPU terminal rendering arrives in 7.2).
                 '--no-system-dxc-compiler',
@@ -104,12 +105,8 @@ try {
             if (Test-Path -LiteralPath $taskSbom) {
                 Copy-Item -LiteralPath $taskSbom -Destination (Join-Path $taskPackageDirectory 'licenses/qtbase-sbom.spdx.json') -Force
             }
-            if ($taskToolchain.Kind -eq 'msvc') {
-                # App-local Visual C++ runtime: the preview runs without installing vc_redist.
-                Copy-MsvcRuntime $taskToolchain $taskPackageDirectory
-            } elseif ($taskToolchain.RuntimeLicenses -and (Test-Path -LiteralPath $taskToolchain.RuntimeLicenses)) {
-                Copy-Item -LiteralPath $taskToolchain.RuntimeLicenses -Destination (Join-Path $taskPackageDirectory 'licenses/mingw') -Recurse -Force
-            }
+            # App-local Visual C++ runtime: the preview runs without installing vc_redist.
+            Copy-MsvcRuntime $taskToolchain $taskPackageDirectory
             $taskBuildInfo = @{ qt = $taskQtVersion; configuration = $Configuration;
                 application = '0.1.0-window-preview'; compiler = $taskToolchain.Description }
             if ($IncludeHashes) {

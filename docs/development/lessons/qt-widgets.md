@@ -14,7 +14,7 @@
   - 只有父控件为空或父控件本身是顶层窗口时，调用 `winId()` 才安全，例如 `PeekSizeDialog`。
   - 父控件是普通子控件的弹窗都要按上面处理：菜单栏的菜单、组合框的下拉列表、工具按钮的菜单。
 - **验证**：`CaptionStripTest::compressedMenuStripMovedUpKeepsTheWindowAlien` 按用户的操作重现，检查窗口内没有任何控件带原生句柄或 `WA_NativeWindow` 标记；`ToolbarPopupTest::hoveredOverflowMenusKeepTheWindowAlien` 在小夹具里检查同一条件，并确认方角策略仍然作用到菜单句柄上。两个测试都确认过在修复前失败。
-- **出处**：2026-10-20，`window-system/menus` 修复；排查过程见 [调试方法](debugging.md#用-gdb-抓某个事件的调用栈)。
+- **出处**：2026-10-20，`window-system/menus` 修复；排查过程见 [调试方法](debugging.md#用调试器抓某个事件的调用栈)。
 
 ### `QMenu` 关闭后句柄会被销毁，`aboutToShow` 比重新创建句柄更早
 

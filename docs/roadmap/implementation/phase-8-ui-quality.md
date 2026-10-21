@@ -264,7 +264,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
    ```
 
 2. Windows 实现，按下面的顺序评估并在代码注释中记录选择：
-   - **首选 WinRT 通知**（`Windows.UI.Notifications.ToastNotificationManager`）：未打包的桌面程序需要应用标识：启动时调用 `SetCurrentProcessExplicitAppUserModelID(L"Muxora.Muxora")`，并在 `HKCU\Software\Classes\AppUserModelId\Muxora.Muxora` 下登记显示名（应用目前没有图标，按 AGENTS.md 暂不设计 logo，先不设图标）。需要先确认当前 MinGW 工具链能否使用对应的 WinRT 头文件或通过 COM ABI 调用；不能时用下一种。
+   - **首选 WinRT 通知**（`Windows.UI.Notifications.ToastNotificationManager`）：未打包的桌面程序需要应用标识：启动时调用 `SetCurrentProcessExplicitAppUserModelID(L"Muxora.Muxora")`，并在 `HKCU\Software\Classes\AppUserModelId\Muxora.Muxora` 下登记显示名（应用目前没有图标，按 AGENTS.md 暂不设计 logo，先不设图标）。项目使用 MSVC（ADR 0009），可以直接用 Windows SDK 自带的 C++/WinRT 头文件；确实调用不通时用下一种。
    - **备选**：`QSystemTrayIcon::showMessage`。Windows 10／11 会把它显示为系统通知，但需要一个托盘图标；只在有通知时显示托盘图标，通知消失后隐藏。
 3. 点击通知：激活 Muxora，按 `tag` 切到对应窗口或会话标签。
 4. `ui.notify` 改为调用 `showSystemNotification`；参数 `title`、`text` 保持兼容，`timeout_ms` 不再有意义（系统决定显示时长），接受但忽略，并在 `lua-guide.md` 中说明。删除程序内 `QMessageBox` 通知及其数量上限。

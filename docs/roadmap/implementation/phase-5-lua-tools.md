@@ -61,7 +61,7 @@
 **实现**：
 
 1. Scintilla 的 Qt 平台层自带的是 qmake 工程（`qt/ScintillaEditBase/ScintillaEditBase.pro`），改写成 CMake target；只编译 `ScintillaEditBase`（不需要代码生成步骤），不编译需要 Python 生成的 `ScintillaEdit`。
-2. 第一步先确认它在 Qt 6.12 + MinGW GCC 15.1 下能编译并运行一个最小窗口；失败时在 ADR 中记录原因，回到 `QPlainTextEdit` 方案，后续步骤相应调整。
+2. 第一步先确认它在 Qt 6.12 + MSVC 下能编译并运行一个最小窗口；失败时在 ADR 中记录原因，回到 `QPlainTextEdit` 方案，后续步骤相应调整。
 3. 插件：`muxora-editor.dll` 实现 `EditorFactory`（设计 §7），用 `Q_PLUGIN_METADATA` 导出；应用在第一次需要编辑器时用 `QPluginLoader` 加载，之后不卸载。
 4. 应用测试：启动、打开设置、运行占位标签等普通操作后，进程模块列表中没有 `muxora-editor.dll`（`EnumProcessModules` 检查）；打开编辑器后才出现。
 

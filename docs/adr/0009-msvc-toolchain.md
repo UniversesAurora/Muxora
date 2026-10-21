@@ -19,7 +19,7 @@
 
 - Release、日常开发和全部自动化测试改用 Qt 6.12 的 **MSVC 2022 64-bit** 套件（`msvc2022_64`），编译器用本机 Visual Studio 2022 的 MSVC。Qt 6.12 对 x64 不支持 MSVC 2026，等 Qt 官方支持表中加入后再一起升级。
 - 编译器版本必须不低于 Qt 套件构建时的版本（微软的二进制兼容规则：链接时用的工具集要至少和构建任何一个被链接二进制的工具集一样新）。`tools/toolchain.ps1` 从套件的 `mkspecs/qconfig.pri` 读出 `QT_MSVC_*_VERSION` 并核对，低于时报错。
-- 构建脚本通过 `vswhere` 找到装有 x64 C++ 工具的最新 Visual Studio，载入 `vcvars64` 环境；Qt 套件中 MSVC 套件优先。MinGW 套件仍能识别和构建，保留到 MSVC 构建经过试用、用户卸载 MinGW 为止。
+- 构建脚本通过 `vswhere` 找到装有 x64 C++ 工具的最新 Visual Studio，载入 `vcvars64` 环境；Qt 套件中 MSVC 套件优先。MinGW 套件仍能识别和构建，保留到 MSVC 构建经过试用、用户卸载 MinGW 为止。2026-10-21 补记：用户已卸载 MinGW 套件，构建脚本中的 MinGW 分支和只供其他链接器使用的 `muxora.rc` 随之删除，脚本只接受 MSVC 套件。
 - 部署时把 Visual C++ 运行库 DLL 复制到程序旁边（app-local），试用者不用另装 vc_redist。
 - 所有目标对 MSVC 加 `/utf-8`：源码是 UTF-8，MSVC 默认按系统代码页读源文件。
 

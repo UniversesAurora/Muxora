@@ -21,7 +21,7 @@
 | KTextEditor（KDE） | 不用：依赖整套 KDE Frameworks，体积大 |
 | 基于 `QPlainTextEdit` 自写 | 原方案。补全、提示、指示器、折叠等都要自己做，工作量大且效果不如成熟内核 |
 
-具体版本在实现时固定（与 `third_party/lua` 相同：`FetchContent` 加 `URL_HASH`），并在 `THIRD_PARTY_NOTICES.md` 和部署目录的许可证中加入 Scintilla 与 Lexilla 的许可。实现第一步先确认 `ScintillaEditBase` 在 Qt 6.12 + MinGW 下能编译；不能时在 ADR 中记录原因并回到自写方案。
+具体版本在实现时固定（与 `third_party/lua` 相同：`FetchContent` 加 `URL_HASH`），并在 `THIRD_PARTY_NOTICES.md` 和部署目录的许可证中加入 Scintilla 与 Lexilla 的许可。实现第一步先确认 `ScintillaEditBase` 在 Qt 6.12 + MSVC 下能编译；不能时在 ADR 中记录原因并回到自写方案。
 
 ## 3. 打开方式：标签页或弹窗
 

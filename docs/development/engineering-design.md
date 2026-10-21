@@ -189,7 +189,7 @@ Ghostty 官方 CMake wrapper 调用 Zig，并支持 Windows DLL／import library
 
 Qt SDK 放在项目外的版本化目录，例如仓库旁边的 `..\sdk\Qt\<版本>\msvc2022_64`，多个项目共用；不把 SDK 提交进仓库。初版无需从源码编译 Qt。
 
-`tools/toolchain.ps1` 统一处理套件与编译器，`build.ps1`、`verify.ps1`、`bench.ps1` 共用：按顺序查找 Qt 套件（`-QtRoot` 参数、环境变量 `QT_ROOT`、仓库旁边 `..\sdk\Qt` 中最新版本的 MSVC 套件、再其次 MinGW 套件，最后是不提交的 `.local/sdk.json`），从套件的 `mkspecs/qconfig.pri` 判断它是用 MSVC 还是 MinGW 构建的。MSVC 套件通过 `vswhere` 找到装有 x64 C++ 工具的最新 Visual Studio，载入 `vcvars64` 环境，并要求 `cl` 的版本不低于套件记录的 `QT_MSVC_*_VERSION`；MinGW 套件只接受 Qt 安装目录 `Tools/mingw*` 中同版本的编译器。构建目录的 CMake 缓存记录的编译器与本次不同时，脚本先清空该构建目录。提交的 `mise.toml` 只定义 `build`、`test`、`verify`、`run`、`package` 等任务入口，不负责安装或固定工具版本；本机绝对路径放在不提交的 `.local/sdk.json`、`.mise.local.toml`、环境变量或 `CMakeUserPresets.json`。不依赖机器全局 PATH 恰好找到某个版本。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
+`tools/toolchain.ps1` 统一处理套件与编译器，`build.ps1`、`verify.ps1`、`bench.ps1` 共用：按顺序查找 Qt 套件（`-QtRoot` 参数、环境变量 `QT_ROOT`、仓库旁边 `..\sdk\Qt` 中最新版本的 MSVC 套件，最后是不提交的 `.local/sdk.json`），从套件的 `mkspecs/qconfig.pri` 确认它是 MSVC 套件，其他套件直接报错。脚本通过 `vswhere` 找到装有 x64 C++ 工具的最新 Visual Studio，载入 `vcvars64` 环境，并要求 `cl` 的版本不低于套件记录的 `QT_MSVC_*_VERSION`。构建目录的 CMake 缓存记录的编译器与本次不同时，脚本先清空该构建目录。提交的 `mise.toml` 只定义 `build`、`test`、`verify`、`run`、`package` 等任务入口，不负责安装或固定工具版本；本机绝对路径放在不提交的 `.local/sdk.json`、`.mise.local.toml`、环境变量或 `CMakeUserPresets.json`。不依赖机器全局 PATH 恰好找到某个版本。[Qt CMake 路径](https://doc.qt.io/qt-6/cmake-making-qt-available.html)
 
 所有目标在 MSVC 下加 `/utf-8`：源码是 UTF-8，MSVC 默认按系统代码页读源文件，中文字符串会悄悄变成乱码而不一定报警告。各目录的 CMakeLists 末尾为本目录内实际编译源码的目标统一添加，新增目标自动覆盖。
 

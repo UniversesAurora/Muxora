@@ -5,14 +5,9 @@ function(muxora_use_utf8_process_manifest target)
     # A manifest source tells Qt not to generate a second default manifest.
     # Preserve Qt's normal compatibility, long-path and UAC declarations in
     # this file; only activeCodePage differs from that generated default.
+    # The MSVC linker embeds the manifest source as the single manifest.
     target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/muxora.manifest")
-    if(MSVC)
-        target_link_options(${target} PRIVATE /MANIFEST:NO /MANIFESTUAC:NO)
-    else()
-        enable_language(RC)
-        target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/muxora.rc")
-        target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    endif()
+    target_link_options(${target} PRIVATE /MANIFEST:NO /MANIFESTUAC:NO)
 endfunction()
 
 qt_add_executable(muxora WIN32 main.cpp state_paths.cpp user_preferences.cpp

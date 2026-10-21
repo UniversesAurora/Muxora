@@ -1,19 +1,18 @@
 # Shared Qt kit and compiler discovery for the build, verification and
 # benchmark scripts. Dot-source this file; it only defines functions.
 #
-# The compiler always follows the Qt kit: a kit built with MSVC is used with
-# the installed Visual Studio toolset (loaded through vcvars64), a kit built
-# with MinGW with the matching MinGW compiler from the Qt installation.
+# The project builds with MSVC only (ADR 0009): the Qt kit must be an MSVC kit,
+# used with the installed Visual Studio toolset loaded through vcvars64.
 
 function Resolve-QtKit([string]$QtRoot, [string]$Repository) {
     if (-not $QtRoot) { $QtRoot = $env:QT_ROOT }
     if (-not $QtRoot) {
-        # Newest Qt version beside the repository; its MSVC kit is preferred.
+        # Newest Qt version beside the repository that has an MSVC kit.
         $taskSiblingSdk = Join-Path (Split-Path -Parent $Repository) 'sdk/Qt'
         if (Test-Path -LiteralPath $taskSiblingSdk) {
             $QtRoot = Get-ChildItem -LiteralPath $taskSiblingSdk -Directory |
                 Where-Object Name -Match '^\d+\.\d+\.\d+$' | Sort-Object { [version]$_.Name } -Descending |
-                ForEach-Object { Join-Path $_.FullName 'msvc2022_64'; Join-Path $_.FullName 'mingw_64' } |
+                ForEach-Object { Join-Path $_.FullName 'msvc2022_64' } |
                 Where-Object { Test-Path -LiteralPath (Join-Path $_ 'lib/cmake/Qt6/Qt6Config.cmake') } |
                 Select-Object -First 1
         }
@@ -87,52 +86,32 @@ function Enter-Toolchain([string]$QtRoot) {
     $taskState = [ordered]@{
         QtRoot = $QtRoot; QtInstallation = $taskQtInstallation; Cmake = $taskCmake; Ninja = $taskNinja; Ctest = $taskCtest
         Kind = $null; Compiler = $null; CompilerVersion = $null; Description = $null
-        RuntimeDirectory = $null; RuntimeLicenses = $null
+        RuntimeDirectory = $null
         SavedEnvironment = @{ PATH = $env:PATH }
     }
     $taskMsvcVersion = Read-QtCompilerVersion $QtRoot 'MSVC'
-    $taskGccVersion = Read-QtCompilerVersion $QtRoot 'GCC'
-    if ($taskMsvcVersion) {
-        $taskSaved = Import-VisualStudioEnvironment
-        foreach ($taskName in $taskSaved.Keys) {
-            if (-not $taskState.SavedEnvironment.Contains($taskName)) { $taskState.SavedEnvironment[$taskName] = $taskSaved[$taskName] }
-        }
-        $taskCompiler = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-        if (-not $taskCompiler) { throw 'vcvars64 did not put cl.exe on PATH.' }
-        $taskVersion = Get-MsvcCompilerVersion $taskCompiler
-        # Microsoft's binary compatibility rule: the toolset that links must be
-        # at least as new as the newest toolset that built any linked binary.
-        if ($taskVersion -lt $taskMsvcVersion) {
-            throw "This Qt kit was built with MSVC $taskMsvcVersion; the installed compiler is $taskVersion. Update Visual Studio."
-        }
-        $taskState.Kind = 'msvc'
-        $taskState.Compiler = $taskCompiler
-        $taskState.CompilerVersion = $taskVersion
-        $taskState.Description = "MSVC $taskVersion"
-        $taskState.RuntimeDirectory = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
-        if (-not (Test-Path -LiteralPath $taskState.RuntimeDirectory)) {
-            throw "Visual C++ runtime redistributable directory is missing: $($taskState.RuntimeDirectory)"
-        }
-    } elseif ($taskGccVersion) {
-        $taskCandidates = @(Get-ChildItem -LiteralPath $taskTools -Directory -Filter 'mingw*' |
-            ForEach-Object { Join-Path $_.FullName 'bin/g++.exe' } | Where-Object { Test-Path -LiteralPath $_ })
-        $taskDetected = foreach ($taskCandidate in $taskCandidates) {
-            $taskText = (& $taskCandidate -dumpfullversion -dumpversion 2>&1 | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0 -or $taskText -notmatch '^\d+\.\d+\.\d+$') { throw "Unable to read GCC version from $taskCandidate." }
-            if ([version]$taskText -eq $taskGccVersion -and -not $taskState.Compiler) { $taskState.Compiler = $taskCandidate }
-            "$taskText ($taskCandidate)"
-        }
-        if (-not $taskState.Compiler) {
-            $taskInstalled = if ($taskDetected) { $taskDetected -join '; ' } else { 'none' }
-            throw "This Qt kit was built with GCC $taskGccVersion. Install that matching Qt MinGW compiler before building. Installed compilers: $taskInstalled"
-        }
-        $taskState.Kind = 'mingw'
-        $taskState.CompilerVersion = $taskGccVersion
-        $taskState.Description = "MinGW GCC $taskGccVersion"
-        $taskState.RuntimeLicenses = Join-Path (Split-Path -Parent (Split-Path -Parent $taskState.Compiler)) 'licenses'
-        $env:PATH = "$(Split-Path -Parent $taskState.Compiler);$env:PATH"
-    } else {
-        throw "The Qt kit does not declare its compiler (QT_MSVC_* or QT_GCC_* in mkspecs/qconfig.pri): $QtRoot"
+    if (-not $taskMsvcVersion) {
+        throw "Not an MSVC Qt kit (no QT_MSVC_* in mkspecs/qconfig.pri): $QtRoot. Install Qt's MSVC 2022 64-bit kit."
+    }
+    $taskSaved = Import-VisualStudioEnvironment
+    foreach ($taskName in $taskSaved.Keys) {
+        if (-not $taskState.SavedEnvironment.Contains($taskName)) { $taskState.SavedEnvironment[$taskName] = $taskSaved[$taskName] }
+    }
+    $taskCompiler = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
+    if (-not $taskCompiler) { throw 'vcvars64 did not put cl.exe on PATH.' }
+    $taskVersion = Get-MsvcCompilerVersion $taskCompiler
+    # Microsoft's binary compatibility rule: the toolset that links must be
+    # at least as new as the newest toolset that built any linked binary.
+    if ($taskVersion -lt $taskMsvcVersion) {
+        throw "This Qt kit was built with MSVC $taskMsvcVersion; the installed compiler is $taskVersion. Update Visual Studio."
+    }
+    $taskState.Kind = 'msvc'
+    $taskState.Compiler = $taskCompiler
+    $taskState.CompilerVersion = $taskVersion
+    $taskState.Description = "MSVC $taskVersion"
+    $taskState.RuntimeDirectory = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
+    if (-not (Test-Path -LiteralPath $taskState.RuntimeDirectory)) {
+        throw "Visual C++ runtime redistributable directory is missing: $($taskState.RuntimeDirectory)"
     }
     $env:PATH = "$QtRoot\bin;$(Split-Path -Parent $taskNinja);$env:PATH"
     return [pscustomobject]$taskState
