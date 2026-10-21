@@ -91,6 +91,7 @@ class ScriptWorker final : public QObject {
     static ScriptWorker *self(lua_State *state);
     static void *allocate(void *user, void *pointer, size_t oldSize, size_t newSize);
     static void hook(lua_State *state, lua_Debug *debug);
+    static void restoreRuntimeHook(lua_State *state, int userMask, int userCount);
     static int initialize(lua_State *state);
     static int prepare(lua_State *state);
     static int hostCall(lua_State *state);

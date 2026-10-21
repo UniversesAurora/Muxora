@@ -16,6 +16,9 @@
 #include <QCoreApplication>
 #include <limits>
 #include <memory>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 using lua_runtime::RuntimeLimits;
 using lua_runtime::ScriptResult;
@@ -26,6 +29,16 @@ namespace lua_runtime::detail {
 struct ScriptWorkerTestAccess {
     static lua_State *initializedState(ScriptWorker &worker) {
         return worker.ensureState() ? worker.state_ : nullptr;
+    }
+
+    static void registerHookProbe(lua_State *state) {
+        lua_pushcfunction(state, [](lua_State *caller) {
+            auto *target = lua_isthread(caller, 1) ? lua_tothread(caller, 1) : caller;
+            lua_pushinteger(caller, lua_gethookmask(target));
+            lua_pushinteger(caller, lua_gethookcount(target));
+            return 2;
+        });
+        lua_setglobal(state, "test_hook_configuration");
     }
 };
 
@@ -113,6 +126,8 @@ class ScriptRuntimeTest final : public QObject {
     void runningObserverMayDestroyTheRuntime();
     void explicitCoroutineHooksReserveStackSpace_data();
     void explicitCoroutineHooksReserveStackSpace();
+    void runtimeHooksOnlyRequestUserEvents();
+    void cancellationRestoresRetainedCoroutineHooks();
 };
 
 void ScriptRuntimeTest::supersededResetRepliesDoNotReachTheNewGeneration() {
@@ -339,6 +354,15 @@ void ScriptRuntimeTest::protectedCallsCannotSwallowAStopRequest_data() {
         "local raw;for i=1,10 do local name,value=debug.getupvalue(pcall,i);"
         "if name=='raw_pcall'then raw=value end end;assert(raw);"
         "while true do raw(function()while true do end end)end");
+    QTest::newRow("raw-pcall-in-user-hook") << QStringLiteral(
+        "local raw;for i=1,10 do local name,value=debug.getupvalue(pcall,i);"
+        "if name=='raw_pcall'then raw=value end end;assert(raw);"
+        "debug.sethook(function()while true do raw(function()while true do end end)end end,'',5);"
+        "while true do end");
+    QTest::newRow("raw-pcall-nonyieldable-comparator") << QStringLiteral(
+        "local raw;for i=1,10 do local name,value=debug.getupvalue(pcall,i);"
+        "if name=='raw_pcall'then raw=value end end;assert(raw);"
+        "while true do raw(function()table.sort({2,1},function()while true do end end)end)end");
 
 }
 
@@ -812,6 +836,135 @@ void ScriptRuntimeTest::explicitCoroutineHooksReserveStackSpace() {
     QCOMPARE(lua_gettop(target), originalValues);
     QVERIFY2(target->stack_last.p - target->stack.p > capacity,
              "Cross-coroutine debug hooks must reserve space before pushing on the target stack");
+}
+
+void ScriptRuntimeTest::runtimeHooksOnlyRequestUserEvents() {
+    using namespace lua_runtime::detail;
+    ScriptWorker worker(RuntimeLimits{}, std::make_shared<SharedStatistics>());
+    auto *state = ScriptWorkerTestAccess::initializedState(worker);
+    QVERIFY(state);
+    ScriptWorkerTestAccess::registerHookProbe(state);
+    QSignalSpy finished(&worker, &ScriptWorker::jobFinished);
+    ScriptJob job;
+    job.id = 1;
+    job.generation = 1;
+    job.cancellation = 1;
+    job.name = "=runtime-hook-configuration-test";
+    job.context = {{QStringLiteral("countMask"), LUA_MASKCOUNT},
+                   {QStringLiteral("callMask"), LUA_MASKCALL},
+                   {QStringLiteral("returnMask"), LUA_MASKRET},
+                   {QStringLiteral("lineMask"), LUA_MASKLINE}};
+    job.source = R"lua(
+local expected = ...
+local function verify(mask, count, co)
+    local actualMask, actualCount = test_hook_configuration(co)
+    assert(actualMask == mask, ('hook mask %d, expected %d'):format(actualMask, mask))
+    assert(actualCount == count, ('hook count %d, expected %d'):format(actualCount, count))
+end
+assert(debug.gethook() == nil)
+verify(expected.countMask, 1000)
+local co = coroutine.create(function()
+    assert(debug.gethook() == nil)
+    verify(expected.countMask, 1000)
+end)
+verify(expected.countMask, 1000, co)
+assert(coroutine.resume(co))
+local userHook = function() end
+debug.sethook(userHook, 'c')
+local hook, flags, count = debug.gethook()
+assert(hook == userHook and flags == 'c' and count == 0)
+verify(expected.countMask | expected.callMask, 1000)
+debug.sethook(userHook, 'r')
+verify(expected.countMask | expected.returnMask, 1000)
+debug.sethook(userHook, 'crl', 1500)
+verify(expected.countMask | expected.callMask | expected.returnMask | expected.lineMask, 500)
+debug.sethook(userHook, '', 7)
+verify(expected.countMask, 1)
+debug.sethook()
+assert(debug.gethook() == nil)
+verify(expected.countMask, 1000)
+debug.sethook(co, userHook, 'cr', 1500)
+verify(expected.countMask | expected.callMask | expected.returnMask, 500, co)
+debug.sethook(co)
+assert(debug.gethook(co) == nil)
+verify(expected.countMask, 1000, co)
+return true
+)lua";
+    worker.enqueue(std::move(job));
+    QTRY_COMPARE(finished.size(), 1);
+    const auto result = qvariant_cast<ScriptResult>(finished.constFirst().at(1));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.values, QVariantList{true});
+    QCOMPARE(lua_gethookmask(state), LUA_MASKCOUNT);
+    QCOMPARE(lua_gethookcount(state), 1000);
+}
+
+void ScriptRuntimeTest::cancellationRestoresRetainedCoroutineHooks() {
+    using namespace lua_runtime::detail;
+    const auto statistics = std::make_shared<SharedStatistics>();
+    ScriptWorker worker(RuntimeLimits{}, statistics);
+    auto *state = ScriptWorkerTestAccess::initializedState(worker);
+    QVERIFY(state);
+    ScriptWorkerTestAccess::registerHookProbe(state);
+    QSignalSpy finished(&worker, &ScriptWorker::jobFinished);
+    std::mutex readyMutex;
+    std::condition_variable_any readyCondition;
+    bool enteredCoroutine = false;
+    connect(&worker, &ScriptWorker::logReady, &worker, [&](const QString &message) {
+        if (message != QStringLiteral("retained coroutine ready"))
+            return;
+        {
+            const std::lock_guard lock(readyMutex);
+            enteredCoroutine = true;
+        }
+        readyCondition.notify_all();
+    });
+    // The worker runs on this test thread so it can expose its private state.
+    // The helper touches only the same atomic cancellation field as the facade.
+    std::jthread cancellation([&](std::stop_token stop) {
+        std::unique_lock lock(readyMutex);
+        if (readyCondition.wait(lock, stop, [&] { return enteredCoroutine; }))
+            statistics->cancellation.fetch_add(1, std::memory_order_acq_rel);
+    });
+    ScriptJob first;
+    first.id = 1;
+    first.generation = 1;
+    first.cancellation = 1;
+    first.name = "=retained-coroutine-cancellation-test";
+    first.source = R"lua(
+retained = coroutine.create(function()
+    print('retained coroutine ready')
+    while not continueAfterStop do end
+    return test_hook_configuration()
+end)
+coroutine.resume(retained)
+)lua";
+    worker.enqueue(std::move(first));
+    QTRY_COMPARE(finished.size(), 1);
+    const auto stopped = qvariant_cast<ScriptResult>(finished.constFirst().at(1));
+    QVERIFY(!stopped.ok);
+    QVERIFY2(stopped.error.contains(QStringLiteral("cancelled")), qPrintable(stopped.error));
+    QVERIFY(enteredCoroutine);
+    cancellation.join();
+
+    ScriptJob second;
+    second.id = 2;
+    second.generation = 1;
+    second.cancellation = statistics->cancellation.load(std::memory_order_acquire);
+    second.name = "=retained-coroutine-recovery-test";
+    second.source = R"lua(
+assert(coroutine.status(retained) == 'suspended')
+continueAfterStop = true
+local ok, mask, count = coroutine.resume(retained)
+assert(ok, mask)
+assert(debug.gethook(retained) == nil)
+return mask, count
+)lua";
+    worker.enqueue(std::move(second));
+    QTRY_COMPARE(finished.size(), 2);
+    const auto recovered = qvariant_cast<ScriptResult>(finished.at(1).at(1));
+    QVERIFY2(recovered.ok, qPrintable(recovered.error));
+    QCOMPARE(recovered.values, (QVariantList{LUA_MASKCOUNT, 1000}));
 }
 
 int main(int argc, char **argv) {

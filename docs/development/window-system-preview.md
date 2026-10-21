@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-接手核对：Release 构建及 Lua 相关套件通过，代码版本和用时见 [验证日志](verification-log/2026-10.md#codex-接手核对2026-10-21)。本次没有更新部署目录或重跑全量；上一轮全量、部署及外部宿主结果见 [此前记录](verification-log/2026-10.md#claude-接手审查2026-10-21)。9.8 返工要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。
+R1：实际钩子回归在重编后的旧实现失败，修复后运行时套件通过，同机前后基准见 [验证日志](verification-log/2026-10.md#lua-98-r1-停止钩子返工2026-10-21)。接手时发现残留产物与源码不符，首次套件及基准的源码验证结论已作废。本步没有更新部署目录或重跑全量；9.8 后续要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 

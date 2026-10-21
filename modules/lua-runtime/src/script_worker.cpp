@@ -26,7 +26,8 @@ qint64 executionClock() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-constexpr int runtimeHookMask = LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET;
+constexpr int runtimeHookMask = LUA_MASKCOUNT;
+constexpr int stoppingHookMask = LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET;
 
 struct TraceInput {
     lua_State *source;
@@ -147,6 +148,11 @@ bool ScriptWorker::checkCurrentStop() {
 void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
     auto *worker = self(state);
     if (!worker->checkCurrentStop()) {
+        // Dense checks are needed only after cancellation. Call/return hooks
+        // prevent raw pcall, obtained through debug upvalues, from repeatedly
+        // catching the count hook's error inside another protected scope.
+        if (!worker->cleanup_)
+            lua_sethook(state, hook, stoppingHookMask, 1);
         // Only count/line hooks may yield. At C-call boundaries raise an
         // error before entering another protected scope, so raw pcall cannot
         // repeatedly swallow a stop obtained through debug introspection.
@@ -165,6 +171,7 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
     lua_pushthread(state);
     lua_rawget(state, -2);
     if (!lua_istable(state, -1)) {
+        restoreRuntimeHook(state, 0, 0);
         lua_settop(state, top);
         return;
     }
@@ -172,6 +179,10 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
     lua_rawgeti(state, record, 2);
     const int mask = static_cast<int>(lua_tointeger(state, -1));
     lua_pop(state, 1);
+    lua_rawgeti(state, record, 3);
+    const int count = static_cast<int>(lua_tointeger(state, -1));
+    lua_pop(state, 1);
+    restoreRuntimeHook(state, mask, count);
     bool invoke = false;
     if (debug->event == LUA_HOOKCOUNT && (mask & LUA_MASKCOUNT)) {
         lua_rawgeti(state, record, 4);
@@ -224,6 +235,16 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
             luaL_error(state, "Lua task was cancelled");
     }
     lua_settop(state, top);
+}
+
+void ScriptWorker::restoreRuntimeHook(lua_State *state, int userMask, int userCount) {
+    // A coroutine saved by the script can outlive a cancelled task. When it
+    // runs again, discard that task's dense stop checks without losing its
+    // user hook or leaving call/return hooks on an otherwise unhooked thread.
+    const int mask = runtimeHookMask | userMask;
+    const int interval = userCount > 0 ? std::gcd(hookInterval, userCount) : hookInterval;
+    if (lua_gethookmask(state) != mask || lua_gethookcount(state) != interval)
+        lua_sethook(state, hook, mask, interval);
 }
 
 int ScriptWorker::checkStop(lua_State *state) {
