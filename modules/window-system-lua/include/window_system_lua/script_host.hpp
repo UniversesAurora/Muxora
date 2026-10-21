@@ -33,7 +33,6 @@ class ScriptHost final : public QObject {
     bool invokeCommand(QString command, const window_system::CommandContext &context);
     void publishEvent(QString name, QVariant payload = {}, QVariantMap context = {});
     [[nodiscard]] bool ready() const;
-    [[nodiscard]] QStringList affectedCommands() const;
     [[nodiscard]] QVariantMap resourceCounts() const;
     [[nodiscard]] lua_runtime::ScriptRuntime *runtime() const;
   signals:

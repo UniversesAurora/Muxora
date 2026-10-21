@@ -139,7 +139,6 @@ struct ScriptHost::Private {
     QHash<quint64, QString> callbackJobs;
     QSet<QString> pendingResources;
     QString moduleDirectory, pendingSource, pendingName;
-    QStringList lastAffected;
     quint64 bootstrapJob = 0, initializeJob = 0, nextResource = 0;
     bool isReady = false, initializing = false, unloading = false;
     explicit Private(ScriptHost *owner, window_system::WindowManager *windows);

@@ -123,8 +123,6 @@ void ScriptHost::Private::clearResources(bool preserveChrome) {
     deferredEvents = 0;
     callbackJobs.clear();
     pendingResources.clear();
-    lastAffected = previousBindings.keys();
-    lastAffected.append(commandCallbacks.keys());
     // Detach ownership before notifications. A host listener is allowed to
     // destroy this adapter or the manager synchronously during unregistration.
     auto toolbars = std::exchange(ownedToolbars, {});
@@ -414,13 +412,6 @@ bool ScriptHost::Private::scheduleResource(const QString &resource, const QStrin
     return false;
 }
 bool ScriptHost::ready() const { return d->isReady; }
-QStringList ScriptHost::affectedCommands() const {
-    auto ids = d->lastAffected;
-    ids.append(d->previousBindings.keys());
-    ids.append(d->commandCallbacks.keys());
-    ids.removeDuplicates();
-    return ids;
-}
 QVariantMap ScriptHost::resourceCounts() const {
     return {{"commands", d->commandCallbacks.size()},
             {"bindings", d->previousBindings.size()},
