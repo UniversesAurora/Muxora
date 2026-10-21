@@ -200,7 +200,7 @@
 
 **前置**：无。建议在 9.1 之前做：9.1 改造宿主让出与挂起，需要沿用这里的让出标记。
 
-**现状**：
+**实施前的现状**：
 
 - `modules/lua-runtime/src/script_worker.cpp` 的 `initialize()` 只打开基础库、`string`、`table`、`math`、`utf8`，并移除 `load`、`loadfile`、`dofile`、`collectgarbage`、`string.dump`；`print` 由宿主实现、写入脚本日志；`pcall`／`xpcall` 包装为调用后检查预算（`guardedCalls`）。
 - 每个任务在独立协程中运行，`prepare()` 用 `lua_sethook` 给它装计数钩子（每 1000 条指令检查一次）。钩子按线程（协程）生效；`lua_newthread` 会把创建者的钩子复制给新协程，所以用户自建的协程也受预算约束。
@@ -208,7 +208,7 @@
 - `require` 是 `modules/window-system-lua/src/script_host.cpp` 引导脚本里自己写的：经宿主方法 `module.read`（`script_api.cpp`）读取模块目录下的文件，限制路径必须在目录内、严格 UTF-8、不超过 1 MiB，并检测循环依赖。
 - 默认预算（`RuntimeLimits`）：每次运行 100 ms 执行时间（按墙钟计）、200 万条指令、32 MiB 内存。阻塞的 `io` 调用和 `os.execute`、`io.popen` 等待外部程序的时间也会计入，一次普通的 `git status` 就会超时。
 
-**涉及文件**：`modules/lua-runtime/src/script_worker.{hpp,cpp}`、`modules/lua-runtime/include/lua_runtime/script_runtime.hpp`（`RuntimeLimits`）、`modules/window-system-lua/src/script_host.cpp`（引导脚本、`require`）、`modules/window-system-lua/src/script_api.cpp`（`module.read`）、`src/app/script_services.cpp`（`app.exit`）、`src/app/CMakeLists.txt` 与新建 `src/app/muxora.manifest`、`muxora.rc`、设置注册（预算设置项）、测试 `modules/lua-runtime/tests/script_runtime_test.cpp`、`modules/window-system-lua/tests/script_host_test.cpp`、`src/app/tests/scripting_test.cpp`，文档 `docs/development/lua-guide.md`、`docs/design/lua-scripting-design.md`。
+**涉及文件**：`modules/lua-runtime/` 的 worker、runtime、参数转换和公开限制，`modules/window-system-lua/src/script_host.cpp`（引导脚本、`require`）、`script_api.cpp`（移除 `module.read`），`src/app/` 的脚本服务、菜单命令、退出流程与应用清单，WindowSystem 通用可点击状态项，以及这些模块的测试、Lua 指南和脚本设计。当前没有预算设置项；本步不增加相关设置。
 
 **实现**：
 
@@ -220,7 +220,7 @@
    - `coroutine.yield`、`status`、`running`、`isyieldable`、`close`、`create` 保持原样。
 4. **`debug.sethook`／`debug.gethook` 与运行时钩子共存**：脚本或第三方库（例如覆盖率工具）调用 `debug.sethook` 会替换掉线程上运行时用来检查停止请求的钩子，导致死循环停不下来。用 C 实现替换这两个函数，其余 `debug` 函数原样：
    - 用户的钩子（函数、事件掩码、计数）按线程保存在注册表中一张弱键表里，协程被回收时条目自动消失。
-   - 线程上始终安装运行时的 C 钩子：掩码为“计数 | 用户请求的事件”，计数间隔取运行时间隔与用户计数中较小的一个。
+   - 线程上始终安装运行时的 C 钩子：保留计数、调用和返回检查，加上用户请求的事件；计数间隔取运行时间隔与用户计数的最大公约数，既及时检查停止又准确触发用户计数。
    - 运行时钩子先检查是否请求停止，需要停止时立即让出或报错，不再调用用户钩子；否则按用户请求的事件调用用户钩子（`call`、`tail call`、`return`、`line`，以及按用户自己的计数递减触发的 `count`），参数与标准 `debug.sethook` 相同。清理阶段（`cleanup_`）不调用用户钩子。
    - `debug.gethook` 返回用户设置的钩子、掩码和计数；`debug.sethook()` 不带参数时只清除用户钩子。
 5. **去掉执行预算，只保留请求停止**（用户 2026-10-20 决定）：
@@ -232,12 +232,13 @@
    - 宿主回复超时（30 秒）不在本步调整，由 9.1 处理交互调用。
 6. **标准 `require`**：删除引导脚本中自写的 `require` 和宿主方法 `module.read`，使用标准 `package`：
    - 初始化时由宿主提供用户 Lua 目录，引导脚本把 `package.path` 设为 `<目录>/?.lua;<目录>/?/init.lua`，放在默认路径之前。
-   - `package.cpath` 设为空字符串：**不支持 C 模块（DLL）**。Lua 按 C++ 编译后静态链接在程序中（[ADR 0002](../../adr/0002-lua-as-cxx-with-gc-hook.md)），没有 Lua DLL 供外部模块链接，按 C 编译的模块也不能和它混用；`package.loadlib` 保留，调用时返回标准的错误。
-   - 取消原来的路径限制、严格 UTF-8 检查和 1 MiB 上限，与 Neovim 一致。
-7. **中文路径**：Lua 标准库在 Windows 上通过 C 运行库的 `fopen`、`getenv`、`system`、`_popen` 访问系统，路径和环境变量按进程的 ANSI 代码页解释，用户名或目录含中文时打不开文件。给 `muxora.exe` 加应用清单，声明 `<activeCodePage>UTF-8</activeCodePage>`（Windows 10 1903 起支持；更早的系统忽略该项，仍按 ANSI 处理），清单通过 `muxora.rc` 以 `RT_MANIFEST` 嵌入。先确认 MinGW 工具链没有已经嵌入的默认清单，避免出现两份；同时核对 Qt 的界面字体、文件对话框与 `QProcess` 在 UTF-8 代码页下行为不变。
+   - `package.cpath` 设为空字符串：**不支持 Lua C 模块（DLL）的 ABI**。Lua 按 C++ 编译后静态链接在程序中（[ADR 0002](../../adr/0002-lua-as-cxx-with-gc-hook.md)），没有 Lua DLL 供外部模块链接，按 C 编译的模块也不能和它混用。`package.loadlib` 保留标准行为，不把它描述成任意 DLL 的安全隔离或保证调用失败。
+   - 标准 `require` 取消原来的路径限制、严格 UTF-8 检查和 1 MiB 上限，支持 Lua 二进制块。应用直接运行文件和 `execute(QString)` 仍接收严格 UTF-8 文本，源码上限为 64 MiB，与标准加载入口分别说明。
+   - 标准 `require` 的 C 加载器不能让出；模块返回初始化函数，在 `require` 返回后调用 `muxora.*`。不能让出的调用在提交宿主请求前拒绝，不能先产生 GUI 副作用再报错。
+7. **中文路径**：Lua 标准库在 Windows 上通过 C 运行库的 `fopen`、`getenv`、`system`、`_popen` 访问系统，路径和环境变量按进程的 ANSI 代码页解释。给应用和相应测试程序添加 `<activeCodePage>UTF-8</activeCodePage>`（Windows 10 1903 起支持；更早系统忽略该项）。当前按 [ADR 0009](../../adr/0009-msvc-toolchain.md) 使用 MSVC，由链接器嵌入唯一清单并保留原有 UAC、兼容性和长路径声明；`.rc` 仅用于兼容的其他工具链。不更改用户系统代码页或字体设置，中文路径、Qt 窗口和 `QProcess` 通过相关自动化检查，真实字体与文件对话框试用单独记录。
 8. **`os.exit`**：引导脚本把 `os.exit` 改为调用宿主方法 `app.exit`；应用侧在 `script_services.cpp` 中实现，执行现有命令 `application.exit`（先保存工作区、按窗口族申请关闭许可）。被关闭许可拒绝时返回 `false`，程序继续运行；退出码参数忽略并在文档中写明。没有实现该方法的宿主（独立模块的外部宿主）调用时报“未知宿主方法”。直接调用 C 的 `exit()` 会跳过保存，并在其他线程仍在工作时结束整个进程。
 9. **标准输入输出**：Muxora 是窗口程序，没有控制台：`io.read` 读不到输入，`io.write` 写到进程的标准输出，界面中看不到。不重定向，在 Lua 指南中写明“看输出请用 `print`，它写入脚本日志”。
-10. **文档**：`lua-guide.md` 写明可用的标准库、`require` 的搜索路径、不支持 C 模块、`os.exit` 的行为、`print` 与 `io.write` 的区别、预算的含义和设置项；`lua-scripting-design.md` 的沙箱描述改为指向 ADR 0008。
+10. **文档**：`lua-guide.md` 写明完整标准库、`require` 的搜索与初始化方式、不支持的 C 模块 ABI、`os.exit`、标准输入输出、停止边界和保留的传输／队列限制；删除已不存在的执行预算描述。`lua-scripting-design.md` 的沙箱描述改为指向 ADR 0008。
 
 **测试**：
 
@@ -253,4 +254,9 @@
 
 **完成标准**：上述测试通过；Release 全量测试通过；部署后的程序中，一个 `init.lua` 用 `io` 读写含中文路径的文件、用 `os.execute` 运行命令、`require` 一个用户模块，都能正常工作（真实桌面试用，结果写入验证日志）。
 
-**状态**：未开始。
+**状态**（2026-10-21）：代码与自动化验证完成，用户真实桌面试用未执行；上述完成标准中的真实试用仍待验收。
+
+- Release 构建通过。首次全量 61 个套件中 57 个通过、4 个桌面套件失败；失败记录保留，未将首次全量写为通过。随后相关 8 个套件定向补测全部通过，最终运行时定向检查 64 行（含初始化／清理）全部通过。没有再次运行全量；当前 61 个套件的最新报告汇总为 2343 个实际数据行通过、0 失败。
+- 独立模块构建通过；安装后的 C++ 宿主与 Lua 宿主各 1/1 检查通过。固定部署中的 Lua 脚本、应用退出保存和重启检查通过；这些是自动化检查，不替代用户真实桌面试用。
+- 标准库和执行预算相关旧断言按 ADR 0008 迁移，保留取消、洪泛、终结函数和重载资源归零检查。详细结果见 [验证日志](../../development/verification-log/2026-10.md)。
+- 下一步按推荐顺序进行 1.7。本轮只收尾 9.8，不启动 9.0、9.1 或其他阶段。

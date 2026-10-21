@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 #include "script_host_p.hpp"
-#include <QCoreApplication>
-#include <QFile>
-#include <QFileInfo>
-#include <QJsonObject>
+#include <QDir>
 #include <QSignalBlocker>
 #include <QRegularExpression>
 
 namespace window_system_lua {
 namespace {
+QString luaString(const QString &value) {
+    QString literal = QStringLiteral("\"");
+    for (const auto byte : value.toUtf8())
+        literal += QStringLiteral("\\%1").arg(uint(static_cast<unsigned char>(byte)), 3, 10, QLatin1Char('0'));
+    return literal + QLatin1Char('"');
+}
 // Small Lua adapters keep callbacks in the VM. All effects still pass through
 // the same typed host handlers as commands, without exposing C++ object graphs.
 const char bootstrap[] = R"lua(
@@ -60,24 +63,17 @@ muxora.layout = api('layout','snapshot restore')
 muxora.settings = api('settings','get update')
 muxora.theme = api('theme','get update')
 muxora.ui = api('ui','settings command_palette window_selector notify')
-muxora.app = api('app','launch play_sound')
+muxora.app = api('app','launch play_sound exit')
 muxora.events = api('events','off emit')
 function muxora.events.on(name, fn) return registerCallback(fn,function(id)return host('events.on',name,id)end) end
 muxora.timers = api('timers','cancel')
 function muxora.timers.after(ms, fn) return registerCallback(fn,function(id)return host('timers.create',ms,id,false)end) end
 function muxora.timers.every(ms, fn) return registerCallback(fn,function(id)return host('timers.create',ms,id,true)end) end
-local modules, loading = {}, {}
-function require(name)
-  if modules[name] ~= nil then return modules[name] end
-  assert(not loading[name], 'cyclic module dependency: '..name)
-  local source, path = host('module.read',name)
-  loading[name] = true
-  local ok, value = pcall(function() return muxora._compile(source,path)(name) end)
-  loading[name] = nil
-  if not ok then error(value,2) end
-  modules[name] = value == nil and true or value
-  return modules[name]
+if moduleDirectory ~= '' then
+  package.path = moduleDirectory..'/?.lua;'..moduleDirectory..'/?/init.lua;'..package.path
 end
+package.cpath = ''
+os.exit = function() return host('app.exit') end
 )lua";
 } // namespace
 ScriptHost::Private::Private(ScriptHost *owner, window_system::WindowManager *windows)
@@ -194,7 +190,10 @@ ScriptHost::ScriptHost(window_system::WindowManager *manager, QObject *parent)
     connect(d->engine, &lua_runtime::ScriptRuntime::logMessage, this, &ScriptHost::logMessage);
     connect(d->engine, &lua_runtime::ScriptRuntime::resetFinished, this, [this] {
         if (d->initializing) {
-            d->bootstrapJob = d->engine->execute(QString::fromUtf8(bootstrap), QStringLiteral("@muxora/api"));
+            const auto directory = QDir::fromNativeSeparators(d->moduleDirectory);
+            const auto source = QStringLiteral("local moduleDirectory = %1\n").arg(luaString(directory)) +
+                                QString::fromUtf8(bootstrap);
+            d->bootstrapJob = d->engine->execute(source, QStringLiteral("@muxora/api"));
             if (!d->bootstrapJob)
                 d->finishInitialization(false, QStringLiteral("Lua runtime is overloaded"));
         }

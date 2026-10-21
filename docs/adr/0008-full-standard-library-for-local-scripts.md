@@ -1,6 +1,6 @@
 # 0008 本地脚本使用完整 Lua 标准库，与 Neovim 一致
 
-**状态**：采用（取代 [0003](0003-lua-sandbox-scope.md)；实现见 [阶段 9.8](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)，完成前代码仍是 0003 描述的范围）
+**状态**：采用，9.8 已实现，验证进度见 [阶段 9.8](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)；取代 [0003](0003-lua-sandbox-scope.md)。
 
 ## 背景
 

@@ -2,7 +2,57 @@
 
 从“工具 → Lua → 打开 Lua 配置文件”进入 `User/init.lua`，保存后选择“重新加载 Lua 配置”。没有配置文件时不会自动创建或执行其他目录的脚本。“运行 Lua 脚本…”可以运行一次输入的代码。
 
-普通安装的 `User` 在系统用户配置目录，便携运行在 `data/User`；指定 `--state-dir` 时使用该隔离目录的 `User`。脚本使用 UTF-8。模块放在 `User/lua`，例如 `User/lua/workspace.lua` 可以用 `require('workspace')` 加载；只支持这里的纯 Lua 文本模块。模块含无效 UTF-8 字节时会报错，不会替换字符后继续执行。
+普通安装的 `User` 在系统用户配置目录，便携运行在 `data/User`；指定 `--state-dir` 时使用该隔离目录的 `User`。`init.lua` 和“运行 Lua 脚本”的文件入口使用 UTF-8 文本；模块默认放在 `User/lua`。
+
+## 标准库与模块
+
+本地脚本可以使用完整的 Lua 5.5 标准库，包括 `io`、`os`、`debug`、`package`、`coroutine`、`load`、`loadfile`、`dofile`、`string.dump` 和 `collectgarbage`。`load` 可以加载二进制块。文件读写和 shell 命令直接使用标准库，不需要申请权限；脚本拥有与当前用户相同的权限。决定见 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md)。
+
+`require` 使用标准 Lua 搜索器和缓存。初始化时，`package.path` 在默认路径之前加入：
+
+```text
+User/lua/?.lua
+User/lua/?/init.lua
+```
+
+例如 `require('workspace')` 查找 `workspace.lua` 或 `workspace/init.lua`，`require('workspace.tools')` 查找 `workspace/tools.lua` 或 `workspace/tools/init.lua`。脚本可以修改 `package.path`、使用 `package.preload`，或修改 `package.loaded` 缓存；重新加载配置会建立新 VM，旧缓存随之清除。
+
+标准 `require`、`loadfile` 和 `dofile` 按 Lua 自身规则读取文件，没有原来的目录边界、严格 UTF-8 检查或 1 MiB 上限。`init.lua` 和应用的一次性脚本入口仍是经过 UTF-8 解码的文本传输，默认上限为 64 MiB；这个上限不限制标准库在脚本内部加载文件。
+
+`package.cpath` 初始为空。当前 Lua 按 C++ 编译并静态链接，没有供外部模块链接的 Lua DLL，因此不支持 C 模块；这是构建与 ABI 条件，不是文件权限限制。`package.loadlib` 保留，加载失败时返回标准错误。纯 Lua 模块可使用文本或与嵌入版本匹配的字节码。
+
+标准 `require` 在 C 加载器中调用模块顶层，那里不能让出给宿主。模块中需要调用 `muxora.*` 时，返回一个初始化函数，在 `require` 返回后调用：
+
+```lua
+-- User/lua/workspace.lua
+return function()
+  muxora.commands.register({ id = 'user.module_action', title = '模块命令' }, function()
+    muxora.commands.execute('host.newTab')
+  end)
+end
+```
+
+```lua
+-- User/init.lua
+local setup = require('workspace')
+setup()
+```
+
+用户协程中的 `muxora.*` 调用会逐层转交宿主并恢复，普通 `coroutine.yield` 的返回值遵循 Lua 语义。`debug.sethook` 和 `debug.gethook` 管理用户钩子；清除用户钩子不影响运行时的停止检查。
+
+在支持 UTF-8 进程代码页的 Windows 10 1903 及后续版本上，应用清单让标准库的文件路径和环境变量按 UTF-8 处理，可用于中文路径。更早系统会忽略这项声明。
+
+`print` 写入 Muxora 的脚本日志。`io.write` 写到进程标准输出，不显示在界面中；普通图形启动没有控制台输入，`io.read` 不会弹出输入框。
+
+`os.exit(code, close)` 和 `muxora.app.exit()` 都走应用的正常退出命令，先保存工作区，再申请关闭所有窗口。退出码和 `close` 参数忽略；关闭许可拒绝时返回 `false`，应用继续运行。独立使用窗口模块的宿主需要提供 `app.exit` 服务；未提供时调用报“未知宿主方法”，不会直接结束进程。
+
+## 停止脚本
+
+脚本没有执行时间、指令数和 Lua 内存预算。耗时计算不会自动被中止；某次连续执行超过 2 秒时，状态栏显示“Lua 脚本运行中”，点击它或执行“工具 → Lua → 停止正在运行的 Lua 脚本”（`lua.stop`）可请求停止。脚本结束后提示消失。
+
+停止请求在下一个 Lua 检查点生效，嵌套协程、`pcall`、`xpcall` 和用户 debug 钩子不能吞掉请求。重新加载、卸载和程序退出也会请求停止；运行时仍可执行之后提交的新任务。
+
+所有脚本共用一个线程。`os.execute`、`io.popen` 或其他阻塞的 C 调用返回前无法停止，其他脚本也需要等待，界面继续响应。此时重载会提示“脚本仍在运行，已请求停止”，调用返回后再完成重载。程序退出最多等待 Lua 线程约 2 秒，然后继续退出，不强杀线程。
 
 ## 快捷键与命令
 
@@ -43,7 +93,7 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 | `toolbars` / `status` | 注册命令工具条和状态项，调整位置、宽度、弹性、按钮、文本和显隐。 |
 | `layout` | `snapshot()` / `restore(snapshot)`，保持宿主内容工厂与布局校验。 |
 | `settings` / `theme` | 已有行为、标签外观、颜色预设、主题令牌和尺寸；语言请求重启生效。 |
-| `ui` / `app` | 非模态通知、设置／命令面板、打开外部程序、beep 和 Windows 本地 WAV。 |
+| `ui` / `app` | 非模态通知、设置／命令面板、正常退出、打开外部程序、beep 和 Windows 本地 WAV。 |
 | `events` / `timers` | 订阅宿主事件、自定义 `user.*` 事件、一次／重复计时器及取消。 |
 | `clock` / `runtime` | 本地／UTC 时间、日期字段，以及 Lua 分配、队列和注册资源计数。 |
 
@@ -134,7 +184,7 @@ end)
 
 以上订阅需要真实终端组件发布 `terminal.output`；当前预览尚未提供终端后端。宿主可以用同一入口接入连接、传输和其他业务事件，不需要修改 Lua 解释器。
 
-`events.on` 返回订阅 ID，`events.off(id)` 撤销它；脚本可用 `events.emit('user.name', data)` 发布自己的事件。同一订阅串行处理；`layout.changed` 允许合并，其余事件按顺序有界排队。队列或数据超过预算会报告错误并撤销对应订阅，不会静默丢弃。高流量组件应按业务需要控制事件粒度。
+`events.on` 返回订阅 ID，`events.off(id)` 撤销它；脚本可用 `events.emit('user.name', data)` 发布自己的事件。同一订阅串行处理；`layout.changed` 允许合并，其余事件按顺序有界排队。队列或数据超过传输上限会报告错误并撤销对应订阅，不会静默丢弃。高流量组件应按业务需要控制事件粒度。
 
 `app.launch({ program = 'notepad.exe', args = {} })` 按独立参数打开程序，返回启动请求 ID；结果通过 `app.launch.completed` 事件返回。程序独立运行，Muxora 不在重载或退出时强杀它，也不捕获其输出。声音可用 `app.play_sound('beep')` 或 Windows 本地 WAV 路径。
 
@@ -144,8 +194,25 @@ end)
 
 脚本重载会回收旧函数、计时器、订阅和不再声明的界面贡献。相同 ID 的工具条更新定义，保留各窗口及窗口形态的排列；状态项保留显隐。用户快捷键覆盖在新默认值注册后重施，重载中间状态不会写回用户文件。
 
-默认不开放系统 shell、阻塞 IO、原生动态模块、debug 或未约束协程。请用宿主服务实现外部效果；VM 与传输资源都有预算。它用于用户信任的本地配置，不是运行恶意脚本的安全边界。初始化失败会清理本代注册资源，已经完成的普通 UI 操作不作事务回滚。
+本地脚本由用户选择运行，不做权限管理，也不作为运行恶意脚本的安全边界。初始化失败会清理本代注册资源，已经完成的普通 UI 操作不作事务回滚。
 
-默认预算为 32 MiB Lua 分配、128 个待处理任务、8 MiB 任务传输保留数据、1024 个函数引用；源代码和单个字符串最多 1 MiB，值最多 32 层、4096 个节点。`runtime.stats()` 提供 Lua 当前／峰值字节、待处理任务和各类注册资源计数。这些数字不包含 Qt 界面、应用缓存或外部程序占用，不能用来代表整个进程的内存。
+## 队列、传输与资源计数
+
+为避免阻塞的宿主或日志接收者积压内存，运行时保留以下默认上限。它们约束跨线程数据和待处理资源，不限制 Lua 内部的计算或分配：
+
+| 项目 | 默认上限 |
+| --- | --- |
+| 直接提交的源代码／单个传输字符串 | 各 64 MiB |
+| 排队输入与待投递结果保留数据 | 合计 256 MiB，按保守传输记账计算 |
+| 已接收且尚未交付结果的任务 | 128 个 |
+| 保留的 Lua 回调 | 1,000,000 个 |
+| 一次转换的值节点／嵌套深度 | 1,000,000 个／32 层 |
+| 普通宿主回执等待 | 30 秒 |
+| 单任务日志／单条日志 | 128 条／16 KiB |
+| 等待宿主显示的日志 | 256 条 |
+
+界面贡献另有限制：每代脚本最多 256 个命令、512 个快捷键目标、32 条工具条、64 个状态项、128 个事件订阅和 128 个计时器。事件积压最多 128 项、256 MiB；超过上限会报告并停用该订阅。窗口内容仍由窗口模块维护，不通过复制完整内容保存订阅状态。
+
+`runtime.stats()` 提供 Lua 当前／峰值字节、待处理任务和各类注册资源计数。这些数字不包含 Qt 界面、应用缓存或外部程序占用，不能代表整个进程的内存。
 
 应用部署检查可以独立运行 `pwsh tools/tests/lua-deployment-test.ps1`。它使用隔离状态目录和已部署的程序，断言 Lua 启动、命令、保存与重启后的工具区和栏显隐；不计算校验值或读取截图。执行前应关闭固定部署目录中的程序。

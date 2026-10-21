@@ -210,7 +210,7 @@ bool WindowManager::setToolbarsLocked(WindowId window, bool locked) {
 bool WindowManager::registerStatusItem(StatusItem item) {
     if (!validId(item.id) || statusItemIds().contains(item.id) ||
         d->customStatusItems.size() >= maximumDefinitions || item.text.size() > maximumTextLength ||
-        item.tooltip.size() > maximumTextLength)
+        item.tooltip.size() > maximumTextLength || (!item.command.isEmpty() && !validId(item.command)))
         return false;
     d->customStatusItems.append(std::move(item));
     const QPointer<WindowManager> self(this);

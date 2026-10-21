@@ -305,8 +305,8 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="156" />
-            <source>Lua 脚本超过 1 MiB 限制。</source>
-            <translation>Lua script exceeds the 1 MiB limit.</translation>
+            <source>Lua 脚本超过 %1 MiB 传输限制。</source>
+            <translation>Lua script exceeds the %1 MiB transport limit.</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="163" />
@@ -413,6 +413,22 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
             <location filename="../script_services.cpp" line="220" />
             <source>未知脚本服务：%1</source>
             <translation>Unknown script service: %1</translation>
+        </message>
+        <message>
+            <source>停止正在运行的 Lua 脚本</source>
+            <translation>Stop Running Lua Scripts</translation>
+        </message>
+        <message>
+            <source>Lua 脚本运行中</source>
+            <translation>Lua script running</translation>
+        </message>
+        <message>
+            <source>点击停止正在运行的 Lua 脚本</source>
+            <translation>Click to stop running Lua scripts</translation>
+        </message>
+        <message>
+            <source>脚本仍在运行，已请求停止。</source>
+            <translation>The script is still running. A stop has been requested.</translation>
         </message>
     </context>
     <context>

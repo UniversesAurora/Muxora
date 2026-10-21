@@ -3,6 +3,11 @@
 
 #include <lauxlib.h>
 #include <lualib.h>
+// Private dependency on the pinned Lua version: user hooks remain stoppable.
+#include <lstate.h>
+#include <chrono>
+#include <numeric>
+#include <cstring>
 #include <QRandomGenerator>
 #include <QThread>
 #include <cstdlib>
@@ -13,6 +18,15 @@ namespace {
 
 constexpr int hookInterval = 1000;
 constexpr int maximumPendingLogs = 256;
+char userHooksKey;
+char hostYieldMarker;
+
+qint64 executionClock() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+constexpr int runtimeHookMask = LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET;
 
 struct TraceInput {
     lua_State *source;
@@ -26,13 +40,11 @@ int buildTraceback(lua_State *state) {
 
 ScriptResult failure(QString message) { return {false, {}, std::move(message)}; }
 
-// Lua calls these wrappers after each protected call, including protected calls
-// whose body entered a non-yieldable library callback. The original functions
-// and budget checker are private upvalues: replacing global names cannot bypass
-// a sticky cancellation, instruction limit, or deadline.
+// Private upvalues preserve protected-call semantics and forward host yields
+// through every user coroutine. Stops remain sticky even after caught errors.
 constexpr char guardedCalls[] = R"lua(
-local raw_pcall, raw_xpcall, check = ...
-local pack, unpack = table.pack, table.unpack
+local raw_pcall, raw_xpcall, check, raw_resume, create, raw_yield, close, marker = ...
+local pack, unpack, raise = table.pack, table.unpack, error
 pcall = function(...)
     local result = pack(raw_pcall(...))
     check()
@@ -42,6 +54,27 @@ xpcall = function(...)
     local result = pack(raw_xpcall(...))
     check()
     return unpack(result, 1, result.n)
+end
+local function resume(co, ...)
+    local result = pack(raw_resume(co, ...))
+    check()
+    while result[1] and result[2] == marker do
+        result = pack(raw_resume(co, raw_yield(marker)))
+        check()
+    end
+    return unpack(result, 1, result.n)
+end
+coroutine.resume = resume
+coroutine.wrap = function(f)
+    local co = create(f)
+    return function(...)
+        local result = pack(resume(co, ...))
+        if not result[1] then
+            local ok, err = close(co)
+            raise(ok and result[2] or err, 2)
+        end
+        return unpack(result, 2, result.n)
+    end
 end
 )lua";
 
@@ -77,9 +110,6 @@ void *ScriptWorker::allocate(void *user, void *pointer, size_t oldSize, size_t n
         return nullptr;
     }
     const auto requested = static_cast<quint64>(newSize);
-    if (requested > previous &&
-        requested - previous > worker->limits_.memoryBytes - qMin(used, worker->limits_.memoryBytes))
-        return nullptr;
     void *result = std::realloc(pointer, newSize);
     if (!result)
         return nullptr;
@@ -93,7 +123,7 @@ void *ScriptWorker::allocate(void *user, void *pointer, size_t oldSize, size_t n
 }
 
 bool ScriptWorker::stale(const ScriptJob &job) const {
-    return shutdown_ || job.generation != statistics_->generation.load(std::memory_order_acquire) ||
+    return shutdown_ || statistics_->stopping.load(std::memory_order_acquire) || job.generation != statistics_->generation.load(std::memory_order_acquire) ||
            job.cancellation != statistics_->cancellation.load(std::memory_order_acquire);
 }
 
@@ -104,65 +134,198 @@ void ScriptWorker::setAbort(QString message) {
     active_->abortReason = std::move(message);
 }
 
-bool ScriptWorker::checkCurrentBudget() {
+bool ScriptWorker::checkCurrentStop() {
     if (cleanup_)
         return false;
     if (!active_)
         return true;
     if (stale(active_->job))
         setAbort(QStringLiteral("Lua task was cancelled"));
-    if (active_->instructions >= limits_.instructionLimit)
-        setAbort(QStringLiteral("Lua task exceeded its instruction limit"));
-    const auto current = resumeTimer_.isValid() ? resumeTimer_.nsecsElapsed() : 0;
-    if (active_->elapsedNanoseconds + current >= static_cast<qint64>(limits_.timeLimitMs) * 1'000'000)
-        setAbort(QStringLiteral("Lua task exceeded its execution time limit"));
     return !active_->aborted;
 }
 
-void ScriptWorker::hook(lua_State *state, lua_Debug *) {
+void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
     auto *worker = self(state);
-    if (worker->active_ && !worker->cleanup_)
-        worker->active_->instructions +=
-            static_cast<quint64>(qMin<quint64>(hookInterval, worker->limits_.instructionLimit));
-    if (worker->checkCurrentBudget())
-        return;
-    // A yield crosses pcall/xpcall without being caught. Library callbacks that
-    // cannot yield raise first; the private protected-call wrappers check the
-    // sticky abort immediately after that boundary returns.
-    if (!worker->cleanup_ && lua_isyieldable(state)) {
-        lua_yield(state, 0);
+    if (!worker->checkCurrentStop()) {
+        // Only count/line hooks may yield. At C-call boundaries raise an
+        // error before entering another protected scope, so raw pcall cannot
+        // repeatedly swallow a stop obtained through debug introspection.
+        if (!worker->cleanup_ && lua_isyieldable(state) &&
+            (debug->event == LUA_HOOKCOUNT || debug->event == LUA_HOOKLINE)) {
+            lua_yield(state, 0);
+            return;
+        }
+        luaL_error(state, "Lua task was cancelled");
         return;
     }
-    luaL_error(state, "Lua task stopped by the runtime budget");
+    if (!worker->active_ || worker->cleanup_ || worker->executingUserHooks_.contains(state))
+        return;
+    const int top = lua_gettop(state);
+    lua_rawgetp(state, LUA_REGISTRYINDEX, &userHooksKey);
+    lua_pushthread(state);
+    lua_rawget(state, -2);
+    if (!lua_istable(state, -1)) {
+        lua_settop(state, top);
+        return;
+    }
+    const int record = lua_gettop(state);
+    lua_rawgeti(state, record, 2);
+    const int mask = static_cast<int>(lua_tointeger(state, -1));
+    lua_pop(state, 1);
+    bool invoke = false;
+    if (debug->event == LUA_HOOKCOUNT && (mask & LUA_MASKCOUNT)) {
+        lua_rawgeti(state, record, 4);
+        const auto remaining = lua_tointeger(state, -1) - lua_gethookcount(state);
+        lua_pop(state, 1);
+        if (remaining <= 0) {
+            lua_rawgeti(state, record, 3);
+            lua_rawseti(state, record, 4);
+            invoke = true;
+        } else {
+            lua_pushinteger(state, remaining);
+            lua_rawseti(state, record, 4);
+        }
+    } else {
+        const int eventMask = debug->event == LUA_HOOKTAILCALL ? LUA_MASKCALL : (1 << debug->event);
+        invoke = (mask & eventMask) != 0;
+    }
+    if (invoke) {
+        constexpr const char *events[] = {"call", "return", "line", "count", "tail call"};
+        lua_rawgeti(state, record, 1);
+        lua_pushstring(state, events[debug->event]);
+        if (debug->currentline >= 0)
+            lua_pushinteger(state, debug->currentline);
+        else
+            lua_pushnil(state);
+        // Lua suppresses hooks inside hooks. Re-enable only our C dispatcher
+        // here; its re-entry guard suppresses user callbacks, but stop checks
+        // still run inside an accidental infinite loop in the user's hook.
+        struct HookScope {
+            ScriptWorker *worker;
+            lua_State *state;
+            lu_byte previous;
+            HookScope(ScriptWorker *w, lua_State *s) : worker(w), state(s), previous(s->allowhook) {
+                worker->executingUserHooks_.insert(state);
+                state->allowhook = 1;
+            }
+            ~HookScope() {
+                state->allowhook = previous;
+                worker->executingUserHooks_.remove(state);
+            }
+        };
+        int status;
+        {
+            const HookScope scope(worker, state);
+            status = lua_pcall(state, 2, 0, 0);
+        }
+        if (status != LUA_OK)
+            lua_error(state);
+        if (!worker->checkCurrentStop())
+            luaL_error(state, "Lua task was cancelled");
+    }
+    lua_settop(state, top);
 }
 
-int ScriptWorker::checkBudget(lua_State *state) {
+int ScriptWorker::checkStop(lua_State *state) {
     auto *worker = self(state);
-    if (worker->checkCurrentBudget())
+    if (worker->checkCurrentStop())
         return 0;
     if (!worker->cleanup_ && lua_isyieldable(state))
         return lua_yield(state, 0);
-    return luaL_error(state, "Lua task stopped by the runtime budget");
+    return luaL_error(state, "Lua task was cancelled");
+}
+
+int ScriptWorker::setUserHook(lua_State *state) {
+    int argument = 1;
+    auto *target = lua_isthread(state, 1) ? lua_tothread(state, argument++) : state;
+    const bool clear = lua_isnoneornil(state, argument);
+    int count = 0;
+    int mask = 0;
+    if (!clear) {
+        luaL_checktype(state, argument, LUA_TFUNCTION);
+        const auto *flags = luaL_checkstring(state, argument + 1);
+        count = static_cast<int>(luaL_optinteger(state, argument + 2, 0));
+        if (std::strchr(flags, 'c')) mask |= LUA_MASKCALL;
+        if (std::strchr(flags, 'r')) mask |= LUA_MASKRET;
+        if (std::strchr(flags, 'l')) mask |= LUA_MASKLINE;
+        if (count > 0) mask |= LUA_MASKCOUNT;
+    }
+    lua_rawgetp(state, LUA_REGISTRYINDEX, &userHooksKey);
+    if (target != state && !lua_checkstack(target, 1))
+        return luaL_error(state, "stack overflow");
+    lua_pushthread(target);
+    lua_xmove(target, state, 1);
+    if (clear) {
+        lua_pushnil(state);
+    } else {
+        lua_createtable(state, 4, 0);
+        lua_pushvalue(state, argument);
+        lua_rawseti(state, -2, 1);
+        lua_pushinteger(state, mask);
+        lua_rawseti(state, -2, 2);
+        lua_pushinteger(state, count);
+        lua_rawseti(state, -2, 3);
+        lua_pushinteger(state, count);
+        lua_rawseti(state, -2, 4);
+    }
+    lua_rawset(state, -3);
+    // A divisor gives exact user count intervals, including nonmultiples of
+    // our normal checkpoint frequency (for example 1500 instructions).
+    const int interval = count > 0 ? std::gcd(hookInterval, count) : hookInterval;
+    lua_sethook(target, hook, runtimeHookMask | mask, interval);
+    return 0;
+}
+
+int ScriptWorker::getUserHook(lua_State *state) {
+    auto *target = lua_isthread(state, 1) ? lua_tothread(state, 1) : state;
+    lua_rawgetp(state, LUA_REGISTRYINDEX, &userHooksKey);
+    if (target != state && !lua_checkstack(target, 1))
+        return luaL_error(state, "stack overflow");
+    lua_pushthread(target);
+    lua_xmove(target, state, 1);
+    lua_rawget(state, -2);
+    if (!lua_istable(state, -1)) {
+        lua_pushnil(state);
+        return 1;
+    }
+    const int record = lua_gettop(state);
+    lua_rawgeti(state, record, 2);
+    const auto mask = static_cast<int>(lua_tointeger(state, -1));
+    lua_pop(state, 1);
+    if (mask == 0) {
+        lua_pushnil(state);
+        return 1;
+    }
+    lua_rawgeti(state, record, 1);
+    char flags[4];
+    int length = 0;
+    if (mask & LUA_MASKCALL) flags[length++] = 'c';
+    if (mask & LUA_MASKRET) flags[length++] = 'r';
+    if (mask & LUA_MASKLINE) flags[length++] = 'l';
+    lua_pushlstring(state, flags, static_cast<size_t>(length));
+    lua_rawgeti(state, record, 3);
+    return 3;
 }
 
 int ScriptWorker::initialize(lua_State *state) {
-    const luaL_Reg libraries[] = {{"_G", luaopen_base},
-                                  {LUA_MATHLIBNAME, luaopen_math},
-                                  {LUA_STRLIBNAME, luaopen_string},
-                                  {LUA_TABLIBNAME, luaopen_table},
-                                  {LUA_UTF8LIBNAME, luaopen_utf8},
-                                  {nullptr, nullptr}};
-    for (const auto *library = libraries; library->func; ++library) {
-        luaL_requiref(state, library->name, library->func, 1);
-        lua_pop(state, 1);
-    }
-    for (const auto *name : {"load", "loadfile", "dofile", "collectgarbage"}) {
-        lua_pushnil(state);
-        lua_setglobal(state, name);
-    }
-    lua_getglobal(state, LUA_STRLIBNAME);
-    lua_pushnil(state);
-    lua_setfield(state, -2, "dump");
+    luaL_openlibs(state);
+    // This statically linked C++ Lua has no DLL ABI for native Lua modules.
+    // Keep loadlib available for its standard diagnostic return contract.
+    lua_getglobal(state, LUA_LOADLIBNAME);
+    lua_pushliteral(state, "");
+    lua_setfield(state, -2, "cpath");
+    lua_pop(state, 1);
+    lua_newtable(state);
+    lua_newtable(state);
+    lua_pushliteral(state, "k");
+    lua_setfield(state, -2, "__mode");
+    lua_setmetatable(state, -2);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &userHooksKey);
+    lua_getglobal(state, LUA_DBLIBNAME);
+    lua_pushcfunction(state, setUserHook);
+    lua_setfield(state, -2, "sethook");
+    lua_pushcfunction(state, getUserHook);
+    lua_setfield(state, -2, "gethook");
     lua_pop(state, 1);
 
     lua_newtable(state);
@@ -172,8 +335,6 @@ int ScriptWorker::initialize(lua_State *state) {
     lua_setfield(state, -2, "_callback");
     lua_pushcfunction(state, releaseRetainedCallback);
     lua_setfield(state, -2, "_release");
-    lua_pushcfunction(state, compile);
-    lua_setfield(state, -2, "_compile");
     lua_setglobal(state, "muxora");
     lua_pushcfunction(state, print);
     lua_setglobal(state, "print");
@@ -183,8 +344,14 @@ int ScriptWorker::initialize(lua_State *state) {
         return lua_error(state);
     lua_getglobal(state, "pcall");
     lua_getglobal(state, "xpcall");
-    lua_pushcfunction(state, checkBudget);
-    lua_call(state, 3, 0);
+    lua_pushcfunction(state, checkStop);
+    lua_getglobal(state, LUA_COLIBNAME);
+    const int coroutineLibrary = lua_gettop(state);
+    for (const auto *name : {"resume", "create", "yield", "close"})
+        lua_getfield(state, coroutineLibrary, name);
+    lua_remove(state, coroutineLibrary);
+    lua_pushlightuserdata(state, &hostYieldMarker);
+    lua_call(state, 8, 0);
     return 0;
 }
 
@@ -195,12 +362,11 @@ bool ScriptWorker::ensureState() {
     state_ = lua_newstate(allocate, this, QRandomGenerator::global()->generate());
     if (!state_) {
         initializationError_ =
-            QStringLiteral("Unable to allocate the Lua interpreter within its memory budget");
+            QStringLiteral("Unable to allocate the Lua interpreter");
         return false;
     }
     *static_cast<ScriptWorker **>(lua_getextraspace(state_)) = this;
-    lua_sethook(state_, hook, LUA_MASKCOUNT,
-                static_cast<int>(qMin<quint64>(hookInterval, limits_.instructionLimit)));
+    lua_sethook(state_, hook, runtimeHookMask, hookInterval);
     lua_pushcfunction(state_, initialize);
     const int status = lua_pcall(state_, 0, 0, 0);
     if (status == LUA_OK)
@@ -220,6 +386,7 @@ void ScriptWorker::closeState() {
     lua_close(state_);
     state_ = nullptr;
     cleanup_ = false;
+    executingUserHooks_.clear();
     callbacks_.clear();
     statistics_->retainedCallbacks.store(0, std::memory_order_release);
 }
@@ -263,10 +430,8 @@ void ScriptWorker::pump() {
     active_ = std::make_unique<ActiveJob>();
     active_->job = std::move(job);
     lua_pushcfunction(state_, prepare);
-    resumeTimer_.start();
+    statistics_->executionStarted.store(executionClock(), std::memory_order_release);
     const int status = lua_pcall(state_, 0, 0, 0);
-    active_->elapsedNanoseconds += resumeTimer_.nsecsElapsed();
-    resumeTimer_.invalidate();
     if (status != LUA_OK) {
         finish(failure(stackError(state_, status)));
         lua_settop(state_, 0);
@@ -281,8 +446,7 @@ int ScriptWorker::prepare(lua_State *state) {
     auto &active = *worker->active_;
     active.coroutine = lua_newthread(state);
     active.reference = luaL_ref(state, LUA_REGISTRYINDEX);
-    const auto count = static_cast<int>(qMin<quint64>(hookInterval, worker->limits_.instructionLimit));
-    lua_sethook(active.coroutine, hook, LUA_MASKCOUNT, count);
+    lua_sethook(active.coroutine, hook, runtimeHookMask, hookInterval);
     try {
         if (active.job.callbackId.isEmpty()) {
             const auto &source = active.job.source;
@@ -312,21 +476,22 @@ int ScriptWorker::prepare(lua_State *state) {
 void ScriptWorker::resume(int arguments) {
     if (!active_)
         return;
-    if (!checkCurrentBudget()) {
+    if (!checkCurrentStop()) {
         finish(failure(active_->abortReason));
         schedulePump();
         return;
     }
     active_->awaitingHost = false;
-    resumeTimer_.start();
+    statistics_->executionStarted.store(executionClock(), std::memory_order_release);
     int results = 0;
     const int status = lua_resume(active_->coroutine, nullptr, arguments, &results);
-    active_->elapsedNanoseconds += resumeTimer_.nsecsElapsed();
-    resumeTimer_.invalidate();
-    checkCurrentBudget();
+    statistics_->executionStarted.store(0, std::memory_order_release);
+    checkCurrentStop();
     if (active_->aborted) {
         finish(failure(active_->abortReason));
-    } else if (status == LUA_YIELD && active_->awaitingHost) {
+    } else if (status == LUA_YIELD && active_->awaitingHost && results == 1 &&
+               lua_touserdata(active_->coroutine, -1) == &hostYieldMarker) {
+        lua_pop(active_->coroutine, results);
         hostDeadline_.start(limits_.hostReplyTimeoutMs);
         return;
     } else if (status != LUA_OK) {
@@ -350,8 +515,8 @@ int ScriptWorker::hostCall(lua_State *state) {
     auto *worker = self(state);
     if (!worker->active_ || worker->cleanup_ || !lua_isyieldable(state))
         return luaL_error(state, "Host operations require a yieldable Lua task");
-    if (!worker->checkCurrentBudget())
-        return checkBudget(state);
+    if (!worker->checkCurrentStop())
+        return checkStop(state);
     try {
         ValueBudget budget{worker->limits_};
         const auto method = readText(state, 1, budget);
@@ -361,6 +526,11 @@ int ScriptWorker::hostCall(lua_State *state) {
         for (int i = 2; i <= lua_gettop(state); ++i)
             arguments.append(readValue(state, i, budget));
         auto &active = *worker->active_;
+        if (active.hostCoroutineReference >= 0)
+            luaL_unref(state, LUA_REGISTRYINDEX, active.hostCoroutineReference);
+        active.hostCoroutine = state;
+        lua_pushthread(state);
+        active.hostCoroutineReference = luaL_ref(state, LUA_REGISTRYINDEX);
         active.awaitingHost = true;
         worker->statistics_->activeHostJob.store(active.job.id, std::memory_order_release);
         emit worker->hostRequested(active.job.id, active.job.generation, active.job.cancellation, method,
@@ -368,7 +538,8 @@ int ScriptWorker::hostCall(lua_State *state) {
     } catch (const ValueError &error) {
         return luaL_error(state, "%s", error.what());
     }
-    return lua_yieldk(state, 0, 0, hostContinuation);
+    lua_pushlightuserdata(state, &hostYieldMarker);
+    return lua_yieldk(state, 1, static_cast<lua_KContext>(worker->active_->job.id), hostContinuation);
 }
 
 void ScriptWorker::hostReply(quint64 job, quint64 generation, quint64 cancellation, ScriptResult result) {
@@ -382,13 +553,16 @@ void ScriptWorker::hostReply(quint64 job, quint64 generation, quint64 cancellati
     resume(0);
 }
 
-int ScriptWorker::hostContinuation(lua_State *state, int, lua_KContext) {
+int ScriptWorker::hostContinuation(lua_State *state, int, lua_KContext context) {
     auto *worker = self(state);
-    if (!worker->active_)
+    if (!worker->active_ || worker->active_->job.id != static_cast<quint64>(context))
         return luaL_error(state, "Lua task no longer exists");
-    if (!worker->checkCurrentBudget())
-        return checkBudget(state);
+    if (!worker->checkCurrentStop())
+        return checkStop(state);
     auto result = std::move(worker->active_->reply);
+    luaL_unref(state, LUA_REGISTRYINDEX, worker->active_->hostCoroutineReference);
+    worker->active_->hostCoroutineReference = LUA_NOREF;
+    worker->active_->hostCoroutine = nullptr;
     if (!result.ok) {
         const auto error = result.error.left(worker->limits_.maximumStringBytes).toUtf8();
         lua_pushlstring(state, error.constData(), static_cast<size_t>(error.size()));
@@ -427,28 +601,6 @@ int ScriptWorker::createCallback(lua_State *state) {
     return 1;
 }
 
-int ScriptWorker::compile(lua_State *state) {
-    auto *worker = self(state);
-    if (!worker->active_ || worker->cleanup_)
-        return luaL_error(state, "Cannot compile Lua during cleanup");
-    if (lua_type(state, 1) != LUA_TSTRING)
-        return luaL_error(state, "Lua module source must be text");
-    size_t length = 0;
-    const auto *source = lua_tolstring(state, 1, &length);
-    if (length > static_cast<size_t>(worker->limits_.maximumSourceBytes))
-        return luaL_error(state, "Lua module source exceeds its configured byte limit");
-    try {
-        ValueBudget budget{worker->limits_};
-        const auto name =
-            lua_gettop(state) > 1 ? readText(state, 2, budget).left(4096).toUtf8() : QByteArray("=module");
-        if (luaL_loadbufferx(state, source, length, name.constData(), "t") != LUA_OK)
-            return lua_error(state);
-    } catch (const ValueError &error) {
-        return luaL_error(state, "%s", error.what());
-    }
-    return 1;
-}
-
 int ScriptWorker::releaseRetainedCallback(lua_State *state) {
     if (lua_type(state, 1) != LUA_TSTRING)
         return luaL_error(state, "Callback ID must be a string");
@@ -464,8 +616,8 @@ int ScriptWorker::print(lua_State *state) {
     auto *worker = self(state);
     if (!worker->active_ || worker->cleanup_)
         return 0;
-    if (!worker->checkCurrentBudget())
-        return checkBudget(state);
+    if (!worker->checkCurrentStop())
+        return checkStop(state);
     auto &active = *worker->active_;
     if (active.logMessages++ >= worker->limits_.maximumLogMessagesPerJob)
         return 0;
@@ -491,7 +643,7 @@ int ScriptWorker::print(lua_State *state) {
 
 QString ScriptWorker::stackError(lua_State *state, int status) const {
     if (status == LUA_ERRMEM)
-        return QStringLiteral("Lua task exceeded its memory budget");
+        return QStringLiteral("Lua allocator could not allocate memory");
     if (lua_type(state, -1) != LUA_TSTRING)
         return QStringLiteral("Lua task failed with a non-string error");
     size_t size = 0;
@@ -522,6 +674,13 @@ void ScriptWorker::disposeCoroutine() {
         return;
     const bool previousCleanup = cleanup_;
     cleanup_ = true;
+    if (active_->hostCoroutineReference >= 0) {
+        if (active_->hostCoroutine != active_->coroutine) {
+            lua_sethook(active_->hostCoroutine, hook, LUA_MASKCOUNT, 1);
+            lua_closethread(active_->hostCoroutine, state_);
+        }
+        luaL_unref(state_, LUA_REGISTRYINDEX, active_->hostCoroutineReference);
+    }
     lua_sethook(active_->coroutine, hook, LUA_MASKCOUNT, 1);
     lua_closethread(active_->coroutine, state_);
     luaL_unref(state_, LUA_REGISTRYINDEX, active_->reference);
@@ -533,6 +692,7 @@ void ScriptWorker::finish(ScriptResult result) {
     if (!active_)
         return;
     hostDeadline_.stop();
+    statistics_->executionStarted.store(0, std::memory_order_release);
     statistics_->activeHostJob.store(0, std::memory_order_release);
     disposeCoroutine();
     auto job = std::move(active_->job);
@@ -609,6 +769,7 @@ void ScriptWorker::shutdown() {
     shutdown_ = true;
     cancel();
     closeState();
+    QThread::currentThread()->quit();
 }
 
 } // namespace lua_runtime::detail

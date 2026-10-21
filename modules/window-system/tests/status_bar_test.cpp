@@ -10,6 +10,8 @@
 #include <QMenu>
 #include <QPointer>
 #include <QTest>
+#include <QToolButton>
+#include <QDir>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -55,6 +57,10 @@ private slots:
     void menuActionsDoNotOutliveTheManager();
     void controlVisibilityCallbacksMayDeferManagerDestruction();
     void heightFollowsThemeMetricAndFont();
+    void commandItemsUseTheirOwnWindowAndSupportKeyboard();
+    void commandItemsUseTheirOwnWindowAndSupportKeyboard_data();
+    void removedCommandItemsCancelQueuedClicks();
+    void emptyCommandItemsPreserveVisibilityPreferences();
 };
 
 void StatusBarTest::contextMenuReflectsEachControlAndCommandsUpdateIt()
@@ -208,6 +214,84 @@ void StatusBarTest::heightFollowsThemeMetricAndFont()
     bar->setFont(font);
     QTRY_VERIFY(bar->fontMetrics().height() + 6 > 22);
     QTRY_COMPARE(bar->height(), bar->fontMetrics().height() + 6);
+}
+
+void StatusBarTest::commandItemsUseTheirOwnWindowAndSupportKeyboard_data()
+{
+    QTest::addColumn<QString>("appearance");
+    for (const auto& name : {QString("light"), QString("dark"), QString("black")})
+        QTest::newRow(qPrintable(name)) << name;
+}
+
+void StatusBarTest::commandItemsUseTheirOwnWindowAndSupportKeyboard()
+{
+    QFETCH(QString, appearance);
+    WindowManager manager;
+    auto theme = manager.theme();
+    if (appearance != "light") {
+        theme.statusBackground = QColor(appearance == "black" ? "#000000" : "#252526");
+        theme.statusText = QColor("#f0f0f0"); theme.accentSoft = QColor("#393343");
+        theme.text = QColor("#f0f0f0");
+    }
+    manager.setTheme(theme);
+    const auto first = manager.createWindow(), second = manager.createWindow();
+    const auto firstTab = manager.addTab(first, new QLabel("First"), {"First", {}, {}});
+    manager.addTab(second, new QLabel("Second"), {"Second", {}, {}});
+    QVector<CommandContext> calls;
+    QVERIFY(manager.commands().add({"test.status", "Status", {}, {}, {},
+        [&](const CommandContext& context) { calls.append(context); return true; }}));
+    QVERIFY(!manager.registerStatusItem({"bad", "Bad", {}, " invalid "}));
+    QVERIFY(manager.registerStatusItem({"running", "Lua 脚本运行中", "停止正在运行的 Lua 脚本", "test.status"}));
+    auto* button = status(manager, first)->findChild<QToolButton*>("CustomStatusCommandItem"); QVERIFY(button);
+    manager.showWindow(first); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(first)));
+    QVERIFY(!button->isHidden()); QVERIFY(button->focusPolicy() & Qt::TabFocus);
+    QVERIFY(status(manager, first)->rect().contains(QRect(button->mapTo(status(manager, first), QPoint()), button->size())));
+    QTest::mouseClick(button, Qt::LeftButton); QTRY_COMPARE(calls.size(), 1);
+    QCOMPARE(calls.first().window, first); QCOMPARE(calls.first().tab, firstTab);
+    button->setFocus(); QTest::keyClick(button, Qt::Key_Space); QTRY_COMPARE(calls.size(), 2);
+    QCOMPARE(calls.last().window, first);
+    const auto review = qEnvironmentVariable("MUXORA_UI_REVIEW_DIRECTORY");
+    if (!review.isEmpty()) {
+        QVERIFY(QDir().mkpath(review));
+        QVERIFY(status(manager, first)->grab().save(QDir(review).filePath("status-" + appearance + ".png")));
+    }
+}
+
+void StatusBarTest::removedCommandItemsCancelQueuedClicks()
+{
+    auto manager = std::make_unique<WindowManager>();
+    const auto window = manager->createWindow();
+    int calls = 0;
+    QVERIFY(manager->commands().add({"test.status", "Status", {}, {}, {},
+        [&](const CommandContext&) { ++calls; return true; }}));
+    QVERIFY(manager->registerStatusItem({"running", "Running", {}, "test.status"}));
+    auto* button = status(*manager, window)->findChild<QToolButton*>("CustomStatusCommandItem"); QVERIFY(button);
+    button->click(); QVERIFY(manager->removeStatusItem("running"));
+    // Reusing the same ID and command must not revive the old button's click.
+    QVERIFY(manager->registerStatusItem({"running", "Replacement", {}, "test.status"}));
+    QCoreApplication::processEvents(); QCOMPARE(calls, 0);
+    button = status(*manager, window)->findChild<QToolButton*>("CustomStatusCommandItem"); QVERIFY(button);
+    button->click(); QCoreApplication::processEvents(); QCOMPARE(calls, 1);
+    calls = 0;
+    button->click(); manager.reset(); QCoreApplication::processEvents(); QCOMPARE(calls, 0);
+}
+
+void StatusBarTest::emptyCommandItemsPreserveVisibilityPreferences()
+{
+    WindowManager manager; const auto window = manager.createWindow();
+    QVERIFY(manager.commands().add({"test.status", "Status", {}, {}, {}, [](const CommandContext&) { return true; }}));
+    QVERIFY(manager.registerStatusItem({"running", {}, {}, "test.status"}));
+    auto* button = status(manager, window)->findChild<QToolButton*>("CustomStatusCommandItem"); QVERIFY(button);
+    QVERIFY(button->isHidden());
+    std::unique_ptr<QMenu> menu(status(manager, window)->createContextMenu());
+    QVERIFY(itemAction(menu.get(), "running"));
+    QCOMPARE(itemAction(menu.get(), "running")->text(), QString("Status"));
+    QVERIFY(manager.setStatusItemText("running", "Running")); QVERIFY(!button->isHidden());
+    QVERIFY(manager.setStatusItemVisible(window, "running", false)); QVERIFY(button->isHidden());
+    QVERIFY(manager.setStatusItemText("running", {}));
+    QVERIFY(manager.setStatusItemText("running", "Running again")); QVERIFY(button->isHidden());
+    QVERIFY(manager.setStatusItemVisible(window, "running", true)); QVERIFY(!button->isHidden());
+    QVERIFY(manager.setStatusItemText("running", {})); QVERIFY(button->isHidden());
 }
 
 QTEST_MAIN(StatusBarTest)

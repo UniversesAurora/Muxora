@@ -331,6 +331,8 @@ QStatusBar, QWidget#StatusBar { background: @status; color: @statusText; border:
 QStatusBar QLabel, QWidget#StatusBar QLabel { color: @statusText; }
 QStatusBar::item { border: none; }
 QStatusBar QToolButton, QWidget#StatusBar QToolButton { color: @statusText; }
+QWidget#StatusBar QToolButton#CustomStatusCommandItem { background: transparent; border: none; padding: 0 4px; min-height: 0; }
+QWidget#StatusBar QToolButton#CustomStatusCommandItem:hover, QWidget#StatusBar QToolButton#CustomStatusCommandItem:focus { background: @soft; color: @text; }
 QToolTip { background: @surface; color: @text; border: 1px solid @border; border-radius: @radiuspx; padding: 4px 6px; }
 QCheckBox, QRadioButton { spacing: 5px; }
 QCheckBox::indicator, QRadioButton::indicator { width: 14px; height: 14px; }

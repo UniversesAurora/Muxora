@@ -2,6 +2,7 @@
 #include <window_system_lua/script_host.hpp>
 #include <window_system/window_manager.hpp>
 #include <QApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
@@ -67,7 +68,12 @@ class ScriptHostTest final : public QObject {
     void eventCallbacksPreserveOrderAndReleaseQueuedValues();
     void overloadedRuntimeDoesNotStrandEventResources();
     void timersAreCancelledOnUnloadAndOneShotsReleaseCallbacks();
-    void pureLuaModulesAreCachedAndCannotEscapeTheirDirectory();
+    void standardModulesUseUserPathsAndPackageLoaded();
+    void standardModulesAllowUserSearchersAndBinaryChunks();
+    void standardModulesReportMissingFilesAndUnavailableCLibraries();
+    void nestedCoroutinesCanCallTheWindowHost();
+    void cancellingANestedHostCallRejectsStaleReplies();
+    void osExitUsesTheHostAndDoesNotTerminateAnExternalHost();
     void invalidArgumentsDoNotPartiallyReplaceBindings();
     void scriptEffectsRespectCloseGuard();
     void registrationObserversCanDestroyTheScriptHost();
@@ -520,45 +526,195 @@ void ScriptHostTest::timersAreCancelledOnUnloadAndOneShotsReleaseCallbacks() {
     QVERIFY(reply.values[0].toBool());
     QCOMPARE(host.resourceCounts()["timers"].toInt(), 0);
 }
-void ScriptHostTest::pureLuaModulesAreCachedAndCannotEscapeTheirDirectory() {
+void ScriptHostTest::standardModulesUseUserPathsAndPackageLoaded() {
     WindowManager manager;
     auto window = manager.createWindow();
     addEditor(manager, window);
     ScriptHost host(&manager);
     QTemporaryDir root;
     QVERIFY(root.isValid());
-    QFile file(root.filePath("sample.lua"));
-    QVERIFY(file.open(QIODevice::WriteOnly));
-    QVERIFY(file.write("loaded=(loaded or 0)+1;return {value=42}") > 0);
-    file.close();
+    QVERIFY(QDir(root.path()).mkpath("a"));
+    QVERIFY(QDir(root.path()).mkpath("folder"));
+    const auto write = [&root](const QString &name, const QByteArray &source) {
+        QFile file(root.filePath(name));
+        return file.open(QIODevice::WriteOnly) && file.write(source) == source.size();
+    };
+    QVERIFY(write("a.lua", "loaded=(loaded or 0)+1;return {value=42}"));
+    QVERIFY(write("a/b.lua", "return {nested=71}"));
+    QVERIFY(write("folder/init.lua", "return {directory=93}"));
+    QVERIFY(write("empty.lua", "emptyLoads=(emptyLoads or 0)+1"));
+    QVERIFY(write("false_value.lua", "falseLoads=(falseLoads or 0)+1;return false"));
     host.setModuleDirectory(root.path());
     QVERIFY(initialize(host));
-    auto reply = run(host, "return require('sample').value,require('sample').value,loaded");
+    auto reply = run(host, R"lua(
+      local first=require('a')
+      assert(first==require('a') and package.loaded.a==first and loaded==1)
+      assert(require('a.b').nested==71 and require('folder').directory==93)
+      assert(require('empty')==true and require('empty')==true and emptyLoads==1)
+      assert(require('false_value')==false and require('false_value')==false and falseLoads==2)
+      package.loaded.a={value=52}
+      assert(require('a').value==52)
+      package.loaded.a=nil
+      assert(require('a').value==42 and loaded==2)
+      return package.path
+    )lua");
     QVERIFY2(reply.ok, qPrintable(reply.error));
-    QCOMPARE(reply.values, (QVariantList{qlonglong(42), qlonglong(42), qlonglong(1)}));
-    reply = run(host, "return require('../sample')");
+    const auto prefix = root.path() + "/?.lua;" + root.path() + "/?/init.lua;";
+    QVERIFY(reply.values[0].toString().startsWith(prefix));
+    QVERIFY(reply.values[0].toString().size() > prefix.size());
+    QVERIFY(initialize(host));
+    reply = run(host, "assert(package.loaded.a==nil);return require('a').value,loaded");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, (QVariantList{qlonglong(42), qlonglong(1)}));
+}
+void ScriptHostTest::standardModulesAllowUserSearchersAndBinaryChunks() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+    QFile file(outside.filePath("outside-name.lua"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    const auto largeSource = QByteArray("--") + QByteArray(1024 * 1024 + 1, 'x') + "\nreturn 73";
+    QCOMPARE(file.write(largeSource), largeSource.size());
+    file.close();
+    QFile byteSource(root.filePath("bytes.lua"));
+    QVERIFY(byteSource.open(QIODevice::WriteOnly));
+    const QByteArray bytes("return '\xff'");
+    QCOMPARE(byteSource.write(bytes), bytes.size());
+    byteSource.close();
+    host.setModuleDirectory(root.path());
+    host.setServiceHandler([&](QString method, QVariantList, QVariantMap) {
+        return method == "fixture.paths"
+                   ? ScriptResult{true, {QVariantMap{{"outside", outside.path()}, {"root", root.path()}}}, {}}
+                   : ScriptResult{false, {}, "Unexpected host call"};
+    });
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+      local paths=muxora.call('fixture.paths')
+      package.path=paths.outside..'/?.lua;'..package.path
+      assert(require('outside-name')==73)
+      assert(require('bytes'):byte()==255)
+      package.preload.fixture=function(name) return {name=name} end
+      assert(require('fixture').name=='fixture')
+      local binary=assert(io.open(paths.root..'/binary.lua','wb'))
+      assert(binary:write(string.dump(function()return {binary=94}end)))
+      assert(binary:close())
+      assert(require('binary').binary==94)
+      return true
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+}
+void ScriptHostTest::standardModulesReportMissingFilesAndUnavailableCLibraries() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+      assert(package.cpath=='')
+      local ok,message=pcall(require,'muxora_fixture_does_not_exist')
+      assert(not ok and message:find("module 'muxora_fixture_does_not_exist' not found",1,true))
+      assert(message:find('no file',1,true))
+      local module,problem=package.loadlib('muxora_fixture_missing.dll','luaopen_fixture')
+      assert(module==nil and type(problem)=='string' and #problem>0)
+      local legacy,legacyError=pcall(muxora.call,'module.read','a')
+      assert(not legacy and legacyError:find('Unknown Lua host method: module.read',1,true))
+      return true
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+}
+void ScriptHostTest::nestedCoroutinesCanCallTheWindowHost() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+      local outer=coroutine.create(function()
+        local inner=coroutine.create(function()
+          local ok,changed=pcall(muxora.tabs.rename,nil,'Nested rename')
+          assert(ok and changed)
+          return muxora.context().tab
+        end)
+        local ok,value=coroutine.resume(inner)
+        assert(ok and coroutine.status(inner)=='dead')
+        return value
+      end)
+      local ok,tab=coroutine.resume(outer)
+      assert(ok and coroutine.status(outer)=='dead')
+      local wrapped=coroutine.wrap(function()
+        coroutine.yield('visible',nil,8)
+        return muxora.context().tab
+      end)
+      local first=table.pack(wrapped())
+      assert(first.n==3 and first[1]=='visible' and first[2]==nil and first[3]==8)
+      assert(wrapped()==tab)
+      return tab
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
+    QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Nested rename"));
+}
+void ScriptHostTest::cancellingANestedHostCallRejectsStaleReplies() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window, "Unchanged");
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    int calls = 0;
+    host.setServiceHandler([&](QString method, QVariantList, QVariantMap) {
+        if (method != "fixture.cancel")
+            return ScriptResult{false, {}, "Unexpected host call"};
+        ++calls;
+        host.runtime()->cancelAll();
+        return ScriptResult{true, {true}, {}};
+    });
+    const auto reply = run(host, R"lua(
+      local nested=coroutine.create(function()
+        return pcall(muxora.call,'fixture.cancel')
+      end)
+      pcall(coroutine.resume,nested)
+      muxora.tabs.rename(nil,'Must not execute')
+    )lua");
     QVERIFY(!reply.ok);
-    QVERIFY(!reply.error.isEmpty());
-    QFile invalid(root.filePath("invalid.lua"));
-    QVERIFY(invalid.open(QIODevice::WriteOnly));
-    const QByteArray invalidSource("return '\xff'");
-    QCOMPARE(invalid.write(invalidSource), invalidSource.size());
-    invalid.close();
-    reply = run(host, "return require('invalid')");
-    QVERIFY(!reply.ok);
-    QVERIFY(reply.error.contains("UTF-8"));
-    const QList<QByteArray> incompleteTails{QByteArray::fromHex("c2"), QByteArray::fromHex("e282")};
-    for (int index = 0; index < incompleteTails.size(); ++index) {
-        const auto module = QStringLiteral("incomplete_%1").arg(index);
-        QFile incomplete(root.filePath(module + ".lua"));
-        QVERIFY(incomplete.open(QIODevice::WriteOnly));
-        const QByteArray incompleteSource = QByteArray("return 42 ") + incompleteTails[index];
-        QCOMPARE(incomplete.write(incompleteSource), incompleteSource.size());
-        incomplete.close();
-        reply = run(host, QStringLiteral("return require('%1')").arg(module));
-        QVERIFY2(!reply.ok, qPrintable(module + " silently accepted incomplete UTF-8"));
-        QVERIFY(reply.error.contains("UTF-8"));
-    }
+    QVERIFY(reply.error.contains("cancel", Qt::CaseInsensitive));
+    QCOMPARE(calls, 1);
+    QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Unchanged"));
+    const auto recovered = run(host, "return muxora.context().tab");
+    QVERIFY2(recovered.ok, qPrintable(recovered.error));
+    QCOMPARE(recovered.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
+}
+void ScriptHostTest::osExitUsesTheHostAndDoesNotTerminateAnExternalHost() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    auto reply = run(host, R"lua(
+      local ok,message=pcall(os.exit,17,true)
+      assert(not ok and message:find('Unknown Lua host method: app.exit',1,true))
+      return muxora.context().tab
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
+    int calls = 0;
+    host.setServiceHandler([&](QString method, QVariantList args, QVariantMap) {
+        if (method != "app.exit" || !args.isEmpty())
+            return ScriptResult{false, {}, "Unexpected host call"};
+        ++calls;
+        return ScriptResult{true, {false}, {}};
+    });
+    reply = run(host, "assert(os.exit(3,true)==false);assert(muxora.app.exit()==false)");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(calls, 2);
+    QVERIFY(manager.model().window(window));
+    QVERIFY(manager.model().tab(tab));
 }
 void ScriptHostTest::windowDisplayStateUsesSharedCommands_data() {
     QTest::addColumn<bool>("floating");

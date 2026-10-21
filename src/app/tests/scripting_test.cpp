@@ -11,11 +11,18 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProcess>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <algorithm>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 using namespace window_system;
 namespace {
@@ -26,6 +33,27 @@ bool write(const QString &path, QByteArray data) {
 QByteArray read(const QString &path) {
     QFile f(path);
     return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray{};
+}
+bool releaseBlockedProcess(QTemporaryDir &directory) {
+    bool valid = false;
+    const auto pid = read(directory.filePath("blocked-ready")).toULongLong(&valid);
+    if (!valid || !pid)
+        return false;
+#ifdef Q_OS_WIN
+    const auto process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
+    if (!process)
+        return false;
+    const auto close = qScopeGuard([&] { CloseHandle(process); });
+    if (!write(directory.filePath("release"), "release"))
+        return false;
+    if (WaitForSingleObject(process, 5000) != WAIT_OBJECT_0)
+        return false;
+    DWORD result = 1;
+    return GetExitCodeProcess(process, &result) && result == 0;
+#else
+    Q_UNUSED(pid);
+    return false;
+#endif
 }
 lua_runtime::ScriptResult evaluate(window_system_lua::ScriptHost *host, QString code) {
     QSignalSpy done(host->runtime(), &lua_runtime::ScriptRuntime::finished);
@@ -55,6 +83,14 @@ class ScriptingTest final : public QObject {
     void notificationsHaveBoundedLifetimeAndPlainText();
     void externalProgramArgumentsAreNotShellText();
     void launchCompletedObserverMayDestroyServices();
+    void utf8ProcessManifestRetainsApplicationCompatibility();
+    void standardLibraryHandlesChinesePathsAndEnvironment();
+    void directScriptTransportAllowsFilesLargerThanOneMiB();
+    void osExitUsesApplicationCommandAndHonorsClosePermission();
+    void osExitSavesTheActualApplicationLayout();
+    void longRunningStatusOffersStopAndClearsAfterwards();
+    void blockedReloadReportsThePendingStop();
+    void blockedStandardCallDoesNotDelayProcessExit();
 };
 void ScriptingTest::startupLoadsScriptCommandsBeforeUserBindings() {
     QTemporaryDir dir;
@@ -308,6 +344,246 @@ void ScriptingTest::launchCompletedObserverMayDestroyServices() {
     QCOMPARE(published, 0);
     QTRY_VERIFY(QFileInfo::exists(output));
     QCOMPARE(QJsonDocument::fromJson(read(output)).array(), QJsonArray{});
+}
+void ScriptingTest::utf8ProcessManifestRetainsApplicationCompatibility() {
+#ifdef Q_OS_WIN
+    QCOMPARE(GetACP(), UINT(CP_UTF8));
+    const auto module = GetModuleHandleW(nullptr);
+    const auto resource = FindResourceW(module, MAKEINTRESOURCEW(1), MAKEINTRESOURCEW(24));
+    QVERIFY(resource);
+    const auto loaded = LoadResource(module, resource);
+    QVERIFY(loaded);
+    const QByteArray manifest(static_cast<const char *>(LockResource(loaded)),
+                              int(SizeofResource(module, resource)));
+    QVERIFY(manifest.contains("UTF-8</activeCodePage>"));
+    QCOMPARE(manifest.count("<activeCodePage"), 1);
+    QCOMPARE(manifest.count("<requestedExecutionLevel"), 1);
+    QVERIFY(manifest.contains("level=\"asInvoker\""));
+    QVERIFY(manifest.contains("longPathAware"));
+    QVERIFY(manifest.contains("8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a"));
+#else
+    QVERIFY(true); // Process ANSI code pages are a Windows-only facility.
+#endif
+}
+void ScriptingTest::standardLibraryHandlesChinesePathsAndEnvironment() {
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const auto directory = temporary.filePath(QStringLiteral("中文目录 有空格"));
+    QVERIFY(QDir().mkpath(QDir(directory).filePath("lua/中文模块")));
+    QVERIFY(write(QDir(directory).filePath("lua/中文模块/init.lua"), "return {value='模块内容'}"));
+    constexpr auto variable = "MUXORA_LUA_UTF8_TEST";
+    const auto previous = qgetenv(variable);
+    const bool wasSet = qEnvironmentVariableIsSet(variable);
+    const auto restore = qScopeGuard([&] {
+        if (wasSet)
+            qputenv(variable, previous);
+        else
+            qunsetenv(variable);
+    });
+    QVERIFY(qputenv(variable, QStringLiteral("中文环境值").toUtf8()));
+    WindowManager manager;
+    manager.createWindow();
+    muxora::UserPreferences preferences(directory);
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    QVERIFY(initialized[0][0].toBool());
+    const auto source = QStringLiteral(R"(
+        local original = [=[%1/原始文件.txt]=]
+        local renamed = [=[%1/重命名 文件.txt]=]
+        local file = assert(io.open(original, 'wb'))
+        assert(file:write('文件正文')); assert(file:close())
+        assert(os.rename(original, renamed))
+        file = assert(io.open(renamed, 'rb'))
+        local contents = file:read('*a'); assert(file:close())
+        local first = require('中文模块')
+        return contents, os.getenv('MUXORA_LUA_UTF8_TEST'), first.value,
+               first == require('中文模块')
+    )").arg(QDir::fromNativeSeparators(directory));
+    const auto reply = evaluate(setup.host(), source);
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values,
+             (QVariantList{QStringLiteral("文件正文"), QStringLiteral("中文环境值"),
+                           QStringLiteral("模块内容"), true}));
+    QCOMPARE(read(QDir(directory).filePath(QStringLiteral("重命名 文件.txt"))),
+             QStringLiteral("文件正文").toUtf8());
+}
+void ScriptingTest::directScriptTransportAllowsFilesLargerThanOneMiB() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QByteArray source("--");
+    source += QByteArray(1024 * 1024 + 32, ' ');
+    source += "\nlarge_script_ran=true";
+    QVERIFY(write(directory.filePath("large.lua"), source));
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    muxora::UserPreferences preferences(directory.path());
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    QVERIFY(manager.execute("lua.run", {{"file", "large.lua"}}, window));
+    const auto reply = evaluate(setup.host(), "return large_script_ran");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+}
+void ScriptingTest::osExitUsesApplicationCommandAndHonorsClosePermission() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    QVERIFY(!tab.isNull());
+    int commands = 0;
+    int closeRequests = 0;
+    manager.commands().add({"application.exit", "Exit", "File", {}, {}, [&](const CommandContext &) {
+        ++commands;
+        return manager.requestCloseAllWindows();
+    }});
+    manager.setCloseGuard([&](const QVector<TabId> &tabs) {
+        ++closeRequests;
+        return tabs.isEmpty();
+    });
+    muxora::UserPreferences preferences(directory.path());
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    const auto reply = evaluate(setup.host(), "return os.exit(57,true), 'still running'");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, (QVariantList{false, QStringLiteral("still running")}));
+    QCOMPARE(commands, 1);
+    QCOMPARE(closeRequests, 1);
+    QVERIFY(manager.model().window(window));
+    QVERIFY(manager.model().tab(tab));
+}
+void ScriptingTest::osExitSavesTheActualApplicationLayout() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(QDir().mkpath(directory.filePath("User")));
+    QVERIFY(write(directory.filePath("User/init.lua"), "os.exit(73,true)"));
+    const auto binary = QDir(QCoreApplication::applicationDirPath()).filePath("../../bin/muxora.exe");
+    QVERIFY(QFileInfo::exists(binary));
+    QProcess child;
+    child.setProgram(binary);
+    child.setArguments({"--fresh", "--state-dir", directory.path()});
+    child.start();
+    QVERIFY(child.waitForStarted());
+    QVERIFY2(child.waitForFinished(10000), qPrintable(child.errorString()));
+    QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(child.exitCode(), 0);
+    const auto layout = QJsonDocument::fromJson(read(directory.filePath("window-layout.json"))).object();
+    QVERIFY(!layout.value("windows").toArray().isEmpty());
+    QVERIFY(!layout.value("model").toObject().isEmpty());
+}
+void ScriptingTest::longRunningStatusOffersStopAndClearsAfterwards() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    muxora::UserPreferences preferences(directory.path());
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    QVERIFY(!manager.execute("lua.stop", {}, window));
+    const auto job = setup.host()->run("while true do end");
+    QVERIFY(job);
+    const auto runningText = [&manager] {
+        const auto items = manager.statusItems();
+        for (const auto &item : items)
+            if (item.id == QStringLiteral("lua.running"))
+                return item.text;
+        return QString();
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(!runningText().isEmpty(), 4000);
+    const auto items = manager.statusItems();
+    const auto status = std::find_if(items.cbegin(), items.cend(), [](const StatusItem &item) {
+        return item.id == QStringLiteral("lua.running");
+    });
+    QVERIFY(status != items.cend());
+    QCOMPARE(status->command, QStringLiteral("lua.stop"));
+    QVERIFY(!status->text.isEmpty());
+    QVERIFY(manager.execute("lua.stop", {}, window));
+    QTRY_VERIFY(runningText().isEmpty());
+    QTRY_VERIFY(!setup.host()->runtime()->isRunning());
+    const auto reply = evaluate(setup.host(), "return 42");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{42});
+}
+void ScriptingTest::blockedReloadReportsThePendingStop() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    WindowManager manager;
+    manager.createWindow();
+    muxora::UserPreferences preferences(directory.path());
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    bool released = false;
+    const auto release = qScopeGuard([&] {
+        if (!released && !releaseBlockedProcess(directory)) {
+            directory.setAutoRemove(false);
+            qWarning() << "Preserving blocked process fixture after failed release:" << directory.path();
+        }
+    });
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    QSignalSpy diagnostics(&setup, &muxora::AppScriptingSetup::diagnostic);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    const auto helper = QDir(QCoreApplication::applicationDirPath()).filePath("muxora-script-child.exe");
+    const auto command = QStringLiteral("\"\"%1\" --wait-for-release \"%2\" \"%3\"\"")
+                             .arg(QDir::toNativeSeparators(helper),
+                                  QDir::toNativeSeparators(directory.filePath("blocked-ready")),
+                                  QDir::toNativeSeparators(directory.filePath("release")));
+    QVERIFY(setup.host()->run(QStringLiteral("os.execute([=[%1]=])").arg(command)));
+    QTRY_VERIFY(QFile::exists(directory.filePath("blocked-ready")));
+    QVERIFY(setup.reload());
+    QTRY_VERIFY_WITH_TIMEOUT(std::any_of(diagnostics.cbegin(), diagnostics.cend(), [](const auto &entry) {
+        return entry[0].toString().contains(QStringLiteral("脚本仍在运行"));
+    }), 4000);
+    QVERIFY(!setup.host()->ready());
+    released = releaseBlockedProcess(directory);
+    QVERIFY(released);
+    QTRY_COMPARE(initialized.size(), 2);
+    QVERIFY(initialized.last()[0].toBool());
+}
+void ScriptingTest::blockedStandardCallDoesNotDelayProcessExit() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    bool released = false;
+    const auto release = qScopeGuard([&] {
+        if (!released && !releaseBlockedProcess(directory)) {
+            directory.setAutoRemove(false);
+            qWarning() << "Preserving blocked process fixture after failed release:" << directory.path();
+        }
+    });
+    QProcess child;
+    child.setProgram(QDir(QCoreApplication::applicationDirPath()).filePath("muxora-scripting-exit-child.exe"));
+    child.setArguments({directory.path()});
+    child.start();
+    QVERIFY(child.waitForStarted());
+    QVERIFY2(child.waitForFinished(10000), qPrintable(child.errorString()));
+    // Windows QElapsedTimer uses the machine-wide QPC reference. Capture the
+    // instant after the process handle signals, before reading any reports.
+    QElapsedTimer completed;
+    completed.start();
+    QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+    QVERIFY2(child.exitCode() == 0, child.readAllStandardError().constData());
+    const auto result = QJsonDocument::fromJson(read(directory.filePath("shutdown.json"))).object();
+    QVERIFY(!result.isEmpty());
+    const auto elapsed = result.value("elapsed_ms").toInt(-1);
+    QVERIFY2(elapsed >= 0 && elapsed < 2000, qPrintable(QString::number(elapsed)));
+    bool timestampValid = false;
+    const auto started = read(directory.filePath("shutdown-started")).toLongLong(&timestampValid);
+    QVERIFY(timestampValid);
+    QVERIFY(QElapsedTimer::isMonotonic());
+    const auto processElapsed = completed.msecsSinceReference() - started;
+    QVERIFY2(processElapsed >= 0 && processElapsed < 2000,
+             qPrintable(QString::number(processElapsed)));
+    QVERIFY(QFile::exists(directory.filePath("blocked-ready")));
+    QVERIFY(!QFile::exists(directory.filePath("release")));
+    released = releaseBlockedProcess(directory);
+    QVERIFY(released);
 }
 QTEST_MAIN(ScriptingTest)
 #include "scripting_test.moc"

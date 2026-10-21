@@ -16,17 +16,14 @@ struct ScriptResult {
 };
 
 struct RuntimeLimits {
-    quint64 memoryBytes = 32 * 1024 * 1024;
-    quint64 instructionLimit = 2'000'000;
-    int timeLimitMs = 100;
     int hostReplyTimeoutMs = 30'000;
     int maximumPendingJobs = 128;
-    int maximumCallbacks = 1024;
-    int maximumSourceBytes = 1024 * 1024;
-    quint64 maximumQueuedBytes = 8 * 1024 * 1024;
-    int maximumValueNodes = 4096;
+    int maximumCallbacks = 1'000'000;
+    int maximumSourceBytes = 64 * 1024 * 1024;
+    quint64 maximumQueuedBytes = 256 * 1024 * 1024;
+    int maximumValueNodes = 1'000'000;
     int maximumValueDepth = 32;
-    int maximumStringBytes = 1024 * 1024;
+    int maximumStringBytes = 64 * 1024 * 1024;
     int maximumLogMessagesPerJob = 128;
     int maximumLogMessageBytes = 16 * 1024;
 };
@@ -59,7 +56,14 @@ class ScriptRuntime final : public QObject {
     // Reset cancels outstanding jobs, invalidates callback IDs, and drops the
     // complete VM. Hosts may execute their bootstrap after resetFinished().
     void reset();
+    // Cooperatively stop existing jobs. A blocking standard-library C call
+    // cannot observe this request until it returns; later jobs remain usable.
     void cancelAll();
+
+    // True only while executing Lua or a synchronous standard-library call,
+    // not while awaiting a host reply. These accessors are thread-safe.
+    [[nodiscard]] bool isRunning() const;
+    [[nodiscard]] bool isLongRunning() const;
 
     [[nodiscard]] quint64 memoryBytes() const;
     [[nodiscard]] quint64 peakMemoryBytes() const;
@@ -73,6 +77,12 @@ class ScriptRuntime final : public QObject {
     void finished(quint64 jobId, lua_runtime::ScriptResult result);
     void logMessage(QString message);
     void resetFinished();
+    void runningChanged(bool running);
+    // A continuous execution lasting two seconds, with no automatic stop.
+    void longRunningChanged(bool running);
+    // Reset is still pending after two seconds in a blocking C call. The
+    // original resetFinished() is emitted once the call actually returns.
+    void resetBlocked();
 
   private:
     struct Private;

@@ -1,6 +1,24 @@
+function(muxora_use_utf8_process_manifest target)
+    if(NOT WIN32)
+        return()
+    endif()
+    # A manifest source tells Qt not to generate a second default manifest.
+    # Preserve Qt's normal compatibility, long-path and UAC declarations in
+    # this file; only activeCodePage differs from that generated default.
+    target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/muxora.manifest")
+    if(MSVC)
+        target_link_options(${target} PRIVATE /MANIFEST:NO /MANIFESTUAC:NO)
+    else()
+        enable_language(RC)
+        target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/muxora.rc")
+        target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
+endfunction()
+
 qt_add_executable(muxora WIN32 main.cpp state_paths.cpp user_preferences.cpp
     scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp
     ../workspace_host/placeholder_content.cpp)
+muxora_use_utf8_process_manifest(muxora)
 qt_add_lrelease(TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     QM_FILES_OUTPUT_VARIABLE muxora_translation_files LRELEASE_TARGET muxora_lrelease OPTIONS -nounfinished)
 qt_add_resources(muxora muxora_translations PREFIX "/muxora/i18n"
@@ -50,10 +68,12 @@ if(BUILD_TESTING)
     set_tests_properties(muxora.user-preferences PROPERTIES LABELS model)
 
     qt_add_executable(muxora-script-child tests/script_child.cpp)
+    muxora_use_utf8_process_manifest(muxora-script-child)
     target_link_libraries(muxora-script-child PRIVATE Qt6::Core)
     target_compile_features(muxora-script-child PRIVATE cxx_std_20)
     qt_add_executable(muxora-scripting-test tests/scripting_test.cpp
         scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp user_preferences.cpp)
+    muxora_use_utf8_process_manifest(muxora-scripting-test)
     target_link_libraries(muxora-scripting-test PRIVATE WindowSystemLua::Host Qt6::Test)
     if(WIN32)
         target_link_libraries(muxora-scripting-test PRIVATE winmm)
@@ -61,10 +81,20 @@ if(BUILD_TESTING)
     target_compile_features(muxora-scripting-test PRIVATE cxx_std_20)
     target_include_directories(muxora-scripting-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set_target_properties(muxora-scripting-test PROPERTIES AUTOMOC ON)
-    add_dependencies(muxora-scripting-test muxora-script-child)
+    qt_add_executable(muxora-scripting-exit-child tests/scripting_exit_child.cpp
+        scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp user_preferences.cpp)
+    muxora_use_utf8_process_manifest(muxora-scripting-exit-child)
+    target_link_libraries(muxora-scripting-exit-child PRIVATE WindowSystemLua::Host)
+    if(WIN32)
+        target_link_libraries(muxora-scripting-exit-child PRIVATE winmm)
+    endif()
+    target_compile_features(muxora-scripting-exit-child PRIVATE cxx_std_20)
+    target_include_directories(muxora-scripting-exit-child PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(muxora-scripting-exit-child PROPERTIES AUTOMOC ON)
+    add_dependencies(muxora-scripting-test muxora-script-child muxora-scripting-exit-child muxora)
     add_test(NAME muxora.scripting COMMAND muxora-scripting-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/scripting-results.txt,txt)
-    set_tests_properties(muxora.scripting PROPERTIES TIMEOUT 60 LABELS widget)
+    set_tests_properties(muxora.scripting PROPERTIES TIMEOUT 60 LABELS desktop RUN_SERIAL TRUE)
 endif()
 
 # MSVC reads sources in the system code page unless told otherwise; these

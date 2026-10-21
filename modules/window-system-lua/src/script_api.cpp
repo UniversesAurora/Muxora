@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: MIT
 #include "script_host_p.hpp"
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QKeySequence>
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QDateTime>
-#include <QStringDecoder>
 #include <algorithm>
 
 namespace window_system_lua {
@@ -409,34 +405,6 @@ void ScriptHost::Private::installScriptApi() {
         if (!pending && runtime)
             runtime->releaseCallback(callback);
         return result(true);
-    };
-    handlers["module.read"] = [this](const Args &a, const Context &) {
-        const auto name = text(a, 0);
-        static const QRegularExpression valid("^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$");
-        if (!valid.match(name).hasMatch() || moduleDirectory.isEmpty())
-            return failure("Invalid module name");
-        const auto root = QFileInfo(moduleDirectory).canonicalFilePath();
-        const auto path =
-            QFileInfo(QDir(root).filePath(QString(name).replace('.', '/') + ".lua")).canonicalFilePath();
-#ifdef Q_OS_WIN
-        constexpr auto pathCase = Qt::CaseInsensitive;
-#else
-        constexpr auto pathCase = Qt::CaseSensitive;
-#endif
-        const auto prefix = root.endsWith('/') ? root : root + '/';
-        if (root.isEmpty() || path.isEmpty() || !path.startsWith(prefix, pathCase))
-            return failure("Module must be inside the configured Lua directory");
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            return failure(file.errorString());
-        const auto source = file.read(1024 * 1024 + 1);
-        if (source.size() > 1024 * 1024)
-            return failure("Lua module exceeds 1 MiB");
-        QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
-        const QString decoded = decoder(source);
-        if (decoder.hasError())
-            return failure("Lua modules must use UTF-8");
-        return Reply{true, {decoded, QStringLiteral("@") + path}, {}};
     };
 }
 } // namespace window_system_lua

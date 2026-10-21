@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QQueue>
+#include <QSet>
 #include <QTimer>
 #include <atomic>
 #include <memory>
@@ -22,6 +23,8 @@ struct SharedStatistics {
     std::atomic<quint64> generation{1};
     std::atomic<quint64> cancellation{1};
     std::atomic<quint64> activeHostJob{0};
+    std::atomic<qint64> executionStarted{0};
+    std::atomic<bool> stopping{false};
 };
 
 struct ScriptJob {
@@ -56,12 +59,13 @@ class ScriptWorker final : public QObject {
     void didReset(quint64 generation);
 
   private:
+    friend struct ScriptWorkerTestAccess;
     struct ActiveJob {
         ScriptJob job;
         lua_State *coroutine = nullptr;
         int reference = -2;
-        quint64 instructions = 0;
-        qint64 elapsedNanoseconds = 0;
+        lua_State *hostCoroutine = nullptr;
+        int hostCoroutineReference = -2;
         int logMessages = 0;
         bool awaitingHost = false;
         bool aborted = false;
@@ -77,12 +81,12 @@ class ScriptWorker final : public QObject {
     QHash<QString, int> callbacks_;
     quint64 nextCallback_ = 0;
     quint64 stateGeneration_ = 0;
-    QElapsedTimer resumeTimer_;
     QTimer hostDeadline_;
     bool cleanup_ = false;
     bool shutdown_ = false;
     bool pumpQueued_ = false;
     QString initializationError_;
+    QSet<lua_State *> executingUserHooks_;
 
     static ScriptWorker *self(lua_State *state);
     static void *allocate(void *user, void *pointer, size_t oldSize, size_t newSize);
@@ -93,9 +97,10 @@ class ScriptWorker final : public QObject {
     static int hostContinuation(lua_State *state, int status, lua_KContext context);
     static int createCallback(lua_State *state);
     static int releaseRetainedCallback(lua_State *state);
-    static int compile(lua_State *state);
     static int print(lua_State *state);
-    static int checkBudget(lua_State *state);
+    static int checkStop(lua_State *state);
+    static int setUserHook(lua_State *state);
+    static int getUserHook(lua_State *state);
 
     bool ensureState();
     void closeState();
@@ -107,7 +112,7 @@ class ScriptWorker final : public QObject {
     void finishQueued(ScriptJob job, const QString &error);
     void disposeCoroutine();
     bool stale(const ScriptJob &job) const;
-    bool checkCurrentBudget();
+    bool checkCurrentStop();
     void setAbort(QString message);
     QString stackError(lua_State *state, int status) const;
 };

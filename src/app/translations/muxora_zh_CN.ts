@@ -305,8 +305,8 @@ Ctrl+Shift+D     移到轻量浮窗
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="156" />
-            <source>Lua 脚本超过 1 MiB 限制。</source>
-            <translation>Lua 脚本超过 1 MiB 限制。</translation>
+            <source>Lua 脚本超过 %1 MiB 传输限制。</source>
+            <translation>Lua 脚本超过 %1 MiB 传输限制。</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="163" />
@@ -413,6 +413,22 @@ Ctrl+Shift+D     移到轻量浮窗
             <location filename="../script_services.cpp" line="220" />
             <source>未知脚本服务：%1</source>
             <translation>未知脚本服务：%1</translation>
+        </message>
+        <message>
+            <source>停止正在运行的 Lua 脚本</source>
+            <translation>停止正在运行的 Lua 脚本</translation>
+        </message>
+        <message>
+            <source>Lua 脚本运行中</source>
+            <translation>Lua 脚本运行中</translation>
+        </message>
+        <message>
+            <source>点击停止正在运行的 Lua 脚本</source>
+            <translation>点击停止正在运行的 Lua 脚本</translation>
+        </message>
+        <message>
+            <source>脚本仍在运行，已请求停止。</source>
+            <translation>脚本仍在运行，已请求停止。</translation>
         </message>
     </context>
     <context>

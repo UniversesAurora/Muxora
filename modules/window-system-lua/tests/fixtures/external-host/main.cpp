@@ -31,8 +31,18 @@ int main(int argc, char **argv) {
             app.exit(3);
             return;
         }
-        checkJob = host.run("assert(muxora.windows.set_title(nil,'External Lua'));"
-                            "assert(muxora.tabs.rename(nil,'Retained content'));return muxora.context().tab");
+        checkJob = host.run(R"lua(
+            local ok,message=pcall(os.exit,1,true)
+            assert(not ok and message:find('Unknown Lua host method: app.exit',1,true))
+            assert(package.cpath=='')
+            assert(type(package.loadlib)=='function' and type(io.open)=='function')
+            local nested=coroutine.wrap(function()
+                assert(muxora.windows.set_title(nil,'External Lua'))
+                assert(muxora.tabs.rename(nil,'Retained content'))
+                return muxora.context().tab
+            end)
+            return nested()
+        )lua");
         if (!checkJob)
             app.exit(4);
     });

@@ -18,7 +18,7 @@
 namespace muxora {
 namespace {
 
-constexpr qint64 maximumScriptBytes = 1024 * 1024;
+constexpr auto runningStatusId = "lua.running";
 }
 
 AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, UserPreferences &preferences,
@@ -38,6 +38,22 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
     connect(host_, &window_system_lua::ScriptHost::scriptError, this, &AppScriptingSetup::report);
     connect(host_, &window_system_lua::ScriptHost::logMessage, this,
             [](const QString &message) { qInfo().noquote() << "Lua:" << message; });
+    connect(host_->runtime(), &lua_runtime::ScriptRuntime::longRunningChanged, this,
+            [this](bool running) {
+                if (!manager_ || shuttingDown_)
+                    return;
+                manager_->setStatusItemText(QString::fromLatin1(runningStatusId),
+                    running ? QCoreApplication::translate("Muxora", "Lua 脚本运行中") : QString(),
+                    QCoreApplication::translate("Muxora", "点击停止正在运行的 Lua 脚本"));
+                manager_->commandsChanged();
+            });
+    connect(host_->runtime(), &lua_runtime::ScriptRuntime::runningChanged, this, [this] {
+        if (manager_ && !shuttingDown_)
+            manager_->commandsChanged();
+    });
+    connect(host_->runtime(), &lua_runtime::ScriptRuntime::resetBlocked, this, [this] {
+        report(QCoreApplication::translate("Muxora", "脚本仍在运行，已请求停止。"));
+    });
     connect(host_, &window_system_lua::ScriptHost::initialized, this, [this](bool ok, const QString &error) {
         if (shuttingDown_ || !manager_)
             return;
@@ -55,6 +71,9 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
     saveTimer_->setInterval(300);
     connect(saveTimer_, &QTimer::timeout, this, [this] { flushKeybindings(); });
     if (manager_) {
+        manager_->registerStatusItem({QString::fromLatin1(runningStatusId), {},
+            QCoreApplication::translate("Muxora", "点击停止正在运行的 Lua 脚本"),
+            QStringLiteral("lua.stop")});
         const QPointer<AppScriptingSetup> self(this);
         const auto available = [self](const window_system::CommandContext &) {
             return self && !self->shuttingDown_;
@@ -72,6 +91,22 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
                                   },
                                   {QStringLiteral("工具"), QStringLiteral("Lua")},
                                   10});
+        manager_->commands().add(
+            {QStringLiteral("lua.stop"),
+             QCoreApplication::translate("Muxora", "停止正在运行的 Lua 脚本"),
+             QStringLiteral("工具"),
+             {},
+             [self](const window_system::CommandContext &) {
+                 return self && !self->shuttingDown_ && self->host_->runtime()->isRunning();
+             },
+             [self](const window_system::CommandContext &) {
+                 if (!self || self->shuttingDown_)
+                     return false;
+                 self->host_->runtime()->cancelAll();
+                 return true;
+             },
+             {QStringLiteral("工具"), QStringLiteral("Lua")},
+             15});
         manager_->commands().add(
             {QStringLiteral("lua.reload"),
              QCoreApplication::translate("Muxora", "重新加载 Lua 配置"),
@@ -118,8 +153,15 @@ void AppScriptingSetup::start() {
 }
 
 bool AppScriptingSetup::reload() {
-    if (!manager_ || loading_ || shuttingDown_)
+    if (!manager_ || shuttingDown_)
         return false;
+    if (loading_) {
+        if (host_->runtime()->isRunning()) {
+            host_->runtime()->cancelAll();
+            report(QCoreApplication::translate("Muxora", "脚本仍在运行，已请求停止。"));
+        }
+        return false;
+    }
     if (started_ && !flushKeybindings())
         return false;
     saveTimer_->stop();
@@ -151,9 +193,11 @@ bool AppScriptingSetup::readScript(QString path, QString &source, QString &error
         error = file.errorString();
         return false;
     }
-    const auto bytes = file.read(maximumScriptBytes + 1);
+    const auto maximumScriptBytes = host_->runtime()->limits().maximumSourceBytes;
+    const auto bytes = file.read(qint64(maximumScriptBytes) + 1);
     if (bytes.size() > maximumScriptBytes) {
-        error = QCoreApplication::translate("Muxora", "Lua 脚本超过 1 MiB 限制。");
+        error = QCoreApplication::translate("Muxora", "Lua 脚本超过 %1 MiB 传输限制。")
+                    .arg(maximumScriptBytes / (1024 * 1024));
         return false;
     }
     QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
@@ -283,6 +327,8 @@ void AppScriptingSetup::shutdown() {
     if (input_)
         delete input_.data();
     services_->reset();
+    if (manager_)
+        manager_->removeStatusItem(QString::fromLatin1(runningStatusId));
     host_->unload();
 }
 } // namespace muxora

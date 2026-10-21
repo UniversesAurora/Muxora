@@ -9,9 +9,6 @@
 namespace lua_runtime::detail {
 
 RuntimeLimits normalizedLimits(RuntimeLimits limits) {
-    limits.memoryBytes = qMax<quint64>(64 * 1024, limits.memoryBytes);
-    limits.instructionLimit = qMax<quint64>(1, limits.instructionLimit);
-    limits.timeLimitMs = qMax(1, limits.timeLimitMs);
     limits.hostReplyTimeoutMs = qMax(1, limits.hostReplyTimeoutMs);
     limits.maximumPendingJobs = qMax(1, limits.maximumPendingJobs);
     limits.maximumCallbacks = qMax(1, limits.maximumCallbacks);

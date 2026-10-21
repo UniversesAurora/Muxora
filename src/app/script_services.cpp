@@ -101,6 +101,13 @@ int AppScriptServices::pendingLaunchCount() const { return d->pending.size(); }
 lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList args, QVariantMap context) {
     if (!d->manager)
         return failure(QCoreApplication::translate("Muxora", "脚本服务已关闭。"));
+    if (method == QStringLiteral("app.exit")) {
+        const auto window = QUuid(context.value(QStringLiteral("window")).toString());
+        // The ordinary application command owns saving and close permission.
+        // Lua's numeric exit status and close-state arguments are intentionally
+        // ignored: a script must not bypass that application lifecycle.
+        return success(d->manager->execute(QStringLiteral("application.exit"), {}, window));
+    }
     if (method == QStringLiteral("ui.notify")) {
         const bool descriptor = args.value(0).metaType().id() == QMetaType::QVariantMap;
         const auto options = descriptor ? args[0].toMap() : QVariantMap{};

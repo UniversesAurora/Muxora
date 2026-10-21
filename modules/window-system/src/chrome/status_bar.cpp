@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QSet>
 #include <QTimer>
+#include <QToolButton>
 #include <algorithm>
 
 namespace window_system {
@@ -79,7 +80,10 @@ void WorkspaceStatusBar::setHiddenItems(const QStringList& hidden)
     if (!retained) return;
     const auto items = customItems_;
     for (auto it = items.cbegin(); it != items.cend(); ++it) {
-        if (it.value()) it.value()->setVisible(!hidden.contains(it.key()));
+        if (it.value()) {
+            const auto* button = qobject_cast<QToolButton*>(it.value().data());
+            it.value()->setVisible(!hidden.contains(it.key()) && (!button || !button->text().isEmpty()));
+        }
         if (!retained) return;
     }
 }
@@ -98,18 +102,41 @@ void WorkspaceStatusBar::setCustomItems(const QVector<StatusItem>& items)
     }
     auto* row = qobject_cast<QHBoxLayout*>(layout());
     for (const auto& item : items) {
-        auto label = customItems_.value(item.id);
-        if (!label) {
-            label = new QLabel(this);
-            label->setTextFormat(Qt::PlainText);
-            label->setObjectName(QStringLiteral("CustomStatusItem"));
-            label->setProperty("statusItemId", item.id);
-            customItems_.insert(item.id, label);
-            row->insertWidget(row->count() - 1, label);
+        auto widget = customItems_.value(item.id);
+        if (!widget) {
+            if (item.command.isEmpty()) {
+                auto* label = new QLabel(this);
+                label->setTextFormat(Qt::PlainText);
+                label->setObjectName(QStringLiteral("CustomStatusItem"));
+                widget = label;
+            } else {
+                auto* button = new QToolButton(this);
+                button->setObjectName(QStringLiteral("CustomStatusCommandItem"));
+                button->setFocusPolicy(Qt::StrongFocus);
+                button->setCursor(Qt::PointingHandCursor);
+                widget = button;
+                connect(button, &QToolButton::clicked, this,
+                    [this, button, id = item.id, command = item.command] {
+                        const auto manager = manager_;
+                        const auto window = window_;
+                        QTimer::singleShot(0, button, [manager, window, id, command] {
+                            if (!manager || !manager->model().window(window)) return;
+                            const auto definitions = manager->statusItems();
+                            const auto found = std::find_if(definitions.cbegin(), definitions.cend(),
+                                [&](const auto& definition) { return definition.id == id && definition.command == command; });
+                            if (found != definitions.cend()) manager->execute(command, {}, window);
+                        });
+                    });
+            }
+            widget->setProperty("statusItemId", item.id);
+            customItems_.insert(item.id, widget);
+            row->insertWidget(row->count() - 1, widget);
         }
-        label->setText(item.text); label->setToolTip(item.tooltip);
-        label->setAccessibleName(item.text);
-        label->setVisible(!hiddenItems_.contains(item.id));
+        if (auto* label = qobject_cast<QLabel*>(widget.data())) label->setText(item.text);
+        else if (auto* button = qobject_cast<QToolButton*>(widget.data())) button->setText(item.text);
+        widget->setToolTip(item.tooltip);
+        widget->setAccessibleName(item.text);
+        widget->setVisible(!hiddenItems_.contains(item.id) && (item.command.isEmpty() || !item.text.isEmpty()));
         if (!retained) return;
     }
 }
@@ -122,7 +149,13 @@ QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
     applyTheme(menu, manager_->theme());
     QVector<QPair<QString, QString>> entries{{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "状态消息")},
         {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "工作区信息")}};
-    for (const auto& item : customDefinitions_) entries.append({item.id, item.text.isEmpty() ? item.id : item.text});
+    for (const auto& item : customDefinitions_) {
+        auto title = item.text;
+        if (title.isEmpty() && !item.command.isEmpty()) {
+            if (const auto* command = manager_->commands().find(item.command)) title = command->title;
+        }
+        entries.append({item.id, title.isEmpty() ? item.id : title});
+    }
     for (const auto& entry : entries) {
         auto* action = menu->addAction(entry.second);
         action->setObjectName(QStringLiteral("StatusItemToggle"));

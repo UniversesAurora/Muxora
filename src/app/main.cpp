@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QSignalBlocker>
+#include <QScopedValueRollback>
 #include <QTimer>
 
 int main(int argc, char* argv[])
@@ -95,9 +96,12 @@ int main(int argc, char* argv[])
         {"host.newTab", "host.newFilesTab", "host.newSessionsTab", "host.newTransfersTab"});
     windows.commands().add({"layout.save", QCoreApplication::translate("Muxora", "保存工作区布局"), "文件", QKeySequence("Ctrl+S"), {},
         [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QCoreApplication::translate("Muxora", "布局已保存") : QCoreApplication::translate("Muxora", "布局保存失败")); return ok; }, {"文件"}, 40});
+    bool applicationExitPending = false;
     windows.commands().add({"application.exit", QCoreApplication::translate("Muxora", "退出"), "文件", QKeySequence(QKeySequence::Quit),
         [&windows](const window_system::CommandContext&) { return !windows.model().windows().isEmpty(); },
-        [&windows, &save](const window_system::CommandContext& ctx) {
+        [&windows, &save, &applicationExitPending](const window_system::CommandContext& ctx) {
+            if (applicationExitPending) return false;
+            QScopedValueRollback<bool> exiting(applicationExitPending, true);
             if (!save()) { windows.setStatus(ctx.window, QCoreApplication::translate("Muxora", "布局保存失败，未退出")); return false; }
             return windows.requestCloseAllWindows();
         }, {"文件"}, 100});
@@ -155,7 +159,9 @@ int main(int argc, char* argv[])
         if (parser.isSet("command") && (!ok || !windows.execute(parser.value("command")))) app.exit(4);
     });
     scripting.start();
-    QObject::connect(&windows, &window_system::WindowManager::lastWindowAboutToClose, &app, [&] { save(); });
+    QObject::connect(&windows, &window_system::WindowManager::lastWindowAboutToClose, &app, [&] {
+        if (!applicationExitPending) save();
+    });
     QTimer persistTimer; persistTimer.setSingleShot(true); persistTimer.setInterval(700);
     QObject::connect(&windows, &window_system::WindowManager::layoutChanged, &persistTimer, [&persistTimer] { persistTimer.start(); });
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);

@@ -142,7 +142,7 @@ end)
         QCOMPARE(windows.toolbarState(floating, "user.lifecycle_tools")->width, 159);
         QCOMPARE(windows.paneWidget(pane), content);
         QVERIFY(scripts->runtime()->memoryBytes() > 128 * 1024);
-        QVERIFY(scripts->runtime()->memoryBytes() <= scripts->runtime()->limits().memoryBytes);
+        QVERIFY(scripts->runtime()->peakMemoryBytes() >= scripts->runtime()->memoryBytes());
         if (generation == 4)
             activeTypes = ownedTypes(windows, scripts.get());
         else if (generation > 4)

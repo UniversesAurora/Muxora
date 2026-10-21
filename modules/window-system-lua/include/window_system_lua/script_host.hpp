@@ -24,6 +24,8 @@ class ScriptHost final : public QObject {
     // their provider. Built-in names cannot be replaced by an extension.
     bool registerService(QString method, ServiceHandler handler, QObject *owner = nullptr);
     bool removeService(const QString &method);
+    // On the next initialize(), prepend directory/?.lua and directory/?/init.lua
+    // to the standard package.path. Module loading and caching follow Lua.
     void setModuleDirectory(QString directory);
     void initialize(QString source = {}, QString name = QStringLiteral("init.lua"));
     void unload();

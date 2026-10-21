@@ -34,6 +34,9 @@ struct StatusItem {
     QString id;
     QString text;
     QString tooltip;
+    // Optional command invoked in the status item's own window. Empty items
+    // remain ordinary text labels; content and command ownership stay external.
+    QString command;
     bool operator==(const StatusItem &) const = default;
 };
 

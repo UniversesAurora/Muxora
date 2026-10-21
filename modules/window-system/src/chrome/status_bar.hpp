@@ -36,7 +36,7 @@ private:
     WindowId window_;
     QLabel* message_;
     QLabel* workspace_;
-    QHash<QString, QPointer<QLabel>> customItems_;
+    QHash<QString, QPointer<QWidget>> customItems_;
     QVector<StatusItem> customDefinitions_;
     QStringList hiddenItems_;
     QString messageText_;

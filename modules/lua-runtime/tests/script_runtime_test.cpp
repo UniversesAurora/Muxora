@@ -1,4 +1,7 @@
 #include <lua_runtime/script_runtime.hpp>
+#include "../src/script_worker.hpp"
+#include <lauxlib.h>
+#include <lstate.h>
 
 #include <QPointer>
 #include <QElapsedTimer>
@@ -7,12 +10,26 @@
 #include <QTest>
 #include <QThread>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QProcess>
+#include <QCoreApplication>
 #include <limits>
 #include <memory>
 
 using lua_runtime::RuntimeLimits;
 using lua_runtime::ScriptResult;
 using lua_runtime::ScriptRuntime;
+
+namespace lua_runtime::detail {
+
+struct ScriptWorkerTestAccess {
+    static lua_State *initializedState(ScriptWorker &worker) {
+        return worker.ensureState() ? worker.state_ : nullptr;
+    }
+};
+
+} // namespace lua_runtime::detail
 
 namespace {
 
@@ -39,6 +56,19 @@ ScriptResult evaluate(ScriptRuntime &runtime, const QString &source, QVariantMap
     return waitFor(spy, runtime.execute(source, QStringLiteral("=runtime-test"), std::move(context)));
 }
 
+QString sleepingChildCommand(const QString &readyPath, int milliseconds) {
+    auto command = QStringLiteral("\"%1\" --lua-sleep %2 \"%3\"")
+                       .arg(QCoreApplication::applicationFilePath())
+                       .arg(milliseconds)
+                       .arg(readyPath);
+#ifdef Q_OS_WIN
+    // cmd.exe /c removes its outer pair when the command contains more than
+    // one quoted argument, so system() needs a second enclosing pair.
+    command = QLatin1Char('"') + command + QLatin1Char('"');
+#endif
+    return command;
+}
+
 } // namespace
 
 class ScriptRuntimeTest final : public QObject {
@@ -53,12 +83,12 @@ class ScriptRuntimeTest final : public QObject {
     void resetInsideAHostCallDiscardsItsOldReply();
     void hostCanDestroyTheRuntimeDuringItsCallback();
     void cancellationDuringExecutionKeepsTheOwnerResponsive();
-    void protectedCallsCannotSwallowTheInstructionBudget_data();
-    void protectedCallsCannotSwallowTheInstructionBudget();
-    void executionDeadlineDoesNotBlockTheOwner();
-    void missingAndUnsafeLibrariesStayUnavailable();
-    void compileSupportsTextModulesWithinTheSameTask();
-    void compileRejectsBytecodeAndOversizedSources();
+    void protectedCallsCannotSwallowAStopRequest_data();
+    void protectedCallsCannotSwallowAStopRequest();
+    void stopKeepsTheOwnerResponsive();
+    void allStandardLibrariesAreAvailable();
+    void loadSupportsTextModulesWithinTheSameTask();
+    void loadAcceptsBinaryAndLargeChunks();
     void sourceAndQueueLimitsAreEnforced();
     void rejectionRepliesRemainBoundedUnderFlood_data();
     void rejectionRepliesRemainBoundedUnderFlood();
@@ -68,10 +98,21 @@ class ScriptRuntimeTest final : public QObject {
     void invalidHostValuesAreRejected();
     void pendingResultsShareTheTransferBudget();
     void logsHaveCountAndLengthLimits();
-    void memoryExhaustionLeavesTheVmUsable();
+    void largeAllocationsAreMeasuredAndReleased();
     void repeatedResetReleasesCallbacksAndJobStorage();
     void cleanupCannotExecuteUnboundedFinalizers();
     void supersededResetRepliesDoNotReachTheNewGeneration();
+    void userHooksKeepStandardSemantics();
+    void nestedHostCallsPreserveYieldSemantics();
+    void resetsStopNestedCoroutines();
+    void executionHasNoAutomaticBudget();
+    void runningSignalsAndBlockedReset();
+    void blockingStandardCallHasNoExecutionBudget();
+    void blockedDestructorRetainsWorkerUntilItReturns();
+    void weakHookEntriesDoNotRetainCoroutines();
+    void runningObserverMayDestroyTheRuntime();
+    void explicitCoroutineHooksReserveStackSpace_data();
+    void explicitCoroutineHooksReserveStackSpace();
 };
 
 void ScriptRuntimeTest::supersededResetRepliesDoNotReachTheNewGeneration() {
@@ -253,8 +294,6 @@ void ScriptRuntimeTest::hostCanDestroyTheRuntimeDuringItsCallback() {
 
 void ScriptRuntimeTest::cancellationDuringExecutionKeepsTheOwnerResponsive() {
     RuntimeLimits limits;
-    limits.instructionLimit = std::numeric_limits<quint64>::max();
-    limits.timeLimitMs = 5000;
     ScriptRuntime runtime(limits);
     bool began = false;
     connect(&runtime, &ScriptRuntime::logMessage, &runtime, [&](const QString &) {
@@ -269,7 +308,7 @@ void ScriptRuntimeTest::cancellationDuringExecutionKeepsTheOwnerResponsive() {
     QVERIFY2(recovered.ok, qPrintable(recovered.error));
 }
 
-void ScriptRuntimeTest::protectedCallsCannotSwallowTheInstructionBudget_data() {
+void ScriptRuntimeTest::protectedCallsCannotSwallowAStopRequest_data() {
     QTest::addColumn<QString>("source");
     QTest::newRow("loop") << QStringLiteral("while true do end");
     QTest::newRow("pcall") << QStringLiteral("while true do pcall(function() while true do end end) end");
@@ -281,75 +320,100 @@ void ScriptRuntimeTest::protectedCallsCannotSwallowTheInstructionBudget_data() {
         << QStringLiteral("local v=setmetatable({},{__tostring=function()while true do end end}); while true "
                           "do pcall(tostring,v) end");
     QTest::newRow("compiled-nested-pcall") << QStringLiteral(
-        "local f=muxora._compile('while true do pcall(function()while true do end end) end'); pcall(f)");
+        "local f=load('while true do pcall(function()while true do end end) end'); pcall(f)");
     QTest::newRow("mutated-globals") << QStringLiteral(
         "local protected=pcall; muxora=nil; table=nil; pcall=nil; while true do protected(function()while "
         "true do end end)end");
+    QTest::newRow("coroutine") << QStringLiteral("coroutine.resume(coroutine.create(function()while true do end end))");
+    QTest::newRow("wrap") << QStringLiteral("coroutine.wrap(function()while true do end end)()");
+    QTest::newRow("nested-coroutines") << QStringLiteral(
+        "coroutine.wrap(function()coroutine.resume(coroutine.create(function()"
+        "coroutine.wrap(function()while true do end end)() end))end)()");
+    QTest::newRow("user-line-hook") << QStringLiteral("debug.sethook(function()end,'l');while true do end");
+    QTest::newRow("user-count-hook") << QStringLiteral("debug.sethook(function()end,'',7);while true do end");
+    QTest::newRow("cleared-user-hook") << QStringLiteral("debug.sethook(function()end,'l');debug.sethook();while true do end");
+    QTest::newRow("hook-self-loop") << QStringLiteral("debug.sethook(function()while true do end end,'',5);while true do end");
+    QTest::newRow("hook-pcall-self-loop") << QStringLiteral(
+        "debug.sethook(function()while true do pcall(function()while true do end end)end end,'',5);while true do end");
+    QTest::newRow("raw-pcall") << QStringLiteral(
+        "local raw;for i=1,10 do local name,value=debug.getupvalue(pcall,i);"
+        "if name=='raw_pcall'then raw=value end end;assert(raw);"
+        "while true do raw(function()while true do end end)end");
+
 }
 
-void ScriptRuntimeTest::protectedCallsCannotSwallowTheInstructionBudget() {
+void ScriptRuntimeTest::protectedCallsCannotSwallowAStopRequest() {
     QFETCH(QString, source);
-    RuntimeLimits limits;
-    limits.instructionLimit = 10'000;
-    limits.timeLimitMs = 2000;
-    ScriptRuntime runtime(limits);
-    const auto result = evaluate(runtime, source);
+    ScriptRuntime runtime;
+    bool requested = false;
+    connect(&runtime, &ScriptRuntime::logMessage, &runtime, [&](const QString &) {
+        QTimer::singleShot(20, &runtime, [&] {
+            requested = true;
+            runtime.cancelAll();
+        });
+    });
+    const auto result = evaluate(runtime, QStringLiteral("print('ready'); ") + source);
+    QVERIFY(requested);
     QVERIFY(!result.ok);
-    QVERIFY2(result.error.contains(QStringLiteral("instruction limit")), qPrintable(result.error));
+    QVERIFY2(result.error.contains(QStringLiteral("cancelled")), qPrintable(result.error));
     const auto recovered = evaluate(runtime, QStringLiteral("return 3"));
     QVERIFY2(recovered.ok, qPrintable(recovered.error));
 }
 
-void ScriptRuntimeTest::executionDeadlineDoesNotBlockTheOwner() {
+void ScriptRuntimeTest::stopKeepsTheOwnerResponsive() {
     RuntimeLimits limits;
-    limits.instructionLimit = std::numeric_limits<quint64>::max();
-    limits.timeLimitMs = 40;
     ScriptRuntime runtime(limits);
     QTimer heartbeat;
     heartbeat.setInterval(1);
     int ticks = 0;
     connect(&heartbeat, &QTimer::timeout, this, [&] { ++ticks; });
     heartbeat.start();
+    QTimer::singleShot(40, &runtime, &ScriptRuntime::cancelAll);
     const auto result = evaluate(runtime, QStringLiteral("while true do end"));
     QVERIFY(!result.ok);
-    QVERIFY2(result.error.contains(QStringLiteral("time limit")), qPrintable(result.error));
+    QVERIFY2(result.error.contains(QStringLiteral("cancelled")), qPrintable(result.error));
     QVERIFY(ticks > 0);
 }
 
-void ScriptRuntimeTest::missingAndUnsafeLibrariesStayUnavailable() {
+void ScriptRuntimeTest::allStandardLibrariesAreAvailable() {
     ScriptRuntime runtime;
-    const auto result = evaluate(
-        runtime,
-        QStringLiteral("return io==nil,os==nil,debug==nil,coroutine==nil,package==nil,load==nil,"
-                       "loadfile==nil,dofile==nil,string.dump==nil,math.floor(1.9)==1,utf8.len('中文')==2"));
+    const auto result = evaluate(runtime, QStringLiteral(
+        "return type(io.open)=='function',type(os.execute)=='function',type(io.popen)=='function',"
+        "type(debug.sethook)=='function',type(coroutine.wrap)=='function',type(package.loadlib)=='function',"
+        "type(require)=='function',type(loadfile)=='function',type(dofile)=='function',"
+        "type(string.dump)=='function',type(collectgarbage('count'))=='number'"));
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(result.values.size(), 11);
     for (const auto &value : result.values)
         QVERIFY(value.toBool());
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto io = evaluate(runtime, QStringLiteral(
+        "local p=(...).path;local f=assert(io.open(p,'wb'));f:write('standard IO');f:close();"
+        "f=assert(io.open(p,'rb'));local value=f:read('*a');f:close();return value"),
+        {{QStringLiteral("path"), directory.filePath(QStringLiteral("runtime.txt"))}});
+    QVERIFY2(io.ok, qPrintable(io.error));
+    QCOMPARE(io.values.constFirst().toString(), QStringLiteral("standard IO"));
 }
 
-void ScriptRuntimeTest::compileSupportsTextModulesWithinTheSameTask() {
+void ScriptRuntimeTest::loadSupportsTextModulesWithinTheSameTask() {
     ScriptRuntime runtime;
-    const auto result = evaluate(
-        runtime,
-        QStringLiteral(
-            "local module=muxora._compile('local value=...; return {answer=value+1}', 'custom/module'); "
-            "return module(41).answer"));
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local module=assert(load('local value=...; return {answer=value+1}', 'custom/module')); "
+        "return module(41).answer"));
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(result.values.constFirst().toLongLong(), 42);
 }
 
-void ScriptRuntimeTest::compileRejectsBytecodeAndOversizedSources() {
-    RuntimeLimits limits;
-    limits.maximumSourceBytes = 256;
-    ScriptRuntime runtime(limits);
-    const auto binary =
-        evaluate(runtime, QStringLiteral("return muxora._compile(string.char(27)..'Lua', 'binary')"));
-    QVERIFY(!binary.ok);
-    QVERIFY(binary.error.contains(QStringLiteral("binary")));
-    const auto oversized = evaluate(runtime, QStringLiteral("return muxora._compile(string.rep(' ',257))"));
-    QVERIFY(!oversized.ok);
-    QVERIFY(oversized.error.contains(QStringLiteral("byte limit")));
+void ScriptRuntimeTest::loadAcceptsBinaryAndLargeChunks() {
+    ScriptRuntime runtime;
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local binary=string.dump(function()return 42 end);"
+        "local large=string.rep(' ',2*1024*1024)..'return 17';"
+        "return assert(load(binary))(),assert(load(large))()"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.values.at(0).toInt(), 42);
+    QCOMPARE(result.values.at(1).toInt(), 17);
 }
 
 void ScriptRuntimeTest::sourceAndQueueLimitsAreEnforced() {
@@ -523,21 +587,20 @@ void ScriptRuntimeTest::logsHaveCountAndLengthLimits() {
         QCOMPARE(message.constFirst().toString().size(), 8);
 }
 
-void ScriptRuntimeTest::memoryExhaustionLeavesTheVmUsable() {
-    RuntimeLimits limits;
-    limits.memoryBytes = 1024 * 1024;
-    limits.instructionLimit = 10'000'000;
-    limits.timeLimitMs = 2000;
-    ScriptRuntime runtime(limits);
-    const auto exhausted =
-        evaluate(runtime, QStringLiteral("local t={};while true do t[#t+1]=string.rep('x',4096)..#t end"));
-    QVERIFY(!exhausted.ok);
-    QVERIFY2(exhausted.error.contains(QStringLiteral("memory budget")), qPrintable(exhausted.error));
-    QVERIFY(runtime.memoryBytes() <= limits.memoryBytes);
-    QVERIFY(runtime.peakMemoryBytes() <= limits.memoryBytes);
+void ScriptRuntimeTest::largeAllocationsAreMeasuredAndReleased() {
+    ScriptRuntime runtime;
+    const auto baseline = evaluate(runtime, QStringLiteral("collectgarbage('collect');return true"));
+    QVERIFY2(baseline.ok, qPrintable(baseline.error));
+    const auto before = runtime.memoryBytes();
+    const auto large = evaluate(runtime, QStringLiteral(
+        "local value=string.rep('x',100*1024*1024);local size=#value;"
+        "value=nil;collectgarbage('collect');return size"));
+    QVERIFY2(large.ok, qPrintable(large.error));
+    QCOMPARE(large.values.constFirst().toInt(), 100 * 1024 * 1024);
+    QVERIFY(runtime.peakMemoryBytes() > 100 * 1024 * 1024);
+    QVERIFY(runtime.memoryBytes() < before + 256 * 1024);
     const auto recovered = evaluate(runtime, QStringLiteral("return 17"));
     QVERIFY2(recovered.ok, qPrintable(recovered.error));
-    QCOMPARE(recovered.values.constFirst().toLongLong(), 17);
 }
 
 void ScriptRuntimeTest::repeatedResetReleasesCallbacksAndJobStorage() {
@@ -569,5 +632,200 @@ void ScriptRuntimeTest::cleanupCannotExecuteUnboundedFinalizers() {
     QCOMPARE(runtime.memoryBytes(), 0);
 }
 
-QTEST_GUILESS_MAIN(ScriptRuntimeTest)
+void ScriptRuntimeTest::userHooksKeepStandardSemantics() {
+    ScriptRuntime runtime;
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local lines,counts,calls,returns=0,0,0,0;local f=function(e)"
+        "if e=='line'then lines=lines+1 elseif e=='count'then counts=counts+1 "
+        "elseif e=='call'or e=='tail call'then calls=calls+1 elseif e=='return'then returns=returns+1 end end;"
+        "debug.sethook(f,'crl',7);local h,m,n=debug.gethook();local sum=0;for i=1,100 do sum=sum+i end;"
+        "debug.sethook();local h2,m2,n2=debug.gethook();"
+        "debug.sethook(f,'',0);local empty=table.pack(debug.gethook());assert(empty.n==1 and empty[1]==nil);debug.sethook();"
+        "local co=coroutine.create(function()local x=0;for i=1,100 do x=x+i end;return x end);"
+        "debug.sethook(co,f,'l',9);local h3,m3,n3=debug.gethook(co);local ok,v=coroutine.resume(co);"
+        "return h==f,m=='crl',n==7,lines>0,counts>0,calls>0,returns>0,h2==nil,m2==nil,n2==nil,"
+        "h3==f,m3=='l',n3==9,ok,v==5050"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.values.size(), 15);
+    for (const auto &value : result.values)
+        QVERIFY(value.toBool());
+}
+
+void ScriptRuntimeTest::nestedHostCallsPreserveYieldSemantics() {
+    ScriptRuntime runtime;
+    runtime.setHostHandler([](QString method, QVariantList values, QVariantMap) {
+        return ScriptResult{true, {method, values.constFirst(), 42}, {}};
+    });
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local co=coroutine.create(function()"
+        "local a,b=coroutine.yield(nil,17);"
+        "local ok,name,n,answer=pcall(function()return coroutine.wrap(function()"
+        "return muxora._host('nested',a+b)end)()end);return ok,name,n,answer end);"
+        "local a,b,c=coroutine.resume(co);assert(a and b==nil and c==17);"
+        "local resumed,ok,name,n,answer=coroutine.resume(co,20,22);return resumed,ok,name,n,answer"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.values, QVariantList({true,true,QStringLiteral("nested"),42,42}));
+}
+
+void ScriptRuntimeTest::resetsStopNestedCoroutines() {
+    ScriptRuntime runtime;
+    QSignalSpy finished(&runtime, &ScriptRuntime::finished);
+    QSignalSpy reset(&runtime, &ScriptRuntime::resetFinished);
+    connect(&runtime, &ScriptRuntime::logMessage, &runtime, [&](const QString &) {
+        QTimer::singleShot(20, &runtime, &ScriptRuntime::reset);
+    });
+    const auto id = runtime.execute(QStringLiteral(
+        "print('ready');coroutine.wrap(function()coroutine.wrap(function()while true do end end)()end)()"));
+    const auto stopped = waitFor(finished, id);
+    QVERIFY2(stopped.error.contains(QStringLiteral("cancelled")), qPrintable(stopped.error));
+    QTRY_COMPARE(reset.count(), 1);
+    QCOMPARE(runtime.memoryBytes(), 0);
+    QVERIFY(evaluate(runtime, QStringLiteral("return 42")).ok);
+}
+
+void ScriptRuntimeTest::executionHasNoAutomaticBudget() {
+    ScriptRuntime runtime;
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local n=0;debug.sethook(function(e)if e=='count'then n=n+1 end end,'',1000);"
+        "while n<30001 do end;debug.sethook();return n"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(result.values.constFirst().toInt() >= 30001);
+}
+
+void ScriptRuntimeTest::runningSignalsAndBlockedReset() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto ready = directory.filePath(QStringLiteral("ready"));
+    ScriptRuntime runtime;
+    QSignalSpy finished(&runtime, &ScriptRuntime::finished);
+    QSignalSpy reset(&runtime, &ScriptRuntime::resetFinished);
+    QSignalSpy blocked(&runtime, &ScriptRuntime::resetBlocked);
+    QSignalSpy running(&runtime, &ScriptRuntime::runningChanged);
+    QSignalSpy longRunning(&runtime, &ScriptRuntime::longRunningChanged);
+    const auto id = runtime.execute(QStringLiteral("os.execute((...).command);return true"), {},
+                                   {{QStringLiteral("command"), sleepingChildCommand(ready, 3300)}});
+    QTRY_VERIFY(QFile::exists(ready));
+    QVERIFY(runtime.isRunning());
+    runtime.reset();
+    QTRY_VERIFY(runtime.isLongRunning());
+    QTRY_COMPARE(blocked.count(), 1);
+    QVERIFY(!waitFor(finished, id).ok);
+    QTRY_COMPARE(reset.count(), 1);
+    QTRY_VERIFY(!runtime.isRunning());
+    QTRY_VERIFY(!longRunning.isEmpty() && !longRunning.last().at(0).toBool());
+    QVERIFY(!running.isEmpty());
+    QVERIFY(evaluate(runtime, QStringLiteral("return 1")).ok);
+}
+
+void ScriptRuntimeTest::blockingStandardCallHasNoExecutionBudget() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    ScriptRuntime runtime;
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local ok= os.execute((...).command);return ok==true,17"),
+        {{QStringLiteral("command"), sleepingChildCommand(directory.filePath(QStringLiteral("ready")), 3000)}});
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.values, QVariantList({true,17}));
+}
+
+void ScriptRuntimeTest::blockedDestructorRetainsWorkerUntilItReturns() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto ready = directory.filePath(QStringLiteral("ready"));
+    auto runtime = std::make_unique<ScriptRuntime>();
+    runtime->execute(QStringLiteral("os.execute((...).command)"), {},
+                     {{QStringLiteral("command"), sleepingChildCommand(ready, 3200)}});
+    QTRY_VERIFY(QFile::exists(ready));
+    QVERIFY(runtime->isRunning());
+    QElapsedTimer elapsed;
+    elapsed.start();
+    runtime.reset();
+    QVERIFY2(elapsed.elapsed() < 2000, "Blocked C code delayed runtime destruction beyond two seconds");
+    // The original thread returns and frees its VM after its facade is gone.
+    // A subsequent event-processing interval must produce no QThread warnings.
+    QTest::qWait(1600);
+    ScriptRuntime recovered;
+    QVERIFY(evaluate(recovered, QStringLiteral("return 42")).ok);
+}
+
+void ScriptRuntimeTest::weakHookEntriesDoNotRetainCoroutines() {
+    ScriptRuntime runtime;
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local weak=setmetatable({},{__mode='v'});do local co=coroutine.create(function()end);"
+        "debug.sethook(co,function()end,'l',10);weak[1]=co end;"
+        "collectgarbage('collect');collectgarbage('collect');return weak[1]==nil"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(result.values.constFirst().toBool());
+}
+
+void ScriptRuntimeTest::runningObserverMayDestroyTheRuntime() {
+    auto runtime = std::make_unique<ScriptRuntime>();
+    const QPointer<ScriptRuntime> guard(runtime.get());
+    connect(runtime.get(), &ScriptRuntime::runningChanged, this, [&](bool running) {
+        if (running)
+            runtime.reset();
+    });
+    QVERIFY(runtime->execute(QStringLiteral("while true do end")));
+    QTRY_VERIFY(guard.isNull());
+}
+
+void ScriptRuntimeTest::explicitCoroutineHooksReserveStackSpace_data() {
+    QTest::addColumn<QByteArray>("operation");
+    QTest::newRow("sethook") << QByteArray("sethook");
+    QTest::newRow("gethook") << QByteArray("gethook");
+}
+
+void ScriptRuntimeTest::explicitCoroutineHooksReserveStackSpace() {
+    QFETCH(QByteArray, operation);
+    using namespace lua_runtime::detail;
+    ScriptWorker worker(RuntimeLimits{}, std::make_shared<SharedStatistics>());
+    auto *caller = ScriptWorkerTestAccess::initializedState(worker);
+    QVERIFY(caller);
+    auto *target = lua_newthread(caller);
+    const int threadIndex = lua_gettop(caller);
+    QVERIFY(lua_checkstack(target, 64));
+    const int available = static_cast<int>(target->stack_last.p - target->top.p);
+    // lua_checkstack uses a strict 'free > requested' comparison, so asking
+    // for the exact free capacity would grow it again. This internal fixture
+    // permits the initial C frame to use the allocation we already reserved,
+    // then fills every slot without changing that allocation.
+    target->ci->top.p = target->stack_last.p;
+    for (int i = 0; i < available; ++i)
+        lua_pushnil(target);
+    const auto capacity = target->stack_last.p - target->stack.p;
+    const int originalValues = lua_gettop(target);
+    QCOMPARE(target->stack_last.p - target->top.p, 0);
+
+    lua_getglobal(caller, "debug");
+    lua_getfield(caller, -1, operation.constData());
+    lua_pushvalue(caller, threadIndex);
+    int arguments = 1;
+    if (operation == "sethook") {
+        lua_pushcfunction(caller, [](lua_State *) { return 0; });
+        lua_pushliteral(caller, "l");
+        lua_pushinteger(caller, 7);
+        arguments = 4;
+    }
+    const auto status = lua_pcall(caller, arguments, LUA_MULTRET, 0);
+    const auto error = status == LUA_OK ? QByteArray{} : QByteArray(lua_tostring(caller, -1));
+    QVERIFY2(status == LUA_OK, error.constData());
+    QCOMPARE(lua_gettop(target), originalValues);
+    QVERIFY2(target->stack_last.p - target->stack.p > capacity,
+             "Cross-coroutine debug hooks must reserve space before pushing on the target stack");
+}
+
+int main(int argc, char **argv) {
+    if (argc == 4 && QByteArray(argv[1]) == "--lua-sleep") {
+        QFile ready(QString::fromLocal8Bit(argv[3]));
+        if (!ready.open(QIODevice::WriteOnly))
+            return 2;
+        ready.close();
+        QThread::msleep(QByteArray(argv[2]).toUInt());
+        return 0;
+    }
+    QCoreApplication application(argc, argv);
+    ScriptRuntimeTest test;
+    return QTest::qExec(&test, argc, argv);
+}
+
 #include "script_runtime_test.moc"
