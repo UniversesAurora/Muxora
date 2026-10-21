@@ -282,6 +282,7 @@ Muxora/
 │   ├── design/                # 产品、界面与接口设计，每个主题一个文件
 │   ├── development/           # 开发规范与实际操作说明
 │   │   ├── handoff.md         # 助手之间的交接记录
+│   │   ├── documentation.md   # 文档维护规范：信息的权威位置与更新对照
 │   │   ├── window-system-preview.md   # 当前状态与最近一次验证
 │   │   ├── verification-log/  # 按月的修订与验证记录
 │   │   └── lessons/           # 开发经验

@@ -284,6 +284,6 @@ Claude 审查首轮实现，发现两处不符合本步的要求。返工完成�
   - 模块顶层的代码由 Lua 调用，因此可以让出给宿主，`muxora.*` 在顶层可用；
   - 循环 `require` 的行为与标准一致（标准 Lua 不检测循环，第二次进入时 `package.loaded` 尚未设置，会再次加载；照此实现，不另加检测）。
 - **测试**：模块顶层调用 `muxora.*` 得到正确结果；`a.b`、`a/init.lua`、`package.preload`、自定义搜索器插入 `package.searchers`、加载器返回 `nil` 和返回值缓存、第二个返回值、找不到模块的错误信息；保留现有“不能让出时在提交宿主请求前拒绝”的检查（用于其他不能让出的位置，例如元方法）。
-- **文档**：删除第 6 条最后一项和 Lua 指南中“模块返回初始化函数”的用法；改写 [Lua 运行时经验](../../development/lessons/lua-runtime.md) 中对应一条（现象保留，做法改为本办法）。
+- **文档**：删除第 6 条最后一项和 Lua 指南中“模块返回初始化函数”的用法，确认 `modules/window-system-lua/README.md` 与 [Lua 脚本设计](../../design/lua-scripting-design.md) 没有相反的说法；改写 [Lua 运行时经验](../../development/lessons/lua-runtime.md) 中对应一条（现象保留，做法改为本办法）。
 
 完成 R1、R2 后，重跑 Release 全量（按 AGENTS.md 的桌面测试规则），在验证日志中写清运行和对应提交，再更新本状态。

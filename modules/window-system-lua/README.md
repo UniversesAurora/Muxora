@@ -39,11 +39,9 @@
 
 跨线程仅传 nil、布尔、有限数值、UTF-8 字符串、数组、对象及 UUID 字符串。循环表、混合／稀疏数组、函数和 userdata 不能作为普通宿主值传输。注册函数单独保存在当前 VM；注销、初始化失败、重载和退出均释放所属引用，旧代回执不能进入新 VM。
 
-按 [ADR 0008](../../docs/adr/0008-full-standard-library-for-local-scripts.md)，本地脚本使用完整标准库，不设执行时间、指令数或 Lua 分配预算。`io`、`os`、`debug`、`package`／`require`、`coroutine`、`load`、`string.dump`、`collectgarbage` 均可用，`load` 支持二进制块。标准模块加载不检查原来的目录边界、严格 UTF-8 或 1 MiB 上限，脚本也可以修改搜索路径和 `package.loaded`。`execute`／`initialize`／`run` 的直接源代码参数仍是 UTF-8 编码的 Qt 文本，默认传输上限为 64 MiB。
+脚本可用的标准库、模块加载和停止方式见 [Lua 使用说明](../../docs/development/lua-guide.md#标准库与模块)，决定见 [ADR 0008](../../docs/adr/0008-full-standard-library-for-local-scripts.md)。`execute`／`initialize`／`run` 的直接源代码参数是 UTF-8 编码的 Qt 文本。
 
 `package.cpath` 初始为空。Lua 按 C++ 编译并静态链接，没有供外部模块链接的 Lua DLL，因此不支持 C 模块；`package.loadlib` 保留并返回标准加载错误。这个限制来自构建和 ABI，不是权限控制。本模块供用户选择运行的本地脚本使用，不做进程级隔离。
-
-嵌套协程转发宿主调用的让出，`debug.sethook`／`debug.gethook` 与运行时停止检查共存。原生 `require` 的 C 加载器不能让出；模块顶层需要调用 `muxora.*` 时，应返回初始化函数，在 `require` 返回后调用，示例见 [Lua 使用说明](../../docs/development/lua-guide.md#标准库与模块)。
 
 `os.exit` 和 `muxora.app.exit()` 转交宿主的 `app.exit` 服务。Muxora 的服务执行正常退出命令，先保存再申请关闭许可，忽略退出码及 `close` 参数；关闭被拒绝时返回 `false`。独立宿主未提供服务时报告未知方法错误，不结束宿主进程。`print` 经 `logMessage` 写入脚本日志；`io.write` 保持标准输出语义，不显示在图形界面。
 
@@ -51,9 +49,9 @@
 
 宿主可调用 `runtime()->cancelAll()` 请求停止；重载、卸载和退出也会请求停止。Lua 在下一个检查点响应，`pcall` 和用户钩子不能吞掉请求。标准库阻塞 C 调用返回前无法停止，其他脚本需要等待，GUI 不等待。运行时提供 `isRunning()`／`isLongRunning()`、状态变化信号和 `resetBlocked`；Muxora 在连续执行超过 2 秒时显示可点击停止的状态项，并在重载仍被阻塞时显示提示。析构最多等待线程约 2 秒，仍在阻塞时让工作线程保留自身状态直至返回，不强杀线程。
 
-跨线程队列和日志保持有界：默认最多 128 个待处理任务，排队输入与待投递结果保留数据合计 256 MiB，单个传输字符串 64 MiB，转换值最多 32 层／1,000,000 个节点，保留回调最多 1,000,000 个。普通宿主回执等待 30 秒，单任务最多 128 条日志、单条 16 KiB，待显示日志最多 256 条。宿主界面注册另有数量上限；完整默认值见 [RuntimeLimits](../lua-runtime/include/lua_runtime/script_runtime.hpp) 和 [Lua 使用说明](../../docs/development/lua-guide.md#队列传输与资源计数)。Lua 内存统计不包含 Qt 或外部程序占用。
+跨线程队列、日志和宿主界面注册都有上限，默认值见 [Lua 使用说明](../../docs/development/lua-guide.md#队列传输与资源计数)，宿主可以通过 [RuntimeLimits](../lua-runtime/include/lua_runtime/script_runtime.hpp) 调整。
 
-事件订阅串行调用。`layout.changed` 可合并，其余事件按顺序进入有界队列；溢出或非法值会报告错误并撤销对应订阅。一次／重复计时器可取消，最短 10 ms，周期回调未完成时不积压；未捕获的回调错误停用该资源。按月／年及时区等日历规则仍属后续设计。
+事件订阅和计时器的语义见 [Lua 使用说明](../../docs/development/lua-guide.md#状态项与定时回调)；宿主用 `publishEvent` 注入事件。
 
 ## 使用与验证
 

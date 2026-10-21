@@ -2,7 +2,7 @@
 
 可独立构建的 Qt Widgets 工作区模块。Muxora 通过公开 API 使用它；其他项目也可通过 CMake package 接入，模块不依赖 SSH、终端、文件业务或 Muxora 配置。
 
-当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、组／标签／窗格层级转换、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。文档更新：2026-10-18。实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
+当前提供两种窗口壳、逻辑窗口族、中央标签组、标签内窗格、四边自动隐藏／固定、单标签、整组与整窗移动、组／标签／窗格层级转换、标签颜色和六种排序、顶部／底部工具区、独立栏显隐、三种全屏范围与禅模式、命令面板、快捷键入口和布局快照。本文说明构建与公开 API；交互行为的具体规则见 [窗口交互细则](../../docs/design/window-interaction-design.md)，实际验证与待完善项见 [预览说明](../../docs/development/window-system-preview.md)。
 
 ## 构建边界
 
@@ -43,7 +43,7 @@
 
 [TranslationManager](include/window_system/localization.hpp) 由宿主在创建界面前构造、安装语言并保留生命周期，提供 `System`、`SimplifiedChinese` 和 `English`。宿主可通过 `addCatalog` 增加自己的翻译目录，通过 `requestedLanguageChanged` 持久化重启偏好。语言切换不会重建业务内容或修改用户名称。目录维护入口为 CMake 的 `window_system_lupdate`、`window_system_lrelease`；应用目录使用 `muxora_lupdate`、`muxora_lrelease`。新增文本更新两种语言的 `.ts` 后统一构建和测试。
 
-默认主题使用白色内容背景，标签条与收纳条空白处跟随工具栏背景。非固定侧栏标签保留原紫色背景和浅色文字。内容、菜单和按钮边框为直角矩形，普通按钮悬停使用 `Theme.buttonHover`，菜单栏保留原悬停配色。提示气泡和拖拽定位控件允许圆角。
+默认主题的配色和形状见 [交互细则 · 默认视觉](../../docs/design/window-interaction-design.md#默认视觉)；宿主通过 [Theme](include/window_system/theme.hpp) 令牌取色，例如普通按钮悬停用 `Theme.buttonHover`。
 
 `Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
 
@@ -113,7 +113,7 @@
 
 每组最后一个标签后是组合的新建按钮与类型下拉，中间保留 1 个逻辑像素细缝；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
 
-标签条缩小或扩大时尽量保留已有内容的屏幕位置，再以最小滚动量保护此前完全可见的活动标签。边界尚未碰到活动标签时不动，开始遮挡时才跟随边界移动；不强制跳到左端。滚动只限于真实内容范围，能够放下全部内容时偏移为 0，也不显示滚动条。窗口两边缩放、分隔线来回调整和固定边栏共用此规则；单纯平移窗口不滚动。隐藏控件的初始几何不作为显示锚点，用户新输入优先于待执行的布局定位。
+标签条尺寸变化时的滚动规则见 [交互细则 · 条带尺寸变化](../../docs/design/window-interaction-design.md#条带尺寸变化)，模块内部实现，不需要宿主参与。
 
 ### 标签外观、排序与整组移动
 
@@ -182,6 +182,7 @@
 - [窗口系统设计](../../docs/design/window-system-design.md)
 - [工作区与导航](../../docs/design/workspace-design.md)
 - [双窗口与拖拽](../../docs/design/floating-window-design.md)
+- [窗口交互细则](../../docs/design/window-interaction-design.md)
 - [测试要求](../../docs/development/testing-design.md)
 
-运行 `pwsh tools/verify.ps1` 验证 Muxora、独立模块、安装后的外部接入及部署启动。用例由程序断言模型、几何、颜色、输入结果与内容身份，结果可自行运行复现；不依赖人工或模型阅读截图，不使用 computer use 执行测试。安装后的外部夹具还检查颜色、排序和整组跨窗移动。具体执行状态以预览说明及实际日志为准；失败须修复实现，不自行降低标准。
+运行 `pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1` 验证 Muxora、独立模块、安装后的外部接入及部署启动。用例由程序断言模型、几何、颜色、输入结果与内容身份，结果可自行运行复现；不依赖人工或模型阅读截图，不使用 computer use 执行测试。安装后的外部夹具还检查颜色、排序和整组跨窗移动。具体执行状态以预览说明及实际日志为准；失败须修复实现，不自行降低标准。
