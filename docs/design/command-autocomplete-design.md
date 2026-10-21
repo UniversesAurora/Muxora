@@ -68,7 +68,7 @@
 
 ### 3.6 Lua 扩展
 
-[Lua 扩展 API](lua-extension-api-design.md) 增加 `muxora.terminal.add_completion_provider(spec)`：脚本声明适用的命令名或匹配条件，收到当前命令行、光标位置、目录和主机，返回候选列表（文字、说明、类型）。脚本按 Lua 扩展的预算和超时运行，超时的结果丢弃，不阻塞弹窗。
+[Lua 扩展 API](lua-extension-api-design.md) 增加 `muxora.terminal.add_completion_provider(spec)`：脚本声明适用的命令名或匹配条件，收到当前命令行、光标位置、目录和主机，返回候选列表（文字、说明、类型）。补全回调有超时，超时的结果丢弃，不阻塞弹窗。
 
 ### 3.7 加载与内存
 

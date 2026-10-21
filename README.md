@@ -31,13 +31,15 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 | 目录 | 内容 |
 | --- | --- |
 | `modules/window-system/` | 独立窗口系统、公开 API 和模块测试 |
-| `modules/lua-runtime/` | Qt Core 与 Lua 的有界异步运行时 |
+| `modules/lua-runtime/` | 在工作线程运行 Lua 的异步运行时（Qt Core） |
 | `modules/window-system-lua/` | 窗口 API 的 Lua 适配与组件服务入口 |
 | `src/app/` | Muxora 应用入口，后续产品继续使用 |
 | `src/workspace_host/` | 宿主内容接入；目前提供布局试用的占位内容 |
 | `tools/` | 开发与构建脚本 |
 | `docs/design/` | 产品行为、模块边界和接口设计 |
-| `docs/development/` | 工程规范、测试要求和预览使用说明 |
+| `docs/development/` | 工程规范、测试要求、预览说明、交接记录和开发经验 |
+| `docs/roadmap/` | 实现计划、功能对标和未来规划 |
+| `docs/adr/` | 架构决定记录 |
 | `third_party/` | 固定版本的依赖构建定义与许可证 |
 | `out/` | 本地构建与部署产物，忽略提交 |
 

@@ -30,10 +30,9 @@ themselves are not distributed with the preview.
 
 Lua is built from the fixed upstream archive as C++ and statically linked. The
 embedded build keeps the instruction hook enabled during `__gc` finalizers so
-task budgets also apply during cleanup. CMake generates a build-local copy of
+a stop request also reaches code running during cleanup. CMake generates a build-local copy of
 `lgc.c` for this change and checks the expected source location; the downloaded
 archive is unchanged. See the [build definition](third_party/lua/CMakeLists.txt)
-and [adaptation notes](third_party/lua/README.md). This does not expose Lua's
-debug library to user scripts. No separate Lua installation or runtime DLL is
+and [adaptation notes](third_party/lua/README.md). No separate Lua installation or runtime DLL is
 required. These notices describe the current source; previously published
 preview packages retain the dependency list of their own release.
