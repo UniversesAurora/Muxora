@@ -38,7 +38,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
      - **`peek-size` 失败**：`shortcutOpensAKeyboardEditableSizeDialog` 在 Debug 下 `height->hasFocus()` 为 false，随后等待超时（`peek_size_test.cpp:518`、`:530`），Release 下通过。按真实缺陷排查（焦点时序或等待条件），修复后保留回归。
      - 结果写进验证日志和预览说明“已知问题”；完成后 `verify.ps1` 应能完整跑通。
   4. 之后按推荐顺序进行 1.7。
-- **待用户决定**：原发布标签 `v0.1.0-preview.1` 的处理；8.10 尺寸规格统一。
+- **待用户决定**：8.10 尺寸规格统一。
 - **本轮新决定**：
   - 桌面测试和全量测试一律带 `-Elevate` 运行，不先用普通权限试一次，并且整批以管理员权限运行：权限更高的前台窗口会让普通权限的测试无法移动鼠标（AGENTS.md、[测试要求](testing-design.md)、[桌面测试经验](lessons/desktop-testing.md)）。
   - 9.8 中被 `require` 的模块必须能在顶层调用 `muxora.*`，与 Neovim 一致（用户此前“按 Neovim 的方式处理”的要求，写在 9.8 返工 R2）。
@@ -47,6 +47,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
   - 排查用的临时文件放系统临时目录或 `out/diagnostics/<主题>/`，用完删除（AGENTS.md“必须遵守 · 临时文件”）。
   - 文档：每类信息只写在 [文档维护规范](documentation.md) 规定的位置，别处只链接；每次提交同步更新受影响的文档并运行 `pwsh tools/check-docs.ps1`；接手时按该规范审查上一位的提交（AGENTS.md、文档维护规范）。
   - AGENTS.md 只放所有助手必须遵守的规则、常用命令和链接，细则写在它链接的文档里。
+  - 发布标签 `v0.1.0-preview.1` 移到 main 上内容相同的 `dfb5c14`（用户同意；原先指向 10-20 改写前的 `d3aeb53`，两者文件完全相同）。GitHub 预发布及其下载文件不变。
   - “默认用 pwsh”“提权优先用 gsudo”“git 只用 rebase 或快进”属于这台电脑的约定，已同步写进两位助手各自的全局配置，不在仓库里。
 - **环境与注意事项**：
   - 已知偶发问题见 [预览说明](window-system-preview.md#待完成与验证范围)。
