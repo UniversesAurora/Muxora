@@ -1,6 +1,15 @@
 # Qt Widgets 经验
 
-适用于 Qt 6.12（Windows）。以下问题都是在 MinGW 构建下发现的，与 Qt 自身的行为有关，改用 MSVC 后同样适用。
+适用于 Qt 6.12（Windows）。工具链要求见 [工程设计](../engineering-design.md)。
+
+## 焦点
+
+### 等窗口真正激活后再输入，模态登记不代表已经取得焦点
+
+- **现象**：尺寸对话框已经进入 `activeModalWidget()`，测试输入后按 Tab，`height->hasFocus()` 仍为 false；稍后窗口自然激活，高度框才取得真实焦点。
+- **原因**：Qt 6.12 的窗口激活是异步的。窗口未激活时，`setFocus()` 只记下焦点子控件，等窗口激活才更新实际键盘焦点；模态登记和显示事件都不保证这个过程已经结束。依据见 [QDialog 显示实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/dialogs/qdialog.cpp#L733)、[QWidget 焦点契约与实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/kernel/qwidget.cpp#L6019)。
+- **做法**：快捷键测试先等待宿主窗口激活。对话框输入在原看门狗范围内等待自然激活及初始输入框取得焦点，不强制激活、不用补设焦点挽救失败；就绪后仍立即断言 Tab 的焦点结果。
+- **验证**：`PeekSizeTest::shortcutOpensAKeyboardEditableSizeDialog` 在旧流程下失败。修正前提后，原断言和看门狗保留；初始焦点错误、Tab 顺序错误及显示不激活的反向条件仍分别失败。完整记录、评审及运行范围见 [验证日志](../verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
 
 ## 原生窗口
 

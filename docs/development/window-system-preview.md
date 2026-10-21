@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向重跑通过，不能写作首次全量全绿。固定预览和 Lua 部署检查完成，见 [验证日志](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)。Debug 的原超时套件均在临时诊断清单下完成，正式总时限方案经 Claude 评审并完成配置属性核对；`peek-size` 的焦点失败已单独复现，正式 Debug 全量和完整验证仍待通过，见 [诊断记录](verification-log/2026-10.md#msvc-debug-套件总时限诊断与评审2026-10-21)。9.8 状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
+R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向重跑通过，不能写作首次全量全绿。固定预览和 Lua 部署检查完成，见 [验证日志](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)。Debug 总时限按用户转达的主导会话 [A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22) 调整并核对生成属性；`peek-size` 按 [A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22) 修正测试前提，相关套件、连续单用例及反向验证完成。正式 Debug 全量和完整验证仍待通过；9.8 状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
@@ -151,7 +151,7 @@ R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向
 - 工具条原生菜单的真实输入用例偶发“第二次点击前菜单已不可见”，原因未查明（2026-10-15、10-16）。
 - `window-system.lua` 的 `panelPoliciesCanBeConfiguredWithoutNestedExecution` 偶发失败，在改动前的代码上同样出现，原因未查明（2026-10-20）。
 - 用户报告过悬停最大化按钮不出现贴靠布局，本机未复现，触发条件待确认（2026-10-20）。
-- MSVC Debug 的套件总时限已按诊断和 Claude 评审调整；`peek-size` 焦点失败仍待处理，不能据此声称 Debug 全量通过。Release 的工具条菜单失败也仍未确认根因，见 [验证日志](verification-log/2026-10.md#msvc-debug-套件总时限诊断与评审2026-10-21)。
+- MSVC Debug 总时限与 `peek-size` 的处理已完成，仍待完整验证；Release 的工具条菜单失败尚未确认根因，见 [验证日志](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
 
 ## 试用时记录
 

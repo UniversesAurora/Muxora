@@ -10,6 +10,7 @@
 #include <QAction>
 #include <QAbstractButton>
 #include <QApplication>
+#include <QDebug>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QContextMenuEvent>
@@ -500,28 +501,43 @@ void PeekSizeTest::shortcutOpensAKeyboardEditableSizeDialog()
     const auto tab = manager.addTab(window, content, {"Side", "editor", {}});
     QVERIFY(manager.moveTabToEdge(tab, Edge::Left));
     QVERIFY(manager.commands().setShortcut("tab.peek.setSize", QKeySequence("Ctrl+Alt+P")));
-    sizeWindow(manager.windowWidget(window)); manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); QVERIFY(manager.activateTab(tab));
+    auto* const host = manager.windowWidget(window);
+    sizeWindow(host); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(host)); QVERIFY(manager.activateTab(tab));
+    QVERIFY(QTest::qWaitForWindowActive(host));
     bool interacted = false, timedOut = false; QTimer navigation, watchdog;
     navigation.setInterval(20); watchdog.setSingleShot(true);
     connect(&navigation, &QTimer::timeout, this, [&] {
         auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
         if (!dialog || dialog->objectName() != "PeekSizeDialog") return;
-        navigation.stop(); interacted = true;
         auto* width = dialog->findChild<QSpinBox*>("PeekWidthInput");
         auto* height = dialog->findChild<QSpinBox*>("PeekHeightInput");
         auto* buttons = dialog->findChild<QDialogButtonBox*>("PeekSizeButtons");
-        QVERIFY(width && height && buttons); QCOMPARE(width->value(), 0); QCOMPARE(height->value(), 0);
+        QVERIFY(width && height && buttons);
+        // Modal registration precedes native activation. Keep the original
+        // watchdog running while waiting for actual initial keyboard focus.
+        if (!dialog->isActiveWindow() || !width->hasFocus()) return;
+        navigation.stop(); interacted = true;
+        QVERIFY(dialog->isActiveWindow()); QVERIFY(width->hasFocus());
+        QCOMPARE(width->value(), 0); QCOMPARE(height->value(), 0);
         QCOMPARE(width->specialValueText(), QStringLiteral("默认宽度"));
         QCOMPARE(height->specialValueText(), QStringLiteral("填满高度"));
         QTest::keyClick(width, Qt::Key_A, Qt::ControlModifier); QTest::keyClicks(width, "369");
         QTest::keyClick(width, Qt::Key_Tab); QVERIFY(height->hasFocus());
+        QVERIFY(dialog->isActiveWindow());
         QTest::keyClick(height, Qt::Key_A, Qt::ControlModifier); QTest::keyClicks(height, "217");
         buttons->button(QDialogButtonBox::Ok)->setFocus();
+        QVERIFY(dialog->isActiveWindow());
         QTest::keyClick(buttons->button(QDialogButtonBox::Ok), Qt::Key_Return);
     });
     connect(&watchdog, &QTimer::timeout, this, [&] {
         timedOut = true;
+        const auto* modal = QApplication::activeModalWidget();
+        const auto* focus = QApplication::focusWidget();
+        const auto* active = QApplication::activeWindow();
+        qWarning() << "Peek-size navigation timed out; dialogActive=" << (modal && modal->isActiveWindow())
+                   << "focus=" << (focus ? focus->objectName() : QStringLiteral("<none>"))
+                   << "activeWindow=" << (active ? active->objectName() : QStringLiteral("<none>"));
         for (auto* widget : QApplication::topLevelWidgets())
             if (auto* dialog = qobject_cast<QDialog*>(widget); dialog && dialog->objectName() == "PeekSizeDialog") dialog->reject();
     });
