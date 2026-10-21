@@ -86,5 +86,5 @@ Muxora 除了 SSH 会话，还要像 Windows Terminal 一样打开本机的 shel
 本地终端也要支持同时打开数百个：
 
 - 每个终端的 ConPTY 输出读取不各占一个线程。ConPTY 要求用管道连接，`CreatePipe` 创建的匿名管道不支持重叠 I/O，因此改为自己创建一对命名管道（`CreateNamedPipeW` 加 `FILE_FLAG_OVERLAPPED`，客户端一端交给 ConPTY），用一个 I/O 完成端口加少量工作线程处理全部终端的读写。
-- 输出进入终端核心后按帧合并绘制；不可见的终端不生成渲染数据（[性能方案 §5](../roadmap/performance-plan.md#5-gpu-渲染与终端视图契约)）。
+- 输出进入终端核心后按帧合并绘制；不可见的终端不生成渲染数据（[性能方案 §5](../roadmap/review-2026-10/performance-plan.md#5-gpu-渲染与终端视图契约)）。
 - 输入写入使用有界队列；进程不读输入时施加背压，不无限缓存。

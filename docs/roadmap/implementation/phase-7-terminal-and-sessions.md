@@ -351,7 +351,7 @@ PuTTY 注册表、Xshell `.xsh`、MobaXterm `.mxtsessions` 导入为应用自建
 
 **产出**：SSH 传输实现 7.3a 的 `TerminalTransport` 接口，复用 7.3c 的 `terminal_content` 内容控件（内容类型 `terminal.ssh`）；PTY 通道 ↔ `TerminalCore`；尺寸同步；环境变量（`TERM`、`COLORTERM`）按 V0 设计请求并显示远端是否接受。
 
-**要点**：登录脚本（Lua，`session.expect`／`session.send`，见 [Lua 方案](../lua-plan.md#1-运行时审查结论)）；Shell 集成（OSC 133）带来的命令完成通知和提示符跳转；会话日志；触发器；广播输入（窗口模块的窗格选择集 + 内容层发送）。
+**要点**：登录脚本（Lua，`session.expect`／`session.send`，见 [Lua 方案](../review-2026-10/lua-plan.md#1-运行时审查结论)）；Shell 集成（OSC 133）带来的命令完成通知和提示符跳转；会话日志；触发器；广播输入（窗口模块的窗格选择集 + 内容层发送）。
 
 **验证**：在测试服务上运行 `vim`、`htop`、`tmux`、`less`，以及宽字符和颜色样例；断线时内容显示状态并可重连，重连不新建标签。
 

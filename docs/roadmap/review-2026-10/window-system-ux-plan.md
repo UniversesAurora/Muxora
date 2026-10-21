@@ -1,10 +1,12 @@
 # 窗口系统与交互改进
 
-本文列出窗口系统在交互和配置上的缺口与冲突，并给出实现方案。设计约束沿用 [设置与命令](../design/settings-and-commands-design.md)、[工作区](../design/workspace-design.md) 等设计文档；这里只写“当前差什么”和“怎么补”。
+> 2026-10 整体审查的快照，不再更新；可执行步骤以 [实现计划](../implementation/README.md) 为准，说明见 [审查目录](README.md)。
+
+本文列出窗口系统在交互和配置上的缺口与冲突，并给出实现方案。设计约束沿用 [设置与命令](../../design/settings-and-commands-design.md)、[工作区](../../design/workspace-design.md) 等设计文档；这里只写“当前差什么”和“怎么补”。
 
 ## 1. 主题：深色与黑色
 
-> 2026-10-19 修订：主题部分已扩展为独立的 [主题系统设计](../design/theme-system-design.md)，实现步骤见 [阶段 2](implementation/phase-2-themes.md)。原来“在现有 `Theme` 结构上加几个字段、给两套颜色”的方案不再采用。
+> 2026-10-19 修订：主题部分已扩展为独立的 [主题系统设计](../../design/theme-system-design.md)，实现步骤见 [阶段 2](../implementation/phase-2-themes.md)。原来“在现有 `Theme` 结构上加几个字段、给两套颜色”的方案不再采用。
 
 要点：
 
@@ -72,7 +74,7 @@
 
 ### 3.2 `when` 条件与上下文键
 
-按 [设置与命令 §8](../design/settings-and-commands-design.md) 中已定的语法实现：
+按 [设置与命令 §8](../../design/settings-and-commands-design.md) 中已定的语法实现：
 
 1. **上下文键服务**（放在窗口模块）：分层取值，顺序为全局 → 窗口 → 组 → 标签 → 窗格 → 内容。模块自动提供 `windowKind`、`groupLocation`、`contentType`、`paneCount`、`textInputFocus`、`viewMode`、`zenMode`、`sideBarsVisible`、`keybindingSequencePending` 等键；宿主可以给窗格或内容设置自定义键，例如 `terminalFocus`、`terminalMode`、`connectionState`。
 2. **表达式**：手写小型解析器，支持 `!`、`&&`、`||`、括号、`==`、`!=`、`=~`（正则）、`in`、数值比较。解析结果缓存到绑定上，分发时只做求值。解析错误在快捷键界面和文件诊断中指出位置。
@@ -123,6 +125,6 @@
 
 > 2026-10-19 新增。
 
-- **整体标准**：所有界面以 Visual Studio、VS Code 为参照，遵守 [界面设计规范](../design/ui-design-system.md)。现有界面与规范的差距见 [界面审查](ui-audit-2026-10.md)：命令面板、窗口选择是带表头和按钮的居中对话框；标签组目标选择是三层嵌套菜单；重命名、Lua 运行、临时展开大小用系统默认输入框或 `exec()` 对话框；设置页和快捷键页信息过密、层次弱。处理方式是统一组件（快速输入、浮层、对话框、通知），见 [阶段 8](implementation/phase-8-ui-quality.md)。
-- **临时面板八向调整**：侧栏临时展开面板的四条边、四个角都可以拖动调整大小，位置仍按现有对齐规则，拖动只改变宽高（[窗口交互设计](../design/window-interaction-design.md)，实现 8.2）。
-- **贴窗口边缘时的冲突**：隐藏侧边栏后，左右面板一直延伸到窗口边缘；非最大化时窗口在客户区内侧约 8 像素的缩放命中区挡住了面板外侧边。解决方法是把窗口的左、右、下缩放区移到可见边框之外的不可见系统边框（与普通 Windows 窗口一致），可见外观和内容贴边都不变，不需要留白（[窗口交互设计“窗口缩放边框”](../design/window-interaction-design.md#窗口缩放边框)，实现 8.1）。
+- **整体标准**：所有界面以 Visual Studio、VS Code 为参照，遵守 [界面设计规范](../../design/ui-design-system.md)。现有界面与规范的差距见 [界面审查](ui-audit.md)：命令面板、窗口选择是带表头和按钮的居中对话框；标签组目标选择是三层嵌套菜单；重命名、Lua 运行、临时展开大小用系统默认输入框或 `exec()` 对话框；设置页和快捷键页信息过密、层次弱。处理方式是统一组件（快速输入、浮层、对话框、通知），见 [阶段 8](../implementation/phase-8-ui-quality.md)。
+- **临时面板八向调整**：侧栏临时展开面板的四条边、四个角都可以拖动调整大小，位置仍按现有对齐规则，拖动只改变宽高（[窗口交互设计](../../design/window-interaction-design.md)，实现 8.2）。
+- **贴窗口边缘时的冲突**：隐藏侧边栏后，左右面板一直延伸到窗口边缘；非最大化时窗口在客户区内侧约 8 像素的缩放命中区挡住了面板外侧边。解决方法是把窗口的左、右、下缩放区移到可见边框之外的不可见系统边框（与普通 Windows 窗口一致），可见外观和内容贴边都不变，不需要留白（[窗口交互设计“窗口缩放边框”](../../design/window-interaction-design.md#窗口缩放边框)，实现 8.1）。

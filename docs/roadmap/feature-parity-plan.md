@@ -19,11 +19,11 @@
 | 搜索 | 回滚内搜索，支持正则、大小写；结果高亮；与 Normal／Visual 模式（[设计](../design/terminal-mark-mode-design.md)）共用 |
 | 图形 | Kitty 图形协议（Ghostty 核心支持）；Sixel 不在 Ghostty 支持范围，见 V0 设计 |
 | 会话日志 | 按会话写日志文件，可选时间戳与纯文本／原始字节；大小与轮转上限 |
-| 广播输入 | 多选窗格后同时输入，见 [交互 §5](window-system-ux-plan.md#5-其他交互问题) |
+| 广播输入 | 多选窗格后同时输入，见 [交互 §5](review-2026-10/window-system-ux-plan.md#5-其他交互问题) |
 | 外观 | 配色方案独立于界面主题；背景透明、亚克力（DWM）、背景图；光标样式；铃声（视觉、声音、任务栏闪烁） |
 | 下拉终端 | 全局热键呼出的下拉窗口（Windows Terminal 的 Quake 模式），复用轻量窗口 |
 | ZMODEM | `rz`/`sz`（Xshell、MobaXterm、Tabby 都支持），检测到 ZMODEM 起始序列后接管传输并显示进度 |
-| 性能 | 以 vtebench 和 alacritty 的 benchmark 为基准；解析不占 GUI 线程，按帧合并绘制，见 [性能 §5](performance-plan.md#5-gpu-渲染与终端视图契约) |
+| 性能 | 以 vtebench 和 alacritty 的 benchmark 为基准；解析不占 GUI 线程，按帧合并绘制，见 [性能 §5](review-2026-10/performance-plan.md#5-gpu-渲染与终端视图契约) |
 
 ## 2. SSH 会话管理
 
@@ -39,7 +39,7 @@
 | 代理 | SOCKS4/5、HTTP CONNECT、`ProxyCommand` |
 | 端口转发 | 本地、远程、动态；会话内转发列表，显示状态和流量 |
 | 保活与重连 | keepalive；断线后按退避策略自动重连，可设最大次数；重连后可选重新执行登录脚本 |
-| 登录脚本 | Lua：`expect`／`send` 风格，带超时和取消，见 [Lua §1](lua-plan.md#1-运行时审查结论) |
+| 登录脚本 | Lua：`expect`／`send` 风格，带超时和取消，见 [Lua §1](review-2026-10/lua-plan.md#1-运行时审查结论) |
 | 自定义 shell | 登录后执行的命令、远端 shell 路径、环境变量、工作目录 |
 | 主机密钥 | `known_hosts` 管理界面；首次连接和密钥变化的明确提示 |
 | 会话操作 | 复制会话、在新标签／新窗口打开、批量连接文件夹 |
@@ -78,8 +78,8 @@
 
 与 V0 设计的阶段 A–D 一致，补充窗口系统侧的前置条件：
 
-1. 窗口系统完成增量调和、延迟视图和可见性回调（[性能 §1–2](performance-plan.md)），再接入第一个真实终端；
-2. `when` 条件和终端按键冲突的处理（[交互 §3](window-system-ux-plan.md#3-快捷键对标-vs-code)）与终端同时上线；
+1. 窗口系统完成增量调和、延迟视图和可见性回调（[性能 §1–2](review-2026-10/performance-plan.md)），再接入第一个真实终端；
+2. `when` 条件和终端按键冲突的处理（[交互 §3](review-2026-10/window-system-ux-plan.md#3-快捷键对标-vs-code)）与终端同时上线；
 3. 会话管理与 SSH；
 4. SFTP 面板与传输队列；
 5. X11 与其余完善项。

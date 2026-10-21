@@ -63,4 +63,4 @@
 
 生命周期场景在完整窗口和浮动窗口上运行 24 代重载、768 个有序事件。每代断言 3 个回调，以及各 1 个命令、工具条、状态项、计时器和订阅，排空后的事件积压为零；同时核验工具条布局、内容实例及预热后的 QObject 类型数量。卸载后 VM 与注册资源归零，原生内存和句柄另作记录。窗口未显示，该检查不代表实际应用峰值或长期资源验收。实际执行与通过情况以 [预览状态](../../docs/development/window-system-preview.md) 和测试日志为准。
 
-[`tests/fixtures/external-host`](tests/fixtures/external-host/) 使用已安装的 WindowSystem 包，加上 LuaRuntime／WindowSystemLua 源码 target，验证组件服务、脚本命令、标题、内容身份和动态工具区。它不链接 Muxora 应用，也不作为另一个用户产品交付。
+[`tests/fixtures/external-host`](tests/fixtures/external-host) 使用已安装的 WindowSystem 包，加上 LuaRuntime／WindowSystemLua 源码 target，验证组件服务、脚本命令、标题、内容身份和动态工具区。它不链接 Muxora 应用，也不作为另一个用户产品交付。

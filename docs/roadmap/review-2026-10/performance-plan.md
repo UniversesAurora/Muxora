@@ -1,6 +1,8 @@
 # 性能与内存方案
 
-目标：在几乎不牺牲交互性能的前提下压低内存，CPU 只做必要工作，绘制尽量交给 GPU，支撑同时打开数百到上千个会话。本文针对 [代码审查记录](code-review-2026-10.md) 中的 R1–R9，给出实现顺序和验证方法。数值目标在第 6 节先做测量再定，不在这里预设成绩。
+> 2026-10 整体审查的快照，不再更新；可执行步骤以 [实现计划](../implementation/README.md) 为准，说明见 [审查目录](README.md)。
+
+目标：在几乎不牺牲交互性能的前提下压低内存，CPU 只做必要工作，绘制尽量交给 GPU，支撑同时打开数百到上千个会话。本文针对 [代码审查记录](code-review.md) 中的 R1–R9，给出实现顺序和验证方法。数值目标在第 6 节先做测量再定，不在这里预设成绩。
 
 ## 1. 布局变化改为增量调和
 
@@ -26,7 +28,7 @@
 
 - `GroupTabs` 对非活动标签只放一个轻量占位页（或不放页，只保留标签条数据），首次激活时再创建 `TabContent`。
 - 内容控件本身由宿主创建，模块不能决定其生命周期；但可以给宿主一个“视图挂起／恢复”回调，让终端这类内容在隐藏后释放渲染资源（字形纹理、帧缓冲），只保留终端核心状态。
-- 隐藏控件 Qt 本来就不绘制。终端内容还需在不可见时停止生成渲染快照，只更新模型（参见 [工程设计 §3.3](../development/engineering-design.md)）。
+- 隐藏控件 Qt 本来就不绘制。终端内容还需在不可见时停止生成渲染快照，只更新模型（参见 [工程设计 §3.3](../../development/engineering-design.md)）。
 
 建议给 `WindowManager` 增加宿主可选接口，例如：
 
@@ -67,7 +69,7 @@ void setContentVisibilityHandler(std::function<void(const ContentVisibility&)> h
 
 逐个控件迁移，迁移一个删一段 QSS；每步用现有像素和几何测试守住外观。
 
-**限制（实现计划阶段补充）**：`theme.cpp` 中 `styleSheet()` 的注释说明，`QWidget::setStyle()` 只作用于单个控件，不随子控件增加和改挂传播；整棵控件树使用同一个样式只能靠 `QApplication::setStyle()`，而模块契约是不改变应用级样式。因此迁移只能作为宿主可选的应用级入口，模块默认仍用样式表。阶段 1 减少改挂之后，样式表的成本可能已不重要，先测量再决定，见 [实现计划 2.10](implementation/phase-2-themes.md#210-样式实现迁移可选先测量)。深色主题不依赖这一步，直接在现有令牌上实现。
+**限制（实现计划阶段补充）**：`theme.cpp` 中 `styleSheet()` 的注释说明，`QWidget::setStyle()` 只作用于单个控件，不随子控件增加和改挂传播；整棵控件树使用同一个样式只能靠 `QApplication::setStyle()`，而模块契约是不改变应用级样式。因此迁移只能作为宿主可选的应用级入口，模块默认仍用样式表。阶段 1 减少改挂之后，样式表的成本可能已不重要，先测量再决定，见 [实现计划 2.10](../implementation/phase-2-themes.md#210-样式实现迁移可选先测量)。深色主题不依赖这一步，直接在现有令牌上实现。
 
 ## 5. GPU 渲染与终端视图契约
 
@@ -93,11 +95,11 @@ void setContentVisibilityHandler(std::function<void(const ContentVisibility&)> h
 | 1000 个标签的布局保存 | JSON 字节数、写盘耗时 |
 | 循环开关 1000 次 | 私有提交、句柄、GDI／USER 计数趋势 |
 
-先跑出基线，再按 [工程设计 §4](../development/engineering-design.md) 的 p95 ≤ 50 ms 原型目标定各项预算并写入测试。没有测量结果之前，不在文档或提交说明里写“已达到”。
+先跑出基线，再按 [工程设计 §4](../../development/engineering-design.md) 的 p95 ≤ 50 ms 原型目标定各项预算并写入测试。没有测量结果之前，不在文档或提交说明里写“已达到”。
 
 ### 基线数据（2026-10-19）
 
-由 [阶段 0.1](implementation/phase-0-baseline.md#01-规模基准程序) 的 `pwsh ./tools/bench.ps1 -Name baseline -Tabs '100,500,1000'` 测得，原始数据在 `out/test-results/bench-baseline.json`（不提交）。这是本机单次测量，不能当作跨机器的结论。
+由 [阶段 0.1](../implementation/phase-0-baseline.md#01-规模基准程序) 的 `pwsh ./tools/bench.ps1 -Name baseline -Tabs '100,500,1000'` 测得，原始数据在 `out/test-results/bench-baseline.json`（不提交）。这是本机单次测量，不能当作跨机器的结论。
 
 - 机器：Intel Core i9-13900K（32 个逻辑核心），64 GB 内存，Windows 11 25H2。
 - 构建：Release，Qt 6.12.0，MinGW GCC 15.1；平台插件 `offscreen`，不经过原生窗口和 DWM，绘制成本偏低。

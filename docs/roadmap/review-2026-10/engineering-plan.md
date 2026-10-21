@@ -1,5 +1,7 @@
 # 工程结构与测试
 
+> 2026-10 整体审查的快照，不再更新；可执行步骤以 [实现计划](../implementation/README.md) 为准，说明见 [审查目录](README.md)。
+
 ## 1. 目录与模块
 
 **现状**：
@@ -84,7 +86,7 @@ docs/adr/            架构决定记录
 
 ## 4. 工具链与构建
 
-**文档与实际不一致**：[工程设计 §6.1](../development/engineering-design.md) 写的是首选 MSVC 2022 预编译 Qt，实际构建和部署使用 Qt 6.12 MinGW（GCC 15.1）。两者都可行，需要用 ADR 明确：
+**文档与实际不一致**：[工程设计 §6.1](../../development/engineering-design.md) 写的是首选 MSVC 2022 预编译 Qt，实际构建和部署使用 Qt 6.12 MinGW（GCC 15.1）。两者都可行，需要用 ADR 明确：
 
 - 继续 MinGW：保持现状；ASan 需要改用 llvm-mingw 或单独的诊断构建。
 - 增加 MSVC 诊断构建：使用 MSVC 版 Qt 和 `/fsanitize=address`，只用于诊断，不影响 Release 预览。

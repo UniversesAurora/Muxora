@@ -120,11 +120,11 @@ pwsh ./tools/bench.ps1 -Name baseline
 
 - [x] 默认 Release 构建产物与之前相同（不出现基准目标，`muxora.exe` 不受影响）。
 - [ ] `bench-baseline.json` 生成，八个场景在四个规模下都有数据。（按用户决定只跑了 100／500／1000 三个规模，见下方状态）
-- [x] 在 [性能方案 §6](../performance-plan.md#6-测量与预算) 末尾追加“基线数据”表，写明机器、平台插件、提交。
+- [x] 在 [性能方案 §6](../review-2026-10/performance-plan.md#6-测量与预算) 末尾追加“基线数据”表，写明机器、平台插件、提交。
 
 **风险**：offscreen 平台不走原生窗口和 DWM，绘制成本偏低。表格中注明平台；需要原生数据时用 `-Visible` 另跑一份。
 
-**状态**：已完成（提交标题 “Add opt-in WindowSystem layout scale benchmark”），2000 个标签这一档未运行。基线结果见 [性能方案 §6 基线数据](../performance-plan.md#基线数据2026-10-19)。
+**状态**：已完成（提交标题 “Add opt-in WindowSystem layout scale benchmark”），2000 个标签这一档未运行。基线结果见 [性能方案 §6 基线数据](../review-2026-10/performance-plan.md#基线数据2026-10-19)。
 
 实现与上面的差别：
 

@@ -1,6 +1,6 @@
 # 内置编辑器设计
 
-状态：设计稿，2026-10-20。实现步骤见 [阶段 5.2](../roadmap/implementation/phase-5-lua-tools.md#52-内置编辑器)。取代 [Lua 方案 §2](../roadmap/lua-plan.md#2-内置编辑器) 中“基于 `QPlainTextEdit` 自写”的方案。
+状态：设计稿，2026-10-20。实现步骤见 [阶段 5.2](../roadmap/implementation/phase-5-lua-tools.md#52-内置编辑器)。取代 [Lua 方案 §2](../roadmap/review-2026-10/lua-plan.md#2-内置编辑器) 中“基于 `QPlainTextEdit` 自写”的方案。
 
 ## 1. 定位
 

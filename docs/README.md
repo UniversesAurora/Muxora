@@ -42,11 +42,14 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | --- | --- |
 | [架构决定记录](adr/README.md) | 自研停靠、Lua 编译方式与标准库范围、Windows 工具链、标题按钮命中、组件按需加载、系统通知等已做出决定的背景、取舍与后果 |
 
-## 审查与路线
+## 路线
 
 | 文档 | 内容 |
 | --- | --- |
+| [路线入口](roadmap/README.md) | 路线文档的总览和维护方式 |
+| [实现计划](roadmap/implementation/README.md) | 按阶段拆分的步骤、推荐执行顺序和当前位置 |
+| [业务功能对标](roadmap/feature-parity-plan.md) | 终端、SSH、SFTP、X11 的对标清单与接入顺序 |
 | [未来规划](roadmap/future-plans.md) | Windows 7 Aero 风格外观、AI 接入等以后要做的事项（只记录需求与约束） |
-| [审查结论与后续路线](roadmap/README.md) | 2026-10 整体代码审查、优先级，以及性能、交互、Lua、工程和业务对标的实现方案 |
+| [2026-10 整体审查](roadmap/review-2026-10/README.md) | 当时的代码审查、界面审查和各方面方案（快照，不再更新） |
 
-设计文档使用小写英文加连字符命名。产品与接口设计放在 `design/`，开发规范和操作说明放在 `development/`；审查结论和按优先级排列的实现方案放在 `roadmap/`；长期有效的架构决定放在 `adr/`，每轮修订与验证记录放在 `development/verification-log/`。引用仓库文件使用相对路径，机器 SDK 路径只作为本地示例出现。
+设计文档使用小写英文加连字符命名。产品与接口设计放在 `design/`，开发规范和操作说明放在 `development/`；实现计划和路线放在 `roadmap/`，整体审查的快照放在 `roadmap/review-<年>-<月>/`；长期有效的架构决定放在 `adr/`，每轮修订与验证记录放在 `development/verification-log/`。引用仓库文件使用相对路径，机器 SDK 路径只作为本地示例出现。

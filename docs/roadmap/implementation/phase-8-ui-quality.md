@@ -1,6 +1,6 @@
 # 阶段 8：界面质量
 
-**目的**：让所有临时界面、页面和窗口交互达到 [界面设计规范](../../design/ui-design-system.md) 的标准，解决 [界面审查](../ui-audit-2026-10.md) 中的问题，并实现侧栏临时面板的八向调整和窗口外侧缩放边框（[窗口交互设计](../../design/window-interaction-design.md#窗口缩放边框)）。
+**目的**：让所有临时界面、页面和窗口交互达到 [界面设计规范](../../design/ui-design-system.md) 的标准，解决 [界面审查](../review-2026-10/ui-audit.md) 中的问题，并实现侧栏临时面板的八向调整和窗口外侧缩放边框（[窗口交互设计](../../design/window-interaction-design.md#窗口缩放边框)）。
 
 **阶段约束**：
 
@@ -295,7 +295,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **实现**：
 
-1. 主菜单调整为 [交互改进 §2](../window-system-ux-plan.md#2-菜单与命令结构) 的结构：文件、编辑、视图、窗口（合并原“布局”和“窗口”）、工具、帮助；“会话”“终端”菜单在阶段 7 加入。
+1. 主菜单调整为 [交互改进 §2](../review-2026-10/window-system-ux-plan.md#2-菜单与命令结构) 的结构：文件、编辑、视图、窗口（合并原“布局”和“窗口”）、工具、帮助；“会话”“终端”菜单在阶段 7 加入。
 2. “编辑”菜单的通用命令：`edit.undo`、`edit.redo`、`edit.cut`、`edit.copy`、`edit.paste`、`edit.selectAll`、`edit.find`。实现为“转发给当前焦点控件”：`QLineEdit`、`QTextEdit`、`QPlainTextEdit` 调用其同名槽；内容控件可以通过动态属性 `windowSystemEditActions` 声明支持的操作，或实现一个小接口（`EditTarget`）由模块查找。没有可用目标时命令禁用。
 3. 标签右键菜单按规范 §4.2 重新分组：关闭组 → 固定与颜色 → 移动与拆分 → 转换 → 所在标签组 → 复制标题。
 4. 文案检查：写一个测试遍历所有命令，检查：需要进一步输入的命令（打开快速输入或对话框的）标题以“…”结尾，其他命令不以“…”结尾；标题不以句号结尾；同一命令在菜单中显示的文字与命令标题一致。需要输入的命令在注册时用一个标志声明（`Command` 增加 `bool opensInput = false;`）。

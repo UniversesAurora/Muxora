@@ -1,6 +1,6 @@
 # 界面设计规范
 
-状态：设计稿，2026-10-19。适用于 WindowSystem 模块和 Muxora 应用的全部界面。颜色规则见 [主题系统设计](theme-system-design.md)；现有界面与本规范的差距见 [界面审查](../roadmap/ui-audit-2026-10.md)；实现步骤见 [阶段 8 实现计划](../roadmap/implementation/phase-8-ui-quality.md)。
+状态：设计稿，2026-10-19。适用于 WindowSystem 模块和 Muxora 应用的全部界面。颜色规则见 [主题系统设计](theme-system-design.md)；现有界面与本规范的差距见 [界面审查](../roadmap/review-2026-10/ui-audit.md)；实现步骤见 [阶段 8 实现计划](../roadmap/implementation/phase-8-ui-quality.md)。
 
 ## 1. 原则
 

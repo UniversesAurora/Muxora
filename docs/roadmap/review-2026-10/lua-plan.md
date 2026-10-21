@@ -1,6 +1,8 @@
 # Lua：审查结论、编辑器与脚本管理
 
-相关文档：[Lua 设计](../design/lua-scripting-design.md)、[Lua 使用说明](../development/lua-guide.md)。
+> 2026-10 整体审查的快照，不再更新；可执行步骤以 [实现计划](../implementation/README.md) 为准，说明见 [审查目录](README.md)。
+
+相关文档：[Lua 设计](../../design/lua-scripting-design.md)、[Lua 使用说明](../../development/lua-guide.md)。
 
 ## 1. 运行时审查结论
 
@@ -24,7 +26,7 @@
 
 ## 2. 内置编辑器
 
-> 2026-10-20 修订：编辑器改用 Scintilla + Lexilla（成熟、宽松许可、自带 Qt 控件），按需加载，并同时用于编辑 `settings.json`、`keybindings.json` 等配置文件。以 [内置编辑器设计](../design/text-editor-design.md) 为准，下面 2.1–2.3 中与之冲突的内容（自写编辑器、`QCompleter` 补全）不再适用。
+> 2026-10-20 修订：编辑器改用 Scintilla + Lexilla（成熟、宽松许可、自带 Qt 控件），按需加载，并同时用于编辑 `settings.json`、`keybindings.json` 等配置文件。以 [内置编辑器设计](../../design/text-editor-design.md) 为准，下面 2.1–2.3 中与之冲突的内容（自写编辑器、`QCompleter` 补全）不再适用。
 
 ### 2.1 组件选型
 
@@ -105,9 +107,9 @@ src/editor/
 
 ### 3.3 权限
 
-> 2026-10-20 修订：用户自己放在 `User/` 下的脚本默认拥有全部能力，不弹权限确认（见 [Lua 扩展 API 设计 §2](../design/lua-extension-api-design.md#2-不变的原则)）。以后如果支持安装别人发布的扩展包，再为扩展包设计权限声明。
+> 2026-10-20 修订：用户自己放在 `User/` 下的脚本默认拥有全部能力，不弹权限确认（见 [Lua 扩展 API 设计 §2](../../design/lua-extension-api-design.md#2-不变的原则)）。以后如果支持安装别人发布的扩展包，再为扩展包设计权限声明。
 
-Lua 能力的完整范围（对话框、自定义界面、终端读写、会话、文件、网络等）见 [Lua 扩展 API 设计](../design/lua-extension-api-design.md) 和 [实现阶段 9](implementation/phase-9-lua-extension-api.md)。
+Lua 能力的完整范围（对话框、自定义界面、终端读写、会话、文件、网络等）见 [Lua 扩展 API 设计](../../design/lua-extension-api-design.md) 和 [实现阶段 9](../implementation/phase-9-lua-extension-api.md)。
 
 ## 4. 实施顺序
 
