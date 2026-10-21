@@ -30,9 +30,9 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 
 | 目录 | 内容 |
 | --- | --- |
-| `modules/window-system/` | 独立窗口系统、公开 API 和模块测试 |
-| `modules/lua-runtime/` | 在工作线程运行 Lua 的异步运行时（Qt Core） |
-| `modules/window-system-lua/` | 窗口 API 的 Lua 适配与组件服务入口 |
+| [`modules/window-system/`](modules/window-system/README.md) | 独立窗口系统、公开 API 和模块测试 |
+| [`modules/lua-runtime/`](modules/lua-runtime/README.md) | 在工作线程运行 Lua 的异步运行时（Qt Core） |
+| [`modules/window-system-lua/`](modules/window-system-lua/README.md) | 窗口 API 的 Lua 适配与组件服务入口 |
 | `src/app/` | Muxora 应用入口，后续产品继续使用 |
 | `src/workspace_host/` | 宿主内容接入；目前提供布局试用的占位内容 |
 | `tools/` | 开发与构建脚本 |
@@ -43,7 +43,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -Test -Run
 | `third_party/` | 固定版本的依赖构建定义与许可证 |
 | `out/` | 本地构建与部署产物，忽略提交 |
 
-文档入口见 [docs/README.md](docs/README.md)。设计文档描述目标；预览说明记录已实现范围，二者不能混同。
+文档入口见 [docs/README.md](docs/README.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。设计文档描述目标；预览说明记录已实现范围，二者不能混同。
 
 ## 参与开发
 

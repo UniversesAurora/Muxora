@@ -33,8 +33,11 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [验证日志](development/verification-log/2026-10.md) | 每一轮修订说明与验证记录，按月分文件、按日期倒序 |
 | [Lua 使用说明](development/lua-guide.md) | 用户配置、脚本命令、API 分组、重载与宿主扩展 |
 | [交接记录](development/handoff.md) | 助手轮流开发时的交接入口：当前状态、进行中的工作、下一步、待用户决定的问题 |
+| [文档维护规范](development/documentation.md) | 每类信息的权威位置、索引规则、改动时要同步更新的文档、提交前检查 |
 | [开发经验](development/lessons/README.md) | Qt Widgets、Windows、Lua 运行时、构建、桌面测试及调试中的问题与排查方法 |
-| [WindowSystem 模块入口](../modules/window-system/README.md) | 模块构建与宿主使用方式 |
+| [WindowSystem 模块](../modules/window-system/README.md) | 窗口模块的构建、公开 API 与宿主接入 |
+| [LuaRuntime 模块](../modules/lua-runtime/README.md) | 在工作线程运行 Lua 的异步运行时 |
+| [WindowSystemLua 模块](../modules/window-system-lua/README.md) | 窗口 API 的 Lua 适配与宿主接入 |
 
 ## 架构决定
 
@@ -46,10 +49,9 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 
 | 文档 | 内容 |
 | --- | --- |
-| [路线入口](roadmap/README.md) | 路线文档的总览和维护方式 |
 | [实现计划](roadmap/implementation/README.md) | 按阶段拆分的步骤、推荐执行顺序和当前位置 |
 | [业务功能对标](roadmap/feature-parity-plan.md) | 终端、SSH、SFTP、X11 的对标清单与接入顺序 |
 | [未来规划](roadmap/future-plans.md) | Windows 7 Aero 风格外观、AI 接入等以后要做的事项（只记录需求与约束） |
 | [2026-10 整体审查](roadmap/review-2026-10/README.md) | 当时的代码审查、界面审查和各方面方案（快照，不再更新） |
 
-设计文档使用小写英文加连字符命名。产品与接口设计放在 `design/`，开发规范和操作说明放在 `development/`；实现计划和路线放在 `roadmap/`，整体审查的快照放在 `roadmap/review-<年>-<月>/`；长期有效的架构决定放在 `adr/`，每轮修订与验证记录放在 `development/verification-log/`。引用仓库文件使用相对路径，机器 SDK 路径只作为本地示例出现。
+每类信息放在哪份文档、改动时要同步更新什么、提交前怎么检查，见 [文档维护规范](development/documentation.md)。

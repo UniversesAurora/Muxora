@@ -23,7 +23,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
 - **本轮完成**：
   - 接手核对：Release 构建通过；在提交 `0966631` 上经 `quiet-desktop.ps1 -Elevate` 重跑 Release 全量，结果见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
   - 审查上一轮的全部提交。9.8 需要返工两处（R1 常驻调用钩子、R2 可让出的 `require`），要求、测试和完成条件写在 [9.8 · 返工](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。审查发现的协作问题写进 [助手协作经验](lessons/collaboration.md)，对应规则写进 AGENTS.md。
-  - 整理仓库：2026-10 审查文档移到 `docs/roadmap/review-2026-10/` 作为快照，`docs/roadmap/README.md` 只列持续维护的计划；变更记录分成“未发布”和 `0.1.0-preview.1`；工程设计 §8 的目录规划改为只列目录；预览说明“最近一次验证”只保留最新一次。
+  - 整理仓库：2026-10 审查文档移到 `docs/roadmap/review-2026-10/` 作为快照，路线文档直接列在文档入口；变更记录分成“未发布”和 `0.1.0-preview.1`；工程设计 §8 的目录规划改为只列目录；预览说明“最近一次验证”只保留最新一次。
   - 按完整文件清单再整理一轮（[经验](lessons/collaboration.md#仓库整理)）：删除 MinGW 构建分支和 `muxora.rc`、无人使用的 `mise.toml`；`verify.ps1`／`bench.ps1` 改用与 `build.ps1` 相同的 Qt 查找，`verify.ps1` 增加 Lua 外部宿主和 Lua 部署检查；删除无调用者的 `ScriptHost::affectedCommands`；`FloatingPanel` 的实现移到模块 `src/` 根目录，`authored_mouse_input.hpp` 移出 `tests/fixtures/`；更正 Lua 预算、`debug` 库等过时说法和预览说明里的本机路径；清理 `out/` 下的排查残留。
   - 改造 `tools/tests/quiet-desktop.ps1`（用户要求由 Claude 直接改）：自己解析参数，选项按全名匹配且只在被测命令之前，被测命令里的 `-Test` 等原样传递；同名程序取第一个；整批以管理员权限运行（`-Elevate` 用一次 UAC 启动管理员会话并转回输出和退出码），删除只控制窗口的代理进程。自测相应补充，结果见验证日志。
   - “窗口交互修订”整理为正式的 [窗口交互细则](../design/window-interaction-design.md)：去掉修订标注和历史说明（移到验证日志），所有引用改为“交互细则”，规则本身没有改。
