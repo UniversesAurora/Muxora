@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向重跑通过，不能写作首次全量全绿。固定预览和 Lua 部署检查完成，见 [验证日志](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)。Debug 总时限按用户转达的主导会话 [A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22) 调整并核对生成属性；`peek-size` 按 [A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22) 修正测试前提，相关套件、连续单用例及反向验证完成。正式 Debug 全量和完整验证仍待通过；9.8 状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
+完整验证已按正式入口执行，Debug 的原超时项与 `peek-size` 通过，菜单关闭、深色滚动条悬停和多行跨窗插入失败。相关诊断未复现，本轮更倾向桌面交互条件或时序波动，按用户要求停止扩展排查，不阻塞 Lua 返工交付；首报仍保留，完整入口未通过、后续阶段本批未运行，见 [验证日志](verification-log/2026-10.md#完整验证与-debug-新失败2026-10-22)。用户转达的 [A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22)、[A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22) 变更及相关检查已完成。固定预览和 Lua 部署检查来自此前的 [Release 验证](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)；9.8 状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
@@ -151,7 +151,7 @@ R1／R2 后的 Release 全量出现工具条菜单交互失败，随后仅定向
 - 工具条原生菜单的真实输入用例偶发“第二次点击前菜单已不可见”，原因未查明（2026-10-15、10-16）。
 - `window-system.lua` 的 `panelPoliciesCanBeConfiguredWithoutNestedExecution` 偶发失败，在改动前的代码上同样出现，原因未查明（2026-10-20）。
 - 用户报告过悬停最大化按钮不出现贴靠布局，本机未复现，触发条件待确认（2026-10-20）。
-- MSVC Debug 总时限与 `peek-size` 的处理已完成，仍待完整验证；Release 的工具条菜单失败尚未确认根因，见 [验证日志](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
+- 正式 Debug 全量中的菜单看门狗、深色滚动条悬停和多行跨窗插入失败，相关运行未复现；暂按环境／时序待复现记录，首报不作废，见 [验证日志](verification-log/2026-10.md#完整验证与-debug-新失败2026-10-22)。Release 的菜单首报同样保留，未宣称修复。
 
 ## 试用时记录
 
