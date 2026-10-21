@@ -19,7 +19,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
 
 ## 2026-10-21 · Claude 交给 Codex：审查 9.8，整理仓库，测试改为管理员权限
 
-- **最后提交**：交出时 `main` 的最新提交，标题为 “docs/handoff: Close the reorganization round”。工作区干净。
+- **最后提交**：交出时 `main` 的最新提交，标题为 “docs/handoff: Record the documentation rules round”。工作区干净。
 - **本轮完成**：
   - 接手核对：Release 构建通过；在提交 `0966631` 上经 `quiet-desktop.ps1 -Elevate` 重跑 Release 全量，结果见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
   - 审查上一轮的全部提交。9.8 需要返工两处（R1 常驻调用钩子、R2 可让出的 `require`），要求、测试和完成条件写在 [9.8 · 返工](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。审查发现的协作问题写进 [助手协作经验](lessons/collaboration.md)，对应规则写进 AGENTS.md。
@@ -27,6 +27,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
   - 按完整文件清单再整理一轮（[经验](lessons/collaboration.md#仓库整理)）：删除 MinGW 构建分支和 `muxora.rc`、无人使用的 `mise.toml`；`verify.ps1`／`bench.ps1` 改用与 `build.ps1` 相同的 Qt 查找，`verify.ps1` 增加 Lua 外部宿主和 Lua 部署检查；删除无调用者的 `ScriptHost::affectedCommands`；`FloatingPanel` 的实现移到模块 `src/` 根目录，`authored_mouse_input.hpp` 移出 `tests/fixtures/`；更正 Lua 预算、`debug` 库等过时说法和预览说明里的本机路径；清理 `out/` 下的排查残留。
   - 改造 `tools/tests/quiet-desktop.ps1`（用户要求由 Claude 直接改）：自己解析参数，选项按全名匹配且只在被测命令之前，被测命令里的 `-Test` 等原样传递；同名程序取第一个；整批以管理员权限运行（`-Elevate` 用一次 UAC 启动管理员会话并转回输出和退出码），删除只控制窗口的代理进程。自测相应补充，结果见验证日志。
   - “窗口交互修订”整理为正式的 [窗口交互细则](../design/window-interaction-design.md)：去掉修订标注和历史说明（移到验证日志），所有引用改为“交互细则”，规则本身没有改。
+  - 文档按多助手项目的通行做法重新整理（用户要求）：新增 [文档维护规范](documentation.md)（每类信息的权威位置、索引规则、改动时同步更新的文档、提交前和接手时的检查）和 `tools/check-docs.ps1`；AGENTS.md 精简为共用规则、常用命令和链接，原来只写在其中的规则移到测试要求、工程设计和 CONTRIBUTING；删除重复的路线入口页、过时的版本号和日期、正文里的修订标注，模块说明里重复的数值和行为改为链接。
 - **进行中**：无。
 - **下一步**（按顺序）：
   1. **9.8 返工 R1、R2**，见上面的链接。R1 先在改动前测一次基准，改完再测，数字写进验证日志。
@@ -44,6 +45,8 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
   - 改动热路径要附前后耗时；达不到设计或 ADR 要求时交给用户决定，不写成“用法”；交出前按文档的写法跑一遍改过的入口脚本；验证结论写清每个数字对应的运行和提交（AGENTS.md、[助手协作经验](lessons/collaboration.md)）。
   - 项目只支持 MSVC 构建（ADR 0009 补记）；开发入口只有 `tools/` 下的脚本，不再有 `mise.toml`。
   - 排查用的临时文件放系统临时目录或 `out/diagnostics/<主题>/`，用完删除（AGENTS.md“必须遵守 · 临时文件”）。
+  - 文档：每类信息只写在 [文档维护规范](documentation.md) 规定的位置，别处只链接；每次提交同步更新受影响的文档并运行 `pwsh tools/check-docs.ps1`；接手时按该规范审查上一位的提交（AGENTS.md、文档维护规范）。
+  - AGENTS.md 只放所有助手必须遵守的规则、常用命令和链接，细则写在它链接的文档里。
   - “默认用 pwsh”“提权优先用 gsudo”“git 只用 rebase 或快进”属于这台电脑的约定，已同步写进两位助手各自的全局配置，不在仓库里。
 - **环境与注意事项**：
   - 已知偶发问题见 [预览说明](window-system-preview.md#待完成与验证范围)。
