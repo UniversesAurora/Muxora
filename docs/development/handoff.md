@@ -6,7 +6,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
 
 - 最上面一节永远是当前状态，标题写日期和交出的助手。新的一轮把上一节改写成新状态，不往下无限追加；只保留最近 3 节作为背景，更早的看 git 历史和 [验证日志](verification-log/2026-10.md)。
 - 每节固定包含下面几项，没有内容写“无”：
-  - **最后提交**：交出时 `main` 的最新提交；工作区有未提交的改动时说明是什么。
+  - **最后提交**：交出时 `main` 是否已推送、与 `origin/main` 一致；工作区有未提交的改动时说明是什么。不写提交标题，最新提交以 `git log` 为准。
   - **本轮完成**：做完的步骤和提交标题，各自验证到什么程度。
   - **进行中**：做到一半的步骤、已完成和剩下的部分、卡住的原因。
   - **下一步**：建议接手的人先做什么。
@@ -19,7 +19,7 @@ Muxora 由几个助手（目前是 Claude 和 Codex）按额度轮流开发，�
 
 ## 2026-10-21 · Claude 交给 Codex：审查 9.8，整理仓库，测试改为管理员权限
 
-- **最后提交**：交出时 `main` 的最新提交，标题为 “docs/handoff: Record the documentation rules round”。工作区干净。
+- **最后提交**：`main` 已全部推送，与 `origin/main` 一致；工作区干净。
 - **本轮完成**：
   - 接手核对：Release 构建通过；在提交 `0966631` 上经 `quiet-desktop.ps1 -Elevate` 重跑 Release 全量，结果见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
   - 审查上一轮的全部提交。9.8 需要返工两处（R1 常驻调用钩子、R2 可让出的 `require`），要求、测试和完成条件写在 [9.8 · 返工](../roadmap/implementation/phase-9-lua-extension-api.md#返工2026-10-21-审查)。审查发现的协作问题写进 [助手协作经验](lessons/collaboration.md)，对应规则写进 AGENTS.md。
