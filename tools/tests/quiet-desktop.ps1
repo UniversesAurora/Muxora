@@ -6,34 +6,61 @@ Runs a command after clearing application windows, then restores their state.
 The snapshot is written before changing windows, so -Restore can recover an
 interrupted run. Owned windows and application tool windows are included;
 shell surfaces, tooltips and off-screen helper windows are left alone.
-Invoke this script through a separate, ordinary-privilege pwsh process. -Elevate
-uses one Windows UAC prompt for window control only; the test command and its
-descendants keep the ordinary runner's permissions. Recovery starts only after
-the complete test process tree has ended. An interrupted broker session retains
-the snapshot for explicit recovery rather than assuming tests have finished.
+Invoke this script through a separate pwsh process. The whole session (window
+cleanup, the test command with all its descendants, and recovery) runs with
+administrator rights: an ordinary-privilege test cannot move the cursor or send
+input while a window of a higher-privilege program is in the foreground. From
+an ordinary session, -Elevate starts the session once through Windows UAC and
+relays its output and exit code. Recovery starts only after the complete test
+process tree has ended; an interrupted session keeps the snapshot for -Restore.
 
-.EXAMPLE
-pwsh tools/tests/quiet-desktop.ps1 pwsh tools/build.ps1 -Configuration Release -Test
-
-.EXAMPLE
-pwsh tools/tests/quiet-desktop.ps1 -Restore
+Options are matched by their full name and must precede the test command. The
+first argument that is not an option starts the command, and everything after
+it is passed on unchanged, so the command may use names such as -Test freely.
+A command that itself starts with '-' follows a '--' separator.
 
 .EXAMPLE
 pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test
-Elevates only window cleanup and recovery, while the build/tests remain ordinary.
+
+.EXAMPLE
+pwsh tools/tests/quiet-desktop.ps1 -Elevate -Restore
 #>
-[CmdletBinding()]
-param(
-    [switch]$ProcessHelpersOnly,
-    [switch]$Restore,
-    [switch]$List,
-    [switch]$Elevate,
-    [string]$BrokerRequestFile,
-    [string]$StateFile,
-    [uint32]$WindowProcessId = 0,
-    [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]]$TestCommand
-)
 $ErrorActionPreference = 'Stop'
+
+function ConvertFrom-QuietDesktopArguments([object[]]$Arguments) {
+    $options = [ordered]@{ ProcessHelpersOnly = $false; Restore = $false; List = $false; Elevate = $false
+        StateFile = $null; WindowProcessId = [uint32]0; TestCommand = @() }
+    $index = 0
+    while ($index -lt $Arguments.Count) {
+        $argument = [string]$Arguments[$index]
+        if ($argument -eq '--') { ++$index; break }
+        if (-not $argument.StartsWith('-')) { break }
+        $name = $argument.Substring(1)
+        if ($name -in @('ProcessHelpersOnly', 'Restore', 'List', 'Elevate')) {
+            $options[$name] = $true
+            ++$index
+        } elseif ($name -in @('StateFile', 'WindowProcessId')) {
+            if ($index + 1 -ge $Arguments.Count) { throw "Option $argument needs a value." }
+            $options[$name] = if ($name -eq 'WindowProcessId') { [uint32]$Arguments[$index + 1] } else { [string]$Arguments[$index + 1] }
+            $index += 2
+        } else {
+            throw "Unknown option $argument. Options go before the test command; put -- before a command that starts with '-'."
+        }
+    }
+    $options.TestCommand = @($Arguments | Select-Object -Skip $index | ForEach-Object { [string]$_ })
+    [pscustomobject]$options
+}
+
+# PowerShell would bind any prefix of a declared parameter (-Test for
+# -TestCommand), so the script takes no param() block and parses $args itself.
+$taskOptions = ConvertFrom-QuietDesktopArguments $args
+$ProcessHelpersOnly = $taskOptions.ProcessHelpersOnly
+$Restore = $taskOptions.Restore
+$List = $taskOptions.List
+$Elevate = $taskOptions.Elevate
+$StateFile = $taskOptions.StateFile
+$WindowProcessId = $taskOptions.WindowProcessId
+$TestCommand = $taskOptions.TestCommand
 
 # Internal lifecycle helpers. The caller runs in a dedicated pwsh process:
 # Windows job membership cannot be removed from a live process.
@@ -92,6 +119,16 @@ public sealed class QuietDesktopProcessScope : IDisposable {
 '@
 }
 
+function Resolve-QuietDesktopProgram([string]$Name) {
+    # Several matches (the same program in two PATH directories) come back as
+    # an array; run the first, which is the one PowerShell itself would run.
+    $program = Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $program) {
+        throw 'The desktop test command must be an executable; run scripts through pwsh -File.'
+    }
+    $program.Source
+}
+
 function Invoke-QuietDesktopSession {
     param(
         [Parameter(Mandatory)][scriptblock]$Prepare,
@@ -101,15 +138,12 @@ function Invoke-QuietDesktopSession {
     $taskScope = $null
     $taskCommandExit = 1
     try {
-        $taskProgram = Get-Command -Name $TestCommand[0] -CommandType Application -ErrorAction SilentlyContinue
-        if (-not $taskProgram) {
-            throw 'The desktop test command must be an executable; run scripts through pwsh -File.'
-        }
+        $taskProgram = Resolve-QuietDesktopProgram $TestCommand[0]
         & $Prepare
         $taskScope = [QuietDesktopProcessScope]::new()
         $taskArguments = @($TestCommand | Select-Object -Skip 1)
         $global:LASTEXITCODE = 0
-        & $taskProgram.Source @taskArguments
+        & $taskProgram @taskArguments
         $taskCommandExit = $LASTEXITCODE
     } finally {
         try {
@@ -138,47 +172,23 @@ function Test-Administrator {
     } finally { $identity.Dispose() }
 }
 
-function Test-BrokerParent($request) {
-    try {
-        $parent = [Diagnostics.Process]::GetProcessById([int]$request.parentProcess)
-        try { -not $parent.HasExited -and $parent.StartTime.ToUniversalTime().Ticks -eq [long]$request.parentStarted }
-        finally { $parent.Dispose() }
-    } catch { $false }
-}
-
-function Write-BrokerMessage([string]$Path, $Message) {
-    $Message | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$Path.tmp" -Encoding utf8
-    Move-Item -LiteralPath "$Path.tmp" -Destination $Path -Force
-}
-
-function Publish-BrokerStatus([string]$Phase, [string]$Message = '') {
-    Write-BrokerMessage (Join-Path $taskBrokerDirectory 'status.json') @{
-        sessionId = $taskBrokerRequest.sessionId; phase = $Phase; message = $Message
-    }
-}
-
-function Start-WindowBroker([string]$Action) {
-    # The elevated process receives window-control data only. Test commands and
-    # arguments remain exclusively in this ordinary-privilege runner.
-    $taskTransfer = Join-Path $taskRepository ('out/test-results/quiet-desktop-elevation-' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $taskTransfer -Force | Out-Null
-    $taskRequest = Join-Path $taskTransfer 'request.json'
-    $taskOutput = Join-Path $taskTransfer 'output.txt'
-    $taskResult = Join-Path $taskTransfer 'result.json'
-    $taskSession = [guid]::NewGuid().ToString('N')
-    $taskParent = [Diagnostics.Process]::GetCurrentProcess()
-    try { $taskParentStarted = $taskParent.StartTime.ToUniversalTime().Ticks }
-    finally { $taskParent.Dispose() }
-    @{ action = $Action; sessionId = $taskSession; parentProcess = $PID; parentStarted = $taskParentStarted;
-       stateFile = $taskStateFile; windowProcessId = $WindowProcessId } |
-        ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $taskRequest -Encoding utf8
-    $taskLaunch = @'
+function Invoke-ElevatedSession([string[]]$Arguments) {
+    # One UAC prompt starts this script again with administrator rights for the
+    # whole session. Its output is relayed here and its exit code returned.
+    $transfer = Join-Path $taskRepository ('out/test-results/quiet-desktop-elevation-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $transfer -Force | Out-Null
+    $request = Join-Path $transfer 'arguments.json'
+    $output = Join-Path $transfer 'output.txt'
+    $result = Join-Path $transfer 'result.json'
+    ConvertTo-Json -InputObject @($Arguments) | Set-Content -LiteralPath $request -Encoding utf8
+    $launch = @'
 $ErrorActionPreference = 'Stop'
 $taskCode = 1
 try {
+    Set-Location -LiteralPath '__DIRECTORY__'
+    $taskArguments = @(Get-Content -LiteralPath '__REQUEST__' -Raw | ConvertFrom-Json)
     $global:LASTEXITCODE = 0
-    & '__SCRIPT__' -BrokerRequestFile '__REQUEST__' *>&1 |
-        Out-File -LiteralPath '__OUTPUT__' -Encoding utf8
+    & '__SCRIPT__' @taskArguments *>&1 | Out-File -LiteralPath '__OUTPUT__' -Encoding utf8
     $taskCode = $LASTEXITCODE
 } catch {
     $_ | Out-String | Out-File -LiteralPath '__OUTPUT__' -Encoding utf8 -Append
@@ -187,102 +197,48 @@ try {
 }
 exit $taskCode
 '@
-    $taskLaunch = $taskLaunch.Replace('__SCRIPT__', $PSCommandPath.Replace("'", "''")).
-        Replace('__REQUEST__', $taskRequest.Replace("'", "''")).
-        Replace('__OUTPUT__', $taskOutput.Replace("'", "''")).
-        Replace('__RESULT__', $taskResult.Replace("'", "''"))
-    $taskEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($taskLaunch))
+    $launch = $launch.Replace('__DIRECTORY__', (Get-Location).ProviderPath.Replace("'", "''")).
+        Replace('__SCRIPT__', $PSCommandPath.Replace("'", "''")).
+        Replace('__REQUEST__', $request.Replace("'", "''")).
+        Replace('__OUTPUT__', $output.Replace("'", "''")).
+        Replace('__RESULT__', $result.Replace("'", "''"))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launch))
+    $reader = $null
+    $process = $null
     try {
-        $taskProcess = Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $taskEncoded)
-        [pscustomobject]@{ Process = $taskProcess; Directory = $taskTransfer; Session = $taskSession; Reader = $null }
-    } catch {
-        Remove-BrokerDirectory $taskTransfer
-        throw
-    }
-}
-
-function Receive-BrokerOutput($broker) {
-    $path = Join-Path $broker.Directory 'output.txt'
-    if (-not $broker.Reader -and (Test-Path -LiteralPath $path)) {
-        $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-        $broker.Reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
-    }
-    if ($broker.Reader) {
-        $message = $broker.Reader.ReadToEnd()
-        if ($message) { Write-Host -NoNewline $message }
-    }
-}
-
-function Wait-WindowBroker($broker, [string]$Phase) {
-    $path = Join-Path $broker.Directory 'status.json'
-    do {
-        Receive-BrokerOutput $broker
-        if (Test-Path -LiteralPath $path) {
-            $status = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            if ($status.sessionId -ne $broker.Session) { throw 'The desktop window broker reported a different session.' }
-            if ($status.phase -eq 'error') {
-                $broker.Process.WaitForExit()
-                Receive-BrokerOutput $broker
-                throw "The desktop window broker failed: $($status.message)"
+        $process = Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -Verb RunAs -WindowStyle Hidden -PassThru `
+            -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded)
+        do {
+            $exited = $process.WaitForExit(200)
+            if (-not $reader -and (Test-Path -LiteralPath $output)) {
+                $stream = [IO.File]::Open($output, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+                $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
             }
-            if ($status.phase -eq $Phase) {
-                if ($Phase -eq 'done') {
-                    $broker.Process.WaitForExit()
-                    Receive-BrokerOutput $broker
-                    $result = Get-Content -LiteralPath (Join-Path $broker.Directory 'result.json') -Raw | ConvertFrom-Json
-                    if ($result.exitCode -ne 0) { throw 'The desktop window broker exited unsuccessfully.' }
-                }
-                return
+            if ($reader) {
+                $text = $reader.ReadToEnd()
+                if ($text) { Write-Host -NoNewline $text }
             }
-        }
-        if ($broker.Process.HasExited) {
-            Receive-BrokerOutput $broker
-            throw 'The desktop window broker exited before completing its request; keep any recovery snapshot.'
-        }
-        Start-Sleep -Milliseconds 100
-    } while ($true)
-}
-
-function Remove-BrokerDirectory([string]$Directory) {
-    $resolved = [IO.Path]::GetFullPath($Directory)
-    $allowed = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/test-results')) + [IO.Path]::DirectorySeparatorChar
-    if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected broker cleanup path.' }
-    Remove-Item -LiteralPath $resolved -Recurse -Force
-}
-
-function Close-WindowBroker($broker) {
-    if (-not $broker) { return }
-    try {
-        if (-not $broker.Process.HasExited) {
-            Write-BrokerMessage (Join-Path $broker.Directory 'control.json') @{ sessionId = $broker.Session; action = 'abandon' }
-            $broker.Process.WaitForExit()
-        }
-        Receive-BrokerOutput $broker
+        } until ($exited)
+        if (-not (Test-Path -LiteralPath $result)) { throw 'The elevated desktop session ended without reporting its exit code.' }
+        [int](Get-Content -LiteralPath $result -Raw | ConvertFrom-Json).exitCode
     } finally {
-        if ($broker.Reader) { $broker.Reader.Dispose() }
-        $broker.Process.Dispose()
-        Remove-BrokerDirectory $broker.Directory
+        if ($reader) { $reader.Dispose() }
+        if ($process) { $process.Dispose() }
+        $resolved = [IO.Path]::GetFullPath($transfer)
+        $allowed = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/test-results')) + [IO.Path]::DirectorySeparatorChar
+        if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected elevation transfer path.' }
+        Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
 
-$taskIsAdministrator = Test-Administrator
-if ($TestCommand -and $taskIsAdministrator) {
-    throw 'Tests must run from an ordinary PowerShell session. Use -Elevate to elevate window control only.'
-}
-$taskBrokerRequest = $null
-if ($BrokerRequestFile) {
-    if (-not $taskIsAdministrator) { throw 'The desktop window broker requires administrator rights.' }
-    if ($TestCommand) { throw 'The desktop window broker never accepts test commands.' }
-    $taskBrokerDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $BrokerRequestFile))
-    $taskAllowed = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/test-results')) + [IO.Path]::DirectorySeparatorChar
-    if (-not $taskBrokerDirectory.StartsWith($taskAllowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'The broker request must be inside out/test-results.' }
-    $taskBrokerRequest = Get-Content -LiteralPath $BrokerRequestFile -Raw | ConvertFrom-Json
-    if ($taskBrokerRequest.PSObject.Properties.Name -contains 'command' -or
-        $taskBrokerRequest.action -notin @('session', 'list', 'restore')) { throw 'Invalid window-only broker request.' }
-    $taskSession = [guid]::ParseExact([string]$taskBrokerRequest.sessionId, 'N')
-    $StateFile = [string]$taskBrokerRequest.stateFile
-    $WindowProcessId = [uint32]$taskBrokerRequest.windowProcessId
-    if (-not (Test-BrokerParent $taskBrokerRequest)) { throw 'The desktop broker parent identity is no longer valid.' }
+if ($Elevate -and -not (Test-Administrator)) {
+    # Everything except -Elevate is passed on unchanged.
+    $taskForwarded = [Collections.Generic.List[string]]::new()
+    foreach ($taskName in @('Restore', 'List')) { if ($taskOptions.$taskName) { $taskForwarded.Add("-$taskName") } }
+    if ($StateFile) { $taskForwarded.Add('-StateFile'); $taskForwarded.Add($StateFile) }
+    if ($WindowProcessId -ne 0) { $taskForwarded.Add('-WindowProcessId'); $taskForwarded.Add([string]$WindowProcessId) }
+    if ($TestCommand.Count) { $taskForwarded.Add('--'); foreach ($taskPart in $TestCommand) { $taskForwarded.Add($taskPart) } }
+    exit (Invoke-ElevatedSession $taskForwarded.ToArray())
 }
 
 if ($StateFile) {
@@ -681,70 +637,8 @@ function Clear-WindowSnapshot {
     [QuietDesktopNative]::WaitUntilReady([QuietDesktopNative+WindowState[]]$taskWindows, $WindowProcessId)
 }
 
-if ($taskBrokerRequest) {
-    $taskSnapshotCreated = $false
-    $taskReadyReported = $false
-    try {
-        if (-not (Test-BrokerParent $taskBrokerRequest)) { throw 'The desktop broker parent identity is no longer valid.' }
-        switch ($taskBrokerRequest.action) {
-            'list' { Write-WindowList; Publish-BrokerStatus 'done'; return }
-            'restore' { Restore-Windows; Publish-BrokerStatus 'done'; return }
-            'session' {
-                Initialize-WindowSnapshot
-                $taskSnapshotCreated = $true
-                Clear-WindowSnapshot
-                $taskReadyReported = $true
-                Publish-BrokerStatus 'ready'
-                $taskControlFile = Join-Path $taskBrokerDirectory 'control.json'
-                do {
-                    if (-not (Test-BrokerParent $taskBrokerRequest)) {
-                        throw 'The test runner disappeared; application windows remain cleared and the recovery snapshot is retained.'
-                    }
-                    if (Test-Path -LiteralPath $taskControlFile) {
-                        $taskControl = Get-Content -LiteralPath $taskControlFile -Raw | ConvertFrom-Json
-                        if ($taskControl.sessionId -ne $taskBrokerRequest.sessionId -or $taskControl.action -notin @('restore', 'abandon')) {
-                            throw 'Invalid desktop broker control message; the recovery snapshot is retained.'
-                        }
-                        if ($taskControl.action -eq 'abandon') {
-                            throw 'The test runner could not confirm completion; the recovery snapshot is retained.'
-                        }
-                        # Only the ordinary runner can authorize this transition,
-                        # after its tracked test process tree has completely ended.
-                        if (-not (Test-BrokerParent $taskBrokerRequest)) {
-                            throw 'The desktop broker parent identity changed before recovery; the snapshot is retained.'
-                        }
-                        Restore-Windows
-                        Publish-BrokerStatus 'done'
-                        return
-                    }
-                    Start-Sleep -Milliseconds 100
-                } while ($true)
-            }
-        }
-    } catch {
-        $taskFailure = $_
-        # Preparation failed before tests could start. Recover that partial
-        # cleanup while the original caller is still present; never infer test
-        # completion after ready, parent loss, or a broken control protocol.
-        if ($taskSnapshotCreated -and -not $taskReadyReported -and (Test-BrokerParent $taskBrokerRequest)) {
-            try { Restore-Windows }
-            catch { $taskFailure = $_ }
-        }
-        Publish-BrokerStatus 'error' $taskFailure.Exception.Message
-        throw $taskFailure
-    }
-    return
-}
-
 if ($Restore -or $List) {
-    if ($Elevate -and -not $taskIsAdministrator) {
-        $taskWindowBroker = $null
-        try {
-            $taskWindowBroker = Start-WindowBroker $(if ($Restore) { 'restore' } else { 'list' })
-            Wait-WindowBroker $taskWindowBroker 'done'
-        } finally { Close-WindowBroker $taskWindowBroker }
-    } elseif ($Restore) { Restore-Windows }
-    else { Write-WindowList }
+    if ($Restore) { Restore-Windows } else { Write-WindowList }
     return
 }
 if (-not $TestCommand) { throw 'Pass the command to run, or -Restore.' }
@@ -752,23 +646,8 @@ if (Test-Path -LiteralPath $taskStateFile) {
     throw "A previous run did not restore its windows. Run with -Restore first: $taskStateFile"
 }
 
-$script:taskWindowBroker = $null
-try {
-    Invoke-QuietDesktopSession -Prepare {
-        if ($Elevate) {
-            $script:taskWindowBroker = Start-WindowBroker 'session'
-            Wait-WindowBroker $taskWindowBroker 'ready'
-        } else {
-            Initialize-WindowSnapshot
-            Clear-WindowSnapshot
-        }
-    } -TestCommand $TestCommand -Recover {
-        if ($Elevate) {
-            if ($taskWindowBroker) {
-                Write-BrokerMessage (Join-Path $taskWindowBroker.Directory 'control.json') @{ sessionId = $taskWindowBroker.Session; action = 'restore' }
-                Wait-WindowBroker $taskWindowBroker 'done'
-            }
-        } else { Restore-Windows }
-    }
-} finally { Close-WindowBroker $taskWindowBroker }
+Invoke-QuietDesktopSession -Prepare {
+    Initialize-WindowSnapshot
+    Clear-WindowSnapshot
+} -TestCommand $TestCommand -Recover { Restore-Windows }
 exit $LASTEXITCODE

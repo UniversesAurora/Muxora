@@ -20,6 +20,8 @@ $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $taskWrapper = Join-Path $PSScriptRoot 'quiet-desktop.ps1'
 $taskOuterRecovery = Join-Path $taskRepository 'out/test-results/quiet-desktop-windows.json'
+# The running pwsh: Get-Command can return several when PATH lists two installs.
+$taskPwsh = Join-Path $PSHOME 'pwsh.exe'
 
 if ($Headless -or $WorkerCase -or $CommandChild -or $Grandchild) {
     $taskShell = Join-Path $PSHOME 'pwsh.exe'
@@ -97,6 +99,34 @@ if ($Headless -or $WorkerCase -or $CommandChild -or $Grandchild) {
     $taskRepository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $taskTemporary = Join-Path $taskRepository ('out/test-results/quiet-process-' + [guid]::NewGuid().ToString('N'))
     try {
+        . $taskWrapper -ProcessHelpersOnly
+        # Options bind by full name only and stop at the command, so a command
+        # may carry -Test, -Elevate or -Restore of its own.
+        $parsed = ConvertFrom-QuietDesktopArguments @('-Elevate', 'pwsh', 'tools/build.ps1', '-Configuration', 'Release', '-Test', '-Restore', '-Elevate')
+        Assert-That ($parsed.Elevate -and -not $parsed.Restore) 'Options after the command were taken by the runner.'
+        Assert-That (($parsed.TestCommand -join '|') -eq 'pwsh|tools/build.ps1|-Configuration|Release|-Test|-Restore|-Elevate') 'The command arguments were changed.'
+        $parsed = ConvertFrom-QuietDesktopArguments @('-statefile', 'x.json', '-WindowProcessId', '42', '--', '-dash-command', '中文 "q"')
+        Assert-That ($parsed.StateFile -eq 'x.json' -and $parsed.WindowProcessId -eq 42) 'Option values were not read.'
+        Assert-That (($parsed.TestCommand -join '|') -eq '-dash-command|中文 "q"') 'The -- separator did not start the command.'
+        foreach ($rejected in @(@('-Test', 'pwsh'), @('-Elev', 'pwsh'), @('-StateFile'))) {
+            $refused = $false
+            try { [void](ConvertFrom-QuietDesktopArguments $rejected) } catch { $refused = $true }
+            Assert-That $refused "Options were accepted by prefix or without a value: $($rejected -join ' ')."
+        }
+        # The same program name in two PATH directories runs the first one.
+        $taskFirst = Join-Path $taskTemporary 'path-first'
+        $taskSecond = Join-Path $taskTemporary 'path-second'
+        foreach ($directory in @($taskFirst, $taskSecond)) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $directory 'quiet-desktop-probe.cmd') -Value "@exit /b 0"
+        }
+        $taskPath = $env:PATH
+        try {
+            $env:PATH = "$taskFirst;$taskSecond;$taskPath"
+            $resolved = @(Resolve-QuietDesktopProgram 'quiet-desktop-probe')
+            Assert-That ($resolved.Count -eq 1 -and $resolved[0] -eq (Join-Path $taskFirst 'quiet-desktop-probe.cmd')) "Duplicate programs were not resolved to the first: $($resolved -join '; ')."
+        } finally { $env:PATH = $taskPath }
+
         foreach ($case in @('descendant-drain', 'prepare-failure', 'non-executable')) {
             $directory = Join-Path $taskTemporary $case
             New-Item -ItemType Directory -Path $directory -Force | Out-Null
@@ -106,7 +136,7 @@ if ($Headless -or $WorkerCase -or $CommandChild -or $Grandchild) {
                 Assert-That ($worker.ExitCode -eq 0) "Lifecycle check failed: $case ($($worker.ExitCode))."
             } finally { $worker.Dispose() }
         }
-        Write-Output 'PASS: preparation precedes command execution; recovery waits for all descendants; preparation failure blocks the command; exit code and Unicode arguments are preserved. No windows were created or changed.'
+        Write-Output 'PASS: options bind by full name before the command only; duplicate programs resolve to the first; preparation precedes command execution; recovery waits for all descendants; preparation failure blocks the command; exit code and Unicode arguments are preserved. No windows were created or changed.'
     } finally {
         $resolved = [IO.Path]::GetFullPath($taskTemporary)
         $allowed = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/test-results')) + [IO.Path]::DirectorySeparatorChar
@@ -120,7 +150,7 @@ if ($Headless -or $WorkerCase -or $CommandChild -or $Grandchild) {
 if (-not $Probe -and -not $IsolatedWorker) {
     # No fixture windows exist before the outer runner has finished clearing
     # user applications. This one session owns their entire recovery lifetime.
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -Elevate (Get-Command pwsh).Source -NoProfile -File $PSCommandPath -IsolatedWorker -OuterStateFile $taskOuterRecovery
+    & $taskPwsh -NoProfile -File $taskWrapper -Elevate $taskPwsh -NoProfile -File $PSCommandPath -IsolatedWorker -OuterStateFile $taskOuterRecovery
     exit $LASTEXITCODE
 }
 
@@ -131,6 +161,12 @@ if ($Probe) {
     if (-not $OuterStateFile -or -not (Test-Path -LiteralPath $OuterStateFile)) {
         throw 'The fixture worker must run inside an active outer desktop-isolation session.'
     }
+    $taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        if (-not [Security.Principal.WindowsPrincipal]::new($taskIdentity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            throw 'The -Elevate session did not run its test command with administrator rights.'
+        }
+    } finally { $taskIdentity.Dispose() }
 }
 
 Add-Type -TypeDefinition @'
@@ -402,7 +438,7 @@ try {
     foreach ($expectedExit in @(0, 7)) {
         $lateOrderBefore = [QuietDesktopFixture]::LateOrderCount()
         [QuietDesktopFixture]::ArmLateOrder()
-        & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID (Get-Command pwsh).Source -NoProfile -File $PSCommandPath -Probe -CaseDirectory $taskTemporary -FixtureStateFile $taskRecovery -ProbeExitCode $expectedExit
+        & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -File $PSCommandPath -Probe -CaseDirectory $taskTemporary -FixtureStateFile $taskRecovery -ProbeExitCode $expectedExit
         Assert-That ($LASTEXITCODE -eq $expectedExit) "The wrapper changed the child exit code: $LASTEXITCODE."
         Assert-That (Test-Path -LiteralPath (Join-Path $taskTemporary 'probe-ran')) 'The isolated command did not execute.'
         Assert-That (-not (Test-Path -LiteralPath $taskRecovery)) 'Successful recovery left its snapshot behind.'
@@ -425,7 +461,7 @@ try {
     }
     # The child's -Command must remain an argument, not bind to the wrapper.
     $taskChildCommand = "& '$($PSCommandPath.Replace("'", "''"))' -Probe -CaseDirectory '$($taskTemporary.Replace("'", "''"))' -FixtureStateFile '$($taskRecovery.Replace("'", "''"))' -ProbeExitCode 9" + '; exit $LASTEXITCODE'
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID (Get-Command pwsh).Source -NoProfile -Command $taskChildCommand
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -Command $taskChildCommand
     Assert-That ($LASTEXITCODE -eq 9) 'The child PowerShell -Command argument was not forwarded intact.'
     Assert-That ((Get-Content -LiteralPath (Join-Path $taskTemporary 'probe-ran') -Raw).Trim() -eq '9') 'The child PowerShell command did not execute.'
     # Keep emergency recovery compatible with snapshots written by the old script.
@@ -433,7 +469,7 @@ try {
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$owner.Handle, 7)
     @{ foreground = 0; windows = @($owner.Handle) } | ConvertTo-Json |
         Set-Content -LiteralPath $taskRecovery -Encoding utf8
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
     Assert-That ($LASTEXITCODE -eq 0) 'Legacy recovery failed.'
     $elapsed = [Diagnostics.Stopwatch]::StartNew()
     while ([QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle) -and $elapsed.ElapsedMilliseconds -lt 3000) { Start-Sleep -Milliseconds 25 }
@@ -446,13 +482,13 @@ try {
     $foreground.Handle = 0
     @{ version = 2; foreground = 0; foregroundWindow = $foreground; windows = @($forged) } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $taskRecovery -Encoding utf8
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
     Assert-That ($LASTEXITCODE -eq 0) 'Recovery of a stale window identity failed.'
     Assert-That ([QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle)) 'Recovery changed a window with a different process identity.'
     # A vanished predecessor must not prevent a surviving peer from restoring.
     @{ version = 2; foreground = 0; foregroundWindow = $foreground; windows = @($forged, $owner) } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $taskRecovery -Encoding utf8
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
     Assert-That ($LASTEXITCODE -eq 0) 'Recovery failed after a predecessor identity disappeared.'
     Assert-That (-not [QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle)) 'Recovery left the surviving peer minimized.'
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$owner.Handle, 9)
@@ -461,7 +497,7 @@ try {
     $unexpectedCommand = Join-Path $taskTemporary 'unexpected-command-ran'
     $taskBlockedCommand = "Set-Content -LiteralPath '$($unexpectedCommand.Replace("'", "''"))' -Value unexpected"
     [QuietDesktopFixture]::ArmHiddenAppearance()
-    & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID (Get-Command pwsh).Source -NoProfile -Command $taskBlockedCommand
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -Command $taskBlockedCommand
     Assert-That ($LASTEXITCODE -ne 0) 'A newly visible window did not block the test command.'
     Assert-That (-not (Test-Path -LiteralPath $unexpectedCommand)) 'The test command ran under a newly visible application window.'
     $appearing = $original | Where-Object Name -eq 'appearing-hidden'
@@ -475,7 +511,7 @@ try {
     # A failed inner snapshot then contains only dead fixture identities.
     if ($taskFixtureStarted) { [QuietDesktopFixture]::Stop() }
     if (Test-Path -LiteralPath $taskRecovery) {
-        & (Get-Command pwsh).Source -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
+        & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
         Assert-That ($LASTEXITCODE -eq 0) 'Fixture-only recovery cleanup failed.'
     }
     $taskResolved = [IO.Path]::GetFullPath($taskTemporary)
@@ -483,4 +519,4 @@ try {
     if (-not $taskResolved.StartsWith($taskAllowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fixture cleanup path.' }
     Remove-Item -LiteralPath $taskResolved -Recurse -Force
 }
-Write-Output 'PASS: owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry/Z-order recovery with delayed reordering, child failure and -Command forwarding, legacy recovery, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
+Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry/Z-order recovery with delayed reordering, child failure and -Command forwarding, legacy recovery, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
