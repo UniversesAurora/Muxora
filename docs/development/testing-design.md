@@ -1,7 +1,5 @@
 # Muxora 自动化测试与质量要求
 
-版本：0.4，讨论稿\
-日期：2026-10-15\
 状态：实现阶段必须遵循的测试规范。窗口系统首个预览开始建立测试；实际执行范围与结果见 [预览说明](window-system-preview.md)。
 
 关联：[V0 设计](../design/v0-design.md)、[工程设计](engineering-design.md)、[通用窗口系统](../design/window-system-design.md)、[工作区设计](../design/workspace-design.md)、[浮动与完整窗口设计](../design/floating-window-design.md)。
@@ -100,8 +98,6 @@ pwsh ./tools/test-summary.ps1 -BuildDirectory out/build/dev-release -Output out/
 异步测试等待具体事件或可观察状态，并设置有理由的超时；不能依赖固定长 sleep、网络运气或执行顺序。每个用例可独立运行，临时资源清理明确，随机场景记录 seed 和操作序列。
 
 Qt 生命周期夹具须遵循对象销毁契约。控件正在处理 Show、Hide 等通知时，宿主请求销毁该控件或其所有者，应使用 `deleteLater()`。事件过滤器返回 `true` 只能停止事件继续分发；Qt 的 `show()` / `hide()` 调用栈还可能继续访问控件的私有状态，不能把这一返回值当成同步删除窗口的保证。[QObject 析构与延迟删除说明](https://github.com/qt/qtbase/blob/6.12/src/corelib/kernel/qobject.cpp)、[QWidget 显隐实现](https://github.com/qt/qtbase/blob/6.12/src/widgets/kernel/qwidget.cpp)
-
-2026-10-15 复核了本轮新增的浮动面板 Show / Hide 和状态控件 Hide 夹具。原夹具在通知内同步删除所有者；崩溃栈停在 Qt 的 `QWidgetPrivate::hideChildren()`，尚未返回模块代码。经源码、崩溃栈及独立审阅确认后，将这些新增用例改为在相同通知位置调用 `deleteLater()`：检查显隐和模态性同步完成、事件触发确实发生，随后检查所有者及子控件各销毁一次、`QPointer` 清空、绑定到已销毁对象的排队回调不执行。原有同步 `finished` 回调和命令回调销毁所有者的有效用例继续保留。失败诊断保留在 `out/diagnostics/`，修正夹具不视为测试已通过。
 
 ## 4. 分层覆盖
 

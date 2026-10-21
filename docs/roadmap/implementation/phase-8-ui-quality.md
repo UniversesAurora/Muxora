@@ -250,7 +250,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 ## 8.7 改用 Windows 系统通知（U9）
 
-> 2026-10-20 修订：不做通知中心，也不做程序内的自绘提示（[界面规范 §4.4](../../design/ui-design-system.md#44-通知使用-windows-系统通知)）。
+> 不做通知中心，也不做程序内的自绘提示（[界面规范 §4.4](../../design/ui-design-system.md#44-通知使用-windows-系统通知)）。
 
 **涉及文件**：`src/app/script_services.cpp`（`ui.notify` 现在用非模态 `QMessageBox`，约 104–136 行）；新建 `src/platform/windows/system_notification.{hpp,cpp}`；`src/app/tests/scripting_test.cpp`。
 

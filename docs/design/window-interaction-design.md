@@ -1,7 +1,5 @@
 # 窗口交互细则
 
-日期：2026-10-21
-
 本文是 [工作区与导航](workspace-design.md)、[双窗口形态与跨窗口拖拽](floating-window-design.md) 和 [通用窗口系统](window-system-design.md) 的交互细则：那三份文档讲结构、模型和概要，这里写拖拽各阶段、边栏、标签条、工具条、显隐与全屏等具体规则和尺寸。两边说法不一致时以本文为准，并同步修正概要。窗口结构以 Visual Studio 为参考；设置页和标签滚动参考 VS Code。实际实现与验证见 [预览说明](../development/window-system-preview.md)。
 
 ## 拖拽与投放

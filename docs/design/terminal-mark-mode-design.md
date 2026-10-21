@@ -1,7 +1,5 @@
 # Muxora 终端键盘标记模式设计
 
-版本：0.1，讨论稿\
-日期：2026-10-11\
 状态：行为、命令与适配要求；尚未实现、构建或运行测试。
 
 关联：[V0 设计](v0-design.md)、[工作区设计](workspace-design.md)、[设置与命令设计](settings-and-commands-design.md)、[工程设计](../development/engineering-design.md)、[自动化测试规范](../development/testing-design.md)。

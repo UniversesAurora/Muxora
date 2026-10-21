@@ -1,7 +1,5 @@
 # Muxora V0 设计文档
 
-版本：0.7，讨论稿\
-日期：2026-10-11\
 状态：产品行为、技术选型和实现边界的设计基线。窗口系统首个预览开始开发；当前实现与验证范围见 [预览说明](../development/window-system-preview.md)。文中的远程业务及第三方能力仍需分别完成构建与集成验证。
 
 本文件保留产品与架构总览。详细规则见 [通用窗口系统设计](window-system-design.md)、[工作区与导航设计](workspace-design.md)、[设置与命令设计](settings-and-commands-design.md)、[终端 Normal 与选择模式](terminal-mark-mode-design.md)、[工程、资源与依赖设计](../development/engineering-design.md) 和 [自动化测试与质量要求](../development/testing-design.md)。
@@ -89,9 +87,9 @@ KDDockWidgets 已有丰富的分割、标签、自动隐藏和跨窗口能力，
 | --- | --- |
 | 首发平台 | 只构建和验收 Windows，保留未来 macOS／Linux 的明确平台边界。 |
 | SSH 终端 | 连接、认证、主机密钥校验、断开、重连、调整尺寸、多个终端实例。 |
-| 本地终端 | 2026-10-19 新增：通过 ConPTY 运行本机 shell，包括 Windows PowerShell、PowerShell 7、cmd、各 WSL 发行版、Git Bash；自动检测与自建配置，外部来源只读。见 [本地终端设计](local-terminal-design.md)。 |
+| 本地终端 | 通过 ConPTY 运行本机 shell，包括 Windows PowerShell、PowerShell 7、cmd、各 WSL 发行版、Git Bash；自动检测与自建配置，外部来源只读。见 [本地终端设计](local-terminal-design.md)。 |
 | 会话管理 | 应用自建会话，以及从 SSH config 动态生成的会话；分组、搜索、收藏、排序。 |
-| 启动恢复 | 2026-10-20 新增：可设置不恢复、只恢复布局与历史、恢复并重新连接全部会话；连接重新建立，有限流和优先级，需要输入密码的会话不在启动时弹窗。见 [启动时恢复会话设计](session-restore-design.md)。 |
+| 启动恢复 | 可设置不恢复、只恢复布局与历史、恢复并重新连接全部会话；连接重新建立，有限流和优先级，需要输入密码的会话不在启动时弹窗。见 [启动时恢复会话设计](session-restore-design.md)。 |
 | SSH config | 默认只读使用，启动及运行中发现变化；按别名附加应用设置。可选：允许修改并写回原文件、应用会话与 SSH config 双向同步（[设计](ssh-config-sync-design.md)）。 |
 | 工作区 | 所有功能内容统一为标签；四边收纳／固定、中央自由标签组、标签内递归窗格；轻量／完整窗口转换、整窗及单标签拖拽、遮挡目标唤起与图形投放辅助。 |
 | 键盘与命令 | 所有公共命令可绑定；命令面板、条件、参数、多键序列、冲突及默认解绑；标签组、标签、窗格及业务工作流都可键盘操作。 |
@@ -193,7 +191,7 @@ SSH config 会话不是一次性导入。应用设置中不保存一份可脱离
 
 ### 5.2 只读规则
 
-> **2026-10-19 修订**：只读是默认行为。设置中新增两个独立选项：`ssh.config.allowEditing`（允许在 Muxora 中修改 SSH config 中的连接，修改写回原文件）和 `ssh.config.syncAppSessions`（应用会话实时同步到一个由 Muxora 管理、并通过 `Include` 接入 `~/.ssh/config` 的文件）。两个都关闭时，本节规则完全不变。打开后的写入方式、不破坏无关配置的规则、冲突与开关切换的处理见 [SSH config 修改与同步设计](ssh-config-sync-design.md)。
+> 只读是默认行为。设置中有两个独立选项：`ssh.config.allowEditing`（允许在 Muxora 中修改 SSH config 中的连接，修改写回原文件）和 `ssh.config.syncAppSessions`（应用会话实时同步到一个由 Muxora 管理、并通过 `Include` 接入 `~/.ssh/config` 的文件）。两个都关闭时，本节规则完全不变。打开后的写入方式、不破坏无关配置的规则、冲突与开关切换的处理见 [SSH config 修改与同步设计](ssh-config-sync-design.md)。
 
 Muxora 不提供通过会话设置修改 SSH config 的入口，也不通过自己的设置覆盖该来源的地址、用户、端口、密钥、代理或认证参数。详情页可以只读显示来源、别名和有效连接信息。
 

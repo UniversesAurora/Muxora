@@ -196,7 +196,7 @@ public:
 
 ## 7.4 会话目录与 SSH config
 
-**要求来源**：[V0 设计 §5](../../design/v0-design.md#5-会话管理与-ssh-config) 与 §15，以及 2026-10-19 新增的 [SSH config 修改与同步设计](../../design/ssh-config-sync-design.md)。核心是：**SSH config 不是导入，而是动态读取的来源；默认只读**。7.4a–7.4f 实现默认的只读行为；7.4h–7.4m 实现两个可选开关 `ssh.config.allowEditing`、`ssh.config.syncAppSessions`。以下默认规则在两个开关都关闭时成立：Muxora 不修改 `.ssh/config` 及其 `Include` 文件，不提供任何修改入口，也不用自己的设置覆盖其中的地址、用户、端口、密钥、代理或认证参数；只能按“配置源 ID + 原始别名”在 Muxora 自己的目录中附加界面设置。
+**要求来源**：[V0 设计 §5](../../design/v0-design.md#5-会话管理与-ssh-config) 与 §15，以及 [SSH config 修改与同步设计](../../design/ssh-config-sync-design.md)。核心是：**SSH config 不是导入，而是动态读取的来源；默认只读**。7.4a–7.4f 实现默认的只读行为；7.4h–7.4m 实现两个可选开关 `ssh.config.allowEditing`、`ssh.config.syncAppSessions`。以下默认规则在两个开关都关闭时成立：Muxora 不修改 `.ssh/config` 及其 `Include` 文件，不提供任何修改入口，也不用自己的设置覆盖其中的地址、用户、端口、密钥、代理或认证参数；只能按“配置源 ID + 原始别名”在 Muxora 自己的目录中附加界面设置。
 
 **产出**：`src/sessions/`：`session_catalog`、`app_session_store`、`ssh_config_source`、`ssh_config_indexer`、`alias_overrides`、`session_tree_model`。
 

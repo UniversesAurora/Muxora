@@ -144,7 +144,7 @@
 
 ## 9.5 存储、剪贴板、文件监听、网络、外部程序输出
 
-> 2026-10-20 修订：文件读写、列目录改用标准库 `io`／`os`（9.8），本步不再提供 `files.read/write/list/stat`，只保留标准库没有的文件监听。
+> 文件读写、列目录用标准库 `io`／`os`（9.8），本步不提供 `files.read/write/list/stat`，只提供标准库没有的文件监听。
 
 **涉及文件**：`src/app/script_services.cpp`（这些属于应用服务）、新建 `src/app/script_services/` 下按分组拆分的文件、测试 `src/app/tests/scripting_test.cpp` 或新测试。
 

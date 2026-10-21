@@ -153,7 +153,7 @@
 
 **目标**：有一个可以检测越界、释放后使用和未定义行为的构建，用于 `model` 与 `widget` 层测试。
 
-**实现**（2026-10-20 修订：Release 已改用 MSVC（[ADR 0009](../../adr/0009-msvc-toolchain.md)），诊断构建直接走 MSVC，不再需要另一套 Qt）：
+**实现**（Release 用 MSVC（[ADR 0009](../../adr/0009-msvc-toolchain.md)），诊断构建直接走 MSVC，不需要另一套 Qt）：
 
 - 新增用户预设 `diag-msvc-asan`，与 Release 共用 `msvc2022_64` 套件和 `tools/toolchain.ps1` 载入的编译环境：`CMAKE_BUILD_TYPE=RelWithDebInfo`、对本项目目标加 `/fsanitize=address /Zi`（目标级选项，不改全局）。Qt 本身不带 ASan 插桩，越界检查覆盖本项目的代码。MSVC 的 ASan 不包含泄漏检测，泄漏仍靠现有的对象与句柄回落测试。
 - UBSan：MSVC 没有对应功能。可选用 clang-cl（使用 MSVC 的 ABI 和标准库，能链接同一套 Qt）加 `-fsanitize=undefined`，作为第二条诊断构建；不可用时记录“环境阻塞”。

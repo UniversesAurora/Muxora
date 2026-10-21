@@ -1,7 +1,5 @@
 # WindowSystem 双窗口形态与跨窗口拖拽
 
-版本：0.2，讨论稿\
-日期：2026-10-14\
 状态：V0 行为与接口要求；实际预览实现、构建和桌面验证范围见 [预览说明](../development/window-system-preview.md)。
 
 关联：[工作区设计](workspace-design.md)、[窗口系统 API 与外观](window-system-design.md)、[设置与命令](settings-and-commands-design.md)、[测试要求](../development/testing-design.md)。本稿取代旧稿“标签拖出一律创建完整窗口”的规定。
