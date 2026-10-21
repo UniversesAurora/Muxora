@@ -21,22 +21,22 @@ User/lua/?/init.lua
 
 `package.cpath` 初始为空。当前 Lua 按 C++ 编译并静态链接，没有供外部模块链接的 Lua DLL，因此不支持 C 模块；这是构建与 ABI 条件，不是文件权限限制。`package.loadlib` 保留，加载失败时返回标准错误。纯 Lua 模块可使用文本或与嵌入版本匹配的字节码。
 
-标准 `require` 在 C 加载器中调用模块顶层，那里不能让出给宿主。模块中需要调用 `muxora.*` 时，返回一个初始化函数，在 `require` 返回后调用：
+模块顶层可以直接调用 `muxora.*`，例如加载模块时注册命令；宿主回执到达后继续加载，完成结果按标准语义缓存：
 
 ```lua
 -- User/lua/workspace.lua
-return function()
-  muxora.commands.register({ id = 'user.module_action', title = '模块命令' }, function()
-    muxora.commands.execute('host.newTab')
-  end)
-end
+muxora.commands.register({ id = 'user.module_action', title = '模块命令' }, function()
+  muxora.commands.execute('host.newTab')
+end)
+return { title = '模块命令' }
 ```
 
 ```lua
 -- User/init.lua
-local setup = require('workspace')
-setup()
+local workspace = require('workspace')
 ```
+
+`require` 保留标准搜索器、加载器参数、返回值和缓存规则，也支持自定义 Lua 搜索器中的宿主调用。不额外检测循环加载；有循环依赖时可按 Lua 惯例先写入 `package.loaded`。只有实际不可让出的调用位置（如 `tostring` 的 `__tostring` 回调）不能等待宿主；这些位置的调用会在提交宿主请求前失败。
 
 用户协程中的 `muxora.*` 调用会逐层转交宿主并恢复，普通 `coroutine.yield` 的返回值遵循 Lua 语义。`debug.sethook` 和 `debug.gethook` 管理用户钩子；清除用户钩子不影响运行时的停止检查。
 

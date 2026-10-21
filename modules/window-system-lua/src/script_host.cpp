@@ -73,6 +73,58 @@ if moduleDirectory ~= '' then
   package.path = moduleDirectory..'/?.lua;'..moduleDirectory..'/?/init.lua;'..package.path
 end
 package.cpath = ''
+do
+  local modulePackage, registry, standardRequire = package, debug.getregistry(), require
+  local kind, raw, raise = type, rawget, error
+  local concat, find, sub = table.concat, string.find, string.sub
+  local function cString(value)
+    local zero = find(value,'\0',1,true)
+    return zero and sub(value,1,zero-1) or value
+  end
+  local function invalidName(...)
+    -- This path fails before loading. Let Lua preserve its exact type names
+    -- and argument diagnostics, including light userdata and absent values.
+    local require = standardRequire
+    local value = require(...)
+    return value
+  end
+  local function findLoader(name)
+    local searchers = modulePackage.searchers
+    if kind(searchers) ~= 'table' then raise("'package.searchers' must be a table",3) end
+    local messages, index = {}, 1
+    while true do
+      local searcher = raw(searchers,index)
+      if searcher == nil then
+        raise("module '"..name.."' not found:"..cString(concat(messages)),3)
+      end
+      local loader, data = searcher(name)
+      local loaderKind = kind(loader)
+      if loaderKind == 'function' then return loader,data end
+      if loaderKind == 'string' or loaderKind == 'number' then
+        messages[#messages+1] = '\n\t'..loader
+      end
+      index = index+1
+    end
+  end
+  require = function(...)
+    local name = ...
+    local nameKind = kind(name)
+    if nameKind == 'number' then name = name..''
+    elseif nameKind ~= 'string' then return invalidName(...) end
+    -- The standard loader uses C-string keys but forwards the full name to
+    -- the module. Keep the registry cache, not a replaceable package.loaded.
+    local key = cString(name)
+    local loaded = registry._LOADED
+    local value = loaded[key]
+    if value then return value end
+    local loader, data = findLoader(key)
+    local result = loader(name,data)
+    if result ~= nil then loaded[key] = result end
+    value = loaded[key]
+    if value == nil then value = true; loaded[key] = value end
+    return value,data
+  end
+end
 os.exit = function() return host('app.exit') end
 )lua";
 } // namespace

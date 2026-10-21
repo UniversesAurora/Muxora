@@ -46,13 +46,13 @@ Neovim 的 Lua 接口采用命名空间组织、统一命令、用户配置和�
 
 ## 完整标准库与模块加载
 
-按 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md)，`luaL_openlibs` 打开全部 Lua 标准库，包括 `io`、`os`、`debug`、`package`／`require`、`coroutine`、`load`、`string.dump` 和 `collectgarbage`。`load`、标准文件加载器支持 Lua 二进制块；不再提供原 `module.read` 或自写 `require`。文件读写、shell 命令和纯 Lua 模块直接使用标准库，`muxora.*` 负责窗口和应用特有能力。
+按 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md)，`luaL_openlibs` 打开全部 Lua 标准库，包括 `io`、`os`、`debug`、`package`／`require`、`coroutine`、`load`、`string.dump` 和 `collectgarbage`。`load`、标准文件加载器支持 Lua 二进制块；不提供 `module.read` 宿主接口。文件读写、shell 命令和纯 Lua 模块使用标准加载与缓存规则，`muxora.*` 负责窗口和应用特有能力。
 
 初始化时，在默认 `package.path` 之前加入 `<用户Lua目录>/?.lua` 和 `<用户Lua目录>/?/init.lua`，使用标准搜索器与 `package.loaded` 缓存。脚本可以修改搜索路径和缓存；重载 VM 清除旧缓存。原来的目录边界、严格 UTF-8 和 1 MiB 模块大小检查取消，标准加载器按 Lua 自身规则处理文件。应用的 `init.lua`／运行文件入口仍通过 UTF-8 文本传输，受 64 MiB 直接源代码上限约束。
 
 `package.cpath` 初始为空；`package.loadlib` 保留并返回标准加载错误。Lua 以 C++ 静态链接，没有外部模块可链接的 Lua DLL，不支持 C 模块。这是构建与 ABI 约束，不是对本地脚本的权限限制。
 
-宿主调用让出使用私有标记，`coroutine.resume`／`wrap` 逐层转发标记，并保留普通让出的返回值。标准 `require` 的 C 加载器不能让出，模块顶层不能直接调用需要宿主回执的 `muxora.*`；模块可以返回初始化函数，待 `require` 返回后再调用。用法见 [Lua 使用说明](../development/lua-guide.md#标准库与模块)。
+宿主调用让出使用私有标记，`coroutine.resume`／`wrap` 逐层转发标记，并保留普通让出的返回值。引导脚本用 Lua 实现 `require` 的调度，按顺序使用标准 `package.searchers` 并以模块名、加载器数据调用返回的加载器；模块顶层和自定义 Lua 搜索器可以调用 `muxora.*` 并等待宿主回执。缓存命中、`nil`／`false`、加载器数据返回值、缺失模块错误与循环加载均保持标准语义。真正不可让出的 C 回调位置仍须在提交宿主请求前拒绝，不能先产生副作用。用法见 [Lua 使用说明](../development/lua-guide.md#标准库与模块)。
 
 `os.exit` 替换为宿主 `app.exit` 调用，应用执行 `application.exit`，先保存工作区再申请窗口关闭许可。退出码与 `close` 参数忽略；关闭被拒绝时返回 `false`。独立宿主未提供该方法时返回未知方法错误，不能直接调用 C `exit()` 跳过保存与线程清理。
 

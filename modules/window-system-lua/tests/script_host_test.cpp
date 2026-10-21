@@ -68,6 +68,14 @@ class ScriptHostTest final : public QObject {
     void eventCallbacksPreserveOrderAndReleaseQueuedValues();
     void overloadedRuntimeDoesNotStrandEventResources();
     void timersAreCancelledOnUnloadAndOneShotsReleaseCallbacks();
+    void standardModulesCanCallTheHostAtTopLevel_data();
+    void standardModulesCanCallTheHostAtTopLevel();
+    void standardModuleLoadingPreservesLuaSemantics_data();
+    void standardModuleLoadingPreservesLuaSemantics();
+    void nestedModuleLoadingCanYieldThroughUserCoroutines();
+    void cancellingModuleLoadingDoesNotCacheOrContinueTheModule();
+    void nonyieldableModuleLoadingHasNoHostSideEffects_data();
+    void nonyieldableModuleLoadingHasNoHostSideEffects();
     void standardModulesUseUserPathsAndPackageLoaded();
     void standardModulesAllowUserSearchersAndBinaryChunks();
     void standardModulesReportMissingFilesAndUnavailableCLibraries();
@@ -526,6 +534,375 @@ void ScriptHostTest::timersAreCancelledOnUnloadAndOneShotsReleaseCallbacks() {
     QVERIFY(reply.values[0].toBool());
     QCOMPARE(host.resourceCounts()["timers"].toInt(), 0);
 }
+void ScriptHostTest::standardModulesCanCallTheHostAtTopLevel_data() {
+    QTest::addColumn<bool>("duringInitialization");
+    QTest::newRow("initialization") << true;
+    QTest::newRow("ordinary-task") << false;
+}
+void ScriptHostTest::standardModulesCanCallTheHostAtTopLevel() {
+    QFETCH(bool, duringInitialization);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window, "Before loading");
+    ScriptHost host(&manager);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile module(directory.filePath("host_module.lua"));
+    QVERIFY(module.open(QIODevice::WriteOnly));
+    const QByteArray source = R"lua(
+      moduleLoads=(moduleLoads or 0)+1
+      assert(muxora.tabs.rename(nil,'Loaded from module'))
+      return {tab=muxora.context().tab}
+    )lua";
+    QCOMPARE(module.write(source), source.size());
+    module.close();
+    host.setModuleDirectory(directory.path());
+    const QString load = QStringLiteral(R"lua(
+      local value=require('host_module')
+      assert(value.tab==muxora.context().tab)
+      assert(value==require('host_module') and moduleLoads==1)
+    )lua");
+    if (duringInitialization) {
+        QVERIFY(initialize(host, load));
+    } else {
+        QVERIFY(initialize(host));
+        const auto reply = run(host, load);
+        QVERIFY2(reply.ok, qPrintable(reply.error));
+    }
+    QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Loaded from module"));
+}
+void ScriptHostTest::standardModuleLoadingPreservesLuaSemantics_data() {
+    QTest::addColumn<QString>("source");
+    QTest::newRow("preload-arguments-and-cache-results") << QStringLiteral(R"lua(
+      local loads=0
+      package.preload.fixture=function(name,data)
+        assert(name=='fixture' and data==':preload:')
+        loads=loads+1
+        return {value=42},'discarded'
+      end
+      local first=table.pack(require('fixture'))
+      assert(first.n==2 and first[1].value==42 and first[2]==':preload:')
+      local cached=table.pack(require('fixture'))
+      assert(cached.n==1 and cached[1]==first[1] and loads==1)
+    )lua");
+    QTest::newRow("custom-searcher-and-loader-data") << QStringLiteral(R"lua(
+      local data={source='custom'}
+      table.insert(package.searchers,1,function(name)
+        assert(name=='fixture')
+        assert(muxora.context().window~='')
+        return function(module,extra)
+          assert(module==name and extra==data)
+          return {value=73}
+        end,data
+      end)
+      local value,extra=require('fixture')
+      assert(value.value==73 and extra==data and package.loaded.fixture==value)
+    )lua");
+    QTest::newRow("nil-loader-result-and-nil-loader-data") << QStringLiteral(R"lua(
+      local loads=0
+      package.searchers={function()
+        return function() loads=loads+1 end
+      end}
+      local first=table.pack(require('fixture'))
+      assert(first.n==2 and first[1]==true and first[2]==nil)
+      local cached=table.pack(require('fixture'))
+      assert(cached.n==1 and cached[1]==true and loads==1)
+    )lua");
+    QTest::newRow("explicit-loaded-value-with-nil-result") << QStringLiteral(R"lua(
+      local value={value=91}
+      package.preload.fixture=function(name) package.loaded[name]=value end
+      assert(require('fixture')==value and require('fixture')==value)
+      package.loaded.fixture=nil
+      package.preload.fixture=function(name) package.loaded[name]=false end
+      assert(require('fixture')==false and package.loaded.fixture==false)
+    )lua");
+    QTest::newRow("returned-false-overrides-cache-and-reloads") << QStringLiteral(R"lua(
+      local loads=0
+      package.preload.fixture=function(name)
+        loads=loads+1
+        package.loaded[name]={discarded=true}
+        return false,'ignored'
+      end
+      assert(require('fixture')==false and require('fixture')==false)
+      assert(loads==2 and package.loaded.fixture==false)
+    )lua");
+    QTest::newRow("missing-module-messages") << QStringLiteral(R"lua(
+      package.searchers={
+        function() return 'first' end,
+        function() return nil,'ignored' end,
+        function() return 42 end,
+        function() return false end,
+        function() return 'last' end
+      }
+      expectError(function()require('missing')end,
+        "module 'missing' not found:\n\tfirst\n\t42\n\tlast")
+    )lua");
+    QTest::newRow("missing-module-message-with-embedded-zero") << QStringLiteral(R"lua(
+      package.searchers={
+        function() return 'first\0discarded' end,
+        function() return 'last' end
+      }
+      expectError(function()require('missing')end,"module 'missing' not found:\n\tfirst")
+    )lua");
+    QTest::newRow("searchers-stop-at-first-raw-hole") << QStringLiteral(R"lua(
+      package.searchers=setmetatable({
+        [1]=function() return 'first' end,
+        [3]=function() error('search after hole') end
+      },{__index=function()error('searcher metatable must not run')end})
+      expectError(function()require('missing')end,"module 'missing' not found:\n\tfirst")
+    )lua");
+    QTest::newRow("callable-searcher-but-function-loader-only") << QStringLiteral(R"lua(
+      local rejected=setmetatable({},{__call=function()error('not a function loader')end})
+      package.searchers={
+        function()return rejected end,
+        setmetatable({},{__call=function(_,name)
+          return function(module,data)
+            assert(module==name and data=='callable searcher')
+            return 57
+          end,'callable searcher'
+        end})
+      }
+      local value,data=require('fixture')
+      assert(value==57 and data=='callable searcher')
+    )lua");
+    QTest::newRow("invalid-searchers") << QStringLiteral(R"lua(
+      package.searchers=false
+      expectError(function()require('missing')end,"'package.searchers' must be a table")
+    )lua");
+    QTest::newRow("failed-loader-can-be-retried") << QStringLiteral(R"lua(
+      local loads=0
+      package.preload.fixture=function()
+        loads=loads+1
+        if loads==1 then error('loader failure',0) end
+        return 81
+      end
+      expectError(function()require('fixture')end,'loader failure')
+      assert(package.loaded.fixture==nil and require('fixture')==81 and loads==2)
+    )lua");
+    QTest::newRow("recursive-loading-is-not-rejected") << QStringLiteral(R"lua(
+      local loads=0
+      package.preload.fixture=function(name)
+        loads=loads+1
+        if loads<3 then return require(name) end
+        return {depth=loads}
+      end
+      local value=require('fixture')
+      assert(value.depth==3 and loads==3 and require('fixture')==value)
+    )lua");
+    QTest::newRow("original-package-and-registry-cache") << QStringLiteral(R"lua(
+      local original,loaded=package,package.loaded
+      original.preload.fixture=function()return {value=64}end
+      original.loaded={}
+      package={}
+      local value=require('fixture')
+      assert(value.value==64 and loaded.fixture==value and original.loaded.fixture==nil)
+      assert(require('fixture')==value)
+    )lua");
+    QTest::newRow("registry-cache-replacement") << QStringLiteral(R"lua(
+      local registry=debug.getregistry()
+      local old,loaded=registry._LOADED,{}
+      registry._LOADED=loaded
+      package.preload.fixture=function()return {value=65}end
+      local value=require('fixture')
+      assert(value.value==65 and loaded.fixture==value and old.fixture==nil)
+      registry._LOADED=old
+    )lua");
+    QTest::newRow("loading-does-not-depend-on-mutable-globals") << QStringLiteral(R"lua(
+      local assert,pcall,kind,sub=assert,pcall,type,string.sub
+      local loads=0
+      package.preload.fixture=function()loads=loads+1;return 66 end
+      local function broken()assert(false,'overridden global must not run')end
+      type,rawget,error,select=broken,broken,broken,broken
+      table.concat,string.find,string.sub=broken,broken,broken
+      debug.getregistry=broken
+      assert(require('fixture')==66 and require('fixture')==66 and loads==1)
+      package.searchers={function()return 'missing detail'end}
+      local ok,message=pcall(require,'missing')
+      local expected="module 'missing' not found:\n\tmissing detail"
+      assert(not ok and kind(message)=='string' and sub(message,-#expected)==expected)
+    )lua");
+    QTest::newRow("numeric-module-name") << QStringLiteral(R"lua(
+      package.preload['73']=function(name,data)
+        assert(name=='73' and data==':preload:')
+        return 74
+      end
+      assert(require(73)==74 and package.loaded['73']==74)
+      expectError(function()require()end,
+        "bad argument #1 to 'require' (string expected, got no value)")
+      expectError(function()require(false)end,
+        "bad argument #1 to 'require' (string expected, got boolean)")
+    )lua");
+    QTest::newRow("named-argument-types-use-raw-real-metatable") << QStringLiteral(R"lua(
+      local named=setmetatable({},{__name='Fixture',__metatable='hidden'})
+      expectError(function()require(named)end,
+        "bad argument #1 to 'require' (string expected, got Fixture)")
+      local unnamed=setmetatable({},{__index=function()error('type-name metatable must not run')end})
+      expectError(function()require(unnamed)end,
+        "bad argument #1 to 'require' (string expected, got table)")
+      local numeric=setmetatable({},{__name=42})
+      expectError(function()require(numeric)end,
+        "bad argument #1 to 'require' (string expected, got table)")
+    )lua");
+    QTest::newRow("light-userdata-argument-type") << QStringLiteral(R"lua(
+      local value=42
+      local function closure()return value end
+      local pointer=debug.upvalueid(closure,1)
+      expectError(function()require(pointer)end,
+        "bad argument #1 to 'require' (string expected, got light userdata)")
+    )lua");
+    QTest::newRow("embedded-zero-keeps-standard-key-and-loader-name") << QStringLiteral(R"lua(
+      local name='fixture\0suffix'
+      package.preload.fixture=function(module,data)
+        assert(module==name and data==':preload:')
+        return {value=75}
+      end
+      local value=require(name)
+      assert(value.value==75 and package.loaded.fixture==value and require('fixture')==value)
+    )lua");
+}
+void ScriptHostTest::standardModuleLoadingPreservesLuaSemantics() {
+    QFETCH(QString, source);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto reply = run(host, QStringLiteral(R"lua(
+      local function expectError(action,expected)
+        local ok,message=pcall(action)
+        assert(not ok and type(message)=='string')
+        assert(message:sub(-#expected)==expected,message)
+      end
+    )lua") + source + QStringLiteral("\nreturn true"));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+}
+void ScriptHostTest::nestedModuleLoadingCanYieldThroughUserCoroutines() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window);
+    ScriptHost host(&manager);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto write = [&directory](const QString &name, const QByteArray &source) {
+        QFile file(directory.filePath(name));
+        return file.open(QIODevice::WriteOnly) && file.write(source) == source.size();
+    };
+    QVERIFY(write("outer.lua", R"lua(
+      local inner=require('inner')
+      assert(muxora.tabs.rename(nil,'Nested module'))
+      return {tab=muxora.context().tab,inner=inner}
+    )lua"));
+    QVERIFY(write("inner.lua", R"lua(
+      return coroutine.wrap(function()return muxora.context().tab end)()
+    )lua"));
+    host.setModuleDirectory(directory.path());
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+      local outer=coroutine.create(function()
+        return coroutine.wrap(function()
+          local ok,value=pcall(require,'outer')
+          assert(ok,value)
+          assert(value.tab==value.inner)
+          return value.tab
+        end)()
+      end)
+      local ok,value=coroutine.resume(outer)
+      assert(ok,value)
+      assert(coroutine.status(outer)=='dead')
+      return value
+    )lua");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
+    QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Nested module"));
+}
+void ScriptHostTest::cancellingModuleLoadingDoesNotCacheOrContinueTheModule() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = addEditor(manager, window, "Unchanged");
+    ScriptHost host(&manager);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile module(directory.filePath("cancelled_module.lua"));
+    QVERIFY(module.open(QIODevice::WriteOnly));
+    const QByteArray source = R"lua(
+      muxora.call('fixture.cancel')
+      muxora.tabs.rename(nil,'Must not execute')
+      return {loaded=true}
+    )lua";
+    QCOMPARE(module.write(source), source.size());
+    module.close();
+    int calls = 0;
+    host.setServiceHandler([&](QString method, QVariantList, QVariantMap) {
+        if (method != "fixture.cancel")
+            return ScriptResult{false, {}, "Unexpected host call"};
+        ++calls;
+        host.runtime()->cancelAll();
+        return ScriptResult{true, {true}, {}};
+    });
+    host.setModuleDirectory(directory.path());
+    QVERIFY(initialize(host));
+    const auto reply = run(host, R"lua(
+      pcall(require,'cancelled_module')
+      muxora.tabs.rename(nil,'Must not continue')
+    )lua");
+    QVERIFY(!reply.ok);
+    QVERIFY2(reply.error.contains("cancel", Qt::CaseInsensitive), qPrintable(reply.error));
+    QCOMPARE(calls, 1);
+    QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Unchanged"));
+    const auto recovered = run(host, R"lua(
+      assert(package.loaded.cancelled_module==nil)
+      return muxora.context().tab
+    )lua");
+    QVERIFY2(recovered.ok, qPrintable(recovered.error));
+    QCOMPARE(recovered.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
+}
+void ScriptHostTest::nonyieldableModuleLoadingHasNoHostSideEffects_data() {
+    QTest::addColumn<QString>("source");
+    QTest::newRow("tostring-metamethod") << QStringLiteral(R"lua(
+      tostring(setmetatable({},{__tostring=function()return require('effect')end}))
+    )lua");
+    QTest::newRow("sort-comparator") << QStringLiteral(R"lua(
+      table.sort({2,1},function()require('effect');return false end)
+    )lua");
+}
+void ScriptHostTest::nonyieldableModuleLoadingHasNoHostSideEffects() {
+    QFETCH(QString, source);
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile module(directory.filePath("effect.lua"));
+    QVERIFY(module.open(QIODevice::WriteOnly));
+    const QByteArray moduleSource = "return muxora.call('fixture.effect')";
+    QCOMPARE(module.write(moduleSource), moduleSource.size());
+    module.close();
+    int calls = 0;
+    host.setServiceHandler([&](QString method, QVariantList, QVariantMap) {
+        if (method != "fixture.effect")
+            return ScriptResult{false, {}, "Unexpected host call"};
+        ++calls;
+        return ScriptResult{true, {QStringLiteral("loaded")}, {}};
+    });
+    host.setModuleDirectory(directory.path());
+    QVERIFY(initialize(host));
+    const auto reply = run(host, QStringLiteral("local ok,message=pcall(function()\n") + source +
+                                     QStringLiteral(R"lua(
+      end)
+      assert(not ok and message:find('yieldable Lua task',1,true),message)
+      assert(package.loaded.effect==nil)
+      return true
+    )lua"));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values, QVariantList{true});
+    QCOMPARE(calls, 0);
+    const auto recovered = run(host, "return require('effect')");
+    QVERIFY2(recovered.ok, qPrintable(recovered.error));
+    QCOMPARE(recovered.values[0].toString(), QStringLiteral("loaded"));
+    QCOMPARE(calls, 1);
+}
 void ScriptHostTest::standardModulesUseUserPathsAndPackageLoaded() {
     WindowManager manager;
     auto window = manager.createWindow();
@@ -547,7 +924,8 @@ void ScriptHostTest::standardModulesUseUserPathsAndPackageLoaded() {
     host.setModuleDirectory(root.path());
     QVERIFY(initialize(host));
     auto reply = run(host, R"lua(
-      local first=require('a')
+      local first,filename=require('a')
+      assert(filename:sub(-6)=='/a.lua')
       assert(first==require('a') and package.loaded.a==first and loaded==1)
       assert(require('a.b').nested==71 and require('folder').directory==93)
       assert(require('empty')==true and require('empty')==true and emptyLoads==1)

@@ -31,6 +31,7 @@ foreach ($taskFile in $taskOwnedFiles) {
     if (Test-Path -LiteralPath $taskFile) { Remove-Item -LiteralPath $taskFile -Force }
 }
 $taskCommon = @'
+local startupModule=require('部署模块')
 muxora.commands.register({id='user.deployment_check',title='Deployment check'},function(context)
   local state=muxora.toolbars.state(context.window,'user.deployment_tools')
   assert(state and state.visible)
@@ -43,7 +44,8 @@ muxora.commands.register({id='user.deployment_check',title='Deployment check'},f
   assert(type(collectgarbage('count'))=='number')
   assert(package.cpath=='')
   local module=require('部署模块')
-  assert(module==require('部署模块') and module.value=='模块正文')
+  assert(module==startupModule and module==require('部署模块') and module.value=='模块正文')
+  assert(module.window==context.window)
   assert(deployment_module_loads==1)
   assert(os.getenv('MUXORA_LUA_DEPLOYMENT_TEXT')=='中文环境值')
   local directory=assert(os.getenv('MUXORA_LUA_DEPLOYMENT_ROOT'))
@@ -95,7 +97,9 @@ try {
     New-Item -ItemType Directory -Path $taskModules,$taskUnicodeDirectory -Force | Out-Null
     @'
 deployment_module_loads=(deployment_module_loads or 0)+1
-return {value='模块正文'}
+local context=muxora.context()
+assert(type(context.window)=='string')
+return {value='模块正文',window=context.window}
 '@ | Set-Content -LiteralPath $taskModule -Encoding utf8NoBOM
     for ($taskPass = 0; $taskPass -lt $taskBodies.Count; ++$taskPass) {
         $taskCommon.Replace('CHECK_BODY', $taskBodies[$taskPass]) |
@@ -147,7 +151,8 @@ return {value='模块正文'}
     }
     @{ sdkRemovedFromPath = $true; scriptStartupAndCommand = $true; toolbarWidthAndVisibilityRestored = $true;
         scriptChromeSavedBeforeUnload = $true; luaLicenseIncluded = $true;
-        standardLibraries = $true; standardRequireCached = $true; unicodeFileAndEnvironment = $true;
+        standardLibraries = $true; standardRequireCached = $true; moduleTopLevelHostCall = $true;
+        unicodeFileAndEnvironment = $true;
         coroutineHostCall = $true; binaryChunkAndGarbageCollection = $true;
         standardCommandExecution = $true; osExitSavedNormally = $true; passes = $taskPasses } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $taskOutput 'test-results/lua-deployment.json') -Encoding utf8NoBOM

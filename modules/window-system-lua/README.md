@@ -15,7 +15,7 @@
 
 首次构建下载固定的官方 Lua 5.5.1 源码并在构建目录编译，不要求系统安装 Lua。Lua 的许可和 `__gc` hook 构建适配见 [依赖说明](../../third_party/lua/README.md)。
 
-在 GUI 线程创建 [ScriptHost](include/window_system_lua/script_host.hpp)，传入仍然有效的 `WindowManager`。通过 `setModuleDirectory()` 指定纯 Lua 模块目录，再调用 `initialize(source, name)`；结果由 `initialized` 异步返回。该目录的 `?.lua` 和 `?/init.lua` 模板放在标准 `package.path` 的默认路径之前，加载与缓存遵循 Lua。`ready()` 为真后可调用 `run()` 或通过命令注册表执行脚本命令。脚本线程等待 UI 回执时让出，GUI 线程不等待 Lua 执行结束。
+在 GUI 线程创建 [ScriptHost](include/window_system_lua/script_host.hpp)，传入仍然有效的 `WindowManager`。通过 `setModuleDirectory()` 指定纯 Lua 模块目录，再调用 `initialize(source, name)`；结果由 `initialized` 异步返回。该目录的 `?.lua` 和 `?/init.lua` 模板放在标准 `package.path` 的默认路径之前，加载与缓存遵循 Lua。引导脚本以可让出的 Lua 调用标准搜索器和加载器，模块顶层可以直接调用 `muxora.*`，用法见 [Lua 使用说明](../../docs/development/lua-guide.md#标准库与模块)。`ready()` 为真后可调用 `run()` 或通过命令注册表执行脚本命令。脚本线程等待 UI 回执时让出，GUI 线程不等待 Lua 执行结束。
 
 `scriptError` 与 `logMessage` 由宿主接收和展示。`unload()` 撤销脚本资源并取消旧任务；重新 `initialize()` 建立新一代 VM。运行时的重置完成通知核验最新代次，延迟到达的旧通知不会重新启动初始化。相同 ID 的工具条更新定义且保留布局，不再声明的贡献被移除。宿主应在清理脚本贡献前保存需要保留的窗口布局。
 

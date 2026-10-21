@@ -91,7 +91,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 | 设置 | 可移动的设置标签，按类别排列并可搜索，分类树随滚动同步。滚轮不会修改或聚焦下拉框、数字框、日期时间框和滑块，而是滚动页面 |
 | 提示 | 提示气泡使用当前主题，快速切换控件时大小不变；超过 400 逻辑像素的提示按形状换行，不会变成细长条 |
 | 界面语言 | 跟随系统、简体中文、English；Qt 翻译随程序嵌入，选择保存在 `User/settings.json`，重启后生效 |
-| Lua | 官方 Lua 5.5.1 随程序编译；用户启动脚本、命令与快捷键、工具条和状态项、窗口操作、事件和计时器。独立线程提供完整标准库、标准 `require` 与协程宿主调用；没有执行预算，保留显式停止和有界传输／队列。阻塞标准调用返回前不能中断，退出时限时等待；`os.exit` 走正常保存关闭流程，中文路径由 UTF-8 清单支持。范围见 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md) 与 [Lua 指南](lua-guide.md) |
+| Lua | 官方 Lua 5.5.1 随程序编译；用户启动脚本、命令与快捷键、工具条和状态项、窗口操作、事件和计时器。独立线程提供完整标准库、标准语义的 `require` 与协程宿主调用，模块顶层可直接调用 `muxora.*`；没有执行预算，保留显式停止和有界传输／队列。阻塞标准调用返回前不能中断，退出时限时等待；`os.exit` 走正常保存关闭流程，中文路径由 UTF-8 清单支持。范围见 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md) 与 [Lua 指南](lua-guide.md) |
 | 保存恢复 | 严格 JSON 布局由宿主通过 `QSaveFile` 原子写入；行为设置、正常几何和最大化状态、两种窗口各自的工具条布局及四栏偏好随布局保存；关闭最后一个窗口前同步保存 |
 | 启动参数 | `--fresh` 从初始布局开始，`--state-dir <path>` 使用独立状态目录，`--command <id>` 执行已注册命令（例如 `muxora.exe --command window.settings`） |
 
@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-R1：实际钩子回归在重编后的旧实现失败，修复后运行时套件通过，同机前后基准见 [验证日志](verification-log/2026-10.md#lua-98-r1-停止钩子返工2026-10-21)。接手时发现残留产物与源码不符，首次套件及基准的源码验证结论已作废。本步没有更新部署目录或重跑全量；9.8 后续要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工)。
+R2：模块顶层宿主调用在旧实现失败，修复后 Lua 相关套件通过，代码版本与运行结果见 [验证日志](verification-log/2026-10.md#lua-98-r2-可让出的模块加载2026-10-21)。该批次曾因编译器遥测子进程需要人工收尾，不能写作隔离脚本自然收尾通过。尚未更新部署目录或重跑全量；9.8 后续要求见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#返工)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
