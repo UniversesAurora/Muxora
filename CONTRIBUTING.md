@@ -7,7 +7,7 @@
 1. 阅读 [文档入口](docs/README.md)、[工程规范](docs/development/engineering-design.md) 和涉及的设计。
 2. 按 [预览说明](docs/development/window-system-preview.md) 建立本地构建。SDK、编译器和产物留在仓库外或忽略目录。
 3. 将改动限制在明确职责内。宿主使用公开 API，不引用窗口模块内部头文件；窗口模块不引入远程业务依赖。
-4. 运行相关自动化测试；缺陷修复补充能够复现问题的用例。`pwsh ./tools/verify.ps1` 编排 Debug / Release 测试、模块独立构建、安装后的外部宿主验证与部署启动检查。真实交互无法自动检查的部分记录复现步骤和实际验证结果。
+4. 运行相关自动化测试；缺陷修复补充能够复现问题的用例。`pwsh ./tools/verify.ps1` 编排 Debug / Release 测试、模块独立构建、安装后的 C++／Lua 外部宿主验证与部署检查；它和其他含桌面测试的命令一样经 `pwsh ./tools/tests/quiet-desktop.ps1 -Elevate` 运行，见 [测试要求](docs/development/testing-design.md)。真实交互无法自动检查的部分记录复现步骤和实际验证结果。
 
 ## 提交改动
 

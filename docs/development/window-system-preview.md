@@ -62,13 +62,13 @@ pwsh ./tools/package-portable.ps1
 
 脚本检查 7-Zip 压缩包完整性，再解压到 `out/portable-checks/current/便携包 解压检查/`。在子进程中移除 SDK、编译器和 Qt 插件路径覆盖，分别检查首次启动、本地布局保存与重启恢复；验证记录为 `out/test-results/portable-package.json`。历史打包与验证结果见 [验证日志](verification-log/2026-10.md)。
 
-完整验证入口：
+完整验证入口（同样经桌面隔离脚本运行）：
 
 ```powershell
-pwsh ./tools/verify.ps1
+pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 ```
 
-该脚本运行 Debug / Release 自动化测试，单独配置窗口模块并运行其测试，安装模块后构建外部宿主夹具，最后移除 SDK 和编译器路径，检查实际部署程序的启动、退出、重启、显隐、全屏、禅模式及底部工具条恢复。入口存在与验证通过分别记录；最近一次结果见下文，历史结果见 [验证日志](verification-log/2026-10.md)。
+该脚本运行 Debug / Release 自动化测试，单独配置窗口模块并运行其测试，安装模块后构建 C++ 和 Lua 两个外部宿主夹具，最后移除 SDK 和编译器路径，检查实际部署程序的启动、退出、重启、显隐、全屏、禅模式、底部工具条恢复和 Lua 脚本。入口存在与验证通过分别记录；最近一次结果见下文，历史结果见 [验证日志](verification-log/2026-10.md)。
 
 完整窗口系统设计见 [窗口模块](../design/window-system-design.md)、[工作区](../design/workspace-design.md) 和 [浮动窗口](../design/floating-window-design.md)。本次以能交互的基础版本为起点，继续根据试用结果修订。
 

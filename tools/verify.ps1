@@ -18,8 +18,7 @@ if ($PackageDirectory) { $taskReleaseArguments.PackageDirectory = $taskPackage }
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskReleaseArguments
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
-$taskSdk = Get-Content -LiteralPath (Join-Path $taskRepository '.local/sdk.json') -Raw | ConvertFrom-Json
-$taskQt = $taskSdk.qtRoot
+$taskQt = Resolve-QtKit $QtRoot $taskRepository
 $taskToolchain = Enter-Toolchain $taskQt
 $taskCmake = $taskToolchain.Cmake
 $taskCtest = $taskToolchain.Ctest
@@ -45,6 +44,13 @@ try {
     Invoke-Verification $taskCmake @('--build', $taskExternal, '--parallel', '4')
     Invoke-Verification $taskCtest @('--test-dir', $taskExternal, '--output-on-failure', '--no-tests=error',
         '--output-junit', (Join-Path $taskRepository 'out/test-results/external-host.xml'))
+    # The Lua bridge against the installed WindowSystem, without the Muxora application.
+    $taskExternalLua = Join-Path $taskRepository 'out/build/external-lua-host'
+    Invoke-Verification $taskCmake (@('-S', (Join-Path $taskRepository 'modules/window-system-lua/tests/fixtures/external-host'),
+        '-B', $taskExternalLua, "-DCMAKE_PREFIX_PATH=$taskInstall;$taskQt") + $taskCommon)
+    Invoke-Verification $taskCmake @('--build', $taskExternalLua, '--parallel', '4')
+    Invoke-Verification $taskCtest @('--test-dir', $taskExternalLua, '--output-on-failure', '--no-tests=error',
+        '--output-junit', (Join-Path $taskRepository 'out/test-results/external-lua-host.xml'))
     # The packaged application must start without SDK or compiler directories on
     # PATH; its deployment directory is the only source of Qt/runtime DLLs.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
@@ -68,5 +74,6 @@ try {
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/package-smoke.json') -Encoding utf8NoBOM
     & (Join-Path $PSScriptRoot 'tests/application-exit-test.ps1') -PackageDirectory $taskPackage
     & (Join-Path $PSScriptRoot 'tests/application-view-test.ps1') -PackageDirectory $taskPackage
-    Write-Host 'Verification passed: debug, release, standalone, installed API, deployed application, exit/restart and view-state restart.'
+    & (Join-Path $PSScriptRoot 'tests/lua-deployment-test.ps1') -PackageDirectory $taskPackage
+    Write-Host 'Verification passed: debug, release, standalone, installed API and Lua host, deployed application, exit/restart, view-state restart and Lua deployment.'
 } finally { Exit-Toolchain $taskToolchain }

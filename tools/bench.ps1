@@ -3,23 +3,16 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Name,
     [string]$Tabs = '100,500,1000',
     [ValidateRange(1, 100000)][int]$Repeat = 30,
-    [switch]$Visible
+    [switch]$Visible,
+    [string]$QtRoot
 )
 # Builds the opt-in WindowSystem scale benchmark in its own Release directory
 # and writes out/test-results/bench-<Name>.json. The default dev builds and the
 # fixed deployment directory are never touched.
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
-$taskLocalFile = Join-Path $taskRepository '.local/sdk.json'
-if (-not (Test-Path -LiteralPath $taskLocalFile)) {
-    throw "Missing $taskLocalFile. Run tools/build.ps1 once so it records the Qt kit and compiler."
-}
-$taskSdk = Get-Content -LiteralPath $taskLocalFile -Raw | ConvertFrom-Json
-if (-not $taskSdk.qtRoot -or -not $taskSdk.compiler) {
-    throw "$taskLocalFile lacks qtRoot or compiler. Run tools/build.ps1 again."
-}
-$taskQt = $taskSdk.qtRoot
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
+$taskQt = Resolve-QtKit $QtRoot $taskRepository
 $taskBuild = Join-Path $taskRepository 'out/build/bench-release'
 $taskResults = Join-Path $taskRepository 'out/test-results'
 $taskOutput = Join-Path $taskResults "bench-$Name.json"
