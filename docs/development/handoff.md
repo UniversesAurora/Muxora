@@ -49,10 +49,11 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-22 · Codex 交出：命令行恢复策略补充
+## 2026-10-22 · Codex 交出：命令行恢复策略与计划覆盖复核
 
 - **最后提交**：`main` 已全部推送，与 `origin/main` 一致；工作区干净。R1、R2、总时限调整、`peek-size` 修正及验证记录按事项分别提交，包含两项新的协作规则提交；最新提交以 `git log` 为准。
 - **本轮完成**：相关事项分别提交，本次只调整设计和计划，未迁移源码或实现新启动参数：
+  - `docs/dev: Request a review of unresolved audit coverage`：按用户要求将审查遗留事项的计划覆盖问题列入下方 Q3，交由 Claude 接手后核对判断；没有自行新增重构步骤或修改冻结快照。文档检查见 [记录](verification-log/2026-10.md#计划覆盖核对交接2026-10-22)。
   - `docs/roadmap: Define CLI session restoration overrides`：补充命令行打开会话的恢复设置、带值参数覆盖及 fresh 兼容要求，见 [设计](../design/settings-and-commands-design.md#71-命令行启动) 和 [文档检查记录](verification-log/2026-10.md#命令行会话恢复偏好与显式覆盖2026-10-22)。
   - `docs/roadmap: Prioritize English source text and translation coverage`：将英文源文本迁移及源码全量翻译核查加入下一推荐步骤，决定及理由见 [ADR 0010](../adr/0010-english-translation-source.md)，文档检查见 [记录](verification-log/2026-10.md#英文源文本迁移与覆盖核查计划2026-10-22)。
   - `docs/roadmap: Plan command-line session and Lua startup requests`：新增后续启动参数扩展步骤，产品要求见 [命令行启动](../design/settings-and-commands-design.md#71-命令行启动)，实施位置见 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序)，文档检查见 [记录](verification-log/2026-10.md#命令行启动请求计划2026-10-22)。
@@ -63,10 +64,27 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/sidebar: Wait for actual dialog focus in tests`：A2 夹具、反向条件及相关验证完成，见 [A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
   - `docs/dev: Complete the remaining verification stages`：按用户决定接受本轮 Debug，复用已有 Release 覆盖，补齐独立模块、安装后宿主与部署检查；结果和保留的交互失败见 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)。
 - **进行中**：无。新增两步均未开始实现。菜单、悬停及多行拖拽的整套运行首报保留；此前单项重复未复现，不能确认原因或宣称修复、完整入口全绿。真实试用范围仍待用户。此前自行调用独立实例的意见不作为主导会话批准。
-- **下一步**：按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 先做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7；开始前先完整读该步及其引用。9.8 的真实试用范围单独保留；已有自动报告无需再因文档或构建类型变化重复全量。只有后续实际使用或新证据指向代码缺陷时，再取证已保留的交互问题。
+- **下一步**：Claude 接手后先答复下方 Q3，按结论补齐现行计划的引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 先做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前先完整读对应步骤及其引用。9.8 的真实试用范围单独保留；已有自动报告无需再因文档或构建类型变化重复全量。只有后续实际使用或新证据指向代码缺陷时，再取证已保留的交互问题。
 - **待用户决定**：8.10 尺寸规格统一。
-- **请下一位回答**：无。
-- **本轮新决定**：命令行单个／批量打开会话时可在设置中选择是否恢复原会话；命令行带值选项可显式恢复或不恢复并覆盖设置，同时提供成对的恢复与 fresh 入口，要求见 [命令行启动设计](../design/settings-and-commands-design.md#71-命令行启动)。此前英文源文本与全源码翻译核查约定见 [翻译设计](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 ADR 0010；执行位置只维护在推荐顺序中。此前提交信息长度规则见 [提交规范](../../CONTRIBUTING.md#提交信息格式)，历史映射保留原验证引用。此前助手间问答仍经交接或用户转达，A1、A2 以用户转达的主导会话答复为准，见 [AGENTS.md](../../AGENTS.md#轮流开发与交接)。用户对本轮 Debug 的接受和后半段验证范围仍按原记录保留。
+- **请下一位回答**：
+
+  Q3（Codex 问 Claude，2026-10-22）
+
+  问题：冻结的代码审查中尚未完成的事项，是否已经被现行计划完整覆盖？用户要求你接手后检查判断，包括编号问题下面的补充建议，不只核对 R1–R17 的标题。
+
+  背景：基于 `f780340`。编号问题的主要工作能对应到现行阶段，但以下候选尾项尚未找到独立、可验收的步骤；这是静态核对结果，没有执行新的产品测试，不能据此认定存在泄漏或新的确定缺陷。
+
+  材料：先读 [冻结代码审查](../roadmap/review-2026-10/code-review.md)（含“关于内存泄漏”）和 [计划总览](../roadmap/implementation/README.md)，再核对：
+
+  - [阶段 1](../roadmap/implementation/phase-1-layout-performance.md) 的 1.4–1.6 状态与“发现”：R1 主要热路径已优化，但结构变化仍有按标签总数增长的成本。判断是否需要独立测量／优化步骤，还是已有计划足以覆盖；同节的窗格内部布局重入风险也请核对是否有后续安排。
+  - [基准程序](../../modules/window-system/benchmarks/layout_scale_benchmark.cpp) 的 `timed()`、`settleEventLoop()`、`recordCycle()`：现有循环会处理事件和延迟删除，未直接覆盖冻结审查提到的“没有事件循环的同步批量关闭”峰值场景。判断是否需要补测以及放在哪一步。
+  - [TabContent](../../modules/window-system/src/panes/tab_content.cpp) 的 `setTopBar()`／`setBottomBar()` 与 [WindowManager](../../modules/window-system/src/window_manager.cpp) 的 `setPaneBar()`：当前分别同步删除和延迟删除旧栏。判断是否应统一，或保留差异并写明生命周期理由；不要把写法不同直接定性为泄漏。
+
+  我的方案：保留冻结快照，只在现行计划维护执行安排。已覆盖的事项补准确引用；确有缺口的补步骤、前置、优先级和验收方式；无需行动的给出依据。不因这次核对直接扩大重构范围或改变用户行为。
+
+  需要的答复：逐项给出“已完成／已有计划／需要补计划／无需行动”，附源码或步骤依据；若需补项，给出建议位置和完成条件，并检查其余审查建议有无同类遗漏。先答复并更新对应现行文档，再继续推荐步骤。
+
+- **本轮新决定**：命令行单个／批量打开会话时可在设置中选择是否恢复原会话；命令行带值选项可显式恢复或不恢复并覆盖设置，同时提供成对的恢复与 fresh 入口，要求见 [命令行启动设计](../design/settings-and-commands-design.md#71-命令行启动)。用户要求计划覆盖问题经本交接记录留给 Claude 核对判断，见 Q3，不直接联系。此前英文源文本与全源码翻译核查约定见 [翻译设计](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 ADR 0010；执行位置只维护在推荐顺序中。此前提交信息长度规则见 [提交规范](../../CONTRIBUTING.md#提交信息格式)，历史映射保留原验证引用。此前助手间问答仍经交接或用户转达，A1、A2 以用户转达的主导会话答复为准，见 [AGENTS.md](../../AGENTS.md#轮流开发与交接)。用户对本轮 Debug 的接受和后半段验证范围仍按原记录保留。
 - **接手审查发现**：
   - 新增实际钩子掩码回归发现增量产物与源码不符；初次接手套件和基准不能归属于当前源码，已作废其源码验证结论。重编后复现旧实现失败，并在 R1 前后重新测量，见验证日志。
   - 阶段 9 正文的钩子要求与 R1 冲突已修正；已删除的 `.rc` 分支说明也已修正。
