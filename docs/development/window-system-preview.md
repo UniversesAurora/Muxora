@@ -133,7 +133,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-用户明确接受本轮 Debug 后，已补齐剩余自动检查：固定预览重新构建部署，独立模块构建和安装完成，C++／Lua 外部宿主、实际部署启动、退出恢复、显隐与全屏恢复、Lua 部署通过。独立模块的菜单和悬停交互仍有失败，首报保留，不写成全绿或已修复，见 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)。已有应用 Release 覆盖按原运行复用，没有重复 Debug／Release 全量；[A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22)、[A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22) 相关工作已收尾。9.8 的用户真实试用仍单独保留，状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
+按用户要求，先前失败的具体函数及数据行已按原构建配置逐项重复，连同已修正的尺寸对话框用例均通过，没有重跑全量或修改代码。次数、报告及恢复收尾见 [逐项重复记录](verification-log/2026-10.md#先前失败用例逐项重复2026-10-22)。单项未复现不能抹去原整套失败，未宣称间歇性交互问题已修复或完整入口全绿。固定预览及部署覆盖沿用此前的 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)；9.8 的用户真实试用仍单列保留，状态见 [实现计划](../roadmap/implementation/phase-9-lua-extension-api.md#98-本地脚本使用完整标准库与-neovim-一致)。
 
 没有执行：7-Zip 打包、混合 DPI 和多屏切换、长期资源、真实桌面试用。最大化时在屏幕右上角点击关闭，尚待在真实 150% 笔记本屏幕上试用确认。详见 [验证日志](verification-log/2026-10.md#claude-接手审查2026-10-21)。
 
@@ -151,7 +151,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 - 工具条原生菜单的真实输入用例偶发“第二次点击前菜单已不可见”，原因未查明（2026-10-15、10-16）。
 - `window-system.lua` 的 `panelPoliciesCanBeConfiguredWithoutNestedExecution` 偶发失败，在改动前的代码上同样出现，原因未查明（2026-10-20）。
 - 用户报告过悬停最大化按钮不出现贴靠布局，本机未复现，触发条件待确认（2026-10-20）。
-- Debug 原首报与后续独立构建中的菜单、悬停失败均保留，暂按环境／时序待复现记录；最新独立构建的多行拖拽通过，不能据此抹去原失败。用户接受的范围和各次结果见 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)，未宣称交互问题已修复。
+- Debug 中菜单、悬停及多行拖拽的首报，以及独立构建中的菜单、悬停失败均保留；最新 [逐项重复](verification-log/2026-10.md#先前失败用例逐项重复2026-10-22) 未复现，原因仍未确认，不能据此抹去原失败或宣称已修复。
 
 ## 试用时记录
 
