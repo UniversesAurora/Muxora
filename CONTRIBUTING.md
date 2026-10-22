@@ -25,7 +25,9 @@
 
 ### 提交信息格式
 
-参考 Linux 内核：标题以“改动范围”开头，后接冒号和一句祈使句英文摘要，标题尽量不超过 72 个字符；空一行后写多行正文，说明行为变化、原因和实际验证。正文按单词在 72 个字符以内硬换行，段落之间空一行，不依赖展示页面的自动折行。
+参考 [Linux 内核提交规范](https://www.kernel.org/doc/html/latest/process/submitting-patches.html#the-canonical-patch-format)：标题以“改动范围”开头，后接冒号和一句祈使句英文摘要，保持单行，尽量不超过 70 个字符，最多 75 个字符（含范围前缀）。
+
+标题后空一行再写正文，说明行为变化、原因和实际验证。正文按单词在 75 列以内硬换行，段落之间空一行，不依赖展示页面的自动折行。`Fixes:`、`Link:`、`Signed-off-by:` 等标签行保持完整，不受正文折行宽度限制。
 
 ```text
 window-system/chrome: Offer three caption button orders
