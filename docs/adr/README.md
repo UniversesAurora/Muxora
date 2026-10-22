@@ -15,6 +15,7 @@
 | [0007](0007-windows-system-notifications.md) | 消息通知使用 Windows 系统通知，不做通知中心 | 采用 |
 | [0008](0008-full-standard-library-for-local-scripts.md) | 本地脚本使用完整 Lua 标准库，与 Neovim 一致 | 采用（实现见阶段 9.8） |
 | [0009](0009-msvc-toolchain.md) | Release 改用 MSVC 工具链 | 采用 |
+| [0010](0010-english-translation-source.md) | 界面翻译使用英文源文本 | 采用（迁移见阶段 8.12） |
 
 ## 写法
 
