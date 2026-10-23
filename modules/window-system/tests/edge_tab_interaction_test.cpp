@@ -23,6 +23,8 @@
 #include <QStyle>
 #include <QTest>
 #include <QScrollArea>
+#include <QSignalSpy>
+#include <QJsonObject>
 #include <QToolButton>
 #include <climits>
 #include <QWheelEvent>
@@ -80,6 +82,7 @@ private slots:
     void cleanup() { test::authoredMouseInput().finish(); }
     void peekShowsOnlyTheChosenTabAndPinsOnlyThatTab();
     void railTitleLengthChangesKeepTheLeadingTabInPlace();
+    void appearanceChangesRelabelRailsInPlace();
     void peekShowsTheRealContentAndSharedBars_data();
     void peekShowsTheRealContentAndSharedBars();
     void edgeBarCornerOwnership_data();
@@ -869,6 +872,38 @@ void EdgeTabInteractionTest::railTitleLengthChangesKeepTheLeadingTabInPlace()
         QCoreApplication::processEvents(); QCoreApplication::processEvents();
         QCOMPARE(position(8), 0);
     }
+}
+
+void EdgeTabInteractionTest::appearanceChangesRelabelRailsInPlace()
+{
+    // Tab appearance only relabels built strips: an open peek stays open and
+    // the rail keeps its buttons, which only change length.
+    WindowManager manager; auto appearance = manager.tabAppearance();
+    appearance.clipSidebarTitles = true; appearance.maximumSidebarTitleWidth = 160;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow();
+    manager.addTab(window, content("Central"), options("Central"));
+    auto* sideContent = content("Side content");
+    const auto side = manager.addTab(window, sideContent, options(QString(30, QLatin1Char('W'))));
+    QVERIFY(manager.moveTabToEdge(side, Edge::Left));
+    auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
+    QVERIFY(manager.activateTab(side));
+    const QPointer<QWidget> peek = host->findChild<QFrame*>("PeekPanel"); QVERIFY(peek);
+    QTRY_VERIFY(sideContent->isVisible());
+    const QPointer<QAbstractButton> button = edgeButton(host, side); QVERIFY(button);
+    const int before = button->height();
+    QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    appearance.maximumSidebarTitleWidth = 40; QVERIFY(manager.setTabAppearance(appearance));
+    QCoreApplication::processEvents();
+    QCOMPARE(changes.size(), 1);
+    QVERIFY(peek && peek->isVisible()); QVERIFY(sideContent->isVisible());
+    QCOMPARE(edgeButton(host, side), button.data());
+    QCOMPARE(button->height(), before - 120);
+    appearance.showSidebarNumbers = true; QVERIFY(manager.setTabAppearance(appearance));
+    QCoreApplication::processEvents();
+    QCOMPARE(edgeButton(host, side), button.data()); QCOMPARE(button->property("tabNumber").toInt(), 1);
+    QVERIFY(peek && peek->isVisible());
+    QCOMPARE(manager.saveLayout().value("tabAppearance").toObject().value("maximumSidebarTitleWidth").toInt(), 40);
 }
 
 void EdgeTabInteractionTest::oversizedUnclippedTitleStaysWithinTheWidgetSizeLimit()

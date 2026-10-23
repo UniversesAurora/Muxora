@@ -14,6 +14,7 @@
 
 class QSplitter;
 namespace window_system {
+class EdgeTabButton;
 class GroupTabs;
 class DockSurface final : public QFrame {
 public:
@@ -21,6 +22,10 @@ public:
     void rebuild(const QHash<TabId, QPointer<TabContent>>& contents);
     void captureStripScrollOffsets();
     void restoreStripScrollOffsets();
+    // Applies a changed tab appearance to the existing strips and rail
+    // buttons. Returns false when the built strips no longer match the model;
+    // the caller then refreshes.
+    bool updateTabAppearance();
     bool scrollStripAt(QPoint global, QPoint delta);
     [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
     [[nodiscard]] GroupId groupAt(QPoint global) const;
@@ -74,6 +79,8 @@ private:
     using StructureSignature = QVector<QPair<QUuid, int>>;
     [[nodiscard]] StructureSignature structureSignature() const;
     bool updateInPlace(const QHash<TabId, QPointer<TabContent>>& contents);
+    [[nodiscard]] QVector<QPair<GroupId, TabId>> edgeTabs(Edge edge) const;
+    void configureEdgeButton(EdgeTabButton& button, TabId tab, int ordinal, const TabAppearance& appearance) const;
     void applyChangedRatios(LayoutTree node);
     [[nodiscard]] bool holdsPages(const GroupTabs& widget, const GroupRecord& group,
                                   const QHash<TabId, QPointer<TabContent>>& contents) const;

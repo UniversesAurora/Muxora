@@ -93,6 +93,12 @@ void EdgeStrip::observe(QWidget* widget)
     });
 }
 
+QList<QAbstractButton*> EdgeStrip::buttons() const
+{
+    QList<QAbstractButton*> result;
+    for (const auto& button : buttons_) if (button) result.append(button);
+    return result;
+}
 void EdgeStrip::addButton(QAbstractButton* button)
 {
     if (!button || std::any_of(buttons_.cbegin(), buttons_.cend(), [button](const auto& existing) { return existing == button; })) return;

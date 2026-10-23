@@ -235,6 +235,69 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     applyFocusScope();
     restoreStripScrollOffsets();
 }
+void DockSurface::configureEdgeButton(EdgeTabButton& button, TabId tab, int ordinal, const TabAppearance& appearance) const
+{
+    const auto* record = manager_->model().tab(tab);
+    button.setPreset(manager_->tabColorPreset(record ? record->colorId : QString()));
+    button.setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
+    button.setPresentation(appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon
+        ? iconFor("window", manager_->theme()) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
+}
+QVector<QPair<GroupId, TabId>> DockSurface::edgeTabs(Edge edge) const
+{
+    QVector<QPair<GroupId, TabId>> result;
+    const auto* window = manager_->model().window(window_);
+    if (!window) return result;
+    for (const auto id : window->edgeGroups)
+        if (const auto* group = manager_->model().group(id); group && group->edge == edge && group->location == GroupLocation::AutoHide)
+            for (const auto tab : group->tabs) result.append({id, tab});
+    return result;
+}
+bool DockSurface::updateTabAppearance()
+{
+    // An appearance change only relabels what is built: strips keep their
+    // pages and rails keep their buttons. Unlike a refresh, the cost does not
+    // grow with the views, pages or rail rebuilds of every tab, so a slider
+    // dragged through many values stays responsive.
+    if (!root_ || manager_->d->drag->isActive() || builtThemeRevision_ != manager_->d->themeRevision
+        || builtStructure_ != structureSignature()) return false;
+    const auto& appearance = manager_->d->appearance;
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        const auto* record = manager_->model().group(it.key());
+        const auto built = builtGroups_.constFind(it.key());
+        if (!it.value() || !record || built == builtGroups_.cend()) return false;
+        auto expected = *built; expected.appearance = appearance;
+        if (expected != signatureOf(*record)) return false;
+    }
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) {
+        const auto tabs = edgeTabs(edge);
+        const auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
+        if (!strip) { if (tabs.isEmpty()) continue; return false; }
+        const auto buttons = strip->buttons();
+        if (buttons.size() != tabs.size()) return false;
+        for (qsizetype index = 0; index < tabs.size(); ++index)
+            if (!dynamic_cast<EdgeTabButton*>(buttons[index]) || buttons[index]->property("tabId").toUuid() != tabs[index].second) return false;
+    }
+    // GroupTabs and rail buttons never call back into the host here.
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        const auto* record = manager_->model().group(it.key());
+        it.value()->setAppearance(appearance, record->location == GroupLocation::Pinned);
+        builtGroups_[it.key()].appearance = appearance;
+    }
+    for (const auto edge : {Edge::Top, Edge::Left, Edge::Right, Edge::Bottom}) {
+        auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
+        if (!strip) continue;
+        const auto anchor = strip->scrollAnchor();
+        const auto tabs = edgeTabs(edge);
+        const auto buttons = strip->buttons();
+        for (qsizetype index = 0; index < tabs.size(); ++index)
+            configureEdgeButton(*static_cast<EdgeTabButton*>(buttons[index]), tabs[index].second, int(index + 1), appearance);
+        strip->restoreScrollAnchor(anchor);
+    }
+    edgeAppearance_ = appearance;
+    placePeek();
+    return true;
+}
 DockSurface::StructureSignature DockSurface::structureSignature() const
 {
     StructureSignature result;
@@ -533,17 +596,13 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     bar->setVisible(manager_->sideBarsVisible(window_));
     bar->setProperty("edge", int(edge)); edgeBars_.insert(edge, bar);
     int ordinal = 0;
+    const auto& appearance = manager_->d->appearance;
     for (const auto groupId : ids) {
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
             ++ordinal;
             auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
                 manager_->theme().metrics.edgeThickness, bar);
-            button->setPreset(manager_->tabColorPreset(manager_->model().tab(tabId)->colorId));
-            const auto appearance=manager_->tabAppearance();
-            const auto options=manager_->tabOptions(tabId);
-            button->setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
-            button->setPresentation(appearance.showSidebarIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
-                appearance.showSidebarNumbers ? ordinal : 0);
+            configureEdgeButton(*button, tabId, ordinal, appearance);
             button->setCheckable(true);
             button->setChecked(manager_->context(window_).tab == tabId);
             button->setProperty("tabId", tabId);

@@ -27,6 +27,7 @@ public:
     ~EdgeStrip() override;
 
     void addButton(QAbstractButton* button);
+    [[nodiscard]] QList<QAbstractButton*> buttons() const;
     void setTailWidget(QWidget* widget);
     [[nodiscard]] QRect viewportRectGlobal() const;
     [[nodiscard]] int insertionIndex(QPoint global) const;
