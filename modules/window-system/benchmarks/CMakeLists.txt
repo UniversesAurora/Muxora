@@ -10,6 +10,11 @@ if(WIN32)
     target_link_libraries(window-system-layout-benchmark PRIVATE psapi)
 endif()
 
+qt_add_executable(window-system-title-benchmark title_rendering_benchmark.cpp)
+target_link_libraries(window-system-title-benchmark PRIVATE WindowSystem::Widgets)
+target_include_directories(window-system-title-benchmark PRIVATE ../src)
+target_compile_features(window-system-title-benchmark PRIVATE cxx_std_20)
+
 # MSVC reads sources in the system code page unless told otherwise; these
 # sources are UTF-8 (Chinese interface text and test data).
 if(MSVC)

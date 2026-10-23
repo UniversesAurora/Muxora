@@ -272,6 +272,25 @@ Qt 事件模拟与离屏渲染用于快速组件检查；真实桌面测试另�
 
 改动热路径（脚本运行时、布局刷新、绘制、按键分发等每次操作都会经过的代码）时，在同一台机器上对比改动前后的耗时，把数字写进验证日志；不能只验证功能。
 
+长标题绘制定向基准为可选目标 `window-system-title-benchmark`，负载和输出字段定义在 [基准源码](../../modules/window-system/benchmarks/title_rendering_benchmark.cpp)。它只把真实标签控件绘制到固定大小的离屏图像，不显示窗口、不发输入，也不设置依赖机器的性能阈值。首帧单列，重复绘制均值不包含控件构造和初次尺寸计算；不能据此宣称首次排版开销消失。
+
+```powershell
+. ./tools/toolchain.ps1
+$tc = Enter-Toolchain (Resolve-QtKit "" (Get-Location).Path)
+$priorPlatform = $env:QT_QPA_PLATFORM
+try {
+    & $tc.Cmake --preset dev-release -DWINDOW_SYSTEM_BUILD_BENCHMARKS=ON
+    & $tc.Cmake --build out/build/dev-release --parallel 4 --target window-system-title-benchmark
+    $env:QT_QPA_PLATFORM = "offscreen"
+    ./out/build/dev-release/modules/window-system/benchmarks/window-system-title-benchmark.exe --commit <源码版本> --out <报告文件>
+} finally {
+    $env:QT_QPA_PLATFORM = $priorPlatform
+    Exit-Toolchain $tc
+}
+```
+
+前后使用相同的标题、字体、平台、画布和迭代参数；具体数字只写进验证日志。基准目标默认关闭，普通构建和 CTest 不执行它。
+
 依据工程文档的资源预算和响应目标，在固定参考机器、构建、数据量及负载下测量。首个原型建立经审阅的基线与容差，后续变更保留前后数据；失败不能通过重新定义基线解决。本地操作初始 p95 50 ms 目标和网络往返分别统计。
 
 自动化场景包括多终端持续输出、文件传输并行、大目录、快速切换与调整尺寸、反复连接／关闭、四边展开／固定、跨窗口移动、传输取消、配置刷新和退出。循环次数、运行时长、输出速率、文件规模及允许增长在测试配置中固定，不能随失败结果缩减。
