@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'tests/deployment-test.ps1')
+& (Join-Path $PSScriptRoot 'tests/toolchain-test.ps1')
 $taskBuildArguments = @{}
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
 $taskPackage = if ($PackageDirectory) {
@@ -17,6 +18,7 @@ $taskReleaseArguments = $taskBuildArguments.Clone()
 if ($PackageDirectory) { $taskReleaseArguments.PackageDirectory = $taskPackage }
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskReleaseArguments
+. (Join-Path $PSScriptRoot 'deployment.ps1')
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
 $taskQt = Resolve-QtKit $QtRoot $taskRepository
 $taskToolchain = Enter-Toolchain $taskQt
@@ -31,6 +33,13 @@ try {
     $taskStandalone = Join-Path $taskRepository 'out/build/standalone'
     $taskInstall = Join-Path $taskRepository 'out/install/window-system'
     $taskExternal = Join-Path $taskRepository 'out/build/external-host'
+    $taskExternalLua = Join-Path $taskRepository 'out/build/external-lua-host'
+    foreach ($taskBuild in @($taskStandalone, $taskExternal, $taskExternalLua)) {
+        if ($taskStale = Get-StaleBuildReason $taskToolchain $taskBuild) {
+            Write-Host "Build directory is stale: $taskStale; clearing $taskBuild"
+            Remove-OutputItem $taskBuild (Join-Path $taskRepository 'out')
+        }
+    }
     $taskCommon = @('-G', 'Ninja', "-DCMAKE_CXX_COMPILER=$($taskToolchain.Compiler)",
         "-DCMAKE_MAKE_PROGRAM=$taskNinja", '-DCMAKE_BUILD_TYPE=Release')
     Invoke-Verification $taskCmake (@('-S', (Join-Path $taskRepository 'modules/window-system'),
@@ -45,7 +54,6 @@ try {
     Invoke-Verification $taskCtest @('--test-dir', $taskExternal, '--output-on-failure', '--no-tests=error',
         '--output-junit', (Join-Path $taskRepository 'out/test-results/external-host.xml'))
     # The Lua bridge against the installed WindowSystem, without the Muxora application.
-    $taskExternalLua = Join-Path $taskRepository 'out/build/external-lua-host'
     Invoke-Verification $taskCmake (@('-S', (Join-Path $taskRepository 'modules/window-system-lua/tests/fixtures/external-host'),
         '-B', $taskExternalLua, "-DCMAKE_PREFIX_PATH=$taskInstall;$taskQt") + $taskCommon)
     Invoke-Verification $taskCmake @('--build', $taskExternalLua, '--parallel', '4')

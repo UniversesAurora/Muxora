@@ -43,15 +43,9 @@ try {
         Set-Content -LiteralPath (Join-Path $taskRepository 'CMakeUserPresets.json') -Encoding utf8NoBOM
     $taskPreset = 'dev-' + $Configuration.ToLowerInvariant()
     $taskBuild = Join-Path $taskRepository "out/build/$taskPreset"
-    # A CMake cache configured for another compiler cannot be reused.
-    $taskCache = Join-Path $taskBuild 'CMakeCache.txt'
-    if (Test-Path -LiteralPath $taskCache) {
-        $taskCachedCompiler = (Select-String -LiteralPath $taskCache -Pattern '^CMAKE_CXX_COMPILER:[A-Z]+=(.*)$' |
-            Select-Object -First 1).Matches.Groups[1].Value
-        if ($taskCachedCompiler -and -not ([IO.Path]::GetFullPath($taskCachedCompiler) -ieq [IO.Path]::GetFullPath($taskCompiler))) {
-            Write-Host "Compiler changed ($taskCachedCompiler -> $taskCompiler); clearing $taskBuild"
-            Remove-OutputItem $taskBuild (Join-Path $taskRepository 'out')
-        }
+    if ($taskStale = Get-StaleBuildReason $taskToolchain $taskBuild) {
+        Write-Host "Build directory is stale: $taskStale; clearing $taskBuild"
+        Remove-OutputItem $taskBuild (Join-Path $taskRepository 'out')
     }
     Push-Location $taskRepository
     try {

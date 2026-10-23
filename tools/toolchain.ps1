@@ -63,6 +63,57 @@ function Import-VisualStudioEnvironment {
     return $taskSaved
 }
 
+# Returns the localized prefix cl writes before each /showIncludes path in the
+# current console output code page, for example "Note: including file:".
+function Get-MsvcShowIncludesPrefix([string]$Compiler) {
+    $taskProbe = Join-Path ([IO.Path]::GetTempPath()) ("muxora-showincludes-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $taskProbe | Out-Null
+    try {
+        $taskHeader = Join-Path $taskProbe 'probe.h'
+        Set-Content -LiteralPath $taskHeader -Value '' -Encoding ascii
+        Set-Content -LiteralPath (Join-Path $taskProbe 'probe.cpp') -Value '#include "probe.h"' -Encoding ascii
+        Push-Location -LiteralPath $taskProbe
+        try { $taskLines = @(& $Compiler /nologo /showIncludes /Zs probe.cpp 2>&1 | ForEach-Object { "$_" }) }
+        finally { Pop-Location }
+        foreach ($taskLine in $taskLines) {
+            $taskIndex = $taskLine.IndexOf($taskHeader, [StringComparison]::OrdinalIgnoreCase)
+            if ($taskIndex -gt 0) { return $taskLine.Substring(0, $taskIndex).TrimEnd() }
+        }
+        throw "Unable to read the /showIncludes prefix from: $($taskLines -join "`n")"
+    } finally {
+        Remove-Item -LiteralPath $taskProbe -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Returns why an existing Ninja build directory cannot be reused, or $null.
+# The CMake cache fixes the compiler. Ninja records header dependencies only
+# from output lines that start with the /showIncludes prefix CMake detected,
+# byte for byte; a directory configured under another code page or compiler
+# language silently records none, and later header edits rebuild nothing.
+function Get-StaleBuildReason($Toolchain, [string]$Build) {
+    $taskCache = Join-Path $Build 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $taskCache)) { return $null }
+    $taskCachedCompiler = (Select-String -LiteralPath $taskCache -Pattern '^CMAKE_CXX_COMPILER:[A-Z]+=(.*)$' |
+        Select-Object -First 1).Matches.Groups[1].Value
+    if ($taskCachedCompiler -and -not ([IO.Path]::GetFullPath($taskCachedCompiler) -ieq [IO.Path]::GetFullPath($Toolchain.Compiler))) {
+        return "compiler changed ($taskCachedCompiler -> $($Toolchain.Compiler))"
+    }
+    $taskRules = Join-Path $Build 'CMakeFiles/rules.ninja'
+    if (-not (Test-Path -LiteralPath $taskRules)) { return $null }
+    # Latin-1 maps each byte to one character, so the match keeps the raw bytes.
+    $taskMatch = [regex]::Match([Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($taskRules)),
+        '(?m)^msvc_deps_prefix = ([^\r\n]*)')
+    if (-not $taskMatch.Success) { return $null }
+    try {
+        $taskRecorded = [Text.UTF8Encoding]::new($false, $true).GetString(
+            [Text.Encoding]::Latin1.GetBytes($taskMatch.Groups[1].Value)).TrimEnd()
+    } catch { return 'header dependency prefix was recorded in another code page' }
+    if ($taskRecorded -cne $Toolchain.ShowIncludesPrefix) {
+        return "header dependency prefix changed ('$taskRecorded' -> '$($Toolchain.ShowIncludesPrefix)')"
+    }
+    return $null
+}
+
 function Get-MsvcCompilerVersion([string]$Compiler) {
     # cl prints its banner, including the version, to standard error and its
     # usage line to standard output, in no fixed order: search all of it.
@@ -86,8 +137,8 @@ function Enter-Toolchain([string]$QtRoot) {
     $taskState = [ordered]@{
         QtRoot = $QtRoot; QtInstallation = $taskQtInstallation; Cmake = $taskCmake; Ninja = $taskNinja; Ctest = $taskCtest
         Kind = $null; Compiler = $null; CompilerVersion = $null; Description = $null
-        RuntimeDirectory = $null
-        SavedEnvironment = @{ PATH = $env:PATH }
+        RuntimeDirectory = $null; ShowIncludesPrefix = $null
+        SavedEnvironment = @{ PATH = $env:PATH }; SavedEncodings = $null
     }
     $taskMsvcVersion = Read-QtCompilerVersion $QtRoot 'MSVC'
     if (-not $taskMsvcVersion) {
@@ -105,6 +156,16 @@ function Enter-Toolchain([string]$QtRoot) {
     if ($taskVersion -lt $taskMsvcVersion) {
         throw "This Qt kit was built with MSVC $taskMsvcVersion; the installed compiler is $taskVersion. Update Visual Studio."
     }
+    # A localized cl writes its /showIncludes notes in the console output code
+    # page, while CMake decodes them with the console input code page when it
+    # detects the prefix. Use UTF-8 for both during every configure and build so
+    # the recorded prefix matches cl byte for byte, whichever console started it.
+    try {
+        $taskState.SavedEncodings = @([Console]::InputEncoding, [Console]::OutputEncoding)
+        [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    } catch { }
+    $taskState.ShowIncludesPrefix = Get-MsvcShowIncludesPrefix $taskCompiler
     $taskState.Kind = 'msvc'
     $taskState.Compiler = $taskCompiler
     $taskState.CompilerVersion = $taskVersion
@@ -121,6 +182,12 @@ function Exit-Toolchain($Toolchain) {
     if (-not $Toolchain) { return }
     foreach ($taskName in $Toolchain.SavedEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($taskName, $Toolchain.SavedEnvironment[$taskName], 'Process')
+    }
+    if ($Toolchain.SavedEncodings) {
+        try {
+            [Console]::InputEncoding = $Toolchain.SavedEncodings[0]
+            [Console]::OutputEncoding = $Toolchain.SavedEncodings[1]
+        } catch { }
     }
 }
 

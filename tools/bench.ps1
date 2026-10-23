@@ -11,6 +11,7 @@ param(
 # fixed deployment directory are never touched.
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'deployment.ps1')
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
 $taskQt = Resolve-QtKit $QtRoot $taskRepository
 $taskBuild = Join-Path $taskRepository 'out/build/bench-release'
@@ -25,6 +26,10 @@ $taskToolchain = Enter-Toolchain $taskQt
 $taskCmake = $taskToolchain.Cmake
 $taskNinja = $taskToolchain.Ninja
 try {
+    if ($taskStale = Get-StaleBuildReason $taskToolchain $taskBuild) {
+        Write-Host "Build directory is stale: $taskStale; clearing $taskBuild"
+        Remove-OutputItem $taskBuild (Join-Path $taskRepository 'out')
+    }
     Invoke-Checked $taskCmake @('-S', $taskRepository, '-B', $taskBuild, '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_PREFIX_PATH=$taskQt",
         "-DCMAKE_CXX_COMPILER=$($taskToolchain.Compiler)", "-DCMAKE_MAKE_PROGRAM=$taskNinja",
