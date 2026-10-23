@@ -132,6 +132,7 @@ class ScriptRuntimeTest final : public QObject {
     void explicitCoroutineHooksReserveStackSpace();
     void runtimeHooksOnlyRequestUserEvents();
     void cancellationRestoresRetainedCoroutineHooks();
+    void retainedCoroutineCountHookKeepsItsInterval();
 };
 
 void ScriptRuntimeTest::supersededResetRepliesDoNotReachTheNewGeneration() {
@@ -1053,6 +1054,76 @@ return mask, count
     const auto recovered = qvariant_cast<ScriptResult>(finished.at(1).at(1));
     QVERIFY2(recovered.ok, qPrintable(recovered.error));
     QCOMPARE(recovered.values, (QVariantList{LUA_MASKCOUNT, 1000}));
+}
+
+void ScriptRuntimeTest::retainedCoroutineCountHookKeepsItsInterval() {
+    // Cancellation leaves the retained coroutine on one-instruction checks with
+    // its user count hook due again in 1000 instructions. The first event after
+    // resuming covers one instruction, not the restored interval, so the user
+    // hook must not run before the loop below has started counting.
+    using namespace lua_runtime::detail;
+    const auto statistics = std::make_shared<SharedStatistics>();
+    ScriptWorker worker(RuntimeLimits{}, statistics);
+    QVERIFY(ScriptWorkerTestAccess::initializedState(worker));
+    QSignalSpy finished(&worker, &ScriptWorker::jobFinished);
+    std::mutex readyMutex;
+    std::condition_variable_any readyCondition;
+    bool enteredCoroutine = false;
+    connect(&worker, &ScriptWorker::logReady, &worker, [&](const QString &message) {
+        if (message != QStringLiteral("counted coroutine ready"))
+            return;
+        {
+            const std::lock_guard lock(readyMutex);
+            enteredCoroutine = true;
+        }
+        readyCondition.notify_all();
+    });
+    std::jthread cancellation([&](std::stop_token stop) {
+        std::unique_lock lock(readyMutex);
+        if (readyCondition.wait(lock, stop, [&] { return enteredCoroutine; }))
+            statistics->cancellation.fetch_add(1, std::memory_order_acq_rel);
+    });
+    ScriptJob first;
+    first.id = 1;
+    first.generation = 1;
+    first.cancellation = 1;
+    first.name = "=retained-count-hook-cancellation-test";
+    first.source = R"lua(
+counted = coroutine.create(function()
+    debug.sethook(function()
+        if resumed and not firstHit then firstHit = iterations or -1 end
+    end, '', 1000)
+    print('counted coroutine ready')
+    while not continueAfterStop do end
+    iterations = 0
+    while not firstHit and iterations < 1000000 do iterations = iterations + 1 end
+    return firstHit
+end)
+coroutine.resume(counted)
+)lua";
+    worker.enqueue(std::move(first));
+    QTRY_COMPARE(finished.size(), 1);
+    QVERIFY(!qvariant_cast<ScriptResult>(finished.constFirst().at(1)).ok);
+    cancellation.join();
+
+    ScriptJob second;
+    second.id = 2;
+    second.generation = 1;
+    second.cancellation = statistics->cancellation.load(std::memory_order_acquire);
+    second.name = "=retained-count-hook-recovery-test";
+    second.source = R"lua(
+assert(coroutine.status(counted) == 'suspended')
+continueAfterStop, resumed = true, true
+local ok, hit = coroutine.resume(counted)
+assert(ok, hit)
+return hit
+)lua";
+    worker.enqueue(std::move(second));
+    QTRY_COMPARE(finished.size(), 2);
+    const auto recovered = qvariant_cast<ScriptResult>(finished.at(1).at(1));
+    QVERIFY2(recovered.ok, qPrintable(recovered.error));
+    QCOMPARE(recovered.values.size(), 1);
+    QVERIFY2(recovered.values.constFirst().toInt() > 0, qPrintable(recovered.values.constFirst().toString()));
 }
 
 int main(int argc, char **argv) {

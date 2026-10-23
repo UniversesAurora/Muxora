@@ -182,11 +182,14 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
     lua_rawgeti(state, record, 3);
     const int count = static_cast<int>(lua_tointeger(state, -1));
     lua_pop(state, 1);
+    // A count event follows the interval that was installed before it, which
+    // differs from the restored one after a cancelled task's dense checks.
+    const int elapsed = lua_gethookcount(state);
     restoreRuntimeHook(state, mask, count);
     bool invoke = false;
     if (debug->event == LUA_HOOKCOUNT && (mask & LUA_MASKCOUNT)) {
         lua_rawgeti(state, record, 4);
-        const auto remaining = lua_tointeger(state, -1) - lua_gethookcount(state);
+        const auto remaining = lua_tointeger(state, -1) - elapsed;
         lua_pop(state, 1);
         if (remaining <= 0) {
             lua_rawgeti(state, record, 3);
