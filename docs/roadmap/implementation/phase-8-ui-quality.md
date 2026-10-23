@@ -317,7 +317,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **做法**：先列出所有与规范不一致的尺寸及其测试位置（`grep -rn "23\b\|setFixedHeight" modules/window-system/src`，再逐个核对），整理成一张“现值 → 规范值 → 受影响测试”的表，提交给用户确认；确认后再改代码和测试预期。
 
-**状态**：未开始（等待确认）。
+**状态**：未开始（等待确认）。标签内部的内边距和间隙已按用户 2026-10-23 的要求单独调整，规格见 [界面设计规范 §2.2](../../design/ui-design-system.md#22-尺寸)，列表时不再重复提出。
 
 ---
 

@@ -223,7 +223,7 @@ void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences()
         auto* bar = barFor(target); return bar ? bar->displayTabRect(0).width() : 0;
     };
     QVERIFY(barFor(group));
-    const int sidePlain = barFor(group)->fontMetrics().size(Qt::TextShowMnemonic, manager.model().tab(side)->title).width() + 35;
+    const int sidePlain = barFor(group)->fontMetrics().size(Qt::TextShowMnemonic, manager.model().tab(side)->title).width() + 34;
     QTRY_COMPARE(width(group), sidePlain);
     QVERIFY(!manager.tabAppearance().showSidebarIcons); QVERIFY(!manager.tabAppearance().showSidebarNumbers);
     auto appearance = manager.tabAppearance(); appearance.showIcons = false; appearance.showNumbers = true;
@@ -233,7 +233,7 @@ void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences()
     QTRY_COMPARE(width(group), sidePlain + manager.theme().metrics.iconSize + 4);
     QCOMPARE(width(centralGroup), ordinaryWidth);
     appearance.showSidebarNumbers = true; QVERIFY(manager.setTabAppearance(appearance));
-    const int numberWidth = barFor(group)->fontMetrics().horizontalAdvance("1") + 5;
+    const int numberWidth = barFor(group)->fontMetrics().horizontalAdvance("1") + 4;
     QTRY_COMPARE(width(group), sidePlain + manager.theme().metrics.iconSize + 4 + numberWidth);
     QCOMPARE(width(centralGroup), ordinaryWidth);
     QVERIFY(manager.setTabIconVisible(side, false)); QTRY_COMPARE(width(group), sidePlain + numberWidth);

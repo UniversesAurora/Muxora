@@ -4,6 +4,7 @@
 #include <window_system/theme.hpp>
 #include <window_system/tab_appearance.hpp>
 #include "tab_viewport_state.hpp"
+#include "style/tab_label_geometry.hpp"
 #include "style/tab_title_layout.hpp"
 #include <QFrame>
 #include <QPointer>
@@ -52,12 +53,14 @@ protected:
     void tabRemoved(int index) override;
 private:
     QRect closeRect(int index) const;
+    TabLabelParts labelParts(int index) const;
     int displayedTabAt(QPoint local) const;
     bool isDragged(int index) const;
     QPoint start_;
     int pressed_ = -1;
     int closePressed_ = -1;
     int hovered_ = -1;
+    bool closeHovered_ = false;
     QIcon closeIcon_;
     int insertionIndex_ = -1;
     int insertionExtent_ = 0;

@@ -687,13 +687,14 @@ void EdgeTabInteractionTest::edgePresentationKeepsNaturalSizeAndRendersPresetIco
     const int thickness = defaultTheme().metrics.edgeThickness;
     EdgeTabButton button("Side label", vertical, thickness, &root); button.setCheckable(true);
     const auto major = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
-    const int plainExtent = qMax(64, button.fontMetrics().horizontalAdvance(button.text()) + 24);
+    // Rail tabs: 8 px at each end, single 4 px gaps between ordinal, icon and title.
+    const int plainExtent = button.fontMetrics().horizontalAdvance(button.text()) + 16;
     QCOMPARE(major(button.sizeHint()), plainExtent);
     QPixmap pixels(16, 16); pixels.fill(Qt::white); const QIcon icon(pixels);
     button.setPresentation(icon, 12);
-    const int numberWidth = button.fontMetrics().horizontalAdvance("12") + 5;
+    const int numberWidth = button.fontMetrics().horizontalAdvance("12") + 4;
     const int textWidth = button.fontMetrics().horizontalAdvance(button.text());
-    const int extent = qMax(64, textWidth + 24 + 20 + numberWidth);
+    const int extent = textWidth + 16 + 20 + numberWidth;
     QCOMPARE(major(button.sizeHint()), extent); QCOMPARE(button.property("tabNumber").toInt(), 12);
     QCOMPARE(vertical ? button.sizeHint().width() : button.sizeHint().height(), thickness);
     button.resize(button.sizeHint()); button.move(30, 30);
@@ -702,8 +703,7 @@ void EdgeTabInteractionTest::edgePresentationKeepsNaturalSizeAndRendersPresetIco
     preset.autoHideActive = {QColor("#426270"), QColor("#ffffff"), QColor("#e06040"), QColor("#e36aac")};
     button.setPreset(preset); root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
     button.clearFocus();
-    const int span = qMin(extent - 12, textWidth + numberWidth + 20);
-    const int iconCenter = qMax(6, (extent - span) / 2) + numberWidth + 8;
+    const int iconCenter = 8 + numberWidth + 8;
     const QPoint logical = vertical ? QPoint(thickness / 2, iconCenter) : QPoint(iconCenter, thickness / 2);
     const auto iconPixel = [&] {
         const auto image = button.grab().toImage(); const auto ratio = image.devicePixelRatio();
@@ -713,9 +713,9 @@ void EdgeTabInteractionTest::edgePresentationKeepsNaturalSizeAndRendersPresetIco
     button.setChecked(true); QCOMPARE(iconPixel(), preset.autoHideActive.icon);
     button.setText(QString(100, QLatin1Char('W')));
     const int longTextWidth = button.fontMetrics().horizontalAdvance(button.text());
-    QCOMPARE(major(button.sizeHint()), longTextWidth + 24 + 20 + numberWidth);
+    QCOMPARE(major(button.sizeHint()), longTextWidth + 16 + 20 + numberWidth);
     button.setPresentation({}, 0); QCOMPARE(button.property("tabNumber").toInt(), 0); QVERIFY(button.icon().isNull());
-    QCOMPARE(major(button.sizeHint()), longTextWidth + 24);
+    QCOMPARE(major(button.sizeHint()), longTextWidth + 16);
 }
 
 void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPreview_data()
@@ -743,11 +743,11 @@ void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPrevie
     preset.autoHideInactive = {Qt::white, Qt::black, QColor("#123456"), QColor("#2468ac")};
     button.setPreset(preset); button.resize(button.sizeHint()); button.move(10, 10);
     root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
-    const int decorationWidth = decorated ? 20 + button.fontMetrics().horizontalAdvance("12") + 5 : 0;
-    const int textLeft = 12 + decorationWidth;
+    const int decorationWidth = decorated ? 20 + button.fontMetrics().horizontalAdvance("12") + 4 : 0;
+    const int textLeft = 8 + decorationWidth;
     const auto major = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
     const int naturalExtent = major(button.sizeHint());
-    QCOMPARE(naturalExtent, button.fontMetrics().horizontalAdvance(title) + 24 + decorationWidth);
+    QCOMPARE(naturalExtent, button.fontMetrics().horizontalAdvance(title) + 16 + decorationWidth);
     const auto full = renderAtRatio(&button, 1);
     const auto inkPoint = [vertical, thickness](int x, int y) {
         return vertical ? QPoint(thickness - 1 - y, x) : QPoint(x, y);
@@ -763,7 +763,7 @@ void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPrevie
     QVector<QImage> references;
     for (const qreal ratio : {1.0, 2.0}) references.append(renderAtRatio(&button, ratio));
     button.setTitleClipping(true, limit); button.resize(button.sizeHint());
-    QCOMPARE(major(button.sizeHint()), limit + 24 + decorationWidth);
+    QCOMPARE(major(button.sizeHint()), limit + 16 + decorationWidth);
     QCOMPARE(vertical ? button.width() : button.height(), thickness);
     QCOMPARE(button.text(), title); QCOMPARE(button.toolTip(), title); QCOMPARE(button.accessibleName(), title);
     const QRect textRect = vertical ? QRect(3, textLeft, thickness - 5, limit) : QRect(textLeft, 2, limit, thickness - 5);
@@ -785,7 +785,10 @@ void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPrevie
     button.setTitleClipping(false, limit); button.resize(button.sizeHint());
     QCOMPARE(major(button.sizeHint()), naturalExtent);
     button.setText("i"); button.setPresentation({}, 0); button.setTitleClipping(true, 16);
-    QCOMPARE(major(button.sizeHint()), 64);
+    // A short label is not stretched; only an empty one keeps the rail's thickness.
+    QCOMPARE(major(button.sizeHint()), qMax(thickness, 16 + qMin(16, button.fontMetrics().horizontalAdvance("i"))));
+    button.setTitleClipping(true, 0);
+    QCOMPARE(major(button.sizeHint()), thickness);
 }
 
 void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent_data()
@@ -808,7 +811,7 @@ void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
     auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
     auto* button = edgeButton(host, side); QVERIFY(button);
     const auto extent = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
-    const int expected = appearance.maximumSidebarTitleWidth + 24 + 20 + button->fontMetrics().horizontalAdvance("1") + 5;
+    const int expected = appearance.maximumSidebarTitleWidth + 16 + 20 + button->fontMetrics().horizontalAdvance("1") + 4;
     QCOMPARE(extent(button->size()), expected);
     auto* surface = host->findChild<QFrame*>("DockSurface"); QVERIFY(surface);
     auto* dock = static_cast<DockSurface*>(surface);
@@ -833,7 +836,7 @@ void EdgeTabInteractionTest::oversizedUnclippedTitleStaysWithinTheWidgetSizeLimi
     const QString title(24000, QLatin1Char('W'));
     const QFontMetrics metrics(font);
     QVERIFY(metrics.horizontalAdvance(title) > QWIDGETSIZE_MAX);
-    QCOMPARE(edgeTabExtent(metrics, title, true, 123), QWIDGETSIZE_MAX);
+    QCOMPARE(edgeTabExtent(metrics, metrics.horizontalAdvance(title), true, 123, defaultTheme().metrics.edgeThickness), QWIDGETSIZE_MAX);
     for (const bool vertical : {false, true}) {
         EdgeTabButton button(title, vertical, defaultTheme().metrics.edgeThickness, nullptr);
         button.setFont(font);
@@ -874,13 +877,13 @@ void EdgeTabInteractionTest::regularPinnedAndAutoHideTitlesUseIndependentLimits(
         auto* bar = group->tabBar();
         const int natural = bar->fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, title).width();
         QVERIFY(natural > appearance.maximumTitleWidth);
-        QCOMPARE(bar->tabRect(0).width(), (clipTabs ? appearance.maximumTitleWidth : natural) + 35);
+        QCOMPARE(bar->tabRect(0).width(), (clipTabs ? appearance.maximumTitleWidth : natural) + 34);
         QCOMPARE(bar->tabText(0), title);
     }
     auto* button = edgeButton(host, sidebar); QVERIFY(button);
     const int natural = button->fontMetrics().horizontalAdvance(title);
     QVERIFY(natural > appearance.maximumSidebarTitleWidth);
-    QCOMPARE(button->height(), (clipSidebar ? appearance.maximumSidebarTitleWidth : natural) + 24);
+    QCOMPARE(button->height(), (clipSidebar ? appearance.maximumSidebarTitleWidth : natural) + 16);
     QCOMPARE(manager.model().tab(sidebar)->title, title); QCOMPARE(button->text(), title);
     QCOMPARE(button->toolTip(), title); QCOMPARE(button->accessibleName(), title);
 }
@@ -944,7 +947,7 @@ void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations
         sendDragMouse(receiver, QEvent::MouseMove, threshold);
         QCOMPARE(QWidget::mouseGrabber(), host);
         auto* labelOnly = dragLabelPreview(); QVERIFY(labelOnly && labelOnly->isVisible());
-        const int sourceExtent = sidebarSource ? appearance.maximumSidebarTitleWidth + 24 : appearance.maximumTitleWidth + 35;
+        const int sourceExtent = sidebarSource ? appearance.maximumSidebarTitleWidth + 16 : appearance.maximumTitleWidth + 34;
         QCOMPARE(sidebarSource ? labelOnly->height() : labelOnly->width(), sourceExtent + 12);
         const auto sourceGap = sidebarSource ? host->surface()->edgeInsertionPreviewRect(Edge::Left)
             : host->surface()->insertionPreviewRect(sourceGroup);
@@ -964,9 +967,9 @@ void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations
             sendDragMouse(carrier, QEvent::MouseMove, tabPoint);
             QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
             auto* carriedGroup = groupView(carrier, manager.model().groupForTab(moving)); QVERIFY(carriedGroup);
-            QCOMPARE(carriedGroup->tabBar()->tabRect(0).width(), appearance.maximumTitleWidth + 35);
-            QCOMPARE(targetGroup->insertionPreviewRectGlobal().width(), appearance.maximumTitleWidth + 35);
-            QCOMPARE(carrier->surface()->dragLabelExtent(moving, false), appearance.maximumTitleWidth + 35);
+            QCOMPARE(carriedGroup->tabBar()->tabRect(0).width(), appearance.maximumTitleWidth + 34);
+            QCOMPARE(targetGroup->insertionPreviewRectGlobal().width(), appearance.maximumTitleWidth + 34);
+            QCOMPARE(carrier->surface()->dragLabelExtent(moving, false), appearance.maximumTitleWidth + 34);
 
             const bool vertical = edge == Edge::Left || edge == Edge::Right;
             const auto area = host->surface()->edgeBarRects().value(edge); QVERIFY(!area.isEmpty());
@@ -975,10 +978,10 @@ void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations
             sendDragMouse(carrier, QEvent::MouseMove, point);
             QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation(int(WorkspaceWindow::DragPresentation::Left) + int(edge)));
             auto* label = carrier->findChild<QAbstractButton*>("DragEdgeLabel"); QVERIFY(label && label->isVisible());
-            QCOMPARE(vertical ? label->height() : label->width(), appearance.maximumSidebarTitleWidth + 24);
+            QCOMPARE(vertical ? label->height() : label->width(), appearance.maximumSidebarTitleWidth + 16);
             const auto gap = host->surface()->edgeInsertionPreviewRect(edge); QVERIFY(!gap.isEmpty());
-            QCOMPARE(vertical ? gap.height() : gap.width(), appearance.maximumSidebarTitleWidth + 24);
-            QCOMPARE(carrier->surface()->dragLabelExtent(moving, true), appearance.maximumSidebarTitleWidth + 24);
+            QCOMPARE(vertical ? gap.height() : gap.width(), appearance.maximumSidebarTitleWidth + 16);
+            QCOMPARE(carrier->surface()->dragLabelExtent(moving, true), appearance.maximumSidebarTitleWidth + 16);
             QCOMPARE(label->text(), title); QCOMPARE(label->toolTip(), title); QCOMPARE(label->accessibleName(), title);
             QCOMPARE(manager.model().tab(moving)->title, title); QCOMPARE(manager.model().tab(moving)->activePane, pane);
             QCOMPARE(manager.paneWidget(pane), editor); QVERIFY(observed && observed->isVisible());

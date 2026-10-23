@@ -121,6 +121,10 @@ private slots:
     void titleClippingKeepsFullTextAndDecorationSpace_data();
     void titleClippingKeepsFullTextAndDecorationSpace();
     void zeroTitleLimitsKeepLabelsAndDecorationSpace();
+    void zeroTitleLeavesOneGapBetweenIconAndClose();
+    void zeroTitleRailLabelKeepsEqualEndPadding_data();
+    void zeroTitleRailLabelKeepsEqualEndPadding();
+    void closeTargetShowsHoverAndPressFeedback();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void tabShapeOptionsPreserveStyleStates_data();
     void tabShapeOptionsPreserveStyleStates();
@@ -269,7 +273,7 @@ void TabStripLayoutTest::displayFlagsChangeActualLabelWidthsAndCreationControls(
     auto appearance = TabAppearance{}; appearance.showIcons = false; tabs.setAppearance(appearance);
     QTRY_COMPARE(bar->displayTabRect(0).width(), original - bar->iconSize().width() - 4);
     const int noIcon = bar->displayTabRect(0).width(); appearance.showNumbers = true; tabs.setAppearance(appearance);
-    QTRY_COMPARE(bar->displayTabRect(0).width(), noIcon + bar->fontMetrics().horizontalAdvance("1") + 5);
+    QTRY_COMPARE(bar->displayTabRect(0).width(), noIcon + bar->fontMetrics().horizontalAdvance("1") + 4);
     auto* controls = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(controls);
     QVERIFY(!controls->isHidden()); appearance.showNewTabButton = false; tabs.setAppearance(appearance);
     QVERIFY(controls->isHidden());
@@ -306,10 +310,11 @@ void TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace()
     TabRecord record; record.id = id; record.title = title; record.colorId = preset.id; tabs.setTabMetadata(0, record);
     tabs.resize(900, 250); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar();
-    const int decorationWidth = decorated ? bar->iconSize().width() + 4 + bar->fontMetrics().horizontalAdvance("1") + 5 : 0;
+    // Regular tabs: 7 px at each end, a 16 px close target and single 4 px gaps.
+    const int decorationWidth = decorated ? bar->iconSize().width() + 4 + bar->fontMetrics().horizontalAdvance("1") + 4 : 0;
     const int textLeft = 7 + decorationWidth;
     const int naturalWidth = bar->displayTabRect(0).width();
-    QCOMPARE(naturalWidth, bar->fontMetrics().size(Qt::TextShowMnemonic, title).width() + decorationWidth + 35);
+    QCOMPARE(naturalWidth, bar->fontMetrics().size(Qt::TextShowMnemonic, title).width() + decorationWidth + 34);
     const auto full = renderAtRatio(bar, 1);
     // Pick a boundary through actual glyph ink, so the reference distinguishes
     // geometric clipping from truncating whole characters or adding an ellipsis.
@@ -324,7 +329,7 @@ void TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace()
     for (const qreal ratio : {1.0, 2.0}) references.append(renderAtRatio(bar, ratio));
     appearance.clipTitles = true; appearance.maximumTitleWidth = limit;
     tabs.setAppearance(appearance, pinned);
-    QTRY_COMPARE(bar->displayTabRect(0).width(), limit + decorationWidth + 35);
+    QTRY_COMPARE(bar->displayTabRect(0).width(), limit + decorationWidth + 34);
     QCOMPARE(bar->tabText(0), title); QCOMPARE(bar->tabToolTip(0), title);
     const QRect textRect(textLeft, 2, limit, bar->height() - 5);
     for (int index = 0; index < references.size(); ++index) {
@@ -377,6 +382,126 @@ void TabStripLayoutTest::zeroTitleLimitsKeepLabelsAndDecorationSpace()
         button.setTitleClipping(true, maximumTabTitleWidth); button.resize(button.sizeHint());
         QVERIFY(containsColor(renderAtRatio(&button, 1), Qt::red));
     }
+}
+
+namespace {
+// First and last position along a label's text axis that has the exact color.
+std::pair<int, int> colorSpan(const QImage& image, QColor color, bool alongY, int from, int to)
+{
+    int first = -1, last = -1;
+    const int length = alongY ? image.height() : image.width();
+    for (int major = 0; major < length; ++major)
+        for (int minor = from; minor < to; ++minor) {
+            const auto pixel = alongY ? image.pixelColor(minor, major) : image.pixelColor(major, minor);
+            if (pixel.rgb() != color.rgb()) continue;
+            if (first < 0) first = major;
+            last = major; break;
+        }
+    return {first, last};
+}
+TabColorPreset solidPreset(const QString& id)
+{
+    auto preset = defaultTabColorPresets().front(); preset.id = id;
+    preset.groupActive = preset.groupInactive = preset.autoHideActive = preset.autoHideInactive
+        = {Qt::white, Qt::black, QColor("#123456"), QColor("#2468ac")};
+    return preset;
+}
+void sendBarMouse(QWidget* bar, QEvent::Type type, QPoint point, Qt::MouseButton button, Qt::MouseButtons buttons)
+{
+    QMouseEvent event(type, point, bar->mapToGlobal(point), button, buttons, Qt::NoModifier);
+    QApplication::sendEvent(bar, &event);
+}
+}
+
+void TabStripLayoutTest::zeroTitleLeavesOneGapBetweenIconAndClose()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false;
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 0;
+    const auto preset = solidPreset("zero-title-gap"); appearance.colors = {preset};
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs); tabs.setAppearance(appearance);
+    QPixmap icon(16, 16); icon.fill(Qt::white);
+    const auto title = QString(30, QLatin1Char('W')); const auto id = QUuid::createUuid();
+    tabs.addTab(new QLabel("Content"), QIcon(icon), title, id);
+    TabRecord record; record.id = id; record.title = title; record.colorId = preset.id;
+    tabs.setTabMetadata(0, record); tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const auto tab = bar->displayTabRect(0);
+    // 7 padding, 16 icon, one 4 px gap, 16 close target, 7 padding.
+    QCOMPARE(tab.width(), 7 + 16 + 4 + 16 + 7);
+    const auto image = logicalCrop(renderAtRatio(bar, 1), tab);
+    const auto iconSpan = colorSpan(image, preset.groupActive.icon, false, 2, tab.height() - 4);
+    QCOMPARE(iconSpan.first, 7); QCOMPARE(iconSpan.second, 7 + 16 - 1);
+    // The close target appears on hover, one gap after the icon; its wash
+    // extends one pixel around the 16 px target.
+    sendBarMouse(bar, QEvent::MouseMove, QPoint(tab.right() - 7 - 8 + 1, tab.center().y()), Qt::NoButton, Qt::NoButton);
+    const auto hovered = logicalCrop(renderAtRatio(bar, 1), tab);
+    int closeLeft = -1;
+    for (int x = iconSpan.second + 1; x < tab.width() && closeLeft < 0; ++x)
+        for (int y = 2; y < tab.height() - 4; ++y)
+            if (hovered.pixelColor(x, y).rgb() != QColor(Qt::white).rgb()) { closeLeft = x; break; }
+    QCOMPARE(closeLeft, 7 + 16 + 4 - 1);
+}
+
+void TabStripLayoutTest::zeroTitleRailLabelKeepsEqualEndPadding_data()
+{
+    QTest::addColumn<bool>("vertical");
+    QTest::newRow("horizontal") << false;
+    QTest::newRow("vertical") << true;
+}
+
+void TabStripLayoutTest::zeroTitleRailLabelKeepsEqualEndPadding()
+{
+    QFETCH(bool, vertical);
+    QWidget root; applyTheme(&root); root.resize(200, 200);
+    const int thickness = defaultTheme().metrics.edgeThickness;
+    EdgeTabButton button(QString(30, QLatin1Char('W')), vertical, thickness, &root);
+    QPixmap icon(16, 16); icon.fill(Qt::white);
+    const auto preset = solidPreset("zero-title-rail");
+    button.setPreset(preset); button.setPresentation(QIcon(icon), 0);
+    for (const int limit : {0, 1, 40}) {
+        button.setTitleClipping(true, limit); button.resize(button.sizeHint());
+        const int extent = vertical ? button.height() : button.width();
+        // 8 px at each end; a title only adds itself and one gap.
+        QCOMPARE(extent, 8 + 16 + (limit ? 4 + limit : 0) + 8);
+        const auto span = colorSpan(renderAtRatio(&button, 1), preset.autoHideInactive.icon, vertical, 2, thickness - 3);
+        QCOMPARE(span.first, 8); QCOMPARE(span.second, 8 + 16 - 1);
+        if (!limit) QCOMPARE(extent - 1 - span.second, 8);
+    }
+}
+
+void TabStripLayoutTest::closeTargetShowsHoverAndPressFeedback()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false; appearance.showIcons = false;
+    const auto preset = solidPreset("close-feedback"); appearance.colors = {preset};
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs); tabs.setAppearance(appearance);
+    const auto id = QUuid::createUuid(); tabs.addTab(new QLabel("Content"), {}, "Feedback", id);
+    TabRecord record; record.id = id; record.title = "Feedback"; record.colorId = preset.id;
+    tabs.setTabMetadata(0, record);
+    int closed = 0; tabs.closeRequested = [&closed](int) { ++closed; };
+    tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const auto tab = bar->displayTabRect(0);
+    const QRect target(tab.right() - 7 - 16 + 1, tab.top() + (tab.height() - 16) / 2, 16, 16);
+    const QPoint body(tab.left() + 10, tab.center().y());
+    sendBarMouse(bar, QEvent::MouseMove, body, Qt::NoButton, Qt::NoButton);
+    const auto plain = renderAtRatio(bar, 1);
+    sendBarMouse(bar, QEvent::MouseMove, target.center(), Qt::NoButton, Qt::NoButton);
+    const auto hovered = renderAtRatio(bar, 1);
+    sendBarMouse(bar, QEvent::MouseButtonPress, target.center(), Qt::LeftButton, Qt::LeftButton);
+    const auto pressed = renderAtRatio(bar, 1);
+    // Only the target gains a wash, stronger while pressed; the label is unchanged.
+    const QRect label(tab.left(), tab.top(), target.left() - 2 - tab.left(), tab.height());
+    QCOMPARE(logicalCrop(hovered, label), logicalCrop(plain, label));
+    const QPoint corner = target.topLeft();
+    QCOMPARE(plain.pixelColor(corner).rgb(), QColor(Qt::white).rgb());
+    QVERIFY(hovered.pixelColor(corner).rgb() != QColor(Qt::white).rgb());
+    QVERIFY(qGray(pressed.pixelColor(corner).rgb()) < qGray(hovered.pixelColor(corner).rgb()));
+    // Releasing elsewhere cancels and clears the feedback; releasing on it closes.
+    sendBarMouse(bar, QEvent::MouseMove, body, Qt::NoButton, Qt::LeftButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, body, Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(closed, 0);
+    QCOMPARE(renderAtRatio(bar, 1).pixelColor(corner).rgb(), QColor(Qt::white).rgb());
+    sendBarMouse(bar, QEvent::MouseButtonPress, target.center(), Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, target.center(), Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(closed, 1);
 }
 
 void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit()

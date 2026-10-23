@@ -33,7 +33,8 @@ EdgeTabButton::EdgeTabButton(QString title, bool vertical, int thickness, QWidge
 QSize EdgeTabButton::sizeHint() const
 {
     titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
-    const auto extent = edgeTabExtent(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_, clipTitles_, maximumTitleWidth_);
+    const auto extent = edgeTabExtent(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_, thickness_,
+                                      clipTitles_, maximumTitleWidth_);
     return vertical_ ? QSize(thickness_, extent) : QSize(extent, thickness_);
 }
 void EdgeTabButton::setPresentation(QIcon image, int number)
@@ -91,26 +92,24 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
         painter.translate(width(), 0); painter.rotate(90);
     }
     const QRect area=vertical_ ? QRect(0,0,height(),width()) : rect();
-    const int numberWidth=number_>0 ? fontMetrics().horizontalAdvance(QString::number(number_))+5 : 0;
-    const int imageWidth=icon().isNull() ? 0 : 20;
     titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
-    const int naturalTitleWidth = titleLayout_.naturalWidth();
-    const int titleWidth = clipTitles_ ? std::min(naturalTitleWidth, maximumTitleWidth_) : naturalTitleWidth;
-    const int span=std::min(std::max(0,area.width()-12),titleWidth+numberWidth+imageWidth);
-    int left=std::max(6,(area.width()-span)/2);
-    if(number_) {
-        painter.drawText(QStyle::visualRect(layoutDirection(), area, QRect(left,0,numberWidth,area.height())),
-                         Qt::AlignVCenter | Qt::AlignLeading,QString::number(number_));
-        left+=numberWidth;
-    }
-    if(!icon().isNull()) {
-        auto image=icon().pixmap(QSize(16,16));
+    const auto parts = edgeTabParts(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_,
+                                    clipTitles_, maximumTitleWidth_);
+    // The extent matches the label exactly; a longer button (an empty label
+    // on a thick rail) centers it, and a shorter one cuts the title.
+    const int span = int(std::min<qint64>(std::max(0, area.width() - 2 * edgeTabPadding), tabLabelWidth(parts)));
+    const QRect label(std::max(edgeTabPadding, (area.width() - span) / 2), area.top(), span, area.height());
+    const auto rects = layoutTabLabel(label, parts, layoutDirection());
+    if (!rects.number.isEmpty())
+        painter.drawText(rects.number, Qt::AlignVCenter | Qt::AlignLeading, QString::number(number_));
+    if (!rects.icon.isEmpty()) {
+        auto image=icon().pixmap(QSize(edgeTabIconSize,edgeTabIconSize));
         QPainter tint(&image); tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
         tint.fillRect(image.rect(),colors ? colors->icon : edgeTabColor(this,"edgeTabText",QPalette::ButtonText)); tint.end();
-        painter.drawPixmap(QStyle::visualRect(layoutDirection(), area, QRect(left,area.center().y()-8,16,16)),image); left+=imageWidth;
+        painter.save(); painter.setClipRect(rects.icon, Qt::IntersectClip);
+        painter.drawPixmap(QRect(rects.icon.topLeft(), QSize(edgeTabIconSize, edgeTabIconSize)), image);
+        painter.restore();
     }
-    const auto textArea = QStyle::visualRect(layoutDirection(), area,
-        QRect(left,0,std::max(0,std::min(titleWidth,area.width()-6-left)),area.height()));
-    titleLayout_.draw(painter, textArea);
+    titleLayout_.draw(painter, rects.title);
 }
 } // namespace window_system

@@ -350,37 +350,35 @@ int DragTabBar::insertionIndexAt(QPoint local) const
     }
     return visible;
 }
-QSize DragTabBar::tabSizeHint(int index) const {
-    auto size = QTabBar::tabSizeHint(index);
-    const int iconWidth = !appearance_.showIcons || tabIcon(index).isNull() ? 0 : iconSize().width() + 4;
-    const int numberWidth = appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) + 5 : 0;
-    // Without an icon a one-character label can put its center inside the
-    // trailing close hitbox. Keep a small independent drag/click area even for
-    // the shortest labels; the close target retains its full 16 pixels.
+TabLabelParts DragTabBar::labelParts(int index) const {
     auto& title = titleLayouts_[index];
     title.prepare(tabText(index), font(), layoutDirection(), true, this);
-    const int naturalTitleWidth = title.naturalWidth();
-    const int titleWidth = appearance_.clipTitles ? std::min(naturalTitleWidth, appearance_.maximumTitleWidth) : naturalTitleWidth;
-    size.setWidth(int(std::clamp<qint64>(qint64(titleWidth) + iconWidth + numberWidth + 35, 46, QWIDGETSIZE_MAX)));
+    const int natural = title.naturalWidth();
+    return {appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) : 0,
+            appearance_.showIcons && !tabIcon(index).isNull() ? iconSize().width() : 0,
+            appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural};
+}
+QSize DragTabBar::tabSizeHint(int index) const {
+    auto size = QTabBar::tabSizeHint(index);
+    size.setWidth(tabBarTabWidth(labelParts(index)));
     return size;
 }
 QRect DragTabBar::closeRect(int index) const {
-    const auto area = displayTabRect(index);
-    return QRect(layoutDirection() == Qt::RightToLeft ? area.left() + 6 : area.right() - 22,
-                 area.center().y() - 8, 16, 16);
+    return tabBarCloseRect(displayTabRect(index), layoutDirection());
 }
 void DragTabBar::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton) { pressed_ = -1; closePressed_ = -1; event->accept(); return; }
     start_ = event->position().toPoint(); pressed_ = displayedTabAt(start_);
     if (event->button() == Qt::LeftButton && pressed_ >= 0 && closeRect(pressed_).contains(start_)) {
-        closePressed_ = pressed_; pressed_ = -1; event->accept(); return;
+        closePressed_ = pressed_; pressed_ = -1; update(closeRect(closePressed_).adjusted(-2, -2, 2, 2)); event->accept(); return;
     }
     if (customLayout_) { if (event->button() == Qt::LeftButton && pressed_ >= 0) setCurrentIndex(pressed_); event->accept(); }
     else QTabBar::mousePressEvent(event);
 }
 void DragTabBar::mouseMoveEvent(QMouseEvent* event) {
     const auto hover = displayedTabAt(event->position().toPoint());
-    if (hover != hovered_) { hovered_ = hover; update(); }
+    const bool overClose = hover >= 0 && closeRect(hover).contains(event->position().toPoint());
+    if (hover != hovered_ || overClose != closeHovered_) { hovered_ = hover; closeHovered_ = overClose; update(); }
     if (event->buttons().testFlag(Qt::LeftButton) && pressed_ >= 0 &&
         (event->position().toPoint() - start_).manhattanLength() >= QApplication::startDragDistance()) {
         const auto index = pressed_; pressed_ = -1;
@@ -394,6 +392,7 @@ void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
     pressed_ = -1;
     if (closePressed_ >= 0) {
         const auto index = closePressed_; closePressed_ = -1;
+        update(closeRect(index).adjusted(-2, -2, 2, 2));
         if (event->button() == Qt::LeftButton && closeRect(index).contains(event->position().toPoint())) {
             const auto callback = close; if (callback) callback(index);
         }
@@ -401,7 +400,7 @@ void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
     }
     if(customLayout_) event->accept(); else QTabBar::mouseReleaseEvent(event);
 }
-void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; update(); QTabBar::leaveEvent(event); }
+void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; closeHovered_ = false; update(); QTabBar::leaveEvent(event); }
 void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
     painter.setLayoutDirection(layoutDirection());
@@ -442,21 +441,14 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             painter.fillRect(option.rect, colors->background);
             painter.fillRect(QRect(option.rect.left(), option.rect.bottom() - 1, option.rect.width(), 2), colors->line);
         } else painter.drawControl(QStyle::CE_TabBarTabShape, option);
-        const bool rtl = layoutDirection() == Qt::RightToLeft;
-        auto textArea = option.rect.adjusted(rtl ? 27 : 7, 0, rtl ? -7 : -27, 0);
-        if (appearance_.showNumbers) {
-            const auto number = QString::number(index + 1);
-            const int width = fontMetrics().horizontalAdvance(number) + 5;
+        const auto label = layoutTabLabel(tabBarLabelArea(option.rect, layoutDirection()), labelParts(index), layoutDirection());
+        if (!label.number.isEmpty()) {
             painter.setPen(colors ? colors->text : palette().color(QPalette::WindowText));
-            painter.drawText(QRect(rtl ? textArea.right() - width + 1 : textArea.left(),textArea.top(),width,textArea.height()),
-                             Qt::AlignLeading | Qt::AlignVCenter,number);
-            textArea.adjust(rtl ? 0 : width,0,rtl ? -width : 0,0);
+            painter.drawText(label.number, Qt::AlignLeading | Qt::AlignVCenter, QString::number(index + 1));
         }
-        if (appearance_.showIcons && !option.icon.isNull()) {
-            const int side = iconSize().width();
-            const QRect iconArea(rtl ? textArea.right() - side + 1 : textArea.left(),
-                                 textArea.center().y() - iconSize().height() / 2,
-                                 side, iconSize().height());
+        if (!label.icon.isEmpty()) {
+            const QRect iconArea(label.icon.topLeft(), iconSize());
+            painter.save(); painter.setClipRect(label.icon, Qt::IntersectClip);
             if (colors) {
                 auto pixmap = option.icon.pixmap(iconArea.size());
                 QPainter iconPainter(&pixmap); iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
@@ -464,12 +456,9 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             } else option.icon.paint(&painter, iconArea, Qt::AlignCenter,
                               isTabEnabled(index) ? QIcon::Normal : QIcon::Disabled,
                               index == currentIndex() ? QIcon::On : QIcon::Off);
-            textArea.adjust(rtl ? 0 : side + 4, 0, rtl ? -side - 4 : 0, 0);
+            painter.restore();
         }
-        if (appearance_.clipTitles && textArea.width() > appearance_.maximumTitleWidth) {
-            if (rtl) textArea.setLeft(textArea.right() - appearance_.maximumTitleWidth + 1);
-            else textArea.setWidth(appearance_.maximumTitleWidth);
-        }
+        const auto textArea = label.title;
         auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText,colors->text);
         if (isTabEnabled(index)) {
             auto& title = titleLayouts_[index];
@@ -492,7 +481,21 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
         painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
         painter.drawRect(gap.adjusted(1, 1, -2, -2));
     }
-    if (hovered_ >= 0 && hovered_ != draggedIndex_) closeIcon_.paint(&painter, closeRect(hovered_));
+    if (hovered_ >= 0 && hovered_ != draggedIndex_) {
+        const auto target = closeRect(hovered_);
+        if (closeHovered_ || closePressed_ == hovered_) {
+            // A translucent wash of the tab's own text color reads on every
+            // theme and color preset, like VS Code's tab action hover.
+            const auto* preset = tabPreset(hovered_);
+            auto wash = preset ? (hovered_ == currentIndex() ? preset->groupActive.text : preset->groupInactive.text)
+                               : palette().color(QPalette::WindowText);
+            wash.setAlphaF(closePressed_ == hovered_ && closeHovered_ ? 0.28 : 0.16);
+            painter.save(); painter.setRenderHint(QPainter::Antialiasing); painter.setPen(Qt::NoPen);
+            painter.setBrush(wash); painter.drawRoundedRect(QRectF(target).adjusted(-1, -1, 1, 1), 3, 3);
+            painter.restore();
+        }
+        closeIcon_.paint(&painter, target);
+    }
 }
 void DragTabBar::tabRemoved(int index)
 {

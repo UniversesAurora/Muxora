@@ -246,7 +246,7 @@
 
 ## 2.9 高对比主题
 
-**实现**：Muxora High Contrast（`hcDark`）与 Muxora High Contrast Light（`hcLight`）。规则参照 VS Code 高对比主题：所有交互元素有 1 像素 `contrastBorder`，焦点和活动元素用 `contrastActiveBorder`；不使用半透明背景表达状态；正文对比 ≥ 7.0。对比度测试加入这两个主题。
+**实现**：Muxora High Contrast（`hcDark`）与 Muxora High Contrast Light（`hcLight`）。规则参照 VS Code 高对比主题：所有交互元素有 1 像素 `contrastBorder`，焦点和活动元素用 `contrastActiveBorder`；不使用半透明背景表达状态；正文对比 ≥ 7.0。对比度测试加入这两个主题。现有用半透明底色表示状态的地方要逐个改成边框，例如标签关闭按钮的悬停和按下（[标签内部排布](../../design/ui-design-system.md#22-尺寸)）。
 
 **状态**：未开始。
 

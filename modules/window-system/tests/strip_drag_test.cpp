@@ -174,10 +174,10 @@ struct Fixture {
             if (bar->tabData(index).toUuid() == tab) return bar->tabRect(index).translated(bar->mapToGlobal(QPoint()));
         return {};
     }
-    QWidget* begin(TabId tab)
+    QWidget* begin(TabId tab, int distance = 20)
     {
         const auto bounds = labelRect(tab); const auto start = bounds.center();
-        const auto delta = kind == StripKind::AutoHide && vertical(edge) ? QPoint(0, 20) : QPoint(20, 0);
+        const auto delta = kind == StripKind::AutoHide && vertical(edge) ? QPoint(0, distance) : QPoint(distance, 0);
         QWidget* receiver = kind == StripKind::AutoHide ? static_cast<QWidget*>(edgeButton(window, tab))
             : static_cast<QWidget*>(groupView(window, manager.model().groupForTab(tab))->tabBar());
         if (!receiver || !viewportRect().contains(start + delta)) return nullptr;
@@ -593,10 +593,14 @@ void StripDragTest::releasingWithinTheOriginalLabelKeepsItsOrderAndNeighbours()
     const auto firstLabel = fixture.labelRect(fixture.tabs[0]);
     const auto movingLabel = fixture.labelRect(moving);
     const auto lastLabel = fixture.labelRect(fixture.tabs[2]);
-    const auto offset = fixture.kind == StripKind::AutoHide && vertical(fixture.edge) ? QPoint(0, 20) : QPoint(20, 0);
-    const auto released = movingLabel.center() + offset;
+    // Rail labels are as long as their text; a one-letter label is shorter
+    // than the usual 20 px move. Stay inside it but beyond the drag threshold.
+    const bool alongY = fixture.kind == StripKind::AutoHide && vertical(fixture.edge);
+    const int distance = std::max(QApplication::startDragDistance(),
+        std::min(20, (alongY ? movingLabel.height() : movingLabel.width()) / 2 - 1));
+    const auto released = movingLabel.center() + (alongY ? QPoint(0, distance) : QPoint(distance, 0));
     QVERIFY2(movingLabel.contains(released), "The drag threshold must be reached inside the original label bounds");
-    auto* actor = fixture.begin(moving); QVERIFY(actor); QCOMPARE(actor, fixture.window.data()); QVERIFY(labelPreview());
+    auto* actor = fixture.begin(moving, distance); QVERIFY(actor); QCOMPARE(actor, fixture.window.data()); QVERIFY(labelPreview());
     QCOMPARE(fixture.manager.model().windows().size(), 1); QCOMPARE(fixture.manager.model().toJson(), before);
     QCOMPARE(content->parentWidget(), parent.data()); QCOMPARE(globalBounds(content), contentBounds); QVERIFY(content->isVisible());
     if (fixture.kind == StripKind::AutoHide) {

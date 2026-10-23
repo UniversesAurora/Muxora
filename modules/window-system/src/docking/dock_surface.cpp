@@ -733,7 +733,8 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
         auto& title = dragTitleLayouts_[tab][1];
         title.prepare(record->title, font(), layoutDirection(), false, this);
         return edgeTabExtent(fontMetrics(),title.naturalWidth(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
-            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
+            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, manager_->theme().metrics.edgeThickness,
+            appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         const auto* bar = group->tabBar();
@@ -749,13 +750,13 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
             return bar->tabRect(i).width();
         }
     }
+    // Not in a strip yet: measure it as an unnumbered tab of the target bar.
     const auto appearance = manager_->tabAppearance();
-    const int icon = appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
     auto& layout = dragTitleLayouts_[tab][0];
     layout.prepare(record->title, font(), layoutDirection(), true, this);
     const int natural = layout.naturalWidth();
-    const int title = appearance.clipTitles ? std::min(natural, appearance.maximumTitleWidth) : natural;
-    return int(std::clamp<qint64>(qint64(title) + icon + 35, 46, QWIDGETSIZE_MAX));
+    return tabBarTabWidth({0, appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize : 0,
+                           appearance.clipTitles ? std::min(natural, appearance.maximumTitleWidth) : natural});
 }
 QHash<Edge, QRect> DockSurface::edgeBarRects() const
 {

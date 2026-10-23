@@ -131,7 +131,7 @@ QJsonObject measureTabBar(const QString& title, const Options& options)
     bar.resize(canvasExtent, canvasThickness);
     bar.layoutTabs(canvasExtent, true);
     const auto rect = bar.displayTabRect(0);
-    require(!rect.isEmpty() && rect.width() <= titleWidth + 35,
+    require(!rect.isEmpty() && rect.width() <= titleWidth + 34,
             "the tab bar must apply the configured title limit");
     return measure(bar, QStringLiteral("tab-bar"), title, options,
                    bar.fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, title).width(),
