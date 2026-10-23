@@ -56,7 +56,7 @@ QJsonArray mergeStripRow(const QJsonArray& previous, const QJsonArray& current,
         if (cachedIds.contains(entry.toString())) currentExisting.append(entry);
     QJsonArray merged;
     qsizetype next = 0;
-    // Reuse shared slots while keeping dormant Workbench strips in place.
+    // Reuse shared slots while keeping dormant provider strips in place.
     for (const auto& entry : previous) {
         if (!present.contains(entry.toString())) merged.append(entry);
         else if (next < currentExisting.size()) merged.append(currentExisting[next++]);
@@ -95,10 +95,8 @@ QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObjec
             const auto merged = mergeStripRow(previous, current, present, cachedIds);
             if (!merged.isEmpty()) rows.append(merged);
         }
-        if (QString::fromLatin1(field) == "rows") {
-            while (rows.size() < 2) rows.append(QJsonArray{});
-            result.insert(field, rows);
-        } else if (rows.isEmpty()) result.remove(field);
+        if (QString::fromLatin1(field) == "rows") result.insert(field, rows);
+        else if (rows.isEmpty()) result.remove(field);
         else result.insert(field, rows);
     }
     result.insert("locked", rendered.value("locked"));

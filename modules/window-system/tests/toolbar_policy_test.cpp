@@ -202,9 +202,9 @@ void ToolbarPolicyTest::savedContentTitleRecoversMenuResetAndRightAnchoring()
     QCOMPARE(host->stripWidget("menu")->geometry().right(), tail);
     QCOMPARE(host->stripWidget("caption-controls")->geometry(), controls);
     auto* caption = window->findChild<QLabel*>("CaptionTitle"); QVERIFY(caption); QVERIFY(caption->width() >= 96);
-    const auto migrated = host->saveLayout();
-    QCOMPARE(migrated.value("strips").toObject().value("title").toObject().value("sizing"), QJsonValue("elastic"));
-    host->restoreLayout(migrated); QCOMPARE(host->saveLayout(), migrated);
+    const auto normalized = host->saveLayout();
+    QCOMPARE(normalized.value("strips").toObject().value("title").toObject().value("sizing"), QJsonValue("elastic"));
+    host->restoreLayout(normalized); QCOMPARE(host->saveLayout(), normalized);
     const int rightInset = host->width() - host->stripWidget("caption-controls")->geometry().right();
     window->resize(window->width() + 180, window->height()); QCoreApplication::processEvents();
     QCOMPARE(host->width() - host->stripWidget("caption-controls")->geometry().right(), rightInset);

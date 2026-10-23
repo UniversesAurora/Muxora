@@ -64,7 +64,7 @@ OperationResult parseVisibilityProfiles(const QJsonValue& value, QHash<WindowKin
 QRect savedWindowGeometry(const QJsonObject& object)
 {
     // Bound untrusted JSON before QRect arithmetic. Qt's widget size limit is
-    // large enough for desktop layouts without the old 5000-pixel ceiling.
+    // large enough for desktop layouts.
     return {qBound(-QWIDGETSIZE_MAX, object.value("x").toInt(), QWIDGETSIZE_MAX),
             qBound(-QWIDGETSIZE_MAX, object.value("y").toInt(), QWIDGETSIZE_MAX),
             qBound(480, object.value("width").toInt(1000), QWIDGETSIZE_MAX),
@@ -176,56 +176,18 @@ OperationResult validateToolbarKinds(const QJsonValue& value)
         const bool mixed = it.key() == "workbench" ? ids.contains("floating-menu")
             : ids.contains("menu") || ids.contains("workspace");
         if (mixed) return {false, QCoreApplication::translate("WindowSystem", "不同窗口类型的工具条布局不能混用")};
+        const QStringList required = it.key() == "workbench"
+            ? QStringList{"menu", "workspace", "title", "caption-controls"}
+            : QStringList{"floating-menu", "title", "caption-controls"};
+        QSet<QString> positioned;
+        for (const auto* field : {"rows", "bottomRows"})
+            for (const auto& row : layout.value(field).toArray())
+                for (const auto& entry : row.toArray()) positioned.insert(entry.toString());
+        for (const auto& id : required)
+            if (!positioned.contains(id) || !settings.value(id).isObject())
+                return {false, QCoreApplication::translate("WindowSystem", "工具条布局无效")};
     }
     return {true, {}};
-}
-
-bool layoutContainsStrip(const QJsonObject& layout, const QString& id)
-{
-    if (layout.value("strips").toObject().contains(id)) return true;
-    for (const auto* field : {"rows", "bottomRows"})
-        for (const auto& row : layout.value(field).toArray())
-            if (row.toArray().contains(id)) return true;
-    return false;
-}
-
-QJsonObject legacyToolbarLayout(QJsonObject layout, WindowKind kind)
-{
-    if (layout.isEmpty()) return layout;
-    const QSet<QString> removed = kind == WindowKind::Workbench ? QSet<QString>{"floating-menu"}
-        : QSet<QString>{"menu", "workspace"};
-    auto settings = layout.value("strips").toObject();
-    for (const auto& id : removed) settings.remove(id);
-    layout.insert("strips", settings);
-    for (const auto* field : {"rows", "bottomRows"}) {
-        if (!layout.contains(field)) continue;
-        auto rows = layout.value(field).toArray();
-        for (qsizetype row = 0; row < rows.size(); ++row) {
-            auto entries = rows[row].toArray();
-            for (qsizetype index = entries.size(); index-- > 0;)
-                if (removed.contains(entries[index].toString())) entries.removeAt(index);
-            rows[row] = entries;
-        }
-        layout.insert(field, rows);
-    }
-    if (kind == WindowKind::Floating && !layoutContainsStrip(layout, "floating-menu")) {
-        const char* target = "rows";
-        qsizetype ordinal = 0;
-        bool found = false;
-        for (const auto* field : {"rows", "bottomRows"}) {
-            const auto rows = layout.value(field).toArray();
-            for (qsizetype row = 0; row < rows.size() && !found; ++row)
-                if (rows[row].toArray().contains(QStringLiteral("title"))) {
-                    target = field; ordinal = row; found = true;
-                }
-            if (found) break;
-        }
-        auto rows = layout.value(target).toArray();
-        while (rows.size() <= ordinal) rows.append(QJsonArray{});
-        auto entries = rows[ordinal].toArray(); entries.insert(0, QStringLiteral("floating-menu"));
-        rows[ordinal] = entries; layout.insert(target, rows);
-    }
-    return layout;
 }
 
 } // namespace
@@ -290,6 +252,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     if (!parsedAppearance) return parsedAppearance;
     QHash<WindowKind, BarVisibility> restoredVisibilityProfiles;
     QHash<WindowId, QHash<WindowKind, BarVisibility>> restoredWindowVisibility;
+    if (!snapshot.value("visibilityProfiles").isObject() || !snapshot.value("toolbarProfiles").isObject())
+        return {false, QCoreApplication::translate("WindowSystem", "布局版本无效")};
     const auto visibilityParsed = parseVisibilityProfiles(snapshot.value("visibilityProfiles"), restoredVisibilityProfiles);
     if (!visibilityParsed) return visibilityParsed;
     const auto parsedProfiles = validateToolbarKinds(snapshot.value("toolbarProfiles"));
@@ -332,6 +296,10 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     restoredBehavior.revealDelayMs = qBound(200, settings.value("revealDelayMs").toInt(500), 2000);
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject();
+        static const QSet<QString> fields{"id", "title", "x", "y", "width", "height", "maximized", "tabBarsVisible",
+            "sideBarsVisible", "toolbarsVisible", "statusBarVisible", "hiddenStatusItems", "strips", "barLayouts", "stripLayouts"};
+        for (auto field = object.begin(); field != object.end(); ++field)
+            if (!fields.contains(field.key())) return {false, QCoreApplication::translate("WindowSystem", "布局版本无效")};
         const WindowId id(object.value("id").toString());
         if (!candidate.window(id)) continue;
         if (object.contains("tabBarsVisible") && !object.value("tabBarsVisible").isBool())
@@ -361,37 +329,16 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
                 seen.insert(item.toString());
             }
         }
-        // Older previews persisted fullscreen/Zen targets. Validate their
-        // complete contract before mutating content, but never restore this
-        // temporary presentation as a user preference.
-        const auto parsedState = validateSavedWindowViewState(object.value("viewState"), candidate, id);
-        if (!parsedState) return parsedState;
         const auto parsedStrips = validateStripLayout(object.value("strips"));
         if (!parsedStrips) return parsedStrips;
         const auto parsedInactive = validateToolbarKinds(object.value("stripLayouts"));
         if (!parsedInactive) return parsedInactive;
         const auto kind = candidate.window(id)->kind;
-        const auto savedStrips = object.value("strips").toObject();
-        const bool legacy = !snapshot.contains("toolbarProfiles") && !object.contains("stripLayouts");
-        if (!legacy && !savedStrips.isEmpty()) {
-            const auto parsedCurrent = validateToolbarKinds(QJsonObject{{toolbarKindKey(kind), savedStrips}});
-            if (!parsedCurrent) return parsedCurrent;
-        }
-        const auto current = legacy ? legacyToolbarLayout(savedStrips, kind) : savedStrips;
-        auto inactive = object.value("stripLayouts").toObject();
-        if (legacy) {
-            const auto other = kind == WindowKind::Workbench ? WindowKind::Floating : WindowKind::Workbench;
-            const bool hasOther = other == WindowKind::Workbench
-                ? layoutContainsStrip(savedStrips, "menu") || layoutContainsStrip(savedStrips, "workspace")
-                : layoutContainsStrip(savedStrips, "floating-menu");
-            if (hasOther) inactive.insert(toolbarKindKey(other), legacyToolbarLayout(savedStrips, other));
-        }
-        restoredCurrentStrips.insert(id, current);
-        restoredInactiveStrips.insert(id, inactive);
-        // Old snapshots had no edit-order metadata. Pick one stable default
-        // per kind once; current windows keep all their individual layouts.
-        if (!snapshot.contains("toolbarProfiles") && !current.isEmpty() && !restoredProfiles.contains(kind))
-            restoredProfiles.insert(kind, current);
+        const auto current = object.value("strips");
+        const auto parsedCurrent = validateToolbarKinds(QJsonObject{{toolbarKindKey(kind), current}});
+        if (!parsedCurrent) return parsedCurrent;
+        restoredCurrentStrips.insert(id, current.toObject());
+        restoredInactiveStrips.insert(id, object.value("stripLayouts").toObject());
     }
     QHash<PaneId, TabOptions> descriptors;
     for (const auto& entry : snapshot.value("panes").toArray()) {
@@ -472,7 +419,6 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         const auto kind = d->model.window(id)->kind;
         const auto bars = preferredBarVisibility(id);
         d->windowVisibility[id].insert(kind, bars); d->visibilityKinds.insert(id, kind);
-        if (!snapshot.contains("visibilityProfiles") && !d->visibilityProfiles.contains(kind)) d->visibilityProfiles.insert(kind, bars);
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
     refresh();

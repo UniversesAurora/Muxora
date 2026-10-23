@@ -217,7 +217,7 @@ private slots:
     void optionsPolicyDoesNotReserveSpaceOrChangeSavedLayout();
     void lockedEmptyOptionsDisappearAndReturnForOverflow();
     void disabledToolbarButtonsHaveNoBorderOrHoverFeedback();
-    void oneElasticStripOwnsEachRowAndRestoresLegacyDefaults();
+    void oneElasticStripOwnsEachRowAndRestoresOptionalDefaults();
     void movingElasticStripClaimsTheTargetRowAndEscRestoresTheOwner();
     void elasticContentDoesNotBecomeAWindowDragTarget();
     void customizationUpdatesMenuAndActionGeometryImmediately();
@@ -474,7 +474,7 @@ void ChromeInteractionTest::titleFirstFillsTheRowAndIsAWindowDragArea()
     QVERIFY(!qobject_cast<QToolButton*>(handle));
 }
 
-void ChromeInteractionTest::oneElasticStripOwnsEachRowAndRestoresLegacyDefaults()
+void ChromeInteractionTest::oneElasticStripOwnsEachRowAndRestoresOptionalDefaults()
 {
     CommandStripHost host;
     host.addActionStrip("before", "Before", actions(&host, 2), 0);
@@ -498,17 +498,17 @@ void ChromeInteractionTest::oneElasticStripOwnsEachRowAndRestoresLegacyDefaults(
     QCOMPARE(host.stripWidget("after")->width(), afterWidth);
     QCOMPARE(host.stripWidget("after")->geometry().right(), host.width() - 1); // No outer row gutter.
     const auto snapshot = host.saveLayout();
-    auto legacy = snapshot;
-    auto settings = legacy.value("strips").toObject();
+    auto optionalDefaults = snapshot;
+    auto settings = optionalDefaults.value("strips").toObject();
     for (const auto& id : host.stripIds()) {
         auto entry = settings.value(id).toObject(); entry.remove("sizing"); settings.insert(id, entry);
     }
-    legacy.insert("strips", settings);
+    optionalDefaults.insert("strips", settings);
     CommandStripHost restored;
     restored.addActionStrip("before", "Before", actions(&restored, 2), 0);
     restored.addStrip("elastic", "Elastic", new QLabel("Workspace"), 0, CommandStripHost::StripSizing::Elastic);
     restored.addActionStrip("after", "After", actions(&restored, 3), 0);
-    restored.restoreLayout(legacy);
+    restored.restoreLayout(optionalDefaults);
     QCOMPARE(restored.stripSizing("before"), CommandStripHost::StripSizing::Content);
     QCOMPARE(restored.stripSizing("elastic"), CommandStripHost::StripSizing::Elastic);
     restored.restoreLayout(snapshot);

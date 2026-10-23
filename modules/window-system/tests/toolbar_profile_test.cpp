@@ -57,7 +57,7 @@ private slots:
     void unrelatedEditsInOlderWindowsKeepTheNewestOrder();
     void windowKindsRestoreTheirOwnLayoutAndLiveContent();
     void closingEveryFloatingWindowKeepsItsDefault();
-    void legacyMixedSnapshotSeparatesKinds();
+    void incompleteSnapshotsDoNotReconstructProfiles();
     void malformedProfilesLeaveTheManagerUntouched_data();
     void malformedProfilesLeaveTheManagerUntouched();
     void cancellingToolbarDragDoesNotPublish_data() { kinds(); }
@@ -223,41 +223,49 @@ void ToolbarProfileTest::closingEveryFloatingWindowKeepsItsDefault()
     QVERIFY(!view(restarted, root)->saveStripLayout().value("strips").toObject().contains("floating-menu"));
 }
 
-void ToolbarProfileTest::legacyMixedSnapshotSeparatesKinds()
+void ToolbarProfileTest::incompleteSnapshotsDoNotReconstructProfiles()
 {
     WindowManager manager; const auto owner = manager.createWindow();
     const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
-    auto legacy = manager.saveLayout(); legacy.remove("toolbarProfiles");
-    auto records = legacy.value("windows").toArray();
+    QPointer<QWidget> content = new QLabel("retained");
+    const auto tab = manager.addTab(owner, content, {"retained", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    int created = 0;
+    manager.setContentFactory([&created](const TabOptions& options, PaneId) { ++created; return new QLabel(options.title); });
+    const auto before = manager.saveLayout();
+    for (const auto* field : {"toolbarProfiles", "visibilityProfiles"}) {
+        auto incomplete = before; incomplete.remove(field);
+        QVERIFY(!manager.restoreLayout(incomplete));
+        QCOMPARE(created, 0);
+        QCOMPARE(manager.saveLayout(), before);
+        QCOMPARE(manager.paneWidget(pane), content.data());
+    }
+    auto mixed = before;
+    auto records = mixed.value("windows").toArray();
     for (qsizetype i = 0; i < records.size(); ++i) {
-        auto record = records[i].toObject(); record.remove("stripLayouts");
-        if (record.value("id").toString() == floating.toString(QUuid::WithoutBraces)) {
-            auto hybrid = view(manager, owner)->saveStripLayout();
-            auto rows = hybrid.value("rows").toArray();
-            rows[0] = QJsonArray{"caption-controls", "floating-menu", "title", "menu"};
-            hybrid.insert("rows", rows);
-            auto settings = hybrid.value("strips").toObject();
-            settings.insert("floating-menu", view(manager, floating)->saveStripLayout().value("strips").toObject().value("floating-menu"));
-            hybrid.insert("strips", settings); record.insert("strips", hybrid);
-        }
+        auto record = records[i].toObject();
+        if (record.value("id").toString() != floating.toString(QUuid::WithoutBraces)) continue;
+        auto hybrid = view(manager, owner)->saveStripLayout();
+        auto rows = hybrid.value("rows").toArray();
+        rows[0] = QJsonArray{"caption-controls", "floating-menu", "title", "menu"};
+        hybrid.insert("rows", rows);
+        auto settings = hybrid.value("strips").toObject();
+        settings.insert("floating-menu", view(manager, floating)->saveStripLayout().value("strips").toObject().value("floating-menu"));
+        hybrid.insert("strips", settings); record.insert("strips", hybrid);
         records[i] = record;
     }
-    legacy.insert("windows", records);
-    WindowManager restarted; QVERIFY(restarted.restoreLayout(legacy));
-    auto* window = view(restarted, floating); auto* strips = window->strips();
-    QCOMPARE(strips->stripOrder(0), (QStringList{"caption-controls", "floating-menu", "title"}));
-    QVERIFY(!window->saveStripLayout().value("strips").toObject().contains("menu"));
-    QVERIFY(restarted.promoteWindow(floating));
-    QCOMPARE(window->strips()->stripOrder(0), (QStringList{"caption-controls", "title", "menu"}));
-    QVERIFY(!window->saveStripLayout().value("strips").toObject().contains("floating-menu"));
-    QVERIFY(restarted.demoteWindow(floating, owner));
-    QCOMPARE(window->strips()->stripOrder(0), (QStringList{"caption-controls", "floating-menu", "title"}));
+    mixed.insert("windows", records);
+    QVERIFY(!manager.restoreLayout(mixed));
+    QCOMPARE(created, 0);
+    QCOMPARE(manager.saveLayout(), before);
+    QCOMPARE(manager.paneWidget(pane), content.data());
 }
 
 void ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched_data()
 {
     QTest::addColumn<QString>("mutation");
-    for (const auto* name : {"not-object", "unknown-kind", "duplicate-id", "mixed-menu", "bad-width", "inactive-not-object", "inactive-mixed-menu", "current-mixed-menu", "zero-width", "short-title-width", "short-menu-width", "unlocked-menu-width", "inactive-short-width", "current-short-width"})
+    for (const auto* name : {"not-object", "unknown-kind", "duplicate-id", "mixed-menu", "bad-width", "inactive-not-object", "inactive-mixed-menu", "current-mixed-menu", "zero-width", "short-title-width", "short-menu-width", "unlocked-menu-width", "inactive-short-width", "current-short-width",
+                            "profile-missing-caption", "current-missing-caption", "inactive-missing-caption", "current-missing-menu", "current-missing-title", "current-missing-workspace", "current-unpositioned-caption"})
         QTest::newRow(name) << QString::fromLatin1(name);
 }
 
@@ -274,7 +282,33 @@ void ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched()
     const auto before = manager.saveLayout(); auto malformed = before;
     auto profiles = malformed.value("toolbarProfiles").toObject();
     auto layout = profiles.value("workbench").toObject();
-    if (mutation.endsWith("width") && mutation != "bad-width") {
+    if (mutation.contains("missing-") || mutation == "current-unpositioned-caption") {
+        const auto id = mutation.endsWith("caption") ? "caption-controls"
+            : mutation.endsWith("menu") ? "menu" : mutation.endsWith("title") ? "title" : "workspace";
+        for (const auto* field : {"rows", "bottomRows"}) {
+            if (!layout.contains(field)) continue;
+            auto rows = layout.value(field).toArray();
+            for (qsizetype row = 0; row < rows.size(); ++row) {
+                auto entries = rows[row].toArray();
+                for (qsizetype index = entries.size(); index-- > 0;)
+                    if (entries[index].toString() == id) entries.removeAt(index);
+                rows[row] = entries;
+            }
+            layout.insert(field, rows);
+        }
+        if (mutation != "current-unpositioned-caption") {
+            auto settings = layout.value("strips").toObject(); settings.remove(id); layout.insert("strips", settings);
+        }
+        if (mutation.startsWith("profile")) {
+            profiles.insert("workbench", layout); malformed.insert("toolbarProfiles", profiles);
+        } else {
+            auto records = malformed.value("windows").toArray(); auto record = records[0].toObject();
+            if (mutation.startsWith("inactive")) record.insert("stripLayouts", QJsonObject{{"workbench", layout}});
+            else record.insert("strips", layout);
+            records[0] = record; malformed.insert("windows", records);
+        }
+    }
+    else if (mutation.endsWith("width") && mutation != "bad-width") {
         auto settings = layout.value("strips").toObject();
         const bool menuWidth = mutation.contains("menu"); const auto id = menuWidth ? "menu" : "title";
         auto value = settings.value(id).toObject();

@@ -492,9 +492,10 @@ void ViewCommandsTest::toolbarMoveCommandPreservesIdentityAndRejectsInvalidArgum
     QCOMPARE(host->stripOrder(CommandStripHost::Area::Bottom, 0), QStringList{"workspace"});
     QVERIFY(manager.execute("window.toolbar.move", {{"strip", "menu"}, {"area", "bottom"}, {"row", 0}, {"index", 0}}, fixture.window));
     QCOMPARE(host->stripOrder(CommandStripHost::Area::Bottom, 0), (QStringList{"menu", "workspace"}));
-    QVERIFY(manager.execute("window.toolbar.move", {{"strip", "workspace"}, {"area", "top"}, {"row", 2}, {"index", 0}}, fixture.window));
-    QVERIFY(manager.execute("window.toolbar.move", {{"strip", "menu"}, {"area", "top"}, {"row", 2}, {"index", 0}}, fixture.window));
-    QCOMPARE(host->stripOrder(CommandStripHost::Area::Top, 2), (QStringList{"menu", "workspace"}));
+    const auto newTopRow = host->rowCount(CommandStripHost::Area::Top);
+    QVERIFY(manager.execute("window.toolbar.move", {{"strip", "workspace"}, {"area", "top"}, {"row", newTopRow}, {"index", 0}}, fixture.window));
+    QVERIFY(manager.execute("window.toolbar.move", {{"strip", "menu"}, {"area", "top"}, {"row", newTopRow}, {"index", 0}}, fixture.window));
+    QCOMPARE(host->stripOrder(CommandStripHost::Area::Top, newTopRow), (QStringList{"menu", "workspace"}));
     QCOMPARE(host->stripWidget("workspace"), strip.data()); QCOMPARE(strip->findChild<QWidget*>("StripViewport"), viewport.data());
     QCOMPARE(host->saveLayout().value("strips").toObject().value("workspace"), settings);
     QCOMPARE(manager.paneWidget(fixture.pane), fixture.editor);

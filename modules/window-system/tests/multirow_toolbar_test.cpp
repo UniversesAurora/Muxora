@@ -81,6 +81,7 @@ private slots:
     void publicMovementPreservesIdentityAndAppendsRows();
     void publicMovementRejectsUnboundedAndInvalidRequestsWithoutMutation();
     void bothAreasRoundTripAndRejectAmbiguousLayouts();
+    void savedLayoutsContainOnlyOccupiedTrailingRows();
     void sparseLayoutsKeepLogicalRowsWithoutAllocatingEmptyWidgets_data();
     void sparseLayoutsKeepLogicalRowsWithoutAllocatingEmptyWidgets();
     void draggingOverEarlierRowsDoesNotReserveAPlaceholder_data() { addAreas(); }
@@ -206,10 +207,11 @@ void MultirowToolbarTest::publicMovementPreservesIdentityAndAppendsRows()
     QVERIFY(manager.moveToolbar(id, "menu", ToolbarArea::Bottom, 0, 0));
     QCOMPARE(changes.count(), 1);
     QCOMPARE(host->stripOrder(Area::Bottom, 0), QStringList({"menu", "workspace"}));
-    QVERIFY(manager.moveToolbar(id, "workspace", ToolbarArea::Top, 2));
-    QCOMPARE(host->stripOrder(Area::Top, 2), QStringList{"workspace"});
-    QVERIFY(manager.moveToolbar(id, "menu", ToolbarArea::Top, 2, 0));
-    QCOMPARE(host->stripOrder(Area::Top, 2), QStringList({"menu", "workspace"}));
+    const auto newTopRow = host->rowCount(Area::Top);
+    QVERIFY(manager.moveToolbar(id, "workspace", ToolbarArea::Top, newTopRow));
+    QCOMPARE(host->stripOrder(Area::Top, newTopRow), QStringList{"workspace"});
+    QVERIFY(manager.moveToolbar(id, "menu", ToolbarArea::Top, newTopRow, 0));
+    QCOMPARE(host->stripOrder(Area::Top, newTopRow), QStringList({"menu", "workspace"}));
     QCOMPARE(host->bottomArea()->height(), 0);
     QCOMPARE(host->stripWidget("workspace"), strip.data());
     QCOMPARE(manager.paneWidget(pane), content);
@@ -260,12 +262,31 @@ void MultirowToolbarTest::bothAreasRoundTripAndRejectAmbiguousLayouts()
     target.restoreLayout(bad); QCOMPARE(target.saveLayout(), saved);
     bad = saved; bad.insert("bottomRows", QJsonArray{42});
     target.restoreLayout(bad); QCOMPARE(target.saveLayout(), saved);
-    auto legacy = saved; legacy.remove("bottomRows");
-    legacy.insert("rows", QJsonArray{QJsonArray{"0", "1", "2"}, QJsonArray{"3", "4", "5"}});
-    target.restoreLayout(legacy);
+    auto topOnly = saved; topOnly.remove("bottomRows");
+    topOnly.insert("rows", QJsonArray{QJsonArray{"0", "1", "2"}, QJsonArray{"3", "4", "5"}});
+    target.restoreLayout(topOnly);
     QCOMPARE(target.stripOrder(0), QStringList({"0", "1", "2"}));
     QCOMPARE(target.stripOrder(1), QStringList({"3", "4", "5"}));
     QCOMPARE(target.rowCount(Area::Bottom), 0);
+}
+void MultirowToolbarTest::savedLayoutsContainOnlyOccupiedTrailingRows()
+{
+    CommandStripHost host;
+    host.addStrip("only", new QLabel("Only"), 0);
+    QCOMPARE(host.saveLayout().value("rows").toArray(), (QJsonArray{QJsonValue(QJsonArray{"only"})}));
+    QVERIFY(host.moveStrip("only", Area::Bottom, 0, 0));
+    QVERIFY(host.saveLayout().value("rows").toArray().isEmpty());
+    QCOMPARE(host.saveLayout().value("bottomRows").toArray(), (QJsonArray{QJsonValue(QJsonArray{"only"})}));
+    WindowManager manager; const auto root = manager.createWindow();
+    const auto floating = manager.createWindow(WindowKind::Floating, {}, root);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(floating)); QVERIFY(window);
+    auto* strips = window->strips();
+    const auto saved = window->saveStripLayout();
+    QCOMPARE(saved.value("rows").toArray().size(), 1);
+    window->restoreStripLayout(saved);
+    QCOMPARE(window->saveStripLayout(), saved);
+    for (const auto& id : strips->stripIds()) QVERIFY(strips->moveStrip(id, Area::Bottom, 0, -1));
+    QVERIFY(window->saveStripLayout().value("rows").toArray().isEmpty());
 }
 void MultirowToolbarTest::sparseLayoutsKeepLogicalRowsWithoutAllocatingEmptyWidgets_data()
 {

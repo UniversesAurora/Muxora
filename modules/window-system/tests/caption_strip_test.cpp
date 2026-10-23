@@ -164,7 +164,7 @@ private slots:
     void movedMaximizeButtonRetainsNativeHitTesting_data() { addWindowKinds(); }
     void movedMaximizeButtonRetainsNativeHitTesting();
     void lightweightCustomizationPreservesTheCompleteChromeCache();
-    void legacyLayoutsIntroduceTheProtectedCaptionStrip();
+    void incompleteLayoutsCannotIntroduceOrRemoveCaptionControls();
     void titleCentersAndElidesWithoutLosingItsFullCaption_data() { addWindowKinds(); }
     void titleCentersAndElidesWithoutLosingItsFullCaption();
     void titleMinimumIncludesTheUnlockedHandleAndCannotBeOverriddenByLayout_data() { addWindowKinds(); }
@@ -370,26 +370,30 @@ void CaptionStripTest::lightweightCustomizationPreservesTheCompleteChromeCache()
     QCOMPARE(restoredContent->text(), QStringLiteral("Content"));
 }
 
-void CaptionStripTest::legacyLayoutsIntroduceTheProtectedCaptionStrip()
+void CaptionStripTest::incompleteLayoutsCannotIntroduceOrRemoveCaptionControls()
 {
     WindowManager manager;
     const auto id = manager.createWindow();
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
-    auto legacy = window->saveStripLayout();
-    auto rows = legacy.value("rows").toArray();
+    const auto original = window->saveStripLayout();
+    auto incomplete = original;
+    auto rows = incomplete.value("rows").toArray();
     for (int row = 0; row < rows.size(); ++row) {
         auto entries = rows[row].toArray();
         for (qsizetype index = entries.size(); index-- > 0;)
             if (entries[index].toString() == QStringLiteral("caption-controls")) entries.removeAt(index);
         rows[row] = entries;
     }
-    auto values = legacy.value("strips").toObject(); values.remove("caption-controls");
+    auto values = incomplete.value("strips").toObject(); values.remove("caption-controls");
     auto menu = values.value("menu").toObject(); menu.insert("visible", false); values.insert("menu", menu);
-    legacy.insert("rows", rows); legacy.insert("strips", values);
-    window->restoreStripLayout(legacy);
+    incomplete.insert("rows", rows); incomplete.insert("strips", values);
+    // Test the container directly: the manager validates a complete snapshot
+    // before replacing content, while this internal entry is also atomic.
     auto* strips = window->strips(); QVERIFY(strips);
+    strips->restoreLayout(incomplete);
+    QCOMPARE(strips->saveLayout(), original);
     QCOMPARE(strips->stripOrder(0).last(), QStringLiteral("caption-controls"));
-    QVERIFY(!strips->isStripVisible("menu"));
+    QVERIFY(strips->isStripVisible("menu"));
     QCOMPARE(strips->stripSizing("caption-controls"), CommandStripHost::StripSizing::Content);
     QVERIFY(!strips->stripConstraints("caption-controls").compressible);
     QVERIFY(!strips->stripConstraints("caption-controls").elasticAllowed);
@@ -782,9 +786,9 @@ void CaptionStripTest::captionButtonOrderFollowsTheBehavior()
         WindowManager rejected; QVERIFY(!rejected.restoreLayout(invalid).ok);
     }
     // Layouts saved before the setting existed keep the Windows order.
-    auto legacy = manager.saveLayout(); auto settings = legacy.value("behavior").toObject();
-    settings.remove("captionButtonOrder"); legacy.insert("behavior", settings);
-    WindowManager restored; QVERIFY(restored.restoreLayout(legacy).ok);
+    auto defaults = manager.saveLayout(); auto settings = defaults.value("behavior").toObject();
+    settings.remove("captionButtonOrder"); defaults.insert("behavior", settings);
+    WindowManager restored; QVERIFY(restored.restoreLayout(defaults).ok);
     QCOMPARE(restored.behavior().captionButtonOrder, CaptionButtonOrder::Windows);
 }
 

@@ -1129,9 +1129,8 @@ QJsonObject CommandStripHost::saveLayout() const
         if (sourceAreas[row] == Area::Top) rows.append(entries);
         else bottomRows.append(entries);
     }
-    // Keep the two legacy top slots for old layouts, but never persist a
-    // transient innermost drop row or accumulate empty trailing slots.
-    while (rows.size() > 2 && rows.last().toArray().isEmpty()) rows.removeLast();
+    // Transient drop rows and empty trailing slots are not layout state.
+    while (!rows.isEmpty() && rows.last().toArray().isEmpty()) rows.removeLast();
     while (!bottomRows.isEmpty() && bottomRows.last().toArray().isEmpty()) bottomRows.removeLast();
     QJsonObject result{{"locked", d->locked}, {"rows", rows}, {"strips", strips}};
     if (!bottomRows.isEmpty()) result.insert("bottomRows", bottomRows);
@@ -1159,7 +1158,9 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
             proposed.append(entries); areas.append(area);
         }
     }
-    // Missing upgrade-time strips retain their host's default area and row.
+    if (d->strips.contains("caption-controls") && !seen.contains("caption-controls")) return;
+    // Providers may register a new strip while the application is running.
+    // Keep its declared position when applying the other strips' saved layout.
     int localRows[2] = {};
     for (int row = 0; row < d->rows.size(); ++row) {
         const Area area = d->rowAreas[row];

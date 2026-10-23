@@ -65,9 +65,9 @@
 
 这些公开接口不引入 Lua 依赖。可选的 [WindowSystemLua](../window-system-lua/README.md) 在外部把值和稳定 ID 映射为本模块 API，其他宿主也可以直接用 C++ 注册组件。
 
-每行最多一条弹性工具条。标题条必须保持弹性，同一行的其他条带不能设为弹性；把弹性条拖入标题行时，它会改为普通条。宿主约束优先于保存布局，旧布局中的普通标题会恢复弹性。窗口宽度变化时先调整弹性空间，右侧条带直接相对右边缘排列；缩窄时的临时压缩不改写请求宽度，放大后恢复。标题在自身条带内居中，过长时右侧省略，内容区至少 96 个逻辑像素。
+每行最多一条弹性工具条。标题条必须保持弹性，同一行的其他条带不能设为弹性；把弹性条拖入标题行时，它会改为普通条。宿主约束优先于保存布局，恢复时也强制标题弹性。窗口宽度变化时先调整弹性空间，右侧条带直接相对右边缘排列；缩窄时的临时压缩不改写请求宽度，放大后恢复。标题在自身条带内居中，过长时右侧省略，内容区至少 96 个逻辑像素。
 
-重置优先级以可选 `naturalWidthPriority` 字段进入布局快照，每行最多一个；未启用时省略该字段，旧布局仍可读取。手动调整宽度、改变尺寸策略或移动条带会清除受影响行的优先级；Esc 取消拖动恢复原值。
+重置优先级以可选 `naturalWidthPriority` 字段进入布局快照，每行最多一个；未启用时省略该可选字段。手动调整宽度、改变尺寸策略或移动条带会清除受影响行的优先级；Esc 取消拖动恢复原值。
 
 `moveToolbar(window, stripId, ToolbarArea::Top/Bottom, row, index = -1)` 将已有工具条放入指定区域与行，保留其内容、按钮选择和尺寸策略。顶部与底部均支持任意多行，底部工具区位于下侧收纳条之下、全局状态栏之上。各区从外侧的第 0 行向工作区增加，顶部向下、底部向上；`index = -1` 追加到行末。允许已有行或末尾新一行，错误目标和越界索引返回 `false`，不创建空控件或改变布局。
 
@@ -77,11 +77,13 @@
 
 `WindowBehavior::hideToolbarOptionsWhenLocked` 默认 `false`，设置页使用 `window.hideToolbarOptionsWhenLocked`。开启后，锁定且无溢出的普通工具条隐藏选项尾部并释放宽度；溢出或解锁时恢复。禁用工具按钮不绘制高亮边框，只显示灰色图标。
 
+完整布局快照显式保存 `toolbarProfiles` 和 `visibilityProfiles` 对象。各窗口的工具条布局必须属于自身形态，并包含该形态的内置条带；不拆分混合布局、不从窗口记录补共享默认，也不补旧窗口控制条。保存时不预留空尾行。运行中新增脚本工具条仍使用其声明位置，不受此限制。
+
 当前 API 为 0.1 初版，尚在交互迭代阶段，不承诺稳定二进制 ABI。完整 JSONC 用户键位、条件表达式和后续扩展仍按设计逐步接入。
 
 `setTabBarsVisible(window, visible)` / `tabBarsVisible(window)` 按窗口控制中央标签组的标签栏，隐藏时内容与布局模型保持。侧边收纳条、固定面板标签栏及临时展开标题继续显示。窗口创建选项 `WindowOptions.tabBarsVisible` 默认为 `true`；命令 `window.tabBars.toggle` 可从菜单、命令面板或 `Ctrl+Alt+T` 调用，设置随布局保存。
 
-`setSideBarsVisible(window, visible)` / `sideBarsVisible(window)` 独立控制四边收纳条，隐藏时关闭当前临时面板，保留固定分区。`WindowOptions.sideBarsVisible` 默认为 `true`；命令 `window.sideBars.toggle` 默认绑定 `Ctrl+Alt+B`，状态随窗口布局保存。隐藏后仍可通过明确的标签激活操作打开临时面板。没有该字段的旧快照默认显示侧栏；非法字段拒绝恢复，不修改现有布局。
+`setSideBarsVisible(window, visible)` / `sideBarsVisible(window)` 独立控制四边收纳条，隐藏时关闭当前临时面板，保留固定分区。`WindowOptions.sideBarsVisible` 默认为 `true`；命令 `window.sideBars.toggle` 默认绑定 `Ctrl+Alt+B`，状态随窗口布局保存。隐藏后仍可通过明确的标签激活操作打开临时面板。省略该可选字段时默认显示侧栏；非法字段拒绝恢复，不修改现有布局。
 
 `setToolbarsVisible(window, visible)` 控制顶部与底部工具区，`setStatusBarVisible(window, visible)` 控制完整窗口的全局状态栏；对应 `WindowOptions.toolbarsVisible` / `statusBarVisible` 默认均为 `true`。命令 `window.toolbars.toggle` / `window.statusBar.toggle` 默认使用 `Ctrl+Alt+H` / `Ctrl+Alt+S`。这四项显隐偏好按窗口保存，与是否全屏无关，其他窗口保持自己的设置。
 
@@ -97,7 +99,7 @@
 | `window.zen.toggle` | 依次按 `Ctrl+K`、`Z` |
 | `window.fullscreen.exit` | `Esc` |
 
-全屏状态、禅模式和临时目标只在当前运行中有效，不写入窗口快照。恢复使用正常矩形、最大化状态和原栏偏好，不恢复全屏或禅模式。旧快照的 `viewState` 仍严格校验，但合法值只用于兼容读取，不重新进入保存的模式；非法字段仍拒绝整次恢复。`zenFullscreenMode` 是进入禅模式的行为偏好，继续保存。
+全屏状态、禅模式和临时目标只在当前运行中有效，不写入窗口快照。恢复使用正常矩形、最大化状态和原栏偏好，不恢复全屏或禅模式。窗口快照只接受当前格式的字段，不记录临时模式。`zenFullscreenMode` 是进入禅模式的行为偏好，继续保存。
 
 侧栏标签首次固定时，新分区位于该侧最靠外的位置；此前取消固定的标签恢复其记录的位置。单标签、整组和整侧 API 采用同一位置规则，整侧首次固定保留组间顺序。
 

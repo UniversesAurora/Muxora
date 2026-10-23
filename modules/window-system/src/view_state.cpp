@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include <QCoreApplication>
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
-
-#include <QJsonValue>
-#include <utility>
 
 namespace window_system {
 namespace {
@@ -18,27 +14,6 @@ bool& visibleFlag(BarVisibility& bars, WindowBar bar)
     case WindowBar::SideBars: return bars.sideBars;
     }
     Q_UNREACHABLE();
-}
-
-QString modeName(ViewMode mode)
-{
-    switch (mode) {
-    case ViewMode::Normal: return QStringLiteral("normal");
-    case ViewMode::WindowFullscreen: return QStringLiteral("windowFullscreen");
-    case ViewMode::GroupFullscreen: return QStringLiteral("groupFullscreen");
-    case ViewMode::PaneFullscreen: return QStringLiteral("paneFullscreen");
-    }
-    return {};
-}
-
-OperationResult parseTargetId(const QJsonObject& object, const char* key, QUuid& id)
-{
-    const auto value = object.value(key);
-    if (value.isUndefined()) { id = QUuid(); return {true, {}}; }
-    if (!value.isString()) return {false, QCoreApplication::translate("WindowSystem", "全屏内容目标 ID 无效")};
-    id = QUuid(value.toString());
-    if (id.isNull()) return {false, QCoreApplication::translate("WindowSystem", "全屏内容目标 ID 无效")};
-    return {true, {}};
 }
 
 } // namespace
@@ -232,42 +207,6 @@ void WindowManager::leaveFocusScopeFor(TabId tab, PaneId pane)
     if ((state.mode == ViewMode::GroupFullscreen && state.group != group)
         || (state.mode == ViewMode::PaneFullscreen && (state.tab != tab || (!pane.isNull() && state.pane != pane))))
         setViewMode(record->windowId, ViewMode::WindowFullscreen);
-}
-
-OperationResult validateSavedWindowViewState(const QJsonValue& value, const LayoutModel& model,
-                                            WindowId window)
-{
-    if (value.isUndefined()) return {true, {}};
-    if (!value.isObject()) return {false, QCoreApplication::translate("WindowSystem", "窗口显示模式无效")};
-    const auto object = value.toObject();
-    const auto name = object.value("mode");
-    if (!name.isString()) return {false, QCoreApplication::translate("WindowSystem", "窗口显示模式无效")};
-    WindowViewState candidate;
-    bool found = false;
-    for (const auto mode : {ViewMode::Normal, ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen})
-        if (name.toString() == modeName(mode)) { candidate.mode = mode; found = true; break; }
-    if (!found) return {false, QCoreApplication::translate("WindowSystem", "窗口显示模式无效")};
-    const auto zen = object.value("zen");
-    if (!zen.isUndefined() && !zen.isBool()) return {false, QCoreApplication::translate("WindowSystem", "禅模式设置无效")};
-    candidate.zen = zen.toBool(false);
-    if (candidate.zen && candidate.mode == ViewMode::Normal) return {false, QCoreApplication::translate("WindowSystem", "普通窗口不能恢复禅模式")};
-    for (const auto& target : {std::pair{"group", &candidate.group}, std::pair{"tab", &candidate.tab}, std::pair{"pane", &candidate.pane}}) {
-        const auto result = parseTargetId(object, target.first, *target.second);
-        if (!result) return result;
-    }
-    if (candidate.mode == ViewMode::Normal || candidate.mode == ViewMode::WindowFullscreen) {
-        if (!candidate.group.isNull() || !candidate.tab.isNull() || !candidate.pane.isNull())
-            return {false, QCoreApplication::translate("WindowSystem", "窗口模式不能包含内容目标")};
-    } else {
-        const auto* group = model.group(candidate.group);
-        if (!group || group->windowId != window || !group->tabs.contains(candidate.tab)
-            || !model.panes(candidate.tab).contains(candidate.pane)) return {false, QCoreApplication::translate("WindowSystem", "全屏内容目标不属于当前窗口")};
-        if (group->activeTab != candidate.tab)
-            return {false, QCoreApplication::translate("WindowSystem", "标签组全屏目标与活动标签不一致")};
-        if (candidate.mode == ViewMode::PaneFullscreen && model.tab(candidate.tab)->activePane != candidate.pane)
-            return {false, QCoreApplication::translate("WindowSystem", "窗格全屏目标与活动窗格不一致")};
-    }
-    return {true, {}};
 }
 
 } // namespace window_system

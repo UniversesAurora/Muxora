@@ -139,11 +139,11 @@ private slots:
     void invalidOperationsLeaveStateUnchanged();
     void fullscreenAndZenRestartPreserveNormalPlacement_data();
     void fullscreenAndZenRestartPreserveNormalPlacement();
-    void legacyFullscreenAndZenAreValidatedButNotRestored_data() { fullscreenAndZenRestartPreserveNormalPlacement_data(); }
-    void legacyFullscreenAndZenAreValidatedButNotRestored();
+    void nonPersistentWindowFieldsAreRejected_data() { fullscreenAndZenRestartPreserveNormalPlacement_data(); }
+    void nonPersistentWindowFieldsAreRejected();
     void oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement_data() { fullscreenAndZenRestartPreserveNormalPlacement_data(); }
     void oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement();
-    void oldSnapshotsRestoreDefaultDisplayState();
+    void omittedOptionalDisplayFlagsUseDefaults();
     void malformedDisplaySnapshotsFailBeforeCreatingContent_data();
     void malformedDisplaySnapshotsFailBeforeCreatingContent();
     void arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail();
@@ -380,44 +380,30 @@ void ViewStateTest::fullscreenAndZenRestartPreserveNormalPlacement()
     QCOMPARE(restored.barVisibility(fixture.window), preferred);
 }
 
-void ViewStateTest::legacyFullscreenAndZenAreValidatedButNotRestored()
+void ViewStateTest::nonPersistentWindowFieldsAreRejected()
 {
     QFETCH(ViewMode, mode); QFETCH(bool, zen); QFETCH(bool, maximized);
     WindowManager original;
     const auto fixture = createFixture(original);
-    auto* source = dynamic_cast<WorkspaceWindow*>(original.windowWidget(fixture.window)); QVERIFY(source);
-    const auto normal = visibleFixtureGeometry(qApp->primaryScreen()->availableGeometry());
-    source->restorePlacement(normal, maximized);
-    QTRY_COMPARE(source->isMaximized(), maximized);
-    QVERIFY(original.setTabBarsVisible(fixture.window, false));
-    QVERIFY(original.setSideBarsVisible(fixture.window, false));
-    const auto preferences = original.preferredBarVisibility(fixture.window);
-    auto behavior = original.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen;
-    original.setBehavior(behavior);
     auto snapshot = original.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [&](QJsonObject& record) {
         const auto name = mode == ViewMode::WindowFullscreen ? "windowFullscreen"
             : mode == ViewMode::GroupFullscreen ? "groupFullscreen" : "paneFullscreen";
-        QJsonObject legacy{{"mode", name}, {"zen", zen}};
+        record.insert("maximized", maximized);
+        QJsonObject state{{"mode", name}, {"zen", zen}};
         if (mode != ViewMode::WindowFullscreen) {
-            legacy.insert("group", original.model().groupForTab(fixture.tab).toString(QUuid::WithoutBraces));
-            legacy.insert("tab", fixture.tab.toString(QUuid::WithoutBraces));
-            legacy.insert("pane", fixture.pane.toString(QUuid::WithoutBraces));
+            state.insert("group", original.model().groupForTab(fixture.tab).toString(QUuid::WithoutBraces));
+            state.insert("tab", fixture.tab.toString(QUuid::WithoutBraces));
+            state.insert("pane", fixture.pane.toString(QUuid::WithoutBraces));
         }
-        record.insert("viewState", legacy);
+        record.insert("viewState", state);
     });
-    source->hide();
-    WindowManager restored; factory(restored);
-    QVERIFY(restored.restoreLayout(snapshot));
-    QCOMPARE(restored.model().toJson(), original.model().toJson());
-    QCOMPARE(restored.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!restored.zenMode(fixture.window));
-    QCOMPARE(restored.preferredBarVisibility(fixture.window), preferences);
-    QCOMPARE(restored.barVisibility(fixture.window), preferences);
-    QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::PaneFullscreen);
-    auto* target = dynamic_cast<WorkspaceWindow*>(restored.windowWidget(fixture.window)); QVERIFY(target);
-    QVERIFY(!target->isFullScreen()); QTRY_COMPARE(target->isMaximized(), maximized);
-    QCOMPARE(target->normalPlacementGeometry(), normal);
-    QVERIFY(!windowRecord(restored.saveLayout(), fixture.window).contains("viewState"));
+    WindowManager restored;
+    int created = 0; factory(restored, &created);
+    const auto before = restored.saveLayout();
+    QVERIFY(!restored.restoreLayout(snapshot));
+    QCOMPARE(created, 0);
+    QCOMPARE(restored.saveLayout(), before);
 }
 
 void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
@@ -486,13 +472,13 @@ void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
     QCOMPARE(savedPlacement(savedAgain), available); QCOMPARE(savedAgain.value("maximized").toBool(), maximized);
 }
 
-void ViewStateTest::oldSnapshotsRestoreDefaultDisplayState()
+void ViewStateTest::omittedOptionalDisplayFlagsUseDefaults()
 {
     WindowManager original;
     const auto fixture = createFixture(original);
     auto snapshot = original.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [](QJsonObject& record) {
-        record.remove("viewState"); record.remove("toolbarsVisible"); record.remove("statusBarVisible");
+        record.remove("toolbarsVisible"); record.remove("statusBarVisible");
     });
     WindowManager restored; factory(restored);
     QVERIFY(restored.restoreLayout(snapshot));
