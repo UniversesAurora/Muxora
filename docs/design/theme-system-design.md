@@ -55,7 +55,7 @@ Muxora 的主题行为对齐 VS Code：同样的设置名、同样的切换逻�
 | `workbench.preferredHighContrastLightColorTheme` | 字符串 | `Muxora High Contrast Light` | 系统高对比且为浅色时使用。 |
 | `workbench.colorCustomizations` | 对象 | `{}` | 用户颜色覆盖，见 2.2。 |
 
-主题用显示名称引用（与 VS Code 一致），内部再映射到稳定 ID；改名的内置主题保留旧名称作为别名。
+主题用显示名称引用（与 VS Code 一致），内部再映射到稳定 ID；名称及设置引用同步更新，不保留旧名称别名。
 
 ### 2.1 选择主题的交互
 
@@ -99,7 +99,7 @@ Muxora 的主题行为对齐 VS Code：同样的设置名、同样的切换逻�
 
 文件修改后自动重新加载（与设置文件相同的监听和去抖动）。继承深度上限 8，循环继承报错。
 
-Lua 的 `muxora.theme.update` 改为写入 `workbench.colorCustomizations` 的当前主题作用域（脚本卸载时撤销），`muxora.theme.get` 返回解析结果。现有字段名通过兼容映射保留（见 §5）。
+Lua 的 `muxora.theme.update` 改为写入 `workbench.colorCustomizations` 的当前主题作用域（脚本卸载时撤销），`muxora.theme.get` 返回颜色 ID 对应的解析结果；同步更新调用方。
 
 ## 3. 深色配色的设计方法
 
@@ -188,7 +188,7 @@ Black 的内容区与最外层同为纯黑，层次只靠标题行、输入框�
 
 ## 5. 与现有 `Theme` 结构的关系
 
-现有公开结构 `window_system::Theme`（`theme.hpp`）是一组固定字段。它保留为**兼容视图**：由解析结果填充，各字段对应一个颜色 ID：
+公开结构 `window_system::Theme`（`theme.hpp`）作为控件使用的类型化视图，由解析结果填充，各字段对应一个颜色 ID：
 
 | 现有字段 | 对应颜色 ID |
 | --- | --- |

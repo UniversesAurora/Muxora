@@ -7,7 +7,7 @@
 **阶段约束**：
 
 - **浅色主题像素不变**：注册表中 `light` 默认值和 Muxora Light 主题必须让现有界面逐像素保持原样，现有像素测试不改预期。这是迁移正确性的主要检查。
-- 公开结构 `window_system::Theme` 和 `setTheme()` 继续可用（设计 §5 的兼容视图）。
+- 公开结构 `window_system::Theme` 和 `setTheme()` 使用设计 §5 的类型化视图。
 - 模块不读写文件；内置主题以 Qt 资源打包在模块中，用户主题文件由宿主读取后交给模块。
 - 颜色值以设计文档 §3 为初稿，以本阶段的对比度测试为准；调整颜色让测试通过，不调整阈值。
 - 每个步骤都更新组件画廊（2.5 之后）并导出三套截图到 `out/diagnostics/ui-review/<步骤>/`。
@@ -80,7 +80,6 @@
    struct ColorThemeDefinition {
        QString id;            // 稳定 ID，例如 "muxora-dark"
        QString label;         // 显示名称，例如 "Muxora Dark"；设置中按名称引用
-       QStringList aliases;   // 旧名称
        ColorThemeType type;
        QString include;       // 继承的主题名称，可空
        QHash<QString, QColor> colors;
@@ -124,10 +123,10 @@
 
    `light` 值逐个取自 `theme.cpp` 的 `defaultTheme()`、`styleSheet()` 中的 QSS 颜色、`tab_appearance.cpp` 的预设和 2.4 中要替换的硬编码颜色。逐项列一张对照表放在 `builtin_colors.cpp` 顶部注释中：“颜色 ID ← 原来的字段或 QSS 选择器”。
 2. `dark` 值使用设计 §3.1 的 Muxora Dark 阶梯和 §3.2 的做法；Muxora Black 只在其主题文件中覆盖与 Dark 不同的颜色（中性阶梯和强调色）。`hcDark`、`hcLight` 先给出合理的高对比值（黑底白字、白底黑字、边框用 `contrastBorder`），2.9 再完善。
-3. 兼容视图：`Theme defaultTheme()` 改为“用 Muxora Light 解析后填充 `Theme` 字段”，字段映射按设计 §5。
+3. 类型化视图：`Theme defaultTheme()` 改为“用 Muxora Light 解析后填充 `Theme` 字段”，字段映射按设计 §5。
 4. **覆盖检查测试**（`color_coverage_test`）：
    - 所有注册 ID 在四类主题下都能解析为非空颜色，诊断为空；
-   - `Theme` 兼容视图中每个字段都有对应 ID；
+   - `Theme` 视图中每个字段都有对应 ID；
    - 新增：`defaultThemeIsPixelIdentical`：解析得到的 `defaultTheme()` 与本步骤之前硬编码的值逐字段相等（把旧值写在测试中作为固定数据）。
 
 **完成标准**：全量测试通过，不修改任何像素测试的预期。
@@ -188,7 +187,7 @@
 
 **目标**：设计 §2 的全部设置和两个命令。
 
-**前置**：2.5；选择主题的列表依赖 8.4 快速输入组件——8.4 未完成时先用现有命令面板容器实现，8.4 完成后替换。设置的持久化：阶段 4.1／4.4 已完成时使用设置注册表；否则先按界面语言的方式写入 `User/settings.json`（键名相同），4.4 时迁移进注册表，不改键名。
+**前置**：2.5；选择主题的列表依赖 8.4 快速输入组件——8.4 未完成时先用现有命令面板容器实现，8.4 完成后替换。设置的持久化：阶段 4.1／4.4 已完成时使用设置注册表；否则先按界面语言的方式写入 `User/settings.json`（键名相同），4.4 时由注册表接管同一份数据，不导入布局字段。
 
 **涉及文件**：`window_manager.hpp/.cpp`（偏好状态）、新建 `src/style/theme_preference.{hpp,cpp}`、`src/commands/theme_commands.cpp`、`src/app/user_preferences.{hpp,cpp}`、`src/app/main.cpp`、`command_menus.cpp`（“视图 → 外观”子菜单）、测试 `tests/theme_preference_test.cpp`、`src/app/tests/user_preferences_test.cpp`。
 
@@ -237,9 +236,9 @@
 
 1. `workbench.colorCustomizations`：解析全局项与 `"[主题名]"` 作用域块（支持 `*` 通配）；优先级按设计 §2.2。非法 ID 或颜色写入诊断，其余照常生效。
 2. 用户主题：应用读取 `User/themes/*.json`（JSONC 转成 `QJsonObject` 后交给 `parseColorTheme`），调用 `registerColorTheme`；文件变化时重新加载（与设置文件相同的监听）。
-3. Lua：`muxora.theme.get()` 返回当前主题名、类型和解析后的全部颜色；`muxora.theme.update(colors)` 写入当前主题作用域的覆盖，脚本卸载时撤销；现有字段名（`background`、`accent` 等）通过设计 §5 的映射转换为颜色 ID，旧脚本继续可用。`lua-guide.md` 更新。
+3. Lua：`muxora.theme.get()` 返回当前主题名、类型和解析后的全部颜色；`muxora.theme.update(colors)` 写入当前主题作用域的覆盖，脚本卸载时撤销；读写键统一使用颜色 ID，同步更新现有脚本。`lua-guide.md` 更新。
 
-**测试**：覆盖优先级（全局、作用域、通配、主题、默认）；用户主题加载、继承内置主题、错误文件不影响其他主题；Lua 旧字段名兼容、卸载撤销。
+**测试**：覆盖优先级（全局、作用域、通配、主题、默认）；用户主题加载、继承内置主题、错误文件不影响其他主题；Lua 颜色 ID 读写、卸载撤销。
 
 **状态**：未开始。
 

@@ -1,4 +1,4 @@
-# 阶段 4：设置（schema、生成式界面、存储迁移）
+# 阶段 4：设置（schema、生成式界面、持久化）
 
 **目的**：设置项由声明驱动：模块、应用、Lua 都通过同一个注册表声明设置；设置页从声明生成；用户值统一保存在 `User/settings.json`（JSONC），布局文件只存结构。对应审查记录 R10。
 
@@ -22,7 +22,7 @@
   | `window.visibility.*` | 四栏显隐（属于窗口状态，见 4.4） |
 
 - 模块不读写文件。注册表只保存“值”和“是否修改过”，由宿主负责持久化。
-- 迁移期间旧布局中的 `behavior`、`tabAppearance` 继续可读，保证用户不丢设置。
+- 设置与布局的读写同步切换，遵守 [当前配置格式约束](../../development/engineering-design.md#24-当前配置格式)。
 
 ---
 
@@ -110,7 +110,7 @@
 
 1. 控件工厂：`QWidget* createEditor(const SettingDefinition&, SettingsRegistry&, QWidget* parent)`：
    - `Boolean` → `ThemedCheckBox`；`Enum` → `ThemedComboBox`；`Integer`／`Number` → 现有主题数字框；`String` → `QLineEdit`；`StringList` → 列表加“添加／删除”按钮；`Color` → 色块按钮加 `QColorDialog`；`Json` → 现有 `tabs.colors` 使用的多行编辑框，失焦时校验。
-   - 控件的 `objectName` 默认为设置 ID。现有测试通过对象名查找的控件，保留原对象名：在 `builtin_settings.cpp` 中为这些设置声明一个可选字段 `legacyObjectName`（只在模块内部使用，不进入公开结构时可以用一个内部映射表）。先 `grep -n "findChild" tests/*settings*_test.cpp tests/pane_settings_test.cpp` 列出全部被引用的名字。
+   - 控件的 `objectName` 使用设置 ID；同步更新按对象名查找控件的测试，不建立旧对象名映射。
 2. 有特殊交互的设置（`window.visibility.*` 的四个开关属于当前窗口，`workbench.language` 需要 `TranslationManager`）用“自定义编辑器”注册：`registerSettingEditor(id, factory)`，设置页优先使用。
 3. 每行布局：标题、ID（灰色小字）、说明、控件；修改过的行在左侧显示 2 像素的强调色竖条，行尾齿轮按钮菜单：“重置此设置”“复制设置 ID”“复制为 JSON”。
 4. 搜索：普通文字匹配标题、说明、ID、标签；`@modified` 只显示修改过的；`@id:<前缀>`；`@tag:<标签>`。保留分类树、点击定位和随滚动同步的现有行为。
@@ -118,13 +118,13 @@
 6. `requiresRestart` 的设置修改后，行内显示“重启后生效”。
 7. 注册表增删设置（例如 Lua 重载）时，设置页增量更新对应行，不重建整页；滚动位置和搜索词保留。
 
-**测试**：所有现有设置页测试通过（按 1 中的对象名保留）。新增：每种控件类型修改后注册表值正确；外部修改注册表后控件同步；`@modified` 过滤；重置；新增和删除设置时页面增量更新。
+**测试**：所有现有设置页测试通过（同步使用设置 ID 查找控件）。新增：每种控件类型修改后注册表值正确；外部修改注册表后控件同步；`@modified` 过滤；重置；新增和删除设置时页面增量更新。
 
 **状态**：未开始。
 
 ---
 
-## 4.4 应用持久化与迁移
+## 4.4 应用持久化
 
 **涉及文件**：`src/app/user_preferences.{hpp,cpp}`、`src/app/main.cpp`、`modules/window-system/src/layout_persistence.cpp`、`src/app/tests/user_preferences_test.cpp`、`tools/tests/application-exit-test.ps1`（如需检查文件）。
 
@@ -132,15 +132,15 @@
 
 1. `settings.json` 改用 `jsonc`（阶段 3.6）读取；写入时对每个变化的 ID 调用 `jsonc::setValue`／`remove`（值回到默认时删除该键），保留注释。
 2. 启动顺序（`main.cpp`）：创建 `WindowManager` → 读取 `settings.json` → `manager.settings().load(values, diagnostics)` → 恢复布局。诊断显示在状态栏，与现有语言设置的处理一致。
-3. **迁移**：恢复布局时，若 `settings.json` 中没有某个行为或标签外观 ID，而布局快照的 `behavior`／`tabAppearance` 中有非默认值，则把该值写入注册表并标记需要保存（一次性迁移）。迁移后 `saveLayout()` **仍然写出** `behavior` 和 `tabAppearance` 一个版本周期，保证用户回退到旧版本不丢设置；在 `CHANGELOG.md` 记录将在之后的版本移除。
-4. 布局恢复时，若 `settings.json` 已有值，以 `settings.json` 为准，忽略布局中的同名值。
+3. 行为与标签外观值只由设置注册表及 `settings.json` 保存；同步从布局读写中移除对应字段，不导入旧布局或双写。
+4. 未指定的设置使用注册表默认值；布局恢复不修改全局设置。
 5. `window.visibility.*` 是逐窗口状态，继续随布局保存，不进入 `settings.json`。
 6. 外部修改监听：与 3.7 相同的 `QFileSystemWatcher` 加去抖动；重新加载时只应用变化的项。
 
 **测试**：
 
 - `user_preferences_test`：读写、注释保留、非法值诊断、外部修改重新加载。
-- 迁移：用旧版本保存的布局（在测试中构造含 `behavior` 的快照）启动，断言设置迁入 `settings.json`，第二次启动不再迁移；`settings.json` 与布局冲突时以前者为准。
+- 设置缺省、覆盖及重启保持；布局中不写全局设置，恢复布局不改变已加载的注册表。
 - 部署夹具：`application-exit-test.ps1` 照常通过。
 
 **状态**：未开始。
@@ -154,7 +154,7 @@
 **实现**：
 
 1. Lua 新增 `muxora.settings.register{ id=..., type=..., default=..., title=..., description=..., enum={...} }`。ID 必须以 `user.` 或脚本名前缀开头，不能覆盖内置设置；脚本卸载时注销定义，值保留在未知值表中。
-2. `settings.get`／`settings.update` 改为读写注册表（现有键名保持兼容；先阅读现有实现确认支持哪些键）。
+2. `settings.get`／`settings.update` 改为读写注册表，使用当前设置 ID，并同步更新脚本调用方和指南。
 3. 应用自己的设置（例如以后的 `terminal.*`、`ssh.*`）在 `main.cpp` 或对应业务模块中声明，所有者为 `muxora`。
 
 **测试**：`window-system.lua` 中新增注册、读取、更新、卸载后值保留；非法定义被拒绝。
