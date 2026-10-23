@@ -138,6 +138,8 @@ private slots:
     void settingsCategoryIndicatorUsesItsOwnSpacedGutter();
     void settingsSearchKeepsMatchingCategoriesAndTheirAncestors();
     void settingControlsUpdateImmediatelyAndReflectExternalChanges();
+    void titleWidthControlsKeepFocusDuringContinuousInput_data();
+    void titleWidthControlsKeepFocusDuringContinuousInput();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization_data();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization();
     void newTabPositionSearchPreservesTheExistingSettingsAndNavigation();
@@ -612,6 +614,84 @@ void PaneSettingsTest::settingControlsUpdateImmediatelyAndReflectExternalChanges
     QCOMPARE(delay->value(), 700);
     QVERIFY(delay->isEnabled());
     QCOMPARE(position->currentData().toInt(), int(NewTabPosition::End));
+}
+
+void PaneSettingsTest::titleWidthControlsKeepFocusDuringContinuousInput_data()
+{
+    QTest::addColumn<bool>("floating");
+    QTest::addColumn<bool>("sidebar");
+    QTest::newRow("workbench-regular") << false << false;
+    QTest::newRow("workbench-sidebar") << false << true;
+    QTest::newRow("floating-regular") << true << false;
+    QTest::newRow("floating-sidebar") << true << true;
+}
+
+void PaneSettingsTest::titleWidthControlsKeepFocusDuringContinuousInput()
+{
+    QFETCH(bool, floating);
+    QFETCH(bool, sidebar);
+    WindowManager manager;
+    auto appearance = manager.tabAppearance();
+    appearance.clipTitles = true;
+    appearance.clipSidebarTitles = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    auto window = manager.createWindow();
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings"));
+    QVERIFY(page);
+    if (floating) {
+        window = manager.detachTab(tabFor(manager, page));
+        QVERIFY(!window.isNull());
+    }
+    auto* control = page->findChild<QSpinBox*>(sidebar ? QStringLiteral("MaximumSidebarTabTitleWidth")
+        : QStringLiteral("MaximumTabTitleWidth"));
+    auto* search = page->findChild<QLineEdit*>(QStringLiteral("SettingsSearch"));
+    auto* scroll = page->findChild<QScrollArea*>(QStringLiteral("SettingsScrollArea"));
+    QVERIFY(control && search && scroll);
+    manager.showWindow(window);
+    auto* host = manager.windowWidget(window);
+    QVERIFY(QTest::qWaitForWindowActive(host));
+    scroll->ensureWidgetVisible(control);
+    QCoreApplication::processEvents();
+    control->setFocus();
+    const QPointer<QWidget> editor = QApplication::focusWidget();
+    QVERIFY(editor && (editor == control || control->isAncestorOf(editor)));
+    const QString query = search->text();
+    QSignalSpy changes(&manager, &WindowManager::layoutChanged);
+    QTest::keyClick(editor, Qt::Key_A, Qt::ControlModifier);
+    // Send each key to the actual focus owner: targeting the spin box after
+    // every refresh would conceal focus being stolen between two digits.
+    for (const auto digit : QStringLiteral("1732")) {
+        QVERIFY(QApplication::focusWidget());
+        QTest::keyClick(QApplication::focusWidget(), digit.toLatin1());
+        QCoreApplication::processEvents();
+        QCOMPARE(QApplication::focusWidget(), editor.data());
+        QCOMPARE(search->text(), query);
+    }
+    QCOMPARE(control->value(), 1732);
+    QVERIFY(changes.size() >= 3);
+    QCOMPARE(sidebar ? manager.tabAppearance().maximumSidebarTitleWidth
+        : manager.tabAppearance().maximumTitleWidth, 1732);
+    QCOMPARE(sidebar ? manager.tabAppearance().maximumTitleWidth
+        : manager.tabAppearance().maximumSidebarTitleWidth, 160);
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Backspace);
+    QCOMPARE(control->value(), 173);
+    QCOMPARE(QApplication::focusWidget(), editor.data());
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Up);
+    QCOMPARE(control->value(), 174);
+    QCOMPARE(QApplication::focusWidget(), editor.data());
+    const auto* line = control->findChild<QLineEdit*>();
+    QVERIFY(line);
+    const int cursor = line->cursorPosition();
+    const auto text = line->text();
+    appearance = manager.tabAppearance();
+    appearance.showNumbers = !appearance.showNumbers;
+    QVERIFY(manager.setTabAppearance(appearance));
+    QCoreApplication::processEvents();
+    QCOMPARE(QApplication::focusWidget(), editor.data());
+    QCOMPARE(line->cursorPosition(), cursor);
+    QCOMPARE(line->text(), text);
+    QCOMPARE(search->text(), query);
 }
 
 void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()

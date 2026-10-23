@@ -4,6 +4,13 @@
 
 ## 焦点
 
+### 刷新复合窗格时保留具体输入控件
+
+- **现象**：长度数字框输入到有效数值后，焦点立即跳到设置搜索框，后续数字无法继续输入。
+- **原因**：值变化刷新布局，标签条替换会临时卸载页面，使 Qt 丢失原焦点；刷新末尾再对窗格根调用 `setFocus()`，设置页的 `focusProxy` 将焦点交给搜索框。只判断刷新末尾的当前焦点，不能找回卸载前的编辑器。
+- **做法**：刷新前用 `QPointer` 记录真实焦点，完成后只恢复仍存活、可见、启用且属于最终活动窗格的控件。聚焦窗格时，已有焦点在其内部就保留，不再次跳到根控件的代理；切换到其他窗格仍按正常入口聚焦。
+- **验证**：`PaneSettingsTest::titleWidthControlsKeepFocusDuringContinuousInput` 逐键向真实焦点发送数字并断言焦点、完整值、删除及微调；原代码四行均失败。`ViewReuseTest::unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks` 检查未变窗格的选区与主动切换，证据见 [记录](../verification-log/2026-10.md#标题长度连续输入的焦点修复2026-10-23)。
+
 ### 等窗口真正激活后再输入，模态登记不代表已经取得焦点
 
 - **现象**：尺寸对话框已经进入 `activeModalWidget()`，测试输入后按 Tab，`height->hasFocus()` 仍为 false；稍后窗口自然激活，高度框才取得真实焦点。

@@ -2,11 +2,14 @@
 #include <window_system/window_manager.hpp>
 
 #include <QCoreApplication>
+#include <QApplication>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPointer>
 #include <QSplitter>
 #include <QTabBar>
 #include <QTest>
+#include <QVBoxLayout>
 
 using namespace window_system;
 
@@ -118,6 +121,7 @@ private slots:
     void deferredRootDeletionKeepsCarriedPages();
     void mountedRebuildIsVisibleImmediately();
     void reusedStripFollowsMetadataAndTheme();
+    void unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks();
     void mutationFromSplitterLayoutKeepsReusedStrip_data();
     void mutationFromSplitterLayoutKeepsReusedStrip();
 };
@@ -170,6 +174,45 @@ void ViewReuseTest::unrelatedTabsKeepTheirViewWidgets()
     QVERIFY(manager.renameTab(second, "renamed"));
     verify("rename");
     QCOMPARE(manager.model().tab(second)->title, QStringLiteral("renamed"));
+}
+
+void ViewReuseTest::unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    auto* content = new QWidget;
+    auto* column = new QVBoxLayout(content);
+    auto* defaultEditor = new QLineEdit(content);
+    auto* currentEditor = new QLineEdit(QStringLiteral("editing"), content);
+    column->addWidget(defaultEditor);
+    column->addWidget(currentEditor);
+    content->setFocusProxy(defaultEditor);
+    const auto tab = manager.addTab(window, content, {"composite", "test.form", {}});
+    const auto pane = activePane(manager, tab);
+    auto* otherEditor = new QLineEdit;
+    const auto otherPane = manager.splitPane(tab, pane, otherEditor, Placement::Right);
+    QVERIFY(!otherPane.isNull());
+    const auto unrelatedTab = add(manager, window, QStringLiteral("unrelated"));
+    QVERIFY(manager.moveTab(unrelatedTab, manager.model().groupForTab(tab), Placement::Right));
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
+    currentEditor->setFocus();
+    QCOMPARE(QApplication::focusWidget(), currentEditor);
+    currentEditor->setSelection(1, 3);
+    QVERIFY(manager.renameTab(unrelatedTab, QStringLiteral("renamed")));
+    settle();
+    QCOMPARE(QApplication::focusWidget(), currentEditor);
+    QCOMPARE(currentEditor->selectionStart(), 1);
+    QCOMPARE(currentEditor->selectedText(), QStringLiteral("dit"));
+    QVERIFY(manager.focusPane(tab, pane));
+    QCOMPARE(QApplication::focusWidget(), currentEditor);
+    QCOMPARE(currentEditor->selectedText(), QStringLiteral("dit"));
+    QVERIFY(manager.focusPane(tab, otherPane));
+    QCOMPARE(QApplication::focusWidget(), otherEditor);
+    QCOMPARE(manager.context(window).pane, otherPane);
+    QVERIFY(manager.focusPane(tab, pane));
+    QCOMPARE(QApplication::focusWidget(), defaultEditor);
+    QCOMPARE(manager.context(window).pane, pane);
 }
 
 void ViewReuseTest::changedTreeRebuildsOnlyThatTab()

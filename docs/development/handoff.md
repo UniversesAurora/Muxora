@@ -49,10 +49,10 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-23 · Codex 交出：当前配置格式清理完成
+## 2026-10-23 · Codex 交出：标题长度连续输入焦点修复
 
 - **最后提交**：本轮分项提交已纳入 `main`，交出时与 `origin/main` 一致，工作区干净。
-- **本轮完成**：[6.9](../roadmap/implementation/phase-6-engineering.md#69-清除旧配置兼容层) 完成，固定 Release 预览已更新；总交付及每次运行来源见 [记录](verification-log/2026-10.md#当前配置清理交付与接手状态2026-10-23)。实现分别提交：
+- **本轮完成**：`window-system/settings: Keep focus while editing title widths` 修复数字变化刷新布局后跳到搜索框，相关套件通过，固定 Release 预览已覆盖。来源、原代码失败与实际验证范围见 [记录](verification-log/2026-10.md#标题长度连续输入的焦点修复2026-10-23)。此前 [6.9](../roadmap/implementation/phase-6-engineering.md#69-清除旧配置兼容层) 已完成，交付见 [记录](verification-log/2026-10.md#当前配置清理交付与接手状态2026-10-23)。此前实现分别提交：
   - `repo: Keep only the current configuration format`：确定工程约束并清理现行计划中的双写、旧字段导入、别名和转发周期。
   - `window-system/persistence: Preserve explicit saved titles and colors`：删除标题和内置配色升级，显式值恢复回归通过。
   - `test: Drop recovery of obsolete desktop snapshots`：删除旧句柄快照恢复，自身无窗口／原生模式均通过。

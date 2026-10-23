@@ -389,4 +389,4 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **测试**：外观/API/JSON/Lua 合法及非法值、缺省字段、设置双向同步；普通与固定、单行与多行、上下位置、四侧标签的几何；实际绘制与全文裁切参考的程序比较；装饰、完整提示、拖拽和插入范围。运行相关套件及独立模块、安装后外部宿主检查，不重复全量。
 
-**状态**：实现及相关自动验证完成，基础功能见 [记录](../../development/verification-log/2026-10.md#选项卡标题裁切实现与验证2026-10-23)，绘制优化见 [缓存与对比](../../development/verification-log/2026-10.md#长标题可见字形缓存2026-10-23)，独立配置及往返拖动见 [交付记录](../../development/verification-log/2026-10.md#独立侧栏标题配置与往返拖动2026-10-23)。三主题截图审查和用户实际试用仍未执行。
+**状态**：实现及相关自动验证完成，基础功能见 [记录](../../development/verification-log/2026-10.md#选项卡标题裁切实现与验证2026-10-23)，绘制优化见 [缓存与对比](../../development/verification-log/2026-10.md#长标题可见字形缓存2026-10-23)，独立配置及往返拖动见 [交付记录](../../development/verification-log/2026-10.md#独立侧栏标题配置与往返拖动2026-10-23)，连续输入焦点修复见 [回归](../../development/verification-log/2026-10.md#标题长度连续输入的焦点修复2026-10-23)。三主题截图审查和用户实际试用仍未执行。

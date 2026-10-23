@@ -676,7 +676,11 @@ bool WindowManager::focusPane(TabId tab, PaneId pane)
     if (!targetAlive()) return false;
     if (auto view = d->tabs.value(tab)) view->setActivePane(pane);
     if (!targetAlive()) return false;
-    widget->setFocus(Qt::OtherFocusReason);
+    // A composite pane may route root focus to a default control. Keep its
+    // current editor when refreshing or selecting an already focused pane.
+    auto* focused = QApplication::focusWidget();
+    if (focused != widget && (!focused || !widget->isAncestorOf(focused)))
+        widget->setFocus(Qt::OtherFocusReason);
     return targetAlive();
 }
 QWidget* WindowManager::windowWidget(WindowId window) const { return d->windows.value(window); }
@@ -792,6 +796,7 @@ void WindowManager::refresh(bool preserveDrag)
 {
     d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
+    const QPointer<QWidget> previousFocus = QApplication::focusWidget();
     d->refreshing = true;
     if (!preserveDrag) d->drag->releaseForMutation();
     for (auto window : d->windows) if (window) window->surface()->captureStripScrollOffsets();
@@ -869,8 +874,16 @@ void WindowManager::refresh(bool preserveDrag)
     d->refreshing = false;
     QPointer<WindowManager> self(this);
     const auto active = context();
-    if (auto window = d->windows.value(active.window); window && window->isVisible() && window->isActiveWindow())
+    if (auto window = d->windows.value(active.window); window && window->isVisible() && window->isActiveWindow()) {
+        // Replacing a strip temporarily unmounts its pages and loses Qt focus.
+        // Restore only a surviving editor in the resulting active pane.
+        const auto content = d->panes.value(active.pane);
+        if (previousFocus && content && previousFocus->isVisible() && previousFocus->isEnabled()
+            && (previousFocus == content || content->isAncestorOf(previousFocus)))
+            previousFocus->setFocus(Qt::OtherFocusReason);
+        if (!self) return;
         if (!active.pane.isNull()) focusPane(active.tab, active.pane);
+    }
     if (!self) return;
     const bool emptyAtNotification = d->model.windows().isEmpty();
     const auto notificationRevision = d->model.revision();
