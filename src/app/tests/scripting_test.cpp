@@ -88,6 +88,7 @@ class ScriptingTest final : public QObject {
     void directScriptTransportAllowsFilesLargerThanOneMiB();
     void osExitUsesApplicationCommandAndHonorsClosePermission();
     void osExitSavesTheActualApplicationLayout();
+    void applicationRestorePreservesExplicitWindowTitle();
     void longRunningStatusOffersStopAndClearsAfterwards();
     void blockedReloadReportsThePendingStop();
     void blockedStandardCallDoesNotDelayProcessExit();
@@ -476,6 +477,35 @@ void ScriptingTest::osExitSavesTheActualApplicationLayout() {
     const auto layout = QJsonDocument::fromJson(read(directory.filePath("window-layout.json"))).object();
     QVERIFY(!layout.value("windows").toArray().isEmpty());
     QVERIFY(!layout.value("model").toObject().isEmpty());
+}
+void ScriptingTest::applicationRestorePreservesExplicitWindowTitle() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(QDir().mkpath(directory.filePath("User")));
+    QVERIFY(write(directory.filePath("User/init.lua"), "os.exit(0,true)"));
+    WindowManager manager;
+    const auto window = manager.createWindow(WindowKind::Workbench, {"WindowSystem", QSize(900, 600)});
+    QVERIFY(!manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}}).isNull());
+    const auto snapshot = manager.saveLayout();
+    const auto savedWindows = snapshot.value("windows").toArray();
+    QCOMPARE(savedWindows.size(), 1);
+    QCOMPARE(savedWindows.first().toObject().value("title"), QJsonValue("WindowSystem"));
+    QVERIFY(write(directory.filePath("window-layout.json"), QJsonDocument(snapshot).toJson()));
+    const auto binary = QDir(QCoreApplication::applicationDirPath()).filePath("../../bin/muxora.exe");
+    QVERIFY(QFileInfo::exists(binary));
+    QProcess child;
+    child.setProgram(binary);
+    child.setArguments({"--state-dir", directory.path()});
+    child.start();
+    QVERIFY(child.waitForStarted());
+    QVERIFY2(child.waitForFinished(10000), qPrintable(child.errorString()));
+    QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(child.exitCode(), 0);
+    const auto restored = QJsonDocument::fromJson(read(directory.filePath("window-layout.json"))).object();
+    const auto restoredWindows = restored.value("windows").toArray();
+    QCOMPARE(restoredWindows.size(), 1);
+    QCOMPARE(restoredWindows.first().toObject().value("id"), savedWindows.first().toObject().value("id"));
+    QCOMPARE(restoredWindows.first().toObject().value("title"), QJsonValue("WindowSystem"));
 }
 void ScriptingTest::longRunningStatusOffersStopAndClearsAfterwards() {
     QTemporaryDir directory;

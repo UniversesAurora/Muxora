@@ -25,7 +25,7 @@ class TabAppearanceTest final : public QObject {
 private slots:
     void defaultsHaveSeparatePlacementAndConservativeFlags();
     void defaultPaletteKeepsColorIdentityAndReadableForegrounds();
-    void legacyBuiltinPaletteUpgradesWithoutChangingCustomColors();
+    void explicitPaletteValuesRoundTripWithBuiltinIds();
     void appearanceAndEveryPaletteStateRoundTrip();
     void invalidPublicAppearanceDoesNotEmitOrMutate_data();
     void invalidPublicAppearanceDoesNotEmitOrMutate();
@@ -37,7 +37,7 @@ private slots:
     void paletteApplyAllowsSynchronousHostDestruction_data();
     void paletteApplyAllowsSynchronousHostDestruction();
     void sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAndControls();
-    void titleClippingPreservesWidthAcrossToggleAndLegacyLayouts();
+    void titleClippingRetainsWidthAndDefaultsOmittedFields();
     void sidebarTitleClippingIsIndependentInLayoutSnapshots();
     void sidebarTitleClippingControlsStayIndependent();
 };
@@ -84,7 +84,7 @@ void TabAppearanceTest::defaultPaletteKeepsColorIdentityAndReadableForegrounds()
     }
 }
 
-void TabAppearanceTest::legacyBuiltinPaletteUpgradesWithoutChangingCustomColors()
+void TabAppearanceTest::explicitPaletteValuesRoundTripWithBuiltinIds()
 {
     auto saved = TabAppearance{};
     for (auto& preset : saved.colors) {
@@ -98,12 +98,16 @@ void TabAppearanceTest::legacyBuiltinPaletteUpgradesWithoutChangingCustomColors(
     saved.colors[1] = customized;
     TabAppearance restored;
     QVERIFY(parseTabAppearance(tabAppearanceToJson(saved), restored));
-    const auto expected = defaultTabColorPresets();
-    QCOMPARE(restored.colors.size(), expected.size());
-    for (int index = 0; index < expected.size(); ++index)
-        QCOMPARE(restored.colors[index], index == 1 ? customized : expected[index]);
+    QCOMPARE(restored, saved);
     TabAppearance again;
     QVERIFY(parseTabAppearance(tabAppearanceToJson(restored), again)); QCOMPARE(again, restored);
+    WindowManager manager;
+    QVERIFY(manager.setTabAppearance(saved));
+    const auto snapshot = manager.saveLayout();
+    WindowManager restoredManager;
+    QVERIFY(restoredManager.restoreLayout(snapshot));
+    QCOMPARE(restoredManager.tabAppearance(), saved);
+    QCOMPARE(restoredManager.saveLayout().value("tabAppearance"), snapshot.value("tabAppearance"));
 }
 
 void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
@@ -138,8 +142,8 @@ void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
     WindowManager restored;
     QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.tabAppearance(), appearance);
     QCOMPARE(restored.saveLayout().value("tabAppearance"), snapshot.value("tabAppearance"));
-    auto legacy = snapshot; legacy.remove("tabAppearance");
-    QVERIFY(restored.restoreLayout(legacy)); QCOMPARE(restored.tabAppearance(), TabAppearance{});
+    auto omittedAppearance = snapshot; omittedAppearance.remove("tabAppearance");
+    QVERIFY(restored.restoreLayout(omittedAppearance)); QCOMPARE(restored.tabAppearance(), TabAppearance{});
 }
 
 void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate_data()
@@ -374,8 +378,8 @@ void TabAppearanceTest::sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAn
     QCOMPARE(saved.value("showSidebarNumbers"), QJsonValue(true));
     WindowManager restored; QVERIFY(restored.restoreLayout(snapshot));
     QCOMPARE(restored.tabAppearance(), manager.tabAppearance());
-    auto legacy = snapshot; auto old = saved; old.remove("showSidebarIcons"); old.remove("showSidebarNumbers");
-    legacy.insert("tabAppearance", old); QVERIFY(restored.restoreLayout(legacy));
+    auto omittedSidebarFlags = snapshot; auto flags = saved; flags.remove("showSidebarIcons"); flags.remove("showSidebarNumbers");
+    omittedSidebarFlags.insert("tabAppearance", flags); QVERIFY(restored.restoreLayout(omittedSidebarFlags));
     QVERIFY(!restored.tabAppearance().showSidebarIcons); QVERIFY(!restored.tabAppearance().showSidebarNumbers);
     QVERIFY(!restored.tabAppearance().showIcons); QVERIFY(restored.tabAppearance().showNumbers);
     for (const auto& item : {std::pair{"presentation.toggleSidebarIcons", &TabAppearance::showSidebarIcons},
@@ -391,7 +395,7 @@ void TabAppearanceTest::sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAn
     }
 }
 
-void TabAppearanceTest::titleClippingPreservesWidthAcrossToggleAndLegacyLayouts()
+void TabAppearanceTest::titleClippingRetainsWidthAndDefaultsOmittedFields()
 {
     WindowManager manager; SettingsPage page(&manager);
     auto* clipped = page.findChild<QCheckBox*>("ClipTabTitles");
@@ -413,9 +417,9 @@ void TabAppearanceTest::titleClippingPreservesWidthAcrossToggleAndLegacyLayouts(
         auto next = manager.tabAppearance(); next.maximumTitleWidth = boundary;
         QVERIFY(manager.setTabAppearance(next)); QCOMPARE(width->value(), boundary);
     }
-    auto legacy = saved; auto appearance = legacy.value("tabAppearance").toObject();
-    appearance.remove("clipTitles"); appearance.remove("maximumTitleWidth"); legacy.insert("tabAppearance", appearance);
-    QVERIFY(manager.restoreLayout(legacy));
+    auto omittedClippingSettings = saved; auto appearance = omittedClippingSettings.value("tabAppearance").toObject();
+    appearance.remove("clipTitles"); appearance.remove("maximumTitleWidth"); omittedClippingSettings.insert("tabAppearance", appearance);
+    QVERIFY(manager.restoreLayout(omittedClippingSettings));
     QVERIFY(!manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, defaultTabTitleWidth);
     QVERIFY(!clipped->isChecked()); QVERIFY(!width->isEnabled()); QCOMPARE(width->value(), defaultTabTitleWidth);
 }

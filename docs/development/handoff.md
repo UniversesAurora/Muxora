@@ -52,7 +52,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 ## 2026-10-23 · Codex 进行中：清除旧配置兼容层
 
 - **最后提交**：基线 `9137033` 已推送；当前在 6.9 分支推进，未提交改动均为用户授权的兼容层清理及对应文档／测试。
-- **本轮完成**：标题裁切、绘制缓存和独立侧栏配置完成；相关事项分别提交：
+- **本轮完成**：6.9 已完成显式标题与配色恢复清理，相关两套件通过，见 [记录](verification-log/2026-10.md#显式标题和配色不再升级2026-10-23)；其余兼容层及 Lua 空值修复仍在进行。此前标题裁切、绘制缓存和独立侧栏配置完成；相关事项分别提交：
   - `window-system/tabs: Separate auto-hide title clipping settings`：两套独立开关与长度、设置／命令／Lua／保存恢复及往返拖动验证完成；普通／固定栏共用，未加入版本升级迁移。固定预览已更新，见 [配置与交付记录](verification-log/2026-10.md#独立侧栏标题配置与往返拖动2026-10-23)。
   - `window-system/tabs: Cache visible title glyphs and drag measurements`：绘制与拖动测量缓存、同机前后基准及相关套件完成，见 [优化记录](verification-log/2026-10.md#长标题可见字形缓存2026-10-23)。
   - `docs/design: Separate sidebar and tab bar title limits`：按用户要求确定两套独立策略，见 [方案记录](verification-log/2026-10.md#侧栏标题独立策略方案2026-10-23)。

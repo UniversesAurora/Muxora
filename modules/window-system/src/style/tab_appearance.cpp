@@ -45,27 +45,6 @@ bool validColors(const TabVisualColors& colors)
     return colors.background.isValid() && colors.text.isValid() && colors.line.isValid() && colors.icon.isValid();
 }
 
-void upgradeUnmodifiedBuiltinPalette(QVector<TabColorPreset>& colors)
-{
-    // Layouts include the entire palette. Upgrade only byte-for-byte original
-    // built-ins so existing layouts receive the corrected states, while an
-    // edited channel or a host-defined preset remains authoritative.
-    const auto defaults = defaultTabColorPresets();
-    for (auto& preset : colors) {
-        const auto current = std::find_if(defaults.cbegin(), defaults.cend(), [&preset](const auto& value) {
-            return value.id == preset.id && value.name == preset.name;
-        });
-        if (current == defaults.cend()) continue;
-        const auto accent = current->groupActive.line;
-        const TabColorPreset legacy{current->id, current->name,
-            {current->groupActive.background, QColor("#202124"), accent, accent},
-            {QColor("#f7f7f8"), QColor("#3c4043"), accent, QColor("#5f6368")},
-            {accent, QColor(Qt::white), accent, QColor(Qt::white)},
-            {QColor("#6A568C"), QColor(Qt::white), accent, QColor(Qt::white)}};
-        if (preset == legacy) preset = *current;
-    }
-}
-
 QString placementName(TabBarPlacement placement)
 {
     return placement == TabBarPlacement::Top ? QStringLiteral("top") : QStringLiteral("bottom");
@@ -207,7 +186,6 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
             candidate.colors.append(std::move(preset));
         }
     }
-    upgradeUnmodifiedBuiltinPalette(candidate.colors);
     if (!validTabAppearance(candidate)) return {false, QCoreApplication::translate("WindowSystem", "标签外观包含无效颜色、重复 ID 或不适用的滚轮设置")};
     appearance = std::move(candidate);
     return {true, {}};
