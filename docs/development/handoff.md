@@ -49,11 +49,11 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-23 · Codex 交出：标题裁切交由 Claude 规划
+## 2026-10-23 · Codex 开发：选项卡标题裁切
 
-- **最后提交**：`main` 已全部推送，与 `origin/main` 一致；工作区干净。R1、R2、总时限调整、`peek-size` 修正及验证记录按事项分别提交，包含两项新的协作规则提交；最新提交以 `git log` 为准。
+- **最后提交**：在 `codex/8.13-tab-title-clipping` 开发；本次提交仅包含方案，工作区中的产品与测试改动属于 8.13，仍在实现。`main` 与远端的基线为 `2fb76c1`。
 - **本轮完成**：本次补充标题裁切需求交接，未实现该功能；此前相关事项分别提交：
-  - `docs/dev: Hand off configurable tab title clipping`：把选项卡标题裁切需求、当前实现入口和待评估项写入 Q4，交由 Claude 设计并加入后续计划。文档检查见 [本轮记录](verification-log/2026-10.md#选项卡标题裁切需求交接2026-10-23)。
+  - `docs/design: Define configurable tab title clipping`：确定裁切策略并展开 8.13，后续由 Codex 实现，见 [方案记录](verification-log/2026-10.md#选项卡标题裁切方案2026-10-23)。
   - `docs/dev: Request a review of unresolved audit coverage`：按用户要求将审查遗留事项的计划覆盖问题列入下方 Q3，交由 Claude 接手后核对判断；没有自行新增重构步骤或修改冻结快照。文档检查见 [记录](verification-log/2026-10.md#计划覆盖核对交接2026-10-22)。
   - `docs/roadmap: Define CLI session restoration overrides`：补充命令行打开会话的恢复设置、带值参数覆盖及 fresh 兼容要求，见 [设计](../design/settings-and-commands-design.md#71-命令行启动) 和 [文档检查记录](verification-log/2026-10.md#命令行会话恢复偏好与显式覆盖2026-10-22)。
   - `docs/roadmap: Prioritize English source text and translation coverage`：将英文源文本迁移及源码全量翻译核查加入下一推荐步骤，决定及理由见 [ADR 0010](../adr/0010-english-translation-source.md)，文档检查见 [记录](verification-log/2026-10.md#英文源文本迁移与覆盖核查计划2026-10-22)。
@@ -64,22 +64,10 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system: Apply the user-relayed Debug timeout review`：A1 配置与完整属性比较完成，见 [A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22)。
   - `window-system/sidebar: Wait for actual dialog focus in tests`：A2 夹具、反向条件及相关验证完成，见 [A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
   - `docs/dev: Complete the remaining verification stages`：按用户决定接受本轮 Debug，复用已有 Release 覆盖，补齐独立模块、安装后宿主与部署检查；结果和保留的交互失败见 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)。
-- **进行中**：无。标题裁切尚未实现，待 Q4 评估；此前新增的两个实现步骤也未开始。菜单、悬停及多行拖拽的整套运行首报保留；此前单项重复未复现，不能确认原因或宣称修复、完整入口全绿。真实试用范围仍待用户。此前自行调用独立实例的意见不作为主导会话批准。
-- **下一步**：Claude 接手后处理下方 Q4 的标题裁切需求评估与计划录入，并答复保留的 Q3，按结论补齐现行计划的引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 先做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前先完整读对应步骤及其引用。9.8 的真实试用范围单独保留；已有自动报告无需再因文档或构建类型变化重复全量。只有后续实际使用或新证据指向代码缺陷时，再取证已保留的交互问题。
+- **进行中**：[8.13 选项卡长标题裁切](../roadmap/implementation/phase-8-ui-quality.md#813-选项卡长标题裁切)，按用户要求由 Codex 实现；方案已确定，尚未验证。此前新增的两个实现步骤未开始。菜单、悬停及多行拖拽的整套运行首报保留；此前单项重复未复现，不能确认原因或宣称修复、完整入口全绿。真实试用范围仍待用户。此前自行调用独立实例的意见不作为主导会话批准。
+- **下一步**：先完成 8.13 并验证；之后接手方答复保留的 Q3，按结论补齐现行计划的引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 先做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前先完整读对应步骤及其引用。9.8 的真实试用范围单独保留；已有自动报告无需再因文档或构建类型变化重复全量。只有后续实际使用或新证据指向代码缺陷时，再取证已保留的交互问题。
 - **待用户决定**：8.10 尺寸规格统一。
 - **请下一位回答**：
-
-  Q4（Codex 问 Claude，2026-10-23）
-
-  问题：请评估用户要求的选项卡长标题裁切方式，确定合适的长度单位和配置方案，并加入未来需求计划；本轮不实现该功能。
-
-  背景：基于 `1e125e2`。用户希望在设置中开关长标题裁切并调整最大显示长度，普通及侧边栏选项卡都适用。超过上限时直接通过绘制边界裁切，允许切到字形中间，视觉上如被遮住；不能使用省略号，也不能按字符数量截短文本。
-
-  材料：[普通与固定标签栏](../../modules/window-system/src/docking/tab_strip.cpp) 的 `DragTabBar::tabSizeHint()`、`paintEvent()` 和多行布局；[侧边栏按钮](../../modules/window-system/src/docking/edge_tab_button.cpp) 的 `sizeHint()`、`paintEvent()`；[标签外观公开类型](../../modules/window-system/include/window_system/tab_appearance.hpp) 与 [设置设计](../design/settings-and-commands-design.md)；现行几何、滚动、拖拽约定见 [交互细则](../design/window-interaction-design.md)。目前普通栏按完整文本计算宽度，绘制及受限布局中也存在省略路径；没有统一、可配置的标题宽度上限，不能概括为所有情况下都完整显示。
-
-  我的方案：优先评估 Qt 逻辑像素（DIP）作为长度单位，与现有布局一致并跟随屏幕缩放；也可比较字体相对长度，说明取舍。标题保留完整字符串，只限制呈现范围；图标、编号、关闭按钮仍有独立空间，完整标题继续用于提示及可访问名称。侧边栏按所在方向的文字长轴裁切，不能只处理横向宽度。实际设置名、默认开关、默认上限及中央／侧栏是否分别配置由你提出方案，不在本轮定值。
-
-  需要的答复：给出配置与单位建议、裁切范围及 DPI／字体变化行为，核对单行／多行、中央／固定／四边收纳条、滚动及拖拽预览的一致性，并规划程序判断的几何、绘制和持久化测试。将需求加入 [未来规划](../roadmap/future-plans.md) 的合适位置，确定实现顺序时再补设计与步骤；只记录一处权威需求，交接及索引链接过去。明确本功能处理选项卡标题，不改变标签名称、用户内容或窗口标题工具条。
 
   Q3（Codex 问 Claude，2026-10-22）
 
@@ -97,7 +85,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
   需要的答复：逐项给出“已完成／已有计划／需要补计划／无需行动”，附源码或步骤依据；若需补项，给出建议位置和完成条件，并检查其余审查建议有无同类遗漏。先答复并更新对应现行文档，再继续推荐步骤。
 
-- **本轮新决定**：选项卡标题增加可配置的直接裁切与最大显示长度，普通和侧边栏均适用；交由 Claude 评估后录入未来计划，见 Q4。此前命令行恢复设置与显式覆盖要求见 [命令行启动设计](../design/settings-and-commands-design.md#71-命令行启动)，计划覆盖问题保留在 Q3；英文源文本及全源码翻译核查约定见 [翻译设计](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 ADR 0010。执行位置仍以推荐顺序为准，助手之间不直接联系。
+- **本轮新决定**：用户指定由 Codex 直接设计并实现标题裁切，行为要求见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)，执行步骤见 8.13。此前命令行恢复设置与显式覆盖要求见 [命令行启动设计](../design/settings-and-commands-design.md#71-命令行启动)，计划覆盖问题保留在 Q3；英文源文本及全源码翻译核查约定见 [翻译设计](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 ADR 0010。执行位置仍以推荐顺序为准，助手之间不直接联系。
 - **接手审查发现**：
   - 新增实际钩子掩码回归发现增量产物与源码不符；初次接手套件和基准不能归属于当前源码，已作废其源码验证结论。重编后复现旧实现失败，并在 R1 前后重新测量，见验证日志。
   - 阶段 9 正文的钩子要求与 R1 冲突已修正；已删除的 `.rc` 分支说明也已修正。
