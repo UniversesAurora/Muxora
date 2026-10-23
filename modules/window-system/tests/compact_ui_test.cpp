@@ -157,7 +157,10 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     auto* scrollbar = tabs->findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar);
     auto* stack = tabs->findChild<QStackedWidget*>(); QVERIFY(stack);
     QTRY_VERIFY(scrollbar->maximum() > 0);
-    QTest::mouseMove(&root, QPoint(root.width() - 1, root.height() - 1));
+    // The native cursor may still rest where an earlier row hovered the
+    // strip. A QPA move leaves it there and native hover shows the bar again,
+    // so move the real cursor away, as the hover step below does.
+    QCursor::setPos(root.mapToGlobal(QPoint(root.width() - 1, root.height() - 1)));
     QTRY_VERIFY(scrollbar->isHidden());
     const auto headerBefore = boundsIn(header, tabs);
     const auto contentBefore = boundsIn(stack, tabs);
