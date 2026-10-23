@@ -23,7 +23,7 @@
 
 `groups.to_tab`、`groups.into_tab`、`tabs.into_tab`、`tabs.to_group` 和 `panes.to_tab` 对应窗口模块的层级转换 API，保留 Pane ID 与原内容。并入操作明确指定目标标签及可选目标窗格，方向为 `left`、`right`、`top`、`bottom`，默认 `right`；组来源限中央或固定区域的可见组。详细参数与示例见 [Lua 使用说明](../../docs/development/lua-guide.md#标签组标签与窗格转换)。全屏、禅模式保持运行时状态，不随 `layout.snapshot()` 保存或恢复。
 
-标题裁切通过 `tabs.appearance()`／`tabs.set_appearance()` 或 `settings.get()`／`settings.update()` 的 `clip_tab_titles`、`maximum_tab_title_width` 字段控制，和 C++、设置页共用校验与持久化，见 [Lua 使用说明](../../docs/development/lua-guide.md#标题裁切)。
+标题裁切通过 `tabs.appearance()`／`tabs.set_appearance()` 或 `settings.get()`／`settings.update()` 控制：`clip_tab_titles`、`maximum_tab_title_width` 用于普通及固定标签栏，`clip_sidebar_titles`、`maximum_sidebar_title_width` 用于非固定收纳条。两套值独立修改，和 C++、设置页共用校验与持久化，见 [Lua 使用说明](../../docs/development/lua-guide.md#标题裁切)。
 
 ## 组件扩展
 

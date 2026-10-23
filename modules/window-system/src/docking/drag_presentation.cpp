@@ -79,7 +79,7 @@ void EdgeDragPresentation::configureLabel(std::optional<TabColorPreset> preset,Q
 {
     auto* label=static_cast<EdgeTabButton*>(label_);
     label->setPreset(std::move(preset)); label->setPresentation(std::move(icon),number);
-    label->setTitleClipping(appearance.clipTitles, appearance.maximumTitleWidth);
+    label->setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     label->setCheckable(true); label->setChecked(true); label->setFixedSize(label->sizeHint());
 }
 QPoint EdgeDragPresentation::labelAnchor() const

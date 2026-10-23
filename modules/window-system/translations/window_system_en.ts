@@ -4,137 +4,137 @@
     <context>
         <name>WindowSystem</name>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="62" />
+            <location filename="../src/chrome/command_strip.cpp" line="64" />
             <source>工具条选项</source>
             <translation>Toolbar options</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="171" />
+            <location filename="../src/chrome/command_strip.cpp" line="173" />
             <source>拖动以调整工具条位置或前一工具条宽度</source>
             <translation>Drag to move the toolbar or resize the preceding toolbar</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="172" />
+            <location filename="../src/chrome/command_strip.cpp" line="174" />
             <source>工具条拖动把手</source>
             <translation> toolbar drag handle</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="847" />
+            <location filename="../src/chrome/command_strip.cpp" line="865" />
             <source>锁定工具条</source>
             <translation>Lock toolbars</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="881" />
+            <location filename="../src/chrome/command_strip.cpp" line="899" />
             <source>重置尺寸</source>
             <translation>Reset size</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="888" />
+            <location filename="../src/chrome/command_strip.cpp" line="906" />
             <source>弹性空间</source>
             <translation>Flexible space</translation>
         </message>
         <message>
-            <location filename="../src/chrome/command_strip.cpp" line="898" />
+            <location filename="../src/chrome/command_strip.cpp" line="916" />
             <source>添加或移除按钮</source>
             <translation>Add or remove buttons</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="18" />
+            <location filename="../src/chrome/status_bar.cpp" line="20" />
             <source>就绪</source>
             <translation>Ready</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="24" />
-            <location filename="../src/chrome/status_bar.cpp" line="109" />
+            <location filename="../src/chrome/status_bar.cpp" line="26" />
+            <location filename="../src/chrome/status_bar.cpp" line="150" />
             <source>状态消息</source>
             <translation>Status message</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="25" />
-            <location filename="../src/chrome/status_bar.cpp" line="110" />
+            <location filename="../src/chrome/status_bar.cpp" line="27" />
+            <location filename="../src/chrome/status_bar.cpp" line="151" />
             <source>工作区信息</source>
             <translation>Workspace information</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="51" />
+            <location filename="../src/chrome/status_bar.cpp" line="66" />
             <source>%1 个标签</source>
             <translation>%1 tabs</translation>
         </message>
         <message>
-            <location filename="../src/chrome/status_bar.cpp" line="52" />
+            <location filename="../src/chrome/status_bar.cpp" line="67" />
             <source>%1  ·  %2 个标签</source>
             <translation>%1  ·  %2 tabs</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="382" />
+            <location filename="../src/chrome/workspace_window.cpp" line="410" />
             <source>菜单</source>
             <translation>Menu</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="404" />
+            <location filename="../src/chrome/workspace_window.cpp" line="432" />
             <source>工作区</source>
             <translation>Workspace</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="411" />
+            <location filename="../src/chrome/workspace_window.cpp" line="439" />
             <source>窗口标题</source>
             <translation>Window title</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="432" />
+            <location filename="../src/chrome/workspace_window.cpp" line="460" />
             <source>最小化</source>
             <translation>Minimize</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="433" />
-            <location filename="../src/chrome/workspace_window.cpp" line="459" />
+            <location filename="../src/chrome/workspace_window.cpp" line="461" />
+            <location filename="../src/chrome/workspace_window.cpp" line="489" />
             <source>最大化</source>
             <translation>Maximize</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="438" />
+            <location filename="../src/chrome/workspace_window.cpp" line="466" />
             <source>关闭窗口</source>
             <translation>Close window</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="439" />
+            <location filename="../src/chrome/workspace_window.cpp" line="469" />
             <source>窗口控制</source>
             <translation>Window controls</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="459" />
+            <location filename="../src/chrome/workspace_window.cpp" line="489" />
             <source>还原</source>
             <translation>Restore</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="533" />
+            <location filename="../src/chrome/workspace_window.cpp" line="563" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="30" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="56" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="57" />
             <source>显示标签图标</source>
             <translation>Show tab icons</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="534" />
+            <location filename="../src/chrome/workspace_window.cpp" line="564" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="31" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="58" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="59" />
             <source>显示新建标签按钮</source>
             <translation>Show new tab button</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="535" />
+            <location filename="../src/chrome/workspace_window.cpp" line="565" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="32" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="60" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="61" />
             <source>显示标签编号</source>
             <translation>Show tab numbers</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="537" />
+            <location filename="../src/chrome/workspace_window.cpp" line="569" />
             <location filename="../src/commands/tab_group_commands.cpp" line="73" />
             <source>关闭此标签组</source>
             <translation>Close this tab group</translation>
         </message>
         <message>
-            <location filename="../src/chrome/workspace_window.cpp" line="572" />
+            <location filename="../src/chrome/workspace_window.cpp" line="604" />
             <source> · 浮动窗口</source>
             <translation> · Floating window</translation>
         </message>
@@ -154,8 +154,8 @@
             <translation>Search commands</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_dialogs.cpp" line="188" />
             <location filename="../src/commands/command_registry.cpp" line="136" />
+            <location filename="../src/commands/command_dialogs.cpp" line="188" />
             <location filename="../src/settings/shortcuts_page.cpp" line="169" />
             <source>命令</source>
             <translation>Command</translation>
@@ -206,8 +206,8 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Command was not executed: %1</translation>
         </message>
         <message>
+            <location filename="../src/commands/command_menus.cpp" line="156" />
             <location filename="../src/commands/command_dialogs.cpp" line="284" />
-            <location filename="../src/commands/command_menus.cpp" line="155" />
             <source>切换窗口</source>
             <translation>Switch window</translation>
         </message>
@@ -217,11 +217,11 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Search windows, owners, or window types…</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_dialogs.cpp" line="291" />
-            <location filename="../src/commands/command_menus.cpp" line="538" />
-            <location filename="../src/commands/command_menus.cpp" line="563" />
-            <location filename="../src/commands/hierarchy_commands.cpp" line="64" />
+            <location filename="../src/commands/command_menus.cpp" line="541" />
+            <location filename="../src/commands/command_menus.cpp" line="566" />
             <location filename="../src/commands/tab_group_commands.cpp" line="94" />
+            <location filename="../src/commands/hierarchy_commands.cpp" line="64" />
+            <location filename="../src/commands/command_dialogs.cpp" line="291" />
             <location filename="../src/settings/settings_page.cpp" line="246" />
             <source>窗口</source>
             <translation>Window</translation>
@@ -263,9 +263,9 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Workspace window</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_dialogs.cpp" line="311" />
-            <location filename="../src/commands/command_menus.cpp" line="158" />
+            <location filename="../src/commands/command_menus.cpp" line="159" />
             <location filename="../src/commands/window_commands.cpp" line="266" />
+            <location filename="../src/commands/command_dialogs.cpp" line="311" />
             <source>完整窗口</source>
             <translation>Workbench windows</translation>
         </message>
@@ -275,8 +275,8 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Floating window</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_dialogs.cpp" line="404" />
             <location filename="../src/commands/window_commands.cpp" line="129" />
+            <location filename="../src/commands/command_dialogs.cpp" line="404" />
             <location filename="../src/settings/settings_page.cpp" line="182" />
             <source>设置</source>
             <translation>Settings</translation>
@@ -314,7 +314,7 @@ The current window or content does not meet this command's conditions.</translat
         </message>
         <message>
             <location filename="../src/commands/command_menus.cpp" line="129" />
-            <location filename="../src/settings/settings_view_options.cpp" line="40" />
+            <location filename="../src/settings/settings_view_options.cpp" line="45" />
             <source>显示</source>
             <translation>Visibility</translation>
         </message>
@@ -330,32 +330,32 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Sidebar tabs</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="135" />
+            <location filename="../src/commands/command_menus.cpp" line="136" />
             <source>全屏</source>
             <translation>Fullscreen</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="137" />
+            <location filename="../src/commands/command_menus.cpp" line="138" />
             <source>切换标签</source>
             <translation>Switch tabs</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="138" />
+            <location filename="../src/commands/command_menus.cpp" line="139" />
             <source>聚焦标签组</source>
             <translation>Focus tab group</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="139" />
+            <location filename="../src/commands/command_menus.cpp" line="140" />
             <source>聚焦窗格</source>
             <translation>Focus pane</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="140" />
+            <location filename="../src/commands/command_menus.cpp" line="141" />
             <source>工具条</source>
             <translation>Toolbars</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="141" />
+            <location filename="../src/commands/command_menus.cpp" line="142" />
             <source>布局(&amp;L)</source>
             <translation>&amp;Layout</translation>
         </message>
@@ -365,49 +365,49 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Tab group</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="21" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="22" />
             <source>标签外观</source>
             <translation>Tab appearance</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="154" />
+            <location filename="../src/commands/command_menus.cpp" line="155" />
             <source>窗口(&amp;W)</source>
             <translation>&amp;Window</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="156" />
+            <location filename="../src/commands/command_menus.cpp" line="157" />
             <location filename="../src/commands/window_commands.cpp" line="266" />
             <source>所属窗口族</source>
             <translation>Window family</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="157" />
+            <location filename="../src/commands/command_menus.cpp" line="158" />
             <location filename="../src/commands/window_commands.cpp" line="266" />
             <source>全部窗口</source>
             <translation>All windows</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="161" />
+            <location filename="../src/commands/command_menus.cpp" line="162" />
             <source>拖动</source>
             <translation>Drag</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="162" />
+            <location filename="../src/commands/command_menus.cpp" line="163" />
             <source>工具(&amp;T)</source>
             <translation>&amp;Tools</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="163" />
+            <location filename="../src/commands/command_menus.cpp" line="164" />
             <source>帮助(&amp;H)</source>
             <translation>&amp;Help</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="166" />
+            <location filename="../src/commands/command_menus.cpp" line="167" />
             <source>批量关闭标签</source>
             <translation>Close multiple tabs</translation>
         </message>
         <message>
-            <location filename="../src/window_manager.cpp" line="772" />
+            <location filename="../src/window_manager.cpp" line="800" />
             <source>命令不可执行：%1</source>
             <translation>Command is unavailable: %1</translation>
         </message>
@@ -506,203 +506,203 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Move all tabs from this window</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="142" />
+            <location filename="../src/commands/command_menus.cpp" line="143" />
             <source>当前标签组</source>
             <translation>Current tab group</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="143" />
+            <location filename="../src/commands/command_menus.cpp" line="144" />
             <source>当前标签</source>
             <translation>Current tab</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="144" />
-            <location filename="../src/commands/command_menus.cpp" line="168" />
+            <location filename="../src/commands/command_menus.cpp" line="145" />
+            <location filename="../src/commands/command_menus.cpp" line="169" />
             <source>调整此标签在栏内的位置</source>
             <translation>Reorder this tab in its bar</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="145" />
-            <location filename="../src/commands/command_menus.cpp" line="169" />
+            <location filename="../src/commands/command_menus.cpp" line="146" />
+            <location filename="../src/commands/command_menus.cpp" line="170" />
             <source>移动此标签</source>
             <translation>Move this tab</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="146" />
-            <location filename="../src/commands/command_menus.cpp" line="170" />
+            <location filename="../src/commands/command_menus.cpp" line="147" />
+            <location filename="../src/commands/command_menus.cpp" line="171" />
             <source>转换此标签的内容</source>
             <translation>Convert this tab's contents</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="147" />
-            <location filename="../src/commands/command_menus.cpp" line="171" />
+            <location filename="../src/commands/command_menus.cpp" line="148" />
+            <location filename="../src/commands/command_menus.cpp" line="172" />
             <source>此标签的侧边栏收纳</source>
             <translation>Auto-hide this tab in sidebar</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="148" />
+            <location filename="../src/commands/command_menus.cpp" line="149" />
             <source>当前窗格</source>
             <translation>Current pane</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="149" />
-            <location filename="../src/commands/command_menus.cpp" line="175" />
+            <location filename="../src/commands/command_menus.cpp" line="150" />
+            <location filename="../src/commands/command_menus.cpp" line="176" />
             <source>拆分此窗格</source>
             <translation>Split this pane</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="150" />
-            <location filename="../src/commands/command_menus.cpp" line="178" />
+            <location filename="../src/commands/command_menus.cpp" line="151" />
+            <location filename="../src/commands/command_menus.cpp" line="179" />
             <source>调整此窗格边界</source>
             <translation>Resize this pane</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="151" />
-            <location filename="../src/commands/command_menus.cpp" line="176" />
+            <location filename="../src/commands/command_menus.cpp" line="152" />
+            <location filename="../src/commands/command_menus.cpp" line="177" />
             <source>移动此窗格</source>
             <translation>Move this pane</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="152" />
-            <location filename="../src/commands/command_menus.cpp" line="177" />
+            <location filename="../src/commands/command_menus.cpp" line="153" />
+            <location filename="../src/commands/command_menus.cpp" line="178" />
             <source>与同一标签内的窗格交换位置</source>
             <translation>Swap with another pane in this tab</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="172" />
+            <location filename="../src/commands/command_menus.cpp" line="173" />
             <source>所在标签组</source>
             <translation>Containing tab group</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="179" />
+            <location filename="../src/commands/command_menus.cpp" line="180" />
             <source>此标签的附加栏</source>
             <translation>This tab's auxiliary bars</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="299" />
+            <location filename="../src/commands/command_menus.cpp" line="300" />
             <source>标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整</source>
             <translation>The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="300" />
+            <location filename="../src/commands/command_menus.cpp" line="301" />
             <source>窗口菜单的窗口族列表及选择面板提供入口</source>
             <translation>Available in the Window menu family list and window switcher</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="301" />
+            <location filename="../src/commands/command_menus.cpp" line="302" />
             <source>窗口标题由宿主、脚本或命令参数提供</source>
             <translation>The host, a script, or command arguments supply the window title</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="302" />
+            <location filename="../src/commands/command_menus.cpp" line="303" />
             <source>状态栏右键提供逐控件显隐入口</source>
             <translation>Show or hide individual items from the status bar context menu</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="303" />
+            <location filename="../src/commands/command_menus.cpp" line="304" />
             <source>状态项内容由宿主、脚本或命令参数提供</source>
             <translation>The host, a script, or command arguments supply status item content</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="304" />
+            <location filename="../src/commands/command_menus.cpp" line="305" />
             <source>内部布局提交，需要明确节点或分区参数</source>
             <translation>Internal layout operation; requires an explicit node or region</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="305" />
+            <location filename="../src/commands/command_menus.cpp" line="306" />
             <source>内部整窗投放，需要目标窗口和落点参数</source>
             <translation>Internal window drop; requires a target window and drop position</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="306" />
+            <location filename="../src/commands/command_menus.cpp" line="307" />
             <source>内部标签投放；用户入口为四方向收纳及拖拽</source>
             <translation>Internal tab drop; use directional sidebar commands or drag and drop</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="307" />
-            <location filename="../src/commands/command_menus.cpp" line="309" />
+            <location filename="../src/commands/command_menus.cpp" line="308" />
+            <location filename="../src/commands/command_menus.cpp" line="310" />
             <source>工具条选项菜单及命令面板提供定制入口</source>
             <translation>Customize from the toolbar options menu or command palette</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="310" />
+            <location filename="../src/commands/command_menus.cpp" line="311" />
             <source>内容右键附加栏菜单及命令面板提供入口</source>
             <translation>Available from the content context menu and command palette</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="312" />
+            <location filename="../src/commands/command_menus.cpp" line="313" />
             <source>标签右键提供关闭范围；文件菜单保留关闭当前标签</source>
             <translation>Tab context menus provide bulk close options; the File menu closes the current tab</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="318" />
+            <location filename="../src/commands/command_menus.cpp" line="319" />
             <source>退出整个应用只在完整窗口提供菜单入口</source>
             <translation>Exit application appears only in workbench window menus</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="319" />
+            <location filename="../src/commands/command_menus.cpp" line="320" />
             <source>完整工作区保存与重置只在完整窗口提供菜单入口</source>
             <translation>Save and reset workspace commands appear only in workbench window menus</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="320" />
+            <location filename="../src/commands/command_menus.cpp" line="321" />
             <source>新建完整工作窗口只在完整窗口提供菜单入口</source>
             <translation>New workbench window appears only in workbench window menus</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="321" />
+            <location filename="../src/commands/command_menus.cpp" line="322" />
             <source>轻量窗口没有全局状态栏</source>
             <translation>Floating windows do not have a global status bar</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="322" />
+            <location filename="../src/commands/command_menus.cpp" line="323" />
             <source>轻量窗口已经采用浮动形态</source>
             <translation>A floating window already uses this window type</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="432" />
+            <location filename="../src/commands/command_menus.cpp" line="435" />
             <source>设置标签颜色</source>
             <translation>Set tab color</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="443" />
+            <location filename="../src/commands/command_menus.cpp" line="446" />
             <location filename="../src/commands/tab_group_commands.cpp" line="56" />
             <source>默认颜色</source>
             <translation>Default color</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="536" />
+            <location filename="../src/commands/command_menus.cpp" line="539" />
             <source>其他</source>
             <translation>Other</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="537" />
+            <location filename="../src/commands/command_menus.cpp" line="540" />
             <source>文件</source>
             <translation>File</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="537" />
+            <location filename="../src/commands/command_menus.cpp" line="540" />
             <source>视图</source>
             <translation>View</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="537" />
+            <location filename="../src/commands/command_menus.cpp" line="540" />
             <source>布局</source>
             <translation>Layout</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="538" />
+            <location filename="../src/commands/command_menus.cpp" line="541" />
             <source>工具</source>
             <translation>Tools</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="538" />
+            <location filename="../src/commands/command_menus.cpp" line="541" />
             <source>帮助</source>
             <translation>Help</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="539" />
-            <location filename="../src/commands/command_menus.cpp" line="540" />
+            <location filename="../src/commands/command_menus.cpp" line="542" />
+            <location filename="../src/commands/command_menus.cpp" line="543" />
             <source>扩展</source>
             <translation>Extensions</translation>
         </message>
@@ -913,56 +913,56 @@ The current window or content does not meet this command's conditions.</translat
         </message>
         <message>
             <location filename="../src/commands/tab_presentation_commands.cpp" line="33" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="62" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="63" />
             <source>显示侧边栏标签图标</source>
             <translation>Show sidebar tab icons</translation>
         </message>
         <message>
             <location filename="../src/commands/tab_presentation_commands.cpp" line="34" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="64" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="65" />
             <source>显示侧边栏标签编号</source>
             <translation>Show sidebar tab numbers</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="35" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="52" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="37" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="53" />
             <source>多行显示标签</source>
             <translation>Show tabs in multiple rows</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="36" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="54" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="38" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="55" />
             <source>滚轮展开标签行</source>
             <translation>Expand tab rows with mouse wheel</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="39" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="39" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="41" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="40" />
             <source>固定侧栏标签位置</source>
             <translation>Pinned sidebar tab position</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="39" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="38" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="41" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="39" />
             <source>普通标签栏位置</source>
             <translation>Central tab bar position</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="82" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="86" />
             <source>标签栏位置</source>
             <translation>Tab bar position</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="87" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="91" />
             <location filename="../src/commands/toolbar_move_command.cpp" line="47" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="26" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="27" />
             <source>顶部</source>
             <translation>Top</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_presentation_commands.cpp" line="87" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="91" />
             <location filename="../src/commands/toolbar_move_command.cpp" line="47" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="27" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="28" />
             <source>底部</source>
             <translation>Bottom</translation>
         </message>
@@ -1288,7 +1288,7 @@ The current window or content does not meet this command's conditions.</translat
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="468" />
-            <location filename="../src/docking/tab_strip.cpp" line="811" />
+            <location filename="../src/docking/tab_strip.cpp" line="896" />
             <source>取消固定当前标签</source>
             <translation>Unpin current tab</translation>
         </message>
@@ -1363,12 +1363,12 @@ The current window or content does not meet this command's conditions.</translat
             <translation>Set split ratio</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="538" />
+            <location filename="../src/commands/window_commands.cpp" line="541" />
             <source>设置固定边栏分区大小</source>
             <translation>Set pinned sidebar region size</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="117" />
+            <location filename="../src/docking/dock_surface.cpp" line="183" />
             <source>这个工作区还没有标签
 
 Ctrl+Shift+P 打开命令面板</source>
@@ -1377,18 +1377,18 @@ Ctrl+Shift+P 打开命令面板</source>
 Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="302" />
+            <location filename="../src/docking/dock_surface.cpp" line="533" />
             <source>固定这一侧全部标签</source>
             <translation>Pin all tabs on this side</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="599" />
+            <location filename="../src/docking/dock_surface.cpp" line="893" />
             <source>固定并占用布局空间</source>
             <translation>Pin and reserve layout space</translation>
         </message>
         <message>
-            <location filename="../src/docking/dock_surface.cpp" line="602" />
-            <location filename="../src/docking/tab_strip.cpp" line="873" />
+            <location filename="../src/docking/dock_surface.cpp" line="896" />
+            <location filename="../src/docking/tab_strip.cpp" line="958" />
             <source>关闭标签</source>
             <translation>Close tab</translation>
         </message>
@@ -1428,11 +1428,6 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Create adjacent tab group</translation>
         </message>
         <message>
-            <location filename="../src/docking/peek_resize_handle.hpp" line="32" />
-            <source>调整临时展开面板大小</source>
-            <translation>Resize auto-hide panel</translation>
-        </message>
-        <message>
             <location filename="../src/docking/tab_strip.cpp" line="47" />
             <source>新建标签</source>
             <translation>New tab</translation>
@@ -1443,204 +1438,204 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Choose new tab type</translation>
         </message>
         <message>
-            <location filename="../src/docking/tab_strip.cpp" line="492" />
+            <location filename="../src/docking/tab_strip.cpp" line="551" />
             <source>所有标签</source>
             <translation>All tabs</translation>
         </message>
         <message>
-            <location filename="../src/docking/tab_strip.cpp" line="812" />
+            <location filename="../src/docking/tab_strip.cpp" line="897" />
             <source>取消固定这一侧全部标签</source>
             <translation>Unpin all tabs on this side</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="48" />
+            <location filename="../src/layout_persistence.cpp" line="49" />
             <source>栏显示配置无效</source>
             <translation>Invalid bar visibility profile</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="52" />
+            <location filename="../src/layout_persistence.cpp" line="53" />
             <source>栏显示窗口类型无效</source>
             <translation>Invalid bar visibility window type</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="54" />
+            <location filename="../src/layout_persistence.cpp" line="55" />
             <source>栏显示字段不完整</source>
             <translation>Missing bar visibility fields</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="56" />
+            <location filename="../src/layout_persistence.cpp" line="57" />
             <source>栏显示字段类型无效</source>
             <translation>Invalid bar visibility field type</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="83" />
+            <location filename="../src/layout_persistence.cpp" line="84" />
             <source>工具条布局无效</source>
             <translation>Invalid toolbar layout</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="87" />
+            <location filename="../src/layout_persistence.cpp" line="88" />
             <source>工具条锁定设置无效</source>
             <translation>Invalid toolbar lock setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="92" />
-            <location filename="../src/layout_persistence.cpp" line="94" />
-            <location filename="../src/layout_persistence.cpp" line="151" />
+            <location filename="../src/layout_persistence.cpp" line="93" />
+            <location filename="../src/layout_persistence.cpp" line="95" />
+            <location filename="../src/layout_persistence.cpp" line="169" />
             <source>工具条行布局无效</source>
             <translation>Invalid toolbar row layout</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="97" />
+            <location filename="../src/layout_persistence.cpp" line="98" />
             <source>重复或非法工具条 ID</source>
             <translation>Duplicate or invalid toolbar ID</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="104" />
-            <location filename="../src/layout_persistence.cpp" line="107" />
+            <location filename="../src/layout_persistence.cpp" line="105" />
+            <location filename="../src/layout_persistence.cpp" line="108" />
             <source>工具条设置无效</source>
             <translation>Invalid toolbar setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="110" />
+            <location filename="../src/layout_persistence.cpp" line="111" />
             <source>工具条显示设置无效</source>
             <translation>Invalid toolbar visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="113" />
+            <location filename="../src/layout_persistence.cpp" line="114" />
             <source>工具条宽度无效</source>
             <translation>Invalid toolbar width</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="119" />
+            <location filename="../src/layout_persistence.cpp" line="120" />
             <source>工具条宽度小于可恢复的最小值</source>
             <translation>Toolbar width is below the recoverable minimum</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="121" />
+            <location filename="../src/layout_persistence.cpp" line="122" />
             <source>工具条伸缩设置无效</source>
             <translation>Invalid toolbar sizing setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="124" />
+            <location filename="../src/layout_persistence.cpp" line="125" />
             <source>工具条按钮设置无效</source>
             <translation>Invalid toolbar button setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="128" />
+            <location filename="../src/layout_persistence.cpp" line="129" />
             <source>工具条按钮 ID 无效</source>
             <translation>Invalid toolbar button ID</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="143" />
+            <location filename="../src/layout_persistence.cpp" line="161" />
             <source>窗口类型工具条布局无效</source>
             <translation>Invalid toolbar layout for window type</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="147" />
+            <location filename="../src/layout_persistence.cpp" line="165" />
             <source>工具条窗口类型无效</source>
             <translation>Invalid toolbar window type</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="160" />
+            <location filename="../src/layout_persistence.cpp" line="178" />
             <source>不同窗口类型的工具条布局不能混用</source>
             <translation>Toolbar layouts for different window types cannot be mixed</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="260" />
+            <location filename="../src/layout_persistence.cpp" line="285" />
             <source>布局版本无效</source>
             <translation>Invalid layout version</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="281" />
+            <location filename="../src/layout_persistence.cpp" line="306" />
             <source>单标签隐藏设置无效</source>
             <translation>Invalid single-tab bar visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="285" />
+            <location filename="../src/layout_persistence.cpp" line="310" />
             <source>工具条选项显示设置无效</source>
             <translation>Invalid toolbar options visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="290" />
+            <location filename="../src/layout_persistence.cpp" line="322" />
             <source>新建标签位置无效</source>
             <translation>Invalid new tab position</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="295" />
+            <location filename="../src/layout_persistence.cpp" line="327" />
             <source>禅模式全屏类型无效</source>
             <translation>Invalid Zen fullscreen type</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="306" />
+            <location filename="../src/layout_persistence.cpp" line="338" />
             <source>标签栏显示设置无效</source>
             <translation>Invalid tab bar visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="308" />
+            <location filename="../src/layout_persistence.cpp" line="340" />
             <source>侧边栏显示设置无效</source>
             <translation>Invalid sidebar visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="310" />
+            <location filename="../src/layout_persistence.cpp" line="342" />
             <source>工具栏显示设置无效</source>
             <translation>Invalid toolbars visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="312" />
+            <location filename="../src/layout_persistence.cpp" line="344" />
             <source>状态栏显示设置无效</source>
             <translation>Invalid status bar visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="320" />
+            <location filename="../src/layout_persistence.cpp" line="352" />
             <source>状态控件显示设置无效</source>
             <translation>Invalid status item visibility setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="328" />
+            <location filename="../src/layout_persistence.cpp" line="360" />
             <source>状态控件 ID 无效</source>
             <translation>Invalid status item ID</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="367" />
+            <location filename="../src/layout_persistence.cpp" line="399" />
             <source>重复或非法内容 ID</source>
             <translation>Duplicate or invalid content ID</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="374" />
+            <location filename="../src/layout_persistence.cpp" line="406" />
             <source>窗格栏共享设置无效</source>
             <translation>Invalid pane bar sharing setting</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="385" />
+            <location filename="../src/layout_persistence.cpp" line="417" />
             <source>同一标签的窗格栏共享设置不一致</source>
             <translation>Inconsistent pane bar sharing settings within one tab</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="391" />
+            <location filename="../src/layout_persistence.cpp" line="423" />
             <source>缺少内容恢复描述</source>
             <translation>Missing content restoration descriptor</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="399" />
+            <location filename="../src/layout_persistence.cpp" line="431" />
             <source>窗口管理器在准备恢复内容时被销毁</source>
             <translation>The window manager was destroyed while preparing content restoration</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="401" />
+            <location filename="../src/layout_persistence.cpp" line="433" />
             <source>内容恢复失败</source>
             <translation>Content restoration failed</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="404" />
-            <location filename="../src/layout_persistence.cpp" line="406" />
-            <location filename="../src/layout_persistence.cpp" line="408" />
+            <location filename="../src/layout_persistence.cpp" line="436" />
+            <location filename="../src/layout_persistence.cpp" line="438" />
+            <location filename="../src/layout_persistence.cpp" line="440" />
             <source>恢复内容在准备时被销毁</source>
             <translation>Restored content was destroyed during preparation</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" line="447" />
-            <location filename="../src/layout_persistence.cpp" line="455" />
-            <location filename="../src/layout_persistence.cpp" line="460" />
+            <location filename="../src/layout_persistence.cpp" line="479" />
+            <location filename="../src/layout_persistence.cpp" line="487" />
+            <location filename="../src/layout_persistence.cpp" line="492" />
             <source>窗口管理器在恢复时被销毁</source>
             <translation>The window manager was destroyed during restoration</translation>
         </message>
@@ -1817,77 +1812,77 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>No matching settings</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="29" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="30" />
             <source>单独设置固定侧栏面板的标签位置。</source>
             <translation>Choose the tab position for pinned sidebar panels independently.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="29" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="30" />
             <source>普通标签栏可放在内容顶部或底部。</source>
             <translation>Place central tab bars above or below the content.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="53" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="54" />
             <source>标签排满一行后换行，不使用横向滚动条。</source>
             <translation>Wrap tabs to additional rows instead of using a horizontal scrollbar.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="55" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="56" />
             <source>多行模式下向下滚动展开全部行，向上滚动只显示当前标签所在行。</source>
             <translation>In multiline mode, scroll down to show all rows and up to show only the active tab's row.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="57" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="58" />
             <source>控制普通中央标签栏，不影响侧边栏；仍遵循宿主为单个标签隐藏图标的设置。</source>
             <translation>Applies to central tab bars independently of sidebars. Per-tab icon visibility set by the host still applies.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="59" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="60" />
             <source>显示标签尾部的加号和类型下拉。隐藏后仍可使用菜单、命令或快捷键新建。</source>
             <translation>Show the plus button and type menu after the last tab. When hidden, menus, commands, and shortcuts can still create tabs.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="61" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="62" />
             <source>普通中央标签栏的编号显示在图标左侧，按本栏顺序从 1 开始。</source>
             <translation>Show central tab numbers before the icon, starting at 1 in each tab bar.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="63" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="64" />
             <source>独立控制固定侧栏标签栏和非固定收纳条的图标，默认隐藏；仍遵循单个标签的图标设置。</source>
             <translation>Show icons in pinned and auto-hide sidebar bars independently. Hidden by default; per-tab icon visibility still applies.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="65" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="66" />
             <source>独立控制固定侧栏标签栏和非固定收纳条的编号，默认隐藏；固定组按本栏、非固定收纳条按同一侧全部标签顺序从 1 开始。</source>
             <translation>Show numbers in pinned and auto-hide sidebar bars independently. Hidden by default. Number pinned bars separately and each auto-hide side continuously, starting at 1.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="71" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="98" />
             <source>标签颜色定义 JSON</source>
             <translation>Tab color definitions JSON</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="75" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="102" />
             <source>应用颜色列表</source>
             <translation>Apply color list</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="77" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="104" />
             <source>标签颜色</source>
             <translation>Tab colors</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="78" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="105" />
             <source>编辑严格 JSON 数组，可覆盖默认颜色列表。每项包含稳定 ID、名称，以及普通栏和收纳条各自的选中／未选中状态。每种状态包括背景、文字、下划线和图标颜色，写为 #RRGGBB 或 #AARRGGBB。</source>
             <translation>Edit a strict JSON array to override the default palette. Each entry has a stable ID, name, and active/inactive states for central and auto-hide bars. Each state contains background, text, underline, and icon colors in #RRGGBB or #AARRGGBB format.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="85" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="112" />
             <source>颜色列表未修改：请输入有效 JSON 数组。</source>
             <translation>Color list unchanged: enter a valid JSON array.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="94" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="121" />
             <source>颜色列表已应用。</source>
             <translation>Color list applied.</translation>
         </message>
@@ -1907,67 +1902,67 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Auto-hide sidebars</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="41" />
+            <location filename="../src/settings/settings_view_options.cpp" line="46" />
             <source>完整窗口只有一个标签时隐藏标签栏</source>
             <translation>Hide the tab bar when a workbench window has one tab</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="43" />
+            <location filename="../src/settings/settings_view_options.cpp" line="48" />
             <source>完整窗口的单标签栏</source>
             <translation>Single-tab bar in workbench windows</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="44" />
+            <location filename="../src/settings/settings_view_options.cpp" line="49" />
             <source>按整个窗口的标签数量判断；固定面板和侧边收纳条保持显示。</source>
             <translation>Count tabs across the whole window. Pinned panels and auto-hide sidebars remain visible.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="45" />
+            <location filename="../src/settings/settings_view_options.cpp" line="50" />
             <source>轻量浮窗只有一个标签时隐藏标签栏</source>
             <translation>Hide the tab bar when a floating window has one tab</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="47" />
+            <location filename="../src/settings/settings_view_options.cpp" line="52" />
             <source>轻量浮窗的单标签栏</source>
             <translation>Single-tab bar in floating windows</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="48" />
+            <location filename="../src/settings/settings_view_options.cpp" line="53" />
             <source>默认开启；出现第二个标签时恢复标签栏。</source>
             <translation>Enabled by default. The tab bar returns when a second tab is added.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="59" />
+            <location filename="../src/settings/settings_view_options.cpp" line="64" />
             <source>锁定工具栏且没有收起按钮时隐藏工具条选项</source>
             <translation>Hide toolbar options when locked with no overflow</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="61" />
+            <location filename="../src/settings/settings_view_options.cpp" line="66" />
             <source>精简锁定工具条</source>
             <translation>Compact locked toolbars</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="62" />
+            <location filename="../src/settings/settings_view_options.cpp" line="67" />
             <source>工具栏锁定且全部按钮可见时隐藏末尾选项；有按钮被收起时仍然显示。</source>
             <translation>Hide the options button when toolbars are locked and all buttons are visible. Keep it visible when buttons overflow.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="70" />
+            <location filename="../src/settings/settings_view_options.cpp" line="85" />
             <source>禅模式默认全屏范围</source>
             <translation>Default fullscreen scope for Zen mode</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="71" />
+            <location filename="../src/settings/settings_view_options.cpp" line="86" />
             <source>在普通窗口启用禅模式时使用。已经全屏时保留当前范围；退出禅模式恢复各栏，但保留全屏。</source>
             <translation>Used when entering Zen mode from a normal window. Keep the current scope if already fullscreen. Exiting Zen mode restores the bars and keeps fullscreen.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="78" />
+            <location filename="../src/settings/settings_view_options.cpp" line="93" />
             <source>显示%1</source>
             <translation>Show %1</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" line="82" />
+            <location filename="../src/settings/settings_view_options.cpp" line="97" />
             <source>各栏显隐与全屏无关，在当前窗口生效并随布局保存。禅模式临时隐藏全部栏。</source>
             <translation>Bar visibility is independent of fullscreen, applies to the current window, and is saved with the layout. Zen mode temporarily hides every bar.</translation>
         </message>
@@ -2039,8 +2034,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/shortcuts_page.cpp" line="310" />
-            <source>runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。例如 {&quot;commands&quot;:[&quot;host.newTab&quot;,{&quot;command&quot;:&quot;pane.split.right&quot;,&quot;args&quot;:{}}]}。结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。</source>
-            <translation>runCommands is a regular command. Each binding defines its steps in its own args.commands array. Example: {&quot;commands&quot;:[&quot;host.newTab&quot;,{&quot;command&quot;:&quot;pane.split.right&quot;,&quot;args&quot;:{}}]}. The structure follows VS Code; each step's args currently accepts JSON objects only.</translation>
+            <source>runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。例如 {"commands":["host.newTab",{"command":"pane.split.right","args":{}}]}。结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。</source>
+            <translation>runCommands is a regular command. Each binding defines its steps in its own args.commands array. Example: {"commands":["host.newTab",{"command":"pane.split.right","args":{}}]}. The structure follows VS Code; each step's args currently accepts JSON objects only.</translation>
         </message>
         <message>
             <location filename="../src/settings/shortcuts_page.cpp" line="383" />
@@ -2093,82 +2088,82 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Up to 4 key strokes, such as Ctrl+K, G, 1. Changes take effect immediately.</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="112" />
+            <location filename="../src/style/tab_appearance.cpp" line="113" />
             <source>灰色</source>
             <translation>Gray</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="113" />
+            <location filename="../src/style/tab_appearance.cpp" line="114" />
             <source>蓝色</source>
             <translation>Blue</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="114" />
+            <location filename="../src/style/tab_appearance.cpp" line="115" />
             <source>红色</source>
             <translation>Red</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="115" />
+            <location filename="../src/style/tab_appearance.cpp" line="116" />
             <source>金色</source>
             <translation>Gold</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="116" />
+            <location filename="../src/style/tab_appearance.cpp" line="117" />
             <source>绿色</source>
             <translation>Green</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="117" />
+            <location filename="../src/style/tab_appearance.cpp" line="118" />
             <source>粉色</source>
             <translation>Pink</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="118" />
+            <location filename="../src/style/tab_appearance.cpp" line="119" />
             <source>紫色</source>
             <translation>Purple</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="119" />
+            <location filename="../src/style/tab_appearance.cpp" line="120" />
             <source>青色</source>
             <translation>Cyan</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="120" />
+            <location filename="../src/style/tab_appearance.cpp" line="121" />
             <source>橙色</source>
             <translation>Orange</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="161" />
+            <location filename="../src/style/tab_appearance.cpp" line="167" />
             <source>标签外观设置必须是对象</source>
             <translation>Tab appearance settings must be an object</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="165" />
+            <location filename="../src/style/tab_appearance.cpp" line="171" />
             <source>标签栏仅支持顶部或底部</source>
             <translation>Tab bars support only top or bottom placement</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="171" />
+            <location filename="../src/style/tab_appearance.cpp" line="178" />
             <source>标签显示设置类型无效</source>
             <translation>Invalid tab visibility setting type</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="176" />
+            <location filename="../src/style/tab_appearance.cpp" line="194" />
             <source>标签颜色列表无效</source>
             <translation>Invalid tab color list</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="179" />
+            <location filename="../src/style/tab_appearance.cpp" line="197" />
             <source>标签颜色定义无效</source>
             <translation>Invalid tab color definition</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="187" />
+            <location filename="../src/style/tab_appearance.cpp" line="205" />
             <source>标签颜色须包含 ID、名称和四种完整状态，颜色使用 #RRGGBB 或 #AARRGGBB</source>
             <translation>Tab colors require an ID, name, and four complete states, using #RRGGBB or #AARRGGBB</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="193" />
+            <location filename="../src/style/tab_appearance.cpp" line="211" />
             <source>标签外观包含无效颜色、重复 ID 或不适用的滚轮设置</source>
             <translation>Tab appearance contains invalid colors, duplicate IDs, or incompatible wheel settings</translation>
         </message>
@@ -2216,12 +2211,12 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>The fullscreen pane target differs from the active pane</translation>
         </message>
         <message>
-            <location filename="../src/window_manager.cpp" line="593" />
+            <location filename="../src/window_manager.cpp" line="618" />
             <source>临时</source>
             <translation>Temporary</translation>
         </message>
         <message>
-            <location filename="../src/window_manager.cpp" line="1070" />
+            <location filename="../src/window_manager.cpp" line="1122" />
             <source>等待续键：%1</source>
             <translation>Waiting for next key: %1</translation>
         </message>
@@ -2267,7 +2262,7 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Minimize window</translation>
         </message>
         <message>
-            <location filename="../src/commands/command_menus.cpp" line="159" />
+            <location filename="../src/commands/command_menus.cpp" line="160" />
             <source>窗口状态</source>
             <translation>Window state</translation>
         </message>
@@ -2337,37 +2332,37 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Extract current pane as a separate tab in this group</translation>
         </message>
         <message>
-            <location filename="../src/layout_persistence.cpp" />
+            <location filename="../src/layout_persistence.cpp" line="316" />
             <source>窗口控制按钮顺序设置无效</source>
             <translation>Invalid window control button order setting</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" />
+            <location filename="../src/settings/settings_view_options.cpp" line="76" />
             <source>窗口控制按钮顺序</source>
             <translation>Window control button order</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" />
+            <location filename="../src/settings/settings_view_options.cpp" line="23" />
             <source>Windows：最小化、最大化、关闭（靠右）</source>
             <translation>Windows: Minimize, Maximize, Close (right)</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" />
+            <location filename="../src/settings/settings_view_options.cpp" line="24" />
             <source>反向：关闭、最大化、最小化（靠左）</source>
             <translation>Reversed: Close, Maximize, Minimize (left)</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" />
+            <location filename="../src/settings/settings_view_options.cpp" line="25" />
             <source>macOS：关闭、最小化、最大化（靠左）</source>
             <translation>macOS: Close, Minimize, Maximize (left)</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_view_options.cpp" />
+            <location filename="../src/settings/settings_view_options.cpp" line="77" />
             <source>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</source>
             <translation>The last two align the buttons to the left with Close outermost, for a window controls toolbar in the top-left corner.</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="182" />
+            <location filename="../src/style/tab_appearance.cpp" line="188" />
             <source>The maximum tab title width must be an integer number of logical pixels within the allowed range</source>
             <translation>The maximum tab title width must be an integer number of logical pixels within the allowed range</translation>
         </message>
@@ -2375,28 +2370,51 @@ Ctrl+Shift+P opens the command palette</translation>
             <location filename="../src/chrome/workspace_window.cpp" line="566" />
             <location filename="../src/commands/tab_presentation_commands.cpp" line="35" />
             <location filename="../src/settings/settings_tab_appearance.cpp" line="67" />
-            <source>Clip long tab titles</source>
-            <translation>Clip long tab titles</translation>
+            <source>Clip long regular and pinned tab titles</source>
+            <translation>Clip long regular and pinned tab titles</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="68" />
-            <source>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars.</source>
-            <translation>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars.</translation>
+            <source>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs and pinned sidebar tab bars.</source>
+            <translation>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs and pinned sidebar tab bars.</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="72" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="85" />
             <source> logical pixels</source>
             <translation> logical pixels</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="73" />
-            <source>Maximum tab title display width</source>
-            <translation>Maximum tab title display width</translation>
+            <source>Maximum regular and pinned tab title width</source>
+            <translation>Maximum regular and pinned tab title width</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="74" />
-            <source>Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling.</source>
-            <translation>Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling.</translation>
+            <source>Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling.</source>
+            <translation>Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling.</translation>
+        </message>
+        <message>
+            <location filename="../src/chrome/workspace_window.cpp" line="567" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="36" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="80" />
+            <source>Clip long auto-hide sidebar tab titles</source>
+            <translation>Clip long auto-hide sidebar tab titles</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="81" />
+            <source>Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings.</source>
+            <translation>Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings.</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="86" />
+            <source>Maximum auto-hide sidebar tab title length</source>
+            <translation>Maximum auto-hide sidebar tab title length</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="87" />
+            <source>Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling.</source>
+            <translation>Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling.</translation>
         </message>
     </context>
 </TS>

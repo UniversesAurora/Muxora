@@ -80,6 +80,8 @@ private:
     QCheckBox* showSidebarNumbers_ = nullptr;
     QCheckBox* clipTitles_ = nullptr;
     QSpinBox* maximumTitleWidth_ = nullptr;
+    QCheckBox* clipSidebarTitles_ = nullptr;
+    QSpinBox* maximumSidebarTitleWidth_ = nullptr;
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;

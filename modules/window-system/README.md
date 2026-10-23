@@ -121,7 +121,7 @@
 
 `multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 仅允许在多行时开启：向下滚动展开全部行，向上仅显示活动行。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。关闭多行时应同时关闭滚轮展开。
 
-`clipTitles` 和 `maximumTitleWidth` 限制普通、固定及四边收纳条的标题文字长轴，直接裁切而不生成省略号；图标、编号、关闭目标另占空间。完整标题、提示及可访问名称保留，拖拽预览使用相同策略。单位、默认值及允许范围见 [标签外观设置](../../docs/design/settings-and-commands-design.md#31-标签外观与颜色)，头文件提供对应范围常量。设置页和 `presentation.toggleTitleClipping` 命令可修改同一策略，布局快照保存并恢复它。
+`clipTitles`／`maximumTitleWidth` 控制普通及固定标签栏，`clipSidebarTitles`／`maximumSidebarTitleWidth` 独立控制四边非固定收纳条。两者均直接裁切而不生成省略号，图标、编号、关闭目标另占空间；完整标题、提示及可访问名称保留，拖拽预览按呈现样式选择对应策略。单位、默认值、允许范围见 [标签外观设置](../../docs/design/settings-and-commands-design.md#31-标签外观与颜色)，头文件提供范围常量。设置页、`presentation.toggleTitleClipping`／`presentation.toggleSidebarTitleClipping` 命令和布局快照共用同一份外观。
 
 `setTabColor(tab, colorId)` 选择稳定颜色 ID，空 ID 恢复主题默认，未知 ID 返回 `false`。`tabColorPreset(id)` 查询当前预设。`TabAppearance::colors` 可整体替换默认列表，每项 `TabColorPreset` 分别含普通栏、非固定收纳条的活动／非活动状态；每个 `TabVisualColors` 明确指定 `background`、`text`、`line`、`icon`。当前设置页提供严格 JSON 数组编辑，完整字段、格式和范围见 [设置设计](../../docs/design/settings-and-commands-design.md)。这不代表完整 JSONC 用户设置服务已完成。
 

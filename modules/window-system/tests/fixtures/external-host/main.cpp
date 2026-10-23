@@ -121,14 +121,25 @@ int main(int argc, char** argv)
         || !windows.closeTab(splitTab) || windows.paneWidget(windows.model().tab(tab)->activePane) != text) return 152;
     if (windows.tabAppearance().showSidebarIcons || windows.tabAppearance().showSidebarNumbers) return 153;
     const auto originalAppearance = windows.tabAppearance();
+    if (originalAppearance.clipSidebarTitles
+        || originalAppearance.maximumSidebarTitleWidth != window_system::defaultTabTitleWidth) return 192;
     auto clippedAppearance = originalAppearance;
     clippedAppearance.clipTitles = true; clippedAppearance.maximumTitleWidth = 73;
     if (!windows.setTabAppearance(clippedAppearance) || !windows.tabAppearance().clipTitles
-        || windows.tabAppearance().maximumTitleWidth != 73) return 190;
+        || windows.tabAppearance().maximumTitleWidth != 73 || windows.tabAppearance().clipSidebarTitles
+        || windows.tabAppearance().maximumSidebarTitleWidth != window_system::defaultTabTitleWidth) return 190;
     auto invalidAppearance = clippedAppearance;
     invalidAppearance.maximumTitleWidth = window_system::maximumTabTitleWidth + 1;
     if (windows.setTabAppearance(invalidAppearance) || windows.tabAppearance() != clippedAppearance
         || !windows.setTabAppearance(originalAppearance)) return 191;
+    clippedAppearance.clipSidebarTitles = true; clippedAppearance.maximumSidebarTitleWidth = 109;
+    if (!windows.setTabAppearance(clippedAppearance) || !windows.tabAppearance().clipSidebarTitles
+        || windows.tabAppearance().maximumSidebarTitleWidth != 109 || !windows.tabAppearance().clipTitles
+        || windows.tabAppearance().maximumTitleWidth != 73) return 193;
+    invalidAppearance = clippedAppearance;
+    invalidAppearance.maximumSidebarTitleWidth = window_system::minimumTabTitleWidth - 1;
+    if (windows.setTabAppearance(invalidAppearance) || windows.tabAppearance() != clippedAppearance
+        || !windows.setTabAppearance(originalAppearance)) return 194;
     if (!windows.setTabTopBarSharing(tab, window_system::PaneBarSharing::PerPane)
         || !windows.setTabBottomBarSharing(tab, window_system::PaneBarSharing::Shared)
         || !windows.setTabBarsVisible(root, false) || windows.tabBarsVisible(root)

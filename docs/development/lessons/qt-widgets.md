@@ -94,3 +94,9 @@
 - 程序验证用不限宽的全文绘制作为参考，在字形内部选切点，对比不同绘制比例下的可见区域，并检查边界后没有文字像素；无需人工判图。对应 `TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace` 和 `EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPreview`。
 - `TabTitleLayoutTest` 另以 Qt 全文绘制逐像素比较复杂文字、双向文字、缩放、旋转及回退路径，并检查重复绘制和换色不再排版。耗时仍要用同机前后基准测量，首次排版不可能因缓存而消失。
 - Qt 6.12 的文字路径在加基线前先把起点截到 26.6 定点坐标；缩放或非单位旋转还会临时开启抗锯齿，溢出时再次裁剪。直接绘制 `QGlyphRun` 必须保留这些步骤，尤其 Windows 彩色 emoji 会把裁剪覆盖率带入图像绘制。离屏平台通过不代表 Windows 字体路径也相同，不能只测一种平台或用误差容限掩盖差异。
+
+## 设置清单
+
+- **现象**：新增设置后，多处总行数仍使用旧常量，分类、滚动等用例在到达自身断言前就失败。
+- **做法**：维护独立的完整预期键集合，同时检查实际键与集合一致；总行数从这份预期集合取，局部搜索仍断言明确的匹配数量，不能从实际页面反推预期。
+- **验证**：`PaneSettingsTest` 的搜索、类别导航、键盘展开和独立窗口策略用例。

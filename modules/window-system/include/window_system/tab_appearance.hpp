@@ -49,6 +49,9 @@ struct TabAppearance {
     // title or the space reserved for icons, numbers, and close controls.
     bool clipTitles = false;
     int maximumTitleWidth = defaultTabTitleWidth;
+    // Auto-hide rails have a separate text extent from regular and pinned bars.
+    bool clipSidebarTitles = false;
+    int maximumSidebarTitleWidth = defaultTabTitleWidth;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

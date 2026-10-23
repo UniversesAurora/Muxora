@@ -514,7 +514,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             button->setPreset(manager_->tabColorPreset(manager_->model().tab(tabId)->colorId));
             const auto appearance=manager_->tabAppearance();
             const auto options=manager_->tabOptions(tabId);
-            button->setTitleClipping(appearance.clipTitles, appearance.maximumTitleWidth);
+            button->setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
             button->setPresentation(appearance.showSidebarIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
                 appearance.showSidebarNumbers ? ordinal : 0);
             button->setCheckable(true);
@@ -711,7 +711,7 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
         auto& title = dragTitleLayouts_[tab][1];
         title.prepare(record->title, font(), layoutDirection(), false, this);
         return edgeTabExtent(fontMetrics(),title.naturalWidth(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
-            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, appearance.clipTitles, appearance.maximumTitleWidth);
+            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         const auto* bar = group->tabBar();

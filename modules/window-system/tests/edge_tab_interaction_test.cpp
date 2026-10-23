@@ -3,6 +3,8 @@
 #include "docking/tab_strip.hpp"
 #include "docking/edge_tab_button.hpp"
 #include "docking/drag_presentation.hpp"
+#include "chrome/workspace_window.hpp"
+#include "authored_mouse_input.hpp"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -11,10 +13,13 @@
 #include <QLabel>
 #include <QLayout>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QScrollBar>
+#include <QScreen>
 #include <QStyle>
 #include <QTest>
 #include <QToolButton>
@@ -43,11 +48,34 @@ QImage logicalCrop(const QImage& image, QRect rect)
     return image.copy(QRect(qRound(rect.x() * ratio), qRound(rect.y() * ratio),
         qRound(rect.width() * ratio), qRound(rect.height() * ratio)));
 }
+GroupTabs* groupView(QWidget* window, GroupId id)
+{
+    for (auto* widget : window->findChildren<QWidget*>())
+        if (auto* group = dynamic_cast<GroupTabs*>(widget);
+            group && group->isVisible() && group->property("groupId").toUuid() == id) return group;
+    return nullptr;
+}
+void sendDragMouse(QWidget* receiver, QEvent::Type type, QPoint global,
+                   Qt::MouseButton button = Qt::NoButton)
+{
+    test::authoredMouseInput().takePriority();
+    QMouseEvent event(type, receiver->mapFromGlobal(global), global, button, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(receiver, &event);
+    test::authoredMouseInput().takePriority();
+    QApplication::processEvents();
+}
+QWidget* dragLabelPreview()
+{
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == "DragLabelPreview") return widget;
+    return nullptr;
+}
 }
 
 class EdgeTabInteractionTest final : public QObject {
     Q_OBJECT
 private slots:
+    void cleanup() { test::authoredMouseInput().finish(); }
     void peekShowsOnlyTheChosenTabAndPinsOnlyThatTab();
     void peekShowsTheRealContentAndSharedBars_data();
     void peekShowsTheRealContentAndSharedBars();
@@ -78,6 +106,10 @@ private slots:
     void clippedRailLabelsUseTheSameInsertionExtent_data();
     void clippedRailLabelsUseTheSameInsertionExtent();
     void oversizedUnclippedTitleStaysWithinTheWidgetSizeLimit();
+    void regularPinnedAndAutoHideTitlesUseIndependentLimits_data();
+    void regularPinnedAndAutoHideTitlesUseIndependentLimits();
+    void independentTitleLimitsFollowActualDragPresentations_data();
+    void independentTitleLimitsFollowActualDragPresentations();
 };
 
 void EdgeTabInteractionTest::autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets_data()
@@ -744,7 +776,7 @@ void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPrevie
         for (int y = 0; y < blank.height(); ++y) for (int x = 0; x < blank.width(); ++x)
             QCOMPARE(blank.pixelColor(x, y), QColor(Qt::white));
     }
-    TabAppearance appearance; appearance.clipTitles = true; appearance.maximumTitleWidth = limit;
+    TabAppearance appearance; appearance.clipSidebarTitles = true; appearance.maximumSidebarTitleWidth = limit;
     EdgeDragPresentation preview(title, Edge(edge), defaultTheme(), new QLabel("Live content"), &root);
     preview.configureLabel(preset, icon, number, appearance);
     auto* previewLabel = preview.findChild<QAbstractButton*>("DragEdgeLabel"); QVERIFY(previewLabel);
@@ -766,7 +798,7 @@ void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
     QFETCH(int, edge);
     const bool vertical = Edge(edge) == Edge::Left || Edge(edge) == Edge::Right;
     WindowManager manager; auto appearance = manager.tabAppearance();
-    appearance.clipTitles = true; appearance.maximumTitleWidth = 77;
+    appearance.clipSidebarTitles = true; appearance.maximumSidebarTitleWidth = 77;
     appearance.showSidebarIcons = true; appearance.showSidebarNumbers = true;
     QVERIFY(manager.setTabAppearance(appearance));
     const auto window = manager.createWindow(); manager.addTab(window, content("Central"), options("Central"));
@@ -776,7 +808,7 @@ void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
     auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
     auto* button = edgeButton(host, side); QVERIFY(button);
     const auto extent = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
-    const int expected = appearance.maximumTitleWidth + 24 + 20 + button->fontMetrics().horizontalAdvance("1") + 5;
+    const int expected = appearance.maximumSidebarTitleWidth + 24 + 20 + button->fontMetrics().horizontalAdvance("1") + 5;
     QCOMPARE(extent(button->size()), expected);
     auto* surface = host->findChild<QFrame*>("DockSurface"); QVERIFY(surface);
     auto* dock = static_cast<DockSurface*>(surface);
@@ -788,7 +820,7 @@ void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
     dock->clearInsertionPreviews();
     QCOMPARE(manager.model().tab(side)->title, title);
     QCOMPARE(button->text(), title); QCOMPARE(button->toolTip(), title); QCOMPARE(button->accessibleName(), title);
-    appearance.clipTitles = false; QVERIFY(manager.setTabAppearance(appearance));
+    appearance.clipSidebarTitles = false; QVERIFY(manager.setTabAppearance(appearance));
     button = edgeButton(host, side); QVERIFY(button);
     QVERIFY(extent(button->sizeHint()) > expected);
     QCOMPARE(manager.model().tab(side)->title, title);
@@ -809,6 +841,154 @@ void EdgeTabInteractionTest::oversizedUnclippedTitleStaysWithinTheWidgetSizeLimi
         QCOMPARE(vertical ? size.height() : size.width(), QWIDGETSIZE_MAX);
         QCOMPARE(vertical ? size.width() : size.height(), defaultTheme().metrics.edgeThickness);
         QCOMPARE(button.text(), title); QCOMPARE(button.toolTip(), title);
+    }
+}
+
+void EdgeTabInteractionTest::regularPinnedAndAutoHideTitlesUseIndependentLimits_data()
+{
+    QTest::addColumn<bool>("clipTabs"); QTest::addColumn<bool>("clipSidebar");
+    for (const bool tabs : {false, true}) for (const bool sidebar : {false, true})
+        QTest::newRow(qPrintable(QString("tabs-%1-sidebar-%2").arg(tabs).arg(sidebar))) << tabs << sidebar;
+}
+
+void EdgeTabInteractionTest::regularPinnedAndAutoHideTitlesUseIndependentLimits()
+{
+    QFETCH(bool, clipTabs); QFETCH(bool, clipSidebar);
+    WindowManager manager; auto appearance = manager.tabAppearance();
+    appearance.showIcons = false; appearance.showSidebarIcons = false;
+    appearance.showNumbers = false; appearance.showSidebarNumbers = false;
+    appearance.clipTitles = clipTabs; appearance.maximumTitleWidth = 73;
+    appearance.clipSidebarTitles = clipSidebar; appearance.maximumSidebarTitleWidth = 137;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Independent title limits", {900, 650}});
+    const QString title(25, QLatin1Char('W'));
+    const auto regular = manager.addTab(window, content("Regular"), options(title));
+    const auto pinned = manager.addTab(window, content("Pinned"), options(title));
+    const auto sidebar = manager.addTab(window, content("Sidebar"), options(title));
+    QVERIFY(manager.moveTabToEdge(pinned, Edge::Left, true));
+    QVERIFY(manager.moveTabToEdge(sidebar, Edge::Right));
+    auto* host = manager.windowWidget(window); showTestWindow(host);
+    QVERIFY(QTest::qWaitForWindowExposed(host));
+    for (const auto tab : {regular, pinned}) {
+        auto* group = groupView(host, manager.model().groupForTab(tab)); QVERIFY(group);
+        auto* bar = group->tabBar();
+        const int natural = bar->fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, title).width();
+        QVERIFY(natural > appearance.maximumTitleWidth);
+        QCOMPARE(bar->tabRect(0).width(), (clipTabs ? appearance.maximumTitleWidth : natural) + 35);
+        QCOMPARE(bar->tabText(0), title);
+    }
+    auto* button = edgeButton(host, sidebar); QVERIFY(button);
+    const int natural = button->fontMetrics().horizontalAdvance(title);
+    QVERIFY(natural > appearance.maximumSidebarTitleWidth);
+    QCOMPARE(button->height(), (clipSidebar ? appearance.maximumSidebarTitleWidth : natural) + 24);
+    QCOMPARE(manager.model().tab(sidebar)->title, title); QCOMPARE(button->text(), title);
+    QCOMPARE(button->toolTip(), title); QCOMPARE(button->accessibleName(), title);
+}
+
+void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations_data()
+{
+    QTest::addColumn<bool>("sidebarSource");
+    QTest::newRow("tab-bar-source") << false;
+    QTest::newRow("sidebar-source") << true;
+}
+
+void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations()
+{
+    QFETCH(bool, sidebarSource);
+    WindowManager manager; auto appearance = manager.tabAppearance();
+    appearance.showIcons = false; appearance.showSidebarIcons = false;
+    appearance.showNumbers = false; appearance.showSidebarNumbers = false;
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 73;
+    appearance.clipSidebarTitles = true; appearance.maximumSidebarTitleWidth = 137;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto available = qApp->primaryScreen()->availableGeometry();
+    const QSize size(qMin(900, available.width() - 24), qMin(650, available.height() - 24));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Drag title limits", size});
+    const QString title(25, QLatin1Char('W'));
+    const auto anchor = manager.addTab(window, content("Anchor"), options(title));
+    const auto anchorGroup = manager.model().groupForTab(anchor);
+    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+        const auto side = manager.addTab(window, content(QString("Edge %1").arg(int(edge))), options(title), anchorGroup);
+        QVERIFY(manager.moveTabToEdge(side, edge));
+    }
+    auto* editor = new QPlainTextEdit("Persistent drag content"); const QPointer<QPlainTextEdit> observed(editor);
+    const auto moving = manager.addTab(window, editor, options(title), anchorGroup);
+    if (sidebarSource) QVERIFY(manager.moveTabToEdge(moving, Edge::Left));
+    const auto pane = manager.model().tab(moving)->activePane;
+    auto* host = static_cast<WorkspaceWindow*>(manager.windowWidget(window));
+    host->move(available.topLeft() + QPoint(12, 12)); showTestWindow(host);
+    QVERIFY(QTest::qWaitForWindowExposed(host));
+    for (int policy = 0; policy < 2; ++policy) {
+        if (policy) {
+            appearance.maximumTitleWidth = 137; appearance.maximumSidebarTitleWidth = 73;
+            QVERIFY(manager.setTabAppearance(appearance));
+        }
+        QVERIFY(manager.activateTab(moving));
+        QTRY_VERIFY(editor->isVisible());
+        const auto before = manager.model().toJson();
+        const auto sourceGroup = manager.model().groupForTab(moving);
+        QWidget* receiver = nullptr; QRect sourceLabel;
+        if (sidebarSource) {
+            auto* button = edgeButton(host, moving); QVERIFY(button); receiver = button;
+            sourceLabel = QRect(button->mapToGlobal(QPoint()), button->size());
+        } else {
+            auto* group = groupView(host, sourceGroup); QVERIFY(group); auto* bar = group->tabBar(); receiver = bar;
+            const int index = manager.model().group(sourceGroup)->tabs.indexOf(moving);
+            sourceLabel = bar->tabRect(index).translated(bar->mapToGlobal(QPoint()));
+        }
+        const QPoint threshold = sourceLabel.center() + (sidebarSource ? QPoint(0, 20) : QPoint(20, 0));
+        const auto sourceStrip = sidebarSource ? host->surface()->edgeBarRects().value(Edge::Left)
+            : host->surface()->tabBarRects().value(sourceGroup);
+        QVERIFY(sourceStrip.contains(threshold));
+        sendDragMouse(receiver, QEvent::MouseButtonPress, sourceLabel.center(), Qt::LeftButton);
+        sendDragMouse(receiver, QEvent::MouseMove, threshold);
+        QCOMPARE(QWidget::mouseGrabber(), host);
+        auto* labelOnly = dragLabelPreview(); QVERIFY(labelOnly && labelOnly->isVisible());
+        const int sourceExtent = sidebarSource ? appearance.maximumSidebarTitleWidth + 24 : appearance.maximumTitleWidth + 35;
+        QCOMPARE(sidebarSource ? labelOnly->height() : labelOnly->width(), sourceExtent + 12);
+        const auto sourceGap = sidebarSource ? host->surface()->edgeInsertionPreviewRect(Edge::Left)
+            : host->surface()->insertionPreviewRect(sourceGroup);
+        QCOMPARE(sidebarSource ? sourceGap.height() : sourceGap.width(), sourceExtent);
+        QCOMPARE(manager.model().toJson(), before); QCOMPARE(manager.paneWidget(pane), editor);
+        QVERIFY(editor->isVisible());
+
+        // The first exit creates the carrier; subsequent targets only change its presentation.
+        sendDragMouse(host, QEvent::MouseMove, host->surface()->centralRectGlobal().center());
+        QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(QWidget::mouseGrabber());
+        QVERIFY(carrier && carrier != host); QVERIFY(!dragLabelPreview());
+        const auto duringDrag = manager.model().toJson();
+        const auto carrierId = carrier->id();
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+            auto* targetGroup = groupView(host, manager.model().groupForTab(anchor)); QVERIFY(targetGroup);
+            const auto tabPoint = targetGroup->viewportRectGlobal().center();
+            sendDragMouse(carrier, QEvent::MouseMove, tabPoint);
+            QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
+            auto* carriedGroup = groupView(carrier, manager.model().groupForTab(moving)); QVERIFY(carriedGroup);
+            QCOMPARE(carriedGroup->tabBar()->tabRect(0).width(), appearance.maximumTitleWidth + 35);
+            QCOMPARE(targetGroup->insertionPreviewRectGlobal().width(), appearance.maximumTitleWidth + 35);
+            QCOMPARE(carrier->surface()->dragLabelExtent(moving, false), appearance.maximumTitleWidth + 35);
+
+            const bool vertical = edge == Edge::Left || edge == Edge::Right;
+            const auto area = host->surface()->edgeBarRects().value(edge); QVERIFY(!area.isEmpty());
+            const QPoint point = vertical ? QPoint(area.center().x(), area.top() + 8)
+                : QPoint(area.left() + 8, area.center().y());
+            sendDragMouse(carrier, QEvent::MouseMove, point);
+            QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation(int(WorkspaceWindow::DragPresentation::Left) + int(edge)));
+            auto* label = carrier->findChild<QAbstractButton*>("DragEdgeLabel"); QVERIFY(label && label->isVisible());
+            QCOMPARE(vertical ? label->height() : label->width(), appearance.maximumSidebarTitleWidth + 24);
+            const auto gap = host->surface()->edgeInsertionPreviewRect(edge); QVERIFY(!gap.isEmpty());
+            QCOMPARE(vertical ? gap.height() : gap.width(), appearance.maximumSidebarTitleWidth + 24);
+            QCOMPARE(carrier->surface()->dragLabelExtent(moving, true), appearance.maximumSidebarTitleWidth + 24);
+            QCOMPARE(label->text(), title); QCOMPARE(label->toolTip(), title); QCOMPARE(label->accessibleName(), title);
+            QCOMPARE(manager.model().tab(moving)->title, title); QCOMPARE(manager.model().tab(moving)->activePane, pane);
+            QCOMPARE(manager.paneWidget(pane), editor); QVERIFY(observed && observed->isVisible());
+            QCOMPARE(manager.model().toJson(), duringDrag);
+        }
+        QTest::keyClick(carrier, Qt::Key_Escape); QApplication::processEvents();
+        QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!manager.model().window(carrierId));
+        QCOMPARE(manager.model().toJson(), before); QCOMPARE(manager.paneWidget(pane), editor);
+        QCOMPARE(editor->toPlainText(), QStringLiteral("Persistent drag content"));
+        QVERIFY(manager.model().validate());
     }
 }
 

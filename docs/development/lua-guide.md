@@ -101,14 +101,16 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 
 ## 标题裁切
 
-普通、固定和四边侧栏共用标题裁切策略。开关 `clip_tab_titles` 与文字最大长度 `maximum_tab_title_width` 可通过标签外观或设置接口读取、修改；具体单位、默认值和范围见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。只限制显示范围，不修改标题字符串，提示和完整标签列表仍显示完整标题。
+普通及固定标签栏使用 `clip_tab_titles`／`maximum_tab_title_width`，四边非固定收纳条独立使用 `clip_sidebar_titles`／`maximum_sidebar_title_width`。两套值均可通过标签外观或设置接口读取、修改；单位、默认值、范围见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。只限制显示范围，不修改标题字符串，提示和完整标签列表仍显示完整标题。
 
 ```lua
 assert(muxora.tabs.set_appearance({
   clip_tab_titles = true,
-  maximum_tab_title_width = 120
+  maximum_tab_title_width = 120,
+  clip_sidebar_titles = true,
+  maximum_sidebar_title_width = 80
 }))
--- The settings API edits the same appearance, preserving the saved limit.
+-- The settings API edits the same appearance; sidebar values stay unchanged.
 assert(muxora.settings.update({ clip_tab_titles = false }))
 ```
 

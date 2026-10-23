@@ -131,7 +131,8 @@ const Items& layout(CommandMenuSurface surface)
             group("view.tabAppearance", QT_TRANSLATE_NOOP("WindowSystem", "标签栏"), {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
                 command("presentation.toggleNumbers"), command("presentation.toggleTitleClipping"), separator(), command("presentation.toggleMultiline"),
                 command("presentation.toggleWheelExpandRows")}),
-            group("view.sidebarAppearance", QT_TRANSLATE_NOOP("WindowSystem", "侧边栏标签"), {command("presentation.toggleSidebarIcons"), command("presentation.toggleSidebarNumbers")}),
+            group("view.sidebarAppearance", QT_TRANSLATE_NOOP("WindowSystem", "侧边栏标签"), {command("presentation.toggleSidebarIcons"), command("presentation.toggleSidebarNumbers"),
+                command("presentation.toggleSidebarTitleClipping")}),
             group("view.fullscreen", QT_TRANSLATE_NOOP("WindowSystem", "全屏"), {command("window.fullscreen.toggle"), command("window.fullscreen.group"),
                 command("window.fullscreen.pane"), separator(), command("window.zen.toggle"), command("window.fullscreen.exit")}),
             group("view.tabs", QT_TRANSLATE_NOOP("WindowSystem", "切换标签"), {command("workspace.previousTab"), command("workspace.nextTab")}),
@@ -352,6 +353,7 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     else if (id == "presentation.toggleNewTabButton") appearanceChecked = manager->tabAppearance().showNewTabButton;
     else if (id == "presentation.toggleNumbers") appearanceChecked = manager->tabAppearance().showNumbers;
     else if (id == "presentation.toggleTitleClipping") appearanceChecked = manager->tabAppearance().clipTitles;
+    else if (id == "presentation.toggleSidebarTitleClipping") appearanceChecked = manager->tabAppearance().clipSidebarTitles;
     else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;
     else if (id == "presentation.toggleWheelExpandRows") appearanceChecked = manager->tabAppearance().wheelExpandRows;
     const bool checkedCommand = appearanceChecked.has_value() || id == "window.tabBars.toggle" || id == "window.sideBars.toggle"

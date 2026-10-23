@@ -20,6 +20,7 @@ constexpr std::array appearanceBooleans{std::pair{"multiline", &TabAppearance::m
                                         std::pair{"show_sidebar_icons", &TabAppearance::showSidebarIcons},
                                         std::pair{"show_sidebar_numbers", &TabAppearance::showSidebarNumbers},
                                         std::pair{"clip_tab_titles", &TabAppearance::clipTitles},
+                                        std::pair{"clip_sidebar_titles", &TabAppearance::clipSidebarTitles},
                                         std::pair{"show_new_tab_button", &TabAppearance::showNewTabButton}};
 constexpr std::array themeColors{std::pair{"background", &Theme::background},
                                  std::pair{"surface", &Theme::surface},
@@ -109,6 +110,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     map["tab_position"] = value.centralPlacement == TabBarPlacement::Top ? "top" : "bottom";
     map["pinned_tab_position"] = value.pinnedPlacement == TabBarPlacement::Top ? "top" : "bottom";
     map["maximum_tab_title_width"] = value.maximumTitleWidth;
+    map["maximum_sidebar_title_width"] = value.maximumSidebarTitleWidth;
     QVariantList colors;
     for (const auto &preset : value.colors) {
         QVariantMap item{{"id", preset.id}, {"name", preset.name}};
@@ -124,7 +126,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     return map;
 }
 void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKnown = true) {
-    QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "colors"};
+    QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width", "colors"};
     for (const auto &[name, field] : appearanceBooleans) {
         known.insert(name);
         if (map.contains(name))
@@ -140,6 +142,9 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
         value.pinnedPlacement = tabPlacement(map["pinned_tab_position"]);
     if (map.contains("maximum_tab_title_width"))
         value.maximumTitleWidth = number(map["maximum_tab_title_width"], value.maximumTitleWidth,
+            minimumTabTitleWidth, maximumTabTitleWidth);
+    if (map.contains("maximum_sidebar_title_width"))
+        value.maximumSidebarTitleWidth = number(map["maximum_sidebar_title_width"], value.maximumSidebarTitleWidth,
             minimumTabTitleWidth, maximumTabTitleWidth);
     if (map.contains("colors")) {
         const auto presets = map["colors"];
@@ -192,7 +197,7 @@ void ScriptHost::Private::installAppearanceApi() {
         auto appearance = manager->tabAppearance();
         QSet<QString> known{"reveal_delay_ms", "zen_fullscreen", "drag_outside_kind",  "new_tab_position",
                             "language",        "tab_position",   "pinned_tab_position", "caption_button_order",
-                            "maximum_tab_title_width"};
+                            "maximum_tab_title_width", "maximum_sidebar_title_width"};
         for (const auto &[name, field] : behaviorBooleans) {
             known.insert(name);
             if (map.contains(name))

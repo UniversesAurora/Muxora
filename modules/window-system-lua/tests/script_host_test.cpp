@@ -1252,27 +1252,47 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
     auto reply = run(host, R"(
       local initial=muxora.settings.get()
       assert(initial.clip_tab_titles==false and initial.maximum_tab_title_width==160)
+      assert(initial.clip_sidebar_titles==false and initial.maximum_sidebar_title_width==160)
       assert(muxora.settings.update({clip_tab_titles=true,maximum_tab_title_width=137}))
       local appearance=muxora.tabs.appearance()
       assert(appearance.clip_tab_titles and appearance.maximum_tab_title_width==137)
+      assert(not appearance.clip_sidebar_titles and appearance.maximum_sidebar_title_width==160)
+      assert(muxora.tabs.set_appearance({clip_sidebar_titles=true,maximum_sidebar_title_width=113}))
+      assert(muxora.settings.get().clip_tab_titles and muxora.settings.get().maximum_tab_title_width==137)
       assert(muxora.tabs.set_appearance({clip_tab_titles=false}))
       local disabled=muxora.settings.get()
       assert(not disabled.clip_tab_titles and disabled.maximum_tab_title_width==137)
+      assert(disabled.clip_sidebar_titles and disabled.maximum_sidebar_title_width==113)
       for _,invalid in ipairs({15,2049,160.5,'160',false,math.huge,0/0}) do
         assert(not pcall(muxora.settings.update,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
         assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
         local unchanged=muxora.settings.get()
         assert(not unchanged.clip_tab_titles and unchanged.maximum_tab_title_width==137)
+        assert(unchanged.clip_sidebar_titles and unchanged.maximum_sidebar_title_width==113)
+        assert(not pcall(muxora.settings.update,{maximum_tab_title_width=200,maximum_sidebar_title_width=invalid}))
+        assert(not pcall(muxora.tabs.set_appearance,{clip_sidebar_titles=false,maximum_sidebar_title_width=invalid}))
+        unchanged=muxora.settings.get()
+        assert(not unchanged.clip_tab_titles and unchanged.maximum_tab_title_width==137)
+        assert(unchanged.clip_sidebar_titles and unchanged.maximum_sidebar_title_width==113)
       end
       assert(not pcall(muxora.settings.update,{clip_tab_titles='true'}))
       assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=1}))
+      assert(not pcall(muxora.settings.update,{clip_sidebar_titles='true'}))
+      assert(not pcall(muxora.tabs.set_appearance,{clip_sidebar_titles=1}))
       for _,boundary in ipairs({16,2048}) do
+        local sidebar_before=muxora.settings.get().maximum_sidebar_title_width
         assert(muxora.tabs.set_appearance({maximum_tab_title_width=boundary}))
         assert(muxora.settings.get().maximum_tab_title_width==boundary)
+        assert(muxora.settings.get().maximum_sidebar_title_width==sidebar_before)
+        assert(muxora.settings.update({maximum_sidebar_title_width=boundary}))
+        assert(muxora.tabs.appearance().maximum_sidebar_title_width==boundary)
+        assert(muxora.settings.get().maximum_tab_title_width==boundary)
       end
-      assert(muxora.settings.update({clip_tab_titles=true,maximum_tab_title_width=137}))
+      assert(muxora.settings.update({clip_tab_titles=true,maximum_tab_title_width=137,
+                                     clip_sidebar_titles=true,maximum_sidebar_title_width=113}))
       local snapshot=muxora.layout.snapshot()
-      assert(muxora.settings.update({clip_tab_titles=false,maximum_tab_title_width=200}))
+      assert(muxora.settings.update({clip_tab_titles=false,maximum_tab_title_width=200,
+                                     clip_sidebar_titles=false,maximum_sidebar_title_width=300}))
       assert(muxora.layout.restore(snapshot))
       return muxora.settings.get()
     )");
@@ -1280,7 +1300,10 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
     const auto restored = reply.values[0].toMap();
     QVERIFY(restored.value("clip_tab_titles").toBool());
     QCOMPARE(restored.value("maximum_tab_title_width").toInt(), 137);
+    QVERIFY(restored.value("clip_sidebar_titles").toBool());
+    QCOMPARE(restored.value("maximum_sidebar_title_width").toInt(), 113);
     QVERIFY(manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 137);
+    QVERIFY(manager.tabAppearance().clipSidebarTitles); QCOMPARE(manager.tabAppearance().maximumSidebarTitleWidth, 113);
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {
     WindowManager manager;

@@ -97,7 +97,7 @@ QSet<QString> allSettingKeys()
     return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.colors"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -309,10 +309,10 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     QCOMPARE(windowCategory->child(2)->text(0), QStringLiteral("标签外观"));
     QCOMPARE(windowCategory->child(2)->data(0, Qt::UserRole).toString(), QStringLiteral("window/tabs"));
     QCOMPARE(settingKeys(page), allSettingKeys());
-    QCOMPARE(page->findChildren<QWidget*>(QStringLiteral("SettingRow")).size(), 26);
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(page->findChildren<QWidget*>(QStringLiteral("SettingRow")).size(), allSettingKeys().size());
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     categories->setCurrentItem(windowCategory->child(0));
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     search->setText(QStringLiteral("window.revealDelayMs"));
     QCOMPARE(visibleSettingRows(page), 1);
     categories->setCurrentItem(windowCategory);
@@ -322,9 +322,9 @@ void PaneSettingsTest::settingsSearchAndCategoryNavigationKeepRealRows()
     categories->setCurrentItem(windowCategory);
     QCOMPARE(visibleSettingRows(page), 2);
     search->setText(QStringLiteral("窗口"));
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
 }
 
 void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
@@ -347,7 +347,7 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QTest::mouseClick(categories->viewport(), Qt::LeftButton, Qt::NoModifier,
                      categories->visualItemRect(drag).center());
     QVERIFY(scroll->verticalScrollBar()->value() > 0);
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     QVERIFY(drag->font(0).bold());
     QVERIFY(!root->font(0).bold());
     scroll->verticalScrollBar()->setValue(0);
@@ -389,13 +389,13 @@ void PaneSettingsTest::settingsCategoryTreeSupportsKeyboardExpansion()
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Left);
     QVERIFY(!root->isExpanded());
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     QTest::keyClick(categories, Qt::Key_Right);
     QVERIFY(root->isExpanded());
     QTest::keyClick(categories, Qt::Key_Down);
     QCOMPARE(categories->currentItem(), drag);
     QVERIFY(drag->font(0).bold());
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
 }
 
 void PaneSettingsTest::settingsDisclosureHoverChangesOnlyTheChevron()
@@ -565,7 +565,7 @@ void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()
     QVERIFY(display->isHidden());
     for (auto* heading : headings) QVERIFY(heading->isHidden());
     search->clear();
-    QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
     QVERIFY(!root->isHidden());
     QVERIFY(!drag->isHidden());
     QVERIFY(!display->isHidden());
@@ -780,7 +780,7 @@ void PaneSettingsTest::newTabPositionSearchPreservesTheExistingSettingsAndNaviga
     QVERIFY(combo->isVisible()); QVERIFY(!categories->topLevelItem(0)->isHidden());
     QVERIFY(categories->topLevelItem(0)->child(0)->isHidden()); QVERIFY(categories->topLevelItem(0)->child(1)->isHidden());
     QTest::keyClick(search, Qt::Key_A, Qt::ControlModifier); QTest::keyClick(search, Qt::Key_Backspace);
-    QTRY_COMPARE(visibleSettingRows(page), 26); QCOMPARE(settingKeys(page), allSettingKeys());
+    QTRY_COMPARE(visibleSettingRows(page), allSettingKeys().size()); QCOMPARE(settingKeys(page), allSettingKeys());
     QCOMPARE(manager.model().tabs().size(), originalCount); QCOMPARE(tabFor(manager, page), tab);
     QVERIFY(!categories->topLevelItem(0)->child(0)->isHidden()); QVERIFY(!categories->topLevelItem(0)->child(1)->isHidden());
 }
@@ -809,7 +809,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data(
                                 "ZenFullscreenMode", "HideToolbarOptionsWhenLocked", "CaptionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
                                 "window.visibility.tabBars", "window.visibility.sideBars", "CentralTabPlacement", "PinnedTabPlacement",
                                 "MultilineTabs", "WheelExpandTabRows", "ShowTabIcons", "ShowNewTabButton", "ShowTabNumbers",
-                                "ClipTabTitles", "MaximumTabTitleWidth"}) {
+                                "ClipTabTitles", "MaximumTabTitleWidth", "ClipSidebarTabTitles", "MaximumSidebarTabTitleWidth"}) {
         for (const bool deleteManager : {false, true}) {
             const auto row = QByteArray(control) + (deleteManager ? "-manager" : "-page");
             QTest::newRow(row.constData()) << QString::fromLatin1(control) << deleteManager;
@@ -879,6 +879,8 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "ShowTabNumbers") QVERIFY(appearance.value("showNumbers").toBool());
     else if (control == "ClipTabTitles") QVERIFY(appearance.value("clipTitles").toBool());
     else if (control == "MaximumTabTitleWidth") QCOMPARE(appearance.value("maximumTitleWidth").toInt(), 900);
+    else if (control == "ClipSidebarTabTitles") QVERIFY(appearance.value("clipSidebarTitles").toBool());
+    else if (control == "MaximumSidebarTabTitleWidth") QCOMPARE(appearance.value("maximumSidebarTitleWidth").toInt(), 900);
     const auto savedWindow = saved.value("windows").toArray().first().toObject();
     QVERIFY(!savedWindow.contains("viewState"));
     if (control.startsWith("window.visibility.")) {
@@ -947,7 +949,7 @@ void PaneSettingsTest::singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWin
     QCOMPARE(echoedMain.size(), 0); QCOMPARE(echoedFloat.size(), 0);
     QTRY_COMPARE(mainSurface->tabBarRects().size(), 1); QCOMPARE(floatSurface->tabBarRects().size(), 0);
     QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
-    QCOMPARE(settingKeys(page), allSettingKeys()); QCOMPARE(visibleSettingRows(page), 26);
+    QCOMPARE(settingKeys(page), allSettingKeys()); QCOMPARE(visibleSettingRows(page), allSettingKeys().size());
 }
 
 QTEST_MAIN(PaneSettingsTest)
