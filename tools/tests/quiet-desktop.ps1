@@ -254,6 +254,7 @@ if ($StateFile) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -566,6 +567,105 @@ public static class QuietDesktopNative {
                 Normal = new Rect { Left = left, Top = top, Right = right, Bottom = bottom } } };
     }
 }
+
+// When a test window closes, Windows hands the foreground to the next window
+// in Z order. With the applications cleared that can be a shell CoreWindow,
+// which takes the foreground back from the next test window a few hundred
+// milliseconds after that window activates. A transparent 1x1 runner window
+// at the top of the Z order receives that handoff instead and never activates
+// itself; while it holds the foreground it lets any test process take it.
+public sealed class QuietDesktopForegroundAnchor : IDisposable {
+    delegate IntPtr WindowProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct WindowClass {
+        public uint Size, Style; public WindowProc Procedure; public int ClassExtra, WindowExtra;
+        public IntPtr Instance, Icon, Cursor, Background; public string Menu, Name; public IntPtr SmallIcon;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct Message {
+        public IntPtr Window; public uint Id; public IntPtr WParam, LParam; public uint Time; public int X, Y;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern ushort RegisterClassExW(ref WindowClass windowClass);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool UnregisterClassW(string name, IntPtr instance);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateWindowExW(uint extendedStyle, string className, string title, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
+    [DllImport("user32.dll")] static extern IntPtr DefWindowProcW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern void PostQuitMessage(int code);
+    [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern int GetMessageW(out Message message, IntPtr window, uint first, uint last);
+    [DllImport("user32.dll")] static extern bool TranslateMessage(ref Message message);
+    [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref Message message);
+    [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr window, uint key, byte alpha, uint flags);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(uint process);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
+
+    const uint WM_DESTROY = 0x0002, WM_CLOSE = 0x0010, WM_ACTIVATE = 0x0006;
+    const string ClassName = "MuxoraQuietDesktopForegroundAnchor";
+    readonly WindowProc procedure;
+    readonly Thread thread;
+    readonly ManualResetEventSlim ready = new ManualResetEventSlim();
+    IntPtr window;
+    Exception failure;
+
+    public QuietDesktopForegroundAnchor() {
+        procedure = Procedure;
+        thread = new Thread(Run) { IsBackground = true, Name = ClassName };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        ready.Wait();
+        if (failure != null) throw failure;
+    }
+
+    public IntPtr Handle { get { return window; } }
+
+    IntPtr Procedure(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam) {
+        // ASFW_ANY: the next test window may take the foreground from here.
+        if (message == WM_ACTIVATE && ((long)wParam & 0xffff) != 0) AllowSetForegroundWindow(0xffffffff);
+        if (message == WM_DESTROY) PostQuitMessage(0);
+        return DefWindowProcW(handle, message, wParam, lParam);
+    }
+
+    void Run() {
+        var instance = GetModuleHandleW(null);
+        try {
+            var windowClass = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Procedure = procedure,
+                Instance = instance, Name = ClassName };
+            if (RegisterClassExW(ref windowClass) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            // Layered, transparent and tool: invisible, never hit by the pointer
+            // and not on the taskbar, but still activatable. Just past the far
+            // corner of the virtual screen, so no test pixel or point lies on it.
+            int right = GetSystemMetrics(76 /* SM_XVIRTUALSCREEN */) + GetSystemMetrics(78 /* SM_CXVIRTUALSCREEN */);
+            int bottom = GetSystemMetrics(77 /* SM_YVIRTUALSCREEN */) + GetSystemMetrics(79 /* SM_CYVIRTUALSCREEN */);
+            window = CreateWindowExW(0x00080000 | 0x00000020 | 0x00000080 /* LAYERED | TRANSPARENT | TOOLWINDOW */,
+                ClassName, ClassName, 0x80000000 /* WS_POPUP */, right, bottom, 1, 1,
+                IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+            if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+            SetLayeredWindowAttributes(window, 0, 0, 2 /* LWA_ALPHA */);
+            ShowWindow(window, 5 /* SW_SHOW */);
+            SetForegroundWindow(window);
+        } catch (Exception error) {
+            failure = error;
+        }
+        ready.Set();
+        if (failure != null) { UnregisterClassW(ClassName, instance); return; }
+        Message message;
+        while (GetMessageW(out message, IntPtr.Zero, 0, 0) > 0) {
+            TranslateMessage(ref message);
+            DispatchMessageW(ref message);
+        }
+        UnregisterClassW(ClassName, instance);
+    }
+
+    public void Dispose() {
+        if (window != IntPtr.Zero && thread.IsAlive) {
+            PostMessageW(window, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+            thread.Join();
+        }
+        ready.Dispose();
+    }
+}
 '@
 
 function Read-WindowSnapshot($window) {
@@ -630,8 +730,13 @@ if (Test-Path -LiteralPath $taskStateFile) {
     throw "A previous run did not restore its windows. Run with -Restore first: $taskStateFile"
 }
 
+$taskAnchor = $null
 Invoke-QuietDesktopSession -Prepare {
     Initialize-WindowSnapshot
     Clear-WindowSnapshot
-} -TestCommand $TestCommand -Recover { Restore-Windows }
+    $script:taskAnchor = [QuietDesktopForegroundAnchor]::new()
+} -TestCommand $TestCommand -Recover {
+    if ($script:taskAnchor) { $script:taskAnchor.Dispose(); $script:taskAnchor = $null }
+    Restore-Windows
+}
 exit $LASTEXITCODE
