@@ -579,25 +579,9 @@ function Read-WindowSnapshot($window) {
 function Restore-Windows {
     if (-not (Test-Path -LiteralPath $taskStateFile)) { return }
     $state = Get-Content -LiteralPath $taskStateFile -Raw | ConvertFrom-Json
-    if ($state.version -eq 2) {
-        $records = @($state.windows | ForEach-Object { Read-WindowSnapshot $_ })
-        [QuietDesktopNative]::Restore([QuietDesktopNative+WindowState[]]$records, (Read-WindowSnapshot $state.foregroundWindow))
-    } else {
-        # Emergency recovery for the original handle-only snapshot format.
-        $windows = @($state.windows)
-        [array]::Reverse($windows)
-        foreach ($window in $windows) {
-            $handle = [IntPtr][long]$window
-            if ([QuietDesktopNative]::IsWindow($handle) -and [QuietDesktopNative]::IsIconic($handle)) {
-                [void][QuietDesktopNative]::ShowWindowAsync($handle, 9)
-            }
-        }
-    }
-    $foreground = [IntPtr][long]$state.foreground
-    $sameForeground = $state.version -ne 2 -or [QuietDesktopNative]::SameWindow((Read-WindowSnapshot $state.foregroundWindow))
-    if ($state.version -ne 2 -and $sameForeground -and $foreground -ne [IntPtr]::Zero -and [QuietDesktopNative]::IsWindow($foreground)) {
-        [void][QuietDesktopNative]::SetForegroundWindow($foreground)
-    }
+    if ($state.version -ne 2) { throw 'Unsupported desktop snapshot version.' }
+    $records = @($state.windows | ForEach-Object { Read-WindowSnapshot $_ })
+    [QuietDesktopNative]::Restore([QuietDesktopNative+WindowState[]]$records, (Read-WindowSnapshot $state.foregroundWindow))
     Remove-Item -LiteralPath $taskStateFile
 }
 

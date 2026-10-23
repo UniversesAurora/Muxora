@@ -464,16 +464,15 @@ try {
     & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -Command $taskChildCommand
     Assert-That ($LASTEXITCODE -eq 9) 'The child PowerShell -Command argument was not forwarded intact.'
     Assert-That ((Get-Content -LiteralPath (Join-Path $taskTemporary 'probe-ran') -Raw).Trim() -eq '9') 'The child PowerShell command did not execute.'
-    # Keep emergency recovery compatible with snapshots written by the old script.
+    # Unsupported snapshots must not perform window actions or be deleted.
     $owner = $original | Where-Object Name -eq owner
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$owner.Handle, 7)
     @{ foreground = 0; windows = @($owner.Handle) } | ConvertTo-Json |
         Set-Content -LiteralPath $taskRecovery -Encoding utf8
     & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID -Restore
-    Assert-That ($LASTEXITCODE -eq 0) 'Legacy recovery failed.'
-    $elapsed = [Diagnostics.Stopwatch]::StartNew()
-    while ([QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle) -and $elapsed.ElapsedMilliseconds -lt 3000) { Start-Sleep -Milliseconds 25 }
-    Assert-That (-not [QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle)) 'Legacy recovery left the owner minimized.'
+    Assert-That ($LASTEXITCODE -ne 0) 'An unsupported recovery snapshot was accepted.'
+    Assert-That (Test-Path -LiteralPath $taskRecovery) 'Rejected recovery deleted its snapshot.'
+    Assert-That ([QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle)) 'Rejected recovery changed a window.'
     # An HWND reused by another process must never receive recovery actions.
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$owner.Handle, 7)
     $forged = $owner | ConvertTo-Json -Depth 6 | ConvertFrom-Json
@@ -519,4 +518,4 @@ try {
     if (-not $taskResolved.StartsWith($taskAllowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fixture cleanup path.' }
     Remove-Item -LiteralPath $taskResolved -Recurse -Force
 }
-Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry/Z-order recovery with delayed reordering, child failure and -Command forwarding, legacy recovery, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
+Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry/Z-order recovery with delayed reordering, child failure and -Command forwarding, unsupported snapshot rejection, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
