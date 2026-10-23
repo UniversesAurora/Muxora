@@ -189,7 +189,9 @@ void WindowManager::registerWindowCommands()
             }
             connect(window, &QObject::destroyed, &picker, &QMenu::close);
             const auto* chosen = picker.exec(QCursor::pos());
-            if (!window) return false;
+            // Closing the window can dismiss the picker before the widget is
+            // deleted from the event loop; the model already knows it closed.
+            if (!window || !d->model.window(c.window)) return false;
             return !chosen || resetToolbarWidth(c.window, chosen->data().toString());
         }, [this](const CommandContext& c) {
             const auto window = d->windows.value(c.window);

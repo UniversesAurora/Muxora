@@ -50,6 +50,7 @@ private slots:
     void pickerSupportsKeyboardSelectionAndCancellation();
     void invalidRequestsLeaveTheLayoutUnchanged();
     void closingTheWindowDismissesItsPicker();
+    void closingTheWindowAfterThePickerIsDismissedFails();
 };
 
 void ToolbarResetTest::publicApiAndExplicitCommandRestoreNaturalWidth()
@@ -167,6 +168,24 @@ void ToolbarResetTest::invalidRequestsLeaveTheLayoutUnchanged()
     QVERIFY(!manager.resetToolbarWidth(id, "missing"));
     QVERIFY(!manager.execute("window.toolbar.resetSize", {{"strip", "missing"}}, id));
     QCOMPARE(manager.saveLayout(), before);
+}
+
+void ToolbarResetTest::closingTheWindowAfterThePickerIsDismissedFails()
+{
+    // The picker can end before the closed window's widget is deleted; the
+    // command must still report that its window is gone, not a cancellation.
+    WindowManager manager;
+    const auto id = manager.createWindow();
+    manager.showWindow(id);
+    bool closed = false;
+    QTimer::singleShot(30, &manager, [&] {
+        if (auto* picker = qobject_cast<QMenu*>(QApplication::activePopupWidget())) picker->close();
+        closed = manager.requestCloseWindow(id);
+    });
+    QVERIFY(!manager.execute("window.toolbar.resetSize", {}, id));
+    QVERIFY(closed);
+    QVERIFY(!manager.model().window(id));
+    QVERIFY(!QApplication::activePopupWidget());
 }
 
 void ToolbarResetTest::closingTheWindowDismissesItsPicker()
