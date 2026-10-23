@@ -183,6 +183,9 @@ void WorkspaceTest::optionalBarsTravelWithTheTabAndAreReleasedOnClose()
     QCOMPARE(top->window(), manager.windowWidget(root));
     QCOMPARE(bottom->window(), manager.windowWidget(root));
     QVERIFY(manager.setTabTopBar(tab, nullptr));
+    // A cleared bar is deleted from the event loop, like a replaced pane bar.
+    QVERIFY(top && top->isHidden());
+    deliverDeferredDeletes();
     QVERIFY(top.isNull());
     QVERIFY(bottom);
     QVERIFY(manager.closeTab(tab));
