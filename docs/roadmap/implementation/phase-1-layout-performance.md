@@ -9,7 +9,7 @@
 - 重入保护必须保留：宿主回调可能在任何 `emit` 或 `setFocus` 中同步销毁 `WindowManager`；每次回调后的 `QPointer` 检查不能删。
 - 模型的“候选副本 + 校验”原子性是正确性基础。快速路径只能用于不改变成员关系（哪个标签在哪个组、哪个窗格在哪个标签）的操作，并且要证明不变量不会被破坏。
 
-**步骤顺序**：1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8；1.9、1.10 与其余步骤独立。
+**步骤顺序**：1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8；1.7 之后依次做 1.11、1.12（两者都改 `tab_content.cpp`／刷新路径，串行）；1.9、1.10 与其余步骤独立。
 
 **基准的实际跑法（1.4–1.6）**：与 1.1–1.3 相同（`bench-release` 构建、offscreen、100／500／1000 档、每场景 30 次、不含 `cycle`），由临时脚本按 `bench.ps1` 的配置构建后运行。1.4-before 在合并后的 `main`（`151f752`）上重新测量：1.3-after 那次运行之后 `main` 又合入了状态栏高度改动，模块代码不完全相同。之后每一步的 before 就是上一步的 after（代码相同，没有重跑）。运行期间不编译，其他工作只读写文件。1.6b 的最终 after 用 `pwsh ./tools/bench.ps1 -Name 1.6b-after` 跑完整基准（含 `cycle`），这时一次只要 30 分钟左右。
 
@@ -461,6 +461,7 @@
 - [ ] 基准中 1000 个标签的每标签控件数和私有内存下降（写出数字）。
 - [ ] 外部宿主夹具调用一次 `setContentVisibilityHandler()`。
 - [ ] `modules/window-system/README.md` 说明可见性通知的时机。
+- [ ] [通用窗口系统设计](../../design/window-system-design.md) 写明内容控件的挂接契约：同一顶层窗口内移动不改 parent；跨顶层窗口只改一次 parent，并在此之前通过可见性通知让宿主释放 GPU 资源（来自 [性能计划 §5](../review-2026-10/performance-plan.md#5-gpu-渲染与终端视图契约)，终端接入前必须成立）。
 
 **风险**：拖拽中的标签预览（`dragLabelPixmap`）和完整标签列表可能读取非活动标签的视图；逐个检查 `drag_controller.cpp`、`tab_strip.cpp` 中对页面的访问。
 
@@ -555,5 +556,48 @@
 **实现**：`State` 中增加 `QHash<QString, qsizetype> indexById;`。`add()` 追加后插入；`remove()` 删除后重建（删除使后续下标移动，命令数量小，重建 O(n) 可接受）；`find()` 查表。`commands` 向量的顺序不变（菜单和分发依赖注册顺序）。
 
 **测试**：`shortcut_dispatch_test` 中已有注册、删除、回调中修改注册表的用例；新增 `findSurvivesRemovalInTheMiddle`：注册 A、B、C，删除 B，`find("C")` 返回正确命令，`commands()` 顺序为 A、C。
+
+**状态**：未开始。
+
+---
+
+## 1.11 结构变化与同步批量关闭的成本（先测量）
+
+**目标**：知道“新建／删除组”这类结构变化，以及没有事件循环时连续关闭大量标签的实际成本，再决定是否需要改实现。来源：[1.4–1.6 发现](#发现1416) 中“结构变化仍按标签总数付成本，没有单独计时”，以及 [审查记录 · 关于内存泄漏](../review-2026-10/code-review.md#关于内存泄漏) 中同步批量关闭的峰值。
+
+**前置**：1.7（它改变哪些标签有视图，先做 1.7 再测才有意义）。
+
+**涉及文件**：`modules/window-system/benchmarks/layout_scale_benchmark.cpp`（`timed()`、`settleEventLoop()`、`recordCycle()`）、`tools/bench.ps1`；若决定优化，再加 `docking/dock_surface.cpp`（`updateInPlace()`、`rebuild()`）。
+
+**实现**：
+
+1. 基准新增场景 `group`：100／500／1000 个标签时，把一个标签移到新组（新建组）再移回（删除组），各记录单次 `refresh()` 的 p50／p95。
+2. 基准新增场景 `batch-close`：在同一个函数调用里连续关闭 200 个标签，期间不调用 `processEvents()`，记录关闭前、全部关闭后（尚未处理延迟删除）、`settleEventLoop()` 之后三个时刻的私有提交和 `QObject`／`QWidget` 数。现有 `settleEventLoop()` 每次都会处理延迟删除，覆盖不到这种情况。
+3. 按 [工程设计 §4](../../development/engineering-design.md#4-响应速度与性能验收) 的 p95 ≤ 50 ms 判断：`group` 在 1000 个标签时超过就把就地更新扩展到结构变化（只替换变化的分割子树），先在本节补写子步骤再实现；`batch-close` 的峰值若明显高于关闭后的稳定值（写出倍数和绝对值），评估在没有嵌套刷新时直接删除，写明生命周期理由。都没有超标时只记录数字，不改实现。
+
+**测试**：基准场景本身；若改实现，按 1.6 的方式补“未变化的组和视图指针不变”的用例。
+
+**验证**：`pwsh tools/bench.ps1` 的前后两次结果，写进步骤状态和验证日志。
+
+**状态**：未开始。
+
+---
+
+## 1.12 窗格分割器布局期间的重入
+
+**目标**：宿主在标签内部窗格分割器布局子控件期间（例如内容的 `resizeEvent`）同步修改同一标签的窗格树时，不删除正在布局的控件。来源：[1.4–1.6 发现](#发现1416) 中“布局过程中的重入”。
+
+**前置**：1.11（都改刷新路径，串行）。
+
+**涉及文件**：`panes/tab_content.cpp`（`rebuild()`）、`window_manager.cpp`（`geometryUpdateDepth`、`refresh()`）、组级分割器已有的 `SplitterLayoutPass`。
+
+**实现**：
+
+1. 先写失败用例：两个窗格的标签，内容在第一次 `resizeEvent` 里调用 `splitPane()` 或 `closePane()` 修改同一标签；在修复前确认它崩溃或在诊断构建（6.4）下报告释放后使用。
+2. 参照 `SplitterLayoutPass`，窗格分割器布局期间把旧树的删除推迟到布局结束（`deleteLater()` 或在 pass 结束后重建），保证正在布局的分割器和窗格框在本次调用返回前仍然有效。
+
+**测试**：`paneLayoutReentryKeepsWidgetsAlive`：上述场景在 Release 和 Debug 下都不崩溃，模型通过 `validate()`，最终窗格数正确。
+
+**验证**：新用例所在套件、`pane-settings`、`memory-lifecycle`。
 
 **状态**：未开始。
