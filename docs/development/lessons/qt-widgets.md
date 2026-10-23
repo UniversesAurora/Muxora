@@ -11,6 +11,12 @@
 - **做法**：刷新前用 `QPointer` 记录真实焦点，完成后只恢复仍存活、可见、启用且属于最终活动窗格的控件。聚焦窗格时，已有焦点在其内部就保留，不再次跳到根控件的代理；切换到其他窗格仍按正常入口聚焦。
 - **验证**：`PaneSettingsTest::titleWidthControlsKeepFocusDuringContinuousInput` 逐键向真实焦点发送数字并断言焦点、完整值、删除及微调；原代码四行均失败。`ViewReuseTest::unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks` 检查未变窗格的选区与主动切换，证据见 [记录](../verification-log/2026-10.md#标题长度连续输入的焦点修复2026-10-23)。
 
+### 实时调节外观时不要卸载正在操作的控件
+
+- **现象**：数字框能在刷新后恢复焦点，但将它与滑条组合后，连续更新仍会替换设置页所在的标签条，拖动状态可能中断。
+- **做法**：标签顺序、页面归属和其他元数据不变、只有外观变化时，在原标签条上更新外观；不重新挂载页面。回调后检查对象、模型 `stateId()` 和呈现代次，发生其他修改就重新判断布局。组合层只负责两个 Qt 控件同步，单位解析留给独立数字框。
+- **验证**：`PaneSettingsTest::titleWidthUpdatesKeepTheSettingsPageMounted` 在优化前两行均因标签条销毁失败；优化后检查两次连续鼠标移动、实时数值与拖动结束。`IntegerSliderTest` 以无单位、时间和百分比的原生 `QSpinBox` 检查组合复用，另检查后缀恢复、无弹窗、微调按钮与主题像素，见 [记录](../verification-log/2026-10.md#标题长度滑条与可复用数值组件2026-10-23)。
+
 ### 等窗口真正激活后再输入，模态登记不代表已经取得焦点
 
 - **现象**：尺寸对话框已经进入 `activeModalWidget()`，测试输入后按 Tab，`height->hasFocus()` 仍为 false；稍后窗口自然激活，高度框才取得真实焦点。

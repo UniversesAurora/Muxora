@@ -6,6 +6,7 @@
 #include <QAbstractItemView>
 #include <QEvent>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QScreen>
 
 #include <QCursor>
@@ -14,6 +15,7 @@
 #include <QStyleOption>
 #include <QStylePainter>
 #include <QVariantMap>
+#include <QStringView>
 
 namespace window_system {
 namespace {
@@ -44,6 +46,18 @@ void drawChevron(QPainter& painter, const QRect& rect, const QColor& color, bool
     path.lineTo(center + QPointF(halfWidth, -direction * halfHeight));
     painter.drawPath(path);
     painter.restore();
+}
+
+QString leadingInteger(const QString& text, const QString& prefix)
+{
+    QStringView remaining(text);
+    remaining = remaining.trimmed();
+    if (!prefix.isEmpty() && remaining.startsWith(prefix)) remaining = remaining.sliced(prefix.size()).trimmed();
+    qsizetype end = !remaining.isEmpty() && (remaining.front() == QLatin1Char('+')
+        || remaining.front() == QLatin1Char('-')) ? 1 : 0;
+    const qsizetype digits = end;
+    while (end < remaining.size() && remaining[end].isDigit()) ++end;
+    return end > digits ? remaining.first(end).toString() : QString{};
 }
 
 } // namespace
@@ -125,6 +139,32 @@ ThemedSpinBox::ThemedSpinBox(QWidget* parent) : QSpinBox(parent)
 {
     setMouseTracking(true);
     setAttribute(Qt::WA_Hover);
+}
+
+QValidator::State UnitSpinBox::validate(QString& text, int& position) const
+{
+    if (suffix().isEmpty()) return QSpinBox::validate(text, position);
+    const auto number = leadingInteger(text, prefix());
+    if (number.isEmpty()) return QValidator::Intermediate;
+    auto normalized = prefix() + number + suffix();
+    int normalizedPosition = qMin(position, int(normalized.size()));
+    return QSpinBox::validate(normalized, normalizedPosition);
+}
+
+int UnitSpinBox::valueFromText(const QString& text) const
+{
+    if (suffix().isEmpty()) return QSpinBox::valueFromText(text);
+    bool valid = false;
+    const int number = locale().toInt(leadingInteger(text, prefix()), &valid);
+    return valid ? number : value();
+}
+
+void UnitSpinBox::fixup(QString& text) const
+{
+    if (suffix().isEmpty()) { QSpinBox::fixup(text); return; }
+    bool valid = false;
+    const int number = locale().toInt(leadingInteger(text, prefix()), &valid);
+    text = prefix() + textFromValue(valid && number >= minimum() && number <= maximum() ? number : value()) + suffix();
 }
 
 void ThemedSpinBox::paintEvent(QPaintEvent*)

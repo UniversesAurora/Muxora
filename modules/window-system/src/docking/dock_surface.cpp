@@ -260,14 +260,36 @@ bool DockSurface::updateInPlace(const QHash<TabId, QPointer<TabContent>>& conten
     // strip where they are, and swap only the changed strips in place.
     if (!root_ || !vertical_ || !horizontal_ || !center_ || manager_->d->drag->isActive()
         || builtThemeRevision_ != manager_->d->themeRevision || builtStructure_ != structureSignature()) return false;
+    const QPointer<DockSurface> retained(this);
     QVector<QPair<GroupId, QPointer<GroupTabs>>> changed;
-    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+    const auto currentGroups = groups_;
+    for (auto it = currentGroups.cbegin(); it != currentGroups.cend(); ++it) {
         const auto* record = manager_->model().group(it.key());
         auto* splitter = it.value() ? qobject_cast<QSplitter*>(it.value()->parentWidget()) : nullptr;
         if (!record || !splitter || splitter->indexOf(it.value()) < 0) return false;
         const auto signature = builtGroups_.constFind(it.key());
-        if (signature == builtGroups_.cend() || *signature != signatureOf(*record)
-            || !holdsPages(*it.value(), *record, contents)) changed.append({it.key(), it.value()});
+        const auto next = signatureOf(*record);
+        const bool mounted = holdsPages(*it.value(), *record, contents);
+        if (signature != builtGroups_.cend() && mounted && *signature != next) {
+            auto presentationOnly = *signature;
+            presentationOnly.appearance = next.appearance;
+            if (presentationOnly == next) {
+                // Updating appearance must not unmount the live slider or
+                // editor that is currently changing that appearance.
+                const auto state = manager_->model().stateId();
+                const auto generation = rebuildGeneration_;
+                it.value()->setAppearance(next.appearance, next.location == GroupLocation::Pinned);
+                if (!retained || !manager_) return true;
+                if (rebuildGeneration_ != generation) return true;
+                if (manager_->model().stateId() != state || manager_->tabAppearance() != next.appearance
+                    || manager_->d->themeRevision != next.themeRevision
+                    || !it.value() || groups_.value(it.key()) != it.value())
+                    return false;
+                builtGroups_.insert(it.key(), next);
+                continue;
+            }
+        }
+        if (signature == builtGroups_.cend() || *signature != next || !mounted) changed.append({it.key(), it.value()});
     }
     contents_ = contents;
     for (const auto& bar : std::as_const(edgeBars_))

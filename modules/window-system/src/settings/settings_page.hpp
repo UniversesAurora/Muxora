@@ -21,6 +21,8 @@ class QVBoxLayout;
 
 namespace window_system {
 
+class IntegerSlider;
+
 // Built-in window-system preferences remain independent of the host's settings
 // service. The host saves the manager snapshot; this page edits the live model.
 class SettingsPage final : public QWidget {
@@ -79,9 +81,9 @@ private:
     QCheckBox* showSidebarIcons_ = nullptr;
     QCheckBox* showSidebarNumbers_ = nullptr;
     QCheckBox* clipTitles_ = nullptr;
-    QSpinBox* maximumTitleWidth_ = nullptr;
+    IntegerSlider* maximumTitleWidth_ = nullptr;
     QCheckBox* clipSidebarTitles_ = nullptr;
-    QSpinBox* maximumSidebarTitleWidth_ = nullptr;
+    IntegerSlider* maximumSidebarTitleWidth_ = nullptr;
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;

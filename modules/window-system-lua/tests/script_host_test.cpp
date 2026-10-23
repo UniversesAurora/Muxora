@@ -1263,7 +1263,7 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
       local disabled=muxora.settings.get()
       assert(not disabled.clip_tab_titles and disabled.maximum_tab_title_width==137)
       assert(disabled.clip_sidebar_titles and disabled.maximum_sidebar_title_width==113)
-      for _,invalid in ipairs({15,2049,160.5,'160',false,math.huge,0/0}) do
+      for _,invalid in ipairs({-1,1000001,160.5,'160',false,math.huge,0/0}) do
         assert(not pcall(muxora.settings.update,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
         assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
         local unchanged=muxora.settings.get()
@@ -1279,7 +1279,7 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
       assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=1}))
       assert(not pcall(muxora.settings.update,{clip_sidebar_titles='true'}))
       assert(not pcall(muxora.tabs.set_appearance,{clip_sidebar_titles=1}))
-      for _,boundary in ipairs({16,2048}) do
+      for _,boundary in ipairs({0,1000000}) do
         local sidebar_before=muxora.settings.get().maximum_sidebar_title_width
         assert(muxora.tabs.set_appearance({maximum_tab_title_width=boundary}))
         assert(muxora.settings.get().maximum_tab_title_width==boundary)

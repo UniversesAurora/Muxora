@@ -2379,20 +2379,15 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs and pinned sidebar tab bars.</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="72" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="85" />
-            <source> logical pixels</source>
-            <translation> logical pixels</translation>
-        </message>
-        <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="73" />
             <source>Maximum regular and pinned tab title width</source>
             <translation>Maximum regular and pinned tab title width</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="74" />
-            <source>Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling.</source>
-            <translation>Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling.</translation>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="100" />
+            <source>Clip title text that exceeds this length.</source>
+            <translation>Clip title text that exceeds this length.</translation>
         </message>
         <message>
             <location filename="../src/chrome/workspace_window.cpp" line="567" />
@@ -2410,11 +2405,6 @@ Ctrl+Shift+P opens the command palette</translation>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="86" />
             <source>Maximum auto-hide sidebar tab title length</source>
             <translation>Maximum auto-hide sidebar tab title length</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="87" />
-            <source>Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling.</source>
-            <translation>Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling.</translation>
         </message>
     </context>
 </TS>

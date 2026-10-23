@@ -9,8 +9,8 @@ namespace window_system {
 
 enum class TabBarPlacement { Top, Bottom };
 
-inline constexpr int minimumTabTitleWidth = 16;
-inline constexpr int maximumTabTitleWidth = 2048;
+inline constexpr int minimumTabTitleWidth = 0;
+inline constexpr int maximumTabTitleWidth = 1000000;
 inline constexpr int defaultTabTitleWidth = 160;
 
 // Every state is explicit. Hosts need not derive text or icon colors from a

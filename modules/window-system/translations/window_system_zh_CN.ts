@@ -2379,20 +2379,15 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>超过最大显示宽度的标题直接裁切，不添加省略号。适用于普通标签栏和固定侧栏标签栏。</translation>
         </message>
         <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="72" />
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="85" />
-            <source> logical pixels</source>
-            <translation> 逻辑像素</translation>
-        </message>
-        <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="73" />
             <source>Maximum regular and pinned tab title width</source>
             <translation>普通及固定侧栏标签标题最大显示宽度</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="74" />
-            <source>Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling.</source>
-            <translation>只限制文字区域，图标、编号和关闭按钮另计。逻辑像素随屏幕缩放。</translation>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="100" />
+            <source>Clip title text that exceeds this length.</source>
+            <translation>标题超出这个长度时，截断多出的文字。</translation>
         </message>
         <message>
             <location filename="../src/chrome/workspace_window.cpp" line="567" />
@@ -2410,11 +2405,6 @@ Ctrl+Shift+P 打开命令面板</translation>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="86" />
             <source>Maximum auto-hide sidebar tab title length</source>
             <translation>非固定收纳条标签标题最大显示长度</translation>
-        </message>
-        <message>
-            <location filename="../src/settings/settings_tab_appearance.cpp" line="87" />
-            <source>Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling.</source>
-            <translation>沿各侧收纳条的文字方向限制标题长度，图标和编号另计。逻辑像素随屏幕缩放。</translation>
         </message>
     </context>
 </TS>

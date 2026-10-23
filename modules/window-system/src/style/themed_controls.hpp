@@ -27,11 +27,22 @@ private:
     QPointer<QWidget> popup_;
 };
 
-class ThemedSpinBox final : public QSpinBox {
+class ThemedSpinBox : public QSpinBox {
 public:
     explicit ThemedSpinBox(QWidget* parent = nullptr);
 protected:
     void paintEvent(QPaintEvent* event) override;
+};
+
+// The configured suffix is a display unit, not a unit-conversion expression.
+// Keep Qt's editor and step buttons while accepting a leading integer.
+class UnitSpinBox final : public ThemedSpinBox {
+public:
+    using ThemedSpinBox::ThemedSpinBox;
+protected:
+    QValidator::State validate(QString& text, int& position) const override;
+    int valueFromText(const QString& text) const override;
+    void fixup(QString& text) const override;
 };
 
 class ThemedCheckBox final : public QCheckBox {

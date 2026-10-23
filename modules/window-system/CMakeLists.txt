@@ -57,6 +57,7 @@ add_library(WindowSystemWidgets STATIC
     src/style/tab_appearance.cpp
     src/style/tab_title_layout.cpp
     src/style/themed_controls.cpp
+    src/style/integer_slider.cpp
     src/style/wheel_guard.cpp
     src/style/tooltip_layout.cpp
     src/settings/settings_page.cpp

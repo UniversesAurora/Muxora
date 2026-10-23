@@ -9,6 +9,7 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QFocusEvent>
 #include <QImage>
 #include <QJsonArray>
@@ -26,6 +27,7 @@
 #include <QScrollBar>
 #include <QScopeGuard>
 #include <QSlider>
+#include <QStyleOptionSlider>
 #include <QAbstractItemView>
 #include <QDateTimeEdit>
 #include <QDoubleSpinBox>
@@ -140,6 +142,8 @@ private slots:
     void settingControlsUpdateImmediatelyAndReflectExternalChanges();
     void titleWidthControlsKeepFocusDuringContinuousInput_data();
     void titleWidthControlsKeepFocusDuringContinuousInput();
+    void titleWidthUpdatesKeepTheSettingsPageMounted_data();
+    void titleWidthUpdatesKeepTheSettingsPageMounted();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization_data();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization();
     void newTabPositionSearchPreservesTheExistingSettingsAndNavigation();
@@ -692,6 +696,65 @@ void PaneSettingsTest::titleWidthControlsKeepFocusDuringContinuousInput()
     QCOMPARE(line->cursorPosition(), cursor);
     QCOMPARE(line->text(), text);
     QCOMPARE(search->text(), query);
+}
+
+void PaneSettingsTest::titleWidthUpdatesKeepTheSettingsPageMounted_data()
+{
+    QTest::addColumn<bool>("sidebar");
+    QTest::newRow("regular") << false;
+    QTest::newRow("sidebar") << true;
+}
+
+void PaneSettingsTest::titleWidthUpdatesKeepTheSettingsPageMounted()
+{
+    QFETCH(bool, sidebar);
+    WindowManager manager;
+    auto appearance = manager.tabAppearance(); appearance.clipTitles = true; appearance.clipSidebarTitles = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(); manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    const QString name = sidebar ? QStringLiteral("MaximumSidebarTabTitleWidth") : QStringLiteral("MaximumTabTitleWidth");
+    auto* editor = page->findChild<QSpinBox*>(name);
+    auto* slider = page->findChild<QSlider*>(name + QStringLiteral("Slider"));
+    auto* scroll = page->findChild<QScrollArea*>(QStringLiteral("SettingsScrollArea"));
+    QVERIFY(editor && slider && scroll);
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
+    scroll->ensureWidgetVisible(slider); QCoreApplication::processEvents();
+    QPointer<QWidget> strip;
+    for (auto* current = page; current; current = current->parentWidget())
+        if (current->objectName() == QStringLiteral("TabGroup")) { strip = current; break; }
+    QVERIFY(strip);
+    QElapsedTimer measurement; measurement.start();
+    for (int width = 200; width < 210; ++width) { editor->setValue(width); processDeletes(); }
+    qInfo("Ten live title-width updates: %.3f ms", measurement.nsecsElapsed() / 1000000.0);
+    QVERIFY2(strip, "Changing title appearance must not replace the settings page's group");
+    QVERIFY(strip->isAncestorOf(page));
+    QCOMPARE(slider->value(), 209);
+    QStyleOptionSlider option; option.initFrom(slider); option.orientation = Qt::Horizontal;
+    option.minimum = slider->minimum(); option.maximum = slider->maximum();
+    option.sliderPosition = slider->value(); option.sliderValue = slider->value();
+    const auto handle = slider->style()->subControlRect(QStyle::CC_Slider, &option, QStyle::SC_SliderHandle, slider);
+    QVERIFY(!handle.isEmpty());
+    test::authoredMouseInput().takePriority();
+    const auto input = qScopeGuard([] { test::authoredMouseInput().finish(); });
+    QTest::mousePress(slider, Qt::LeftButton, Qt::NoModifier, handle.center());
+    QVERIFY(slider->isSliderDown());
+    const auto move = [slider](QPoint local) {
+        QMouseEvent event(QEvent::MouseMove, QPointF(local), QPointF(slider->mapToGlobal(local)),
+            Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(slider, &event);
+        QCoreApplication::processEvents();
+    };
+    move(handle.center() + QPoint(25, 0));
+    const int first = editor->value(); QVERIFY(first > 209); QVERIFY(slider->isSliderDown());
+    QVERIFY(strip && strip->isAncestorOf(page));
+    move(handle.center() + QPoint(50, 0));
+    QVERIFY(editor->value() > first); QVERIFY(slider->isSliderDown());
+    QCOMPARE(sidebar ? manager.tabAppearance().maximumSidebarTitleWidth : manager.tabAppearance().maximumTitleWidth,
+        editor->value());
+    QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier, handle.center() + QPoint(50, 0));
+    QVERIFY(!slider->isSliderDown());
 }
 
 void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()

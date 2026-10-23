@@ -300,6 +300,15 @@ QSpinBox, QDoubleSpinBox { padding-right: 20px; }
 QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: padding; subcontrol-position: top right; width: 18px; border: 1px solid transparent; background: transparent; }
 QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: padding; subcontrol-position: bottom right; width: 18px; border: 1px solid transparent; background: transparent; }
 QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { border-color: @accent; background: @buttonHover; }
+QSlider[windowSystemIntegerSlider="true"] { min-height: @controlInnerpx; }
+QSlider[windowSystemIntegerSlider="true"]::groove:horizontal { height: 4px; background: @border; border: none; }
+QSlider[windowSystemIntegerSlider="true"]::sub-page:horizontal { background: @accent; }
+QSlider[windowSystemIntegerSlider="true"]::handle:horizontal { width: 8px; margin: -6px 0; background: @surface; border: 1px solid @accent; border-radius: 0; }
+QSlider[windowSystemIntegerSlider="true"]::handle:horizontal:hover { background: @buttonHover; }
+QSlider[windowSystemIntegerSlider="true"]::handle:horizontal:pressed { background: @selection; }
+QSlider[windowSystemIntegerSlider="true"]::handle:horizontal:focus { border-color: @focus; }
+QSlider[windowSystemIntegerSlider="true"]::groove:horizontal:disabled, QSlider[windowSystemIntegerSlider="true"]::sub-page:horizontal:disabled { background: @raised; }
+QSlider[windowSystemIntegerSlider="true"]::handle:horizontal:disabled { background: @raised; border-color: @muted; }
 QComboBox QAbstractItemView { background: @surface; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; }
 QAbstractItemView { background: @surface; alternate-background-color: @raised; color: @text; border: 1px solid @border; selection-background-color: @selection; selection-color: @selectionText; outline: 0; }
 QAbstractItemView::item { padding: 3px 4px; min-height: 18px; }

@@ -3,6 +3,7 @@
 #include "commands/popup_menu.hpp"
 #include "chrome/workspace_window.hpp"
 #include "docking/dock_surface.hpp"
+#include "docking/edge_tab_button.hpp"
 #include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 
@@ -119,6 +120,7 @@ private slots:
     void displayFlagsChangeActualLabelWidthsAndCreationControls();
     void titleClippingKeepsFullTextAndDecorationSpace_data();
     void titleClippingKeepsFullTextAndDecorationSpace();
+    void zeroTitleLimitsKeepLabelsAndDecorationSpace();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void tabShapeOptionsPreserveStyleStates_data();
     void tabShapeOptionsPreserveStyleStates();
@@ -339,6 +341,42 @@ void TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace()
     tabs.setInsertionPreview(-1, 0);
     appearance.clipTitles = false; tabs.setAppearance(appearance, pinned);
     QTRY_COMPARE(bar->displayTabRect(0).width(), naturalWidth);
+}
+
+void TabStripLayoutTest::zeroTitleLimitsKeepLabelsAndDecorationSpace()
+{
+    const auto title = QString(30, QLatin1Char('W'));
+    auto appearance = TabAppearance{};
+    appearance.showIcons = false; appearance.showNewTabButton = false;
+    auto preset = appearance.colors.front(); preset.id = "zero-title-limit";
+    preset.groupActive = preset.groupInactive = preset.autoHideActive = preset.autoHideInactive
+        = {Qt::white, Qt::red, Qt::blue, Qt::green};
+    appearance.colors = {preset};
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs);
+    tabs.setAppearance(appearance);
+    const auto id = QUuid::createUuid(); tabs.addTab(new QLabel("Content"), {}, title, id);
+    TabRecord record; record.id = id; record.title = title; record.colorId = preset.id;
+    tabs.setTabMetadata(0, record); tabs.resize(900, 200); tabs.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const auto naturalWidth = bar->displayTabRect(0).width();
+    QVERIFY(containsColor(renderAtRatio(bar, 1), Qt::red));
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 0; tabs.setAppearance(appearance);
+    QVERIFY(!containsColor(renderAtRatio(bar, 1), Qt::red));
+    QVERIFY(bar->displayTabRect(0).width() > 0);
+    QCOMPARE(bar->tabText(0), title); QCOMPARE(bar->tabToolTip(0), title);
+    appearance.maximumTitleWidth = maximumTabTitleWidth; tabs.setAppearance(appearance);
+    QCOMPARE(bar->displayTabRect(0).width(), naturalWidth);
+    QVERIFY(containsColor(renderAtRatio(bar, 1), Qt::red));
+    for (const bool vertical : {false, true}) {
+        EdgeTabButton button(title, vertical, 24, &tabs);
+        button.setPreset(preset); button.resize(button.sizeHint());
+        QVERIFY(containsColor(renderAtRatio(&button, 1), Qt::red));
+        button.setTitleClipping(true, 0); button.resize(button.sizeHint());
+        QVERIFY(!containsColor(renderAtRatio(&button, 1), Qt::red));
+        QVERIFY(!button.size().isEmpty()); QCOMPARE(button.text(), title);
+        button.setTitleClipping(true, maximumTabTitleWidth); button.resize(button.sizeHint());
+        QVERIFY(containsColor(renderAtRatio(&button, 1), Qt::red));
+    }
 }
 
 void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit()

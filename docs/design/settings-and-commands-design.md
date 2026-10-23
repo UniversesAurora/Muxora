@@ -93,14 +93,18 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.showSidebarIcons` | 默认 `false`；固定和非固定侧栏的独立图标开关，仍尊重宿主逐标签设置。 |
 | `tabs.showSidebarNumbers` | 默认 `false`；固定栏按本组编号，非固定条按整侧连续编号。 |
 | `tabs.clipTitles` | 默认 `false`；开启后限制普通及固定侧栏标签栏的标题。 |
-| `tabs.maximumTitleWidth` | 普通及固定标签栏的文字最大长度，单位为 Qt 逻辑像素，默认 `160`，允许整数 `16–2048`；关闭裁切时保留数值但不限制自然长度。 |
+| `tabs.maximumTitleWidth` | 普通及固定标签栏的文字最大长度，显示单位为 `px`，对应 Qt 逻辑像素，默认 `160`，允许整数 `0–1000000`；`0` 不显示标题文字，图标和操作按钮保留。关闭裁切时保留数值但不限制自然长度。 |
 | `tabs.clipSidebarTitles` | 默认 `false`；独立控制四边非固定收纳条的标题裁切，不影响普通及固定标签栏。 |
 | `tabs.maximumSidebarTitleWidth` | 非固定收纳条的文字最大长度，单位、默认值和范围与 `tabs.maximumTitleWidth` 相同，数值独立保存。 |
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
 
 图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时清除滚轮展开开关，不能留下不适用的组合。
 
-两套裁切开关和长度输入放在同一标签外观分类，明确标注普通／固定栏与非固定收纳条；各自关闭时禁用对应长度输入并保留数值。普通／固定栏右键菜单使用 `presentation.toggleTitleClipping`，非固定收纳条使用 `presentation.toggleSidebarTitleClipping`；全局菜单和命令面板可分别修改。长度只限制文字，不包含图标、编号、关闭按钮或内边距。逻辑像素随屏幕缩放映射到物理像素，不按字符数或主屏 DPR 计算；字体变更后重新测量自然宽度。左右收纳条限制旋转后文字的长轴，不能把它理解为条带厚度。
+两套裁切开关和长度控件放在同一标签外观分类，明确标注普通／固定栏与非固定收纳条；各自关闭时禁用整组控件并保留数值。每项在同一行放滑条和 Qt 数字框，数字框保留上下微调按钮，后缀使用 `px`。滑条覆盖 `0–1000`，数字框支持该设置的完整范围；超出滑条范围的输入仍原样保留，不能被滑条夹回边界。
+
+单位后缀只用于显示。界面读取开头的整数，用户删除或修改后缀后，确认或离开输入框时恢复为 `px`，不换算单位、不弹窗。没有数字或数值越界时保留最近的有效值；允许编辑中暂时清空。JSON、C++ 和 Lua 接口仍严格要求范围内的整数，不接受带单位的字符串。滑条与数字框即时同步，更新不卸载正在操作的控件，也不转移输入焦点。说明只写该设置的效果，不添加滑条操作教程或重复解释单位。
+
+普通／固定栏右键菜单使用 `presentation.toggleTitleClipping`，非固定收纳条使用 `presentation.toggleSidebarTitleClipping`；全局菜单和命令面板可分别修改。长度只限制文字，不包含图标、编号、关闭按钮或内边距。逻辑像素随屏幕缩放映射到物理像素，不按字符数或主屏 DPR 计算；字体变更后重新测量自然宽度。左右收纳条限制旋转后文字的长轴，不能把它理解为条带厚度。
 
 布局快照显式保存两套值，缺少可选字段时使用各自默认值。C++ 外观、Lua 外观和设置接口中的局部更新只修改指定字段，不让一套值覆盖另一套；非法值原子拒绝。格式维护遵守 [工程约束](../development/engineering-design.md#24-当前配置格式)。
 

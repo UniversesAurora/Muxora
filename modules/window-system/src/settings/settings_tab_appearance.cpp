@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include "settings_page.hpp"
 #include "style/themed_controls.hpp"
+#include "style/integer_slider.hpp"
 #include "style/tab_appearance_p.hpp"
 
 #include <QCheckBox>
@@ -12,6 +13,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -66,26 +68,33 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         QCoreApplication::translate("WindowSystem", "独立控制固定侧栏标签栏和非固定收纳条的编号，默认隐藏；固定组按本栏、非固定收纳条按同一侧全部标签顺序从 1 开始。"), &TabAppearance::showSidebarNumbers);
     clipTitles_ = flagControl("ClipTabTitles", "tabs.clipTitles", QCoreApplication::translate("WindowSystem", "Clip long regular and pinned tab titles"),
         QCoreApplication::translate("WindowSystem", "Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs and pinned sidebar tab bars."), &TabAppearance::clipTitles);
-    maximumTitleWidth_ = new ThemedSpinBox(parent);
-    maximumTitleWidth_->setObjectName("MaximumTabTitleWidth");
-    maximumTitleWidth_->setRange(minimumTabTitleWidth, maximumTabTitleWidth);
-    maximumTitleWidth_->setSuffix(QCoreApplication::translate("WindowSystem", " logical pixels"));
+    const auto widthControl = [parent](const char* name, const QString& title) {
+        auto* editor = new UnitSpinBox(parent);
+        editor->setObjectName(QString::fromLatin1(name));
+        editor->setRange(minimumTabTitleWidth, maximumTabTitleWidth);
+        editor->setSuffix(QStringLiteral(" px"));
+        editor->setAccessibleName(title);
+        auto* control = new IntegerSlider(editor, minimumTabTitleWidth, 1000, parent);
+        control->setObjectName(QString::fromLatin1(name) + QStringLiteral("Control"));
+        control->setMaximumWidth(440);
+        control->slider()->setObjectName(QString::fromLatin1(name) + QStringLiteral("Slider"));
+        control->slider()->setAccessibleName(title);
+        return control;
+    };
+    maximumTitleWidth_ = widthControl("MaximumTabTitleWidth", QCoreApplication::translate("WindowSystem", "Maximum regular and pinned tab title width"));
     rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Maximum regular and pinned tab title width"),
-        "tabs.maximumTitleWidth", QCoreApplication::translate("WindowSystem", "Limits only the text area; icons, numbers, and close buttons use separate space. Logical pixels follow display scaling."), maximumTitleWidth_));
-    connect(maximumTitleWidth_, &QSpinBox::valueChanged, this, [this](int width) {
+        "tabs.maximumTitleWidth", QCoreApplication::translate("WindowSystem", "Clip title text that exceeds this length."), maximumTitleWidth_));
+    connect(maximumTitleWidth_, &IntegerSlider::valueChanged, this, [this](int width) {
         if (!manager_) return;
         auto next = manager_->tabAppearance(); next.maximumTitleWidth = width;
         manager_->setTabAppearance(next);
     });
     clipSidebarTitles_ = flagControl("ClipSidebarTabTitles", "tabs.clipSidebarTitles", QCoreApplication::translate("WindowSystem", "Clip long auto-hide sidebar tab titles"),
         QCoreApplication::translate("WindowSystem", "Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings."), &TabAppearance::clipSidebarTitles);
-    maximumSidebarTitleWidth_ = new ThemedSpinBox(parent);
-    maximumSidebarTitleWidth_->setObjectName("MaximumSidebarTabTitleWidth");
-    maximumSidebarTitleWidth_->setRange(minimumTabTitleWidth, maximumTabTitleWidth);
-    maximumSidebarTitleWidth_->setSuffix(QCoreApplication::translate("WindowSystem", " logical pixels"));
+    maximumSidebarTitleWidth_ = widthControl("MaximumSidebarTabTitleWidth", QCoreApplication::translate("WindowSystem", "Maximum auto-hide sidebar tab title length"));
     rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Maximum auto-hide sidebar tab title length"),
-        "tabs.maximumSidebarTitleWidth", QCoreApplication::translate("WindowSystem", "Limits only the title text along each rail's text direction; icons and numbers use separate space. Logical pixels follow display scaling."), maximumSidebarTitleWidth_));
-    connect(maximumSidebarTitleWidth_, &QSpinBox::valueChanged, this, [this](int width) {
+        "tabs.maximumSidebarTitleWidth", QCoreApplication::translate("WindowSystem", "Clip title text that exceeds this length."), maximumSidebarTitleWidth_));
+    connect(maximumSidebarTitleWidth_, &IntegerSlider::valueChanged, this, [this](int width) {
         if (!manager_) return;
         auto next = manager_->tabAppearance(); next.maximumSidebarTitleWidth = width;
         manager_->setTabAppearance(next);
