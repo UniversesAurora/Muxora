@@ -170,7 +170,7 @@ private slots:
     void invalidOrderingJsonIsRejectedAtomically_data()
     {
         QTest::addColumn<QString>("field");
-        for (auto field : {"colorType", "colorLength", "orderType", "orderNegative", "orderFraction", "orderOverflow", "counterType", "missingOpened", "missingVisited"})
+        for (auto field : {"colorType", "colorLength", "orderType", "orderNegative", "orderFraction", "orderOverflow", "counterType", "missingOpened", "missingVisited", "missingCounter", "missingOrders", "counterBehindOrders"})
             QTest::newRow(field) << QString(field);
     }
     void invalidOrderingJsonIsRejectedAtomically()
@@ -186,8 +186,13 @@ private slots:
         if (field == "counterType") json.insert("orderCounter", "1");
         if (field == "missingOpened") tab.remove("openedOrder");
         if (field == "missingVisited") tab.remove("visitedOrder");
+        if (field == "missingCounter") json.remove("orderCounter");
+        if (field == "missingOrders") { tab.remove("openedOrder"); tab.remove("visitedOrder"); }
+        if (field == "counterBehindOrders") json.insert("orderCounter", 0);
         tabs[0] = tab; json.insert("tabs", tabs);
-        QVERIFY(!model.fromJson(json)); QCOMPARE(model.toJson(), original); QVERIFY(model.validate());
+        const auto revision = model.revision(); const auto state = model.stateId();
+        QVERIFY(!model.fromJson(json)); QCOMPARE(model.toJson(), original);
+        QCOMPARE(model.revision(), revision); QCOMPARE(model.stateId(), state); QVERIFY(model.validate());
     }
     void nearLimitClockPreservesAllSixSorts_data()
     {
@@ -245,17 +250,16 @@ private slots:
         QVERIFY(model.addTab(window,"invalid",model.groupForTab(tab),99).isNull()); QCOMPARE(model.toJson(),original);
         LayoutModel restored; QVERIFY(restored.fromJson(original)); QCOMPARE(restored.toJson(),original);
     }
-    void legacySnapshotsWithoutOrderingRemainDeterministic()
+    void orderingFieldsAreRequiredEvenWhenTheArraysAreEmpty()
     {
-        LayoutModel model; const auto window = model.createWindow();
-        const auto a = model.addTab(window,"a"), b = model.addTab(window,"b"), c = model.addTab(window,"c");
-        auto snapshot = model.toJson(); snapshot.remove("orderCounter"); auto tabs = snapshot.value("tabs").toArray();
-        for (qsizetype i = 0; i < tabs.size(); ++i) { auto tab = tabs[i].toObject(); tab.remove("openedOrder"); tab.remove("visitedOrder"); tabs[i] = tab; }
-        snapshot.insert("tabs",tabs); LayoutModel restored; QVERIFY(restored.fromJson(snapshot));
-        const auto group = restored.groupForTab(a); QVERIFY(restored.sortTabs(group,TabSortOrder::OpenedAscending));
-        QCOMPARE(restored.group(group)->tabs,QVector<TabId>({a,b,c}));
-        for (const auto tab : {a,b,c}) QCOMPARE(restored.tab(tab)->openedOrder,restored.tab(tab)->visitedOrder);
-        const auto normalized = restored.toJson(); LayoutModel next; QVERIFY(next.fromJson(normalized)); QCOMPARE(next.toJson(),normalized);
+        LayoutModel model;
+        const auto snapshot = model.toJson();
+        QCOMPARE(snapshot.value("orderCounter").toDouble(), 0.0);
+        LayoutModel restored; QVERIFY(restored.fromJson(snapshot)); QCOMPARE(restored.toJson(), snapshot);
+        auto missing = snapshot; missing.remove("orderCounter");
+        const auto revision = restored.revision(); const auto state = restored.stateId();
+        QVERIFY(!restored.fromJson(missing)); QCOMPARE(restored.toJson(), snapshot);
+        QCOMPARE(restored.revision(), revision); QCOMPARE(restored.stateId(), state);
     }
     void invalidGroupMoveAndSortAreAtomic()
     {

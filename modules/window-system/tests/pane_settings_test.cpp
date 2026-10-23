@@ -141,7 +141,7 @@ private slots:
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization_data();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization();
     void newTabPositionSearchPreservesTheExistingSettingsAndNavigation();
-    void legacySettingsSnapshotsUseTheDefaultNewTabPosition();
+    void omittedNewTabPositionUsesItsDefault();
     void settingNotificationsAllowSynchronousHostDestruction_data();
     void settingNotificationsAllowSynchronousHostDestruction();
     void singleTabPoliciesHaveIndependentSettingsAndUpdateTheirWindows();
@@ -785,7 +785,7 @@ void PaneSettingsTest::newTabPositionSearchPreservesTheExistingSettingsAndNaviga
     QVERIFY(!categories->topLevelItem(0)->child(0)->isHidden()); QVERIFY(!categories->topLevelItem(0)->child(1)->isHidden());
 }
 
-void PaneSettingsTest::legacySettingsSnapshotsUseTheDefaultNewTabPosition()
+void PaneSettingsTest::omittedNewTabPositionUsesItsDefault()
 {
     WindowManager original; const auto window = original.createWindow(); original.showSettings(window);
     auto behavior = original.behavior(); behavior.newTabPosition = NewTabPosition::End;

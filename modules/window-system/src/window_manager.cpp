@@ -521,45 +521,18 @@ bool WindowManager::moveAllTabsToEdge(WindowId source, WindowId target, Edge edg
 bool WindowManager::pinGroup(GroupId group, bool pinned) { return applyResult(d->model.setGroupPinned(group, pinned)); }
 bool WindowManager::pinTab(TabId tab, bool pinned) { return applyResult(d->model.setTabPinned(tab, pinned)); }
 bool WindowManager::pinEdge(WindowId window, Edge edge, bool pinned) { return applyResult(d->model.setEdgePinned(window, edge, pinned)); }
-QSize WindowManager::peekSize(TabId tab) const
-{
-    const auto* record = d->model.tab(tab);
-    if (!record) return {};
-    const auto* group = d->model.group(d->model.groupForTab(tab));
-    return peekSize(tab, group ? group->edge : Edge::Left);
-}
 QSize WindowManager::peekSize(TabId tab, Edge edge) const
 {
-    const auto* record = d->model.tab(tab);
-    if (!record) return {};
-    const auto& directional = edge == Edge::Left || edge == Edge::Right
-        ? record->verticalPeekSize : record->horizontalPeekSize;
-    if (!directional) return record->peekSize.value_or(QSize(250, 170));
-    if (!directional->width && !directional->height) return QSize(250, 170);
-    const auto legacy = record->peekSize.value_or(QSize(250, 170));
+    if (!d->model.tab(tab) || (edge != Edge::Left && edge != Edge::Right
+        && edge != Edge::Top && edge != Edge::Bottom)) return {};
+    const auto policy = peekSizePolicy(tab, edge);
     // The QSize query remains useful for numeric editors, even when the actual
     // panel stretches an axis. PeekSizePolicy exposes that distinction.
-    return QSize(directional->width.value_or(legacy.width()), directional->height.value_or(legacy.height()));
+    return QSize(policy.width.value_or(250), policy.height.value_or(170));
 }
 PeekSizePolicy WindowManager::peekSizePolicy(TabId tab, Edge edge) const
 {
     return d->model.peekSizePolicy(tab, edge);
-}
-bool WindowManager::setPeekSize(TabId tab, QSize size)
-{
-    const auto* record = d->model.tab(tab);
-    if (!record) return false;
-    if (record->peekSize == size && !record->verticalPeekSize && !record->horizontalPeekSize) return true;
-    const auto result = d->model.setPeekSize(tab, size);
-    if (!result) return false;
-    const QPointer<WindowManager> self(this);
-    const auto* group = d->model.group(d->model.groupForTab(tab));
-    ++d->geometryUpdateDepth;
-    const auto releaseGeometry = qScopeGuard([self] { if (self) --self->d->geometryUpdateDepth; });
-    if (group) if (auto window = d->windows.value(group->windowId)) window->surface()->updatePeekSize(tab);
-    if (!self) return false;
-    emit layoutChanged();
-    return true;
 }
 bool WindowManager::setPeekSize(TabId tab, Edge edge, QSize size)
 {
@@ -573,22 +546,6 @@ bool WindowManager::setPeekSizePolicy(TabId tab, Edge edge, const PeekSizePolicy
         ? record->verticalPeekSize : record->horizontalPeekSize;
     if (existing == size) return true;
     const auto result = d->model.setPeekSizePolicy(tab, edge, size);
-    if (!result) return false;
-    const QPointer<WindowManager> self(this);
-    const auto* group = d->model.group(d->model.groupForTab(tab));
-    ++d->geometryUpdateDepth;
-    const auto releaseGeometry = qScopeGuard([self] { if (self) --self->d->geometryUpdateDepth; });
-    if (group) if (auto window = d->windows.value(group->windowId)) window->surface()->updatePeekSize(tab);
-    if (!self) return false;
-    emit layoutChanged();
-    return true;
-}
-bool WindowManager::resetPeekSize(TabId tab)
-{
-    const auto* record = d->model.tab(tab);
-    if (!record) return false;
-    if (!record->peekSize && !record->verticalPeekSize && !record->horizontalPeekSize) return true;
-    const auto result = d->model.setPeekSize(tab, std::nullopt);
     if (!result) return false;
     const QPointer<WindowManager> self(this);
     const auto* group = d->model.group(d->model.groupForTab(tab));

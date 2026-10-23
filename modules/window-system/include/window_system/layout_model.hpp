@@ -2,7 +2,6 @@
 
 #include <QHash>
 #include <QJsonObject>
-#include <QSize>
 #include <QString>
 #include <QUuid>
 #include <QVector>
@@ -91,11 +90,8 @@ struct TabRecord {
     // A dormant group ID is intentional: unpinning its final tab removes the
     // visible group, while repinning can reconstruct that same partition.
     std::optional<PinnedPosition> pinnedPosition;
-    // Compatibility cross-edge defaults from older snapshots/API calls. An
-    // unspecified along-edge dimension continues to stretch the available area.
-    std::optional<QSize> peekSize;
-    // Explicit per-orientation policies override the legacy defaults and
-    // survive pinning or window moves without resizing pinned partitions.
+    // Per-orientation policies survive pinning or window moves without
+    // resizing pinned partitions.
     std::optional<PeekSizePolicy> verticalPeekSize;
     std::optional<PeekSizePolicy> horizontalPeekSize;
     QString colorId;
@@ -192,10 +188,9 @@ public:
     OperationResult setTabPinned(TabId tabId, bool pinned);
     OperationResult setEdgePinned(WindowId windowId, Edge edge, bool pinned);
     OperationResult setEdgeGroupExtent(GroupId groupId, int extent);
-    // nullopt restores the default. Explicit logical sizes require width >= 140
-    // and height >= 100, with each dimension at most 16777215 (Qt's limit).
+    // Missing dimensions restore their defaults. Explicit logical sizes require
+    // width >= 140 and height >= 100, at most 16777215 (Qt's limit).
     // This does not resize pinned partitions or change tab placement.
-    OperationResult setPeekSize(TabId tabId, std::optional<QSize> size);
     [[nodiscard]] PeekSizePolicy peekSizePolicy(TabId tabId, Edge edge) const;
     OperationResult setPeekSizePolicy(TabId tabId, Edge edge, PeekSizePolicy size);
     OperationResult moveGroupToCenter(GroupId groupId, GroupId targetGroup = {},

@@ -173,11 +173,9 @@ public:
     bool pinGroup(GroupId group, bool pinned);
     bool pinTab(TabId tab, bool pinned);
     bool pinEdge(WindowId window, Edge edge, bool pinned);
-    // Each auto-hide tab remembers its own requested width and height. A
-    // smaller viewport limits presentation without replacing this request.
-    bool setPeekSize(TabId tab, QSize size);
-    bool resetPeekSize(TabId tab);
-    [[nodiscard]] QSize peekSize(TabId tab) const;
+    // Each auto-hide tab remembers separate left/right and top/bottom policies.
+    // The edge is mandatory; resetting one orientation leaves the other intact.
+    // A smaller viewport limits presentation without replacing this request.
     bool setPeekSize(TabId tab, Edge edge, QSize size);
     bool setPeekSizePolicy(TabId tab, Edge edge, const PeekSizePolicy& policy);
     bool resetPeekSize(TabId tab, Edge edge);

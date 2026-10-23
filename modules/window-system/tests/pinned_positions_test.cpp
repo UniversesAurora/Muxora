@@ -99,8 +99,8 @@ class PinnedPositionsTest final : public QObject {
     void laterLiveRatiosSurviveWhenAllGroupsBecomeDormant();
     void everyRemovalAndRestorePermutationPreservesTheTree_data() { edgeRows(); }
     void everyRemovalAndRestorePermutationPreservesTheTree();
-    void dormantTreesRoundTripAndOlderFilesKeepTheirFallback_data() { edgeRows(); }
-    void dormantTreesRoundTripAndOlderFilesKeepTheirFallback();
+    void dormantTreesRoundTrip_data() { edgeRows(); }
+    void dormantTreesRoundTrip();
     void unusedDormantNodesAreReleased_data() { edgeRows(); }
     void unusedDormantNodesAreReleased();
     void malformedDormantTreesAreRejectedAtomically_data();
@@ -305,7 +305,7 @@ void PinnedPositionsTest::everyRemovalAndRestorePermutationPreservesTheTree() {
     } while (std::next_permutation(removal.begin(), removal.end()));
 }
 
-void PinnedPositionsTest::dormantTreesRoundTripAndOlderFilesKeepTheirFallback() {
+void PinnedPositionsTest::dormantTreesRoundTrip() {
     QFETCH(int, edge);
     const auto side = Edge(edge);
     LayoutModel model;
@@ -321,19 +321,19 @@ void PinnedPositionsTest::dormantTreesRoundTripAndOlderFilesKeepTheirFallback() 
     QVERIFY(restored.setEdgePinned(f.window, side, true));
     QCOMPARE(shape(restored.pinnedLayout(f.window, side)), before);
     QVERIFY(!record(restored, f.window).contains("pinnedRestoreLayouts"));
-    auto legacy = snapshot;
-    auto windows = legacy.value("windows").toArray();
+    auto withoutRememberedSlots = snapshot;
+    auto windows = withoutRememberedSlots.value("windows").toArray();
     auto window = windows.first().toObject();
     window.remove("pinnedRestoreLayouts");
     windows[0] = window;
-    legacy.insert("windows", windows);
-    LayoutModel older;
-    QVERIFY(older.fromJson(legacy));
-    QVERIFY(older.setEdgePinned(f.window, side, true));
-    QCOMPARE(older.groupForTab(f.a), f.aGroup);
-    QCOMPARE(older.groupForTab(f.b), f.bGroup);
-    QCOMPARE(older.groupForTab(f.c), f.cGroup);
-    QVERIFY(older.validate());
+    withoutRememberedSlots.insert("windows", windows);
+    LayoutModel noRememberedSlots;
+    QVERIFY(noRememberedSlots.fromJson(withoutRememberedSlots));
+    QVERIFY(noRememberedSlots.setEdgePinned(f.window, side, true));
+    QCOMPARE(noRememberedSlots.groupForTab(f.a), f.aGroup);
+    QCOMPARE(noRememberedSlots.groupForTab(f.b), f.bGroup);
+    QCOMPARE(noRememberedSlots.groupForTab(f.c), f.cGroup);
+    QVERIFY(noRememberedSlots.validate());
 }
 
 void PinnedPositionsTest::unusedDormantNodesAreReleased() {

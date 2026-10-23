@@ -81,8 +81,9 @@ private slots:
     void nestedRatiosAreIndependentOfOtherRegions();
     void everyMutationKeepsPinnedTreesFreeOfOrphans_data();
     void everyMutationKeepsPinnedTreesFreeOfOrphans();
-    void explicitTreesRoundTripAndLegacyOrdersMigrate_data();
-    void explicitTreesRoundTripAndLegacyOrdersMigrate();
+    void explicitTreesRoundTripWithoutReconstruction_data();
+    void explicitTreesRoundTripWithoutReconstruction();
+    void emptyPinnedSidesStillRequireExplicitTrees();
     void malformedExplicitTreesAreRejectedAtomically_data();
     void malformedExplicitTreesAreRejectedAtomically();
 };
@@ -239,13 +240,13 @@ void PinnedLayoutTest::everyMutationKeepsPinnedTreesFreeOfOrphans()
     QCOMPARE(model.tab(a)->activePane, originalPane);
 }
 
-void PinnedLayoutTest::explicitTreesRoundTripAndLegacyOrdersMigrate_data()
+void PinnedLayoutTest::explicitTreesRoundTripWithoutReconstruction_data()
 {
     QTest::addColumn<int>("edge");
     for (const auto edge : edges) QTest::newRow(qPrintable(QString::number(int(edge)))) << int(edge);
 }
 
-void PinnedLayoutTest::explicitTreesRoundTripAndLegacyOrdersMigrate()
+void PinnedLayoutTest::explicitTreesRoundTripWithoutReconstruction()
 {
     QFETCH(int, edge); const auto side = Edge(edge);
     LayoutModel model; const auto root = model.createWindow(); model.addTab(root, "Central");
@@ -256,32 +257,35 @@ void PinnedLayoutTest::explicitTreesRoundTripAndLegacyOrdersMigrate()
     QVERIFY(model.setSplitRatio(model.pinnedLayout(root, side)->id, 0.37));
     LayoutModel restored; QVERIFY(restored.fromJson(model.toJson()));
     QCOMPARE(restored.toJson(), model.toJson()); comparePinnedMembership(restored);
-    auto legacy = model.toJson(); auto windows = legacy.value("windows").toArray();
-    auto window = windows.first().toObject(); window.remove("pinnedLayouts"); windows[0] = window; legacy.insert("windows", windows);
-    LayoutModel migrated; QVERIFY(migrated.fromJson(legacy)); comparePinnedMembership(migrated);
-    QVector<GroupId> expected;
-    for (const auto id : model.window(root)->edgeGroups)
-        if (model.group(id)->location == GroupLocation::Pinned && model.group(id)->edge == side) expected.append(id);
-    if (side == Edge::Right || side == Edge::Bottom) std::reverse(expected.begin(), expected.end());
-    const auto tree = migrated.pinnedLayout(root, side); QVERIFY(tree);
-    QCOMPARE(leaves(tree), expected);
-    const auto expectedAxis = side == Edge::Left || side == Edge::Right ? Qt::Horizontal : Qt::Vertical;
-    const auto checkAxis = [&](const auto& recurse, LayoutTree node) -> void {
-        if (!node || node->isLeaf()) return;
-        QCOMPARE(node->orientation, expectedAxis); recurse(recurse, node->first); recurse(recurse, node->second);
-    };
-    checkAxis(checkAxis, tree);
-    QVERIFY(!leaves(tree).contains(model.groupForTab(hidden)));
-    LayoutModel secondRestore; QVERIFY(secondRestore.fromJson(migrated.toJson()));
-    QCOMPARE(secondRestore.toJson(), migrated.toJson());
+    QCOMPARE(restored.pinnedLayout(root, side)->orientation, model.pinnedLayout(root, side)->orientation);
+    QCOMPARE(restored.pinnedLayout(root, side)->ratio, 0.37);
+    QVERIFY(!leaves(restored.pinnedLayout(root, side)).contains(model.groupForTab(hidden)));
+    LayoutModel secondRestore; QVERIFY(secondRestore.fromJson(restored.toJson()));
+    QCOMPARE(secondRestore.toJson(), restored.toJson());
 }
 
 void PinnedLayoutTest::malformedExplicitTreesAreRejectedAtomically_data()
 {
     QTest::addColumn<QString>("problem");
     for (const auto* problem : {"duplicate-leaf", "wrong-edge", "missing-leaf", "auto-hide-leaf",
-                                "central-leaf", "unknown-leaf", "wrong-count", "not-array"})
+                                "central-leaf", "unknown-leaf", "wrong-count", "not-array", "missing"})
         QTest::newRow(problem) << QString(problem);
+}
+
+void PinnedLayoutTest::emptyPinnedSidesStillRequireExplicitTrees()
+{
+    LayoutModel model; const auto root = model.createWindow(); model.addTab(root, "Central");
+    const auto before = model.toJson();
+    auto windows = before.value("windows").toArray(); auto window = windows[0].toObject();
+    const auto trees = window.value("pinnedLayouts").toArray();
+    QCOMPARE(trees.size(), 4);
+    for (const auto& tree : trees) QVERIFY(tree.isNull());
+    LayoutModel restored; QVERIFY(restored.fromJson(before)); QCOMPARE(restored.toJson(), before);
+    const auto revision = restored.revision(); const auto state = restored.stateId();
+    window.remove("pinnedLayouts"); windows[0] = window;
+    auto incomplete = before; incomplete.insert("windows", windows);
+    QVERIFY(!restored.fromJson(incomplete)); QCOMPARE(restored.toJson(), before);
+    QCOMPARE(restored.revision(), revision); QCOMPARE(restored.stateId(), state);
 }
 
 void PinnedLayoutTest::malformedExplicitTreesAreRejectedAtomically()
@@ -304,7 +308,8 @@ void PinnedLayoutTest::malformedExplicitTreesAreRejectedAtomically()
     else if (problem == "central-leaf") layouts[int(Edge::Left)] = leafJson(model.groupForTab(central));
     else if (problem == "unknown-leaf") layouts[int(Edge::Left)] = leafJson(QUuid::createUuid());
     else if (problem == "wrong-count") layouts.removeLast();
-    if (problem == "not-array") window.insert("pinnedLayouts", QJsonObject{});
+    if (problem == "missing") window.remove("pinnedLayouts");
+    else if (problem == "not-array") window.insert("pinnedLayouts", QJsonObject{});
     else window.insert("pinnedLayouts", layouts);
     windows[0] = window; malformed.insert("windows", windows);
     const auto result = model.fromJson(malformed); QVERIFY(!result); QVERIFY(!result.error.isEmpty());

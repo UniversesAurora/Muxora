@@ -47,7 +47,7 @@ private slots:
     void positionFollowsActiveTab();
     void explicitIndexOverridesBehaviorAndModelStillAppends();
     void invalidInsertionPreservesOwnershipAndSnapshot();
-    void settingRoundTripsAndLegacyDefaultsToAfterActive();
+    void settingRoundTripsAndOmissionDefaultsToAfterActive();
     void invalidSettingRejectedBeforeFactory_data();
     void invalidSettingRejectedBeforeFactory();
     void creationUsesClickedGroupInsteadOfFocusedGroup();
@@ -117,7 +117,7 @@ void TabCreationTest::invalidInsertionPreservesOwnershipAndSnapshot()
     auto behavior = manager.behavior(); behavior.newTabPosition = NewTabPosition(99); manager.setBehavior(behavior);
     QCOMPARE(manager.behavior().newTabPosition, NewTabPosition::AfterActive);
 }
-void TabCreationTest::settingRoundTripsAndLegacyDefaultsToAfterActive()
+void TabCreationTest::settingRoundTripsAndOmissionDefaultsToAfterActive()
 {
     WindowManager manager; const auto window = manager.createWindow(); add(manager, window, "Saved");
     auto behavior = manager.behavior(); behavior.newTabPosition = NewTabPosition::BeforeActive; manager.setBehavior(behavior);

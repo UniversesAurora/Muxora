@@ -154,12 +154,6 @@ constexpr int minimumPeekHeight = 100;
 // Keep the model independent of Qt Widgets while respecting QWIDGETSIZE_MAX.
 constexpr int maximumPeekDimension = 16777215;
 
-bool validPeekSize(QSize size)
-{
-    return size.width() >= minimumPeekWidth && size.height() >= minimumPeekHeight
-        && size.width() <= maximumPeekDimension && size.height() <= maximumPeekDimension;
-}
-
 bool validPeekPolicy(const PeekSizePolicy& size)
 {
     return (!size.width || (*size.width >= minimumPeekWidth && *size.width <= maximumPeekDimension))
@@ -970,30 +964,13 @@ OperationResult LayoutModel::setEdgeGroupExtent(GroupId groupId, int extent)
         return success();
     });
 }
-OperationResult LayoutModel::setPeekSize(TabId tabId, std::optional<QSize> size)
-{
-    return transact([&](LayoutModel& model) {
-        if (!model.tab(tabId)) return failure("The tab does not exist.");
-        if (size && !validPeekSize(*size))
-            return failure("Peek sizes require width 140..16777215 and height 100..16777215.");
-        model.tabs_[tabId].peekSize = size;
-        model.tabs_[tabId].verticalPeekSize.reset();
-        model.tabs_[tabId].horizontalPeekSize.reset();
-        return success();
-    });
-}
 PeekSizePolicy LayoutModel::peekSizePolicy(TabId tabId, Edge edge) const
 {
     const auto* record = tab(tabId);
     if (!record) return {};
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
     const auto& policy = vertical ? record->verticalPeekSize : record->horizontalPeekSize;
-    if (policy) return *policy;
-    if (!record->peekSize) return {};
-    // Older snapshots remember both cross-edge defaults, while stretching the
-    // other axis. Do not turn their formerly ignored dimension into a new size.
-    return vertical ? PeekSizePolicy{record->peekSize->width(), std::nullopt}
-                    : PeekSizePolicy{std::nullopt, record->peekSize->height()};
+    return policy.value_or(PeekSizePolicy{});
 }
 OperationResult LayoutModel::setPeekSizePolicy(TabId tabId, Edge edge, PeekSizePolicy size)
 {
@@ -1457,8 +1434,6 @@ OperationResult LayoutModel::validate() const
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
         if (iterator->colorId.size() > 128 || iterator->openedOrder > orderCounter_ || iterator->visitedOrder > orderCounter_)
             return failure("Tab appearance or ordering metadata is invalid.");
-        if (iterator->peekSize && !validPeekSize(*iterator->peekSize))
-            return failure("A peek size is outside the supported dimensions.");
         if ((iterator->verticalPeekSize && !validPeekPolicy(*iterator->verticalPeekSize))
             || (iterator->horizontalPeekSize && !validPeekPolicy(*iterator->horizontalPeekSize)))
             return failure("A directional peek size is outside the supported dimensions.");
@@ -1619,9 +1594,8 @@ QJsonObject LayoutModel::toJson() const
             {"central", treeJson(record.central)}, {"edgeGroups", idArray(record.edgeGroups)},
             {"activeGroup", record.activeGroup.isNull() ? QString{} : uuidText(record.activeGroup)}};
         QJsonArray pinned;
-        bool hasPinned = false;
-        for (const auto& tree : record.pinnedLayouts) { pinned.append(treeJson(tree)); hasPinned |= bool(tree); }
-        if (hasPinned) windowObject.insert("pinnedLayouts", pinned);
+        for (const auto& tree : record.pinnedLayouts) pinned.append(treeJson(tree));
+        windowObject.insert("pinnedLayouts", pinned);
         QJsonArray remembered;
         bool hasRemembered = false;
         for (const auto& tree : record.pinnedRestoreLayouts) { remembered.append(treeJson(tree)); hasRemembered |= bool(tree); }
@@ -1642,8 +1616,6 @@ QJsonObject LayoutModel::toJson() const
                 tabObject.insert("colorId", tabRecord.colorId);
                 tabObject.insert("openedOrder", double(tabRecord.openedOrder));
                 tabObject.insert("visitedOrder", double(tabRecord.visitedOrder));
-                if (const auto& size = tabRecord.peekSize)
-                    tabObject.insert("peekSize", QJsonObject{{"width", size->width()}, {"height", size->height()}});
                 if (const auto& size = tabRecord.verticalPeekSize)
                     tabObject.insert("verticalPeekSize", peekPolicyJson(*size));
                 if (const auto& size = tabRecord.horizontalPeekSize)
@@ -1669,13 +1641,10 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             return failure("Layout records must be bounded arrays.");
     LayoutModel candidate;
     JsonReader reader;
-    QSet<WindowId> legacyPinnedLayouts;
-    if (json.contains("orderCounter")) {
-        const auto value = json.value("orderCounter");
-        if (!value.isDouble() || value.toDouble() < 0 || value.toDouble() > double(maximumTabOrder)
-            || std::floor(value.toDouble()) != value.toDouble()) return failure("Invalid ordering counter.");
-        candidate.orderCounter_ = quint64(value.toDouble());
-    }
+    const auto counter = json.value("orderCounter");
+    if (!counter.isDouble() || counter.toDouble() < 0 || counter.toDouble() > double(maximumTabOrder)
+        || std::floor(counter.toDouble()) != counter.toDouble()) return failure("Invalid ordering counter.");
+    candidate.orderCounter_ = quint64(counter.toDouble());
     for (const auto& value : json.value("windows").toArray()) {
         if (!value.isObject()) return failure("A window record must be an object.");
         const auto object = value.toObject();
@@ -1687,19 +1656,17 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.kind = kind == "workbench" ? WindowKind::Workbench : WindowKind::Floating;
         record.central = reader.tree(object.value("central"));
         record.edgeGroups = reader.ids(object, "edgeGroups");
-        if (object.contains("pinnedLayouts")) {
-            const auto layouts = object.value("pinnedLayouts");
-            if (!layouts.isArray() || layouts.toArray().size() != 4)
-                return failure("Pinned layouts must contain exactly four side trees.");
-            for (int index = 0; index < 4; ++index)
-                record.pinnedLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
-        } else legacyPinnedLayouts.insert(record.id);
+        const auto layouts = object.value("pinnedLayouts");
+        if (!layouts.isArray() || layouts.toArray().size() != 4)
+            return failure("Pinned layouts must contain exactly four side trees.");
+        for (int index = 0; index < 4; ++index)
+            record.pinnedLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
         if (object.contains("pinnedRestoreLayouts")) {
-            const auto layouts = object.value("pinnedRestoreLayouts");
-            if (!layouts.isArray() || layouts.toArray().size() != 4)
+            const auto remembered = object.value("pinnedRestoreLayouts");
+            if (!remembered.isArray() || remembered.toArray().size() != 4)
                 return failure("Dormant pinned layouts must contain exactly four side trees.");
             for (int index = 0; index < 4; ++index)
-                record.pinnedRestoreLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
+                record.pinnedRestoreLayouts[size_t(index)] = reader.tree(remembered.toArray()[index]);
         }
         record.activeGroup = reader.id(object, "activeGroup", true);
         if (candidate.windows_.contains(record.id)) reader.fail("Duplicate window identity.");
@@ -1731,7 +1698,6 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         if (candidate.groups_.contains(record.id)) reader.fail("Duplicate group identity.");
         candidate.groups_.insert(record.id, record);
     }
-    QVector<TabId> legacyOrdering;
     for (const auto& value : json.value("tabs").toArray()) {
         if (!value.isObject()) return failure("A tab record must be an object.");
         const auto object = value.toObject();
@@ -1744,29 +1710,11 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         if (object.contains("colorId") && (!object.value("colorId").isString() || object.value("colorId").toString().size() > 128))
             return failure("Invalid tab color identity.");
         record.colorId = object.value("colorId").toString();
-        if (object.contains("openedOrder") != object.contains("visitedOrder"))
-            return failure("Tab ordering values must be provided together.");
         for (auto key : {"openedOrder", "visitedOrder"}) {
-            if (!object.contains(key)) continue;
             const auto order = object.value(key);
             if (!order.isDouble() || order.toDouble() < 0 || order.toDouble() > double(maximumTabOrder)
                 || std::floor(order.toDouble()) != order.toDouble()) return failure("Invalid tab ordering value.");
             (QLatin1String(key) == QLatin1String("openedOrder") ? record.openedOrder : record.visitedOrder) = quint64(order.toDouble());
-            candidate.orderCounter_ = std::max(candidate.orderCounter_, quint64(order.toDouble()));
-        }
-        if (!object.contains("openedOrder")) legacyOrdering.append(record.id);
-        if (object.contains("peekSize")) {
-            if (!object.value("peekSize").isObject()) return failure("A peek size must be an object.");
-            const auto size = object.value("peekSize").toObject();
-            for (const auto* key : {"width", "height"}) {
-                const auto dimension = size.value(QLatin1String(key));
-                const auto minimum = QLatin1String(key) == QLatin1String("width") ? minimumPeekWidth : minimumPeekHeight;
-                const auto number = dimension.toDouble();
-                if (!dimension.isDouble() || !std::isfinite(number) || number < minimum
-                    || number > maximumPeekDimension || std::floor(number) != number)
-                    return failure("Peek dimensions must be bounded integers.");
-            }
-            record.peekSize = QSize(size.value("width").toInt(), size.value("height").toInt());
         }
         for (const auto* key : {"verticalPeekSize", "horizontalPeekSize"}) {
             if (!object.contains(QLatin1String(key))) continue;
@@ -1805,11 +1753,6 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         candidate.tabs_.insert(record.id, record);
     }
     if (!reader.error.isEmpty()) return failure(reader.error);
-    for (const auto tab : legacyOrdering) {
-        const auto order = candidate.nextTabOrder();
-        candidate.tabs_[tab].openedOrder = candidate.tabs_[tab].visitedOrder = order;
-    }
-    for (const auto window : legacyPinnedLayouts) candidate.synchronizePinnedLayouts(window);
     candidate.rebuildIndex();
     auto result = candidate.validate();
     if (!result) return result;

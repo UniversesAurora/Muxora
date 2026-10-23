@@ -358,7 +358,7 @@ void StripDragTest::wheelOnAPeekDoesNotScrollTheCoveredStrip()
     QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
     const auto hidden = fixture.manager.addTab(fixture.id, new QLabel("Peek content"), {"Peek", {}, {}});
     QVERIFY(fixture.manager.moveTabToEdge(hidden, Edge::Left));
-    QVERIFY(fixture.manager.setPeekSize(hidden, {420, 200}));
+    QVERIFY(fixture.manager.setPeekSizePolicy(hidden, Edge::Left, {420, std::nullopt}));
     QVERIFY(fixture.manager.activateTab(hidden));
     auto* panel = fixture.window->findChild<QWidget*>("PeekPanel"); QVERIFY(panel); QVERIFY(panel->isVisible());
     const auto viewport = fixture.viewportRect();

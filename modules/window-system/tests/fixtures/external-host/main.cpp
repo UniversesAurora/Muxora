@@ -153,9 +153,11 @@ int main(int argc, char** argv)
     if (!windows.moveTabToEdgeBar(tab, root, window_system::Edge::Right, 0)) return 7;
     if (windows.paneWidget(pane) != text || windows.model().autoHiddenTabs(root, window_system::Edge::Right)
         != QVector<window_system::TabId>{tab}) return 8;
-    if (windows.peekSize(tab) != QSize(250, 170) || !windows.setPeekSize(tab, QSize(360, 210))
+    if (windows.peekSize(tab, window_system::Edge::Right) != QSize(250, 170)
+        || !windows.setPeekSize(tab, window_system::Edge::Right, QSize(360, 210))
         || !windows.execute("tab.peek.setSize", {{"tab", tab}, {"width", 420}, {"height", 240}}, root)
-        || windows.peekSize(tab) != QSize(420, 240) || windows.setPeekSize(tab, QSize(0, 0))) return 95;
+        || windows.peekSize(tab, window_system::Edge::Right) != QSize(420, 240)
+        || windows.setPeekSize(tab, window_system::Edge::Right, QSize(0, 0))) return 95;
     if (!windows.setPeekSize(tab, window_system::Edge::Left, QSize(430, 260))
         || windows.peekSize(tab, window_system::Edge::Right) != QSize(430, 260)
         || !windows.setPeekSizePolicy(tab, window_system::Edge::Top, {510, std::nullopt})
@@ -218,8 +220,10 @@ int main(int argc, char** argv)
     if (toolbarLayout(windows.saveLayout(), root) != toolbarLayout(saved, root)) return 94;
     if (windows.peekSize(tab, window_system::Edge::Right) != QSize(430, 260)
         || windows.peekSizePolicy(tab, window_system::Edge::Bottom).width != std::optional<int>(510)
-        || !windows.resetPeekSize(tab)
-        || windows.peekSize(tab) != QSize(250, 170) || windows.paneWidget(pane) != restoredFirst.data()) return 96;
+        || !windows.resetPeekSize(tab, window_system::Edge::Right)
+        || windows.peekSize(tab, window_system::Edge::Right) != QSize(250, 170)
+        || windows.peekSizePolicy(tab, window_system::Edge::Top).width != std::optional<int>(510)
+        || windows.paneWidget(pane) != restoredFirst.data()) return 96;
     {
         const auto conversionWindow = windows.createWindow();
         auto* first = new QLabel("First conversion content");
