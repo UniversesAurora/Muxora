@@ -129,7 +129,7 @@ const Items& layout(CommandMenuSurface surface)
             group("view.visibility", QT_TRANSLATE_NOOP("WindowSystem", "显示"), {command("window.toolbars.toggle"), command("window.statusBar.toggle"),
                 command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
             group("view.tabAppearance", QT_TRANSLATE_NOOP("WindowSystem", "标签栏"), {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
-                command("presentation.toggleNumbers"), separator(), command("presentation.toggleMultiline"),
+                command("presentation.toggleNumbers"), command("presentation.toggleTitleClipping"), separator(), command("presentation.toggleMultiline"),
                 command("presentation.toggleWheelExpandRows")}),
             group("view.sidebarAppearance", QT_TRANSLATE_NOOP("WindowSystem", "侧边栏标签"), {command("presentation.toggleSidebarIcons"), command("presentation.toggleSidebarNumbers")}),
             group("view.fullscreen", QT_TRANSLATE_NOOP("WindowSystem", "全屏"), {command("window.fullscreen.toggle"), command("window.fullscreen.group"),
@@ -351,6 +351,7 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     else if (id == "presentation.toggleSidebarNumbers") appearanceChecked = manager->tabAppearance().showSidebarNumbers;
     else if (id == "presentation.toggleNewTabButton") appearanceChecked = manager->tabAppearance().showNewTabButton;
     else if (id == "presentation.toggleNumbers") appearanceChecked = manager->tabAppearance().showNumbers;
+    else if (id == "presentation.toggleTitleClipping") appearanceChecked = manager->tabAppearance().clipTitles;
     else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;
     else if (id == "presentation.toggleWheelExpandRows") appearanceChecked = manager->tabAppearance().wheelExpandRows;
     const bool checkedCommand = appearanceChecked.has_value() || id == "window.tabBars.toggle" || id == "window.sideBars.toggle"

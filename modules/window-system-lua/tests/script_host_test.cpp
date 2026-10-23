@@ -87,6 +87,7 @@ class ScriptHostTest final : public QObject {
     void registrationObserversCanDestroyTheScriptHost();
     void layoutSnapshotsPreserveEmptyArrays();
     void appearanceAndComponentBarsUseTypedDescriptions();
+    void titleClippingSettingsAreTypedAtomicAndPersistent();
     void componentServicesFollowProviderLifetime();
     void rejectedRegistrationsReleaseFunctionReferences();
     void reloadingToolbarsPreservesPerWindowAndKindLayouts();
@@ -1243,6 +1244,43 @@ void ScriptHostTest::appearanceAndComponentBarsUseTypedDescriptions() {
     QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
     QCOMPARE(manager.behavior().captionButtonOrder, CaptionButtonOrder::MacOS);
     QCOMPARE(manager.paneWidget(pane), originalContent.data());
+}
+void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
+    WindowManager manager;
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    auto reply = run(host, R"(
+      local initial=muxora.settings.get()
+      assert(initial.clip_tab_titles==false and initial.maximum_tab_title_width==160)
+      assert(muxora.settings.update({clip_tab_titles=true,maximum_tab_title_width=137}))
+      local appearance=muxora.tabs.appearance()
+      assert(appearance.clip_tab_titles and appearance.maximum_tab_title_width==137)
+      assert(muxora.tabs.set_appearance({clip_tab_titles=false}))
+      local disabled=muxora.settings.get()
+      assert(not disabled.clip_tab_titles and disabled.maximum_tab_title_width==137)
+      for _,invalid in ipairs({15,2049,160.5,'160',false,math.huge,0/0}) do
+        assert(not pcall(muxora.settings.update,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
+        assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=true,maximum_tab_title_width=invalid}))
+        local unchanged=muxora.settings.get()
+        assert(not unchanged.clip_tab_titles and unchanged.maximum_tab_title_width==137)
+      end
+      assert(not pcall(muxora.settings.update,{clip_tab_titles='true'}))
+      assert(not pcall(muxora.tabs.set_appearance,{clip_tab_titles=1}))
+      for _,boundary in ipairs({16,2048}) do
+        assert(muxora.tabs.set_appearance({maximum_tab_title_width=boundary}))
+        assert(muxora.settings.get().maximum_tab_title_width==boundary)
+      end
+      assert(muxora.settings.update({clip_tab_titles=true,maximum_tab_title_width=137}))
+      local snapshot=muxora.layout.snapshot()
+      assert(muxora.settings.update({clip_tab_titles=false,maximum_tab_title_width=200}))
+      assert(muxora.layout.restore(snapshot))
+      return muxora.settings.get()
+    )");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    const auto restored = reply.values[0].toMap();
+    QVERIFY(restored.value("clip_tab_titles").toBool());
+    QCOMPARE(restored.value("maximum_tab_title_width").toInt(), 137);
+    QVERIFY(manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 137);
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {
     WindowManager manager;

@@ -220,7 +220,7 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
             const auto* group=manager_->model().group(context.group);
             host->configureLabel(manager_->tabColorPreset(tab->colorId),
                 appearance.showSidebarIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->theme()) : QIcon{},
-                appearance.showSidebarNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0);
+                appearance.showSidebarNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0, appearance);
         }
         dragPresentationHost_ = host;
         column_->addWidget(host, 1); host->show(); surface_->show();
@@ -563,6 +563,7 @@ void WorkspaceWindow::showTabPresentationMenu(const QPoint& global)
     if (!add(QStringLiteral("presentation.toggleIcons"), QCoreApplication::translate("WindowSystem", "显示标签图标"), appearance.showIcons, true)) return;
     if (!add(QStringLiteral("presentation.toggleNewTabButton"), QCoreApplication::translate("WindowSystem", "显示新建标签按钮"), appearance.showNewTabButton, true)) return;
     if (!add(QStringLiteral("presentation.toggleNumbers"), QCoreApplication::translate("WindowSystem", "显示标签编号"), appearance.showNumbers, true)) return;
+    if (!add(QStringLiteral("presentation.toggleTitleClipping"), QCoreApplication::translate("WindowSystem", "Clip long tab titles"), appearance.clipTitles, true)) return;
     menu->addSeparator();
     if (!add(QStringLiteral("group.close"), QCoreApplication::translate("WindowSystem", "关闭此标签组"), false, false)) return;
     menu->popup(global);

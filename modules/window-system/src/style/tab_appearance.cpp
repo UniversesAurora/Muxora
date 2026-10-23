@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QSet>
 #include <algorithm>
+#include <cmath>
 
 namespace window_system {
 namespace {
@@ -129,6 +130,7 @@ bool validTabAppearance(const TabAppearance& appearance)
 {
     const auto validPlacement = [](TabBarPlacement value) { return value == TabBarPlacement::Top || value == TabBarPlacement::Bottom; };
     if (!validPlacement(appearance.centralPlacement) || !validPlacement(appearance.pinnedPlacement)
+        || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || (appearance.wheelExpandRows && !appearance.multiline) || appearance.colors.size() > 128) return false;
     QSet<QString> ids;
     for (const auto& preset : appearance.colors) {
@@ -151,7 +153,8 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"pinnedPlacement", placementName(appearance.pinnedPlacement)}, {"multiline", appearance.multiline},
         {"wheelExpandRows", appearance.wheelExpandRows}, {"showIcons", appearance.showIcons},
         {"showNewTabButton", appearance.showNewTabButton}, {"showNumbers", appearance.showNumbers},
-        {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers}, {"colors", colors}};
+        {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers},
+        {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth}, {"colors", colors}};
 }
 
 OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance)
@@ -166,10 +169,18 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
     for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
         std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
-        std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}}) {
+        std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}, std::pair{"clipTitles", &candidate.clipTitles}}) {
         const auto field = object.value(entry.first);
         if (!field.isUndefined() && !field.isBool()) return {false, QCoreApplication::translate("WindowSystem", "标签显示设置类型无效")};
         if (field.isBool()) *entry.second = field.toBool();
+    }
+    const auto titleWidth = object.value("maximumTitleWidth");
+    if (!titleWidth.isUndefined()) {
+        const double width = titleWidth.toDouble();
+        if (!titleWidth.isDouble() || !std::isfinite(width) || std::trunc(width) != width
+            || width < minimumTabTitleWidth || width > maximumTabTitleWidth)
+            return {false, QCoreApplication::translate("WindowSystem", "The maximum tab title width must be an integer number of logical pixels within the allowed range")};
+        candidate.maximumTitleWidth = static_cast<int>(width);
     }
     const auto palette = object.value("colors");
     if (!palette.isUndefined()) {

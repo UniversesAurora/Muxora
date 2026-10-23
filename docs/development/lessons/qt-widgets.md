@@ -83,3 +83,10 @@
 - **做法**：400 像素以内保持一行；更长的取最少的行数，使每行宽度不超过 400 像素，或者不超过高度的 8 倍。富文本和自带换行的文字不处理。用 `horizontalAdvance` 计算文字宽度，因为 Qt 可能已经替它换过行。
 - **验证**：`CaptionStripTest::longToolTipsWrapAtAReadableWidth`。
 - **出处**：`7991ec3`。
+
+## 标签文字裁切
+
+- 限制标题长度时，测量的是文字区域，图标、编号、关闭按钮和内边距另计。标签最小长度仍生效，因此像素测试要选择超出最小长度影响范围的裁切边界，最小值另作断言。
+- 为保留半个字形，绘制完整字符串并显式裁剪文字矩形；先截字符串或调用 `elidedText()` 都不能满足这个要求。裁剪状态只包围文字绘制，随后恢复，避免切掉颜色指示线或其他标签。
+- 收纳条旋转后沿文字长轴应用限制。真实标签、拖拽呈现和插入空位共用测量策略，并用宽整数加法限制到 Qt 控件尺寸上限，不能只在最终布局中收缩控件。
+- 程序验证用不限宽的全文绘制作为参考，在字形内部选切点，对比不同绘制比例下的可见区域，并检查边界后没有文字像素；无需人工判图。对应 `TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace` 和 `EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPreview`。

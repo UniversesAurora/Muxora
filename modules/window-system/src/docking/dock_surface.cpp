@@ -512,6 +512,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             button->setPreset(manager_->tabColorPreset(manager_->model().tab(tabId)->colorId));
             const auto appearance=manager_->tabAppearance();
             const auto options=manager_->tabOptions(tabId);
+            button->setTitleClipping(appearance.clipTitles, appearance.maximumTitleWidth);
             button->setPresentation(appearance.showSidebarIcons && options.showIcon ? iconFor("window",manager_->theme()) : QIcon{},
                 appearance.showSidebarNumbers ? ordinal : 0);
             button->setCheckable(true);
@@ -706,7 +707,7 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
             ordinal += candidate->tabs.size();
         }
         return edgeTabExtent(fontMetrics(),record->title,appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
-            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0);
+            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, appearance.clipTitles, appearance.maximumTitleWidth);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         const auto* bar = group->tabBar();
@@ -722,8 +723,11 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
             return bar->tabRect(i).width();
         }
     }
-    const int icon = manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
-    return qBound(1, fontMetrics().horizontalAdvance(record->title) + icon + 35, QWIDGETSIZE_MAX);
+    const auto appearance = manager_->tabAppearance();
+    const int icon = appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
+    const int natural = fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine,record->title).width();
+    const int title = appearance.clipTitles ? std::min(natural, appearance.maximumTitleWidth) : natural;
+    return int(std::clamp<qint64>(qint64(title) + icon + 35, 46, QWIDGETSIZE_MAX));
 }
 QHash<Edge, QRect> DockSurface::edgeBarRects() const
 {

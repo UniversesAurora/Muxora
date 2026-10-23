@@ -99,6 +99,21 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 
 接口传值和 UUID 字符串，不传 Qt 对象。省略目标 ID 的操作使用来源窗口当前目标；显式有效 ID 可以操作其他窗口。关闭仍经过宿主关闭许可。命令返回的布尔值表示操作是否接受；Lua 命令本身异步执行，后续失败会在诊断中报告。
 
+## 标题裁切
+
+普通、固定和四边侧栏共用标题裁切策略。开关 `clip_tab_titles` 与文字最大长度 `maximum_tab_title_width` 可通过标签外观或设置接口读取、修改；具体单位、默认值和范围见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。只限制显示范围，不修改标题字符串，提示和完整标签列表仍显示完整标题。
+
+```lua
+assert(muxora.tabs.set_appearance({
+  clip_tab_titles = true,
+  maximum_tab_title_width = 120
+}))
+-- The settings API edits the same appearance, preserving the saved limit.
+assert(muxora.settings.update({ clip_tab_titles = false }))
+```
+
+非法类型、非整数或越界长度会报告错误，不部分应用其他修改；关闭开关保留设置值。`layout.snapshot()`／`layout.restore()` 同样保存和恢复此策略。
+
 ## 窗口状态与浮动面板
 
 | 调用 | 参数与结果 |

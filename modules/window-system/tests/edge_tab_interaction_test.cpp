@@ -2,13 +2,16 @@
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
 #include "docking/edge_tab_button.hpp"
+#include "docking/drag_presentation.hpp"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QEnterEvent>
+#include <QImage>
 #include <QLabel>
 #include <QLayout>
 #include <QMenu>
+#include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QScrollBar>
@@ -28,6 +31,18 @@ QAbstractButton* edgeButton(QWidget* window, TabId id) {
 QWidget* content(const QString& name) { auto* widget = new QLabel(name); widget->setObjectName(name); return widget; }
 TabOptions options(const QString& title) { TabOptions result; result.title = title; result.contentType = "test"; return result; }
 void showTestWindow(QWidget* window) { window->setWindowFlag(Qt::WindowStaysOnTopHint); window->show(); }
+QImage renderAtRatio(QWidget* widget, qreal ratio)
+{
+    QImage image(QSize(qRound(widget->width() * ratio), qRound(widget->height() * ratio)), QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(ratio); image.fill(Qt::transparent);
+    QPainter painter(&image); widget->render(&painter); painter.end(); return image;
+}
+QImage logicalCrop(const QImage& image, QRect rect)
+{
+    const auto ratio = image.devicePixelRatio();
+    return image.copy(QRect(qRound(rect.x() * ratio), qRound(rect.y() * ratio),
+        qRound(rect.width() * ratio), qRound(rect.height() * ratio)));
+}
 }
 
 class EdgeTabInteractionTest final : public QObject {
@@ -56,8 +71,13 @@ private slots:
     void autoHidePresentationUsesIndependentFlagsAndPerTabIconOverrides();
     void autoHideColorsSurviveActivationChanges_data();
     void autoHideColorsSurviveActivationChanges();
-    void edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data();
-    void edgePresentationKeepsBoundedSizeAndRendersPresetIcon();
+    void edgePresentationKeepsNaturalSizeAndRendersPresetIcon_data();
+    void edgePresentationKeepsNaturalSizeAndRendersPresetIcon();
+    void titleClippingUsesTheTextAxisAndMatchesTheDragPreview_data();
+    void titleClippingUsesTheTextAxisAndMatchesTheDragPreview();
+    void clippedRailLabelsUseTheSameInsertionExtent_data();
+    void clippedRailLabelsUseTheSameInsertionExtent();
+    void oversizedUnclippedTitleStaysWithinTheWidgetSizeLimit();
 };
 
 void EdgeTabInteractionTest::autoHideLabelsKeepOriginalColorsAndAcceptExplicitPresets_data()
@@ -621,27 +641,27 @@ void EdgeTabInteractionTest::autoHideColorsSurviveActivationChanges()
     QCOMPARE(manager.model().tab(second)->colorId, QStringLiteral("green"));
 }
 
-void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIcon_data()
+void EdgeTabInteractionTest::edgePresentationKeepsNaturalSizeAndRendersPresetIcon_data()
 {
     QTest::addColumn<bool>("vertical");
     QTest::newRow("horizontal") << false;
     QTest::newRow("vertical") << true;
 }
 
-void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIcon()
+void EdgeTabInteractionTest::edgePresentationKeepsNaturalSizeAndRendersPresetIcon()
 {
     QFETCH(bool, vertical);
     QWidget root; applyTheme(&root); root.resize(280, 240);
     const int thickness = defaultTheme().metrics.edgeThickness;
     EdgeTabButton button("Side label", vertical, thickness, &root); button.setCheckable(true);
     const auto major = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
-    const int plainExtent = qBound(64, button.fontMetrics().horizontalAdvance(button.text()) + 24, 180);
+    const int plainExtent = qMax(64, button.fontMetrics().horizontalAdvance(button.text()) + 24);
     QCOMPARE(major(button.sizeHint()), plainExtent);
     QPixmap pixels(16, 16); pixels.fill(Qt::white); const QIcon icon(pixels);
     button.setPresentation(icon, 12);
     const int numberWidth = button.fontMetrics().horizontalAdvance("12") + 5;
     const int textWidth = button.fontMetrics().horizontalAdvance(button.text());
-    const int extent = qBound(64, textWidth + 24 + 20 + numberWidth, 180);
+    const int extent = qMax(64, textWidth + 24 + 20 + numberWidth);
     QCOMPARE(major(button.sizeHint()), extent); QCOMPARE(button.property("tabNumber").toInt(), 12);
     QCOMPARE(vertical ? button.sizeHint().width() : button.sizeHint().height(), thickness);
     button.resize(button.sizeHint()); button.move(30, 30);
@@ -660,9 +680,136 @@ void EdgeTabInteractionTest::edgePresentationKeepsBoundedSizeAndRendersPresetIco
     QCOMPARE(iconPixel(), preset.autoHideInactive.icon);
     button.setChecked(true); QCOMPARE(iconPixel(), preset.autoHideActive.icon);
     button.setText(QString(100, QLatin1Char('W')));
-    QCOMPARE(major(button.sizeHint()), 180);
+    const int longTextWidth = button.fontMetrics().horizontalAdvance(button.text());
+    QCOMPARE(major(button.sizeHint()), longTextWidth + 24 + 20 + numberWidth);
     button.setPresentation({}, 0); QCOMPARE(button.property("tabNumber").toInt(), 0); QVERIFY(button.icon().isNull());
-    QCOMPARE(major(button.sizeHint()), 180); // Decorations never remove the extent bound.
+    QCOMPARE(major(button.sizeHint()), longTextWidth + 24);
+}
+
+void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPreview_data()
+{
+    QTest::addColumn<int>("edge"); QTest::addColumn<bool>("decorated");
+    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+        QTest::newRow(qPrintable(QString("plain-%1").arg(int(edge)))) << int(edge) << false;
+        QTest::newRow(qPrintable(QString("decorated-%1").arg(int(edge)))) << int(edge) << true;
+    }
+}
+
+void EdgeTabInteractionTest::titleClippingUsesTheTextAxisAndMatchesTheDragPreview()
+{
+    QFETCH(int, edge); QFETCH(bool, decorated);
+    const bool vertical = Edge(edge) == Edge::Left || Edge(edge) == Edge::Right;
+    QWidget root; applyTheme(&root); root.resize(900, 900);
+    auto font = root.font(); font.setPixelSize(decorated ? 19 : 15); root.setFont(font);
+    const auto title = QString(25, QLatin1Char('W'));
+    const int thickness = defaultTheme().metrics.edgeThickness;
+    EdgeTabButton button(title, vertical, thickness, &root);
+    QPixmap iconPixels(16, 16); iconPixels.fill(Qt::white);
+    const auto icon = decorated ? QIcon(iconPixels) : QIcon{}; const int number = decorated ? 12 : 0;
+    button.setPresentation(icon, number);
+    auto preset = defaultTabColorPresets().front();
+    preset.autoHideInactive = {Qt::white, Qt::black, QColor("#123456"), QColor("#2468ac")};
+    button.setPreset(preset); button.resize(button.sizeHint()); button.move(10, 10);
+    root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
+    const int decorationWidth = decorated ? 20 + button.fontMetrics().horizontalAdvance("12") + 5 : 0;
+    const int textLeft = 12 + decorationWidth;
+    const auto major = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
+    const int naturalExtent = major(button.sizeHint());
+    QCOMPARE(naturalExtent, button.fontMetrics().horizontalAdvance(title) + 24 + decorationWidth);
+    const auto full = renderAtRatio(&button, 1);
+    const auto inkPoint = [vertical, thickness](int x, int y) {
+        return vertical ? QPoint(thickness - 1 - y, x) : QPoint(x, y);
+    };
+    int limit = 0;
+    for (int x = textLeft + 48; x < textLeft + 120 && !limit; ++x)
+        for (int y = 2; y < thickness - 3; ++y)
+            if (full.pixelColor(inkPoint(x, y)) != QColor(Qt::white)
+                && full.pixelColor(inkPoint(x + 1, y)) != QColor(Qt::white)) {
+                limit = x - textLeft + 1; break;
+            }
+    QVERIFY(limit >= 16);
+    QVector<QImage> references;
+    for (const qreal ratio : {1.0, 2.0}) references.append(renderAtRatio(&button, ratio));
+    button.setTitleClipping(true, limit); button.resize(button.sizeHint());
+    QCOMPARE(major(button.sizeHint()), limit + 24 + decorationWidth);
+    QCOMPARE(vertical ? button.width() : button.height(), thickness);
+    QCOMPARE(button.text(), title); QCOMPARE(button.toolTip(), title); QCOMPARE(button.accessibleName(), title);
+    const QRect textRect = vertical ? QRect(3, textLeft, thickness - 5, limit) : QRect(textLeft, 2, limit, thickness - 5);
+    for (int index = 0; index < references.size(); ++index) {
+        const auto actual = renderAtRatio(&button, index ? 2 : 1);
+        QCOMPARE(logicalCrop(actual, textRect), logicalCrop(references[index], textRect));
+        const QRect beyond = vertical ? QRect(3, textLeft + limit, thickness - 5, 5)
+            : QRect(textLeft + limit, 2, 5, thickness - 5);
+        const auto blank = logicalCrop(actual, beyond);
+        for (int y = 0; y < blank.height(); ++y) for (int x = 0; x < blank.width(); ++x)
+            QCOMPARE(blank.pixelColor(x, y), QColor(Qt::white));
+    }
+    TabAppearance appearance; appearance.clipTitles = true; appearance.maximumTitleWidth = limit;
+    EdgeDragPresentation preview(title, Edge(edge), defaultTheme(), new QLabel("Live content"), &root);
+    preview.configureLabel(preset, icon, number, appearance);
+    auto* previewLabel = preview.findChild<QAbstractButton*>("DragEdgeLabel"); QVERIFY(previewLabel);
+    QCOMPARE(previewLabel->size(), button.size()); QCOMPARE(previewLabel->text(), title);
+    QCOMPARE(previewLabel->toolTip(), title); QCOMPARE(previewLabel->accessibleName(), title);
+    button.setTitleClipping(false, limit); button.resize(button.sizeHint());
+    QCOMPARE(major(button.sizeHint()), naturalExtent);
+    button.setText("i"); button.setPresentation({}, 0); button.setTitleClipping(true, 16);
+    QCOMPARE(major(button.sizeHint()), 64);
+}
+
+void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent_data()
+{
+    peekShowsTheRealContentAndSharedBars_data();
+}
+
+void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
+{
+    QFETCH(int, edge);
+    const bool vertical = Edge(edge) == Edge::Left || Edge(edge) == Edge::Right;
+    WindowManager manager; auto appearance = manager.tabAppearance();
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 77;
+    appearance.showSidebarIcons = true; appearance.showSidebarNumbers = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(); manager.addTab(window, content("Central"), options("Central"));
+    const auto title = QString(25, QLatin1Char('W'));
+    const auto side = manager.addTab(window, content("Side"), options(title));
+    QVERIFY(manager.moveTabToEdge(side, Edge(edge)));
+    auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
+    auto* button = edgeButton(host, side); QVERIFY(button);
+    const auto extent = [vertical](QSize size) { return vertical ? size.height() : size.width(); };
+    const int expected = appearance.maximumTitleWidth + 24 + 20 + button->fontMetrics().horizontalAdvance("1") + 5;
+    QCOMPARE(extent(button->size()), expected);
+    auto* surface = host->findChild<QFrame*>("DockSurface"); QVERIFY(surface);
+    auto* dock = static_cast<DockSurface*>(surface);
+    QCOMPARE(dock->dragLabelExtent(side, true), expected);
+    dock->setEdgeInsertionPreview(Edge(edge), 1, dock->dragLabelExtent(side, true));
+    const auto gap = dock->edgeInsertionPreviewRect(Edge(edge)); QVERIFY(!gap.isEmpty());
+    QCOMPARE(extent(gap.size()), expected);
+    QCOMPARE(dock->edgeTabInsertionIndex(Edge(edge), gap.center()), 1);
+    dock->clearInsertionPreviews();
+    QCOMPARE(manager.model().tab(side)->title, title);
+    QCOMPARE(button->text(), title); QCOMPARE(button->toolTip(), title); QCOMPARE(button->accessibleName(), title);
+    appearance.clipTitles = false; QVERIFY(manager.setTabAppearance(appearance));
+    button = edgeButton(host, side); QVERIFY(button);
+    QVERIFY(extent(button->sizeHint()) > expected);
+    QCOMPARE(manager.model().tab(side)->title, title);
+}
+
+void EdgeTabInteractionTest::oversizedUnclippedTitleStaysWithinTheWidgetSizeLimit()
+{
+    // Measure only: never allocate a widget or image at this natural extent.
+    QFont font = qApp->font(); font.setPixelSize(1024);
+    const QString title(24000, QLatin1Char('W'));
+    const QFontMetrics metrics(font);
+    QVERIFY(metrics.horizontalAdvance(title) > QWIDGETSIZE_MAX);
+    QCOMPARE(edgeTabExtent(metrics, title, true, 123), QWIDGETSIZE_MAX);
+    for (const bool vertical : {false, true}) {
+        EdgeTabButton button(title, vertical, defaultTheme().metrics.edgeThickness, nullptr);
+        button.setFont(font);
+        const auto size = button.sizeHint();
+        QCOMPARE(vertical ? size.height() : size.width(), QWIDGETSIZE_MAX);
+        QCOMPARE(vertical ? size.width() : size.height(), defaultTheme().metrics.edgeThickness);
+        QCOMPARE(button.text(), title); QCOMPARE(button.toolTip(), title);
+    }
 }
 
 QTEST_MAIN(EdgeTabInteractionTest)

@@ -74,10 +74,12 @@ QRegion EdgeDragPresentation::visibleRegion() const
 {
     return QRegion(label_->geometry()).united(QRegion(panel_->geometry()));
 }
-void EdgeDragPresentation::configureLabel(std::optional<TabColorPreset> preset,QIcon icon,int number)
+void EdgeDragPresentation::configureLabel(std::optional<TabColorPreset> preset,QIcon icon,int number,
+                                          const TabAppearance& appearance)
 {
     auto* label=static_cast<EdgeTabButton*>(label_);
     label->setPreset(std::move(preset)); label->setPresentation(std::move(icon),number);
+    label->setTitleClipping(appearance.clipTitles, appearance.maximumTitleWidth);
     label->setCheckable(true); label->setChecked(true); label->setFixedSize(label->sizeHint());
 }
 QPoint EdgeDragPresentation::labelAnchor() const

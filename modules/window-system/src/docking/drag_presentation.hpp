@@ -27,7 +27,8 @@ public:
     EdgeDragPresentation(QString title, Edge edge, const Theme& theme, QWidget* content, QWidget* parent);
     [[nodiscard]] QRegion visibleRegion() const;
     [[nodiscard]] QPoint labelAnchor() const;
-    void configureLabel(std::optional<TabColorPreset> preset, QIcon icon, int number);
+    void configureLabel(std::optional<TabColorPreset> preset, QIcon icon, int number,
+                        const TabAppearance& appearance = {});
 private:
     QWidget* label_;
     QWidget* panel_;

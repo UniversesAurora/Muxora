@@ -354,7 +354,9 @@ QSize DragTabBar::tabSizeHint(int index) const {
     // Without an icon a one-character label can put its center inside the
     // trailing close hitbox. Keep a small independent drag/click area even for
     // the shortest labels; the close target retains its full 16 pixels.
-    size.setWidth(std::max(46, fontMetrics().size(Qt::TextShowMnemonic, tabText(index)).width() + iconWidth + numberWidth + 35));
+    const int naturalTitleWidth = fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, tabText(index)).width();
+    const int titleWidth = appearance_.clipTitles ? std::min(naturalTitleWidth, appearance_.maximumTitleWidth) : naturalTitleWidth;
+    size.setWidth(int(std::clamp<qint64>(qint64(titleWidth) + iconWidth + numberWidth + 35, 46, QWIDGETSIZE_MAX)));
     return size;
 }
 QRect DragTabBar::closeRect(int index) const {
@@ -397,6 +399,7 @@ void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
 void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; update(); QTabBar::leaveEvent(event); }
 void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
+    painter.setLayoutDirection(layoutDirection());
     const auto draw = [&](int index) {
         if (isDragged(index)) return;
         QStyleOptionTab option; initStyleOption(&option, index);
@@ -414,8 +417,9 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             const auto number = QString::number(index + 1);
             const int width = fontMetrics().horizontalAdvance(number) + 5;
             painter.setPen(colors ? colors->text : palette().color(QPalette::WindowText));
-            painter.drawText(QRect(textArea.left(),textArea.top(),width,textArea.height()), Qt::AlignVCenter,number);
-            textArea.adjust(width,0,0,0);
+            painter.drawText(QRect(rtl ? textArea.right() - width + 1 : textArea.left(),textArea.top(),width,textArea.height()),
+                             Qt::AlignLeading | Qt::AlignVCenter,number);
+            textArea.adjust(rtl ? 0 : width,0,rtl ? -width : 0,0);
         }
         if (appearance_.showIcons && !option.icon.isNull()) {
             const int side = iconSize().width();
@@ -431,9 +435,17 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
                               index == currentIndex() ? QIcon::On : QIcon::Off);
             textArea.adjust(rtl ? 0 : side + 4, 0, rtl ? -side - 4 : 0, 0);
         }
+        if (appearance_.clipTitles && textArea.width() > appearance_.maximumTitleWidth) {
+            if (rtl) textArea.setLeft(textArea.right() - appearance_.maximumTitleWidth + 1);
+            else textArea.setWidth(appearance_.maximumTitleWidth);
+        }
         auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText,colors->text);
-        painter.drawItemText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextShowMnemonic,
-                             textPalette, isTabEnabled(index), fontMetrics().elidedText(option.text,Qt::ElideRight,textArea.width()), QPalette::WindowText);
+        // Draw the original title through the text viewport. Eliding or
+        // truncating the string would lose the requested partial glyphs.
+        painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
+        painter.drawItemText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextShowMnemonic | Qt::TextSingleLine,
+                             textPalette, isTabEnabled(index), tabText(index), QPalette::WindowText);
+        painter.restore();
     };
     for (int index = 0; index < count(); ++index) if (index != currentIndex()) draw(index);
     if (currentIndex() >= 0) draw(currentIndex());

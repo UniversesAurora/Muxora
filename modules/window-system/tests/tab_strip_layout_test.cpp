@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPointer>
 #include <QScreen>
 #include <QScopeGuard>
@@ -48,6 +49,20 @@ bool containsColor(const QImage& image, QColor color)
     for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x)
         if (image.pixelColor(x, y).rgb() == color.rgb()) return true;
     return false;
+}
+
+QImage renderAtRatio(QWidget* widget, qreal ratio)
+{
+    QImage image(QSize(qRound(widget->width() * ratio), qRound(widget->height() * ratio)), QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(ratio); image.fill(Qt::transparent);
+    QPainter painter(&image); widget->render(&painter); painter.end(); return image;
+}
+
+QImage logicalCrop(const QImage& image, QRect rect)
+{
+    const auto ratio = image.devicePixelRatio();
+    return image.copy(QRect(qRound(rect.x() * ratio), qRound(rect.y() * ratio),
+        qRound(rect.width() * ratio), qRound(rect.height() * ratio)));
 }
 
 GroupTabs* groupView(QWidget* window, GroupId id)
@@ -86,6 +101,9 @@ private slots:
     void wheelExpansionShowsEveryRowThenOnlyActiveRow();
     void placementIsIndependentForCentralAndPinnedGroups();
     void displayFlagsChangeActualLabelWidthsAndCreationControls();
+    void titleClippingKeepsFullTextAndDecorationSpace_data();
+    void titleClippingKeepsFullTextAndDecorationSpace();
+    void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void paletteRendersSelectedAndUnselectedStatesAndActiveIcon();
     void newTabButtonsHaveGapAndBothOpenTypeMenuOnContextPress();
     void insertionPreviewAndHitTestingUseThePointerRow_data();
@@ -239,6 +257,93 @@ void TabStripLayoutTest::displayFlagsChangeActualLabelWidthsAndCreationControls(
     QCOMPARE(scroll->widget()->width(), bar->width());
     appearance.showNewTabButton = true; tabs.setAppearance(appearance); QVERIFY(!controls->isHidden());
     QCOMPARE(scroll->widget()->width(), bar->width() + controls->width());
+}
+
+void TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace_data()
+{
+    QTest::addColumn<bool>("pinned"); QTest::addColumn<bool>("decorated"); QTest::addColumn<int>("fontPixels");
+    QTest::newRow("central-plain") << false << false << 15;
+    QTest::newRow("central-decorated-large-font") << false << true << 21;
+    QTest::newRow("pinned-plain-large-font") << true << false << 21;
+    QTest::newRow("pinned-decorated") << true << true << 15;
+}
+
+void TabStripLayoutTest::titleClippingKeepsFullTextAndDecorationSpace()
+{
+    QFETCH(bool, pinned); QFETCH(bool, decorated); QFETCH(int, fontPixels);
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs);
+    auto font = tabs.font(); font.setPixelSize(fontPixels); tabs.setFont(font);
+    auto appearance = TabAppearance{};
+    appearance.showIcons = appearance.showSidebarIcons = decorated;
+    appearance.showNumbers = appearance.showSidebarNumbers = decorated;
+    appearance.showNewTabButton = false;
+    auto preset = appearance.colors.front(); preset.id = "clipping-reference";
+    preset.groupActive = {Qt::white, Qt::black, QColor("#123456"), QColor("#2468ac")};
+    appearance.colors = {preset}; tabs.setAppearance(appearance, pinned);
+    const auto title = QString(30, QLatin1Char('W'));
+    QPixmap icon(16, 16); icon.fill(Qt::white);
+    const auto id = QUuid::createUuid(); tabs.addTab(new QLabel("Content"), QIcon(icon), title, id);
+    TabRecord record; record.id = id; record.title = title; record.colorId = preset.id; tabs.setTabMetadata(0, record);
+    tabs.resize(900, 250); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar();
+    const int decorationWidth = decorated ? bar->iconSize().width() + 4 + bar->fontMetrics().horizontalAdvance("1") + 5 : 0;
+    const int textLeft = 7 + decorationWidth;
+    const int naturalWidth = bar->displayTabRect(0).width();
+    QCOMPARE(naturalWidth, bar->fontMetrics().size(Qt::TextShowMnemonic, title).width() + decorationWidth + 35);
+    const auto full = renderAtRatio(bar, 1);
+    // Pick a boundary through actual glyph ink, so the reference distinguishes
+    // geometric clipping from truncating whole characters or adding an ellipsis.
+    int limit = 0;
+    for (int x = textLeft + 32; x < textLeft + 120 && !limit; ++x)
+        for (int y = 2; y < bar->height() - 3; ++y)
+            if (full.pixelColor(x, y) != QColor(Qt::white) && full.pixelColor(x + 1, y) != QColor(Qt::white)) {
+                limit = x - textLeft + 1; break;
+            }
+    QVERIFY(limit >= 16);
+    QVector<QImage> references;
+    for (const qreal ratio : {1.0, 2.0}) references.append(renderAtRatio(bar, ratio));
+    appearance.clipTitles = true; appearance.maximumTitleWidth = limit;
+    tabs.setAppearance(appearance, pinned);
+    QTRY_COMPARE(bar->displayTabRect(0).width(), limit + decorationWidth + 35);
+    QCOMPARE(bar->tabText(0), title); QCOMPARE(bar->tabToolTip(0), title);
+    const QRect textRect(textLeft, 2, limit, bar->height() - 5);
+    for (int index = 0; index < references.size(); ++index) {
+        const auto actual = renderAtRatio(bar, index ? 2 : 1);
+        QCOMPARE(logicalCrop(actual, textRect), logicalCrop(references[index], textRect));
+        // Decorations and the close target remain outside the clipped text.
+        const auto blank = logicalCrop(actual, QRect(textLeft + limit, 2, 5, bar->height() - 5));
+        QVERIFY(!containsColor(blank, Qt::black));
+    }
+    const auto clippedWidth = bar->displayTabRect(0).width();
+    tabs.setInsertionPreview(1, clippedWidth);
+    QCOMPARE(bar->insertionPreviewRect().width(), clippedWidth);
+    QCOMPARE(tabs.insertionIndex(bar->mapToGlobal(bar->insertionPreviewRect().center())), 1);
+    tabs.setInsertionPreview(-1, 0);
+    appearance.clipTitles = false; tabs.setAppearance(appearance, pinned);
+    QTRY_COMPARE(bar->displayTabRect(0).width(), naturalWidth);
+}
+
+void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit()
+{
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs);
+    auto appearance = TabAppearance{}; appearance.showIcons = false; appearance.showNewTabButton = false;
+    auto preset = appearance.colors.front(); preset.id = "multiline-reference";
+    preset.groupActive = {Qt::white, Qt::black, QColor("#123456"), Qt::black}; appearance.colors = {preset};
+    tabs.setAppearance(appearance);
+    const auto title = QString(30, QLatin1Char('W')); const auto id = QUuid::createUuid();
+    tabs.addTab(new QLabel("Content"), {}, title, id);
+    TabRecord record; record.id = id; record.title = title; record.colorId = preset.id; tabs.setTabMetadata(0, record);
+    tabs.resize(900, 250); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const auto full = renderAtRatio(bar, 1);
+    appearance.multiline = true; tabs.setAppearance(appearance); tabs.resize(113, 250);
+    auto* viewport = tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(viewport);
+    QTRY_COMPARE(bar->displayTabRect(0).width(), viewport->viewport()->width());
+    const auto area = bar->displayTabRect(0);
+    const QRect textRect(7, 2, area.width() - 34, area.height() - 5);
+    QVERIFY(textRect.width() > 16);
+    QCOMPARE(logicalCrop(renderAtRatio(bar, 1), textRect), logicalCrop(full, textRect));
+    QCOMPARE(bar->tabText(0), title); QCOMPARE(bar->tabToolTip(0), title);
+    QCOMPARE(viewport->horizontalScrollBar()->maximum(), 0);
 }
 
 void TabStripLayoutTest::paletteRendersSelectedAndUnselectedStatesAndActiveIcon()

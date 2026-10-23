@@ -2366,5 +2366,37 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</source>
             <translation>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="182" />
+            <source>The maximum tab title width must be an integer number of logical pixels within the allowed range</source>
+            <translation>标签标题最大宽度必须是允许范围内的整数逻辑像素</translation>
+        </message>
+        <message>
+            <location filename="../src/chrome/workspace_window.cpp" line="566" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="35" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="67" />
+            <source>Clip long tab titles</source>
+            <translation>裁切过长的标签标题</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="68" />
+            <source>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars.</source>
+            <translation>超过最大显示宽度的标题直接裁切，不添加省略号。适用于普通标签、固定侧栏和非固定侧边栏。</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="72" />
+            <source> logical pixels</source>
+            <translation> 逻辑像素</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="73" />
+            <source>Maximum tab title display width</source>
+            <translation>标签标题最大显示宽度</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="74" />
+            <source>Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling.</source>
+            <translation>只限制文字区域，图标、编号和关闭按钮另计。竖向侧边栏沿文字方向限制长度；逻辑像素随屏幕缩放。</translation>
+        </message>
     </context>
 </TS>

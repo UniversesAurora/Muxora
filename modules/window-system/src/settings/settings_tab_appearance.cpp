@@ -12,6 +12,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QVBoxLayout>
 
 namespace window_system {
@@ -63,6 +64,19 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         QCoreApplication::translate("WindowSystem", "独立控制固定侧栏标签栏和非固定收纳条的图标，默认隐藏；仍遵循单个标签的图标设置。"), &TabAppearance::showSidebarIcons);
     showSidebarNumbers_ = flagControl("ShowSidebarTabNumbers", "tabs.showSidebarNumbers", QCoreApplication::translate("WindowSystem", "显示侧边栏标签编号"),
         QCoreApplication::translate("WindowSystem", "独立控制固定侧栏标签栏和非固定收纳条的编号，默认隐藏；固定组按本栏、非固定收纳条按同一侧全部标签顺序从 1 开始。"), &TabAppearance::showSidebarNumbers);
+    clipTitles_ = flagControl("ClipTabTitles", "tabs.clipTitles", QCoreApplication::translate("WindowSystem", "Clip long tab titles"),
+        QCoreApplication::translate("WindowSystem", "Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars."), &TabAppearance::clipTitles);
+    maximumTitleWidth_ = new ThemedSpinBox(parent);
+    maximumTitleWidth_->setObjectName("MaximumTabTitleWidth");
+    maximumTitleWidth_->setRange(minimumTabTitleWidth, maximumTabTitleWidth);
+    maximumTitleWidth_->setSuffix(QCoreApplication::translate("WindowSystem", " logical pixels"));
+    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Maximum tab title display width"),
+        "tabs.maximumTitleWidth", QCoreApplication::translate("WindowSystem", "Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling."), maximumTitleWidth_));
+    connect(maximumTitleWidth_, &QSpinBox::valueChanged, this, [this](int width) {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.maximumTitleWidth = width;
+        manager_->setTabAppearance(next);
+    });
 
     auto* editor = new QWidget(parent);
     auto* layout = new QVBoxLayout(editor); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(4);
@@ -106,10 +120,13 @@ void SettingsPage::syncTabAppearanceOptions()
     for (const auto& value : {std::pair{multiline_, appearance.multiline}, std::pair{wheelExpandRows_, appearance.wheelExpandRows},
         std::pair{showIcons_, appearance.showIcons}, std::pair{showNewTabButton_, appearance.showNewTabButton},
         std::pair{showNumbers_, appearance.showNumbers}, std::pair{showSidebarIcons_, appearance.showSidebarIcons},
-        std::pair{showSidebarNumbers_, appearance.showSidebarNumbers}}) {
+        std::pair{showSidebarNumbers_, appearance.showSidebarNumbers}, std::pair{clipTitles_, appearance.clipTitles}}) {
         const QSignalBlocker block(value.first); value.first->setChecked(value.second);
     }
     wheelExpandRows_->setEnabled(appearance.multiline);
+    const QSignalBlocker titleWidth(maximumTitleWidth_);
+    maximumTitleWidth_->setValue(appearance.maximumTitleWidth);
+    maximumTitleWidth_->setEnabled(appearance.clipTitles);
     if (!tabColorsDirty_) {
         const QSignalBlocker block(tabColors_);
         tabColors_->setPlainText(QString::fromUtf8(QJsonDocument(tabAppearanceToJson(appearance).value("colors").toArray()).toJson(QJsonDocument::Indented)));

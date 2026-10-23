@@ -2366,5 +2366,37 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。</source>
             <translation>The last two align the buttons to the left with Close outermost, for a window controls toolbar in the top-left corner.</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="182" />
+            <source>The maximum tab title width must be an integer number of logical pixels within the allowed range</source>
+            <translation>The maximum tab title width must be an integer number of logical pixels within the allowed range</translation>
+        </message>
+        <message>
+            <location filename="../src/chrome/workspace_window.cpp" line="566" />
+            <location filename="../src/commands/tab_presentation_commands.cpp" line="35" />
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="67" />
+            <source>Clip long tab titles</source>
+            <translation>Clip long tab titles</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="68" />
+            <source>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars.</source>
+            <translation>Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs, pinned sidebars, and auto-hide sidebars.</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="72" />
+            <source> logical pixels</source>
+            <translation> logical pixels</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="73" />
+            <source>Maximum tab title display width</source>
+            <translation>Maximum tab title display width</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="74" />
+            <source>Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling.</source>
+            <translation>Limits only the text area; icons, numbers, and close buttons use separate space. For vertical sidebars, the limit follows the text direction. Logical pixels follow display scaling.</translation>
+        </message>
     </context>
 </TS>

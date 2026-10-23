@@ -32,6 +32,7 @@ void registerTabPresentationCommands(WindowManager* manager)
     registerFlag("presentation.toggleNumbers", QCoreApplication::translate("WindowSystem", "显示标签编号"), &TabAppearance::showNumbers);
     registerFlag("presentation.toggleSidebarIcons", QCoreApplication::translate("WindowSystem", "显示侧边栏标签图标"), &TabAppearance::showSidebarIcons);
     registerFlag("presentation.toggleSidebarNumbers", QCoreApplication::translate("WindowSystem", "显示侧边栏标签编号"), &TabAppearance::showSidebarNumbers);
+    registerFlag("presentation.toggleTitleClipping", QCoreApplication::translate("WindowSystem", "Clip long tab titles"), &TabAppearance::clipTitles);
     registerFlag("presentation.toggleMultiline", QCoreApplication::translate("WindowSystem", "多行显示标签"), &TabAppearance::multiline);
     registerFlag("presentation.toggleWheelExpandRows", QCoreApplication::translate("WindowSystem", "滚轮展开标签行"), &TabAppearance::wheelExpandRows);
     for (const bool pinned : {false, true}) manager->commands().add({
@@ -70,11 +71,13 @@ void appendTabPresentationActions(QMenu* menu, WindowManager* manager, const Com
     };
     if (autoHide) {
         addFlag("presentation.toggleSidebarIcons"); addFlag("presentation.toggleSidebarNumbers");
+        addFlag("presentation.toggleTitleClipping");
         return;
     }
     addFlag(pinned ? "presentation.toggleSidebarIcons" : "presentation.toggleIcons");
     addFlag("presentation.toggleNewTabButton");
     addFlag(pinned ? "presentation.toggleSidebarNumbers" : "presentation.toggleNumbers");
+    addFlag("presentation.toggleTitleClipping");
     menu->addSeparator(); addFlag("presentation.toggleMultiline"); addFlag("presentation.toggleWheelExpandRows");
     const auto id = pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement");
     const auto appearance = manager->tabAppearance();

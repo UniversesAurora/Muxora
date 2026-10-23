@@ -4,6 +4,7 @@
 #include <QContextMenuEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QStyle>
 #include <QVariantMap>
 
 namespace window_system {
@@ -28,13 +29,19 @@ EdgeTabButton::EdgeTabButton(QString title, bool vertical, int thickness, QWidge
 }
 QSize EdgeTabButton::sizeHint() const
 {
-    const auto extent = edgeTabExtent(fontMetrics(),text(),!icon().isNull(),number_);
+    const auto extent = edgeTabExtent(fontMetrics(),text(),!icon().isNull(),number_,clipTitles_,maximumTitleWidth_);
     return vertical_ ? QSize(thickness_, extent) : QSize(extent, thickness_);
 }
 void EdgeTabButton::setPresentation(QIcon image, int number)
 {
     setIcon(std::move(image)); number_=std::max(0,number);
     setProperty("tabNumber",number_); updateGeometry(); update();
+}
+void EdgeTabButton::setTitleClipping(bool enabled, int maximumWidth)
+{
+    if (clipTitles_ == enabled && maximumTitleWidth_ == maximumWidth) return;
+    clipTitles_ = enabled; maximumTitleWidth_ = maximumWidth;
+    updateGeometry(); update();
 }
 void EdgeTabButton::setPreset(std::optional<TabColorPreset> preset)
 {
@@ -67,6 +74,7 @@ void EdgeTabButton::contextMenuEvent(QContextMenuEvent* event)
 void EdgeTabButton::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
+    painter.setLayoutDirection(layoutDirection());
     // Keyboard focus can remain on the old rail button after programmatic
     // activation. Selection alone owns the active color state.
     const bool active = isChecked();
@@ -79,22 +87,27 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
         painter.translate(width(), 0); painter.rotate(90);
     }
     const QRect area=vertical_ ? QRect(0,0,height(),width()) : rect();
-    if(icon().isNull() && !number_) { painter.drawText(area,Qt::AlignCenter,text()); return; }
     const int numberWidth=number_>0 ? fontMetrics().horizontalAdvance(QString::number(number_))+5 : 0;
     const int imageWidth=icon().isNull() ? 0 : 20;
-    const int span=std::min(area.width()-12,fontMetrics().horizontalAdvance(text())+numberWidth+imageWidth);
+    const int naturalTitleWidth = fontMetrics().horizontalAdvance(text());
+    const int titleWidth = clipTitles_ ? std::min(naturalTitleWidth, maximumTitleWidth_) : naturalTitleWidth;
+    const int span=std::min(std::max(0,area.width()-12),titleWidth+numberWidth+imageWidth);
     int left=std::max(6,(area.width()-span)/2);
     if(number_) {
-        painter.drawText(QRect(left,0,numberWidth,area.height()),Qt::AlignVCenter,QString::number(number_));
+        painter.drawText(QStyle::visualRect(layoutDirection(), area, QRect(left,0,numberWidth,area.height())),
+                         Qt::AlignVCenter | Qt::AlignLeading,QString::number(number_));
         left+=numberWidth;
     }
     if(!icon().isNull()) {
         auto image=icon().pixmap(QSize(16,16));
         QPainter tint(&image); tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
         tint.fillRect(image.rect(),colors ? colors->icon : edgeTabColor(this,"edgeTabText",QPalette::ButtonText)); tint.end();
-        painter.drawPixmap(QRect(left,area.center().y()-8,16,16),image); left+=imageWidth;
+        painter.drawPixmap(QStyle::visualRect(layoutDirection(), area, QRect(left,area.center().y()-8,16,16)),image); left+=imageWidth;
     }
-    painter.drawText(QRect(left,0,std::max(0,area.width()-6-left),area.height()),Qt::AlignVCenter,
-                     fontMetrics().elidedText(text(),Qt::ElideRight,std::max(0,area.width()-6-left)));
+    const auto textArea = QStyle::visualRect(layoutDirection(), area,
+        QRect(left,0,std::max(0,std::min(titleWidth,area.width()-6-left)),area.height()));
+    painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
+    painter.drawText(textArea,Qt::AlignVCenter | Qt::AlignLeading | Qt::TextSingleLine,text());
+    painter.restore();
 }
 } // namespace window_system

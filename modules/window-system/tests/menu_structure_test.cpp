@@ -587,7 +587,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction_data(
     QTest::addColumn<bool>("floating"); QTest::addColumn<QString>("id");
     for (const bool floating : {false, true})
         for (const auto* id : {"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
-                               "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"})
+                               "presentation.toggleTitleClipping", "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"})
             QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(floating ? "floating" : "workbench", QString::fromLatin1(id))))
                 << floating << QString::fromLatin1(id);
 }
@@ -608,7 +608,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
     auto* bar = menuBar(manager, window); QVERIFY(bar);
     auto* menu = menuAt(bar, {"视图", "标签栏"}); QVERIFY(menu);
     QCOMPARE(ids(menu), (QStringList{"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
-        "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"}));
+        "presentation.toggleTitleClipping", "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"}));
     QHash<QString, int> occurrences;
     for (auto* root : bar->actions()) if (root->menu()) walk(root->menu(), occurrences);
     for (const auto& command : ids(menu)) {
@@ -625,6 +625,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
         if (id == "presentation.toggleIcons") return appearance.showIcons;
         if (id == "presentation.toggleNewTabButton") return appearance.showNewTabButton;
         if (id == "presentation.toggleNumbers") return appearance.showNumbers;
+        if (id == "presentation.toggleTitleClipping") return appearance.clipTitles;
         if (id == "presentation.toggleMultiline") return appearance.multiline;
         return appearance.wheelExpandRows;
     };

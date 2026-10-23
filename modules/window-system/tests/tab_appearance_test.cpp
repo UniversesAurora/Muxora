@@ -12,9 +12,11 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QTest>
 #include <memory>
 #include <cmath>
+#include <limits>
 
 using namespace window_system;
 
@@ -35,6 +37,7 @@ private slots:
     void paletteApplyAllowsSynchronousHostDestruction_data();
     void paletteApplyAllowsSynchronousHostDestruction();
     void sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAndControls();
+    void titleClippingPreservesWidthAcrossToggleAndLegacyLayouts();
 };
 
 void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
@@ -45,6 +48,7 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
     QCOMPARE(appearance.pinnedPlacement, TabBarPlacement::Top);
     QVERIFY(!appearance.multiline); QVERIFY(!appearance.wheelExpandRows);
     QVERIFY(appearance.showIcons); QVERIFY(appearance.showNewTabButton); QVERIFY(!appearance.showNumbers);
+    QVERIFY(!appearance.clipTitles); QCOMPARE(appearance.maximumTitleWidth, defaultTabTitleWidth);
     QCOMPARE(appearance.colors.size(), 9);
     for (const auto& preset : appearance.colors) {
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
@@ -107,6 +111,7 @@ void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
     appearance.pinnedPlacement = TabBarPlacement::Top;
     appearance.multiline = true; appearance.wheelExpandRows = true;
     appearance.showIcons = false; appearance.showNewTabButton = false; appearance.showNumbers = true;
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 173;
     appearance.colors = {{"custom", "自定义", {QColor("#104050"), QColor("#fafafa"), QColor("#123456"), QColor("#345678")},
         {QColor("#203040"), QColor("#abcdef"), QColor("#777777"), QColor("#333333")},
         {QColor("#667788"), QColor("#ffffff"), QColor("#8899aa"), QColor("#aabbcc")},
@@ -144,6 +149,8 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate_data()
     QTest::newRow("empty-id") << 5;
     QTest::newRow("empty-name") << 6;
     QTest::newRow("too-many-presets") << 7;
+    QTest::newRow("title-width-too-small") << 8;
+    QTest::newRow("title-width-too-large") << 9;
 }
 
 void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
@@ -165,6 +172,8 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
             candidate.colors.append(preset);
         }
         break;
+    case 8: candidate.maximumTitleWidth = minimumTabTitleWidth - 1; break;
+    case 9: candidate.maximumTitleWidth = maximumTabTitleWidth + 1; break;
     }
     QSignalSpy changed(&manager, &WindowManager::layoutChanged);
     QVERIFY(!manager.setTabAppearance(candidate)); QCOMPARE(manager.saveLayout(), before); QCOMPARE(changed.size(), 0);
@@ -177,6 +186,15 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
     QTest::newRow("wrongPlacement") << QString("centralPlacement") << QJsonValue("left");
     QTest::newRow("wrongPinnedPlacement") << QString("pinnedPlacement") << QJsonValue(false);
     QTest::newRow("wrongFlag") << QString("showIcons") << QJsonValue("false");
+    QTest::newRow("wrongClippingFlag") << QString("clipTitles") << QJsonValue("true");
+    QTest::newRow("titleWidthString") << QString("maximumTitleWidth") << QJsonValue("160");
+    QTest::newRow("titleWidthBoolean") << QString("maximumTitleWidth") << QJsonValue(true);
+    QTest::newRow("titleWidthNull") << QString("maximumTitleWidth") << QJsonValue(QJsonValue::Null);
+    QTest::newRow("titleWidthFraction") << QString("maximumTitleWidth") << QJsonValue(160.5);
+    QTest::newRow("titleWidthSmall") << QString("maximumTitleWidth") << QJsonValue(minimumTabTitleWidth - 1);
+    QTest::newRow("titleWidthLarge") << QString("maximumTitleWidth") << QJsonValue(maximumTabTitleWidth + 1);
+    QTest::newRow("titleWidthInfinity") << QString("maximumTitleWidth") << QJsonValue(std::numeric_limits<double>::infinity());
+    QTest::newRow("titleWidthNaN") << QString("maximumTitleWidth") << QJsonValue(std::numeric_limits<double>::quiet_NaN());
     QTest::newRow("wheelWithoutMultiline") << QString("wheelExpandRows") << QJsonValue(true);
     QTest::newRow("paletteObject") << QString("colors") << QJsonValue(QJsonObject{});
     QTest::newRow("incompletePreset") << QString("colors") << QJsonValue(QJsonArray{QJsonObject{{"id", "blue"}, {"name", "蓝色"}}});
@@ -215,7 +233,8 @@ void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
     WindowManager manager;
     for (const auto& item : {std::pair{"presentation.toggleIcons", &TabAppearance::showIcons},
         std::pair{"presentation.toggleNewTabButton", &TabAppearance::showNewTabButton},
-        std::pair{"presentation.toggleNumbers", &TabAppearance::showNumbers}}) {
+        std::pair{"presentation.toggleNumbers", &TabAppearance::showNumbers},
+        std::pair{"presentation.toggleTitleClipping", &TabAppearance::clipTitles}}) {
         QVERIFY(manager.execute(item.first, {{"visible", false}})); QVERIFY(!(manager.tabAppearance().*item.second));
         QVERIFY(manager.execute(item.first, {{"visible", true}})); QVERIFY(manager.tabAppearance().*item.second);
         const auto before = manager.tabAppearance();
@@ -353,6 +372,35 @@ void TabAppearanceTest::sidebarFlagsHaveIndependentDefaultsPersistenceCommandsAn
         auto invalid = snapshot; auto flags = saved; flags.insert(field, "true"); invalid.insert("tabAppearance", flags);
         const auto before = restored.saveLayout(); QVERIFY(!restored.restoreLayout(invalid)); QCOMPARE(restored.saveLayout(), before);
     }
+}
+
+void TabAppearanceTest::titleClippingPreservesWidthAcrossToggleAndLegacyLayouts()
+{
+    WindowManager manager; SettingsPage page(&manager);
+    auto* clipped = page.findChild<QCheckBox*>("ClipTabTitles");
+    auto* width = page.findChild<QSpinBox*>("MaximumTabTitleWidth");
+    QVERIFY(clipped && width);
+    QVERIFY(!clipped->isChecked()); QVERIFY(!width->isEnabled());
+    QCOMPARE(width->minimum(), minimumTabTitleWidth); QCOMPARE(width->maximum(), maximumTabTitleWidth);
+    QCOMPARE(width->value(), defaultTabTitleWidth);
+    clipped->setChecked(true); QVERIFY(width->isEnabled());
+    width->setValue(137); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 137);
+    QVERIFY(manager.execute("presentation.toggleTitleClipping", {{"visible", false}}));
+    QVERIFY(!clipped->isChecked()); QVERIFY(!width->isEnabled()); QCOMPARE(width->value(), 137);
+    const auto saved = manager.saveLayout();
+    WindowManager restored; QVERIFY(restored.restoreLayout(saved));
+    QVERIFY(!restored.tabAppearance().clipTitles); QCOMPARE(restored.tabAppearance().maximumTitleWidth, 137);
+    QVERIFY(manager.execute("presentation.toggleTitleClipping"));
+    QVERIFY(clipped->isChecked()); QVERIFY(width->isEnabled()); QCOMPARE(width->value(), 137);
+    for (const int boundary : {minimumTabTitleWidth, maximumTabTitleWidth}) {
+        auto next = manager.tabAppearance(); next.maximumTitleWidth = boundary;
+        QVERIFY(manager.setTabAppearance(next)); QCOMPARE(width->value(), boundary);
+    }
+    auto legacy = saved; auto appearance = legacy.value("tabAppearance").toObject();
+    appearance.remove("clipTitles"); appearance.remove("maximumTitleWidth"); legacy.insert("tabAppearance", appearance);
+    QVERIFY(manager.restoreLayout(legacy));
+    QVERIFY(!manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, defaultTabTitleWidth);
+    QVERIFY(!clipped->isChecked()); QVERIFY(!width->isEnabled()); QCOMPARE(width->value(), defaultTabTitleWidth);
 }
 
 QTEST_MAIN(TabAppearanceTest)

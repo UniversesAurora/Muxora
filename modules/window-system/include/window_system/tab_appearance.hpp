@@ -9,6 +9,10 @@ namespace window_system {
 
 enum class TabBarPlacement { Top, Bottom };
 
+inline constexpr int minimumTabTitleWidth = 16;
+inline constexpr int maximumTabTitleWidth = 2048;
+inline constexpr int defaultTabTitleWidth = 160;
+
 // Every state is explicit. Hosts need not derive text or icon colors from a
 // background, and the auto-hide rail remains independent of central tabs.
 struct TabVisualColors {
@@ -41,6 +45,10 @@ struct TabAppearance {
     bool showNumbers = false;
     bool showSidebarIcons = false;
     bool showSidebarNumbers = false;
+    // Limit only the displayed text in Qt logical pixels, never the stored
+    // title or the space reserved for icons, numbers, and close controls.
+    bool clipTitles = false;
+    int maximumTitleWidth = defaultTabTitleWidth;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

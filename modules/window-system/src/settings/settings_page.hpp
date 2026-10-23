@@ -78,6 +78,8 @@ private:
     QCheckBox* showNumbers_ = nullptr;
     QCheckBox* showSidebarIcons_ = nullptr;
     QCheckBox* showSidebarNumbers_ = nullptr;
+    QCheckBox* clipTitles_ = nullptr;
+    QSpinBox* maximumTitleWidth_ = nullptr;
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;
