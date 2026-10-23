@@ -126,6 +126,8 @@ private slots:
     void zeroTitleRailLabelKeepsEqualEndPadding();
     void closeTargetShowsHoverAndPressFeedback();
     void titleWidthChangesKeepTheActiveTabInPlace();
+    void stickyTabsAlwaysShowTheirPin();
+    void draggingAcrossTheStickyRunChangesStickiness();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void tabShapeOptionsPreserveStyleStates_data();
     void tabShapeOptionsPreserveStyleStates();
@@ -537,6 +539,93 @@ void TabStripLayoutTest::titleWidthChangesKeepTheActiveTabInPlace()
     QVERIFY(bar->displayTabRect(15).left() >= tabs.scrollOffset() + viewport);
     apply(60); QCOMPARE(screenLeft(3), 0);
     apply(200); QCOMPARE(screenLeft(3), 0);
+}
+
+void TabStripLayoutTest::stickyTabsAlwaysShowTheirPin()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false; appearance.showIcons = false;
+    const auto preset = solidPreset("sticky-pin"); appearance.colors = {preset};
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs); tabs.setAppearance(appearance);
+    for (const auto* title : {"Sticky", "Plain"}) {
+        const auto id = QUuid::createUuid(); tabs.addTab(new QLabel("Content"), {}, title, id);
+        TabRecord record; record.id = id; record.title = title; record.colorId = preset.id;
+        tabs.setTabMetadata(tabs.count() - 1, record);
+    }
+    int closed = 0, unstuck = 0;
+    tabs.closeRequested = [&closed](int) { ++closed; };
+    tabs.unstickRequested = [&unstuck](int index) { QCOMPARE(index, 0); ++unstuck; };
+    tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar();
+    const auto slot = [bar](int index) {
+        const auto tab = bar->displayTabRect(index);
+        return QRect(tab.right() - 7 - 16 + 1, tab.top() + (tab.height() - 16) / 2, 16, 16);
+    };
+    const auto inked = [](const QImage& image) {
+        for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x)
+            if (image.pixelColor(x, y).rgb() != QColor(Qt::white).rgb()) return true;
+        return false;
+    };
+    // Without hover, a plain tab's close slot is empty and a sticky one shows its pin.
+    QVERIFY(!inked(logicalCrop(renderAtRatio(bar, 1), slot(0))));
+    tabs.setStickyCount(1);
+    QVERIFY(inked(logicalCrop(renderAtRatio(bar, 1), slot(0))));
+    QVERIFY(!inked(logicalCrop(renderAtRatio(bar, 1), slot(1))));
+    // Pressing the pin unsticks instead of closing.
+    sendBarMouse(bar, QEvent::MouseButtonPress, slot(0).center(), Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, slot(0).center(), Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(unstuck, 1); QCOMPARE(closed, 0);
+    sendBarMouse(bar, QEvent::MouseMove, slot(1).center(), Qt::NoButton, Qt::NoButton);
+    sendBarMouse(bar, QEvent::MouseButtonPress, slot(1).center(), Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, slot(1).center(), Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(closed, 1); QCOMPARE(unstuck, 1);
+}
+
+void TabStripLayoutTest::draggingAcrossTheStickyRunChangesStickiness()
+{
+    // Real strip drags: inside the sticky run only the order changes; behind
+    // an unstuck tab the dragged tab unsticks; into the run it sticks.
+    const auto cleanup = qScopeGuard([] {
+        test::authoredMouseInput().finish();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    });
+    WindowManager manager; auto appearance = manager.tabAppearance(); appearance.showNewTabButton = false;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto available = qApp->primaryScreen()->availableGeometry();
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Sticky drag", {900, 360}});
+    QVector<TabId> ids;
+    for (int index = 0; index < 5; ++index)
+        ids.append(manager.addTab(window, new QLabel(QString("Content %1").arg(index)), {QString("Tab %1").arg(index), "label", {}}));
+    QVERIFY(manager.setTabSticky(ids[0], true)); QVERIFY(manager.setTabSticky(ids[1], true)); // [0 1 | 2 3 4]
+    const auto group = manager.model().groupForTab(ids[0]);
+    manager.windowWidget(window)->move(available.topLeft() + QPoint(12, 12)); manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    const auto drag = [&](TabId tab, int targetIndex) {
+        auto* view = groupView(manager.windowWidget(window), group); QVERIFY(view);
+        auto* bar = view->tabBar(); const int from = manager.model().group(group)->tabs.indexOf(tab);
+        const auto start = bar->mapToGlobal(bar->displayTabRect(from).center() - QPoint(12, 0));
+        sendMouse(bar, QEvent::MouseButtonPress, start, Qt::LeftButton);
+        sendMouse(bar, QEvent::MouseMove, start + QPoint(QApplication::startDragDistance() + 3, 0));
+        auto* receiver = QWidget::mouseGrabber(); QVERIFY(receiver);
+        // Aim at the slot that yields the requested final index.
+        QPoint point;
+        for (int x = view->viewportRectGlobal().left() + 1; x < view->viewportRectGlobal().right(); x += 2) {
+            const QPoint candidate(x, start.y());
+            sendMouse(receiver, QEvent::MouseMove, candidate);
+            if (view->insertionIndex(candidate) == targetIndex) { point = candidate; break; }
+        }
+        QVERIFY(!point.isNull());
+        sendMouse(receiver, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
+        QTRY_VERIFY(!labelPreview());
+        QCOMPARE(manager.model().groupForTab(tab), group); QCOMPARE(manager.model().windows().size(), 1);
+    };
+    const auto run = [&] { const auto* record = manager.model().group(group); return record->tabs.first(record->stickyTabs); };
+    drag(ids[0], 1); // still inside the run: [1 0 | 2 3 4]
+    QCOMPARE(run(), QVector<TabId>({ids[1], ids[0]}));
+    drag(ids[0], 3); // behind unstuck tab 2 and 3: [1 | 2 3 0 4]
+    QCOMPARE(run(), QVector<TabId>({ids[1]})); QVERIFY(!manager.isTabSticky(ids[0]));
+    drag(ids[4], 0); // into the run: [4 1 | 2 3 0]
+    QCOMPARE(run(), QVector<TabId>({ids[4], ids[1]}));
+    QVERIFY(manager.model().validate());
 }
 
 void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit()

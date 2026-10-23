@@ -60,6 +60,7 @@ class ScriptHostTest final : public QObject {
     void sharedShortcutContinuationsRemainReachable();
     void explicitCommandContextDoesNotFollowLaterFocus();
     void layoutOperationsKeepContentIdentity();
+    void stickyTabsAreScriptable();
     void hierarchyConversionsKeepTheSamePaneObjects();
     void customChromeIsReleasedWithItsScriptGeneration();
     void initializationFailureReleasesPartialRegistrations();
@@ -381,6 +382,29 @@ void ScriptHostTest::layoutOperationsKeepContentIdentity() {
     QCOMPARE(manager.paneWidget(pane), content.data());
     QCOMPARE(manager.peekSize(tab, Edge::Left), QSize(360, 220));
     QVERIFY(manager.model().validate());
+}
+void ScriptHostTest::stickyTabsAreScriptable() {
+    WindowManager manager;
+    auto window = manager.createWindow();
+    addEditor(manager, window, "First");
+    const auto second = addEditor(manager, window, "Second");
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    auto reply = run(host, R"(
+      local c=muxora.context()
+      assert(muxora.tabs.sticky())
+      local group=muxora.groups.list()[1]
+      assert(group.sticky_tabs==1 and group.tabs[1]==c.tab)
+      assert(muxora.tabs.sticky(nil,false))
+      return muxora.groups.list()[1].sticky_tabs
+    )");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values[0].toInt(), 0);
+    QVERIFY(!manager.isTabSticky(second));
+    QVERIFY(manager.moveTabToEdge(second, Edge::Left));
+    reply = run(host, "return muxora.tabs.sticky(muxora.context().tab)");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QVERIFY(!reply.values[0].toBool());
 }
 void ScriptHostTest::customChromeIsReleasedWithItsScriptGeneration() {
     WindowManager manager;

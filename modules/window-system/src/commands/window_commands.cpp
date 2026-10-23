@@ -475,6 +475,18 @@ void WindowManager::registerWindowCommands()
             const auto edge = static_cast<Edge>(c.args.value("edge", group ? int(group->edge) : int(Edge::Left)).toInt());
             return pinEdge(c.window, edge, pinned);
         }, hasWindow);
+    const auto canStick = [this](const CommandContext& c) {
+        const auto* g = d->model.group(d->model.groupForTab(c.tab));
+        return g && g->location != GroupLocation::AutoHide && !d->model.isTabSticky(c.tab);
+    };
+    const auto isSticky = [this](const CommandContext& c) { return d->model.isTabSticky(c.tab); };
+    add("tab.stick", QCoreApplication::translate("WindowSystem", "Stick Tab to Front"), "布局", {},
+        [this](const CommandContext& c) { return setTabSticky(c.tab, true); }, canStick);
+    add("tab.unstick", QCoreApplication::translate("WindowSystem", "Unstick Tab"), "布局", {},
+        [this](const CommandContext& c) { return setTabSticky(c.tab, false); }, isSticky);
+    add("tab.toggleSticky", QCoreApplication::translate("WindowSystem", "Stick or Unstick Tab"), "布局", {},
+        [this](const CommandContext& c) { return setTabSticky(c.tab, !d->model.isTabSticky(c.tab)); },
+        [canStick, isSticky](const CommandContext& c) { return canStick(c) || isSticky(c); });
     for (const auto& scope : {QStringLiteral("left"), QStringLiteral("right"), QStringLiteral("others"), QStringLiteral("all")}) {
         const auto title = scope == "left" ? QCoreApplication::translate("WindowSystem", "关闭左侧标签") : scope == "right" ? QCoreApplication::translate("WindowSystem", "关闭右侧标签")
             : scope == "others" ? QCoreApplication::translate("WindowSystem", "关闭其他标签") : QCoreApplication::translate("WindowSystem", "关闭该组全部标签");
@@ -482,7 +494,8 @@ void WindowManager::registerWindowCommands()
             QVector<TabId> tabs;
             const auto* group = d->model.group(d->model.groupForTab(c.tab)); if (!group) return tabs;
             const auto current = group->tabs.indexOf(c.tab);
-            for (int i = 0; i < group->tabs.size(); ++i)
+            // Closing a range never takes sticky tabs; closing one directly does.
+            for (int i = group->stickyTabs; i < group->tabs.size(); ++i)
                 if (scope == "all" || (scope == "others" && i != current) || (scope == "left" && i < current) || (scope == "right" && i > current)) tabs << group->tabs[i];
             return tabs;
         };

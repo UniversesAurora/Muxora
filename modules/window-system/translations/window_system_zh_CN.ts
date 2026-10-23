@@ -2397,6 +2397,26 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>裁切非固定收纳条的过长标签标题</translation>
         </message>
         <message>
+            <location filename="../src/commands/window_commands.cpp" line="483" />
+            <source>Stick Tab to Front</source>
+            <translation>钉住标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="485" />
+            <source>Unstick Tab</source>
+            <translation>取消钉住标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="487" />
+            <source>Stick or Unstick Tab</source>
+            <translation>钉住或取消钉住标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="313" />
+            <source>Shortcut toggle; menus offer sticking and unsticking separately</source>
+            <translation>快捷键切换用；菜单分别提供钉住和取消钉住</translation>
+        </message>
+        <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="81" />
             <source>Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings.</source>
             <translation>直接裁切非固定侧边栏收纳条中的标题，不添加省略号。普通标签和固定侧栏使用独立于收纳条的设置。</translation>

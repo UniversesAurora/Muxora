@@ -102,6 +102,9 @@ int main(int argc, char** argv)
     const auto originalGroup = windows.model().groupForTab(tab);
     if (alpha.isNull() || omega.isNull() || !windows.sortTabs(originalGroup, window_system::TabSortOrder::AlphabeticalAscending)
         || windows.model().group(originalGroup)->tabs != QVector<window_system::TabId>{alpha, tab, omega}) return 111;
+    if (!windows.setTabSticky(omega, true) || !windows.isTabSticky(omega)
+        || windows.model().group(originalGroup)->tabs.first() != omega || windows.model().group(originalGroup)->stickyTabs != 1
+        || !windows.setTabSticky(omega, false) || windows.isTabSticky(omega)) return 195;
     const auto staging = windows.createWindow();
     if (!windows.moveGroupToWindow(originalGroup, staging) || windows.paneWidget(windows.model().tab(tab)->activePane) != text
         || windows.model().group(originalGroup)->windowId != staging

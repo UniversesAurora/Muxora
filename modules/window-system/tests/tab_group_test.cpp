@@ -6,6 +6,8 @@
 #include <QDynamicPropertyChangeEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QTabBar>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
@@ -583,6 +585,61 @@ private slots:
         QVERIFY(!manager.executeInContext(command, captured));
         QCOMPARE(manager.saveLayout(), before); QCOMPARE(changes.count(), 0);
     }
+    void stickyTabsLeadTheirStripAndSurviveRangeCloses()
+    {
+        WindowManager manager; auto behavior = manager.behavior();
+        behavior.newTabPosition = NewTabPosition::Beginning; manager.setBehavior(behavior);
+        const auto window = manager.createWindow();
+        QVector<TabId> tabs;
+        for (const auto* name : {"A", "B", "C", "D"}) tabs << manager.addTab(window, new QLabel(name), {name, "test", {}});
+        const auto group = manager.model().groupForTab(tabs[0]);
+        const auto contextFor = [&](TabId tab) {
+            auto result = manager.context(window);
+            result.tab = tab; result.group = manager.model().groupForTab(tab); result.pane = manager.model().tab(tab)->activePane;
+            return result;
+        };
+        auto context = contextFor(tabs[2]);
+        QVERIFY(manager.commands().find("tab.stick")->enabled(context));
+        QVERIFY(!manager.commands().find("tab.unstick")->enabled(context));
+        QVERIFY(manager.executeInContext("tab.stick", context));
+        QVERIFY(manager.isTabSticky(tabs[2])); QCOMPARE(manager.model().group(group)->tabs.first(), tabs[2]);
+        QVERIFY(!manager.commands().find("tab.stick")->enabled(context));
+        QVERIFY(manager.commands().find("tab.unstick")->enabled(context));
+        // A new tab at the "beginning" opens after the sticky run.
+        const auto created = manager.addTab(window, new QLabel("E"), {"E", "test", {}});
+        QCOMPARE(manager.model().group(group)->tabs.indexOf(created), 1);
+        // Range closes never take sticky tabs; a direct close does.
+        context = contextFor(tabs[0]);
+        QVERIFY(manager.executeInContext("workspace.closeTabs.others", context));
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>({tabs[2], tabs[0]}));
+        QVERIFY(manager.executeInContext("workspace.closeTabs.all", context));
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>({tabs[2]}));
+        context = contextFor(tabs[2]);
+        QVERIFY(!manager.commands().find("workspace.closeTabs.all")->enabled(context));
+        // Saved layouts keep the run.
+        const auto restoredTab = manager.addTab(window, new QLabel("F"), {"F", "test", {}});
+        WindowManager restored; restored.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("restored"); });
+        QVERIFY(restored.restoreLayout(manager.saveLayout()));
+        QVERIFY(restored.isTabSticky(tabs[2])); QVERIFY(!restored.isTabSticky(restoredTab));
+        // The strip's pin unsticks the tab.
+        auto* host = manager.windowWidget(window); host->show(); QVERIFY(QTest::qWaitForWindowExposed(host));
+        QTabBar* bar = nullptr;
+        for (auto* candidate : host->findChildren<QTabBar*>())
+            if (candidate->isVisible() && candidate->count() == 2) bar = candidate;
+        QVERIFY(bar);
+        QCOMPARE(bar->tabData(0).toUuid(), tabs[2]);
+        const auto tab = bar->tabRect(0);
+        const QPoint pin(tab.right() - 7 - 8 + 1, tab.center().y());
+        for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, pin, bar->mapToGlobal(pin), Qt::LeftButton,
+                type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(bar, &event);
+        }
+        QTRY_VERIFY(!manager.isTabSticky(tabs[2]));
+        QVERIFY(manager.model().tab(tabs[2]));
+        QVERIFY(manager.model().validate());
+    }
+
 };
 QTEST_MAIN(TabGroupTest)
 #include "tab_group_test.moc"

@@ -158,6 +158,8 @@ GroupId LayoutModel::convertTabToGroup(TabId tabId, Placement placement) {
             tabs.append(record.id);
             model.tabs_.insert(record.id, std::move(record));
         }
+        // Every tab split from a sticky tab stays sticky; the group holds no other tabs.
+        model.groups_[destination].stickyTabs = model.groups_[destination].stickyTabs ? int(tabs.size()) : 0;
         model.groups_[destination].tabs = tabs;
         model.groups_[destination].activeTab = tabId;
         model.windows_[model.groups_[destination].windowId].activeGroup = destination;

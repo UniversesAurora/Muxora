@@ -122,6 +122,10 @@ public:
     bool setTabIconVisible(TabId tab, bool visible);
     bool setTabColor(TabId tab, QString colorId);
     bool sortTabs(GroupId group, TabSortOrder order);
+    // A sticky tab stays at the front of its group's tab bar and survives
+    // closing other tabs. Auto-hide rails cannot hold sticky tabs.
+    bool setTabSticky(TabId tab, bool sticky);
+    [[nodiscard]] bool isTabSticky(TabId tab) const;
     bool swapGroups(GroupId first, GroupId second);
     bool swapGroupDirection(GroupId group, Placement direction);
     bool mergeGroups(GroupId source, GroupId target, int insertionIndex = -1);

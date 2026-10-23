@@ -144,6 +144,15 @@ muxora.ui.command_palette(nil, {
 
 全屏和禅模式是本次运行的临时状态，`layout.snapshot()` 不保存它们，恢复布局或重启不会重新进入全屏。正常几何、最大化状态、栏显隐和启动禅模式的默认范围继续保存。
 
+## 钉住标签
+
+`tabs.sticky(tab_id, sticky)` 钉住或取消钉住标签，`sticky` 省略时为 `true`，`tab_id` 为 `nil` 时使用当前标签；非固定收纳条里的标签不能钉住，返回 `false`。`groups.list()` 每个组的 `sticky_tabs` 是钉住标签的数量，它们就是 `tabs` 列表开头的那几个。规则见 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+
+```lua
+assert(muxora.tabs.sticky())        -- 钉住当前标签
+assert(muxora.tabs.sticky(nil, false))
+```
+
 ## 标签组、标签与窗格转换
 
 | 调用 | 结果 |

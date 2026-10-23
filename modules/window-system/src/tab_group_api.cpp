@@ -9,6 +9,12 @@ bool WindowManager::setTabColor(TabId tab, QString color)
     return applyResult(d->model.setTabColor(tab, std::move(color)));
 }
 bool WindowManager::sortTabs(GroupId group, TabSortOrder order) { return applyResult(d->model.sortTabs(group, order)); }
+bool WindowManager::setTabSticky(TabId tab, bool sticky)
+{
+    if (d->model.tab(tab) && d->model.isTabSticky(tab) == sticky) return true;
+    return applyResult(d->model.setTabSticky(tab, sticky));
+}
+bool WindowManager::isTabSticky(TabId tab) const { return d->model.isTabSticky(tab); }
 bool WindowManager::swapGroups(GroupId first, GroupId second)
 {
     const QPointer<WindowManager> self(this);

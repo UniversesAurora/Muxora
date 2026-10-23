@@ -509,6 +509,10 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     }
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupViewportStates_.contains(id));
+    tabs->setStickyCount(group->stickyTabs);
+    tabs->unstickRequested = [this, bar](int index) {
+        if (manager_ && index >= 0 && index < bar->count()) manager_->setTabSticky(bar->tabData(index).toUuid(), false);
+    };
     groups_.insert(id, tabs);
     builtGroups_.insert(id, signatureOf(*group));
     tabs->newTabRequested = [manager = QPointer<WindowManager>(manager_), window = window_, id] {
@@ -550,6 +554,7 @@ DockSurface::GroupSignature DockSurface::signatureOf(const GroupRecord& group) c
 {
     GroupSignature result;
     result.tabs = group.tabs;
+    result.stickyTabs = group.stickyTabs;
     result.activeTab = group.activeTab;
     result.location = group.location;
     result.edge = group.edge;

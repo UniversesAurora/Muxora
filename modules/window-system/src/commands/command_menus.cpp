@@ -141,7 +141,7 @@ const Items& layout(CommandMenuSurface surface)
             group("view.toolbars", QT_TRANSLATE_NOOP("WindowSystem", "工具条"), {command("window.toggleStripsLock"), command("window.toolbar.move")})}, 20),
         group("布局", QT_TRANSLATE_NOOP("WindowSystem", "布局(&L)"), {
             group("layout.groups", QT_TRANSLATE_NOOP("WindowSystem", "当前标签组"), groupOperations()),
-            group("layout.tab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签"), {command("tab.rename"), command("tab.color.set"), separator(),
+            group("layout.tab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签"), {command("tab.rename"), command("tab.stick"), command("tab.unstick"), command("tab.color.set"), separator(),
                 group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "调整此标签在栏内的位置"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
                 group("tab.move", QT_TRANSLATE_NOOP("WindowSystem", "移动此标签"), tabMovement()),
                 group("tab.convert", QT_TRANSLATE_NOOP("WindowSystem", "转换此标签的内容"), {command("tab.convertToGroup"), command("tab.moveIntoTab")}),
@@ -163,7 +163,8 @@ const Items& layout(CommandMenuSurface surface)
         group("工具", QT_TRANSLATE_NOOP("WindowSystem", "工具(&T)"), {command("window.settings"), command("preferences.openKeyboardShortcuts")}, 50),
         group("帮助", QT_TRANSLATE_NOOP("WindowSystem", "帮助(&H)"), {}, 60)};
     static const Items floating = floatingItems(application);
-    static const Items tab = {command("workspace.closeTab"), command("tab.rename"), command("workspace.pinTab"), command("workspace.unpinTab"),
+    static const Items tab = {command("workspace.closeTab"), command("tab.rename"), command("tab.stick"), command("tab.unstick"),
+        command("workspace.pinTab"), command("workspace.unpinTab"),
         group("tab.closeRange", QT_TRANSLATE_NOOP("WindowSystem", "批量关闭标签"), {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
         group("tab.order", QT_TRANSLATE_NOOP("WindowSystem", "调整此标签在栏内的位置"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
@@ -309,6 +310,7 @@ QString applicationMenuExclusion(const QString& id)
     if (id == "window.toolbar.setVisible" || id == "window.toolbar.setWidth" || id == "window.toolbar.setItemVisible")
         return QCoreApplication::translate("WindowSystem", "工具条选项菜单及命令面板提供定制入口");
     if (id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing") return QCoreApplication::translate("WindowSystem", "内容右键附加栏菜单及命令面板提供入口");
+    if (id == "tab.toggleSticky") return QCoreApplication::translate("WindowSystem", "Shortcut toggle; menus offer sticking and unsticking separately");
     const QStringList closeScopes{"workspace.closeTabs.left", "workspace.closeTabs.right", "workspace.closeTabs.others", "workspace.closeTabs.all"};
     if (closeScopes.contains(id)) return QCoreApplication::translate("WindowSystem", "标签右键提供关闭范围；文件菜单保留关闭当前标签");
     return {};
@@ -342,6 +344,7 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     if (id == "window.redock" || id == "window.reassignFamily") visible = window && window->kind == WindowKind::Floating && enabled;
     if (id == "window.drag.selectTarget" || id == "window.drag.cancel") visible = enabled;
     if (id == "workspace.pinTab" || id == "workspace.pinGroup") visible = group && group->location == GroupLocation::AutoHide;
+    if (id == "tab.stick" || id == "tab.unstick") visible = enabled;
     if (id == "tab.peek.setSize" || id == "tab.peek.resetSize") visible = group && group->location == GroupLocation::AutoHide;
     if (id == "workspace.unpinTab" || id == "workspace.unpinGroup") visible = group && group->location == GroupLocation::Pinned;
     if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")

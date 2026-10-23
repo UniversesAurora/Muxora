@@ -403,6 +403,10 @@ OperationResult LayoutModel::transact(const std::function<OperationResult(Layout
     candidate.indexValid_ = false;
     auto result = operation(candidate);
     if (!result) return result;
+    // A strip-less auto-hide rail has no sticky run, whichever operation
+    // turned the group into one.
+    for (auto& group : candidate.groups_)
+        if (group.location == GroupLocation::AutoHide) group.stickyTabs = 0;
     candidate.synchronizePinnedLayouts();
     candidate.reconcilePinnedRestoreLayouts();
     candidate.rebuildIndex();
@@ -477,7 +481,8 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
         model.tabs_.insert(created, std::move(tabRecord));
         auto& record = model.groups_[target];
         if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure("The insertion index is invalid.");
-        record.tabs.insert(insertionIndex < 0 ? record.tabs.size() : insertionIndex, created);
+        // New tabs are never sticky; "at the beginning" starts after the run.
+        attachTabUnchecked(record, created, insertionIndex < 0 ? -1 : std::max<qsizetype>(insertionIndex, record.stickyTabs), false);
         record.activeTab = created;
         model.windows_[windowId].activeGroup = target;
         return success();
@@ -608,6 +613,48 @@ void LayoutModel::eraseEmptyFloatingWindows()
         }
     }
 }
+bool LayoutModel::detachTabUnchecked(GroupRecord& group, qsizetype index)
+{
+    const bool sticky = index < group.stickyTabs;
+    group.tabs.removeAt(index);
+    if (sticky) --group.stickyTabs;
+    return sticky;
+}
+qsizetype LayoutModel::attachTabUnchecked(GroupRecord& group, TabId tab, qsizetype index, bool sticky)
+{
+    if (group.location == GroupLocation::AutoHide) sticky = false;
+    if (index < 0) index = sticky ? group.stickyTabs : group.tabs.size();
+    else {
+        index = std::clamp<qsizetype>(index, 0, group.tabs.size());
+        sticky = group.location != GroupLocation::AutoHide
+            && (index < group.stickyTabs || (sticky && index == group.stickyTabs));
+    }
+    group.tabs.insert(index, tab);
+    if (sticky) ++group.stickyTabs;
+    return index;
+}
+bool LayoutModel::isTabSticky(TabId tabId) const
+{
+    const auto* record = group(groupForTab(tabId));
+    return record && record->tabs.indexOf(tabId) < record->stickyTabs;
+}
+OperationResult LayoutModel::setTabSticky(TabId tabId, bool sticky)
+{
+    // Asking for the current state is not an edit and keeps the revision.
+    if (tab(tabId) && isTabSticky(tabId) == sticky) return success();
+    return transact([&](LayoutModel& model) {
+        const auto groupId = model.groupForTab(tabId);
+        if (groupId.isNull()) return failure("The tab does not exist.");
+        auto& record = model.groups_[groupId];
+        if (sticky && record.location == GroupLocation::AutoHide)
+            return failure("Tabs in an auto-hide rail cannot be sticky.");
+        detachTabUnchecked(record, record.tabs.indexOf(tabId));
+        // Sticking appends to the run; unsticking leads the remaining tabs.
+        record.tabs.insert(record.stickyTabs, tabId);
+        if (sticky) ++record.stickyTabs;
+        return success();
+    });
+}
 OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                                Placement placement, int insertionIndex)
 {
@@ -639,13 +686,11 @@ OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
     }
     auto& source = groups_[sourceId];
     const auto oldIndex = source.tabs.indexOf(tabId);
-    source.tabs.removeAt(oldIndex);
+    const bool sticky = detachTabUnchecked(source, oldIndex);
     if (source.activeTab == tabId)
         source.activeTab = source.tabs.isEmpty() ? TabId{} : source.tabs[std::min(oldIndex, source.tabs.size() - 1)];
     auto& target = groups_[destinationId];
-    auto index = insertionIndex < 0 ? int(target.tabs.size())
-        : std::clamp(insertionIndex, 0, int(target.tabs.size()));
-    target.tabs.insert(index, tabId);
+    attachTabUnchecked(target, tabId, insertionIndex, sticky);
     target.activeTab = tabId;
     windows_[targetWindow].activeGroup = destinationId;
     eraseEmptyGroup(sourceId);
@@ -1206,7 +1251,7 @@ void LayoutModel::eraseTabUnchecked(TabId tabId)
     if (groupId.isNull()) return;
     auto& record = groups_[groupId];
     const auto oldIndex = record.tabs.indexOf(tabId);
-    record.tabs.removeAt(oldIndex);
+    detachTabUnchecked(record, oldIndex);
     if (record.activeTab == tabId)
         record.activeTab = record.tabs.isEmpty() ? TabId{}
             : record.tabs[std::min(oldIndex, record.tabs.size() - 1)];
@@ -1428,6 +1473,9 @@ OperationResult LayoutModel::validate() const
                 && record.location != GroupLocation::AutoHide)) return failure("A group placement is invalid.");
         if (record.tabs.isEmpty() || !record.tabs.contains(record.activeTab))
             return failure("Groups must contain tabs and a valid active tab.");
+        if (record.stickyTabs < 0 || record.stickyTabs > record.tabs.size()
+            || (record.location == GroupLocation::AutoHide && record.stickyTabs))
+            return failure("A group's sticky tab count is invalid.");
         if (record.edgeExtent < 32 || record.edgeExtent > 32768) return failure("An edge extent is invalid.");
     }
     for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
@@ -1607,8 +1655,8 @@ QJsonObject LayoutModel::toJson() const
             const auto& groupRecord = groups_[groupId];
             groups.append(QJsonObject{{"id", uuidText(groupRecord.id)}, {"windowId", uuidText(groupRecord.windowId)},
                 {"location", locationText(groupRecord.location)}, {"edge", edgeText(groupRecord.edge)},
-                {"tabs", idArray(groupRecord.tabs)}, {"activeTab", uuidText(groupRecord.activeTab)},
-                {"edgeExtent", groupRecord.edgeExtent}});
+                {"tabs", idArray(groupRecord.tabs)}, {"stickyTabs", groupRecord.stickyTabs},
+                {"activeTab", uuidText(groupRecord.activeTab)}, {"edgeExtent", groupRecord.edgeExtent}});
             for (auto tabId : groupRecord.tabs) {
                 const auto& tabRecord = tabs_[tabId];
                 QJsonObject tabObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
@@ -1688,6 +1736,12 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         record.edge = edge == "left" ? Edge::Left : edge == "right" ? Edge::Right
             : edge == "top" ? Edge::Top : Edge::Bottom;
         record.tabs = reader.ids(object, "tabs");
+        if (object.contains("stickyTabs")) {
+            const auto sticky = object.value("stickyTabs");
+            if (!sticky.isDouble() || sticky.toDouble() < 0 || sticky.toDouble() > double(record.tabs.size())
+                || std::floor(sticky.toDouble()) != sticky.toDouble()) return failure("A sticky tab count must be a bounded integer.");
+            record.stickyTabs = sticky.toInt();
+        }
         record.activeTab = reader.id(object, "activeTab");
         if (object.contains("edgeExtent")) {
             const auto extent = object.value("edgeExtent");

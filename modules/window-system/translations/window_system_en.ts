@@ -2397,6 +2397,26 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Clip long auto-hide sidebar tab titles</translation>
         </message>
         <message>
+            <location filename="../src/commands/window_commands.cpp" line="483" />
+            <source>Stick Tab to Front</source>
+            <translation>Stick Tab to Front</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="485" />
+            <source>Unstick Tab</source>
+            <translation>Unstick Tab</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="487" />
+            <source>Stick or Unstick Tab</source>
+            <translation>Stick or Unstick Tab</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/command_menus.cpp" line="313" />
+            <source>Shortcut toggle; menus offer sticking and unsticking separately</source>
+            <translation>Shortcut toggle; menus offer sticking and unsticking separately</translation>
+        </message>
+        <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="81" />
             <source>Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings.</source>
             <translation>Clip titles in auto-hide sidebar rails without adding an ellipsis. Regular and pinned tabs use their own settings.</translation>

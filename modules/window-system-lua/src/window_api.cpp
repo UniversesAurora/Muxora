@@ -26,6 +26,7 @@ QVariantMap groupValue(const GroupRecord &g) {
             {"window", idText(g.windowId)},
             {"tabs", tabs},
             {"active_tab", idText(g.activeTab)},
+            {"sticky_tabs", g.stickyTabs},
             {"location", g.location == GroupLocation::Central  ? "central"
                          : g.location == GroupLocation::Pinned ? "pinned"
                                                                : "auto_hide"},
@@ -293,6 +294,9 @@ void ScriptHost::Private::installWindowApi() {
     };
     handlers["tabs.color"] = [this](const Args &a, const Context &c) {
         return result(manager->setTabColor(target(a, 0, c, Target::Tab), text(a, 1)));
+    };
+    handlers["tabs.sticky"] = [this](const Args &a, const Context &c) {
+        return result(manager->setTabSticky(target(a, 0, c, Target::Tab), boolean(a, 1, true)));
     };
     handlers["tabs.icon"] = [this](const Args &a, const Context &c) {
         return result(manager->setTabIconVisible(target(a, 0, c, Target::Tab), boolean(a, 1)));

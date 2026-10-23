@@ -70,6 +70,9 @@ struct GroupRecord {
     GroupLocation location = GroupLocation::Central;
     Edge edge = Edge::Left;
     QVector<TabId> tabs;
+    // tabs[0, stickyTabs) are stuck to the front of this group's strip.
+    // Auto-hide groups never have any.
+    int stickyTabs = 0;
     TabId activeTab;
     int edgeExtent = 250;
 };
@@ -154,6 +157,10 @@ public:
     OperationResult renameTab(TabId tabId, QString title);
     OperationResult setTabColor(TabId tabId, QString colorId);
     OperationResult sortTabs(GroupId group, TabSortOrder order);
+    // Sticks a tab to the end of its group's sticky run, or unsticks it to
+    // the first position after that run. Auto-hide groups cannot stick tabs.
+    OperationResult setTabSticky(TabId tabId, bool sticky);
+    [[nodiscard]] bool isTabSticky(TabId tabId) const;
     // Exchange complete visible-group slots (tree position or pinned edge),
     // preserving both group identities, contents and each slot's extent.
     OperationResult swapGroups(GroupId first, GroupId second);
@@ -251,6 +258,13 @@ private:
     GroupId createGroupUnchecked(WindowId windowId);
     void unlinkGroupUnchecked(GroupId groupId);
     void eraseTabUnchecked(TabId tabId);
+    // Order edits that keep each group's sticky run contiguous. detach returns
+    // whether the tab was sticky. attach without an index puts a sticky tab at
+    // the end of the run and any other tab at the end of the group; with an
+    // index the position decides, and the slot right after the run keeps a
+    // tab that was sticky.
+    static bool detachTabUnchecked(GroupRecord& group, qsizetype index);
+    static qsizetype attachTabUnchecked(GroupRecord& group, TabId tab, qsizetype index, bool sticky);
     OperationResult moveTabUnchecked(TabId tabId, GroupId targetGroup,
                                      Placement placement, int insertionIndex);
     OperationResult setTabPinnedUnchecked(TabId tabId, bool pinned);

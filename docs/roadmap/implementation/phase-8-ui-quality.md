@@ -405,3 +405,24 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 **做法**：用 Windows 讲述人逐个检查标签条、收纳条、临时面板、设置页：可访问名称和角色、选中与展开状态、焦点移动时的朗读；用 `QAccessible` 接口写自动化断言（名称、角色、状态、子项数），朗读效果的人工检查结果写进步骤状态。发现的问题在本步骤内修复。
 
 **状态**：未开始。
+
+---
+
+## 8.15 钉住标签
+
+**目标**：按 [交互细则 · 钉住标签](../../design/window-interaction-design.md#钉住标签) 实现 VS Code 式的钉住标签。用户 2026-10-24 要求加入，并确认拖动规则：落点仍在钉住段内只调整钉住顺序，落到未钉住标签之后就取消钉住。
+
+**前置**：无。
+
+**8.15a 基本行为（已完成）**：模型用每组的钉住数表示开头的连续钉住段，所有增删、移动、排序、合并、拆分和恢复都维持这一段；非固定收纳条没有钉住段。`WindowManager::setTabSticky()`／`isTabSticky()`、命令 `tab.stick`／`tab.unstick`／`tab.toggleSticky`、标签右键与“布局 → 当前标签”菜单、批量关闭跳过钉住标签、标签栏的钉子图标（点击取消钉住）、布局保存及 Lua `tabs.sticky()`、`groups.list()` 的 `sticky_tabs`。
+
+**8.15b 外观与保护（未开始）**：
+
+1. 设置 `tabs.stickySizing`：`normal`（默认）、`compact`（只显示图标或首字）、`shrink`（固定窄宽度显示部分标题）。紧凑和收缩时，钉住段在标签栏滚动时不离开视野，其余标签在它后面滚动。
+2. 设置 `tabs.stickyTabsOnSeparateRow`：钉住标签单独显示在上方一行，两行之间拖动即钉住或取消。
+3. 设置 `tabs.preventStickyClose`：按键、中键或两者都不关闭钉住标签。依赖 3.x 的上下文按键条件区分来源；中键关闭标签本身也要先实现（[界面设计规范](../../design/ui-design-system.md) 已规定中键关闭）。
+4. 完整标签列表中标出钉住标签。
+
+**测试**：8.15a 见模型、标签条、命令与 Lua 用例；8.15b 各项需要真实拖动、滚动和像素断言，三种主题下截图。
+
+**状态**：8.15a 已完成；8.15b 未开始。

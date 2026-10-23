@@ -278,6 +278,12 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
     displayedSize_ = {appearance_.multiline ? limit : x, y + lineHeight};
 }
 void DragTabBar::setCloseIcon(QIcon icon) { closeIcon_ = std::move(icon); update(); }
+void DragTabBar::setStickyIcon(QIcon icon) { stickyIcon_ = std::move(icon); update(); }
+void DragTabBar::setStickyCount(int count)
+{
+    if (stickyCount_ == count) return;
+    stickyCount_ = count; update();
+}
 void DragTabBar::setDraggedTab(TabId tab)
 {
     draggedIndex_ = -1;
@@ -394,7 +400,7 @@ void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
         const auto index = closePressed_; closePressed_ = -1;
         update(closeRect(index).adjusted(-2, -2, 2, 2));
         if (event->button() == Qt::LeftButton && closeRect(index).contains(event->position().toPoint())) {
-            const auto callback = close; if (callback) callback(index);
+            const auto callback = index < stickyCount_ ? unstick : close; if (callback) callback(index);
         }
         return;
     }
@@ -481,6 +487,9 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
         painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
         painter.drawRect(gap.adjusted(1, 1, -2, -2));
     }
+    // A sticky tab always shows its pin; other tabs show close on hover.
+    for (int index = 0; index < std::min(stickyCount_, count()); ++index)
+        if (index != hovered_ && index != draggedIndex_ && isTabVisible(index)) stickyIcon_.paint(&painter, closeRect(index));
     if (hovered_ >= 0 && hovered_ != draggedIndex_) {
         const auto target = closeRect(hovered_);
         if (closeHovered_ || closePressed_ == hovered_) {
@@ -494,7 +503,7 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             painter.setBrush(wash); painter.drawRoundedRect(QRectF(target).adjusted(-1, -1, 1, 1), 3, 3);
             painter.restore();
         }
-        closeIcon_.paint(&painter, target);
+        (hovered_ < stickyCount_ ? stickyIcon_ : closeIcon_).paint(&painter, target);
     }
 }
 void DragTabBar::tabRemoved(int index)
@@ -529,7 +538,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll_->viewport()->installEventFilter(this); scroll_->viewport()->setMouseTracking(true);
     canvas_ = new QWidget; canvas_->setObjectName("TabStripCanvas"); canvas_->installEventFilter(this);
-    bar_ = new DragTabBar(canvas_); bar_->setCloseIcon(iconFor("close", theme));
+    bar_ = new DragTabBar(canvas_); bar_->setCloseIcon(iconFor("close", theme)); bar_->setStickyIcon(iconFor("pin", theme));
     bar_->setIconSize(QSize(theme.metrics.iconSize, theme.metrics.iconSize));
     bar_->installEventFilter(this); scroll_->setWidget(canvas_);
     auto* create = new TabCreateButtons(theme, canvas_); createButtons_ = create;
@@ -573,6 +582,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         const auto callback = currentChanged; if (callback) callback(index);
     });
     bar_->close = [this](int index) { const auto callback = closeRequested; if (callback) callback(index); };
+    bar_->unstick = [this](int index) { const auto callback = unstickRequested; if (callback) callback(index); };
     QObject::connect(list_, &QToolButton::clicked, this, [this] { showTabList(); });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::rangeChanged, scrollbar_, [this](int low, int high) {
         scrollbar_->setRange(low, high); scrollbar_->setPageStep(scroll_->viewport()->width());
@@ -886,6 +896,7 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     pendingViewportState_.reset();
     settledViewport_ = currentViewportState();
 }
+void GroupTabs::setStickyCount(int count) { bar_->setStickyCount(count); }
 void GroupTabs::setTabMetadata(int index,const TabRecord& tab)
 {
     bar_->setTabMetadata(index,tab); updateBarGeometry();

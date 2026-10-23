@@ -27,7 +27,11 @@ public:
     std::function<void(int, QPoint)> drag;
     std::function<void(int, QPoint)> menu;
     std::function<void(int)> close;
+    // Sticky tabs show a pin in the close slot; pressing it unsticks the tab.
+    std::function<void(int)> unstick;
     void setCloseIcon(QIcon icon);
+    void setStickyIcon(QIcon icon);
+    void setStickyCount(int count);
     void setInsertionPreview(int index, int extent, QColor color);
     void setDraggedTab(TabId tab);
     [[nodiscard]] int draggedExtent() const;
@@ -62,6 +66,8 @@ private:
     int hovered_ = -1;
     bool closeHovered_ = false;
     QIcon closeIcon_;
+    QIcon stickyIcon_;
+    int stickyCount_ = 0;
     int insertionIndex_ = -1;
     int insertionExtent_ = 0;
     QColor insertionColor_;
@@ -87,6 +93,8 @@ public:
     ~GroupTabs() override;
     std::function<void(int)> currentChanged;
     std::function<void(int)> closeRequested;
+    std::function<void(int)> unstickRequested;
+    void setStickyCount(int count);
     std::function<void()> hoverGeometryChanged;
     std::function<void()> newTabRequested;
     std::function<QMenu*(QWidget*)> newTabMenuRequested;

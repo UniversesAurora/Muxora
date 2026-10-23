@@ -88,9 +88,11 @@ OperationResult LayoutModel::sortTabs(GroupId groupId, TabSortOrder sorting)
     return transact([&](LayoutModel& model) {
         if (!model.group(groupId) || int(sorting) < 0 || int(sorting) > 5)
             return bad("Invalid tab sorting request.");
-        auto& tabs = model.groups_[groupId].tabs;
+        auto& group = model.groups_[groupId];
+        auto& tabs = group.tabs;
         const bool descending = int(sorting) % 2 == 1;
-        std::stable_sort(tabs.begin(), tabs.end(), [&](TabId firstId, TabId secondId) {
+        // Sticky tabs stay at the front: each run is sorted on its own.
+        const auto order = [&](TabId firstId, TabId secondId) {
             const auto& first = model.tabs_[firstId];
             const auto& second = model.tabs_[secondId];
             int comparison = 0;
@@ -103,7 +105,9 @@ OperationResult LayoutModel::sortTabs(GroupId groupId, TabSortOrder sorting)
                 comparison = firstOrder < secondOrder ? -1 : firstOrder > secondOrder ? 1 : 0;
             }
             return descending ? comparison > 0 : comparison < 0;
-        });
+        };
+        std::stable_sort(tabs.begin(), tabs.begin() + group.stickyTabs, order);
+        std::stable_sort(tabs.begin() + group.stickyTabs, tabs.end(), order);
         return good();
     });
 }
@@ -180,10 +184,14 @@ OperationResult LayoutModel::mergeGroups(GroupId source, GroupId target, int ins
             return bad("A group merge requires distinct visible groups and a valid insertion index.");
         const auto carried = model.groups_[source];
         auto& destination = model.groups_[target];
-        const auto index = insertionIndex < 0 ? destination.tabs.size() : insertionIndex;
-        for (qsizetype offset = 0; offset < carried.tabs.size(); ++offset) {
-            destination.tabs.insert(index + offset, carried.tabs[offset]);
-        }
+        // Carried sticky tabs join the end of the target's sticky run; the
+        // rest keep their order at the requested place after that run.
+        for (qsizetype offset = 0; offset < carried.stickyTabs; ++offset)
+            attachTabUnchecked(destination, carried.tabs[offset], -1, true);
+        auto index = std::max<qsizetype>(insertionIndex < 0 ? destination.tabs.size()
+            : insertionIndex + carried.stickyTabs, destination.stickyTabs);
+        for (qsizetype offset = carried.stickyTabs; offset < carried.tabs.size(); ++offset)
+            destination.tabs.insert(index++, carried.tabs[offset]);
         // This explicit edit establishes a new partition membership/order.
         // Dormant positions belonging to either old group must not undo it.
         for (const auto tab : destination.tabs) model.tabs_[tab].pinnedPosition.reset();

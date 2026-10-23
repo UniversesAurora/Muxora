@@ -453,6 +453,104 @@ private slots:
         QVERIFY(!model.moveGroupToWindow(second,other)); QCOMPARE(model.toJson(),final);
         QVERIFY(model.detachGroup(second).isNull()); QCOMPARE(model.toJson(),final); QVERIFY(model.validate());
     }
+    // Sticky tabs are a contiguous run at the front of their group.
+    static QVector<TabId> stickyRun(const LayoutModel& model, GroupId group)
+    {
+        const auto* record = model.group(group);
+        return record ? record->tabs.first(record->stickyTabs) : QVector<TabId>{};
+    }
+    void stickingKeepsAFrontRunInStickOrder()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const QVector<TabId> t{model.addTab(window,"a"),model.addTab(window,"b"),model.addTab(window,"c"),model.addTab(window,"d")};
+        const auto group = model.groupForTab(t[0]);
+        QVERIFY(model.setTabSticky(t[2],true)); QVERIFY(model.setTabSticky(t[0],true));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({t[2],t[0],t[1],t[3]})); QCOMPARE(stickyRun(model,group),QVector<TabId>({t[2],t[0]}));
+        QVERIFY(model.isTabSticky(t[0])); QVERIFY(!model.isTabSticky(t[1]));
+        const auto revision = model.revision(); QVERIFY(model.setTabSticky(t[0],true)); QCOMPARE(model.revision(),revision);
+        // Unsticking leads the remaining tabs.
+        QVERIFY(model.setTabSticky(t[2],false));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({t[0],t[2],t[1],t[3]})); QCOMPARE(stickyRun(model,group),QVector<TabId>({t[0]}));
+        // New tabs open after the run, even when asked for the beginning.
+        const auto created = model.addTab(window,"e",group,0);
+        QCOMPARE(model.group(group)->tabs.indexOf(created),1); QVERIFY(!model.isTabSticky(created));
+        QVERIFY(model.removeTab(t[0])); QCOMPARE(model.group(group)->stickyTabs,0); QVERIFY(model.validate());
+    }
+    void movingAcrossTheRunBoundaryChangesStickiness()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const QVector<TabId> t{model.addTab(window,"a"),model.addTab(window,"b"),model.addTab(window,"c"),model.addTab(window,"d")};
+        const auto group = model.groupForTab(t[0]);
+        QVERIFY(model.setTabSticky(t[0],true)); QVERIFY(model.setTabSticky(t[1],true)); // [a b | c d]
+        // Within the run, including the slot right after it, only the order changes.
+        QVERIFY(model.moveTab(t[0],group,Placement::Center,1));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({t[1],t[0],t[2],t[3]})); QCOMPARE(model.group(group)->stickyTabs,2);
+        // Behind an unstuck tab it is no longer sticky.
+        QVERIFY(model.moveTab(t[0],group,Placement::Center,2));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({t[1],t[2],t[0],t[3]})); QCOMPARE(stickyRun(model,group),QVector<TabId>({t[1]}));
+        // An unstuck tab placed right after the run stays unstuck; inside it, it sticks.
+        QVERIFY(model.moveTab(t[3],group,Placement::Center,1)); QCOMPARE(stickyRun(model,group),QVector<TabId>({t[1]}));
+        QVERIFY(model.moveTab(t[3],group,Placement::Center,0)); QCOMPARE(stickyRun(model,group),QVector<TabId>({t[3],t[1]}));
+        QVERIFY(model.validate());
+    }
+    void otherGroupsAndRailsApplyTheRunRules()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto a = model.addTab(window,"a"), b = model.addTab(window,"b"), c = model.addTab(window,"c");
+        const auto source = model.groupForTab(a);
+        const auto other = model.groupForTab(model.addTabToNewGroup(window,"x",source,Placement::Right));
+        const auto x = model.group(other)->tabs.first(); QVERIFY(model.setTabSticky(x,true));
+        const auto w = model.addTab(window,"w",other); // other [x | w]
+        QVERIFY(model.setTabSticky(a,true)); QVERIFY(model.setTabSticky(b,true));
+        // Without a position a sticky tab joins the end of the target's run.
+        QVERIFY(model.moveTab(a,other)); QCOMPARE(stickyRun(model,other),QVector<TabId>({x,a}));
+        // An explicit position behind an unstuck tab unsticks it.
+        QVERIFY(model.moveTab(b,other,Placement::Center,3)); QVERIFY(!model.isTabSticky(b));
+        QCOMPARE(model.group(other)->tabs,QVector<TabId>({x,a,w,b}));
+        // A split keeps a sticky tab sticky in its new group.
+        QVERIFY(model.moveTab(a,other,Placement::Bottom)); QVERIFY(model.isTabSticky(a));
+        // Rails have no run: moving there or turning a group into a rail clears it.
+        QVERIFY(model.moveTabToEdge(a,Edge::Left)); QVERIFY(!model.isTabSticky(a));
+        QVERIFY(!model.setTabSticky(a,true)); QVERIFY(!model.isTabSticky(a));
+        QVERIFY(model.moveGroupToEdge(other,Edge::Right)); QCOMPARE(model.group(other)->stickyTabs,0);
+        QVERIFY(model.setGroupPinned(other,true)); QCOMPARE(model.group(other)->stickyTabs,0);
+        QVERIFY(model.setTabSticky(c,true)); QVERIFY(model.validate());
+    }
+    void sortingAndMergingKeepRunsSeparate()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto d = model.addTab(window,"d"), b = model.addTab(window,"b"), c = model.addTab(window,"c"), a = model.addTab(window,"a");
+        const auto group = model.groupForTab(a);
+        QVERIFY(model.setTabSticky(c,true)); QVERIFY(model.setTabSticky(a,true)); // [c a | d b]
+        QVERIFY(model.sortTabs(group,TabSortOrder::AlphabeticalAscending));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({a,c,b,d})); QCOMPARE(model.group(group)->stickyTabs,2);
+        const auto source = model.groupForTab(model.addTabToNewGroup(window,"y",group,Placement::Right));
+        const auto y = model.group(source)->tabs.first();
+        const auto z = model.addTab(window,"z",source); QVERIFY(model.setTabSticky(z,true)); // source [z | y]
+        QVERIFY(model.mergeGroups(source,group,0));
+        QCOMPARE(model.group(group)->tabs,QVector<TabId>({a,c,z,y,b,d})); QCOMPARE(model.group(group)->stickyTabs,3);
+        QVERIFY(model.validate());
+    }
+    void stickyRunsRoundTripAndRejectInvalidCounts()
+    {
+        LayoutModel model; const auto window = model.createWindow();
+        const auto a = model.addTab(window,"a"); model.addTab(window,"b"); QVERIFY(model.setTabSticky(a,true));
+        const auto json = model.toJson();
+        LayoutModel restored; QVERIFY(restored.fromJson(json)); QVERIFY(restored.isTabSticky(a));
+        QCOMPARE(restored.group(restored.groupForTab(a))->stickyTabs,1);
+        for (const QJsonValue value : {QJsonValue(-1), QJsonValue(3), QJsonValue(0.5), QJsonValue("1")}) {
+            auto broken = json; auto groups = broken.value("groups").toArray();
+            auto first = groups.first().toObject(); first.insert("stickyTabs",value); groups[0] = first; broken.insert("groups",groups);
+            LayoutModel rejected; QVERIFY(!rejected.fromJson(broken));
+        }
+        auto missing = json; auto groups = missing.value("groups").toArray();
+        auto first = groups.first().toObject(); first.remove("stickyTabs"); groups[0] = first; missing.insert("groups",groups);
+        LayoutModel defaulted; QVERIFY(defaulted.fromJson(missing)); QVERIFY(!defaulted.isTabSticky(a));
+        QVERIFY(model.moveGroupToEdge(model.groupForTab(a),Edge::Left)); QCOMPARE(model.group(model.groupForTab(a))->stickyTabs,0);
+        auto rail = model.toJson(); groups = rail.value("groups").toArray();
+        first = groups.first().toObject(); first.insert("stickyTabs",1); groups[0] = first; rail.insert("groups",groups);
+        LayoutModel railRejected; QVERIFY(!railRejected.fromJson(rail));
+    }
 };
 QTEST_GUILESS_MAIN(TabOrderingModelTest)
 #include "tab_ordering_model_test.moc"

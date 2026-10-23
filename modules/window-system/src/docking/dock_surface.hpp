@@ -69,6 +69,7 @@ private:
         QStringList titles;
         QStringList colorIds;
         QVector<bool> icons;
+        int stickyTabs = 0;
         TabAppearance appearance;
         quint64 themeRevision = 0;
         bool operator==(const GroupSignature&) const = default;
