@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -56,6 +57,7 @@ private slots:
     void changingPolicyPreservesWidgetsFocusAndSplitModel();
     void policiesAndBarsSurviveMovesAndPaneExtraction();
     void closingPaneDestroysOnlyItsBars();
+    void replacingTabBarsDefersDeletionLikePaneBars();
     void layoutRestoresPolicyWithoutSerializingWidgets();
     void invalidCallsLeaveThePoliciesUnchanged();
 };
@@ -301,6 +303,42 @@ void PaneBarPolicyTest::closingPaneDestroysOnlyItsBars()
     QVERIFY(manager.closeTab(tab));
     processDeletes();
     QVERIFY(firstTop.isNull());
+}
+
+void PaneBarPolicyTest::replacingTabBarsDefersDeletionLikePaneBars()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QPlainTextEdit, {QStringLiteral("bars"), {}, {}});
+    manager.showWindow(window);
+    for (const bool top : {true, false}) {
+        const auto set = [&](QWidget* bar) { return top ? manager.setTabTopBar(tab, bar) : manager.setTabBottomBar(tab, bar); };
+        QPointer<QWidget> first = new QLabel(QStringLiteral("first"));
+        QVERIFY(set(first));
+        // A replaced bar is hidden at once and deleted by the event loop.
+        QPointer<QWidget> second = new QWidget;
+        auto* replace = new QPushButton(QStringLiteral("Replace"), second);
+        QVERIFY(set(second));
+        QVERIFY(first); QVERIFY(first->isHidden());
+        processDeletes();
+        QVERIFY(first.isNull()); QVERIFY(second);
+        // Replacing a bar from its own button's signal keeps the sender alive
+        // until the signal returns.
+        QPointer<QWidget> third;
+        bool aliveDuringSignal = false;
+        connect(replace, &QPushButton::clicked, this, [&] {
+            third = new QLabel(QStringLiteral("third"));
+            QVERIFY(set(third));
+            aliveDuringSignal = !second.isNull();
+        });
+        replace->click();
+        QVERIFY(aliveDuringSignal); QVERIFY(third);
+        processDeletes();
+        QVERIFY(second.isNull()); QVERIFY(third);
+        QVERIFY(set(nullptr));
+        processDeletes();
+        QVERIFY(third.isNull());
+    }
 }
 
 void PaneBarPolicyTest::layoutRestoresPolicyWithoutSerializingWidgets()

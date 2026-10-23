@@ -93,6 +93,9 @@ public:
     bool requestNewTab(WindowId window, GroupId group = {}, QString command = {});
     void setContentFactory(ContentFactory factory);
     void setCloseGuard(CloseGuard guard);
+    // The manager owns a bar it accepts. Replacing or clearing one hides the
+    // previous bar and deletes it from the event loop, so a host may replace a
+    // bar from that bar's own signal.
     bool setTabTopBar(TabId tab, QWidget* bar);
     bool setTabBottomBar(TabId tab, QWidget* bar);
     bool setPaneTopBar(PaneId pane, QWidget* bar);

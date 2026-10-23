@@ -175,7 +175,9 @@ void TabContent::setTopBar(QWidget* widget)
     if (top_ == widget) return;
     if (top_) {
         if (visibleTop_ == top_) { layout_->removeWidget(top_); visibleTop_.clear(); }
-        delete top_;
+        // Like a replaced pane bar: the host may replace a bar from that bar's
+        // own signal, so its deletion must wait for the event loop.
+        top_->hide(); top_->deleteLater();
     }
     top_ = widget;
     if (top_) { top_->setParent(this); top_->hide(); }
@@ -186,7 +188,7 @@ void TabContent::setBottomBar(QWidget* widget)
     if (bottom_ == widget) return;
     if (bottom_) {
         if (visibleBottom_ == bottom_) { layout_->removeWidget(bottom_); visibleBottom_.clear(); }
-        delete bottom_;
+        bottom_->hide(); bottom_->deleteLater();
     }
     bottom_ = widget;
     if (bottom_) { bottom_->setParent(this); bottom_->hide(); }
