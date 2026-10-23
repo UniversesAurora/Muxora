@@ -4,6 +4,8 @@
 #include <window_system/tab_appearance.hpp>
 #include "panes/focus_projection.hpp"
 #include "tab_viewport_state.hpp"
+#include "style/tab_title_layout.hpp"
+#include <array>
 #include <QFrame>
 #include <QHash>
 #include <QPointer>
@@ -101,6 +103,9 @@ private:
     quint64 peekGeneration_ = 0;
     quint64 rebuildGeneration_ = 0;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
+    // Measurements only, kept separately for ordinary and sidebar formatting.
+    // Rebuilds release removed tabs; no history of old drag views is retained.
+    mutable QHash<TabId, std::array<TabTitleLayout, 2>> dragTitleLayouts_;
     QHash<GroupId, GroupSignature> builtGroups_;
     StructureSignature builtStructure_;
     quint64 builtThemeRevision_ = 0;

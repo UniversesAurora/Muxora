@@ -26,10 +26,14 @@ EdgeTabButton::EdgeTabButton(QString title, bool vertical, int thickness, QWidge
     setText(title); setToolTip(title); setAccessibleName(title);
     setObjectName("EdgeButton"); setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
+    QObject::connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
+        titleLayout_ = TabTitleLayout{}; updateGeometry(); update();
+    });
 }
 QSize EdgeTabButton::sizeHint() const
 {
-    const auto extent = edgeTabExtent(fontMetrics(),text(),!icon().isNull(),number_,clipTitles_,maximumTitleWidth_);
+    titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
+    const auto extent = edgeTabExtent(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_, clipTitles_, maximumTitleWidth_);
     return vertical_ ? QSize(thickness_, extent) : QSize(extent, thickness_);
 }
 void EdgeTabButton::setPresentation(QIcon image, int number)
@@ -89,7 +93,8 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
     const QRect area=vertical_ ? QRect(0,0,height(),width()) : rect();
     const int numberWidth=number_>0 ? fontMetrics().horizontalAdvance(QString::number(number_))+5 : 0;
     const int imageWidth=icon().isNull() ? 0 : 20;
-    const int naturalTitleWidth = fontMetrics().horizontalAdvance(text());
+    titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
+    const int naturalTitleWidth = titleLayout_.naturalWidth();
     const int titleWidth = clipTitles_ ? std::min(naturalTitleWidth, maximumTitleWidth_) : naturalTitleWidth;
     const int span=std::min(std::max(0,area.width()-12),titleWidth+numberWidth+imageWidth);
     int left=std::max(6,(area.width()-span)/2);
@@ -106,8 +111,6 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
     }
     const auto textArea = QStyle::visualRect(layoutDirection(), area,
         QRect(left,0,std::max(0,std::min(titleWidth,area.width()-6-left)),area.height()));
-    painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
-    painter.drawText(textArea,Qt::AlignVCenter | Qt::AlignLeading | Qt::TextSingleLine,text());
-    painter.restore();
+    titleLayout_.draw(painter, textArea);
 }
 } // namespace window_system

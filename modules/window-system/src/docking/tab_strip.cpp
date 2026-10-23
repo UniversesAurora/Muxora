@@ -192,6 +192,9 @@ DragTabBar::DragTabBar(QWidget* parent) : QTabBar(parent)
 {
     setObjectName("TabBar"); setExpanding(false); setElideMode(Qt::ElideNone);
     setUsesScrollButtons(false); setMouseTracking(true); setDocumentMode(true);
+    QObject::connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
+        titleLayouts_.clear(); updateGeometry(); update();
+    });
 }
 void DragTabBar::setAppearance(const TabAppearance& appearance)
 {
@@ -354,7 +357,9 @@ QSize DragTabBar::tabSizeHint(int index) const {
     // Without an icon a one-character label can put its center inside the
     // trailing close hitbox. Keep a small independent drag/click area even for
     // the shortest labels; the close target retains its full 16 pixels.
-    const int naturalTitleWidth = fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, tabText(index)).width();
+    auto& title = titleLayouts_[index];
+    title.prepare(tabText(index), font(), layoutDirection(), true, this);
+    const int naturalTitleWidth = title.naturalWidth();
     const int titleWidth = appearance_.clipTitles ? std::min(naturalTitleWidth, appearance_.maximumTitleWidth) : naturalTitleWidth;
     size.setWidth(int(std::clamp<qint64>(qint64(titleWidth) + iconWidth + numberWidth + 35, 46, QWIDGETSIZE_MAX)));
     return size;
@@ -400,9 +405,35 @@ void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; update(); QTabBar::l
 void DragTabBar::paintEvent(QPaintEvent* event) {
     QStylePainter painter(this);
     painter.setLayoutDirection(layoutDirection());
+    int firstVisible = -1, lastVisible = -1;
+    for (int index = 0; index < count(); ++index) if (isTabVisible(index)) {
+        if (firstVisible < 0) firstVisible = index;
+        lastVisible = index;
+    }
     const auto draw = [&](int index) {
-        if (isDragged(index)) return;
-        QStyleOptionTab option; initStyleOption(&option, index);
+        if (!isTabVisible(index) || isDragged(index)) return;
+        // Only the shape is delegated to QStyle. QTabBar::initStyleOption
+        // elides and measures the complete title even with ElideNone, which
+        // would undo the visible-glyph cache on every repaint.
+        QStyleOptionTab option; option.initFrom(this);
+        option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);
+        if (index == currentIndex()) {
+            option.state |= QStyle::State_Selected;
+            if (hasFocus()) option.state |= QStyle::State_HasFocus;
+        }
+        if (!isTabEnabled(index)) option.state &= ~QStyle::State_Enabled;
+        if (index == pressed_) option.state |= QStyle::State_Sunken;
+        if (index == hovered_) option.state |= QStyle::State_MouseOver;
+        option.shape = shape(); option.documentMode = documentMode(); option.tabIndex = index;
+        option.icon = tabIcon(index); option.iconSize = iconSize();
+        option.text = tabText(index);
+        if (const auto color = tabTextColor(index); color.isValid()) option.palette.setColor(foregroundRole(), color);
+        if (const auto* button = tabButton(index, QTabBar::LeftSide)) option.leftButtonSize = button->size();
+        if (const auto* button = tabButton(index, QTabBar::RightSide)) option.rightButtonSize = button->size();
+        option.selectedPosition = index > 0 && index - 1 == currentIndex() ? QStyleOptionTab::PreviousIsSelected
+            : index + 1 < count() && index + 1 == currentIndex() ? QStyleOptionTab::NextIsSelected : QStyleOptionTab::NotAdjacent;
+        option.position = index == firstVisible ? (index == lastVisible ? QStyleOptionTab::OnlyOneTab : QStyleOptionTab::Beginning)
+            : index == lastVisible ? QStyleOptionTab::End : QStyleOptionTab::Middle;
         option.rect = displayTabRect(index);
         if (!option.rect.intersects(event->rect())) return;
         const auto* preset = tabPreset(index);
@@ -440,12 +471,18 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             else textArea.setWidth(appearance_.maximumTitleWidth);
         }
         auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText,colors->text);
-        // Draw the original title through the text viewport. Eliding or
-        // truncating the string would lose the requested partial glyphs.
-        painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
-        painter.drawItemText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextShowMnemonic | Qt::TextSingleLine,
-                             textPalette, isTabEnabled(index), tabText(index), QPalette::WindowText);
-        painter.restore();
+        if (isTabEnabled(index)) {
+            auto& title = titleLayouts_[index];
+            title.prepare(tabText(index), font(), layoutDirection(), true, this);
+            painter.setPen(textPalette.color(QPalette::WindowText));
+            title.draw(painter, textArea);
+        } else {
+            // Preserve style-specific disabled text effects.
+            painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
+            painter.drawItemText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextShowMnemonic | Qt::TextSingleLine,
+                                 textPalette, false, tabText(index), QPalette::WindowText);
+            painter.restore();
+        }
     };
     for (int index = 0; index < count(); ++index) if (index != currentIndex()) draw(index);
     if (currentIndex() >= 0) draw(currentIndex());
@@ -464,6 +501,9 @@ void DragTabBar::tabRemoved(int index)
     for (auto it = decorations_.cbegin(); it != decorations_.cend(); ++it)
         if (it.key() != index) shifted.insert(it.key() > index ? it.key() - 1 : it.key(), it.value());
     decorations_ = std::move(shifted);
+    // QTabBar can request the new indices' hints before this callback.
+    // Rebuild lazily instead of shifting a mixture of old and new entries.
+    titleLayouts_.clear();
     QTabBar::tabRemoved(index);
 }
 void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {

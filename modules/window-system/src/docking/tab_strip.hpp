@@ -4,6 +4,7 @@
 #include <window_system/theme.hpp>
 #include <window_system/tab_appearance.hpp>
 #include "tab_viewport_state.hpp"
+#include "style/tab_title_layout.hpp"
 #include <QFrame>
 #include <QPointer>
 #include <QSet>
@@ -65,6 +66,7 @@ private:
     TabAppearance appearance_;
     struct Decoration { QString colorId; };
     QHash<int, Decoration> decorations_;
+    mutable QHash<int, TabTitleLayout> titleLayouts_;
     QHash<int, QRect> displayedRects_;
     QRect previewRect_;
     QSize displayedSize_;

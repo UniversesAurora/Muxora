@@ -15,17 +15,33 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
+#include <QProxyStyle>
 #include <QScreen>
 #include <QScopeGuard>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QStackedWidget>
+#include <QStyleFactory>
+#include <QStyleOptionTab>
 #include <QTest>
 #include <QToolButton>
 
 using namespace window_system;
 
 namespace {
+class CapturingTabShapeStyle final : public QProxyStyle {
+public:
+    CapturingTabShapeStyle() : QProxyStyle(QStyleFactory::create(QStringLiteral("Fusion"))) {}
+    mutable QHash<int, QStyleOptionTab> tabs;
+    void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter,
+                     const QWidget* widget = nullptr) const override
+    {
+        if (element == CE_TabBarTabShape)
+            if (const auto* tab = qstyleoption_cast<const QStyleOptionTab*>(option)) tabs.insert(tab->tabIndex, *tab);
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+};
+
 QVector<TabId> populate(GroupTabs& tabs, int count, bool withIcon = false)
 {
     QVector<TabId> ids;
@@ -104,6 +120,8 @@ private slots:
     void titleClippingKeepsFullTextAndDecorationSpace_data();
     void titleClippingKeepsFullTextAndDecorationSpace();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
+    void tabShapeOptionsPreserveStyleStates_data();
+    void tabShapeOptionsPreserveStyleStates();
     void paletteRendersSelectedAndUnselectedStatesAndActiveIcon();
     void newTabButtonsHaveGapAndBothOpenTypeMenuOnContextPress();
     void insertionPreviewAndHitTestingUseThePointerRow_data();
@@ -344,6 +362,95 @@ void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit(
     QCOMPARE(logicalCrop(renderAtRatio(bar, 1), textRect), logicalCrop(full, textRect));
     QCOMPARE(bar->tabText(0), title); QCOMPARE(bar->tabToolTip(0), title);
     QCOMPARE(viewport->horizontalScrollBar()->maximum(), 0);
+}
+
+void TabStripLayoutTest::tabShapeOptionsPreserveStyleStates_data()
+{
+    QTest::addColumn<bool>("bottom");
+    QTest::addColumn<bool>("rtl");
+    QTest::addColumn<bool>("multiline");
+    for (const bool bottom : {false, true}) for (const bool rtl : {false, true})
+        for (const bool multiline : {false, true}) {
+            const auto name = QByteArray(bottom ? "bottom" : "top") + (rtl ? "-rtl" : "-ltr")
+                + (multiline ? "-multiline" : "-single-row");
+            QTest::newRow(name.constData()) << bottom << rtl << multiline;
+        }
+}
+
+void TabStripLayoutTest::tabShapeOptionsPreserveStyleStates()
+{
+    QFETCH(bool, bottom); QFETCH(bool, rtl); QFETCH(bool, multiline);
+    const auto cleanup = qScopeGuard([] { test::authoredMouseInput().finish(); });
+    QWidget host;
+    DragTabBar bar(&host);
+    auto* capture = new CapturingTabShapeStyle;
+    capture->setParent(&bar); bar.setStyle(capture);
+    bar.setLayoutDirection(rtl ? Qt::RightToLeft : Qt::LeftToRight);
+    bar.setShape(bottom ? QTabBar::RoundedSouth : QTabBar::RoundedNorth);
+    auto appearance = TabAppearance{}; appearance.multiline = multiline; appearance.showNewTabButton = false;
+    bar.setAppearance(appearance);
+    for (int index = 0; index < 5; ++index) bar.addTab(QStringLiteral("Tab %1").arg(index));
+    bar.setTabVisible(0, false); bar.setTabVisible(4, false);
+    bar.setCurrentIndex(2); bar.setTabEnabled(3, false);
+    QPixmap image(16, 16); image.fill(Qt::red); bar.setTabIcon(1, QIcon(image));
+    bar.setIconSize({16, 16}); bar.setTabTextColor(1, QColor("#345678"));
+    auto* left = new QLabel(QStringLiteral("L")); left->setFixedSize(13, 15);
+    auto* right = new QLabel(QStringLiteral("R")); right->setFixedSize(17, 19);
+    bar.setTabButton(1, QTabBar::LeftSide, left); bar.setTabButton(3, QTabBar::RightSide, right);
+    const int width = multiline ? 130 : 480;
+    bar.layoutTabs(width, true); bar.resize(width, bar.displayedSize().height());
+    QToolButton other(&host); other.setText(QStringLiteral("Other focus")); other.setGeometry(0, bar.height() + 4, 100, 24);
+    host.resize(500, bar.height() + 32); host.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&host)); QVERIFY(QTest::qWaitForWindowActive(&host));
+    bar.setFocus(); QTRY_VERIFY(bar.hasFocus());
+    if (multiline) QVERIFY(bar.rowCount() > 1);
+    const auto paint = [&] {
+        capture->tabs.clear();
+        renderAtRatio(&bar, 1);
+    };
+    QEvent leave(QEvent::Leave); QApplication::sendEvent(&bar, &leave);
+    paint();
+    QCOMPARE(capture->tabs.size(), 3);
+    QVERIFY(!capture->tabs.contains(0)); QVERIFY(!capture->tabs.contains(4));
+    for (const int index : {1, 2, 3}) {
+        QVERIFY(capture->tabs.contains(index));
+        const auto option = capture->tabs.value(index);
+        QCOMPARE(option.rect, bar.displayTabRect(index)); QCOMPARE(option.tabIndex, index);
+        QCOMPARE(option.shape, bottom ? QTabBar::RoundedSouth : QTabBar::RoundedNorth);
+        QCOMPARE(option.direction, rtl ? Qt::RightToLeft : Qt::LeftToRight);
+        QVERIFY(option.documentMode);
+        QCOMPARE(option.state.testFlag(QStyle::State_Selected), index == 2);
+        QCOMPARE(option.state.testFlag(QStyle::State_HasFocus), index == 2);
+        QCOMPARE(option.state.testFlag(QStyle::State_Enabled), index != 3);
+        QCOMPARE(option.state.testFlag(QStyle::State_Active), bar.isActiveWindow());
+        QVERIFY(!option.state.testFlag(QStyle::State_MouseOver));
+        QVERIFY(!option.state.testFlag(QStyle::State_Sunken));
+    }
+    QCOMPARE(capture->tabs.value(1).position, QStyleOptionTab::Beginning);
+    QCOMPARE(capture->tabs.value(2).position, QStyleOptionTab::Middle);
+    QCOMPARE(capture->tabs.value(3).position, QStyleOptionTab::End);
+    QCOMPARE(capture->tabs.value(1).selectedPosition, QStyleOptionTab::NextIsSelected);
+    QCOMPARE(capture->tabs.value(2).selectedPosition, QStyleOptionTab::NotAdjacent);
+    QCOMPARE(capture->tabs.value(3).selectedPosition, QStyleOptionTab::PreviousIsSelected);
+    QVERIFY(!capture->tabs.value(1).icon.isNull()); QCOMPARE(capture->tabs.value(1).iconSize, QSize(16, 16));
+    QCOMPARE(capture->tabs.value(1).palette.color(bar.foregroundRole()), QColor("#345678"));
+    QCOMPARE(capture->tabs.value(1).leftButtonSize, left->size());
+    QCOMPARE(capture->tabs.value(3).rightButtonSize, right->size());
+
+    other.setFocus(); QTRY_VERIFY(other.hasFocus()); paint();
+    for (const auto& option : capture->tabs) QVERIFY(!option.state.testFlag(QStyle::State_HasFocus));
+    sendMouse(&bar, QEvent::MouseMove, bar.mapToGlobal(bar.displayTabRect(1).center()), Qt::NoButton, Qt::NoButton);
+    paint();
+    for (const int index : {1, 2, 3})
+        QCOMPARE(capture->tabs.value(index).state.testFlag(QStyle::State_MouseOver), index == 1);
+    QApplication::sendEvent(&bar, &leave); paint();
+    for (const auto& option : capture->tabs) QVERIFY(!option.state.testFlag(QStyle::State_MouseOver));
+    bar.setTabVisible(1, false); bar.setTabVisible(3, false);
+    bar.layoutTabs(width, true); paint();
+    QCOMPARE(capture->tabs.size(), 1);
+    QCOMPARE(capture->tabs.value(2).position, QStyleOptionTab::OnlyOneTab);
+    QCOMPARE(capture->tabs.value(2).selectedPosition, QStyleOptionTab::NotAdjacent);
+    QVERIFY(capture->tabs.value(2).state.testFlag(QStyle::State_Selected));
 }
 
 void TabStripLayoutTest::paletteRendersSelectedAndUnselectedStatesAndActiveIcon()

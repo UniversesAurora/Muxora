@@ -114,10 +114,12 @@ DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* paren
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
     qApp->installEventFilter(this);
+    QObject::connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] { dragTitleLayouts_.clear(); });
 }
 void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
     ++rebuildGeneration_;
+    dragTitleLayouts_.clear();
     restoreFocusScope();
     closePeek();
     if (updateInPlace(contents)) return;
@@ -706,7 +708,9 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
             if (index >= 0) { ordinal += index + 1; break; }
             ordinal += candidate->tabs.size();
         }
-        return edgeTabExtent(fontMetrics(),record->title,appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
+        auto& title = dragTitleLayouts_[tab][1];
+        title.prepare(record->title, font(), layoutDirection(), false, this);
+        return edgeTabExtent(fontMetrics(),title.naturalWidth(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
             appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, appearance.clipTitles, appearance.maximumTitleWidth);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
@@ -725,7 +729,9 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
     }
     const auto appearance = manager_->tabAppearance();
     const int icon = appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize + 4 : 0;
-    const int natural = fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine,record->title).width();
+    auto& layout = dragTitleLayouts_[tab][0];
+    layout.prepare(record->title, font(), layoutDirection(), true, this);
+    const int natural = layout.naturalWidth();
     const int title = appearance.clipTitles ? std::min(natural, appearance.maximumTitleWidth) : natural;
     return int(std::clamp<qint64>(qint64(title) + icon + 35, 46, QWIDGETSIZE_MAX));
 }
