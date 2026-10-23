@@ -1,5 +1,6 @@
 #include <lua_runtime/script_runtime.hpp>
 #include "../src/script_worker.hpp"
+#include "../src/variant_codec.hpp"
 #include <lauxlib.h>
 #include <lstate.h>
 
@@ -89,6 +90,9 @@ class ScriptRuntimeTest final : public QObject {
   private slots:
     void standardValuesAndContext();
     void hostCallsYieldToTheOwnerAndReturnMultipleValues();
+    void explicitNullValuesSurviveHostRoundTrips_data();
+    void explicitNullValuesSurviveHostRoundTrips();
+    void explicitNullSentinelDoesNotPermitOtherUserdata();
     void hostErrorsRemainCatchableAndDoNotPoisonTheInterpreter();
     void callbacksHaveExplicitLifetimeAndContext();
     void callbackCountIsBounded();
@@ -200,6 +204,90 @@ void ScriptRuntimeTest::hostCallsYieldToTheOwnerAndReturnMultipleValues() {
     QCOMPARE(result.values.at(1).toMap().value(QStringLiteral("answer")).toLongLong(), 42);
     QCOMPARE(result.values.at(2).toLongLong(), 1);
     QCOMPARE(result.values.at(3).toLongLong(), 2);
+}
+
+void ScriptRuntimeTest::explicitNullValuesSurviveHostRoundTrips_data() {
+    QTest::addColumn<QVariant>("payload");
+    QTest::addColumn<QString>("inspect");
+    const auto null = QVariant::fromValue(nullptr);
+    QTest::newRow("complete-list")
+        << QVariant(QVariantList{qlonglong(11), qlonglong(22), qlonglong(33)})
+        << QStringLiteral("assert(#value==3 and value[1]==11 and value[2]==22 and value[3]==33)");
+    QTest::newRow("empty-list")
+        << QVariant(QVariantList{}) << QStringLiteral("assert(#value==0 and next(value)==nil)");
+    QTest::newRow("all-null-list")
+        << QVariant(QVariantList{null, null, null, null})
+        << QStringLiteral("assert(#value==4); for i=1,4 do assert(value[i]==null) end");
+    QTest::newRow("mixed-null-list")
+        << QVariant(QVariantList{null, qlonglong(42), null, QStringLiteral("last")})
+        << QStringLiteral("assert(#value==4 and value[1]==null and value[2]==42 and "
+                          "value[3]==null and value[4]=='last')");
+    QTest::newRow("trailing-null-list")
+        << QVariant(QVariantList{QStringLiteral("first"), null, null})
+        << QStringLiteral("assert(#value==3 and value[1]=='first' and value[2]==null and value[3]==null)");
+    QTest::newRow("nested-map-null")
+        << QVariant(QVariantMap{{QStringLiteral("nested"),
+                                 QVariantMap{{QStringLiteral("present"), null},
+                                             {QStringLiteral("values"), QVariantList{null, qlonglong(7), null}}}},
+                                {QStringLiteral("present"), null}})
+        << QStringLiteral("assert(value.present==null and value.nested.present==null); "
+                          "local list=value.nested.values; "
+                          "assert(#list==3 and list[1]==null and list[2]==7 and list[3]==null)");
+    QTest::newRow("top-level-null") << null << QStringLiteral("assert(value==null)");
+}
+
+void ScriptRuntimeTest::explicitNullValuesSurviveHostRoundTrips() {
+    QFETCH(QVariant, payload);
+    QFETCH(QString, inspect);
+    ScriptRuntime runtime;
+    const auto null = QVariant::fromValue(nullptr);
+    const QVariantList expected{payload, QVariant{}, null};
+    QVariantList echoed;
+    int calls = 0;
+    runtime.setHostHandler([&](QString method, QVariantList arguments, QVariantMap) {
+        ++calls;
+        if (method == QStringLiteral("values"))
+            return ScriptResult{true, expected, {}};
+        if (method == QStringLiteral("echo")) {
+            echoed = arguments;
+            return ScriptResult{true, arguments, {}};
+        }
+        return ScriptResult{false, {}, QStringLiteral("Unexpected host method")};
+    });
+    const auto result = evaluate(runtime, QStringLiteral(
+        "local value,missing,null=muxora._host('values'); "
+        "assert(missing==nil and null~=nil and type(null)=='userdata'); ") + inspect +
+        QStringLiteral("; return muxora._host('echo',value,missing,null)"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(calls, 2);
+    QCOMPARE(echoed, expected);
+    QCOMPARE(result.values, expected);
+    QCOMPARE(result.values.at(0).metaType(), payload.metaType());
+    QVERIFY(!echoed.at(1).isValid());
+    QVERIFY(!result.values.at(1).isValid());
+    QCOMPARE(echoed.at(2).metaType().id(), int(QMetaType::Nullptr));
+    QCOMPARE(result.values.at(2).metaType().id(), int(QMetaType::Nullptr));
+}
+
+void ScriptRuntimeTest::explicitNullSentinelDoesNotPermitOtherUserdata() {
+    using namespace lua_runtime::detail;
+    const std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate(), &lua_close);
+    QVERIFY(state);
+    const RuntimeLimits limits;
+    int pointer = 0;
+    lua_pushlightuserdata(state.get(), &pointer);
+    ValueBudget lightBudget{limits};
+    QVERIFY_EXCEPTION_THROWN(readValue(state.get(), -1, lightBudget), ValueError);
+    lua_pop(state.get(), 1);
+    lua_newuserdatauv(state.get(), 1, 0);
+    ValueBudget fullBudget{limits};
+    QVERIFY_EXCEPTION_THROWN(readValue(state.get(), -1, fullBudget), ValueError);
+    lua_pop(state.get(), 1);
+    const auto pointerNull = QVariant::fromValue(static_cast<void *>(nullptr));
+    QVERIFY_EXCEPTION_THROWN(measureValue(pointerNull, limits), ValueError);
+    ValueBudget pointerBudget{limits};
+    QVERIFY_EXCEPTION_THROWN(pushValue(state.get(), pointerNull, pointerBudget), ValueError);
+    QCOMPARE(lua_gettop(state.get()), 0);
 }
 
 void ScriptRuntimeTest::hostErrorsRemainCatchableAndDoNotPoisonTheInterpreter() {

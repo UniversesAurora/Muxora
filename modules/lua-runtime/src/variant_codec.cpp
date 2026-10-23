@@ -44,9 +44,10 @@ namespace {
 
 void measure(const QVariant &value, ValueBudget &budget, int depth) {
     budget.visit(depth);
-    if (!value.isValid() || value.isNull())
+    if (!value.isValid())
         return;
     switch (value.metaType().id()) {
+    case QMetaType::Nullptr:
     case QMetaType::Bool:
     case QMetaType::Int:
     case QMetaType::UInt:
@@ -85,7 +86,7 @@ void measure(const QVariant &value, ValueBudget &budget, int depth) {
     }
     default:
         throw ValueError(
-            "Only nil, booleans, finite numbers, UTF-8 strings, lists and maps cross the Lua boundary");
+            "Only nil, JSON null, booleans, finite numbers, UTF-8 strings, lists and maps cross the Lua boundary");
     }
 }
 
@@ -107,11 +108,16 @@ void pushValue(lua_State *state, const QVariant &value, ValueBudget &budget, int
     budget.visit(depth);
     if (!lua_checkstack(state, 4))
         throw ValueError("Lua stack has no space for the supplied value");
-    if (!value.isValid() || value.isNull()) {
+    if (!value.isValid()) {
         lua_pushnil(state);
         return;
     }
     switch (value.metaType().id()) {
+    case QMetaType::Nullptr:
+        // Lua nil removes a table entry. Keep explicit JSON null distinct so
+        // lists retain their length and maps retain their present null fields.
+        lua_pushlightuserdata(state, nullptr);
+        return;
     case QMetaType::Bool:
         lua_pushboolean(state, value.toBool());
         return;
@@ -192,6 +198,13 @@ QVariant readValue(lua_State *state, int index, ValueBudget &budget, int depth) 
     switch (lua_type(state, index)) {
     case LUA_TNIL:
         return {};
+    case LUA_TLIGHTUSERDATA:
+        if (lua_touserdata(state, index) == nullptr)
+            return QVariant::fromValue(nullptr);
+        [[fallthrough]];
+    case LUA_TUSERDATA:
+        throw ValueError("Lua functions, threads and userdata cannot cross the host boundary; register "
+                         "callbacks explicitly");
     case LUA_TBOOLEAN:
         return static_cast<bool>(lua_toboolean(state, index));
     case LUA_TNUMBER:

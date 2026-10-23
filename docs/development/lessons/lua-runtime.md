@@ -1,5 +1,12 @@
 # Lua 运行时
 
+### JSON null 不能在 Lua 表里直接变成 nil
+
+- **现象**：布局里四侧固定树均为空时，经 Lua 保存再恢复会丢掉数组元素，当前格式校验拒绝恢复。
+- **原因**：编码器把所有 Qt 空值变成 Lua `nil`；给表赋 `nil` 会删除该键，首尾和中间空值都不能往返。只给空数组打类型标记无法保留数组长度。
+- **做法**：区分 `QMetaType::Nullptr` 与无效 `QVariant`。显式 JSON 空值使用不可变的空指针哨兵往返，缺失值仍用 `nil`，其他 userdata 和指针继续拒绝。用真实两次宿主调用检查全空、混合、末尾空值、嵌套对象和空数组，同时保留稀疏／混合表拒绝测试。
+- **验证入口**：`ScriptRuntimeTest::explicitNullValuesSurviveHostRoundTrips`、`explicitNullSentinelDoesNotPermitOtherUserdata`，以及窗口脚本的完整布局往返；结果见 [验证日志](../verification-log/2026-10.md)。
+
 ### 用户钩子内部也必须保留停止检查
 
 **现象**：开放 `debug.sethook` 后，用户可以替换运行时的计数钩子。即使把两种钩子合并，如果用户钩子本身进入死循环，普通的计数检查仍不能停止它。
