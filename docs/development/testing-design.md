@@ -70,8 +70,8 @@
 | 位置 | 内容 | 谁来清理 |
 | --- | --- | --- |
 | `build/`、`install/`、`package/muxora-preview/` | 构建目录、`verify.ps1` 安装的独立模块、固定预览 | 脚本管理 |
-| `application-*-checks/`、`portable-checks/` | 脚本自己的临时夹具 | 脚本运行结束时清理 |
-| `test-results/` | 只放统一入口的输出：`build.ps1 -Test` 的 JUnit、`test-summary.ps1`、`verify.ps1` 与各检查脚本的 JSON、`bench.ps1` 的 `bench-<名字>.json`。文件名固定，再次运行覆盖 | 不手工放文件 |
+| `application-*-checks/`、`lua-deployment-checks/`、`package smoke checks/`、`portable-checks/` | 脚本自己的临时夹具 | 检查通过后由脚本清理，失败时保留现场 |
+| `test-results/` | 只放统一入口的输出：`build.ps1 -Test` 的 JUnit、`test-summary.ps1`、`verify.ps1` 与各检查脚本的 JSON 和日志、`bench.ps1` 的 `bench-<名字>.json`。文件名固定，再次运行覆盖 | 不手工放文件 |
 | `diagnostics/<主题>/` | 一次排查或一个步骤的工作文件：首次失败报告、反向验证报告、临时测量、截图、`-o` 输出。重跑不覆盖首次失败 | 主题结束（验证日志已写好、改动已提交）时删除整个目录，最晚在交出时删除 |
 
 主题目录用步骤编号或简短英文名，例如 `diagnostics/8.12/`、`diagnostics/tab-scroll/`；不在 `diagnostics/` 根目录直接放文件。只为排查写的脚本放系统临时目录。确需长期保留的样例数据放进仓库的测试夹具目录并提交，不留在 `out/`。

@@ -62,7 +62,7 @@ try {
     # The packaged application must start without SDK or compiler directories on
     # PATH; its deployment directory is the only source of Qt/runtime DLLs.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-    $taskSmokeState = Join-Path $taskRepository 'out/package smoke state'
+    $taskSmokeState = Join-Path $taskRepository 'out/package smoke checks'
     $taskLaunch = @{
         FilePath = Join-Path $taskPackage 'muxora.exe'
         ArgumentList = @('--fresh', '--smoke', '--state-dir', ('"' + $taskSmokeState + '"'))
@@ -77,6 +77,8 @@ try {
     if (-not (Test-Path -LiteralPath $taskSmokeLayout)) { throw 'Packaged application did not save its smoke layout.' }
     $taskSmokeSnapshot = Get-Content -LiteralPath $taskSmokeLayout -Raw | ConvertFrom-Json
     if (-not $taskSmokeSnapshot.model) { throw 'Packaged application saved an invalid smoke layout.' }
+    # Kept above for inspection when a check fails; a passed check leaves nothing.
+    Remove-OutputItem $taskSmokeState (Join-Path $taskRepository 'out')
     @{ checkedAtUtc = [DateTime]::UtcNow.ToString('o'); exitCode = $taskProcess.ExitCode;
        sdkRemovedFromPath = $true; statePathWithSpaces = $true } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/package-smoke.json') -Encoding utf8NoBOM

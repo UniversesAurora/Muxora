@@ -10,10 +10,10 @@ $taskPackage = if ($PackageDirectory) { [IO.Path]::GetFullPath($PackageDirectory
 $taskExecutable = Join-Path $taskPackage 'muxora.exe'
 if (!(Test-Path -LiteralPath $taskExecutable)) { throw 'Build the Release deployment before this check.' }
 Assert-DeploymentStopped $taskPackage
-$taskState = Assert-OutputPath (Join-Path $taskOutput 'checks/lua-deployment') $taskOutput
+$taskState = Assert-OutputPath (Join-Path $taskOutput 'lua-deployment-checks') $taskOutput
 $taskUser = Join-Path $taskState 'User'
 New-Item -ItemType Directory -Path $taskUser -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $taskOutput 'diagnostics'),(Join-Path $taskOutput 'test-results') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $taskOutput 'test-results') -Force | Out-Null
 $taskReport = Assert-OutputPath (Join-Path $taskOutput 'test-results/lua-deployment.json') $taskOutput
 if (Test-Path -LiteralPath $taskReport) { Remove-Item -LiteralPath $taskReport -Force }
 $taskInit = Join-Path $taskUser 'init.lua'
@@ -131,7 +131,7 @@ return {value='模块正文',window=context.window}
                 throw "Lua deployment pass $taskPass did not exit through its script command."
             }
             $taskDiagnostic = $taskErrors.GetAwaiter().GetResult()
-            $taskDiagnostic | Set-Content -LiteralPath (Join-Path $taskOutput "diagnostics/lua-deployment-$taskPass.log") -Encoding utf8NoBOM
+            $taskDiagnostic | Set-Content -LiteralPath (Join-Path $taskOutput "test-results/lua-deployment-$taskPass.log") -Encoding utf8NoBOM
             if ($taskProcess.ExitCode -ne 0) { throw "Lua deployment pass $taskPass failed: $($taskProcess.ExitCode) $taskDiagnostic" }
             $taskPasses += @{ pass = $taskPass; exitCode = $taskProcess.ExitCode }
         } finally { $taskProcess.Dispose() }
