@@ -137,6 +137,43 @@ void EdgeStrip::restoreScrollOffset(int offset)
     applyPendingScrollOffset();
     QTimer::singleShot(0, this, [this] { applyPendingScrollOffset(); pendingScrollOffset_.reset(); });
 }
+EdgeStrip::ScrollAnchor EdgeStrip::scrollAnchor() const
+{
+    ScrollAnchor anchor{scrollOffset(), {}, 0, false};
+    const int extent = vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width();
+    QAbstractButton* leading = nullptr;
+    for (const auto& button : buttons_) {
+        if (!button || button == draggedButton_) continue;
+        const int start = axis(button->pos());
+        const int end = start + (vertical_ ? button->height() : button->width());
+        if (button->isChecked() && start >= anchor.offset && end <= anchor.offset + extent) {
+            anchor.tab = button->property("tabId").toUuid(); anchor.shift = start - anchor.offset; anchor.active = true;
+            return anchor;
+        }
+        if (!leading && end > anchor.offset) leading = button;
+    }
+    if (leading) { anchor.tab = leading->property("tabId").toUuid(); anchor.shift = axis(leading->pos()) - anchor.offset; }
+    return anchor;
+}
+void EdgeStrip::restoreScrollAnchor(const ScrollAnchor& anchor)
+{
+    int offset = anchor.offset;
+    if (!anchor.tab.isNull()) {
+        // Lay out the new buttons now; the anchor needs their real positions.
+        layoutTrack();
+        for (const auto& button : buttons_) {
+            if (!button || button->property("tabId").toUuid() != anchor.tab) continue;
+            const int start = axis(button->pos());
+            const int length = vertical_ ? button->height() : button->width();
+            offset = start - std::max(anchor.shift, -std::max(0, length - 1));
+            const int extent = vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width();
+            if (anchor.active && extent > 0)
+                offset = extent >= length ? qBound(start + length - extent, offset, start) : start;
+            break;
+        }
+    }
+    restoreScrollOffset(offset);
+}
 void EdgeStrip::scrollByWheel(QPoint delta)
 {
     pendingScrollOffset_.reset();

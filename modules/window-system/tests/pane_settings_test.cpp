@@ -34,6 +34,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QSet>
+#include <QTabBar>
 #include <QTest>
 #include <QtTest/qtestspontaneevent.h>
 #include <QTreeWidget>
@@ -144,6 +145,8 @@ private slots:
     void titleWidthControlsKeepFocusDuringContinuousInput();
     void titleWidthUpdatesKeepTheSettingsPageMounted_data();
     void titleWidthUpdatesKeepTheSettingsPageMounted();
+    void titleWidthUpdatesKeepScrollPositions_data();
+    void titleWidthUpdatesKeepScrollPositions();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization_data();
     void newTabPositionComboSupportsKeyboardAndExternalSynchronization();
     void newTabPositionSearchPreservesTheExistingSettingsAndNavigation();
@@ -755,6 +758,82 @@ void PaneSettingsTest::titleWidthUpdatesKeepTheSettingsPageMounted()
         editor->value());
     QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier, handle.center() + QPoint(50, 0));
     QVERIFY(!slider->isSliderDown());
+}
+
+void PaneSettingsTest::titleWidthUpdatesKeepScrollPositions_data()
+{
+    QTest::addColumn<bool>("sidebar");
+    QTest::newRow("regular") << false;
+    QTest::newRow("sidebar") << true;
+}
+
+void PaneSettingsTest::titleWidthUpdatesKeepScrollPositions()
+{
+    // Editing a value must not scroll the settings page the user is reading.
+    // Its tab strip may move as the tabs change width, but follows the strip
+    // size rule: the active settings tab stays fully shown.
+    QFETCH(bool, sidebar);
+    WindowManager manager;
+    auto appearance = manager.tabAppearance(); appearance.clipTitles = true; appearance.clipSidebarTitles = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Scroll"), {900, 650}});
+    for (int index = 0; index < 30; ++index)
+        manager.addTab(window, new QLabel(QStringLiteral("Content")), {QStringLiteral("Background tab %1").arg(index), {}, {}});
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings")); QVERIFY(page);
+    const QString name = sidebar ? QStringLiteral("MaximumSidebarTabTitleWidth") : QStringLiteral("MaximumTabTitleWidth");
+    auto* editor = page->findChild<QSpinBox*>(name);
+    auto* slider = page->findChild<QSlider*>(name + QStringLiteral("Slider"));
+    auto* scroll = page->findChild<QScrollArea*>(QStringLiteral("SettingsScrollArea"));
+    QVERIFY(editor && slider && scroll);
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
+    // Put the control near the top of the page, far from the center.
+    scroll->widget()->layout()->activate();
+    auto* bar = scroll->verticalScrollBar();
+    bar->setValue(slider->mapTo(scroll->widget(), QPoint()).y() - 30);
+    QCoreApplication::processEvents();
+    const int pageOffset = bar->value();
+    QVERIFY(pageOffset > 0 && pageOffset < bar->maximum());
+    QWidget* strip = nullptr;
+    for (auto* current = page->parentWidget(); current && !strip; current = current->parentWidget())
+        if (current->objectName() == QStringLiteral("TabGroup")) strip = current;
+    QVERIFY(strip);
+    auto* tabs = strip->findChild<QTabBar*>(); auto* viewport = strip->findChild<QScrollArea*>(QStringLiteral("TabScrollViewport"));
+    QVERIFY(tabs && viewport);
+    const auto settingsShown = [&] {
+        const auto area = tabs->tabRect(tabs->currentIndex()).translated(-viewport->horizontalScrollBar()->value(), 0);
+        return area.left() >= 0 && area.right() < viewport->viewport()->width();
+    };
+    QTRY_VERIFY(settingsShown());
+    const auto unchanged = [&](const char* step) {
+        QVERIFY2(bar->value() == pageOffset, qPrintable(QStringLiteral("%1: page %2 -> %3").arg(step).arg(pageOffset).arg(bar->value())));
+        QVERIFY2(settingsShown(), step);
+    };
+    editor->setFocus(); QCoreApplication::processEvents();
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_A, Qt::ControlModifier);
+    for (const auto digit : QStringLiteral("37")) {
+        QTest::keyClick(QApplication::focusWidget(), digit.toLatin1());
+        processDeletes();
+        unchanged("typing");
+    }
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Up); processDeletes(); unchanged("step");
+    QStyleOptionSlider option; option.initFrom(slider); option.orientation = Qt::Horizontal;
+    option.minimum = slider->minimum(); option.maximum = slider->maximum();
+    option.sliderPosition = slider->value(); option.sliderValue = slider->value();
+    const auto handle = slider->style()->subControlRect(QStyle::CC_Slider, &option, QStyle::SC_SliderHandle, slider);
+    test::authoredMouseInput().takePriority();
+    const auto input = qScopeGuard([] { test::authoredMouseInput().finish(); });
+    QTest::mousePress(slider, Qt::LeftButton, Qt::NoModifier, handle.center());
+    for (const int distance : {20, 60, 120}) {
+        QMouseEvent move(QEvent::MouseMove, QPointF(handle.center() + QPoint(distance, 0)),
+            QPointF(slider->mapToGlobal(handle.center() + QPoint(distance, 0))), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(slider, &move);
+        processDeletes();
+        unchanged("dragging");
+    }
+    QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier, handle.center() + QPoint(120, 0));
+    processDeletes(); unchanged("release");
 }
 
 void PaneSettingsTest::internalSettingsRestoreWithoutHostContentFactory()

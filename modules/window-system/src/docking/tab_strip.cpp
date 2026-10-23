@@ -832,6 +832,32 @@ void GroupTabs::updateCanvasGeometry()
 }
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
 {
+    // Label widths may change, which moves every tab after the first. Keep a
+    // fully shown active tab where it is on screen and let the others resize
+    // around it; once it reaches a viewport edge it is pushed only as far as
+    // needed to stay shown. Without a shown active tab, keep the tab at the
+    // leading edge in place. The raw offset alone would clamp and then land
+    // on unrelated tabs.
+    struct Anchor { int tab; int shift; bool active; };
+    std::optional<Anchor> anchor;
+    // Settle a queued reflow first, so the anchor is taken from what is shown.
+    if (pendingViewportState_ && !pendingScrollOffset_ && applyPendingViewportState()) {
+        pendingViewportState_.reset(); settledViewport_ = currentViewportState();
+    }
+    if (isVisible() && !header_->isHidden() && !appearance_.multiline && !appearance.multiline
+        && !pendingViewportState_ && !pendingScrollOffset_ && bar_->count()) {
+        const int offset = scrollOffset();
+        const int width = scroll_->viewport()->width();
+        const int current = bar_->currentIndex();
+        const auto active = current >= 0 ? bar_->displayTabRect(current) : QRect{};
+        if (!active.isEmpty() && active.left() >= offset && active.right() < offset + width) {
+            anchor = Anchor{current, active.left() - offset, true};
+        } else {
+            int leading = 0;
+            while (leading + 1 < bar_->count() && bar_->displayTabRect(leading).right() < offset) ++leading;
+            anchor = Anchor{leading, bar_->displayTabRect(leading).left() - offset, false};
+        }
+    }
     appearance_ = appearance; pinned_ = pinned;
     if (pinned_) {
         appearance_.showIcons = appearance.showSidebarIcons;
@@ -845,6 +871,20 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     box->removeWidget(header_);
     box->insertWidget(placement == TabBarPlacement::Top ? 0 : box->count(),header_);
     updateBarGeometry();
+    if (!anchor || anchor->tab >= bar_->count()) return;
+    updateCanvasGeometry();
+    const auto area = bar_->displayTabRect(anchor->tab);
+    // A partly scrolled-off leading tab keeps its hidden part, within its new width.
+    int offset = area.left() - std::max(anchor->shift, -std::max(0, area.width() - 1));
+    if (anchor->active) {
+        const int width = scroll_->viewport()->width();
+        offset = width >= area.width() ? qBound(area.right() - width + 1, offset, area.left()) : area.left();
+    }
+    // The scroll bar limits the offset to the real content range. A reflow
+    // queued by the resize above still holds the old widths; this replaces it.
+    scroll_->horizontalScrollBar()->setValue(offset);
+    pendingViewportState_.reset();
+    settledViewport_ = currentViewportState();
 }
 void GroupTabs::setTabMetadata(int index,const TabRecord& tab)
 {

@@ -3,6 +3,7 @@
 #include <window_system/view_state.hpp>
 #include <window_system/tab_appearance.hpp>
 #include "panes/focus_projection.hpp"
+#include "edge_strip.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/tab_title_layout.hpp"
 #include <array>
@@ -114,7 +115,11 @@ private:
     QHash<GroupId, QPointer<GroupTabs>> reusableGroups_;
     QHash<Edge, QPointer<QWidget>> edgeBars_;
     QHash<GroupId, TabViewportState> groupViewportStates_;
-    QHash<Edge, int> edgeScrollOffsets_;
+    QHash<Edge, EdgeStrip::ScrollAnchor> edgeScrollAnchors_;
+    // The appearance the current rails were built with. Only a change of
+    // their label lengths makes a raw offset point at unrelated tabs.
+    TabAppearance edgeAppearance_;
+    TabAppearance edgeAnchorAppearance_;
     QHash<Edge, QPointer<QSplitter>> pinnedRegions_;
     QHash<QUuid, QPointer<QSplitter>> splitters_;
     QPointer<QSplitter> horizontal_;

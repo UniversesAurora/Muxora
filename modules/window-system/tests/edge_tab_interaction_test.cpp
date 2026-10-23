@@ -22,7 +22,9 @@
 #include <QScreen>
 #include <QStyle>
 #include <QTest>
+#include <QScrollArea>
 #include <QToolButton>
+#include <climits>
 #include <QWheelEvent>
 
 using namespace window_system;
@@ -77,6 +79,7 @@ class EdgeTabInteractionTest final : public QObject {
 private slots:
     void cleanup() { test::authoredMouseInput().finish(); }
     void peekShowsOnlyTheChosenTabAndPinsOnlyThatTab();
+    void railTitleLengthChangesKeepTheLeadingTabInPlace();
     void peekShowsTheRealContentAndSharedBars_data();
     void peekShowsTheRealContentAndSharedBars();
     void edgeBarCornerOwnership_data();
@@ -827,6 +830,45 @@ void EdgeTabInteractionTest::clippedRailLabelsUseTheSameInsertionExtent()
     button = edgeButton(host, side); QVERIFY(button);
     QVERIFY(extent(button->sizeHint()) > expected);
     QCOMPARE(manager.model().tab(side)->title, title);
+}
+
+void EdgeTabInteractionTest::railTitleLengthChangesKeepTheLeadingTabInPlace()
+{
+    // Rails are rebuilt on every refresh. Changing their label lengths keeps
+    // the tab at the viewport's leading edge in place instead of reapplying a
+    // raw offset that now points into unrelated tabs.
+    WindowManager manager; auto appearance = manager.tabAppearance();
+    appearance.clipSidebarTitles = true; appearance.maximumSidebarTitleWidth = 160;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Rail anchor", {700, 500}});
+    manager.addTab(window, content("Central"), options("Central"));
+    QVector<TabId> side;
+    for (int index = 0; index < 25; ++index) {
+        side << manager.addTab(window, content(QString("Side %1").arg(index)),
+                               options(QString("Side %1 ").arg(index) + QString(30, QLatin1Char('W'))));
+        QVERIFY(manager.moveTabToEdge(side.last(), Edge::Left));
+    }
+    auto* host = manager.windowWidget(window); showTestWindow(host); QVERIFY(QTest::qWaitForWindowExposed(host));
+    const auto viewportOf = [host, &side]() -> QWidget* {
+        auto* button = edgeButton(host, side.first());
+        for (auto* current = button ? button->parentWidget() : nullptr; current; current = current->parentWidget())
+            if (auto* area = qobject_cast<QScrollArea*>(current)) return area->viewport();
+        return nullptr;
+    };
+    const auto position = [&](int index) {
+        auto* button = edgeButton(host, side[index]); auto* viewport = viewportOf();
+        return button && viewport ? button->mapTo(viewport, QPoint()).y() : INT_MIN;
+    };
+    auto* area = qobject_cast<QScrollArea*>(viewportOf()->parentWidget()); QVERIFY(area);
+    QVERIFY(area->verticalScrollBar()->maximum() > 0);
+    area->verticalScrollBar()->setValue(area->verticalScrollBar()->value() + position(8));
+    QCoreApplication::processEvents();
+    QCOMPARE(position(8), 0);
+    for (const int length : {40, 0, 300, 160}) {
+        appearance.maximumSidebarTitleWidth = length; QVERIFY(manager.setTabAppearance(appearance));
+        QCoreApplication::processEvents(); QCoreApplication::processEvents();
+        QCOMPARE(position(8), 0);
+    }
 }
 
 void EdgeTabInteractionTest::oversizedUnclippedTitleStaysWithinTheWidgetSizeLimit()

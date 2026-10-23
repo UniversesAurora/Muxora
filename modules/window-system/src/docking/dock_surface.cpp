@@ -362,19 +362,24 @@ void DockSurface::captureStripScrollOffsets()
     // Capture before content reparenting changes the old viewport sizes.
     // These caches contain only the currently mounted strips, not tab content
     // or an unbounded history of removed groups.
-    groupViewportStates_.clear(); edgeScrollOffsets_.clear();
+    groupViewportStates_.clear(); edgeScrollAnchors_.clear(); edgeAnchorAppearance_ = edgeAppearance_;
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
         if (it.value()) groupViewportStates_.insert(it.key(), it.value()->captureViewportState());
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
-        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) edgeScrollOffsets_.insert(it.key(), strip->scrollOffset());
+        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) edgeScrollAnchors_.insert(it.key(), strip->scrollAnchor());
 }
 void DockSurface::restoreStripScrollOffsets()
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
         if (it.value() && groupViewportStates_.contains(it.key())) it.value()->restoreViewportState(groupViewportStates_.value(it.key()));
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
-        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data()); strip && edgeScrollOffsets_.contains(it.key()))
-            strip->restoreScrollOffset(edgeScrollOffsets_.value(it.key()));
+        if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data()); strip && edgeScrollAnchors_.contains(it.key())) {
+            // Structural changes keep the offset; changed label lengths keep the anchored tab.
+            const auto anchor = edgeScrollAnchors_.value(it.key());
+            if (manager_->tabAppearance() == edgeAnchorAppearance_) strip->restoreScrollOffset(anchor.offset);
+            else strip->restoreScrollAnchor(anchor);
+        }
+    edgeAppearance_ = manager_->tabAppearance();
 }
 bool DockSurface::scrollStripAt(QPoint global, QPoint delta)
 {

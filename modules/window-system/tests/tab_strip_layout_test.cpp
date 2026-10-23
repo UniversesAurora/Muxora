@@ -125,6 +125,7 @@ private slots:
     void zeroTitleRailLabelKeepsEqualEndPadding_data();
     void zeroTitleRailLabelKeepsEqualEndPadding();
     void closeTargetShowsHoverAndPressFeedback();
+    void titleWidthChangesKeepTheActiveTabInPlace();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void tabShapeOptionsPreserveStyleStates_data();
     void tabShapeOptionsPreserveStyleStates();
@@ -502,6 +503,40 @@ void TabStripLayoutTest::closeTargetShowsHoverAndPressFeedback()
     sendBarMouse(bar, QEvent::MouseButtonPress, target.center(), Qt::LeftButton, Qt::LeftButton);
     sendBarMouse(bar, QEvent::MouseButtonRelease, target.center(), Qt::LeftButton, Qt::NoButton);
     QCOMPARE(closed, 1);
+}
+
+void TabStripLayoutTest::titleWidthChangesKeepTheActiveTabInPlace()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false; appearance.showIcons = false;
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 120;
+    GroupTabs tabs(defaultTheme(), nullptr); applyTheme(&tabs); tabs.setAppearance(appearance);
+    for (int index = 0; index < 30; ++index)
+        tabs.addTab(new QLabel("Content"), {}, QString("Tab %1 ").arg(index) + QString(30, QLatin1Char('W')), QUuid::createUuid());
+    tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); auto* scroll = tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
+    const int viewport = scroll->viewport()->width();
+    tabs.setCurrentIndex(15);
+    // Put the active tab 200 px into the viewport, away from both edges.
+    tabs.restoreScrollOffset(bar->displayTabRect(15).left() - 200);
+    QTRY_COMPARE(bar->displayTabRect(15).left() - tabs.scrollOffset(), 200);
+    QCoreApplication::processEvents(); // Let the pending restore settle.
+    const auto screenLeft = [&](int index) { return bar->displayTabRect(index).left() - tabs.scrollOffset(); };
+    const auto apply = [&](int width) { appearance.maximumTitleWidth = width; tabs.setAppearance(appearance); QCoreApplication::processEvents(); };
+    // The active tab stays where it is while the others resize around it.
+    for (const int width : {40, 0, 80, 120}) { apply(width); QCOMPARE(screenLeft(15), 200); }
+    // Growing past the right edge pushes it back only as far as needed.
+    apply(400);
+    QCOMPARE(bar->displayTabRect(15).right() - tabs.scrollOffset(), viewport - 1);
+    // Shrinking again keeps its new place; back and forth does not drift.
+    apply(120); const int pushed = screenLeft(15); QVERIFY(pushed < 200);
+    apply(40); apply(120); QCOMPARE(screenLeft(15), pushed);
+    // Without a shown active tab, the tab at the leading edge stays in place.
+    tabs.restoreScrollOffset(bar->displayTabRect(3).left());
+    QTRY_COMPARE(tabs.scrollOffset(), bar->displayTabRect(3).left());
+    QCoreApplication::processEvents();
+    QVERIFY(bar->displayTabRect(15).left() >= tabs.scrollOffset() + viewport);
+    apply(60); QCOMPARE(screenLeft(3), 0);
+    apply(200); QCOMPARE(screenLeft(3), 0);
 }
 
 void TabStripLayoutTest::narrowMultilineTitlesUseHardClippingWithoutAWidthLimit()

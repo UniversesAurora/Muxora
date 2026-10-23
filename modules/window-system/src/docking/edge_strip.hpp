@@ -37,6 +37,16 @@ public:
     void setDragHover(QPoint global);
     [[nodiscard]] int scrollOffset() const;
     void restoreScrollOffset(int offset);
+    // The tab a rebuilt strip keeps in place when label lengths change: the
+    // checked tab while fully shown, otherwise the tab at the leading edge.
+    struct ScrollAnchor {
+        int offset = 0;
+        TabId tab;
+        int shift = 0;
+        bool active = false;
+    };
+    [[nodiscard]] ScrollAnchor scrollAnchor() const;
+    void restoreScrollAnchor(const ScrollAnchor& anchor);
     void scrollByWheel(QPoint delta);
     std::function<void()> hoverGeometryChanged;
 
