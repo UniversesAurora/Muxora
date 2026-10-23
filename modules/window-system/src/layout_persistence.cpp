@@ -190,6 +190,16 @@ OperationResult validateToolbarKinds(const QJsonValue& value)
     return {true, {}};
 }
 
+// Every field a saved window record may contain. saveViewLayout() writes
+// only these and restoreLayout() rejects any other, so the current format is
+// defined once and an obsolete field can never be read back silently.
+const QSet<QString>& windowRecordFields()
+{
+    static const QSet<QString> fields{"id", "title", "x", "y", "width", "height", "maximized", "tabBarsVisible",
+        "sideBarsVisible", "toolbarsVisible", "statusBarVisible", "hiddenStatusItems", "strips", "barLayouts", "stripLayouts"};
+    return fields;
+}
+
 } // namespace
 
 QJsonObject WindowManager::saveLayout() const
@@ -219,6 +229,10 @@ QJsonObject WindowManager::saveViewLayout() const
         record.insert("barLayouts", visibilityProfilesToJson(d->windowVisibility.value(id)));
         const auto inactive = widget->saveInactiveStripLayouts();
         if (!inactive.isEmpty()) record.insert("stripLayouts", inactive);
+#ifndef QT_NO_DEBUG
+        for (auto field = record.constBegin(); field != record.constEnd(); ++field)
+            Q_ASSERT_X(windowRecordFields().contains(field.key()), "saveViewLayout", "add the field to windowRecordFields()");
+#endif
         windows.append(record);
     }
     for (auto it = d->descriptors.cbegin(); it != d->descriptors.cend(); ++it)
@@ -296,10 +310,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     restoredBehavior.revealDelayMs = qBound(200, settings.value("revealDelayMs").toInt(500), 2000);
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject();
-        static const QSet<QString> fields{"id", "title", "x", "y", "width", "height", "maximized", "tabBarsVisible",
-            "sideBarsVisible", "toolbarsVisible", "statusBarVisible", "hiddenStatusItems", "strips", "barLayouts", "stripLayouts"};
         for (auto field = object.begin(); field != object.end(); ++field)
-            if (!fields.contains(field.key())) return {false, QCoreApplication::translate("WindowSystem", "布局版本无效")};
+            if (!windowRecordFields().contains(field.key())) return {false, QCoreApplication::translate("WindowSystem", "布局版本无效")};
         const WindowId id(object.value("id").toString());
         if (!candidate.window(id)) continue;
         if (object.contains("tabBarsVisible") && !object.value("tabBarsVisible").isBool())
