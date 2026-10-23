@@ -109,7 +109,7 @@ set_tests_properties(window-system.pinned-ui PROPERTIES TIMEOUT 120)
 # performance targets. See docs/development/testing-design.md, CTest limits.
 if(MSVC)
     set_tests_properties(
-        window-system.custom-chrome window-system.pane-settings
+        window-system.custom-chrome window-system.pane-settings window-system.caption-strip
         window-system.drag-presentation window-system.view-state
         window-system.tab-viewport window-system.tab-group
         window-system.memory-lifecycle
