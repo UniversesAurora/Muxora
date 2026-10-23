@@ -417,7 +417,8 @@ void ViewCommandsTest::displaySettingsSearchKeepsExactRowsAndSectionHeadings()
         "window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars",
         "window.hideSingleTabWorkbench", "window.hideSingleTabFloating", "tabs.centralPlacement", "tabs.pinnedPlacement",
         "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers",
-        "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.colors"}));
+        "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.colors", "tabs.clipTitles", "tabs.maximumTitleWidth",
+        "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth"}));
     search->setText("window.visibility.");
     QSet<QString> visibleRows, visibleSections;
     for (auto* row : page->findChildren<QWidget*>("SettingRow")) if (!row->isHidden()) visibleRows.insert(row->property("settingId").toString());
