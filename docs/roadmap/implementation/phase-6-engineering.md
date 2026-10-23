@@ -35,7 +35,7 @@
    public:
        LayoutStore(window_system::WindowManager& windows, QString stateRoot);
        bool save();                              // 原 save lambda
-       bool restore(const QString& applicationName); // 原恢复块，返回是否恢复成功
+       bool restore();                           // 当前快照恢复，返回是否成功
        [[nodiscard]] QString path() const;
    };
    ```
@@ -235,4 +235,4 @@
 
 **验证**：集中构建并跑受影响的模型、持久化、工具条、配色、临时面板、脚本和应用恢复套件；修改的桌面入口跑自身回归；安装后 C++ 宿主及固定部署退出／恢复检查通过。不为这次清理运行无关的全量套件。
 
-**状态**：进行中；按独立范围分别提交，运行结果记入验证日志。
+**状态**：已完成（实现至 `b17f94a`）。相关回归、安装后 C++／Lua 宿主及固定 Release 预览交付结果见 [验证记录](../../development/verification-log/2026-10.md#当前配置清理交付与接手状态2026-10-23)。

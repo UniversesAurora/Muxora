@@ -49,28 +49,19 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-23 · Codex 进行中：清除旧配置兼容层
+## 2026-10-23 · Codex 交出：当前配置格式清理完成
 
-- **最后提交**：基线 `9137033` 已推送；当前在 6.9 分支推进，未提交改动均为用户授权的兼容层清理及对应文档／测试。
-- **本轮完成**：6.9 已完成显式标题与配色恢复清理，相关两套件通过，见 [记录](verification-log/2026-10.md#显式标题和配色不再升级2026-10-23)；桌面隔离入口的旧快照恢复也已删除，自身回归通过，见 [记录](verification-log/2026-10.md#桌面隔离仅恢复当前身份快照2026-10-23)；Lua 快照空值丢失已修复，运行时、窗口脚本及生命周期相关验证通过，见 [记录](verification-log/2026-10.md#lua-快照保留显式空值2026-10-23)；模型结构补建和跨方向尺寸接口清理完成，相关八套件与安装后宿主通过，见 [记录](verification-log/2026-10.md#模型不再补建旧结构与跨方向尺寸2026-10-23)；工具条与窗口记录的旧格式转换也已清理，相关回归通过，见 [记录](verification-log/2026-10.md#工具条和窗口记录只读取当前格式2026-10-23)；仅剩交付记录和清理收尾。此前标题裁切、绘制缓存和独立侧栏配置完成；相关事项分别提交：
-  - `window-system/tabs: Separate auto-hide title clipping settings`：两套独立开关与长度、设置／命令／Lua／保存恢复及往返拖动验证完成；普通／固定栏共用，未加入版本升级迁移。固定预览已更新，见 [配置与交付记录](verification-log/2026-10.md#独立侧栏标题配置与往返拖动2026-10-23)。
-  - `window-system/tabs: Cache visible title glyphs and drag measurements`：绘制与拖动测量缓存、同机前后基准及相关套件完成，见 [优化记录](verification-log/2026-10.md#长标题可见字形缓存2026-10-23)。
-  - `docs/design: Separate sidebar and tab bar title limits`：按用户要求确定两套独立策略，见 [方案记录](verification-log/2026-10.md#侧栏标题独立策略方案2026-10-23)。
-  - `test: Add a focused long title painting benchmark`：记录未优化产品的首帧和重复绘制成本，见 [基线记录](verification-log/2026-10.md#长标题绘制优化基线2026-10-23)。
-  - `window-system/tabs: Clip long titles at configurable display limits`：完成设置、裁切绘制、持久化、Lua 及预览部署；相关套件、安装后宿主及保留的首次失败见 [验证记录](verification-log/2026-10.md#选项卡标题裁切实现与验证2026-10-23)。
-  - `docs/design: Define configurable tab title clipping`：确定裁切策略并展开 8.13，作为本次实现依据，见 [方案记录](verification-log/2026-10.md#选项卡标题裁切方案2026-10-23)。
-  - `docs/dev: Request a review of unresolved audit coverage`：按用户要求将审查遗留事项的计划覆盖问题列入下方 Q3，交由 Claude 接手后核对判断；没有自行新增重构步骤或修改冻结快照。文档检查见 [记录](verification-log/2026-10.md#计划覆盖核对交接2026-10-22)。
-  - `docs/roadmap: Define CLI session restoration overrides`：补充命令行打开会话的恢复设置、带值参数覆盖及 fresh 兼容要求，见 [设计](../design/settings-and-commands-design.md#71-命令行启动) 和 [文档检查记录](verification-log/2026-10.md#命令行会话恢复偏好与显式覆盖2026-10-22)。
-  - `docs/roadmap: Prioritize English source text and translation coverage`：将英文源文本迁移及源码全量翻译核查加入下一推荐步骤，决定及理由见 [ADR 0010](../adr/0010-english-translation-source.md)，文档检查见 [记录](verification-log/2026-10.md#英文源文本迁移与覆盖核查计划2026-10-22)。
-  - `docs/roadmap: Plan command-line session and Lua startup requests`：新增后续启动参数扩展步骤，产品要求见 [命令行启动](../design/settings-and-commands-design.md#71-命令行启动)，实施位置见 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序)，文档检查见 [记录](verification-log/2026-10.md#命令行启动请求计划2026-10-22)。
-  - 此前提交格式、历史映射及计划核对见 [格式记录](verification-log/2026-10.md#提交说明长度对齐内核约定2026-10-22)、[历史映射](verification-log/2026-10.md#提交说明换行与历史映射2026-10-22) 和 [计划核对](verification-log/2026-10.md#实现计划进度核对2026-10-22)。失败项按原构建配置逐项重复及恢复收尾见 [逐项重复记录](verification-log/2026-10.md#先前失败用例逐项重复2026-10-22)。此前交接工作已分别完成：
-  - `lua: Install call and return stop hooks only after cancellation`：R1 与相关回归、同机基准完成，见 [R1 记录](verification-log/2026-10.md#lua-98-r1-停止钩子返工2026-10-21)。
-  - `lua: Let standard module loaders yield to the window host`：R2 与相关回归、部署验证完成，见 [R2](verification-log/2026-10.md#lua-98-r2-可让出的模块加载2026-10-21) 和 [Release／部署记录](verification-log/2026-10.md#r1r2-后-release-全量与部署2026-10-21)。
-  - `window-system: Apply the user-relayed Debug timeout review`：A1 配置与完整属性比较完成，见 [A1](verification-log/2026-10.md#a1-主导会话答复与配置核对2026-10-22)。
-  - `window-system/sidebar: Wait for actual dialog focus in tests`：A2 夹具、反向条件及相关验证完成，见 [A2](verification-log/2026-10.md#a2-peek-size-夹具前提修正与反向验证2026-10-22)。
-  - `docs/dev: Complete the remaining verification stages`：按用户决定接受本轮 Debug，复用已有 Release 覆盖，补齐独立模块、安装后宿主与部署检查；结果和保留的交互失败见 [验证收尾](verification-log/2026-10.md#debug-接受后的验证收尾2026-10-22)。
-- **进行中**：6.9 的规则与计划先行同步，代码清理及相关验证正在进行，尚未交付；8.13 的剩余人工验证范围见步骤状态。此前新增的两个实现步骤未开始。菜单、悬停及多行拖拽的整套运行首报保留；此前单项重复未复现，不能确认原因或宣称修复、完整入口全绿。真实试用范围仍待用户。此前自行调用独立实例的意见不作为主导会话批准。
-- **下一步**：先完成 6.9 的相关回归、部署和提交；再由接手方答复保留的 Q3，按结论补齐现行计划的引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 先做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前先完整读对应步骤及其引用。9.8 的真实试用范围单独保留；已有自动报告无需再因文档或构建类型变化重复全量。只有后续实际使用或新证据指向代码缺陷时，再取证已保留的交互问题。
+- **最后提交**：本轮分项提交已纳入 `main`，交出时与 `origin/main` 一致，工作区干净。
+- **本轮完成**：[6.9](../roadmap/implementation/phase-6-engineering.md#69-清除旧配置兼容层) 完成，固定 Release 预览已更新；总交付及每次运行来源见 [记录](verification-log/2026-10.md#当前配置清理交付与接手状态2026-10-23)。实现分别提交：
+  - `repo: Keep only the current configuration format`：确定工程约束并清理现行计划中的双写、旧字段导入、别名和转发周期。
+  - `window-system/persistence: Preserve explicit saved titles and colors`：删除标题和内置配色升级，显式值恢复回归通过。
+  - `test: Drop recovery of obsolete desktop snapshots`：删除旧句柄快照恢复，自身无窗口／原生模式均通过。
+  - `window-system/settings: Keep the view command fixture current`：补齐既有标题设置的预期集合，没有改产品行为。
+  - `lua: Preserve explicit null values across host calls`：修复严格结构回归发现的 Lua 空值丢失，运行时及应用相关检查通过，记录同机前后样本。
+  - `window-system/model: Remove obsolete snapshot reconstruction`：删除固定树／顺序补建和旧跨方向尺寸 API，相关模型及界面回归、安装宿主通过。
+  - `window-system/persistence: Remove obsolete chrome layout conversion`：删除工具条混合转换、默认补建、临时全屏字段读取和假空行，相关回归通过。
+- **进行中**：无未提交或中断的实现。此前 8.13 与 9.8 的真实试用范围、既有菜单／悬停及多行拖拽首报继续保留；本轮未宣称完整入口全绿，未执行无关全量或 Debug。
+- **下一步**：Claude 接手后先答复下方保留的 Q3，按结论补齐现行计划引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前完整阅读步骤及引用；不因文档或构建类型变化重复已完成测试。
 - **待用户决定**：8.10 尺寸规格统一。
 - **请下一位回答**：
 
@@ -90,16 +81,8 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
   需要的答复：逐项给出“已完成／已有计划／需要补计划／无需行动”，附源码或步骤依据；若需补项，给出建议位置和完成条件，并检查其余审查建议有无同类遗漏。先答复并更新对应现行文档，再继续推荐步骤。
 
-- **本轮新决定**：用户要求彻底清除旧配置兼容／迁移，并从现行计划中去掉对应双写、转发和导入要求；权威规则见 [工程设计 §2.4](engineering-design.md#24-当前配置格式)，实施位置见 [6.9](../roadmap/implementation/phase-6-engineering.md#69-清除旧配置兼容层)。此前用户要求在保留半字形硬裁切效果的前提下，减少完全不可见尾部带来的重复绘制开销，不删除模型原文；另要求普通／固定标签栏与非固定侧栏独立设置裁切开关及长度，覆盖往返拖动的性能；用户进一步确认普通／固定栏共用，不要求当前预览做版本升级迁移。行为要求见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)，执行步骤见 8.13。此前命令行恢复设置与显式覆盖要求见 [命令行启动设计](../design/settings-and-commands-design.md#71-命令行启动)，计划覆盖问题保留在 Q3；英文源文本及全源码翻译核查约定见 [翻译设计](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 ADR 0010。执行位置仍以推荐顺序为准，助手之间不直接联系。
-- **接手审查发现**：
-  - 新增实际钩子掩码回归发现增量产物与源码不符；初次接手套件和基准不能归属于当前源码，已作废其源码验证结论。重编后复现旧实现失败，并在 R1 前后重新测量，见验证日志。
-  - 阶段 9 正文的钩子要求与 R1 冲突已修正；已删除的 `.rc` 分支说明也已修正。
-  - 部分测试与实现计划中的可复制命令绕过必需的桌面隔离，仍有旧的手工工具链拼接方式和历史修订注释，已作为独立文档修正；新的缩放示例仅通过语法检查，没有执行缩放矩阵。
-  - 本轮独立构建缓存未完整重编公开结构依赖，清理重编后的安装宿主已通过；尚未确认依赖记录失效原因，见本轮验证记录。
-  - 忽略目录中的旧提交草稿、一次性脚本、探针及明确的测试状态已定点清理；失败证据、历史 Git 备份和用户文件保留。`verify.ps1` 的 smoke 状态清理仍有入口收尾缺口，后续修正，未混入 Lua 提交。
-  - 上一轮后续验证的记录只给出提交范围，无法据此确定每次运行的精确提交；保留原记录，不猜测补填。本轮运行分别记录代码版本。
-  - 运行时模块及脚本设计中重复的默认上限已改为链接到 Lua 指南。
-- **环境与注意事项**：固定预览已更新；本轮仅运行标题相关检查、同机基准及安装宿主／部署验证，未跑全量或 Debug。桌面隔离收尾首次恢复仍失败，单独恢复均成功；整批非零退出与成功的子项分别记录，无待恢复快照或遗留夹具。独立缓存按公开结构变化清理重建；先前依赖记录失效原因仍未查明。未执行实际试用、混合 DPI 多屏和三主题截图审查，未制作便携包。此前交互首报及 9.8 的试用范围继续保留。
+- **本轮新决定**：用户明确要求彻底删除旧配置兼容和迁移，并同步清除未来计划中的对应要求。权威规则在 [工程设计 §2.4](engineering-design.md#24-当前配置格式)，AGENTS 只链接；冻结审查与历史验证记录保留原文。
+- **环境与注意事项**：固定预览已覆盖，用户原先运行的旧预览先正常保存退出，未强杀；测试及部署夹具已退出，无待恢复快照。辅助脚本与基准源码已删除，基准的临时构建产物删除被工具自动审批拒绝，原因未提供，残留不在仓库内；见交付记录。各批次恢复完成，首批套件失败与首次部署被占用均保留。独立缓存按公开结构变化清理重建，之前缓存依赖失效的原因仍未确认；`verify.ps1` smoke 状态清理的既有收尾缺口未混入本次。历史交互问题的逐项重复见 [记录](verification-log/2026-10.md#先前失败用例逐项重复2026-10-22)，不能据此认定已修复。
 
 ---
 ## 2026-10-21 · Claude 交给 Codex：审查 9.8，整理仓库，测试改为管理员权限
