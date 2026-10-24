@@ -8,14 +8,14 @@
 
 - **依据**：Windows 的 [ImmGetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetconversionstatus) 只返回输入法支持的模式；[ImmSetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immsetconversionstatus) 明确说明，Windows 8 起部分日文 IME 按用户保持模式，获取焦点时可能拒绝模式修改。
 - **做法**：平台层整体保存活动 TSF 输入处理器配置、键盘布局、开关和转换／句子模式位，不把状态简化为中英文布尔值。恢复时先激活原 TSF 配置，再写 TSF 隔离区，最后对缺失项使用 IMM。按已有输入窗口取上下文，不对编辑器调用 `winId()` 创建原生子窗口；模式写入受限时仍恢复布局，不修改用户系统设置。上层只保存不透明状态，范围生命周期用假的平台接口验证。
-- **验证**：`InputMethodNativeTest::installedLayoutsRoundTripAndTabsRestore` 检查已有布局和模式往返；`inputModeFollowsTabScope` 优先选择已安装的 `WeType`，通过真实标签点击验证两个标签的中英文模式。真实输入法的候选窗和文字输入效果仍需用户试用。
+- **验证**：`InputMethodNativeTest::installedLayoutsRoundTripAndTabsRestore` 检查已有布局和模式往返；`inputProcessorModeFollowsTabScope` 遍历已安装的 TSF 输入处理器，通过真实标签点击验证可读写模式。真实输入法的候选窗和文字输入效果仍需用户试用。
 
 ### Qt 编辑器的 TSF 配置和 IMM 模式需要一起保存
 
-- **现象**：微信输入法 `WeType` 在不同标签设置不同中英文状态，切回后没有恢复。
+- **现象**：TSF 输入法在不同标签设置不同输入模式，切回后没有恢复。
 - **判断**：活动输入处理器由 TSF 配置接口给出，但 Qt 的编辑控件不一定建立可读的 TSF 转换模式隔离区；当前窗口的 IMM 仍能读出和设置准确模式位。只保存其中之一，会在不同输入法上缺一部分状态。
 - **做法**：在 GUI 线程缓存 TSF 会话；捕获活动配置和所有可读隔离区，并同时读取 IMM 状态。恢复配置后再写隔离区，空项回退 IMM。用真实 `QTabBar` 点击和编辑器点击复现，不用单独调用管理器 API 代替用户操作。
-- **验证**：当前 Windows 11 环境存在三个键盘布局；`WeType` 中英文模式在两个真实标签点击切换间往返通过。其他输入法拒绝写模式的情况仍按平台限制处理。
+- **验证**：当前 Windows 11 环境存在三个键盘布局；测试遍历已安装的 TSF 输入处理器并选择第一个可写模式，在两个真实标签点击切换间往返通过。其他输入法拒绝写模式的情况仍按平台限制处理。
 
 ## 标题栏与命中测试
 

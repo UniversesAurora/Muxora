@@ -61,36 +61,23 @@ public:
             TF_IPPMF_FORPROCESS));
     }
 
-    bool activateChineseInputProcessor()
+    QVector<TF_INPUTPROCESSORPROFILE> inputProcessors()
     {
         IEnumTfInputProcessorProfiles* profiles = nullptr;
         if (failed_ || FAILED(profiles_->EnumProfiles(0, &profiles)))
-            return false;
-        static constexpr CLSID weTypeClass{
-            0x86598fb9, 0x66a2, 0x463e, {0xb9, 0xc2, 0xae, 0xb9, 0x06, 0xd4, 0x77, 0xad}};
-        static constexpr GUID weTypeProfile{
-            0x607fdf85, 0xfcc8, 0x4dbd, {0xa3, 0x65, 0x41, 0x29, 0x6f, 0x98, 0x0c, 0x9c}};
+            return {};
         TF_INPUTPROCESSORPROFILE candidates[128]{};
         ULONG count = 0;
         const auto next = profiles->Next(ULONG(std::size(candidates)), candidates, &count);
         profiles->Release();
-        if (FAILED(next)) return false;
-        const auto available = [&](const TF_INPUTPROCESSORPROFILE& candidate) {
-            return candidate.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR;
-        };
+        if (FAILED(next)) return {};
+        QVector<TF_INPUTPROCESSORPROFILE> result;
         for (ULONG index = 0; index < count; ++index) {
             const auto& candidate = candidates[index];
-            if (available(candidate) && IsEqualCLSID(candidate.clsid, weTypeClass)
-                && IsEqualGUID(candidate.guidProfile, weTypeProfile) && activate(candidate))
-                return true;
+            if (candidate.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR)
+                result.append(candidate);
         }
-        for (ULONG index = 0; index < count; ++index) {
-            const auto& candidate = candidates[index];
-            if (available(candidate) && PRIMARYLANGID(candidate.langid) == LANG_CHINESE
-                && activate(candidate))
-                return true;
-        }
-        return false;
+        return result;
     }
 
 private:
@@ -149,7 +136,7 @@ private slots:
         }
 #endif
     }
-    void inputModeFollowsTabScope() {
+    void inputProcessorModeFollowsTabScope() {
 #ifdef Q_OS_WIN
         WindowManager manager;
         const auto window = manager.createWindow();
@@ -169,7 +156,6 @@ private slots:
         const auto profileRestore = qScopeGuard([&] {
             if (hadOriginalProfile) tsf.activate(originalProfile);
         });
-        QVERIFY(tsf.activateChineseInputProcessor());
         const auto windowHandle = reinterpret_cast<HWND>(first->window()->effectiveWinId());
         const auto context = ImmGetContext(windowHandle);
         QVERIFY(context);
@@ -180,9 +166,31 @@ private slots:
         const auto originalRestore = qScopeGuard([&] {
             ImmSetConversionStatus(context, originalConversion, originalSentence);
         });
-        const auto alpha = originalConversion & ~DWORD(IME_CMODE_NATIVE);
-        const auto native = originalConversion | DWORD(IME_CMODE_NATIVE);
-        QVERIFY(ImmSetConversionStatus(context, alpha, originalSentence));
+        bool foundWritableProcessor = false;
+        DWORD testedConversion = originalConversion;
+        DWORD testedSentence = originalSentence;
+        const auto candidates = tsf.inputProcessors();
+        for (const auto& candidate : candidates) {
+            if (!tsf.activate(candidate)) continue;
+            QCoreApplication::processEvents();
+            DWORD probeConversion = 0;
+            DWORD probeSentence = 0;
+            if (!ImmGetConversionStatus(context, &probeConversion, &probeSentence)) continue;
+            if (ImmSetConversionStatus(
+                    context, probeConversion & ~DWORD(IME_CMODE_NATIVE), probeSentence)
+                && ImmSetConversionStatus(
+                    context, probeConversion | DWORD(IME_CMODE_NATIVE), probeSentence)) {
+                foundWritableProcessor = true;
+                testedConversion = probeConversion;
+                testedSentence = probeSentence;
+                break;
+            }
+        }
+        QVERIFY2(foundWritableProcessor,
+            "No installed TSF input processor exposes writable conversion mode.");
+        const auto alpha = testedConversion & ~DWORD(IME_CMODE_NATIVE);
+        const auto native = testedConversion | DWORD(IME_CMODE_NATIVE);
+        QVERIFY(ImmSetConversionStatus(context, alpha, testedSentence));
 
         auto* tabs = manager.windowWidget(window)->findChild<QTabBar*>("TabBar");
         QVERIFY(tabs);
@@ -199,7 +207,7 @@ private slots:
         QTRY_VERIFY(second->isVisible());
         QTest::mouseClick(second, Qt::LeftButton);
         QTRY_COMPARE(QApplication::focusWidget(), second);
-        QVERIFY(ImmSetConversionStatus(context, native, originalSentence));
+        QVERIFY(ImmSetConversionStatus(context, native, testedSentence));
 
         QVERIFY(clickTab(firstTab));
         QTRY_VERIFY(first->isVisible());
