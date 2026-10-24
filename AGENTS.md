@@ -13,7 +13,7 @@ pwsh tools/build.ps1 -Configuration Debug -Run                                  
 pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test   # 全量测试
 pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1                         # 完整验证
 pwsh tools/tests/quiet-desktop.ps1 -Elevate -Restore                                      # 测试被打断后恢复窗口
-pwsh tools/check-docs.ps1                                                                 # 提交前检查文档
+python tools/check-docs.py                                                                # 提交前检查文档
 ```
 
 参数和其他入口见 [预览说明](docs/development/window-system-preview.md#开发环境) 与 [测试要求](docs/development/testing-design.md#3-工具与统一入口)。
