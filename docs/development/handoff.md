@@ -59,6 +59,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/tabs: Show sticky tabs on a separate row`：`tabs.stickyTabsOnSeparateRow`，两行之间拖动按指针所在行决定钉住。
   - `window-system/tabs: Keep sticky tabs open on the close shortcut and middle click`：`tabs.preventStickyClose`，默认与 VS Code 相同（快捷键和中键都拦），因此 Ctrl+W 对钉住标签改为切到未钉住的标签。
   - `window-system/tabs: Mark sticky tabs in the tab list`：完整标签列表中钉住标签带钉子标记。
+  - `window-system/tabs: Keep the slot of a tab dragged along its own last row`：用户试用预览时发现的多行拖动闪烁（原有问题，与钉住无关），见 [记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)。
   - 每项的实现要点、新增用例、反向验证和运行过的套件见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`（16 行）。Release 全量结果见“环境与注意事项”。
 - **进行中**：无。
 - **下一步**：
