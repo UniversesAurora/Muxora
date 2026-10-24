@@ -79,13 +79,17 @@
 
 **风险**：这是原生帧的核心改动，影响面大。必须单独提交，提交前运行 `native-frame`、`window-placement`、`chrome-interaction`、`caption-strip`、`drag-*`、`focus-mode` 和应用部署夹具。
 
-**状态**：进行中（Claude，2026-10-24）。开工前读 Qt 6.12 源码发现上面第 2 步不能照做：
+**状态**：进行中（Claude 实现，2026-10-24 交给 Codex 查一个剩余问题）。代码和测试已提交（`window-system/frame: Move the resize border outside the visible window`），做法见 [窗口交互设计 · 窗口缩放边框](../../design/window-interaction-design.md#窗口缩放边框)，过程中查到的 Qt 行为见 [Windows 平台经验 · 窗口框架](../../development/lessons/windows-platform.md#窗口框架)。
 
-- `WorkspaceWindow` 带 `Qt::FramelessWindowHint`。Qt 对非最大化的无边框窗口跳过边距计算（`qwindowswindow.cpp` 的 `shouldOmitFrameAdjustment()`），把整个窗口矩形当成客户区（`geometry_sys()` = 窗口矩形减去为 0 的边距）。只在 `WM_NCCALCSIZE` 里缩小客户区，Qt 仍按原尺寸布局，右边和下边会被裁掉一圈。
-- `Qt::ExpandedClientAreaHint`（Qt 6.9 起）在 `WM_NCCALCSIZE` 里正好左、右、下各缩一个缩放边框，但 Qt 会在窗口里放一个自己画标题按钮的原生子窗口，破坏我们的标题按钮命中（[Windows 平台经验](../../development/lessons/windows-platform.md#窗口里出现原生子窗口会破坏命中测试)），不能用。
-- 准备采用的做法：`WorkspaceWindow` 去掉 `Qt::FramelessWindowHint`（HWND 的样式本来就带标题和缩放边框，`normalFrameStyle()` 已经这样设置），`window_frame.cpp` 改用一个窗口属性识别自绘框架窗口，不再检查这个标志。Qt 对“程序自己在 `WM_NCCALCSIZE` 里去掉部分边框”的普通窗口会按实际客户区重新计算边距（`updateFullFrameMargins()`，QTBUG-117704），再减去不可见边框得到可见几何。`WM_GETMINMAXINFO` 的拖动尺寸限制在普通状态下要加上左右两个和下面一个边框宽度。要重点验证：第一次显示前的位置会不会按旧边距偏移、可见边框会不会变成 2 像素、拖动预览的紧凑窗口、全屏和最大化。
-- 原有用例 `nativeCaptionDoesNotConsumeClientSpace`、`verifyNativeStyle` 断言了客户区等于窗口矩形和无边框标志，这正是本步骤要改变的行为，改动时按测试规范说明并保留等效覆盖。
-- 原型不通时退回设计里的备选方案（客户区内留 3 像素缩放带，面板调整带在其内侧）。
+- **剩余问题**：整窗拖到标签条上变成紧凑呈现、再拖出来时，约 180 毫秒后客户区右上角（系统最大化按钮的位置）有一块淡出的暗色，持续一两帧。`NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption` 的 layout-1、layout-2 行间歇失败，旧代码上没有出现过。排查记录见 [验证日志](../../development/verification-log/2026-10.md#81-缩放区移到外侧2026-10-24)。
+- **未做**：Windows 11 真实试用（四边四角缩放、Snap 浮窗、系统贴靠、不同 DPI 的屏幕之间移动）；Windows 10 未验证。部署预览也留到剩余问题解决后。
+
+实现与计划的差别：
+
+- 第 2 步：窗口去掉 `Qt::FramelessWindowHint`（Qt 对无边框窗口不算边距，只缩小客户区会被裁掉），边框宽度取 `AdjustWindowRectExForDpi`，与 Qt 自己重算的边距一致；新窗口在换边框前保留系统边框，换边框时一次 `SetWindowPos` 保持客户区不动。
+- 第 3 步：客户区外的点交给 `DefWindowProc`，得到系统自己的边角；固定尺寸的方向返回 `HTBORDER`。顶部只有客户区内的 `HTTOP` 细带，左上、右上角由外侧边框提供。
+- 第 4 步：左、右、下的 1 像素可见边框是 DWM 画在客户区外的（不是计划设想的“DWM 不画”），所以自绘边框只保留顶部，窗口 QSS 边框改为只画上边。可见窗口因此在左、右、下各向外 1 像素，内容区相应变宽变高，没有补偿。
+- 计划中的 `resizeBorderLiesOutsideClient` 写成 `CaptionStripTest::clientEdgesBelongToContent`，另改了 `nativeCaptionDoesNotConsumeClientSpace`；`visibleBoundsUnchanged` 没有写，因为可见边界按上一条有意外扩 1 像素。
 
 ---
 
