@@ -123,7 +123,7 @@
 
 [TabAppearance](include/window_system/tab_appearance.hpp) 通过 `tabAppearance()` / `setTabAppearance()` 读取和完整校验后应用，随布局快照保存。`centralPlacement` 与 `pinnedPlacement` 分别选择中央和固定侧栏标签位于 `Top` 或 `Bottom`。中央栏使用 `showIcons`、`showNumbers`；固定和非固定侧栏使用独立的 `showSidebarIcons`、`showSidebarNumbers`，默认均关闭。编号从 1 开始：中央与固定栏按本组顺序，非固定收纳条按整侧顺序，跨内部组继续递增。`showNewTabButton` 控制各标签栏末尾的新建入口。右键打开目标菜单，不切换标签；菜单含本栏适用的显隐、多行和上下位置设置。
 
-`multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 仅允许在多行时开启：向下滚动展开全部行，向上仅显示活动行。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。关闭多行时应同时关闭滚轮展开。
+`multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 只在多行时起作用：向下滚动展开全部行，向上仅显示活动行；单行时保留值但不生效。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。
 
 `clipTitles`／`maximumTitleWidth` 控制普通及固定标签栏，`clipSidebarTitles`／`maximumSidebarTitleWidth` 独立控制四边非固定收纳条。两者均直接裁切而不生成省略号，图标、编号、关闭目标另占空间；完整标题、提示及可访问名称保留，拖拽预览按呈现样式选择对应策略。单位、默认值、允许范围见 [标签外观设置](../../docs/design/settings-and-commands-design.md#31-标签外观与颜色)，头文件提供范围常量。设置页、`presentation.toggleTitleClipping`／`presentation.toggleSidebarTitleClipping` 命令和布局快照共用同一份外观。
 

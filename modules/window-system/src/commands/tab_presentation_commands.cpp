@@ -22,8 +22,9 @@ void registerTabPresentationCommands(WindowManager* manager)
                 if (!retained) return false;
                 auto next = retained->tabAppearance();
                 if (context.args.contains("visible") && context.args.value("visible").metaType().id() != QMetaType::Bool) return false;
+                // Wheel expansion only applies to several rows but keeps its
+                // value while they are off, so turning them on restores it.
                 next.*field = context.args.contains("visible") ? context.args.value("visible").toBool() : !(next.*field);
-                if (!next.multiline) next.wheelExpandRows = false;
                 return retained->setTabAppearance(next);
             }, {QStringLiteral("视图"), QStringLiteral("标签栏")}});
     };

@@ -1071,7 +1071,8 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
         appearance_.showIcons = appearance.showSidebarIcons;
         appearance_.showNumbers = appearance.showSidebarNumbers;
     }
-    rowsExpanded_ = !appearance_.wheelExpandRows;
+    // Wheel expansion keeps its value with a single row, where it does nothing.
+    rowsExpanded_ = !(appearance_.multiline && appearance_.wheelExpandRows);
     bar_->setAppearance(appearance_);
     createButtons_->setVisible(appearance_.showNewTabButton);
     auto* box = qobject_cast<QVBoxLayout*>(layout());

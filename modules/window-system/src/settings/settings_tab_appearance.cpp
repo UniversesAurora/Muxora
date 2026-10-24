@@ -47,7 +47,6 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         connect(control, &QCheckBox::toggled, this, [this, field](bool enabled) {
             if (!manager_) return;
             auto next = manager_->tabAppearance(); next.*field = enabled;
-            if (!next.multiline) next.wheelExpandRows = false;
             manager_->setTabAppearance(next);
         });
         return control;

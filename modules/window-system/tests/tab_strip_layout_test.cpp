@@ -128,6 +128,7 @@ private slots:
     void closeTargetShowsHoverAndPressFeedback();
     void titleWidthChangesKeepTheActiveTabInPlace();
     void stickyTabsAlwaysShowTheirPin();
+    void keptWheelExpansionWaitsForMultipleRows();
     void multilineTooltipsNameTheDisplayedTab();
     void middleClickClosesTheTabUnderThePointer();
     void middleClickClosesManagedStripAndRailTabs();
@@ -583,6 +584,20 @@ void TabStripLayoutTest::stickyTabsAlwaysShowTheirPin()
     sendBarMouse(bar, QEvent::MouseButtonPress, slot(1).center(), Qt::LeftButton, Qt::LeftButton);
     sendBarMouse(bar, QEvent::MouseButtonRelease, slot(1).center(), Qt::LeftButton, Qt::NoButton);
     QCOMPARE(closed, 1); QCOMPARE(unstuck, 1);
+}
+
+void TabStripLayoutTest::keptWheelExpansionWaitsForMultipleRows()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false; appearance.wheelExpandRows = true;
+    GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 12);
+    tabs.resize(400, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const int line = bar->lineHeight();
+    // One row: the wheel scrolls the strip as usual.
+    QCOMPARE(bar->height(), line); tabs.scrollByWheel({0, -120}); QTRY_VERIFY(tabs.scrollOffset() > 0);
+    // Several rows: collapsed to the active row, and the wheel expands them.
+    appearance.multiline = true; tabs.setAppearance(appearance);
+    QVERIFY(bar->rowCount() > 1); QCOMPARE(bar->height(), line);
+    tabs.scrollByWheel({0, -120}); QCOMPARE(bar->height(), bar->rowCount() * line);
 }
 
 void TabStripLayoutTest::multilineTooltipsNameTheDisplayedTab()

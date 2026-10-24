@@ -86,7 +86,7 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.centralPlacement` | 普通标签栏位置：`top`（默认）或 `bottom`。 |
 | `tabs.pinnedPlacement` | 固定侧栏标签栏位置：`top`（默认）或 `bottom`，独立于普通栏。 |
 | `tabs.multiline` | 多行排列，默认 `false`；开启后排满换行，取消横向滚动条。 |
-| `tabs.wheelExpandRows` | 默认 `false`，仅多行时允许开启；滚轮向下展开全部行，向上仅显示活动行。 |
+| `tabs.wheelExpandRows` | 默认 `false`，只在多行时起作用：滚轮向下展开全部行，向上仅显示活动行。关闭多行时保留这个值（用户 2026-10-24 决定），设置页和菜单里显示为不可用，重新开启多行就恢复。 |
 | `tabs.showIcons` | 默认 `true`；仅控制中央标签栏，开启时仍尊重单标签的宿主设置。 |
 | `tabs.showNewTabButton` | 默认 `true`，同时控制末尾加号与类型下拉，隐藏不移除新建命令。 |
 | `tabs.showNumbers` | 默认 `false`；编号位于图标左侧，使用本栏当前顺序，从 1 开始。 |
@@ -103,7 +103,7 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 
 钉住标签的设置在设置页“标签外观”下单独的“钉住标签”分类里，没有右键菜单入口（VS Code 也没有）。
 
-图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时清除滚轮展开开关，不能留下不适用的组合。
+图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时滚轮展开保留原值、暂不生效，滚轮展开命令在单行时不可用。
 
 两套裁切开关和长度控件放在同一标签外观分类，明确标注普通／固定栏与非固定收纳条；各自关闭时禁用整组控件并保留数值。每项在同一行放滑条和 Qt 数字框，数字框保留上下微调按钮，后缀使用 `px`。滑条覆盖 `0–1000`，数字框支持该设置的完整范围；超出滑条范围的输入仍原样保留，不能被滑条夹回边界。
 

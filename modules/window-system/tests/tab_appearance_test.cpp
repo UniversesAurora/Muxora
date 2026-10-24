@@ -203,7 +203,7 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
     switch (fault) {
     case 0: candidate.centralPlacement = static_cast<TabBarPlacement>(-1); break;
     case 1: candidate.pinnedPlacement = static_cast<TabBarPlacement>(2); break;
-    case 2: candidate.wheelExpandRows = true; break;
+    case 2: candidate.stickySizing = static_cast<StickyTabSizing>(9); break;
     case 3: candidate.colors.append(candidate.colors.front()); break;
     case 4: candidate.colors[0].autoHideInactive.icon = QColor{}; break;
     case 5: candidate.colors[0].id.clear(); break;
@@ -247,7 +247,6 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
         std::pair{"NaN", QJsonValue(std::numeric_limits<double>::quiet_NaN())}})
         QTest::newRow(qPrintable(QStringLiteral("sidebarTitleWidth") + QLatin1String(item.first)))
             << QString("maximumSidebarTitleWidth") << item.second;
-    QTest::newRow("wheelWithoutMultiline") << QString("wheelExpandRows") << QJsonValue(true);
     QTest::newRow("unknownStickySizing") << QString("stickySizing") << QJsonValue("tiny");
     QTest::newRow("stickySizingCase") << QString("stickySizing") << QJsonValue("Compact");
     QTest::newRow("stickySizingNumber") << QString("stickySizing") << QJsonValue(1);
@@ -303,7 +302,13 @@ void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
     QVERIFY(!manager.execute("presentation.toggleWheelExpandRows"));
     QVERIFY(manager.execute("presentation.toggleMultiline"));
     QVERIFY(manager.execute("presentation.toggleWheelExpandRows")); QVERIFY(manager.tabAppearance().wheelExpandRows);
-    QVERIFY(manager.execute("presentation.toggleMultiline")); QVERIFY(!manager.tabAppearance().wheelExpandRows);
+    // Turning several rows off keeps wheel expansion for when they return.
+    QVERIFY(manager.execute("presentation.toggleMultiline")); QVERIFY(manager.tabAppearance().wheelExpandRows);
+    QVERIFY(!manager.execute("presentation.toggleWheelExpandRows")); QVERIFY(manager.tabAppearance().wheelExpandRows);
+    QVERIFY(manager.execute("presentation.toggleMultiline")); QVERIFY(manager.tabAppearance().wheelExpandRows);
+    QVERIFY(manager.execute("presentation.toggleMultiline"));
+    TabAppearance parsed; QVERIFY(parseTabAppearance(tabAppearanceToJson(manager.tabAppearance()), parsed));
+    QVERIFY(!parsed.multiline); QVERIFY(parsed.wheelExpandRows);
     QVERIFY(manager.execute("presentation.setCentralPlacement", {{"position", "bottom"}}));
     QCOMPARE(manager.tabAppearance().centralPlacement, TabBarPlacement::Bottom);
     QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Top);
@@ -324,7 +329,11 @@ void TabAppearanceTest::settingsExposeEachFlagAndOnlyEnableWheelExpansionInMulti
     pinned->setCurrentIndex(1); QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Bottom);
     multiline->setChecked(true); QVERIFY(wheel->isEnabled());
     wheel->setChecked(true); QVERIFY(manager.tabAppearance().wheelExpandRows);
-    multiline->setChecked(false); QVERIFY(!wheel->isEnabled()); QVERIFY(!wheel->isChecked());
+    // Off with a single row, but kept and restored with several.
+    multiline->setChecked(false); QVERIFY(!wheel->isEnabled()); QVERIFY(wheel->isChecked());
+    QVERIFY(manager.tabAppearance().wheelExpandRows);
+    multiline->setChecked(true); QVERIFY(wheel->isEnabled()); QVERIFY(wheel->isChecked());
+    multiline->setChecked(false);
     for (const auto& item : {std::pair{"ShowTabIcons", &TabAppearance::showIcons},
         std::pair{"ShowNewTabButton", &TabAppearance::showNewTabButton}, std::pair{"ShowTabNumbers", &TabAppearance::showNumbers}}) {
         auto* control = page.findChild<QCheckBox*>(QString::fromLatin1(item.first)); QVERIFY(control);

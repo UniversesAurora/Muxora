@@ -676,7 +676,8 @@ void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isChecked());
     multiline->trigger(); QTRY_VERIFY(!manager.tabAppearance().multiline);
     QMetaObject::invokeMethod(menu, "aboutToShow");
-    QVERIFY(!manager.tabAppearance().wheelExpandRows && !wheel->isChecked()); QVERIFY(wheel->isVisible() && !wheel->isEnabled());
+    // Wheel expansion is kept, shown checked but unavailable with one row.
+    QVERIFY(manager.tabAppearance().wheelExpandRows && wheel->isChecked()); QVERIFY(wheel->isVisible() && !wheel->isEnabled());
     QCoreApplication::processEvents(); QCOMPARE(changes.count(), 3);
     QVERIFY(manager.model().tab(tab)); QVERIFY(manager.model().validate().ok);
 }

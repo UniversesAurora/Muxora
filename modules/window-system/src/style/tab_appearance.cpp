@@ -144,7 +144,7 @@ bool validTabAppearance(const TabAppearance& appearance)
     if (!validPlacement(appearance.centralPlacement) || !validPlacement(appearance.pinnedPlacement)
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
-        || (appearance.wheelExpandRows && !appearance.multiline) || stickySizingName(appearance.stickySizing).isEmpty()
+        || stickySizingName(appearance.stickySizing).isEmpty()
         || stickyCloseGuardName(appearance.preventStickyClose).isEmpty()
         || appearance.colors.size() > 128) return false;
     QSet<QString> ids;
