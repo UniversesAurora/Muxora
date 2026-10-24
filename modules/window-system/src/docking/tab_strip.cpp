@@ -38,6 +38,16 @@ constexpr int listButtonWidth = 12;
 constexpr int newTabButtonWidth = 26;
 constexpr int createButtonGap = 1;
 
+class TabPagePlaceholder final : public QWidget {
+public:
+    explicit TabPagePlaceholder(TabId tab, QWidget* parent)
+        : QWidget(parent)
+    {
+        setObjectName("TabPagePlaceholder");
+        setProperty("tabId", tab);
+    }
+};
+
 class TabCreateButtons final : public QWidget {
 public:
     TabCreateButtons(const Theme& theme, QWidget* parent) : QWidget(parent) {
@@ -771,6 +781,8 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         const QPointer<GroupTabs> self(this);
         stack_->setCurrentIndex(index);
         if(!self) return;
+        if (index >= 0) resolvePage(bar_->tabData(index).toUuid());
+        if (!self) return;
         if(appearance_.multiline) updateBarGeometry();
         const auto callback = currentChanged; if (callback) callback(index);
     });
@@ -831,12 +843,28 @@ void GroupTabs::updateScrollBarGeometry()
     scrollbar_->raise();
 }
 void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
-    stack_->addWidget(widget); pages_.insert(id, widget); const auto index = bar_->addTab(icon, title);
-    bar_->setTabData(index, id); bar_->setTabToolTip(index, title); updateBarGeometry();
+    const bool first = bar_->count() == 0;
+    QWidget* page = widget;
+    if (!page) {
+        page = new TabPagePlaceholder(id, stack_);
+        placeholders_.insert(id);
+    }
+    int index = -1;
+    {
+        const QSignalBlocker quietBar(bar_);
+        const QSignalBlocker quietStack(stack_);
+        stack_->addWidget(page);
+        index = bar_->addTab(icon, title);
+        bar_->setTabData(index, id); bar_->setTabToolTip(index, title);
+    }
+    pages_.insert(id, page);
+    if (first) stack_->setCurrentIndex(0);
+    updateBarGeometry();
 }
 QWidget* GroupTabs::takePage(TabId id)
 {
     const QPointer<QWidget> page = pages_.take(id);
+    const bool placeholder = placeholders_.remove(id);
     for (int index = 0; index < bar_->count(); ++index) {
         if (bar_->tabData(index).toUuid() != id) continue;
         const QSignalBlocker quiet(bar_);
@@ -845,12 +873,15 @@ QWidget* GroupTabs::takePage(TabId id)
     }
     const bool stacked = page && stack_->indexOf(page) >= 0;
     if (stacked) stack_->removeWidget(page);
+    if (stacked && placeholder) page->deleteLater();
     if (bar_->currentIndex() >= 0) stack_->setCurrentIndex(bar_->currentIndex());
     updateBarGeometry();
-    return stacked ? page.data() : nullptr;
+    return stacked && !placeholder ? page.data() : nullptr;
 }
 void GroupTabs::setCurrentIndex(int index, bool reveal) {
-    bar_->setCurrentIndex(index); stack_->setCurrentIndex(index);
+    bar_->setCurrentIndex(index);
+    if (index >= 0 && index < bar_->count()) resolvePage(bar_->tabData(index).toUuid());
+    stack_->setCurrentIndex(index);
     if (appearance_.multiline) { updateBarGeometry(); return; }
     if (reveal && index >= 0) {
         cancelViewportReflow();
@@ -989,6 +1020,28 @@ void GroupTabs::scrollByWheel(QPoint delta)
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
 QWidget* GroupTabs::page(int index) const { return stack_->widget(index); }
+bool GroupTabs::pageIsPlaceholder(TabId tab) const { return placeholders_.contains(tab); }
+void GroupTabs::resolvePage(TabId tab)
+{
+    if (!placeholders_.contains(tab) || !pageRequested) return;
+    const QPointer<GroupTabs> retained(this);
+    const QPointer<QWidget> placeholder = pages_.value(tab);
+    int index = -1;
+    for (int candidate = 0; candidate < bar_->count(); ++candidate)
+        if (bar_->tabData(candidate).toUuid() == tab) { index = candidate; break; }
+    if (index < 0 || !placeholder || stack_->widget(index) != placeholder) return;
+    const QPointer<QWidget> page(pageRequested(tab));
+    if (!retained || !page || pages_.value(tab) != placeholder
+        || stack_->widget(index) != placeholder) return;
+    placeholder->hide();
+    stack_->insertWidget(index, page);
+    pages_.insert(tab, page);
+    placeholders_.remove(tab);
+    stack_->removeWidget(placeholder);
+    placeholder->deleteLater();
+    stack_->setCurrentIndex(bar_->currentIndex());
+    updateBarGeometry();
+}
 void GroupTabs::updateBarGeometry() {
     if (updatingBarGeometry_) return;
     QScopedValueRollback updating(updatingBarGeometry_, true);

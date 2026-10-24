@@ -25,6 +25,8 @@ struct WindowManager::Private {
     QHash<WindowId, WindowKind> visibilityKinds;
     QSet<WindowId> projectingViews;
     QHash<TabId, QPointer<TabContent>> tabs;
+    QHash<TabId, QPointer<QWidget>> pendingTabTopBars;
+    QHash<TabId, QPointer<QWidget>> pendingTabBottomBars;
     QHash<PaneId, QPointer<QWidget>> panes;
     QHash<PaneId, QPointer<QWidget>> paneTopBars;
     QHash<PaneId, QPointer<QWidget>> paneBottomBars;
@@ -81,6 +83,11 @@ struct WindowManager::Private {
     };
     std::optional<NavigationAnchor> navigationAnchor;
     bool directionalNavigation = false;
+    std::function<void(const QVector<ContentVisibilityChange>&)> contentVisibilityHandler;
+    QHash<PaneId, bool> contentVisibility;
+    QVector<PaneId> contentVisibilityOrder;
+    bool contentVisibilitySnapshotRequested = false;
+    bool contentVisibilityNotificationPending = false;
 };
 
 } // namespace window_system

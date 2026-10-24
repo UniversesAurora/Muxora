@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include "docking/dock_surface.hpp"
+#include "docking/tab_strip.hpp"
 
 #include <QCoreApplication>
 #include <QApplication>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
@@ -10,6 +13,7 @@
 #include <QTabBar>
 #include <QTest>
 #include <QVBoxLayout>
+#include <algorithm>
 
 using namespace window_system;
 
@@ -54,6 +58,47 @@ struct TwoGroups {
     GroupId first, second;
     QVector<TabId> firstTabs, secondTabs;
 };
+QJsonObject snapshotWithInactiveTabs(int count)
+{
+    LayoutModel model;
+    const auto window = model.createWindow();
+    GroupId group;
+    QVector<TabId> tabs;
+    for (int index = 0; index < count; ++index) {
+        const auto title = QStringLiteral("Tab %1").arg(index);
+        const TabId tab = group.isNull() ? model.addTab(window, title)
+                                         : model.addTab(window, title, group);
+        if (tab.isNull()) return {};
+        group = model.groupForTab(tab);
+        tabs.append(tab);
+    }
+    WindowManager seed;
+    seed.createWindow(WindowKind::Workbench);
+    auto snapshot = seed.saveLayout();
+    snapshot.insert(QStringLiteral("model"), model.toJson());
+    QJsonArray panes;
+    for (const auto tab : tabs) {
+        const auto* record = model.tab(tab);
+        panes.append(QJsonObject{{"id", record->activePane.toString(QUuid::WithoutBraces)},
+            {"title", record->title}, {"type", "test.text"}, {"state", QJsonObject{}},
+            {"showIcon", true}, {"topBarSharing", "shared"}, {"bottomBarSharing", "shared"}});
+    }
+    snapshot.insert(QStringLiteral("panes"), panes);
+    auto windows = snapshot.value("windows").toArray();
+    auto metadata = windows.first().toObject();
+    metadata.insert("id", window.toString(QUuid::WithoutBraces));
+    metadata.insert("title", "Lazy tabs");
+    windows.replace(0, metadata);
+    snapshot.insert(QStringLiteral("windows"), windows);
+    return snapshot;
+}
+bool restoreTabs(WindowManager& manager, const QJsonObject& snapshot)
+{
+    manager.setContentFactory([](const TabOptions& options, PaneId) {
+        return new QLabel(options.title);
+    });
+    return manager.restoreLayout(snapshot).ok;
+}
 TwoGroups createTwoGroups(WindowManager& manager, WindowId window)
 {
     TwoGroups result{window, {}, {}, {}, {}};
@@ -106,6 +151,27 @@ protected:
 private:
     QHash<QObject*, QVector<QPointer<QWidget>>> parents_;
 };
+class ParentChangeProbe final : public QObject {
+public:
+    ParentChangeProbe(QWidget* watched, const bool& notified)
+        : watched_(watched), notified_(notified)
+    {
+        watched->installEventFilter(this);
+    }
+    bool firstChangeHadVisibilityNotification = false;
+    int changes = 0;
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == watched_ && event->type() == QEvent::ParentChange) {
+            if (changes++ == 0) firstChangeHadVisibilityNotification = notified_;
+        }
+        return false;
+    }
+private:
+    QPointer<QWidget> watched_;
+    const bool& notified_;
+};
 } // namespace
 
 class ViewReuseTest final : public QObject {
@@ -114,10 +180,17 @@ class ViewReuseTest final : public QObject {
 private slots:
     void cleanup() { settle(); }
     void unrelatedTabsKeepTheirViewWidgets();
+    void restoredInactiveTabsCreateViewsOnFirstActivation();
+    void pendingTabBarsFollowLazyActivationAndRemoval();
+    void pendingTabBarsSurviveHierarchyConversion();
+    void restoringLayoutDiscardsPendingTabBars();
+    void contentVisibilityNotificationsAreCoalesced();
+    void contentVisibilityTracksWindowStateAndPeek();
     void changedTreeRebuildsOnlyThatTab();
     void themeMetricChangeRebuilds();
     void tabViewsStayInTheirWindow();
     void crossWindowMoveReparentsOnlyTheMovedTab();
+    void crossWindowMoveReportsHiddenBeforeReparent();
     void deferredRootDeletionKeepsCarriedPages();
     void mountedRebuildIsVisibleImmediately();
     void reusedStripFollowsMetadataAndTheme();
@@ -125,6 +198,220 @@ private slots:
     void mutationFromSplitterLayoutKeepsReusedStrip_data();
     void mutationFromSplitterLayoutKeepsReusedStrip();
 };
+
+void ViewReuseTest::restoredInactiveTabsCreateViewsOnFirstActivation()
+{
+    const auto snapshot = snapshotWithInactiveTabs(100);
+    WindowManager manager;
+    QVERIFY(restoreTabs(manager, snapshot));
+    const auto window = manager.model().windowOrder().first();
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    const auto pageCount = [&] {
+        return manager.windowWidget(window)->findChildren<QWidget*>(QStringLiteral("TabPage")).size();
+    };
+    const auto tabs = manager.model().orderedTabs(window);
+    QCOMPARE(tabs.size(), 100);
+    QCOMPARE(pageCount(), 1);
+    auto* strip = dynamic_cast<GroupTabs*>(
+        manager.windowWidget(window)->findChild<QWidget*>(QStringLiteral("TabGroup")));
+    QVERIFY(strip);
+    QCOMPARE(strip->count(), 100);
+    strip->setCurrentIndex(0);
+    settle();
+    QCOMPARE(manager.context(window).tab, tabs.first());
+    QCOMPARE(pageCount(), 2);
+    int expected = int(pageCount());
+    for (const auto tab : tabs) {
+        const auto pane = manager.model().tab(tab)->activePane;
+        const auto* group = manager.model().group(manager.model().groupForTab(tab));
+        if (group->activeTab == tab || manager.context(window).tab == tab) continue;
+        QPointer<QWidget> content = manager.paneWidget(pane);
+        QVERIFY(content);
+        QVERIFY(manager.activateTab(tab));
+        settle();
+        QCOMPARE(pageCount(), ++expected);
+        QCOMPARE(manager.paneWidget(pane), content.data());
+        if (expected == 3) break;
+    }
+    QCOMPARE(expected, 3);
+}
+
+void ViewReuseTest::pendingTabBarsFollowLazyActivationAndRemoval()
+{
+    const auto snapshot = snapshotWithInactiveTabs(3);
+    WindowManager manager;
+    QVERIFY(restoreTabs(manager, snapshot));
+    const auto window = manager.model().windowOrder().first();
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    const auto tabs = manager.model().orderedTabs(window);
+    QVector<TabId> inactive;
+    for (const auto tab : tabs)
+        if (manager.model().group(manager.model().groupForTab(tab))->activeTab != tab) inactive.append(tab);
+    QVERIFY(inactive.size() >= 2);
+    auto* bar = new QLabel(QStringLiteral("Tab bar"));
+    QPointer<QWidget> first(bar);
+    QVERIFY(manager.setTabTopBar(inactive[0], bar));
+    QVERIFY(bar->parentWidget());
+    QCOMPARE(bar->parentWidget()->objectName(), QStringLiteral("WindowSystemStorage"));
+    auto* replacement = new QLabel(QStringLiteral("Replacement"));
+    QPointer<QWidget> observer(replacement);
+    QVERIFY(manager.setTabTopBar(inactive[0], replacement));
+    QVERIFY(first && first->isHidden());
+    settle();
+    QVERIFY(first.isNull());
+    QVERIFY(manager.activateTab(inactive[0]));
+    settle();
+    QVERIFY(observer && observer->isVisible());
+    QVERIFY(observer->parentWidget()->objectName() == QStringLiteral("TabPage"));
+    QVERIFY(manager.setTabTopBar(inactive[0], nullptr));
+    settle();
+    QVERIFY(observer.isNull());
+
+    auto* pending = new QLabel(QStringLiteral("Pending"));
+    QPointer<QWidget> pendingObserver(pending);
+    QVERIFY(manager.setTabTopBar(inactive[1], pending));
+    QVERIFY(manager.closeTab(inactive[1]));
+    settle();
+    QVERIFY(pendingObserver.isNull());
+}
+
+void ViewReuseTest::pendingTabBarsSurviveHierarchyConversion()
+{
+    const auto snapshot = snapshotWithInactiveTabs(2);
+    WindowManager manager;
+    QVERIFY(restoreTabs(manager, snapshot));
+    const auto window = manager.model().windowOrder().first();
+    const auto tabs = manager.model().orderedTabs(window);
+    TabId inactive;
+    for (const auto tab : tabs)
+        if (manager.model().group(manager.model().groupForTab(tab))->activeTab != tab) inactive = tab;
+    QVERIFY(!inactive.isNull());
+    auto* top = new QLabel(QStringLiteral("Pending top"));
+    auto* bottom = new QLabel(QStringLiteral("Pending bottom"));
+    QPointer<QWidget> topObserver(top), bottomObserver(bottom);
+    QVERIFY(manager.setTabTopBar(inactive, top));
+    QVERIFY(manager.setTabBottomBar(inactive, bottom));
+    const auto group = manager.model().groupForTab(inactive);
+    QVERIFY(!manager.convertGroupToTab(group).isNull());
+    settle();
+    QVERIFY(topObserver && bottomObserver);
+    QVERIFY(topObserver->isVisible());
+    QVERIFY(bottomObserver->isVisible());
+    QVERIFY(ancestorNamed(topObserver, QStringLiteral("TabPage")));
+    QVERIFY(ancestorNamed(bottomObserver, QStringLiteral("TabPage")));
+}
+
+void ViewReuseTest::restoringLayoutDiscardsPendingTabBars()
+{
+    const auto snapshot = snapshotWithInactiveTabs(2);
+    WindowManager manager;
+    QVERIFY(restoreTabs(manager, snapshot));
+    const auto window = manager.model().windowOrder().first();
+    const auto tabs = manager.model().orderedTabs(window);
+    TabId inactive;
+    for (const auto tab : tabs)
+        if (manager.model().group(manager.model().groupForTab(tab))->activeTab != tab) inactive = tab;
+    QVERIFY(!inactive.isNull());
+    auto* pending = new QLabel(QStringLiteral("Old pending"));
+    QPointer<QWidget> observer(pending);
+    QVERIFY(manager.setTabTopBar(inactive, pending));
+    QVERIFY(restoreTabs(manager, snapshot));
+    settle();
+    QVERIFY(observer.isNull());
+}
+
+void ViewReuseTest::contentVisibilityNotificationsAreCoalesced()
+{
+    const auto snapshot = snapshotWithInactiveTabs(3);
+    WindowManager manager;
+    QVERIFY(restoreTabs(manager, snapshot));
+    const auto window = manager.model().windowOrder().first();
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    settle();
+    QVector<QVector<ContentVisibilityChange>> batches;
+    manager.setContentVisibilityHandler([&batches](const QVector<ContentVisibilityChange>& changes) {
+        batches.append(changes);
+    });
+    QTRY_COMPARE(batches.size(), 1);
+    QCOMPARE(batches.first().size(), 3);
+    batches.clear();
+    const auto tabs = manager.model().orderedTabs(window);
+    const auto initiallyActive = manager.context(window).tab;
+    QVector<TabId> candidates;
+    for (const auto tab : tabs) if (tab != initiallyActive) candidates.append(tab);
+    QVERIFY(candidates.size() >= 2);
+    QVERIFY(manager.activateTab(candidates[0]));
+    QVERIFY(manager.activateTab(candidates[1]));
+    QTRY_COMPARE(batches.size(), 1);
+    const auto& last = batches.first();
+    const auto previous = manager.model().tab(initiallyActive)->activePane;
+    const auto current = manager.model().tab(candidates[1])->activePane;
+    QVERIFY(std::any_of(last.cbegin(), last.cend(), [previous](const auto& change) {
+        return change.pane == previous && !change.visible;
+    }));
+    QVERIFY(std::any_of(last.cbegin(), last.cend(), [current](const auto& change) {
+        return change.pane == current && change.visible;
+    }));
+}
+
+void ViewReuseTest::contentVisibilityTracksWindowStateAndPeek()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto central = add(manager, window, "central");
+    const auto side = add(manager, window, "side");
+    QVERIFY(manager.moveTabToEdge(side, Edge::Right));
+    const auto sideGroup = manager.model().groupForTab(side);
+    QVERIFY(manager.activateTab(central));
+    manager.showWindow(window);
+    QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
+    settle();
+    QVector<QVector<ContentVisibilityChange>> batches;
+    manager.setContentVisibilityHandler([&batches](const QVector<ContentVisibilityChange>& changes) {
+        batches.append(changes);
+    });
+    QTRY_COMPARE(batches.size(), 1);
+    batches.clear();
+
+    auto* surface = dynamic_cast<DockSurface*>(
+        manager.windowWidget(window)->findChild<QWidget*>("DockSurface"));
+    QVERIFY(surface);
+    surface->showEdgeGroup(sideGroup, side);
+    QTRY_COMPARE(batches.size(), 1);
+    const auto sidePane = manager.model().tab(side)->activePane;
+    const auto centralPane = manager.model().tab(central)->activePane;
+    const auto& peekBatch = batches.last();
+    QVERIFY(std::any_of(peekBatch.cbegin(), peekBatch.cend(), [sidePane](const auto& change) {
+        return change.pane == sidePane && change.visible;
+    }));
+
+    batches.clear();
+    surface->closePeek();
+    QTRY_COMPARE(batches.size(), 1);
+    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [sidePane](const auto& change) {
+        return change.pane == sidePane && !change.visible;
+    }));
+
+    batches.clear();
+    manager.windowWidget(window)->showMinimized();
+    QTRY_VERIFY(manager.windowWidget(window)->isMinimized());
+    QTRY_VERIFY(!batches.isEmpty());
+    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [centralPane](const auto& change) {
+        return change.pane == centralPane && !change.visible;
+    }));
+    batches.clear();
+    manager.windowWidget(window)->showNormal();
+    QTRY_VERIFY(!manager.windowWidget(window)->isMinimized());
+    QTRY_VERIFY(!batches.isEmpty());
+    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [centralPane](const auto& change) {
+        return change.pane == centralPane && change.visible;
+    }));
+}
 
 void ViewReuseTest::unrelatedTabsKeepTheirViewWidgets()
 {
@@ -349,6 +636,35 @@ void ViewReuseTest::crossWindowMoveReparentsOnlyTheMovedTab()
         QCOMPARE(manager.paneWidget(it.key()), it.value().data());
         QCOMPARE(recorder.changes(it.value()), 0);
     }
+}
+
+void ViewReuseTest::crossWindowMoveReportsHiddenBeforeReparent()
+{
+    WindowManager manager;
+    const auto source = manager.createWindow();
+    const auto target = manager.createWindow();
+    const auto tab = add(manager, source, "moving");
+    QVERIFY(!add(manager, target, "target").isNull());
+    manager.showWindow(source);
+    manager.showWindow(target);
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(source)));
+    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(target)));
+    settle();
+    const auto pane = activePane(manager, tab);
+    QPointer<QWidget> page = pageOf(manager, tab);
+    QVERIFY(page);
+    bool notifiedHidden = false;
+    manager.setContentVisibilityHandler([&](const QVector<ContentVisibilityChange>& changes) {
+        if (std::any_of(changes.cbegin(), changes.cend(), [pane](const auto& change) {
+                return change.pane == pane && !change.visible;
+            })) notifiedHidden = true;
+    });
+    settle();
+    notifiedHidden = false;
+    ParentChangeProbe probe(page, notifiedHidden);
+    QVERIFY(manager.moveTabToWindow(tab, target));
+    QVERIFY(probe.changes > 0);
+    QVERIFY(probe.firstChangeHadVisibilityNotification);
 }
 
 void ViewReuseTest::deferredRootDeletionKeepsCarriedPages()

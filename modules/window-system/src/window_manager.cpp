@@ -146,6 +146,63 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
     refresh(); activateTab(id); return id;
 }
 void WindowManager::setContentFactory(ContentFactory factory) { d->factory = std::move(factory); }
+void WindowManager::setContentVisibilityHandler(
+    std::function<void(const QVector<ContentVisibilityChange>&)> handler)
+{
+    d->contentVisibilityHandler = std::move(handler);
+    d->contentVisibilitySnapshotRequested = bool(d->contentVisibilityHandler);
+    scheduleContentVisibilityNotification();
+}
+void WindowManager::scheduleContentVisibilityNotification()
+{
+    if (!d->contentVisibilityHandler || d->contentVisibilityNotificationPending || d->destroying) return;
+    d->contentVisibilityNotificationPending = true;
+    QTimer::singleShot(0, this, [this] {
+        d->contentVisibilityNotificationPending = false;
+        if (d->destroying || !d->contentVisibilityHandler) return;
+        QHash<PaneId, bool> current;
+        QVector<PaneId> order;
+        for (const auto window : d->model.windowOrder()) {
+            const auto host = d->windows.value(window);
+            const bool windowShown = host && host->isVisible() && !host->isMinimized();
+            for (const auto tab : d->model.orderedTabs(window))
+                for (const auto pane : d->model.panes(tab)) {
+                    order.append(pane);
+                    const QPointer<QWidget> widget = d->panes.value(pane);
+                    current.insert(pane, windowShown && widget && widget->isVisible());
+                }
+        }
+        QVector<ContentVisibilityChange> changes;
+        const bool snapshot = d->contentVisibilitySnapshotRequested;
+        for (const auto pane : order) {
+            const auto previous = d->contentVisibility.constFind(pane);
+            if (snapshot || previous == d->contentVisibility.cend() || previous.value() != current.value(pane))
+                changes.append({pane, current.value(pane)});
+        }
+        for (const auto pane : d->contentVisibilityOrder)
+            if (!current.contains(pane) && d->contentVisibility.value(pane))
+                changes.append({pane, false});
+        d->contentVisibility = std::move(current);
+        d->contentVisibilityOrder = std::move(order);
+        d->contentVisibilitySnapshotRequested = false;
+        if (changes.isEmpty()) return;
+        const auto handler = d->contentVisibilityHandler;
+        handler(changes);
+    });
+}
+void WindowManager::reportPanesHiddenBeforeReparent(const QVector<PaneId>& panes)
+{
+    if (!d->contentVisibilityHandler || panes.isEmpty()) return;
+    QVector<ContentVisibilityChange> changes;
+    for (const auto pane : panes) {
+        if (!d->panes.contains(pane)) continue;
+        d->contentVisibility.insert(pane, false);
+        changes.append({pane, false});
+    }
+    if (changes.isEmpty()) return;
+    const auto handler = d->contentVisibilityHandler;
+    handler(changes);
+}
 TabId WindowManager::addTabToNewGroup(WindowId window, QWidget* content, const TabOptions& options,
                                     GroupId reference, Placement placement)
 {
@@ -265,19 +322,73 @@ QWidget* WindowManager::createContent(const TabOptions& options, PaneId pane)
     const ContentFactory retained = d->factory;
     return retained ? retained(options, pane) : nullptr;
 }
+TabContent* WindowManager::ensureTabView(TabId tab)
+{
+    if (!d->model.tab(tab)) return nullptr;
+    if (const QPointer<TabContent> existing = d->tabs.value(tab)) return existing.data();
+    const QPointer<WindowManager> self(this);
+    const QPointer<TabContent> view = new TabContent(this, tab, d->storage);
+    d->tabs.insert(tab, view);
+    const auto currentView = [&] {
+        return self && view && d->tabs.value(tab) == view ? view.data() : nullptr;
+    };
+    auto* record = d->model.tab(tab);
+    if (!currentView() || !record) return nullptr;
+    const auto options = d->descriptors.value(record->activePane);
+    view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
+    if (!currentView()) return nullptr;
+    if (const QPointer<QWidget> bar = d->pendingTabTopBars.take(tab)) view->setTopBar(bar);
+    if (!currentView()) return nullptr;
+    if (const QPointer<QWidget> bar = d->pendingTabBottomBars.take(tab)) view->setBottomBar(bar);
+    if (!currentView()) return nullptr;
+    record = d->model.tab(tab);
+    if (!record) return nullptr;
+    view->rebuild(*record, d->panes, d->paneTopBars, d->paneBottomBars);
+    return self ? d->tabs.value(tab).data() : nullptr;
+}
 void WindowManager::setCloseGuard(CloseGuard guard) { d->closeGuard = std::move(guard); }
 bool WindowManager::setTabTopBar(TabId tab, QWidget* bar)
 {
-    auto view = d->tabs.value(tab); if (!view || (bar && bar->property("windowSystemManaged").toBool())) return false;
-    if (bar) bar->setProperty("windowSystemManaged", true);
-    view->setTopBar(bar);
+    if (!d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
+    if (auto view = d->tabs.value(tab)) {
+        view->setTopBar(bar);
+        return true;
+    }
+    auto& bars = d->pendingTabTopBars;
+    if (bars.value(tab) == bar) return true;
+    if (auto previous = bars.take(tab)) {
+        previous->setParent(d->storage);
+        previous->hide();
+        previous->deleteLater();
+    }
+    if (bar) {
+        bar->setProperty("windowSystemManaged", true);
+        bar->setParent(d->storage);
+        bar->hide();
+        bars.insert(tab, bar);
+    }
     return true;
 }
 bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar)
 {
-    auto view = d->tabs.value(tab); if (!view || (bar && bar->property("windowSystemManaged").toBool())) return false;
-    if (bar) bar->setProperty("windowSystemManaged", true);
-    view->setBottomBar(bar);
+    if (!d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
+    if (auto view = d->tabs.value(tab)) {
+        view->setBottomBar(bar);
+        return true;
+    }
+    auto& bars = d->pendingTabBottomBars;
+    if (bars.value(tab) == bar) return true;
+    if (auto previous = bars.take(tab)) {
+        previous->setParent(d->storage);
+        previous->hide();
+        previous->deleteLater();
+    }
+    if (bar) {
+        bar->setProperty("windowSystemManaged", true);
+        bar->setParent(d->storage);
+        bar->hide();
+        bars.insert(tab, bar);
+    }
     return true;
 }
 bool WindowManager::setPaneTopBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, true); }
@@ -630,6 +741,8 @@ bool WindowManager::activateTab(TabId tab)
 {
     if (!d->model.tab(tab)) return false;
     const QPointer<WindowManager> self(this);
+    if (!ensureTabView(tab)) return false;
+    if (!self) return false;
     leaveFocusScopeFor(tab, {});
     if (!self) return false;
     const auto result = d->model.activateTab(tab); if (!result) return false;
@@ -641,12 +754,17 @@ bool WindowManager::activateTab(TabId tab)
         if (!self) return false;
     }
     const auto* active = d->model.tab(tab);
-    return active && focusPane(tab, active->activePane);
+    if (!active) return false;
+    const bool focused = focusPane(tab, active->activePane);
+    if (focused) scheduleContentVisibilityNotification();
+    return focused;
 }
 bool WindowManager::focusPane(TabId tab, PaneId pane)
 {
     if (!d->model.panes(tab).contains(pane)) return false;
     const QPointer<WindowManager> self(this);
+    if (!ensureTabView(tab)) return false;
+    if (!self) return false;
     leaveFocusScopeFor(tab, pane);
     if (!self) return false;
     if (!d->model.activatePane(tab, pane)) return false;
@@ -803,6 +921,7 @@ void WindowManager::refresh(bool preserveDrag)
 {
     d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
+    const QPointer<WindowManager> self(this);
     d->inputMethods.synchronize(d->model);
     const QPointer<QWidget> previousFocus = QApplication::focusWidget();
     d->refreshing = true;
@@ -826,6 +945,27 @@ void WindowManager::refresh(bool preserveDrag)
     // window's surface moves it between its groups. Views changing window or
     // being deleted are parked so that no old surface deletes them.
     const auto views = d->tabs;
+    QVector<QPointer<TabContent>> crossing;
+    QVector<PaneId> crossingPanes;
+    for (auto it = views.cbegin(); it != views.cend(); ++it) {
+        const auto& view = it.value();
+        if (!view) continue;
+        const auto* group = d->model.group(d->model.groupForTab(it.key()));
+        const auto target = group ? d->windows.value(group->windowId) : QPointer<WorkspaceWindow>{};
+        if (!target || view->window() == target.data() || view->window() == d->storage) continue;
+        crossing.append(view);
+        crossingPanes += d->model.panes(it.key());
+    }
+    for (const auto& view : crossing) if (view) view->hide();
+    if (!self) return;
+    const auto visibilityState = d->model.stateId();
+    reportPanesHiddenBeforeReparent(crossingPanes);
+    if (!self) return;
+    if (d->model.stateId() != visibilityState) {
+        d->refreshing = false;
+        QTimer::singleShot(0, this, [self] { if (self) self->refresh(); });
+        return;
+    }
     for (auto it = views.cbegin(); it != views.cend(); ++it) {
         const auto& view = it.value();
         if (!view) continue;
@@ -851,17 +991,63 @@ void WindowManager::refresh(bool preserveDrag)
         if (!d->model.tab(it.key())) { if (it.value()) it.value()->deleteLater(); it = d->tabs.erase(it); }
         else ++it;
     }
+    for (auto* bars : {&d->pendingTabTopBars, &d->pendingTabBottomBars}) {
+        for (auto it = bars->begin(); it != bars->end();) {
+            if (!d->model.tab(it.key())) {
+                if (it.value()) it.value()->deleteLater();
+                it = bars->erase(it);
+            } else ++it;
+        }
+    }
     // A focused pane can retain its ID while moving into a different tab in
     // this window. Activate that target before rebuilding its containing stack.
     for (const auto id : d->model.windowOrder()) reconcileWindowViewState(id);
+    // Materialize only groups that can be visible. An auto-hide group creates
+    // its view when its rail entry is opened, while previously visited tabs
+    // keep the view they already own.
+    const auto materialize = [&](TabId tab) {
+        if (tab.isNull() || !ensureTabView(tab)) {
+            if (!self) return false;
+            // A synchronous host callback can remove the target while its view
+            // is being prepared. Settle this transaction and retry the model
+            // snapshot instead of leaving refresh() permanently reentrant-locked.
+            d->refreshing = false;
+            QTimer::singleShot(0, this, [self] { if (self) self->refresh(); });
+            return false;
+        }
+        return bool(self);
+    };
+    for (const auto window : d->model.windowOrder()) {
+        const auto* record = d->model.window(window);
+        if (!record) continue;
+        for (const auto group : d->model.centralGroups(window))
+            if (const auto* groupRecord = d->model.group(group);
+                groupRecord && !materialize(groupRecord->activeTab)) return;
+        for (const auto group : record->edgeGroups) {
+            const auto* groupRecord = d->model.group(group);
+            if (groupRecord && groupRecord->location == GroupLocation::Pinned
+                && !materialize(groupRecord->activeTab)) return;
+        }
+        const auto state = windowViewState(window);
+        if (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen) {
+            const auto* groupRecord = d->model.group(state.group);
+            if (groupRecord && groupRecord->location == GroupLocation::AutoHide) {
+                const auto target = state.mode == ViewMode::PaneFullscreen ? state.tab : groupRecord->activeTab;
+                if (!materialize(target)) return;
+            }
+        }
+    }
     // Reattach all existing pane widgets before rebuilding hosts, preserving UI
     // state and avoiding destruction through their previous QWidget parent.
-    for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it) {
-        auto& view = d->tabs[it.key()];
-        if (!view) view = new TabContent(this, it.key(), d->storage);
-        const auto options = d->descriptors.value(it.value().activePane);
-        view->rebuild(it.value(), d->panes, d->paneTopBars, d->paneBottomBars);
+    for (auto it = d->tabs.cbegin(); it != d->tabs.cend(); ++it) {
+        const auto* record = d->model.tab(it.key());
+        const QPointer<TabContent> view = it.value();
+        if (!record || !view) continue;
+        const auto options = d->descriptors.value(record->activePane);
+        view->rebuild(*record, d->panes, d->paneTopBars, d->paneBottomBars);
+        if (!self || !view) return;
         view->setBarSharing(options.topBarSharing, options.bottomBarSharing);
+        if (!self) return;
     }
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (!d->model.window(it.key())) {
@@ -881,7 +1067,6 @@ void WindowManager::refresh(bool preserveDrag)
     }
     d->refreshing = false;
     d->inputMethods.focus(d->model, QApplication::focusWidget());
-    QPointer<WindowManager> self(this);
     const auto active = context();
     if (auto window = d->windows.value(active.window); window && window->isVisible() && window->isActiveWindow()) {
         // Replacing a strip temporarily unmounts its pages and loses Qt focus.
@@ -903,6 +1088,7 @@ void WindowManager::refresh(bool preserveDrag)
     if (emptyAtNotification && d->model.windows().isEmpty()
         && d->model.revision() == notificationRevision) emit allWindowsClosed();
     if (!self) return;
+    scheduleContentVisibilityNotification();
     if (d->behavior.closeEmptyWorkbench) {
         QVector<WindowId> empty;
         for (const auto id : d->model.windowOrder()) {
@@ -920,6 +1106,8 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
 {
     Q_UNUSED(group)
     if (d->refreshing || d->projectingViews.contains(window) || !d->model.tab(tab)) return;
+    const QPointer<WindowManager> self(this);
+    if (!ensureTabView(tab) || !self) return;
     d->activeWindow = window; d->model.activateTab(tab);
     if (auto widget = d->windows.value(window)) widget->updateCaption();
     // The drag transaction publishes after its focus/placement restoration.
@@ -927,6 +1115,7 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
     // after Qt has returned from setFocus on the content being restored.
     if (d->drag->hasStableLayout()) return;
     emit layoutChanged();
+    if (self) scheduleContentVisibilityNotification();
 }
 void WindowManager::beginTabDrag(TabId tab, QPoint global) { cancelPendingShortcut(); d->drag->beginTab(tab, global); }
 void WindowManager::beginWindowDrag(WindowId window, QPoint global) { cancelPendingShortcut(); d->drag->beginWindow(window, global); }

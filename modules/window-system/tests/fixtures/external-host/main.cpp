@@ -23,6 +23,11 @@ int main(int argc, char** argv)
     if (!translations.installLanguage(window_system::UiLanguage::English)) return 124;
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
+    int visibilityNotifications = 0;
+    windows.setContentVisibilityHandler([&visibilityNotifications](
+        const QVector<window_system::ContentVisibilityChange>&) {
+        ++visibilityNotifications;
+    });
     {
         window_system::FloatingPanel panel(windows.windowWidget(root), {false, false});
         if (panel.options().dismissOnOutsidePress || panel.isModal()) return 101;
@@ -44,6 +49,8 @@ int main(int argc, char** argv)
     behavior.inputMethodScope = *scope;
     windows.setBehavior(behavior);
     if (!windows.requestNewTab(root)) return 105;
+    QCoreApplication::processEvents();
+    if (visibilityNotifications == 0) return 126;
     const auto firstCreated = windows.context(root).tab;
     if (!windows.requestNewTab(root)) return 106;
     const auto nextCreated = windows.context(root).tab;

@@ -19,16 +19,17 @@ bool WindowManager::prepareHierarchyBars(const QVector<QPair<TabId, PaneId>> &ta
     QVector<PendingBar> pending;
     for (const auto &[tab, pane] : tabs) {
         const QPointer<TabContent> view = d->tabs.value(tab);
-        if (!view)
-            continue;
         const auto content = d->panes.value(pane);
         for (bool top : {true, false}) {
-            if (!view || d->tabs.value(tab) != view || d->panes.value(pane) != content ||
+            if ((view && d->tabs.value(tab) != view) || d->panes.value(pane) != content ||
                 d->model.tabForPane(pane).isNull())
                 break;
             const auto previous = (top ? d->paneTopBars : d->paneBottomBars).value(pane);
-            const QPointer<QWidget> outer =
-                top ? view->takeTopBar(d->storage) : view->takeBottomBar(d->storage);
+            QPointer<QWidget> outer;
+            if (view)
+                outer = top ? view->takeTopBar(d->storage) : view->takeBottomBar(d->storage);
+            else
+                outer = top ? d->pendingTabTopBars.take(tab) : d->pendingTabBottomBars.take(tab);
             if (!self)
                 return false;
             if (!outer)

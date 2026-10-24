@@ -40,6 +40,11 @@ struct TabOptions {
     PaneBarSharing bottomBarSharing = PaneBarSharing::Shared;
 };
 
+struct ContentVisibilityChange {
+    PaneId pane;
+    bool visible = false;
+};
+
 enum class NewTabPosition { Beginning, BeforeActive, AfterActive, End };
 
 // Windows: minimize, maximize, close, aligned to the strip's trailing edge.
@@ -100,6 +105,10 @@ public:
     bool requestNewTab(WindowId window, GroupId group = {}, QString command = {});
     void setContentFactory(ContentFactory factory);
     void setCloseGuard(CloseGuard guard);
+    // The current visibility of every live pane is reported when the handler
+    // is installed. Later changes are coalesced once per event-loop turn.
+    // Cross-window moves report affected panes as hidden before reparenting.
+    void setContentVisibilityHandler(std::function<void(const QVector<ContentVisibilityChange>&)> handler);
     // The manager owns a bar it accepts. Replacing or clearing one hides the
     // previous bar and deletes it from the event loop, so a host may replace a
     // bar from that bar's own signal.
@@ -286,6 +295,9 @@ private:
     void usePerPaneBars(TabId tab);
     void registerCustomChromeCommands();
     bool applyResult(const OperationResult& result);
+    TabContent* ensureTabView(TabId tab);
+    void scheduleContentVisibilityNotification();
+    void reportPanesHiddenBeforeReparent(const QVector<PaneId>& panes);
     bool approveClose(const QVector<TabId>& tabs);
     bool setPaneBar(PaneId pane, QWidget* bar, bool top);
     bool setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top);

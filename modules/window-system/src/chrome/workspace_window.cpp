@@ -519,6 +519,7 @@ void WorkspaceWindow::changeEvent(QEvent* event)
                 if (manager_ && viewState_.mode != ViewMode::Normal && !isFullScreen() && !isMinimized())
                     manager_->setViewMode(id_, ViewMode::Normal);
             });
+        if (manager_) manager_->scheduleContentVisibilityNotification();
     }
 }
 void WorkspaceWindow::updateFrameMargins()
@@ -776,6 +777,12 @@ void WorkspaceWindow::showEvent(QShowEvent* event)
     applyNativeFrame(this);
 #endif
     queuePlacementNotification();
+    if (manager_) manager_->scheduleContentVisibilityNotification();
+}
+void WorkspaceWindow::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 bool WorkspaceWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {

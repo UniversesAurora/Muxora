@@ -27,6 +27,10 @@
 
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
+标签页只在首次需要显示时创建 `TabContent`。未显示过的标签仍创建宿主内容并停在隐藏的存储控件中，标签条只保留轻量页面占位；活动过的标签继续保留视图，切回时不重建内容。首次显示包括中央组或固定组活动标签、临时侧栏展开、组全屏和窗格全屏目标。`setTabTopBar()` / `setTabBottomBar()` 可在首次显示前调用，栏会隐藏保存并在视图创建时交付；标签关闭或恢复新布局会释放未交付的栏。
+
+`setContentVisibilityHandler()` 接收每个 Pane 的实际内容控件显隐。安装处理函数后，模块在下一事件循环发送一次完整快照；之后把本次事件循环内的变化合并成一批。窗口显示／隐藏、最小化／恢复、标签激活、侧栏临时展开、全屏范围和标签页创建都会触发重新计算。跨顶层窗口移动标签时，模块会在视图容器改挂前同步发送相关 Pane 的隐藏状态，宿主可据此释放该窗口的 GPU 或绘制资源；内容控件自身的直接 parent 和业务对象保持。回调可能同步关闭、移动内容或销毁管理器，调用方按设计中的重入规则处理。完整契约见 [通用窗口系统设计 §3.1](../../docs/design/window-system-design.md#31-标签视图与内容可见性)。
+
 `setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签钉在本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询，尺寸由 `TabAppearance::stickySizing` 和 `shrinkStickyTitleWidth` 决定；模型中 `GroupRecord::stickyTabs` 是开头连续钉住的标签数，规则见 [交互细则 · 钉住标签](../../docs/design/window-interaction-design.md#钉住标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
 达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互细则](../../docs/design/window-interaction-design.md)。

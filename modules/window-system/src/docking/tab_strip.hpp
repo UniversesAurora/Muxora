@@ -137,6 +137,9 @@ public:
     std::function<void(int)> currentChanged;
     std::function<void(int)> closeRequested;
     std::function<void(int)> unstickRequested;
+    // Returns the real page for a tab whose strip currently holds a
+    // lightweight placeholder. The callback is invoked only when needed.
+    std::function<QWidget*(TabId)> pageRequested;
     void setStickyCount(int count);
     std::function<void()> hoverGeometryChanged;
     std::function<void()> newTabRequested;
@@ -158,6 +161,7 @@ public:
     int count() const;
     // The page at a strip index, or null.
     [[nodiscard]] QWidget* page(int index) const;
+    [[nodiscard]] bool pageIsPlaceholder(TabId tab) const;
     QRect viewportRectGlobal() const;
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);
@@ -186,6 +190,7 @@ private:
     bool applyPendingViewportState();
     void cancelViewportReflow();
     [[nodiscard]] TabViewportState currentViewportState() const;
+    void resolvePage(TabId tab);
     // The part of the viewport's start that sticky tabs kept in view cover
     // for the tab at `index`; 0 for those sticky tabs themselves.
     [[nodiscard]] int stickyInset(int index) const;
@@ -199,6 +204,7 @@ private:
     QScrollBar* scrollbar_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     QHash<TabId, QPointer<QWidget>> pages_;
+    QSet<TabId> placeholders_;
     QToolButton* list_ = nullptr;
     Theme theme_;
     QPointer<QTimer> autoScroll_;

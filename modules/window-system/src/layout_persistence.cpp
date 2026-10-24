@@ -415,6 +415,10 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         for (auto bar : *bars) if (bar) { bar->setParent(d->storage); bar->hide(); bar->deleteLater(); }
         bars->clear();
     }
+    for (auto* bars : {&d->pendingTabTopBars, &d->pendingTabBottomBars}) {
+        for (auto bar : *bars) if (bar) { bar->setParent(d->storage); bar->hide(); bar->deleteLater(); }
+        bars->clear();
+    }
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->deleteLater(); }
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
     d->options.clear(); d->viewStates.clear(); d->behavior = restoredBehavior;

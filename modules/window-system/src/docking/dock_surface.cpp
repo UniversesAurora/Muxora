@@ -498,14 +498,19 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
     tabs->setAppearance(manager_->tabAppearance(), group->location == GroupLocation::Pinned);
     tabs->setTabBarVisible(group->location != GroupLocation::Central || centralTabBarVisible(manager_->tabBarsVisible(window_)));
+    tabs->pageRequested = [this](TabId tab) -> QWidget* {
+        if (!manager_) return nullptr;
+        const QPointer<TabContent> content(manager_->ensureTabView(tab));
+        if (!manager_ || !content) return nullptr;
+        contents_.insert(tab, content);
+        return content.data();
+    };
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
-        if (auto content = contents.value(tabId)) {
-            const auto* record = manager_->model().tab(tabId);
-            tabs->addTab(content, manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->theme()) : QIcon{},
-                         record->title, tabId);
-            tabs->setTabMetadata(tabs->tabBar()->count() - 1, *record);
-        }
+        const auto* record = manager_->model().tab(tabId);
+        tabs->addTab(contents.value(tabId), manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->theme()) : QIcon{},
+                     record->title, tabId);
+        tabs->setTabMetadata(tabs->tabBar()->count() - 1, *record);
     }
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupViewportStates_.contains(id));
@@ -577,7 +582,10 @@ bool DockSurface::holdsPages(const GroupTabs& widget, const GroupRecord& group,
     for (int index = 0; index < group.tabs.size(); ++index) {
         const auto id = group.tabs.at(index);
         const auto content = contents.value(id);
-        if (!content || widget.tabBar()->tabData(index).toUuid() != id || widget.page(index) != content.data()) return false;
+        if (widget.tabBar()->tabData(index).toUuid() != id) return false;
+        if (!content) {
+            if (!widget.pageIsPlaceholder(id)) return false;
+        } else if (widget.pageIsPlaceholder(id) || widget.page(index) != content.data()) return false;
     }
     return true;
 }
@@ -947,6 +955,8 @@ void DockSurface::selectTab(TabId tab)
         showEdgeGroup(group, tab); return;
     }
     if (auto widget = groups_.value(group)) {
+        if (const QPointer<TabContent> content(manager_->ensureTabView(tab)); content)
+            contents_.insert(tab, content);
         const auto index = record->tabs.indexOf(tab);
         widget->setCurrentIndex(index);
     }
@@ -970,6 +980,8 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     const auto generation = peekGeneration_ + 1;
     closePeek();
     if (!self || !owner || peekGeneration_ != generation || peek_) return;
+    const QPointer<TabContent> content(owner->ensureTabView(tab));
+    if (!self || !owner || !content || !owner->model().tab(tab)) return;
     owner->updateActive(window_, group, tab);
     if (!self || !owner || peekGeneration_ != generation) return;
     // Activation replaces the model's hash storage and notifies the host. The
@@ -1005,7 +1017,8 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     QObject::connect(pin, &QToolButton::clicked, manager_, [this, tab] { manager_->pinTab(tab, true); });
     QObject::connect(close, &QToolButton::clicked, manager_, [this, tab] { manager_->closeTab(tab); });
     layout->addWidget(header);
-    if (auto content = contents_.value(tab)) {
+    if (content && owner->model().tab(tab)) {
+        contents_.insert(tab, content);
         layout->addWidget(content, 1);
         if (!currentRequest()) return;
         // Refresh parks tabs explicitly hidden. Showing their new ancestor
@@ -1044,6 +1057,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     }
     if (!currentRequest()) return;
     layout->activate();
+    if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 bool DockSurface::centralTabBarVisible(bool requested) const
 {
@@ -1073,6 +1087,7 @@ void DockSurface::setSideBarsVisible(bool visible)
     if (root_) root_->layout()->activate();
     restorePinnedExtents();
     placePeek();
+    if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 bool DockSurface::hasContentFocusScope() const
 {
@@ -1120,6 +1135,10 @@ void DockSurface::applyFocusScope()
     closePeek();
     auto* target = groups_.value(focusState_.group).data();
     if (record->location == GroupLocation::AutoHide) {
+        const auto targetTab = focusState_.mode == ViewMode::PaneFullscreen
+            ? focusState_.tab : record->activeTab;
+        if (const QPointer<TabContent> content = manager_->ensureTabView(targetTab); content)
+            contents_.insert(targetTab, content);
         focusedAutoHideGroup_ = buildGroup(record->id, contents_);
         target = focusedAutoHideGroup_;
         if (!target) return;
@@ -1166,6 +1185,7 @@ void DockSurface::setFocusScope(const WindowViewState& state)
         setTabBarsVisible(state.effective.tabBars);
         setSideBarsVisible(state.effective.sideBars);
         if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
+        if (manager_) manager_->scheduleContentVisibilityNotification();
         return;
     }
     if (!wasFocused && (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen)) {
@@ -1189,6 +1209,7 @@ void DockSurface::setFocusScope(const WindowViewState& state)
         previousPeekTab_ = TabId{};
     }
     if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
+    if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 void DockSurface::closePeek()
 {
@@ -1208,6 +1229,7 @@ void DockSurface::closePeek()
         }
     }
     delete closing.data();
+    if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 void DockSurface::updatePeekSize(TabId tab) { if (tab == peekTab_) placePeek(); }
 void DockSurface::placePeek()
