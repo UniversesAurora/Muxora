@@ -62,6 +62,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/tabs: Keep the slot of a tab dragged along its own last row`：用户试用预览时发现的多行拖动闪烁（原有问题，与钉住无关），见 [记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)。
   - `window-system/tabs: Keep wheel expansion while tabs use one row`：用户要求关闭多行时保留滚轮展开，见 [记录](verification-log/2026-10.md#关闭多行时保留滚轮展开2026-10-24)。
   - `window-system/tabs: Size the single-row canvas to its new-tab buttons`：钉住行占满时多出的滚动条，见 [记录](verification-log/2026-10.md#钉住行占满时单行标签栏多出滚动条2026-10-24)。
+  - `window-system/tabs: Let users choose the shrunk sticky tab width`：用户要求收缩宽度可调，新增 `tabs.shrinkStickyTabWidth`，见 [记录](verification-log/2026-10.md#收缩的钉住标签宽度可调2026-10-24)。
   - 每项的实现要点、新增用例、反向验证和运行过的套件见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`（16 行）。Release 全量结果见“环境与注意事项”。
 - **进行中**：无。
 - **下一步**：
@@ -69,7 +70,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   2. 然后按 Codex 原顺序 1.10 → 1.7 → 1.11 → 1.12。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。
-- **本轮新决定**：关闭多行时保留滚轮展开的值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；8.15b 的三个设置照 VS Code 的名称、选项和默认值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+- **本轮新决定**：收缩的钉住标签宽度可调（用户 2026-10-24），多行收起时不常显新建按钮、保持现状（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；关闭多行时保留滚轮展开的值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；8.15b 的三个设置照 VS Code 的名称、选项和默认值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
 - **环境与注意事项**：
   - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
   - Release 全量在 `f68b388`（本分支全部 8.15b 提交）上 64/64 通过（经隔离桌面，约 324 秒）。

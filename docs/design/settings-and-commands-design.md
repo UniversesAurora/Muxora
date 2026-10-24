@@ -97,7 +97,8 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.clipSidebarTitles` | 默认 `false`；独立控制四边非固定收纳条的标题裁切，不影响普通及固定标签栏。 |
 | `tabs.maximumSidebarTitleWidth` | 非固定收纳条的文字最大长度，单位、默认值和范围与 `tabs.maximumTitleWidth` 相同，数值独立保存。 |
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
-| `tabs.stickySizing` | 钉住标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，不显示钉子）、`shrink`（宽 80，显示编号、图标和标题开头，保留钉子）。紧凑和收缩时，单行标签栏滚动时钉住标签留在视口开头，其他标签从它们下面滚过，最后一个钉住标签右侧有一条主题边框色的分隔线；多行时不固定。 |
+| `tabs.stickySizing` | 钉住标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，不显示钉子）、`shrink`（宽度由 `tabs.shrinkStickyTabWidth` 决定，显示编号、图标和标题开头，保留钉子）。紧凑和收缩时，单行标签栏滚动时钉住标签留在视口开头，其他标签从它们下面滚过，最后一个钉住标签右侧有一条主题边框色的分隔线；多行时不固定。 |
+| `tabs.shrinkStickyTabWidth` | 收缩时每个钉住标签的宽度，显示单位为 `px`（Qt 逻辑像素），默认 `80`（与 VS Code 相同），允许整数 `38–1000`，最小值等于紧凑宽度。标题放不下就裁掉，比标题宽时右侧留空，钉子仍在最右边。VS Code 没有这一项，是用户 2026-10-24 要求加的；只在 `tabs.stickySizing` 为 `shrink` 时生效，设置页里其他尺寸下不可编辑但保留数值。 |
 | `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后有钉住标签的组把它们放在其他标签上方单独的行里，放不下时在这几行里换行；其他标签从下一行开始，单行时照常横向滚动，钉住的行不动。多行收起时显示钉住的行和活动标签所在的行。尺寸设置照样生效，两行之间不画分隔线。 |
 | `tabs.preventStickyClose` | 哪些关闭方式不关钉住标签，对应 VS Code 的 `workbench.editor.preventPinnedEditorClose`：`keyboardAndMouse`（默认）、`keyboard`、`mouse`、`never`。按键指从快捷键执行的关闭当前标签（`workspace.closeTab`），以及会连带关闭标签的关闭窗格（`pane.close`，标签只剩这一个窗格时）；被拦下时和 VS Code 一样切到本组第一个未钉住的标签，本组没有就切到同一窗口其他组的第一个未钉住标签，都没有就什么也不做。鼠标指中键点击。菜单、命令面板、标签列表的关闭按钮、API 和 Lua 照常关闭。Lua 中取值写作 `keyboard_and_mouse`、`keyboard`、`mouse`、`never`。 |
 

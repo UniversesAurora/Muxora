@@ -258,8 +258,8 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
         return area;
     };
     // A preview among sized sticky tabs takes their width, not the carried label's.
-    const int previewExtent = insertionSticky_ && appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth
-        : insertionSticky_ && appearance_.stickySizing == StickyTabSizing::Shrink ? shrinkStickyTabWidth : insertionExtent_;
+    const int previewExtent = insertionSticky_ && appearance_.stickySizing != StickyTabSizing::Normal ? sizedStickyWidth()
+        : insertionExtent_;
     // The sticky run ends before the first other tab or a preview for one.
     std::optional<int> runEnd;
     stickyRowsHeight_ = 0;
@@ -493,9 +493,11 @@ TabLabelParts DragTabBar::labelParts(int index) const {
 QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
     const bool sized = index < stickyCount_ && appearance_.stickySizing != StickyTabSizing::Normal;
-    size.setWidth(!sized ? naturalTabWidth(index)
-        : appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : shrinkStickyTabWidth);
+    size.setWidth(sized ? sizedStickyWidth() : naturalTabWidth(index));
     return size;
+}
+int DragTabBar::sizedStickyWidth() const {
+    return appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : appearance_.shrinkStickyTabWidth;
 }
 QRect DragTabBar::closeRect(int index) const {
     if (isCompactSticky(index)) return {};

@@ -117,6 +117,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     map["maximum_tab_title_width"] = value.maximumTitleWidth;
     map["maximum_sidebar_title_width"] = value.maximumSidebarTitleWidth;
     map["sticky_tab_sizing"] = stickySizings.value(int(value.stickySizing));
+    map["shrink_sticky_tab_width"] = value.shrinkStickyTabWidth;
     map["prevent_sticky_close"] = stickyCloseGuards.value(int(value.preventStickyClose));
     QVariantList colors;
     for (const auto &preset : value.colors) {
@@ -134,7 +135,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
 }
 void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKnown = true) {
     QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width",
-                        "sticky_tab_sizing", "prevent_sticky_close", "colors"};
+                        "sticky_tab_sizing", "shrink_sticky_tab_width", "prevent_sticky_close", "colors"};
     for (const auto &[name, field] : appearanceBooleans) {
         known.insert(name);
         if (map.contains(name))
@@ -160,6 +161,9 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
             throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink").toUtf8().constData());
         value.stickySizing = StickyTabSizing(index);
     }
+    if (map.contains("shrink_sticky_tab_width"))
+        value.shrinkStickyTabWidth = number(map["shrink_sticky_tab_width"], value.shrinkStickyTabWidth,
+            minimumShrinkStickyTabWidth, maximumShrinkStickyTabWidth);
     if (map.contains("prevent_sticky_close")) {
         const auto index = stickyCloseGuards.indexOf(text({map["prevent_sticky_close"]}, 0));
         if (index < 0)

@@ -18,7 +18,10 @@ enum class StickyTabSizing { Normal, Compact, Shrink };
 enum class StickyTabCloseGuard { KeyboardAndMouse, Keyboard, Mouse, Never };
 
 inline constexpr int compactStickyTabWidth = 38;
-inline constexpr int shrinkStickyTabWidth = 80;
+// Shrunk sticky tabs take a user-chosen fixed width, 80 by default as VS Code.
+inline constexpr int minimumShrinkStickyTabWidth = compactStickyTabWidth;
+inline constexpr int maximumShrinkStickyTabWidth = 1000;
+inline constexpr int defaultShrinkStickyTabWidth = 80;
 
 inline constexpr int minimumTabTitleWidth = 0;
 inline constexpr int maximumTabTitleWidth = 1000000;
@@ -66,6 +69,7 @@ struct TabAppearance {
     // Compact and shrunk sticky tabs stay in view while the other tabs of a
     // single-row strip scroll under them.
     StickyTabSizing stickySizing = StickyTabSizing::Normal;
+    int shrinkStickyTabWidth = defaultShrinkStickyTabWidth;
     // Sticky tabs take a row of their own above the other tabs, as VS Code's
     // workbench.editor.pinnedTabsOnSeparateRow.
     bool stickyTabsOnSeparateRow = false;

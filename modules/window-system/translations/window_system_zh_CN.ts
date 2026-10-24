@@ -3803,5 +3803,20 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>Sticky tab</source>
             <translation>已钉住</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="222"></location>
+            <source>The shrunk sticky tab width must be an integer number of logical pixels within the allowed range</source>
+            <translation>收缩的钉住标签宽度必须是允许范围内的整数逻辑像素</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="150"></location>
+            <source>Shrunk sticky tab width</source>
+            <translation>收缩时的钉住标签宽度</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="162"></location>
+            <source>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</source>
+            <translation>钉住标签尺寸为“收缩”时每个钉住标签的宽度，标题放不下的部分被裁掉。</translation>
+        </message>
     </context>
 </TS>

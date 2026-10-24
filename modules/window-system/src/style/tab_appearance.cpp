@@ -145,6 +145,8 @@ bool validTabAppearance(const TabAppearance& appearance)
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
         || stickySizingName(appearance.stickySizing).isEmpty()
+        || appearance.shrinkStickyTabWidth < minimumShrinkStickyTabWidth
+        || appearance.shrinkStickyTabWidth > maximumShrinkStickyTabWidth
         || stickyCloseGuardName(appearance.preventStickyClose).isEmpty()
         || appearance.colors.size() > 128) return false;
     QSet<QString> ids;
@@ -172,6 +174,7 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth},
         {"clipSidebarTitles", appearance.clipSidebarTitles}, {"maximumSidebarTitleWidth", appearance.maximumSidebarTitleWidth},
         {"stickySizing", stickySizingName(appearance.stickySizing)},
+        {"shrinkStickyTabWidth", appearance.shrinkStickyTabWidth},
         {"stickyTabsOnSeparateRow", appearance.stickyTabsOnSeparateRow},
         {"preventStickyClose", stickyCloseGuardName(appearance.preventStickyClose)}, {"colors", colors}};
 }
@@ -211,6 +214,13 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
         if (!sizing.isString() || !parsed)
             return {false, QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink")};
         candidate.stickySizing = *parsed;
+    }
+    if (const auto width = object.value("shrinkStickyTabWidth"); !width.isUndefined()) {
+        const double value = width.toDouble();
+        if (!width.isDouble() || !std::isfinite(value) || std::trunc(value) != value
+            || value < minimumShrinkStickyTabWidth || value > maximumShrinkStickyTabWidth)
+            return {false, QCoreApplication::translate("WindowSystem", "The shrunk sticky tab width must be an integer number of logical pixels within the allowed range")};
+        candidate.shrinkStickyTabWidth = static_cast<int>(value);
     }
     if (const auto guard = object.value("preventStickyClose"); !guard.isUndefined()) {
         const auto parsed = stickyCloseGuardFromName(guard.toString());

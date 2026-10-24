@@ -3810,5 +3810,20 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>Sticky tab</source>
             <translation>Sticky tab</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="222"></location>
+            <source>The shrunk sticky tab width must be an integer number of logical pixels within the allowed range</source>
+            <translation>The shrunk sticky tab width must be an integer number of logical pixels within the allowed range</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="150"></location>
+            <source>Shrunk sticky tab width</source>
+            <translation>Shrunk sticky tab width</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="162"></location>
+            <source>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</source>
+            <translation>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</translation>
+        </message>
     </context>
 </TS>

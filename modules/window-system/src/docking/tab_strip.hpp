@@ -84,6 +84,8 @@ private:
     bool isDragged(int index) const;
     // A compact sticky tab shows only its icon or initial and has no pin.
     bool isCompactSticky(int index) const;
+    // The fixed width of a compact or shrunk sticky tab.
+    int sizedStickyWidth() const;
     // Sticky tabs, and a sticky insertion preview, stay in view.
     bool stickyFloats() const;
     // Sticky tabs take rows of their own above the others.
