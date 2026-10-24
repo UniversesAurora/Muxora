@@ -60,7 +60,7 @@ bool chooseSize(WindowManager* manager, const CommandContext& context, TabId tab
     // manager rejects it without deleting a stack object during the modal loop.
     QDialog dialog;
     dialog.setObjectName("PeekSizeDialog");
-    dialog.setWindowTitle(QCoreApplication::translate("WindowSystem", "临时展开面板大小"));
+    dialog.setWindowTitle(QCoreApplication::translate("WindowSystem", "Auto-hide panel size"));
     dialog.setWindowModality(Qt::WindowModal);
     dialog.winId();
     if (window->windowHandle()) dialog.windowHandle()->setTransientParent(window->windowHandle());
@@ -68,12 +68,12 @@ bool chooseSize(WindowManager* manager, const CommandContext& context, TabId tab
     auto* width = new QSpinBox(&dialog); width->setObjectName("PeekWidthInput");
     auto* height = new QSpinBox(&dialog); height->setObjectName("PeekHeightInput");
     width->setRange(0, QWIDGETSIZE_MAX); height->setRange(0, QWIDGETSIZE_MAX);
-    width->setSpecialValueText(vertical ? QCoreApplication::translate("WindowSystem", "默认宽度") : QCoreApplication::translate("WindowSystem", "填满宽度"));
-    height->setSpecialValueText(vertical ? QCoreApplication::translate("WindowSystem", "填满高度") : QCoreApplication::translate("WindowSystem", "默认高度"));
+    width->setSpecialValueText(vertical ? QCoreApplication::translate("WindowSystem", "Default width") : QCoreApplication::translate("WindowSystem", "Fill width"));
+    height->setSpecialValueText(vertical ? QCoreApplication::translate("WindowSystem", "Fill height") : QCoreApplication::translate("WindowSystem", "Default height"));
     const auto current = manager->peekSizePolicy(tab, edge);
     width->setValue(current.width.value_or(0)); height->setValue(current.height.value_or(0));
-    width->setSuffix(QCoreApplication::translate("WindowSystem", " 像素")); height->setSuffix(QCoreApplication::translate("WindowSystem", " 像素"));
-    form->addRow(QCoreApplication::translate("WindowSystem", "宽度(&W)"), width); form->addRow(QCoreApplication::translate("WindowSystem", "高度(&H)"), height);
+    width->setSuffix(QCoreApplication::translate("WindowSystem", " px")); height->setSuffix(QCoreApplication::translate("WindowSystem", " px"));
+    form->addRow(QCoreApplication::translate("WindowSystem", "&Width"), width); form->addRow(QCoreApplication::translate("WindowSystem", "&Height"), height);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     buttons->setObjectName("PeekSizeButtons"); form->addRow(buttons);
     const auto updateValidity = [width, height, buttons] {
@@ -117,9 +117,9 @@ bool setSize(WindowManager* manager, const CommandContext& context)
 void registerPeekSizeCommands(WindowManager* manager)
 {
     const auto enabled = [manager](const CommandContext& context) { return isAutoHideTab(manager, targetTab(context)); };
-    manager->commands().add({"tab.peek.setSize", QCoreApplication::translate("WindowSystem", "设置临时展开大小…"), "布局", {}, enabled,
+    manager->commands().add({"tab.peek.setSize", QCoreApplication::translate("WindowSystem", "Set auto-hide panel size…"), "布局", {}, enabled,
         [manager](const CommandContext& context) { return setSize(manager, context); }});
-    manager->commands().add({"tab.peek.resetSize", QCoreApplication::translate("WindowSystem", "重置临时展开大小"), "布局", {}, enabled,
+    manager->commands().add({"tab.peek.resetSize", QCoreApplication::translate("WindowSystem", "Reset auto-hide panel size"), "布局", {}, enabled,
         [manager](const CommandContext& context) {
             const auto tab = targetTab(context);
             return manager->resetPeekSize(tab, targetEdge(manager, tab));

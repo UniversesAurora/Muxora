@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "script_host_p.hpp"
 #include <QKeySequence>
 #include <QRegularExpression>
@@ -20,10 +21,10 @@ QStringList stringList(const QVariant &value) {
         return {};
     QStringList list;
     if (value.metaType().id() != QMetaType::QVariantList && value.metaType().id() != QMetaType::QStringList)
-        throw std::runtime_error("Expected a string or array of strings");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Expected a string or array of strings").toUtf8().constData());
     for (const auto &item : value.toList()) {
         if (item.metaType().id() != QMetaType::QString)
-            throw std::runtime_error("Array item must be a string");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Array item must be a string").toUtf8().constData());
         list.append(item.toString());
     }
     return list;
@@ -86,7 +87,7 @@ void ScriptHost::Private::installScriptApi() {
         const auto id = text({spec.value("id")}, 0);
         if (!ownedId(id) || spec.value("title").toString().size() > 256 || commandCallbacks.size() >= 256 ||
             manager->commands().find(id))
-            return failure("Invalid, duplicate or excessive user command");
+            return failure(QCoreApplication::translate("WindowSystem", "Invalid, duplicate or excessive user command"));
         Command command;
         command.id = id;
         command.title = text({spec.value("title")}, 0, id);
@@ -95,16 +96,16 @@ void ScriptHost::Private::installScriptApi() {
         if (spec.contains("menu")) {
             command.menuPath = stringList(spec["menu"]);
             if (command.menuPath.isEmpty() || command.menuPath.size() > 5)
-                return failure("Menu path must contain one to five names");
+                return failure(QCoreApplication::translate("WindowSystem", "Menu path must contain one to five names"));
             for (const auto &part : command.menuPath)
                 if (part.isEmpty() || part.size() > 256)
-                    return failure("Invalid menu path name");
+                    return failure(QCoreApplication::translate("WindowSystem", "Invalid menu path name"));
         }
         command.menuOrder = number(spec.value("order"), 0, -100000, 100000);
         if (spec.contains("context_menus")) {
             const auto entries = spec.value("context_menus");
             if (entries.metaType().id() != QMetaType::QVariantList)
-                return failure("Context menus must be an array");
+                return failure(QCoreApplication::translate("WindowSystem", "Context menus must be an array"));
             for (const auto &entry : entries.toList()) {
                 const auto menu = object({entry}, 0);
                 const auto target = text({menu.value("target")}, 0);
@@ -118,7 +119,7 @@ void ScriptHost::Private::installScriptApi() {
                 else if (target == "window")
                     location.target = ContextMenuTarget::Window;
                 else
-                    return failure("Unknown context menu target");
+                    return failure(QCoreApplication::translate("WindowSystem", "Unknown context menu target"));
                 if (menu.contains("path"))
                     location.path = stringList(menu["path"]);
                 location.contentType = text({menu.value("content_type")}, 0);
@@ -160,13 +161,13 @@ void ScriptHost::Private::installScriptApi() {
     handlers["keymap.set"] = [this](const Args &a, const Context &) {
         const auto command = text(a, 1);
         if (!manager->commands().find(command))
-            return failure("Unknown command");
+            return failure(QCoreApplication::translate("WindowSystem", "Unknown command"));
         const auto options = object(a, 2);
         const auto keys = stringList(a.value(0));
         const bool replace = boolean({options.value("replace", false)}, 0);
         const auto arguments = object({options.value("args")}, 0);
         if (keys.isEmpty() || keys.size() > 32)
-            return failure("Too many script bindings");
+            return failure(QCoreApplication::translate("WindowSystem", "Too many script bindings"));
         const auto strictPrefix = [](const QKeySequence &first, const QKeySequence &second) {
             return first.matches(second) == QKeySequence::PartialMatch ||
                    second.matches(first) == QKeySequence::PartialMatch;
@@ -175,10 +176,10 @@ void ScriptHost::Private::installScriptApi() {
         for (const auto &key : keys) {
             const auto parsed = sequence(key);
             if (parsed.isEmpty())
-                return failure("Invalid shortcut sequence");
+                return failure(QCoreApplication::translate("WindowSystem", "Invalid shortcut sequence"));
             for (const auto &addition : additions)
                 if (strictPrefix(parsed, addition.sequence))
-                    return failure("Shortcut aliases contain a prefix conflict");
+                    return failure(QCoreApplication::translate("WindowSystem", "Shortcut aliases contain a prefix conflict"));
             if (std::any_of(additions.cbegin(), additions.cend(),
                             [&](const CommandBinding &binding) { return binding.sequence == parsed; }))
                 continue;
@@ -194,7 +195,7 @@ void ScriptHost::Private::installScriptApi() {
                         if (it->sequence.matches(addition.sequence) != QKeySequence::NoMatch ||
                             addition.sequence.matches(it->sequence) != QKeySequence::NoMatch) {
                             if (!replace)
-                                return failure("Shortcut conflicts with " + other.id);
+                                return failure(QCoreApplication::translate("WindowSystem", "Shortcut conflicts with %1").arg(other.id));
                             it = bindings.erase(it);
                         } else
                             ++it;
@@ -208,7 +209,7 @@ void ScriptHost::Private::installScriptApi() {
                 std::any_of(replacement.cbegin(), replacement.cend(), [&](const CommandBinding &binding) {
                     return strictPrefix(binding.sequence, addition.sequence);
                 }))
-                return failure("Shortcut has a prefix conflict with " + command);
+                return failure(QCoreApplication::translate("WindowSystem", "Shortcut has a prefix conflict with %1").arg(command));
             replacement.erase(std::remove_if(replacement.begin(), replacement.end(),
                                              [&](const CommandBinding &binding) {
                                                  return binding.sequence == addition.sequence ||
@@ -223,14 +224,14 @@ void ScriptHost::Private::installScriptApi() {
             if (!saved.contains(it.key()))
                 saved.insert(it.key(), manager->commands().bindings(it.key()));
         if (saved.size() > 512)
-            return failure("Too many script binding targets");
+            return failure(QCoreApplication::translate("WindowSystem", "Too many script binding targets"));
         // Validate in a detached registry before capturing owner resources.
         // The real registry commits the whole batch and notifies only once.
         CommandRegistry validator;
         for (auto it = conflicts.cbegin(); it != conflicts.cend(); ++it) {
             if (it.key() == QStringLiteral("runCommands")) {
                 if (!validator.setBindings(it.key(), it.value()))
-                    return failure("Invalid shortcut binding");
+                    return failure(QCoreApplication::translate("WindowSystem", "Invalid shortcut binding"));
                 continue;
             }
             Command candidate;
@@ -238,7 +239,7 @@ void ScriptHost::Private::installScriptApi() {
             candidate.execute = [](const CommandContext &) { return true; };
             candidate.bindings = it.value();
             if (!validator.add(std::move(candidate)))
-                return failure("Invalid shortcut binding");
+                return failure(QCoreApplication::translate("WindowSystem", "Invalid shortcut binding"));
         }
         const QPointer<ScriptHost> owner(q);
         const auto previous = previousBindings;
@@ -258,7 +259,7 @@ void ScriptHost::Private::installScriptApi() {
         auto bindings = manager->commands().bindings(command);
         if (!previousBindings.contains(command)) {
             if (previousBindings.size() >= 512)
-                return failure("Too many script binding targets");
+                return failure(QCoreApplication::translate("WindowSystem", "Too many script binding targets"));
             previousBindings.insert(command, bindings);
         }
         bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
@@ -270,13 +271,13 @@ void ScriptHost::Private::installScriptApi() {
         const auto spec = object(a, 0);
         const auto id = text({spec.value("id")}, 0);
         if (!ownedId(id) || ownedToolbars.contains(id) || ownedToolbars.size() >= 32)
-            return failure("Invalid or excessive user toolbar");
+            return failure(QCoreApplication::translate("WindowSystem", "Invalid or excessive user toolbar"));
         const auto commands = stringList(spec.value("commands"));
         if (commands.size() > 128)
-            return failure("Too many toolbar commands");
+            return failure(QCoreApplication::translate("WindowSystem", "Too many toolbar commands"));
         const auto area = text({spec.value("area")}, 0, "top");
         if (area != "top" && area != "bottom")
-            return failure("Unknown toolbar area");
+            return failure(QCoreApplication::translate("WindowSystem", "Unknown toolbar area"));
         CommandToolbar toolbar{id, text({spec.value("title")}, 0, id), commands,
                                area == "top" ? ToolbarArea::Top : ToolbarArea::Bottom,
                                number(spec.value("row"), 1, 0, 255)};
@@ -304,7 +305,7 @@ void ScriptHost::Private::installScriptApi() {
         const auto spec = object(a, 0);
         const auto id = text({spec.value("id")}, 0);
         if (!ownedId(id) || ownedStatusItems.contains(id) || ownedStatusItems.size() >= 64)
-            return failure("Invalid or excessive status item");
+            return failure(QCoreApplication::translate("WindowSystem", "Invalid or excessive status item"));
         const StatusItem item{id, text({spec.value("text")}, 0), text({spec.value("tooltip")}, 0)};
         const QPointer<ScriptHost> owner(q);
         const bool retained = retainedStatusItems.remove(id);
@@ -342,7 +343,7 @@ void ScriptHost::Private::installScriptApi() {
         });
         const auto name = text(a, 0);
         if (name.isEmpty() || name.size() > 128 || subscriptions.size() >= 128)
-            return failure("Invalid or excessive event subscription");
+            return failure(QCoreApplication::translate("WindowSystem", "Invalid or excessive event subscription"));
         const auto id = QStringLiteral("subscription.%1").arg(++nextResource);
         subscriptions.insert(id, {name, callback});
         transferred = true;
@@ -354,7 +355,7 @@ void ScriptHost::Private::installScriptApi() {
     handlers["events.emit"] = [this](const Args &a, const Context &c) {
         const auto name = text(a, 0);
         if (!name.startsWith("user."))
-            return failure("Scripts may publish user.* events only");
+            return failure(QCoreApplication::translate("WindowSystem", "Scripts may publish user.* events only"));
         q->publishEvent(name, a.value(1), c);
         return result(true);
     };
@@ -367,7 +368,7 @@ void ScriptHost::Private::installScriptApi() {
                 runtime->releaseCallback(callback);
         });
         if (timers.size() >= 128)
-            return failure("Too many script timers");
+            return failure(QCoreApplication::translate("WindowSystem", "Too many script timers"));
         const int delay = number(a.value(0), 1000, 10, 2147483647);
         const bool repeat = boolean(a, 2);
         const auto id = QStringLiteral("timer.%1").arg(++nextResource);

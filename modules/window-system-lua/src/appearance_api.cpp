@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "script_host_p.hpp"
 #include <window_system/localization.hpp>
 #include <QLabel>
@@ -93,7 +94,7 @@ ViewMode fullscreen(const QString &name) {
         return ViewMode::GroupFullscreen;
     if (name == "pane")
         return ViewMode::PaneFullscreen;
-    throw std::runtime_error("Invalid fullscreen mode");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid fullscreen mode").toUtf8().constData());
 }
 TabBarPlacement tabPlacement(const QVariant &value) {
     const auto name = text({value}, 0);
@@ -101,7 +102,7 @@ TabBarPlacement tabPlacement(const QVariant &value) {
         return TabBarPlacement::Top;
     if (name == "bottom")
         return TabBarPlacement::Bottom;
-    throw std::runtime_error("Tab position must be top or bottom");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Tab position must be top or bottom").toUtf8().constData());
 }
 QVariantMap appearanceValue(const TabAppearance &value) {
     QVariantMap map;
@@ -135,7 +136,7 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
     if (requireKnown)
         for (const auto &key : map.keys())
             if (!known.contains(key))
-                throw std::runtime_error("Unknown tab appearance field");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown tab appearance field").toUtf8().constData());
     if (map.contains("tab_position"))
         value.centralPlacement = tabPlacement(map["tab_position"]);
     if (map.contains("pinned_tab_position"))
@@ -149,9 +150,9 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
     if (map.contains("colors")) {
         const auto presets = map["colors"];
         if (presets.metaType().id() != QMetaType::QVariantList)
-            throw std::runtime_error("Colors must be an array");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Colors must be an array").toUtf8().constData());
         if (presets.toList().size() > 64)
-            throw std::runtime_error("Too many color presets");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Too many color presets").toUtf8().constData());
         QVector<TabColorPreset> colors;
         for (const auto &entry : presets.toList()) {
             const auto item = object({entry}, 0);
@@ -163,7 +164,7 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
                 for (const auto &[key, color] : visualFields) {
                     QColor parsed(text({state.value(key)}, 0));
                     if (!parsed.isValid())
-                        throw std::runtime_error("Invalid preset color");
+                        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid preset color").toUtf8().constData());
                     (preset.*field).*color = parsed;
                 }
             }
@@ -209,7 +210,7 @@ void ScriptHost::Private::installAppearanceApi() {
         }
         for (const auto &key : map.keys())
             if (!known.contains(key))
-                throw std::runtime_error("Unknown setting");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown setting").toUtf8().constData());
         readAppearance(map, appearance, false);
         behavior.revealDelayMs = number(map.value("reveal_delay_ms"), behavior.revealDelayMs, 200, 2000);
         if (map.contains("zen_fullscreen"))
@@ -217,20 +218,20 @@ void ScriptHost::Private::installAppearanceApi() {
         if (map.contains("drag_outside_kind")) {
             const auto kind = text({map["drag_outside_kind"]}, 0);
             if (kind != "floating" && kind != "workbench")
-                throw std::runtime_error("Invalid window kind");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid window kind").toUtf8().constData());
             behavior.dragOutsideKind = kind == "floating" ? WindowKind::Floating : WindowKind::Workbench;
         }
         if (map.contains("new_tab_position")) {
             const QStringList positions{"beginning", "before_active", "after_active", "end"};
             const auto index = positions.indexOf(text({map["new_tab_position"]}, 0));
             if (index < 0)
-                throw std::runtime_error("Invalid new tab position");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid new tab position").toUtf8().constData());
             behavior.newTabPosition = NewTabPosition(index);
         }
         if (map.contains("caption_button_order")) {
             const auto index = captionOrders.indexOf(text({map["caption_button_order"]}, 0));
             if (index < 0)
-                throw std::runtime_error("Caption button order must be windows, reversed or macos");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Caption button order must be windows, reversed or macos").toUtf8().constData());
             behavior.captionButtonOrder = CaptionButtonOrder(index);
         }
         QPointer<TranslationManager> language = TranslationManager::applicationInstance();
@@ -238,7 +239,7 @@ void ScriptHost::Private::installAppearanceApi() {
         if (map.contains("language")) {
             const auto name = text({map["language"]}, 0);
             if (!language || (name != "system" && name != "en" && name != "zh_CN"))
-                throw std::runtime_error("Unsupported language");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unsupported language").toUtf8().constData());
             requested = uiLanguageFromId(name);
         }
         const QPointer<ScriptHost> owner(q);
@@ -278,7 +279,7 @@ void ScriptHost::Private::installAppearanceApi() {
             if (it.key() == "name") {
                 theme.name = text({it.value()}, 0);
                 if (theme.name.size() > 128)
-                    throw std::runtime_error("Theme name is too long");
+                    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Theme name is too long").toUtf8().constData());
                 continue;
             }
             if (it.key() == "metrics") {
@@ -293,7 +294,7 @@ void ScriptHost::Private::installAppearanceApi() {
                             break;
                         }
                     if (!found)
-                        throw std::runtime_error("Unknown theme metric");
+                        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown theme metric").toUtf8().constData());
                 }
                 continue;
             }
@@ -302,13 +303,13 @@ void ScriptHost::Private::installAppearanceApi() {
                 if (it.key() == name) {
                     const QColor color(text({it.value()}, 0));
                     if (!color.isValid())
-                        throw std::runtime_error("Invalid color");
+                        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid color").toUtf8().constData());
                     theme.*field = color;
                     found = true;
                     break;
                 }
             if (!found)
-                throw std::runtime_error("Unknown theme field");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown theme field").toUtf8().constData());
         }
         manager->setTheme(theme);
         return result(true);
@@ -317,14 +318,14 @@ void ScriptHost::Private::installAppearanceApi() {
         const auto id = target(a, 0, c, pane ? Target::Pane : Target::Tab);
         const auto side = text(a, 1);
         if (side != "top" && side != "bottom")
-            throw std::runtime_error("Bar must be top or bottom");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar must be top or bottom").toUtf8().constData());
         QPointer<QLabel> bar;
         if (a.size() > 2 && a[2].isValid() && !a[2].isNull()) {
             const auto spec =
                 a[2].metaType().id() == QMetaType::QString ? QVariantMap{{"text", a[2]}} : object(a, 2);
             const auto label = text({spec.value("text")}, 0);
             if (label.size() > 8192)
-                throw std::runtime_error("Bar text is too long");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar text is too long").toUtf8().constData());
             bar = new QLabel(label);
             bar->setTextFormat(Qt::PlainText);
             bar->setToolTip(text({spec.value("tooltip")}, 0));

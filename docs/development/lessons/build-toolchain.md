@@ -46,3 +46,10 @@
 - **原因**：CMake 缓存记录了第一次配置时的编译器，换成另一个编译器后不能沿用；Debug 和 Release 是两个独立的构建目录，各自的缓存要分别判断。
 - **做法**：`toolchain.ps1` 的 `Get-StaleBuildReason` 读取构建目录 `CMakeCache.txt` 中的 `CMAKE_CXX_COMPILER`，与本次使用的编译器不同时由构建脚本先清空该目录。不要用“上一次构建用的是哪套工具链”这种全局记录来判断，否则先构建 Release 后，Debug 目录会漏掉清理。
 - **出处**：2026-10-20。
+
+## 翻译提取
+
+- **现象**：相同翻译覆盖检查在普通目录通过，临时副本的路径含中文后，`lupdate` 报源文件不存在。
+- **原因**：Qt 的 `@list` 输入按本地代码页解码，UTF-8 文件中的路径会损坏；给每行路径加引号也会把引号当作文件名的一部分。依据见 [Qt lupdate 源码](https://github.com/qt/qttools/blob/6.12/src/linguist/lupdate/main.cpp)。
+- **做法**：使用 `lupdate -project` 的 UTF-8 JSON 项目描述传入源文件清单，保留 Unicode 路径，也避免命令行长度限制。临时夹具目录包含中文和空格，正反向用例都经同一入口。
+- **验证**：`tools/tests/translations-test.ps1`，经过见 [8.12 记录](../verification-log/2026-10.md#英文源文本与覆盖检查2026-10-24)。

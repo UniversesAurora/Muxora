@@ -54,21 +54,21 @@ void WindowManager::registerHierarchyCommands() {
         menu->setAttribute(Qt::WA_DeleteOnClose);
         applyTheme(menu, theme());
         const QPointer<WindowManager> self(this);
-        const QStringList directions{QCoreApplication::translate("WindowSystem", "目标窗格左侧"),
-                                     QCoreApplication::translate("WindowSystem", "目标窗格右侧"),
-                                     QCoreApplication::translate("WindowSystem", "目标窗格上方"),
-                                     QCoreApplication::translate("WindowSystem", "目标窗格下方")};
+        const QStringList directions{QCoreApplication::translate("WindowSystem", "Left of target pane"),
+                                     QCoreApplication::translate("WindowSystem", "Right of target pane"),
+                                     QCoreApplication::translate("WindowSystem", "Above target pane"),
+                                     QCoreApplication::translate("WindowSystem", "Below target pane")};
         for (const auto window : d->model.windowOrder()) {
             const auto *widget = windowWidget(window);
             auto *windows = menu->addMenu(widget ? widget->windowTitle()
-                                                 : QCoreApplication::translate("WindowSystem", "窗口"));
+                                                 : QCoreApplication::translate("WindowSystem", "Window"));
             auto groups = d->model.centralGroups(window);
             groups += d->model.window(window)->edgeGroups;
             for (const auto id : groups) {
                 const auto *group = d->model.group(id);
                 if (!group || (wholeGroup && id == context.group))
                     continue;
-                auto *groupMenu = windows->addMenu(QCoreApplication::translate("WindowSystem", "标签组：%1")
+                auto *groupMenu = windows->addMenu(QCoreApplication::translate("WindowSystem", "Tab group: %1")
                                                        .arg(d->model.tab(group->activeTab)->title));
                 for (const auto tab : group->tabs) {
                     if (tab == context.tab && !wholeGroup)
@@ -81,7 +81,7 @@ void WindowManager::registerHierarchyCommands() {
                         if (panes.size() > 1) {
                             const auto title = d->descriptors.value(targetPane).title;
                             paneMenu = tabMenu->addMenu(
-                                QCoreApplication::translate("WindowSystem", "窗格 %1：%2")
+                                QCoreApplication::translate("WindowSystem", "Pane %1: %2")
                                     .arg(paneIndex + 1)
                                     .arg(title.isEmpty() ? d->model.tab(tab)->title : title));
                             paneMenu->menuAction()->setProperty("targetPane", targetPane);
@@ -123,7 +123,7 @@ void WindowManager::registerHierarchyCommands() {
         return true;
     };
     add(
-        "group.convertToTab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签组转换为多窗格标签"),
+        "group.convertToTab", QT_TRANSLATE_NOOP("WindowSystem", "Convert current tab group to a multi-pane tab"),
         [this](const CommandContext &c) {
             const auto place = direction(c.args);
             return place && !convertGroupToTab(c.group, *place).isNull();
@@ -132,7 +132,7 @@ void WindowManager::registerHierarchyCommands() {
             return visibleGroup(c.group) && d->model.group(c.group)->tabs.size() > 1;
         });
     add(
-        "group.moveIntoTab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签组并入指定标签的窗格…"),
+        "group.moveIntoTab", QT_TRANSLATE_NOOP("WindowSystem", "Merge current tab group into a selected tab's panes…"),
         [transfer](const CommandContext &c) { return transfer(c, true); },
         [this, visibleGroup](const CommandContext &c) {
             if (!visibleGroup(c.group))
@@ -143,11 +143,11 @@ void WindowManager::registerHierarchyCommands() {
             return false;
         });
     add(
-        "tab.moveIntoTab", QT_TRANSLATE_NOOP("WindowSystem", "当前标签并入另一标签的窗格…"),
+        "tab.moveIntoTab", QT_TRANSLATE_NOOP("WindowSystem", "Merge current tab into another tab's panes…"),
         [transfer](const CommandContext &c) { return transfer(c, false); },
         [this](const CommandContext &c) { return d->model.tab(c.tab) && d->model.tabs().size() > 1; });
     add(
-        "tab.convertToGroup", QT_TRANSLATE_NOOP("WindowSystem", "当前标签的窗格转换为独立标签组"),
+        "tab.convertToGroup", QT_TRANSLATE_NOOP("WindowSystem", "Convert current tab's panes to a separate tab group"),
         [this](const CommandContext &c) {
             const auto place = direction(c.args);
             return place && !convertTabToGroup(c.tab, *place).isNull();
@@ -156,7 +156,7 @@ void WindowManager::registerHierarchyCommands() {
             return visibleGroup(c.group) && d->model.panes(c.tab).size() > 1;
         });
     add(
-        "pane.extractToTab", QT_TRANSLATE_NOOP("WindowSystem", "当前窗格提取为本组独立标签"),
+        "pane.extractToTab", QT_TRANSLATE_NOOP("WindowSystem", "Extract current pane as a separate tab in this group"),
         [this](const CommandContext &c) { return !extractPaneToTab(c.tab, c.pane).isNull(); },
         [this](const CommandContext &c) {
             return d->model.panes(c.tab).contains(c.pane) && d->model.panes(c.tab).size() > 1;

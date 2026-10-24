@@ -17,14 +17,14 @@ namespace window_system {
 
 WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, QWidget* parent)
     : QLabel(parent), manager_(manager), window_(window),
-      message_(new QLabel(QCoreApplication::translate("WindowSystem", "就绪"), this)), workspace_(new QLabel(this))
+      message_(new QLabel(QCoreApplication::translate("WindowSystem", "Ready"), this)), workspace_(new QLabel(this))
 {
     setObjectName(QStringLiteral("StatusBar"));
     message_->setObjectName(QStringLiteral("StatusMessage"));
     messageText_ = message_->text();
     workspace_->setObjectName(QStringLiteral("StatusWorkspace"));
-    message_->setAccessibleName(QCoreApplication::translate("WindowSystem", "状态消息"));
-    workspace_->setAccessibleName(QCoreApplication::translate("WindowSystem", "工作区信息"));
+    message_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Status message"));
+    workspace_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Workspace information"));
     message_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     workspace_->setMaximumWidth(320);
     auto* row = new QHBoxLayout(this);
@@ -63,8 +63,8 @@ void WorkspaceStatusBar::setTransientMessage(const QString& text)
 
 void WorkspaceStatusBar::setWorkspace(const QString& title, int tabCount)
 {
-    workspace_->setText(title.isEmpty() ? QCoreApplication::translate("WindowSystem", "%1 个标签").arg(tabCount)
-        : QCoreApplication::translate("WindowSystem", "%1  ·  %2 个标签").arg(title).arg(tabCount));
+    workspace_->setText(title.isEmpty() ? QCoreApplication::translate("WindowSystem", "%n tabs", nullptr, tabCount)
+        : QCoreApplication::translate("WindowSystem", "%1  ·  %n tabs", nullptr, tabCount).arg(title));
     workspace_->setToolTip(workspace_->text());
 }
 
@@ -147,8 +147,8 @@ QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
     menu->setObjectName(QStringLiteral("StatusBarMenu"));
     if (!manager_) return menu;
     applyTheme(menu, manager_->theme());
-    QVector<QPair<QString, QString>> entries{{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "状态消息")},
-        {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "工作区信息")}};
+    QVector<QPair<QString, QString>> entries{{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "Status message")},
+        {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "Workspace information")}};
     for (const auto& item : customDefinitions_) {
         auto title = item.text;
         if (title.isEmpty() && !item.command.isEmpty()) {

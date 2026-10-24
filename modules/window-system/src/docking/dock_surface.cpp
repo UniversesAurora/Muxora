@@ -180,7 +180,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     const auto* window = manager_->model().window(window_);
     center_ = buildTree(window ? window->central : LayoutTree{}, contents);
     if (!center_) {
-        auto* empty = new QLabel(QCoreApplication::translate("WindowSystem", "这个工作区还没有标签\n\nCtrl+Shift+P 打开命令面板"), horizontal);
+        auto* empty = new QLabel(QCoreApplication::translate("WindowSystem", "This workspace has no tabs yet\n\nCtrl+Shift+P opens the command palette"), horizontal);
         empty->setAlignment(Qt::AlignCenter); empty->setObjectName("EmptyWorkspace");
         empty->setFocusPolicy(Qt::StrongFocus); center_ = empty;
     }
@@ -621,7 +621,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
         }
     }
     auto* pinAll = new CompactToolButton(bar, manager_->theme().metrics.edgeThickness); pinAll->setObjectName("PinEdgeButton");
-    pinAll->setIcon(iconFor("pin-all", manager_->theme())); pinAll->setToolTip(QCoreApplication::translate("WindowSystem", "固定这一侧全部标签"));
+    pinAll->setIcon(iconFor("pin-all", manager_->theme())); pinAll->setToolTip(QCoreApplication::translate("WindowSystem", "Pin all sidebar tabs"));
     pinAll->setAccessibleName(pinAll->toolTip());
     QObject::connect(pinAll, &QToolButton::clicked, manager_, [this, edge] { manager_->pinEdge(window_, edge, true); });
     bar->setTailWidget(pinAll);
@@ -982,10 +982,10 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     auto* title = new QLabel(titleText, header);
     title->setAttribute(Qt::WA_TransparentForMouseEvents); row->addWidget(title); row->addStretch();
     auto* pin = new CompactToolButton(header, peekButtonExtent); pin->setIcon(iconFor("pin", manager_->theme()));
-    pin->setToolTip(QCoreApplication::translate("WindowSystem", "固定并占用布局空间")); pin->setAccessibleName(pin->toolTip()); row->addWidget(pin);
+    pin->setToolTip(QCoreApplication::translate("WindowSystem", "Pin and reserve layout space")); pin->setAccessibleName(pin->toolTip()); row->addWidget(pin);
     auto* close = new CompactToolButton(header, peekButtonExtent); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
     close->setObjectName("ClosePeekTabButton");
-    close->setToolTip(QCoreApplication::translate("WindowSystem", "关闭标签")); close->setAccessibleName(close->toolTip());
+    close->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab")); close->setAccessibleName(close->toolTip());
     pin->setObjectName("PinPeekTabButton");
     QObject::connect(pin, &QToolButton::clicked, manager_, [this, tab] { manager_->pinTab(tab, true); });
     QObject::connect(close, &QToolButton::clicked, manager_, [this, tab] { manager_->closeTab(tab); });

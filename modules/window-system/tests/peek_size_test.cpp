@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "commands/command_menus.hpp"
@@ -125,8 +126,9 @@ void sendContextMenu(QWidget* widget, QPoint point)
 
 class PeekSizeTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
-    void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void perTabPreferencesUpdateTheLivePanelWithoutRebuilding_data() { edgeRows(); }
     void perTabPreferencesUpdateTheLivePanelWithoutRebuilding();

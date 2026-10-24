@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include <window_system/layout_model.hpp>
 #include <algorithm>
 
@@ -52,7 +53,7 @@ TabId LayoutModel::convertGroupToTab(GroupId groupId, Placement placement) {
         const auto *group = model.group(groupId);
         if (!group || group->location == GroupLocation::AutoHide || group->tabs.isEmpty() ||
             !directional(placement))
-            return {false, "Converting a group needs a visible group and a split direction."};
+            return {false, QCoreApplication::translate("WindowSystem", "Converting a group needs a visible group and a split direction.")};
         const auto tabs = group->tabs;
         retained = group->activeTab;
         QVector<LayoutTree> trees;
@@ -76,12 +77,12 @@ OperationResult LayoutModel::moveTabIntoTab(TabId sourceTab, TabId targetTab, Pa
         const auto *source = model.tab(sourceTab);
         const auto *target = model.tab(targetTab);
         if (!source || !target || sourceTab == targetTab || !directional(placement))
-            return {false, "Transferring a tab needs different existing tabs and a split direction."};
+            return {false, QCoreApplication::translate("WindowSystem", "Transferring a tab needs different existing tabs and a split direction.")};
         if (targetPane.isNull())
             targetPane = target->activePane;
         const auto destinationLeaf = find(target->panes, targetPane);
         if (!destinationLeaf)
-            return {false, "The target pane does not belong to the target tab."};
+            return {false, QCoreApplication::translate("WindowSystem", "The target pane does not belong to the target tab.")};
         const auto carried = source->panes;
         const auto active = source->activePane;
         const auto combined = replace(target->panes, targetPane, join(destinationLeaf, carried, placement));
@@ -104,12 +105,12 @@ OperationResult LayoutModel::moveGroupIntoTab(GroupId sourceGroup, TabId targetT
         if (!group || group->location == GroupLocation::AutoHide || !target ||
             group->tabs.contains(targetTab) || !directional(placement))
             return {false,
-                    "Transferring a group needs a visible source and a target tab outside that group."};
+                    QCoreApplication::translate("WindowSystem", "Transferring a group needs a visible source and a target tab outside that group.")};
         if (targetPane.isNull())
             targetPane = target->activePane;
         const auto destinationLeaf = find(target->panes, targetPane);
         if (!destinationLeaf)
-            return {false, "The target pane does not belong to the target tab."};
+            return {false, QCoreApplication::translate("WindowSystem", "The target pane does not belong to the target tab.")};
         const auto tabs = group->tabs;
         const auto active = model.tabs_[group->activeTab].activePane;
         QVector<LayoutTree> trees;
@@ -136,7 +137,7 @@ GroupId LayoutModel::convertTabToGroup(TabId tabId, Placement placement) {
         const auto *source = model.tab(tabId);
         const auto *group = model.group(model.groupForTab(tabId));
         if (!source || !group || group->location == GroupLocation::AutoHide || !directional(placement))
-            return {false, "Converting a tab needs a visible tab and a group split direction."};
+            return {false, QCoreApplication::translate("WindowSystem", "Converting a tab needs a visible tab and a group split direction.")};
         const auto original = *source;
         const auto panes = model.panes(tabId);
         destination = group->id;

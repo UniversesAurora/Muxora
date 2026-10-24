@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include "commands/command_menus.hpp"
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
@@ -69,8 +70,9 @@ void contributeApplicationCommands(WindowManager& manager)
 
 class MenuStructureTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
-    void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
     void applicationTreeUsesSemanticGroupsAndCoversEveryCommand();
     void directionalFamiliesHaveAConsistentOrder();
     void layoutMenusIdentifyTheSourceObjectAndConversionTarget();

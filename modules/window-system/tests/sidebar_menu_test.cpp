@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
 #include "docking/tab_strip.hpp"
 
@@ -53,6 +54,7 @@ QColor leftBackground(QWidget* row)
 
 class SidebarMenuTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
     void initTestCase();
     void cleanup();
@@ -66,7 +68,7 @@ private slots:
     void tabListHoverPaintsSelectionAndFollowsTheme();
 };
 
-void SidebarMenuTest::initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+void SidebarMenuTest::initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
 void SidebarMenuTest::cleanup() { processDeletes(); }
 
 void SidebarMenuTest::peekCloseRemovesTheActualTab_data()

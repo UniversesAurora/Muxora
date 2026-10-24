@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include "chrome/status_bar.hpp"
 #include "chrome/workspace_window.hpp"
 #include <window_system/window_manager.hpp>
@@ -45,8 +46,9 @@ protected:
 
 class StatusBarTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
-    void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void contextMenuReflectsEachControlAndCommandsUpdateIt();
     void controlsRemainIndependentOfWholeBarVisibility();

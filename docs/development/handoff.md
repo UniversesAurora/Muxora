@@ -49,39 +49,22 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude 交给 Codex：钉住标签、标签条滚动、测试前台修正；Codex 接 8.12 与 M1 内部步骤
+## 2026-10-24 · Codex 进行中：英文源文本与翻译覆盖
 
-- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。
-- **本轮完成**（用户 2026-10-24 的要求，详见各验证记录）：
-  - `window-system/tabs: Keep the viewed tab in place when labels resize`：调整标题长度等外观时，活动标签在标签条上的位置不变、碰边才推动；收纳条按标签 ID 放回。拆出、排序等结构变化仍保留原偏移（[记录](verification-log/2026-10.md#标签长度变化时的条带滚动2026-10-24)）。用户报告的“Codex 版本里调长度时设置页滚到中间”在 `d31eaa8` 和当前版本都没有自动复现，原因未找到，保留了设置页滚动位置的检查。
-  - `window-system/tabs: Relabel built strips when only appearance changes`：外观变化原地更新标签组和收纳条，不走整体刷新；240 个标签时每次约 21 ms → 5.7 ms（[记录](verification-log/2026-10.md#标签外观的原地更新2026-10-24)）。
-  - `docs/dev: Keep test evidence in the log and diagnostics per topic`：证据写进验证日志正文；`out/test-results/` 只放统一入口的输出，`out/diagnostics/<主题>/` 在主题结束时删除（[规则](testing-design.md#测试结果与排查文件)）。已清理 827 个历史文件。
-  - `window-system/persistence: Define the saved window fields once`：窗口记录字段清单只定义一处。
-  - `test: Give caption-strip the MSVC Debug suite guard`：Debug 实测 57.8 秒贴着 60 秒上限，按已评审的做法给 300 秒（[记录](verification-log/2026-10.md#caption-strip-的-debug-总时限2026-10-24)）。
-  - `test: Expect a cleared tab bar to be deleted from the event loop`：修正我上一轮 `ac6d0c8` 漏跑 widgets 套件留下的失败用例。
-  - `test: Move the real cursor away before the compact scrollbar checks`：`compact-ui` 滚动条用例的偶发失败查明是真实光标残留，修正后连续 20 次通过。
-  - `window-system/tabs: Stick tabs to the front of their group`：钉住标签 8.15a（[交互细则](../design/window-interaction-design.md#钉住标签)、[计划](../roadmap/implementation/phase-8-ui-quality.md#815-钉住标签)）。
-  - `window-system/chrome: Fail toolbar reset when its window closes`：第一次完整验证中查出的竞态，关闭窗口时工具条大小重置命令误报成功；新增确定构造该顺序的用例（[记录](verification-log/2026-10.md#工具条大小重置命令在关闭窗口时的结果2026-10-24)）。
-  - `test: Name the window that refuses native input` 和 `test: Keep the foreground handoff inside the quiet desktop runner`：全量中偶发的 `toolbar-popup` 失败查明是测试窗口刚激活就被 Windows 外壳窗口夺走前台；现在 `quiet-desktop.ps1` 用一个透明小窗口接住交出的前台（[记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)）。
-  - `tools: Clean up the deployment check output`：部署检查的日志移到 `test-results/`，临时状态在检查通过后删除。
-  - 完整 `verify.ps1` 在 `f5fffa6` 和 `9a4b98d` 上各通过一次：Debug 63/63、Release 63/63、独立模块 56/56、两个外部宿主、应用退出、视图状态和 Lua 部署检查；固定 Release 预览已刷新。
-- **进行中**：Codex 接手核对后开始 8.12 的源码文字与提取路径盘点，尚未迁移。接手检查见 [记录](verification-log/2026-10.md#英文源文本迁移接手核对2026-10-24)。
-- **下一步**（Codex，按顺序；分工规则见 [AGENTS.md](../../AGENTS.md#轮流开发与交接)，这些步骤都不需要新外观）：
-  1. [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)：独占进行，期间不做其他会新增文字的步骤。中文界面显示的文字保持现状；英文源文本由代码含义决定，拿不准的条目列进验证日志交 Claude 复核；不改菜单归属和持久化标识。
-  2. [1.10 命令注册表 ID 索引](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12)。
-  3. [1.7 非活动标签按需创建视图](../roadmap/implementation/phase-1-layout-performance.md#17-非活动标签按需创建视图) → [1.11 结构变化与同步批量关闭的成本](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)（先测量，结果交 Claude 决定是否改实现）→ [1.12 窗格分割器布局期间的重入](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。
-  4. [1.9 布局保存移出 GUI 线程](../roadmap/implementation/phase-1-layout-performance.md#19-布局保存移出-gui-线程应用侧)（先看基准数据决定做多少）、[6.1 应用入口拆分](../roadmap/implementation/phase-6-engineering.md#61-应用入口拆分)。
-  - 留给 Claude：8.1 → 8.2（原生框架和面板调整，要靠真实试用把握交互手感）；M2 的主题、颜色和界面组件（2.1–2.7、8.3–8.6、8.8、8.11）；3.8 快捷键编辑器、4.3 设置页；M6 的 8.10、8.15b；以及任何新增设置项。用户试用钉住标签和标签条滚动后的反馈也由 Claude 处理。
-  - Codex 以后还可以接的、不涉及外观的步骤：3.1–3.5 上下文键与按键优先级、3.6–3.7 JSONC、4.1、4.2、4.4、4.5 设置注册表与持久化、6.2–6.6 工程、8.7 系统通知。按推荐顺序，到时由交接记录指定。
-- **待用户决定**：8.10 尺寸规格统一；8.15b 第 3 项（按键和中键不关闭钉住标签）做成设置还是按 Claude 的建议改为固定规则；第 1、2 项用户已确认要做，留给 Claude（[计划](../roadmap/implementation/phase-8-ui-quality.md#815-钉住标签)）。
+- **最后提交**：本轮接手记录已提交，源码迁移正在提交，尚未推送；统一验证入口的接入改动留在工作区，属于同一个 8.12 步骤。
+- **本轮完成**：
+  - 按当前规则重新接手、审查 Claude 最近的提交与文档，构建 Release 并运行交接相关套件；首报及恢复记录见[接手核对](verification-log/2026-10.md#英文源文本迁移接手核对2026-10-24)。
+  - 英文源文本、动态菜单的稳定路径与显示映射、模型和 Lua 诊断、双语模板及 Qt 复数已迁移；源码与目录检查、反向用例以及两个本地化和应用脚本套件已通过。细节与每次失败、修正、测量均在 [8.12 验证记录](verification-log/2026-10.md#英文源文本与覆盖检查2026-10-24)。
+- **进行中**：[8.12](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查) 的统一入口、独立模块、外部宿主和部署收尾；本轮不开始后面的内部步骤。Release 首次全量有菜单交互失败，不能写成全绿。
+- **下一步**：完成本步骤剩余验证并更新状态；之后按原交接顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12，再按测量决定 1.9／6.1。新外观工作仍留给 Claude，见 [分工规则](../../AGENTS.md#轮流开发与交接)。
+- **待用户决定**：8.10 尺寸规格统一；8.15b 第 3 项（按键和中键不关闭钉住标签）做成设置还是按 Claude 建议改为固定规则。第 1、2 项用户已确认，留给 Claude，见[计划](../roadmap/implementation/phase-8-ui-quality.md#815-钉住标签)。
 - **请下一位回答**：无。
-- **本轮新决定**：新外观的工作由 Claude 做，Codex 做不涉及外观的步骤（用户 2026-10-24，写在 [AGENTS.md](../../AGENTS.md#轮流开发与交接)）；标签长度变化时的条带滚动规则（[交互细则](../design/window-interaction-design.md#条带尺寸变化)，用户确认“活动标签不动、碰边再推”）；钉住标签的行为与拖动规则（用户 2026-10-24）；测试证据写进验证日志、排查文件按主题删除（[测试要求](testing-design.md#测试结果与排查文件)）。
+- **本轮新决定**：无，按已有 8.12 和分工要求执行。
 - **环境与注意事项**：
-  - Codex 在 `c4149e9` 上接手构建成功；六个相关 Release 套件中五个通过，`toolbar-popup` 的 `mouseOpenedMenuDoesNotLeaveAnOutline(outside)` 在 `visibleBeforeClose` 处失败，不能沿用上一轮的全绿结论。桌面恢复首次报错，随后 `quiet-desktop.ps1 -Elevate -Restore` 成功；未修改测试或产品代码。
-  - 修改公开接口的生命周期或行为时，搜索所有调用它的测试，不能只跑“相关”套件；本轮因此漏了一个用例并推送了失败。
-  - 未做三主题截图审查、混合 DPI、多屏和真实试用；`chrome-interaction` 菜单首报仍未查明。
-  - 用户报告 Codex 版本中调标题长度时设置页会自动滚动，在 `d31eaa8` 和当前版本都没有复现，原因未找到；`PaneSettingsTest::titleWidthUpdatesKeepScrollPositions` 守着当前行为。
-  - `tab-strip-layout` 的 `detachedMultilineTabDropsIntoAnotherGroupAtItsVisibleRow` 在 10-22 和本轮前两次完整 Debug 运行中整组失败、单独运行通过，修正前台交接后的完整运行通过，但原因没有单独确认；再失败时先看拖放目标点上的窗口（[记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)）。
+  - 接手时 `toolbar-popup` 的外点关闭行失败，迁移后全量通过；`chrome-interaction` 的菜单二次点击关闭行在本轮全量失败，三次单函数诊断通过。均保留首报，原因未查明，没有修改断言或时间条件。
+  - 收起／恢复严格经统一隔离入口；两次恢复首次报错后分别单独 `-Restore` 成功，恢复时未运行测试。
+  - 未做便携包、Debug 全量、混合 DPI、多屏、三主题截图审查或用户真实试用。
+  - 用户报告的调标题长度时设置页自动滚动、`tab-strip-layout` 拖拽用例此前偶发失败仍未单独定位；保留既有回归及[上轮记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)。
 
 ---
 

@@ -82,11 +82,11 @@ protected:
             p.fillRect(inner, QColor("#8A52C7"));
         }
         if (!target.accepted) return;
-        const auto text = target.toEdgeBar ? QCoreApplication::translate("WindowSystem", "插入 %1 个边栏标签").arg(count)
-            : target.toEdge ? (target.pinned ? QCoreApplication::translate("WindowSystem", "固定到边栏") : QCoreApplication::translate("WindowSystem", "收纳到边栏"))
-            : target.insertionIndex >= 0 ? QCoreApplication::translate("WindowSystem", "插入 %1 个标签").arg(count)
-            : target.placement == Placement::Center ? QCoreApplication::translate("WindowSystem", "合并 %1 个标签").arg(count)
-            : whole ? QCoreApplication::translate("WindowSystem", "保留分组并停靠") : QCoreApplication::translate("WindowSystem", "创建相邻标签组");
+        const auto text = target.toEdgeBar ? QCoreApplication::translate("WindowSystem", "Insert %n sidebar tabs", nullptr, count)
+            : target.toEdge ? (target.pinned ? QCoreApplication::translate("WindowSystem", "Pin in sidebar") : QCoreApplication::translate("WindowSystem", "Auto-hide on sidebar"))
+            : target.insertionIndex >= 0 ? QCoreApplication::translate("WindowSystem", "Insert %n tabs", nullptr, count)
+            : target.placement == Placement::Center ? QCoreApplication::translate("WindowSystem", "Merge %n tabs", nullptr, count)
+            : whole ? QCoreApplication::translate("WindowSystem", "Dock while preserving tab groups") : QCoreApplication::translate("WindowSystem", "Create adjacent tab group");
         const auto preview = target.preview.translated(-origin);
         const QRect label(preview.topLeft() + QPoint(8, 8), QSize(qMax(180, fontMetrics().horizontalAdvance(text) + 20), 28));
         p.fillRect(label, QColor("#4D356E")); p.setPen(Qt::white); p.drawText(label, Qt::AlignCenter, text);

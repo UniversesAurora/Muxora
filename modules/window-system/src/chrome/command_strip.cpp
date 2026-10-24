@@ -61,7 +61,7 @@ public:
     {
         setObjectName("StripOverflowButton");
         setCursor(Qt::ArrowCursor);
-        setToolTip(QCoreApplication::translate("WindowSystem", "工具条选项"));
+        setToolTip(QCoreApplication::translate("WindowSystem", "Toolbar options"));
         setAccessibleName(toolTip());
         // Mouse popups must not leave a keyboard-focus outline after closing.
         // Tab navigation still gives the button its normal visible focus.
@@ -170,8 +170,8 @@ public:
         setMinimumSize(0, 0);
         handle->setObjectName("StripHandle");
         handle->setProperty("stripId", id);
-        handle->setToolTip(QCoreApplication::translate("WindowSystem", "拖动以调整工具条位置或前一工具条宽度"));
-        handle->setAccessibleName(title + QCoreApplication::translate("WindowSystem", "工具条拖动把手"));
+        handle->setToolTip(QCoreApplication::translate("WindowSystem", "Drag to move the toolbar or resize the preceding toolbar"));
+        handle->setAccessibleName(title + QCoreApplication::translate("WindowSystem", " toolbar drag handle"));
         viewport->setObjectName("StripViewport");
         setProperty("windowDragArea", true);
         viewport->setProperty("windowDragArea", true);
@@ -862,7 +862,7 @@ QList<QWidget*> CommandStripHost::windowDragAreas() const
 QMenu* CommandStripHost::createContextMenu(QWidget* parent)
 {
     auto* menu = new DismissOnlyMenu(parent);
-    auto* lock = menu->addAction(QCoreApplication::translate("WindowSystem", "锁定工具条"));
+    auto* lock = menu->addAction(QCoreApplication::translate("WindowSystem", "Lock toolbars"));
     lock->setObjectName("LockStripsAction"); lock->setCheckable(true); lock->setChecked(d->locked);
     connect(lock, &QAction::toggled, this, [this](bool value) { setLocked(value); });
     menu->addSeparator();
@@ -896,14 +896,14 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
         menu->addAction(item.action);
     }
     if (!menu->actions().isEmpty()) menu->addSeparator();
-    auto* reset = menu->addAction(QCoreApplication::translate("WindowSystem", "重置尺寸"));
+    auto* reset = menu->addAction(QCoreApplication::translate("WindowSystem", "Reset size"));
     reset->setObjectName("StripResetWidthAction");
     connect(reset, &QAction::triggered, this, [this, id] {
         if (d->widthResetRequest) d->widthResetRequest(id);
         else resetStripWidth(id);
     });
     if (isStripSizingEditable(id)) {
-        auto* elastic = menu->addAction(QCoreApplication::translate("WindowSystem", "弹性空间"));
+        auto* elastic = menu->addAction(QCoreApplication::translate("WindowSystem", "Flexible space"));
         elastic->setObjectName("StripElasticAction");
         elastic->setCheckable(true);
         elastic->setChecked(strip->sizing == StripSizing::Elastic);
@@ -913,7 +913,7 @@ void CommandStripHost::populateOverflowMenu(const QString& id, QMenu* menu)
             else setStripSizing(id, sizing);
         });
     }
-    auto* customize = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "添加或移除按钮"), menu);
+    auto* customize = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "Add or remove buttons"), menu);
     menu->addMenu(customize);
     customize->setObjectName("StripCustomizeMenu");
     if (strip->items.isEmpty() && strip->content) {

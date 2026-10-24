@@ -100,7 +100,7 @@ int AppScriptServices::pendingLaunchCount() const { return d->pending.size(); }
 
 lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList args, QVariantMap context) {
     if (!d->manager)
-        return failure(QCoreApplication::translate("Muxora", "脚本服务已关闭。"));
+        return failure(QCoreApplication::translate("Muxora", "Script services have been closed."));
     if (method == QStringLiteral("app.exit")) {
         const auto window = QUuid(context.value(QStringLiteral("window")).toString());
         // The ordinary application command owns saving and close permission.
@@ -116,16 +116,16 @@ lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList
         if (message.metaType().id() != QMetaType::QString || title.metaType().id() != QMetaType::QString ||
             message.toString().size() > maximumText || title.toString().size() > 256)
             return failure(QCoreApplication::translate(
-                "Muxora", "通知需要文本；正文最多 8192 个字符，标题最多 256 个字符。"));
+                "Muxora", "Notifications require text; the message may contain up to 8192 characters and the title up to 256."));
         const auto duration = options.value(QStringLiteral("timeout_ms"), 5000);
         bool numeric = false;
         const double milliseconds = duration.toDouble(&numeric);
         if (!numeric || !std::isfinite(milliseconds) || milliseconds < 0 || milliseconds > 600000 ||
             std::floor(milliseconds) != milliseconds)
             return failure(
-                QCoreApplication::translate("Muxora", "通知时长必须是 0 到 600000 之间的毫秒数。"));
+                QCoreApplication::translate("Muxora", "Notification duration must be between 0 and 600000 milliseconds."));
         if (d->notifications.size() >= maximumNotifications)
-            return failure(QCoreApplication::translate("Muxora", "最多同时显示 16 条脚本通知。"));
+            return failure(QCoreApplication::translate("Muxora", "At most 16 script notifications may be shown at once."));
         const auto source = QUuid(context.value(QStringLiteral("window")).toString());
         auto *parent = d->manager->windowWidget(source);
         auto *box = new QMessageBox(QMessageBox::Information, title.toString(), message.toString(),
@@ -155,24 +155,24 @@ lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList
             directoryValue.metaType().id() != QMetaType::QString ||
             directoryValue.toString().contains(QChar::Null))
             return failure(
-                QCoreApplication::translate("Muxora", "启动程序需要有效的 program 和 cwd 字符串。"));
+                QCoreApplication::translate("Muxora", "Launching a program requires valid program and cwd strings."));
         if (argumentsValue.metaType().id() == QMetaType::QVariantMap && argumentsValue.toMap().isEmpty())
             argumentsValue = QVariantList{};
         if (argumentsValue.metaType().id() != QMetaType::QVariantList &&
             argumentsValue.metaType().id() != QMetaType::QStringList)
-            return failure(QCoreApplication::translate("Muxora", "程序参数 args 必须是字符串数组。"));
+            return failure(QCoreApplication::translate("Muxora", "Program args must be an array of strings."));
         QStringList arguments;
         qsizetype bytes = 0;
         for (const auto &argument : argumentsValue.toList()) {
             if (argument.metaType().id() != QMetaType::QString || argument.toString().contains(QChar::Null))
-                return failure(QCoreApplication::translate("Muxora", "程序参数 args 必须是字符串数组。"));
+                return failure(QCoreApplication::translate("Muxora", "Program args must be an array of strings."));
             arguments.append(argument.toString());
             bytes += argument.toString().size();
         }
         if (arguments.size() > 128 || bytes > 32768)
-            return failure(QCoreApplication::translate("Muxora", "程序参数超过数量或长度限制。"));
+            return failure(QCoreApplication::translate("Muxora", "Program arguments exceed the count or length limit."));
         if (d->pending.size() >= maximumLaunches)
-            return failure(QCoreApplication::translate("Muxora", "最多同时处理 8 个程序启动请求。"));
+            return failure(QCoreApplication::translate("Muxora", "At most 8 program launch requests may be pending at once."));
         if (!d->thread) {
             d->thread = new QThread(this);
             d->thread->setObjectName(QStringLiteral("DetachedProgramLauncher"));
@@ -209,22 +209,22 @@ lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList
             return success();
         }
         if (args[0].metaType().id() != QMetaType::QString)
-            return failure(QCoreApplication::translate("Muxora", "声音参数需要 beep 或本地 WAV 文件路径。"));
+            return failure(QCoreApplication::translate("Muxora", "Sound must be beep or the path to a local WAV file."));
         const auto file = QFileInfo(args[0].toString());
         if (!file.isFile() || file.suffix().compare(QStringLiteral("wav"), Qt::CaseInsensitive) ||
             file.size() > 16 * 1024 * 1024)
             return failure(
-                QCoreApplication::translate("Muxora", "声音文件必须是最多 16 MiB 的本地 WAV 文件。"));
+                QCoreApplication::translate("Muxora", "Sound must be a local WAV file no larger than 16 MiB."));
 #ifdef Q_OS_WIN
         const auto path = file.absoluteFilePath().toStdWString();
         return PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)
                    ? success()
-                   : failure(QCoreApplication::translate("Muxora", "无法播放声音文件。"));
+                   : failure(QCoreApplication::translate("Muxora", "Could not play the sound file."));
 #else
-        return failure(QCoreApplication::translate("Muxora", "当前平台仅支持 beep 提示音。"));
+        return failure(QCoreApplication::translate("Muxora", "Only the beep sound is supported on this platform."));
 #endif
     }
-    return failure(QCoreApplication::translate("Muxora", "未知脚本服务：%1").arg(method));
+    return failure(QCoreApplication::translate("Muxora", "Unknown script service: %1").arg(method));
 }
 } // namespace muxora
 #include "script_services.moc"

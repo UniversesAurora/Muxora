@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
 #include "authored_mouse_input.hpp"
 #include "chrome/workspace_window.hpp"
@@ -125,6 +126,7 @@ QRect colorBounds(const QImage& image, const QRect& region, const QColor& color)
 
 class PaneSettingsTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
     void initTestCase();
     void cleanup();
@@ -163,6 +165,7 @@ private slots:
 
 void PaneSettingsTest::initTestCase()
 {
+    QVERIFY(chineseUi_.install());
     qApp->setQuitOnLastWindowClosed(false);
 }
 

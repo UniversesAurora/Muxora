@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include <QCoreApplication>
 #include <window_system_lua/script_host.hpp>
 #include <window_system/window_manager.hpp>
 #include <QHash>
@@ -23,21 +24,21 @@ inline QString text(const Args &a, int i, QString fallback = {}) {
     if (i >= a.size() || !a[i].isValid() || a[i].isNull())
         return fallback;
     if (a[i].metaType().id() != QMetaType::QString)
-        throw std::runtime_error("Expected a string");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Expected a string").toUtf8().constData());
     return a[i].toString();
 }
 inline QVariantMap object(const Args &a, int i) {
     if (i >= a.size() || !a[i].isValid() || a[i].isNull())
         return {};
     if (a[i].metaType().id() != QMetaType::QVariantMap)
-        throw std::runtime_error("Expected an object table");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Expected an object table").toUtf8().constData());
     return a[i].toMap();
 }
 inline bool boolean(const Args &a, int i, bool fallback = false) {
     if (i >= a.size())
         return fallback;
     if (a[i].metaType().id() != QMetaType::Bool)
-        throw std::runtime_error("Expected a boolean");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Expected a boolean").toUtf8().constData());
     return a[i].toBool();
 }
 inline int number(const QVariant &value, int fallback, int minimum, int maximum) {
@@ -52,13 +53,13 @@ inline int number(const QVariant &value, int fallback, int minimum, int maximum)
     case QMetaType::Double:
         break;
     default:
-        throw std::runtime_error("Expected an integer number");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Expected an integer number").toUtf8().constData());
     }
     bool ok = false;
     const auto n = value.toLongLong(&ok);
     if (!ok || !std::isfinite(value.toDouble()) || value.toDouble() != double(n) || n < minimum ||
         n > maximum)
-        throw std::runtime_error("Integer is outside the supported range");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Integer is outside the supported range").toUtf8().constData());
     return int(n);
 }
 inline QUuid identifier(const Args &a, int i, QUuid fallback = {}) {
@@ -67,7 +68,7 @@ inline QUuid identifier(const Args &a, int i, QUuid fallback = {}) {
         return fallback;
     const QUuid id(string);
     if (id.isNull())
-        throw std::runtime_error("Invalid or null object ID");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid or null object ID").toUtf8().constData());
     return id;
 }
 inline QString idText(const QUuid &id) { return id.isNull() ? QString{} : id.toString(QUuid::WithoutBraces); }
@@ -83,7 +84,7 @@ inline window_system::Placement placement(QString value, bool center = true) {
         return P::Bottom;
     if (value == "center" && center)
         return P::Center;
-    throw std::runtime_error("Invalid placement");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid placement").toUtf8().constData());
 }
 inline window_system::Edge edge(QString value) {
     using E = window_system::Edge;
@@ -95,7 +96,7 @@ inline window_system::Edge edge(QString value) {
         return E::Top;
     if (value == "bottom")
         return E::Bottom;
-    throw std::runtime_error("Invalid edge");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid edge").toUtf8().constData());
 }
 inline Context contextMap(const window_system::CommandContext &c) {
     return {{"window", idText(c.window)},
@@ -167,7 +168,7 @@ struct ScriptHost::Private {
                 return QUuid{};
             const QUuid id(value);
             if (id.isNull())
-                throw std::runtime_error("Invalid context object ID");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid context object ID").toUtf8().constData());
             return id;
         };
         return {readId("window"), readId("group"), readId("tab"), readId("pane"),

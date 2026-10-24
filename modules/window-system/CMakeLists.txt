@@ -109,9 +109,18 @@ qt_add_resources(window_system_translation_resource
     "${CMAKE_CURRENT_BINARY_DIR}/window_system_translations.qrc")
 target_sources(WindowSystemWidgets PRIVATE ${window_system_translation_resource})
 add_dependencies(WindowSystemWidgets window_system_lrelease)
-qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets
+set(QT_I18N_SOURCE_LANGUAGE en)
+# Extract public defaults, model errors, and Lua diagnostics as well as widget
+# text. The Lua libraries depend only on Qt Core for translation; hosts install
+# this catalog when they use the WindowSystem UI.
+file(GLOB_RECURSE window_system_i18n_sources CONFIGURE_DEPENDS
+    "include/*.hpp" "src/*.hpp" "src/*.cpp"
+    "../lua-runtime/include/*.hpp" "../lua-runtime/src/*.hpp" "../lua-runtime/src/*.cpp"
+    "../window-system-lua/include/*.hpp" "../window-system-lua/src/*.hpp" "../window-system-lua/src/*.cpp")
+qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
+    SOURCES ${window_system_i18n_sources}
     TS_FILES ${window_system_translation_sources}
-    LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete)
+    LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -source-language en)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32)

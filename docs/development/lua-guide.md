@@ -4,6 +4,8 @@
 
 普通安装的 `User` 在系统用户配置目录，便携运行在 `data/User`；指定 `--state-dir` 时使用该隔离目录的 `User`。`init.lua` 和“运行 Lua 脚本”的文件入口使用 UTF-8 文本；模块默认放在 `User/lua`。
 
+首次从菜单创建配置文件时，模板的说明和示例命令标题使用当前界面语言。切换语言不会修改已有 `init.lua`。Muxora 自有的接口诊断随界面语言显示；脚本输出、用户抛出的错误及 Lua 标准错误保留原文。
+
 ## 标准库与模块
 
 本地脚本可以使用完整的 Lua 5.5 标准库，包括 `io`、`os`、`debug`、`package`、`coroutine`、`load`、`loadfile`、`dofile`、`string.dump` 和 `collectgarbage`。`load` 可以加载二进制块。文件读写和 shell 命令直接使用标准库，不需要申请权限；脚本拥有与当前用户相同的权限。决定见 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md)。

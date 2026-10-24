@@ -572,7 +572,7 @@ TabId WindowManager::extractPane(TabId tab, PaneId pane, WindowKind kind)
     const auto sourceWindow = candidate.group(candidate.groupForTab(tab))->windowId;
     const auto root = candidate.familyRoot(candidate.window(sourceWindow)->familyId);
     const auto newWindow = candidate.createWindow(WindowKind::Workbench);
-    const auto placeholder = candidate.addTab(newWindow, QCoreApplication::translate("WindowSystem", "临时"));
+    const auto placeholder = candidate.addTab(newWindow, QCoreApplication::translate("WindowSystem", "Temporary"));
     const auto targetGroup = candidate.groupForTab(placeholder);
     const auto extracted = candidate.extractPane(tab, pane, targetGroup);
     if (extracted.isNull()) return {};
@@ -758,7 +758,7 @@ bool WindowManager::executeResolved(const QString& command, CommandContext ctx, 
                                       : d->commands.execute(command, ctx);
     if (!self) return false;
     if (executed) return true;
-    emit commandFailed(QCoreApplication::translate("WindowSystem", "命令不可执行：%1").arg(command)); return false;
+    emit commandFailed(QCoreApplication::translate("WindowSystem", "Command is unavailable: %1").arg(command)); return false;
 }
 void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
 void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
@@ -1089,7 +1089,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = widget; d->keyContext = ctx;
         d->keyTimer->start(1500); key->accept();
         if (auto window = d->windows.value(windowId)) window->setTransientStatus(
-            QCoreApplication::translate("WindowSystem", "等待续键：%1").arg(sequence.toString()));
+            QCoreApplication::translate("WindowSystem", "Waiting for next key: %1").arg(sequence.toString()));
         return true;
     }
     if (continuing) { cancelChord(); key->accept(); return true; }

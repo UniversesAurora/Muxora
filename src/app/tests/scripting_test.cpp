@@ -4,6 +4,7 @@
 #include "user_preferences.hpp"
 #include <window_system_lua/script_host.hpp>
 #include <window_system/window_manager.hpp>
+#include <window_system/localization.hpp>
 #include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -75,6 +76,8 @@ class ScriptingTest final : public QObject {
     void startupLoadsScriptCommandsBeforeUserBindings();
     void reloadRetainsUserOverridesWithoutWritingIntermediateState();
     void missingConfigurationDoesNotCreateUserFiles();
+    void generatedConfigurationUsesRequestedLanguage_data();
+    void generatedConfigurationUsesRequestedLanguage();
     void malformedConfigurationKeepsBuiltinCommandsAndUserFiles();
     void invalidUtf8ScriptsAreRejected_data();
     void invalidUtf8ScriptsAreRejected();
@@ -173,6 +176,41 @@ void ScriptingTest::missingConfigurationDoesNotCreateUserFiles() {
     QVERIFY(!QFileInfo::exists(dir.filePath("keybindings.json")));
     QVERIFY(setup.createConfigurationFile());
     QVERIFY(read(dir.filePath("init.lua")).contains("muxora.keymap.set"));
+}
+void ScriptingTest::generatedConfigurationUsesRequestedLanguage_data() {
+    QTest::addColumn<bool>("chinese");
+    QTest::newRow("english") << false;
+    QTest::newRow("chinese") << true;
+}
+void ScriptingTest::generatedConfigurationUsesRequestedLanguage() {
+    QFETCH(bool, chinese);
+    TranslationManager translations;
+    translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
+    QVERIFY(translations.installLanguage(chinese ? UiLanguage::SimplifiedChinese : UiLanguage::English));
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    WindowManager manager;
+    manager.createWindow();
+    muxora::UserPreferences preferences(directory.path());
+    muxora::AppScriptingSetup setup(&manager, preferences);
+    QVERIFY(setup.createConfigurationFile());
+    const auto original = read(setup.configurationFilePath());
+    QVERIFY(original.contains("id = 'user.hello'"));
+    QVERIFY(original.contains("'ctrl+alt+l'"));
+    QVERIFY(QString::fromUtf8(original).contains(chinese ? QStringLiteral("Lua 已就绪。")
+        : QStringLiteral("Lua is ready.")));
+    QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
+    setup.start();
+    QTRY_COMPARE(initialized.size(), 1);
+    QVERIFY2(initialized[0][0].toBool(), qPrintable(initialized[0][1].toString()));
+    const auto command = manager.commands().find(QStringLiteral("user.hello"));
+    QVERIFY(command);
+    QCOMPARE(command->title, chinese ? QStringLiteral("Lua: 问候") : QStringLiteral("Lua: Hello"));
+    QCOMPARE(manager.commands().bindings(QStringLiteral("user.hello")).last().sequence,
+        QKeySequence(QStringLiteral("Ctrl+Alt+L")));
+    QVERIFY(translations.installLanguage(chinese ? UiLanguage::English : UiLanguage::SimplifiedChinese));
+    QVERIFY(setup.createConfigurationFile());
+    QCOMPARE(read(setup.configurationFilePath()), original);
 }
 void ScriptingTest::malformedConfigurationKeepsBuiltinCommandsAndUserFiles() {
     QTemporaryDir dir;
@@ -569,7 +607,7 @@ void ScriptingTest::blockedReloadReportsThePendingStop() {
     QTRY_VERIFY(QFile::exists(directory.filePath("blocked-ready")));
     QVERIFY(setup.reload());
     QTRY_VERIFY_WITH_TIMEOUT(std::any_of(diagnostics.cbegin(), diagnostics.cend(), [](const auto &entry) {
-        return entry[0].toString().contains(QStringLiteral("脚本仍在运行"));
+        return entry[0].toString().contains(QCoreApplication::translate("Muxora", "The script is still running. A stop has been requested."));
     }), 4000);
     QVERIFY(!setup.host()->ready());
     released = releaseBlockedProcess(directory);

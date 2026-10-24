@@ -32,14 +32,14 @@ bool readDocument(const QString& path, QJsonDocument& document, QString& error, 
     if (!QFileInfo::exists(path)) { document = {}; return true; }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) { error = file.errorString(); return false; }
-    if (file.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "配置文件超过 1 MiB 限制。"); return false; }
+    if (file.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "The configuration file exceeds the 1 MiB limit."); return false; }
     QJsonParseError parseError;
     const auto bytes = file.read(maximumFileBytes + 1);
-    if (bytes.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "配置文件超过 1 MiB 限制。"); return false; }
+    if (bytes.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "The configuration file exceeds the 1 MiB limit."); return false; }
     if (original) *original = bytes;
     document = QJsonDocument::fromJson(bytes, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
-        error = QCoreApplication::translate("WindowSystem", "JSON 格式错误（位置 %1）：%2").arg(parseError.offset).arg(parseError.errorString());
+        error = QCoreApplication::translate("WindowSystem", "Invalid JSON at position %1: %2").arg(parseError.offset).arg(parseError.errorString());
         return false;
     }
     return true;
@@ -48,9 +48,9 @@ bool readDocument(const QString& path, QJsonDocument& document, QString& error, 
 bool writeDocument(const QString& path, const QJsonDocument& document, QString& error)
 {
     const auto bytes = document.toJson(QJsonDocument::Indented);
-    if (bytes.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "配置文件超过 1 MiB 限制。"); return false; }
+    if (bytes.size() > maximumFileBytes) { error = QCoreApplication::translate("WindowSystem", "The configuration file exceeds the 1 MiB limit."); return false; }
     if (!QDir().mkpath(QFileInfo(path).absolutePath())) {
-        error = QCoreApplication::translate("WindowSystem", "无法创建用户配置目录。"); return false;
+        error = QCoreApplication::translate("WindowSystem", "Cannot create the user configuration directory."); return false;
     }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
@@ -113,11 +113,11 @@ UserPreferences::UserPreferences(QString directory) : directory_(std::move(direc
     QJsonDocument document;
     if (!readDocument(QDir(directory_).filePath(QStringLiteral("settings.json")), document, settingsDiagnostic_)) return;
     if (document.isNull()) return;
-    if (!document.isObject()) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json 必须是 JSON 对象。"); return; }
+    if (!document.isObject()) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json must contain a JSON object."); return; }
     const auto value = document.object().value(QStringLiteral("workbench.language"));
     if (value.isUndefined()) return;
     if (!value.isString() || !supportedLanguage(value.toString())) {
-        settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "workbench.language 只支持 system、zh_CN 或 en。"); return;
+        settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "workbench.language supports only system, zh_CN, or en."); return;
     }
     language_ = value.toString();
 }
@@ -133,12 +133,12 @@ QString UserPreferences::diagnostic() const
 
 bool UserPreferences::saveLanguage(const QString& language)
 {
-    if (!supportedLanguage(language)) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "不支持此界面语言。"); return false; }
+    if (!supportedLanguage(language)) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "Unsupported display language."); return false; }
     const auto path = QDir(directory_).filePath(QStringLiteral("settings.json"));
     QJsonDocument document;
     settingsDiagnostic_.clear();
     if (!readDocument(path, document, settingsDiagnostic_)) return false;
-    if (!document.isNull() && !document.isObject()) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json 必须是 JSON 对象。"); return false; }
+    if (!document.isNull() && !document.isObject()) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json must contain a JSON object."); return false; }
     auto settings = document.object();
     settings.insert(QStringLiteral("workbench.language"), language);
     if (!writeDocument(path, QJsonDocument(settings), settingsDiagnostic_)) return false;
@@ -156,7 +156,7 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
     QByteArray original;
     if (!readDocument(path, document, keybindingsDiagnostic_, &original)) return false;
     if (!document.isNull() && (!document.isArray() || document.array().size() > maximumRules)) {
-        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "keybindings.json 必须是最多 4096 项的 JSON 数组。"); return false;
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "keybindings.json must contain a JSON array with at most 4096 entries."); return false;
     }
     QMap<QString, Bindings> bindings;
     for (const auto& command : commands.commands()) {
@@ -167,23 +167,23 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
     for (const auto& value : document.array()) {
         ++index;
         const auto reject = [this, index](const QString& reason) {
-            keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则 %1：%2").arg(index).arg(reason); return false;
+            keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "Keybinding rule %1: %2").arg(index).arg(reason); return false;
         };
-        if (!value.isObject()) return reject(QCoreApplication::translate("WindowSystem", "规则必须是对象。"));
+        if (!value.isObject()) return reject(QCoreApplication::translate("WindowSystem", "The rule must be an object."));
         const auto rule = value.toObject();
         for (const auto& key : rule.keys()) if (key != QStringLiteral("key") && key != QStringLiteral("command") && key != QStringLiteral("args"))
-            return reject(QCoreApplication::translate("WindowSystem", "当前不支持字段：%1").arg(key));
+            return reject(QCoreApplication::translate("WindowSystem", "Unsupported field: %1").arg(key));
         if (!rule.value(QStringLiteral("command")).isString() || !rule.value(QStringLiteral("key")).isString())
-            return reject(QCoreApplication::translate("WindowSystem", "command 和 key 必须是字符串。"));
+            return reject(QCoreApplication::translate("WindowSystem", "command and key must be strings."));
         auto command = rule.value(QStringLiteral("command")).toString();
         const auto key = rule.value(QStringLiteral("key")).toString();
         const bool remove = command.startsWith(QLatin1Char('-'));
         if (remove) command.remove(0, 1);
         const auto sequence = parseSequence(key);
         if (command.isEmpty() || command.size() > 256 || key.size() > 256 || sequence.isEmpty())
-            return reject(QCoreApplication::translate("WindowSystem", "命令 ID 或快捷键无效。"));
+            return reject(QCoreApplication::translate("WindowSystem", "Invalid command ID or shortcut."));
         if (rule.contains(QStringLiteral("args")) && !rule.value(QStringLiteral("args")).isObject())
-            return reject(QCoreApplication::translate("WindowSystem", "args 必须是对象。"));
+            return reject(QCoreApplication::translate("WindowSystem", "args must be an object."));
         if (!commands.find(command)) continue;
         if (remove) {
             auto& values = bindings[command];
@@ -204,7 +204,7 @@ bool UserPreferences::loadKeybindings(window_system::CommandRegistry& commands)
     QHash<QString, Bindings> batch;
     for (auto it = bindings.cbegin(); it != bindings.cend(); ++it) batch.insert(it.key(), it.value());
     if (!commands.setBindingsBatch(std::move(batch))) {
-        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则不符合命令绑定限制，已保留原绑定。"); return false;
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "The keybinding rules exceed command binding limits. Existing bindings were kept."); return false;
     }
     userRules_ = document.array();
     persistedRules_ = userRules_;
@@ -267,7 +267,7 @@ bool UserPreferences::stageKeybindings(const window_system::CommandRegistry& com
         appendRules(it.key(), defaults_.value(it.key()), it.value());
     }
     if (rules.size() > maximumRules) {
-        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则超过 4096 项限制。");
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "The keybinding rules exceed the 4096-entry limit.");
         return false;
     }
     for (auto it = defaults_.begin(); it != defaults_.end();)
@@ -280,7 +280,7 @@ bool UserPreferences::stageKeybindings(const window_system::CommandRegistry& com
 bool UserPreferences::saveKeybindings(const window_system::CommandRegistry& commands)
 {
     if (!defaultsCaptured_ || !keybindingsWritable_) {
-        if (keybindingsDiagnostic_.isEmpty()) keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键文件尚未成功读取，未覆盖原文件。");
+        if (keybindingsDiagnostic_.isEmpty()) keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "The keybindings file has not been read successfully. The original file was kept.");
         return false;
     }
     if (!stageKeybindings(commands)) return false;
@@ -291,12 +291,12 @@ bool UserPreferences::saveKeybindings(const window_system::CommandRegistry& comm
     if (QFileInfo::exists(path) != keybindingsFileExisted_ ||
         (keybindingsFileExisted_ && (!existing.open(QIODevice::ReadOnly) ||
          existing.size() > maximumFileBytes || existing.read(maximumFileBytes + 1) != keybindingsBytes_))) {
-        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键文件已被外部修改，未覆盖；请重新启动以加载修改。");
+        keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "The keybindings file changed externally and was not overwritten. Restart to load the changes.");
         return false;
     }
     existing.close();
     const QJsonArray rules = userRules_;
-    if (rules.size() > maximumRules) { keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "快捷键规则超过 4096 项限制。"); return false; }
+    if (rules.size() > maximumRules) { keybindingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "The keybinding rules exceed the 4096-entry limit."); return false; }
     keybindingsDiagnostic_.clear();
     const QJsonDocument document(rules);
     if (!writeDocument(path, document, keybindingsDiagnostic_)) return false;

@@ -1,3 +1,4 @@
+#include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
@@ -78,7 +79,9 @@ QWidget* dragLabelPreview()
 
 class EdgeTabInteractionTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
+    void initTestCase() { QVERIFY(chineseUi_.install()); }
     void cleanup() { test::authoredMouseInput().finish(); }
     void peekShowsOnlyTheChosenTabAndPinsOnlyThatTab();
     void railTitleLengthChangesKeepTheLeadingTabInPlace();

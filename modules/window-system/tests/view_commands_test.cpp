@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
@@ -189,8 +190,9 @@ PickerResult toolbarPicker(WindowManager& manager, WindowId window, PickerAction
 
 class ViewCommandsTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
-    void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void functionKeysToggleTheirActualFullscreenScope_data() { modeRows(); }
     void functionKeysToggleTheirActualFullscreenScope();

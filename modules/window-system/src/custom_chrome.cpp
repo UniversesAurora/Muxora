@@ -323,7 +323,7 @@ void WindowManager::registerCustomChromeCommands() {
                          {QStringLiteral("视图"), QStringLiteral("工具条")}});
     };
     registerCommand(QStringLiteral("window.toolbar.setVisible"),
-                    QCoreApplication::translate("WindowSystem", "设置工具条可见性"),
+                    QCoreApplication::translate("WindowSystem", "Set toolbar visibility"),
                     [owner](const CommandContext &c) {
                         if (!owner || c.args.value("strip").metaType().id() != QMetaType::QString ||
                             c.args.value("visible").metaType().id() != QMetaType::Bool)
@@ -332,14 +332,14 @@ void WindowManager::registerCustomChromeCommands() {
                                                         c.args.value("visible").toBool());
                     });
     registerCommand(QStringLiteral("window.setTitle"),
-                    QCoreApplication::translate("WindowSystem", "设置窗口标题"),
+                    QCoreApplication::translate("WindowSystem", "Set window title"),
                     [owner](const CommandContext &c) {
                         return owner && c.args.value("title").metaType().id() == QMetaType::QString &&
                                owner->setWindowTitle(c.window, c.args.value("title").toString());
                     });
     registerCommand(
         QStringLiteral("window.toolbar.setWidth"),
-        QCoreApplication::translate("WindowSystem", "设置工具条宽度"), [owner](const CommandContext &c) {
+        QCoreApplication::translate("WindowSystem", "Set toolbar width"), [owner](const CommandContext &c) {
             if (!owner || c.args.value("strip").metaType().id() != QMetaType::QString)
                 return false;
             const auto value = c.args.value("width");
@@ -352,7 +352,7 @@ void WindowManager::registerCustomChromeCommands() {
             return owner->setToolbarWidth(c.window, c.args.value("strip").toString(), width);
         });
     registerCommand(QStringLiteral("window.toolbar.setItemVisible"),
-                    QCoreApplication::translate("WindowSystem", "设置工具条按钮可见性"),
+                    QCoreApplication::translate("WindowSystem", "Set toolbar button visibility"),
                     [owner](const CommandContext &c) {
                         if (!owner || c.args.value("strip").metaType().id() != QMetaType::QString ||
                             c.args.value("item").metaType().id() != QMetaType::QString ||
@@ -363,7 +363,7 @@ void WindowManager::registerCustomChromeCommands() {
                                                             c.args.value("visible").toBool());
                     });
     d->commands.add({QStringLiteral("window.statusItem.setText"),
-                     QCoreApplication::translate("WindowSystem", "设置状态栏控件文本"),
+                     QCoreApplication::translate("WindowSystem", "Set status item text"),
                      QStringLiteral("视图"),
                      {},
                      {},
@@ -378,7 +378,7 @@ void WindowManager::registerCustomChromeCommands() {
                                                          c.args.value("tooltip").toString());
                      }});
     d->commands.add({QStringLiteral("tab.rename"),
-                     QCoreApplication::translate("WindowSystem", "重命名标签…"),
+                     QCoreApplication::translate("WindowSystem", "Rename tab…"),
                      QStringLiteral("布局"),
                      {},
                      [owner](const CommandContext &c) { return owner && owner->model().tab(c.tab); },
@@ -397,8 +397,8 @@ void WindowManager::registerCustomChromeCommands() {
                          bool accepted = false;
                          const auto title =
                              QInputDialog::getText(owner->windowWidget(c.window),
-                                                   QCoreApplication::translate("WindowSystem", "重命名标签…"),
-                                                   QCoreApplication::translate("WindowSystem", "标签名称"),
+                                                   QCoreApplication::translate("WindowSystem", "Rename tab…"),
+                                                   QCoreApplication::translate("WindowSystem", "Tab name"),
                                                    QLineEdit::Normal, current, &accepted);
                          if (!owner)
                              return false;

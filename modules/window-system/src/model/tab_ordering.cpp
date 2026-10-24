@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include <window_system/layout_model.hpp>
 #include <algorithm>
 #include <utility>
@@ -6,7 +7,7 @@
 namespace window_system {
 namespace {
 OperationResult good() { return {true, {}}; }
-OperationResult bad(const char* message) { return {false, QString::fromLatin1(message)}; }
+OperationResult bad(QString message) { return {false, std::move(message)}; }
 LayoutTree groupLeaf(QUuid item)
 {
     LayoutNode node; node.id = QUuid::createUuid(); node.itemId = item;
@@ -79,7 +80,7 @@ quint64 LayoutModel::nextTabOrder()
 OperationResult LayoutModel::setTabColor(TabId id, QString color)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.tab(id) || color.size() > 128) return bad("Invalid tab or color identity.");
+        if (!model.tab(id) || color.size() > 128) return bad(QCoreApplication::translate("WindowSystem", "Invalid tab or color identity."));
         model.tabs_[id].colorId = std::move(color); return good();
     });
 }
@@ -87,7 +88,7 @@ OperationResult LayoutModel::sortTabs(GroupId groupId, TabSortOrder sorting)
 {
     return transact([&](LayoutModel& model) {
         if (!model.group(groupId) || int(sorting) < 0 || int(sorting) > 5)
-            return bad("Invalid tab sorting request.");
+            return bad(QCoreApplication::translate("WindowSystem", "Invalid tab sorting request."));
         auto& group = model.groups_[groupId];
         auto& tabs = group.tabs;
         const bool descending = int(sorting) % 2 == 1;
@@ -116,7 +117,7 @@ OperationResult LayoutModel::moveGroup(GroupId source, GroupId target, Placement
     return transact([&](LayoutModel& model) {
         if (source == target || !visibleGroup(model.group(source)) || !visibleGroup(model.group(target))
             || !acceptsDirection(*model.group(target), direction))
-            return bad("A group move requires distinct visible groups and a supported split direction.");
+            return bad(QCoreApplication::translate("WindowSystem", "A group move requires distinct visible groups and a supported split direction."));
         const auto destination = model.groups_[target];
         const auto targetWindow = destination.windowId;
         model.synchronizePinnedLayouts();
@@ -147,7 +148,7 @@ OperationResult LayoutModel::swapGroups(GroupId first, GroupId second)
 {
     return transact([&](LayoutModel& model) {
         if (first == second || !visibleGroup(model.group(first)) || !visibleGroup(model.group(second)))
-            return bad("A group exchange requires two distinct visible groups.");
+            return bad(QCoreApplication::translate("WindowSystem", "A group exchange requires two distinct visible groups."));
         const auto originalFirst = model.groups_[first], originalSecond = model.groups_[second];
         const QVector<WindowId> affected = originalFirst.windowId == originalSecond.windowId
             ? QVector<WindowId>{originalFirst.windowId} : QVector<WindowId>{originalFirst.windowId, originalSecond.windowId};
@@ -181,7 +182,7 @@ OperationResult LayoutModel::mergeGroups(GroupId source, GroupId target, int ins
     return transact([&](LayoutModel& model) {
         if (source == target || !visibleGroup(model.group(source)) || !visibleGroup(model.group(target))
             || insertionIndex < -1 || insertionIndex > model.group(target)->tabs.size())
-            return bad("A group merge requires distinct visible groups and a valid insertion index.");
+            return bad(QCoreApplication::translate("WindowSystem", "A group merge requires distinct visible groups and a valid insertion index."));
         const auto carried = model.groups_[source];
         auto& destination = model.groups_[target];
         // Carried sticky tabs join the end of the target's sticky run; the
@@ -210,7 +211,7 @@ OperationResult LayoutModel::moveGroupToWindow(GroupId source, WindowId target, 
     return transact([&](LayoutModel& model) {
         if (!model.group(source) || !model.window(target) || model.group(source)->windowId == target
             || !visibleGroup(model.group(source))
-            || direction < Placement::Center || direction > Placement::Bottom) return bad("Invalid group window move.");
+            || direction < Placement::Center || direction > Placement::Bottom) return bad(QCoreApplication::translate("WindowSystem", "Invalid group window move."));
         const auto central = model.centralGroups(target);
         const auto active = model.windows_[target].activeGroup;
         const auto targetGroup = central.contains(active) ? active : central.value(0);
@@ -226,7 +227,7 @@ OperationResult LayoutModel::moveGroupToEdge(GroupId source, WindowId target, Ed
 {
     return transact([&](LayoutModel& model) {
         if (!visibleGroup(model.group(source)) || !model.window(target) || edge < Edge::Left || edge > Edge::Bottom)
-            return bad("A group edge move requires a visible group, window and valid edge.");
+            return bad(QCoreApplication::translate("WindowSystem", "A group edge move requires a visible group, window and valid edge."));
         model.unlinkGroupUnchecked(source);
         auto& group = model.groups_[source];
         group.windowId = target; group.location = pinned ? GroupLocation::Pinned : GroupLocation::AutoHide;
@@ -249,7 +250,7 @@ WindowId LayoutModel::detachGroup(GroupId source, WindowKind kind)
     WindowId created;
     const auto result = transact([&](LayoutModel& model) {
         if (!visibleGroup(model.group(source)) || (kind != WindowKind::Workbench && kind != WindowKind::Floating))
-            return bad("A group detach requires a visible group and valid window kind.");
+            return bad(QCoreApplication::translate("WindowSystem", "A group detach requires a visible group and valid window kind."));
         const auto originalWindow = model.group(source)->windowId;
         const auto owner = model.familyRoot(model.window(originalWindow)->familyId);
         created = model.createWindowUnchecked(kind, owner);

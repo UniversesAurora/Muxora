@@ -2,6 +2,7 @@
 #include "settings_page.hpp"
 
 #include <QCoreApplication>
+#include "localization/display_names.hpp"
 #include <QFocusEvent>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -135,39 +136,39 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(24, 16, 24, 16);
     layout->setSpacing(10);
-    auto* heading = new QLabel(QCoreApplication::translate("WindowSystem", "键盘快捷键"), this);
+    auto* heading = new QLabel(QCoreApplication::translate("WindowSystem", "Keyboard shortcuts"), this);
     heading->setProperty("role", QStringLiteral("heading"));
     auto font = heading->font();
     font.setPointSizeF(font.pointSizeF() + 4);
     heading->setFont(font);
     layout->addWidget(heading);
     auto* description = new QLabel(QCoreApplication::translate("WindowSystem",
-        "每个命令可绑定多组按键。序列支持组合键后接字母、数字或其他按键。"), this);
+        "Each command can have multiple bindings. A sequence may start with a combination and continue with letters, numbers, or other keys."), this);
     description->setWordWrap(true);
     description->setProperty("role", QStringLiteral("hint"));
     layout->addWidget(description);
     auto* searchRow = new QHBoxLayout;
     search_ = new QLineEdit(this);
     search_->setObjectName(QStringLiteral("ShortcutSearch"));
-    search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "搜索全部命令、分类、命令 ID 或快捷键…"));
+    search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Search commands, categories, command IDs, or shortcuts…"));
     search_->setClearButtonEnabled(true);
     searchRow->addWidget(search_, 1);
-    auto* recordSearch = new QPushButton(QCoreApplication::translate("WindowSystem", "按键查询"), this);
+    auto* recordSearch = new QPushButton(QCoreApplication::translate("WindowSystem", "Record keys to search"), this);
     recordSearch->setObjectName(QStringLiteral("RecordShortcutSearch"));
     recordSearch->setCheckable(true);
-    recordSearch->setToolTip(QCoreApplication::translate("WindowSystem", "录入按键以查找绑定；查询期间不会执行命令。"));
+    recordSearch->setToolTip(QCoreApplication::translate("WindowSystem", "Record keys to find bindings. Commands do not run while recording."));
     searchRow->addWidget(recordSearch);
     layout->addLayout(searchRow);
     searchCapture_ = new ShortcutCapture(this);
     searchCapture_->setObjectName(QStringLiteral("ShortcutSearchCapture"));
-    searchCapture_->setAccessibleName(QCoreApplication::translate("WindowSystem", "录入要查询的快捷键"));
+    searchCapture_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Record shortcut to search"));
     searchCapture_->hide();
     layout->addWidget(searchCapture_);
     commands_ = new QTreeWidget(this);
     commands_->setObjectName(QStringLiteral("ShortcutCommands"));
     commands_->setColumnCount(3);
-    commands_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "命令"),
-        QCoreApplication::translate("WindowSystem", "快捷键"), QCoreApplication::translate("WindowSystem", "分类")});
+    commands_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "Command"),
+        QCoreApplication::translate("WindowSystem", "Shortcut"), QCoreApplication::translate("WindowSystem", "Category")});
     commands_->setRootIsDecorated(false);
     commands_->setUniformRowHeights(true);
     commands_->setAlternatingRowColors(true);
@@ -188,8 +189,8 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     bindings_ = new QTreeWidget(this);
     bindings_->setObjectName(QStringLiteral("ShortcutBindings"));
     bindings_->setColumnCount(2);
-    bindings_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "快捷键"),
-        QCoreApplication::translate("WindowSystem", "参数")});
+    bindings_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "Shortcut"),
+        QCoreApplication::translate("WindowSystem", "Arguments")});
     bindings_->setRootIsDecorated(false);
     bindings_->setUniformRowHeights(true);
     bindings_->setMaximumHeight(112);
@@ -198,12 +199,12 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     layout->addWidget(bindings_, 1);
     capture_ = new ShortcutCapture(this);
     capture_->setObjectName(QStringLiteral("ShortcutCapture"));
-    capture_->setAccessibleName(QCoreApplication::translate("WindowSystem", "录入命令快捷键"));
+    capture_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Record a command shortcut"));
     layout->addWidget(capture_);
     arguments_ = new QPlainTextEdit(this);
     arguments_->setObjectName(QStringLiteral("ShortcutArguments"));
-    arguments_->setAccessibleName(QCoreApplication::translate("WindowSystem", "快捷键参数 JSON"));
-    arguments_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "参数（JSON 对象，可留空）"));
+    arguments_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Shortcut arguments JSON"));
+    arguments_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Arguments (JSON object, optional)"));
     arguments_->setMaximumHeight(100);
     arguments_->setMinimumHeight(54);
     layout->addWidget(arguments_);
@@ -213,11 +214,11 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     diagnostic_->setObjectName(QStringLiteral("ShortcutDiagnostic"));
     layout->addWidget(diagnostic_);
     auto* actions = new QHBoxLayout;
-    apply_ = new QPushButton(QCoreApplication::translate("WindowSystem", "应用快捷键"), this);
+    apply_ = new QPushButton(QCoreApplication::translate("WindowSystem", "Apply shortcut"), this);
     apply_->setObjectName(QStringLiteral("ApplyShortcut"));
-    add_ = new QPushButton(QCoreApplication::translate("WindowSystem", "添加绑定"), this);
+    add_ = new QPushButton(QCoreApplication::translate("WindowSystem", "Add binding"), this);
     add_->setObjectName(QStringLiteral("AddShortcut"));
-    clear_ = new QPushButton(QCoreApplication::translate("WindowSystem", "移除此绑定"), this);
+    clear_ = new QPushButton(QCoreApplication::translate("WindowSystem", "Remove this binding"), this);
     clear_->setObjectName(QStringLiteral("ClearShortcut"));
     actions->addWidget(apply_);
     actions->addWidget(add_);
@@ -278,7 +279,7 @@ void ShortcutsPage::rebuild()
         if (manager_) for (const auto& command : manager_->commands().commands()) {
             const auto bindings = manager_->commands().bindings(command.id);
             const QString shortcut = bindingText(bindings);
-            const auto category = QCoreApplication::translate("WindowSystem", command.category.toUtf8().constData());
+            const auto category = commandCategoryDisplayName(command.category);
             if (exactCommand && command.id != query) continue;
             if (keyQuery) {
                 if (recorded.isEmpty() || std::none_of(bindings.cbegin(), bindings.cend(),
@@ -304,15 +305,13 @@ void ShortcutsPage::selectCommand()
     selectedId_ = current ? current->data(0, Qt::UserRole).toString() : QString();
     const auto* command = manager_ ? manager_->commands().find(selectedId_) : nullptr;
     selectedTitle_->setText(command ? titleFor(*command) + QStringLiteral("  ·  ") + command->id :
-        QCoreApplication::translate("WindowSystem", "没有匹配的命令"));
+        QCoreApplication::translate("WindowSystem", "No matching commands"));
     const bool composite = selectedId_ == QStringLiteral("runCommands");
     commandHelp_->setVisible(composite);
     commandHelp_->setText(composite ? QCoreApplication::translate("WindowSystem",
-        "runCommands 是普通命令：每条绑定用自己的 args.commands 数组定义执行步骤。"
-        "例如 {\"commands\":[\"host.newTab\",{\"command\":\"pane.split.right\",\"args\":{}}]}。"
-        "结构参考 VS Code；当前每一步的 args 仅支持 JSON 对象。") : QString());
+        "runCommands is a regular command. Each binding defines its steps in its own args.commands array. Example: {\"commands\":[\"host.newTab\",{\"command\":\"pane.split.right\",\"args\":{}}]}. The structure follows VS Code; each step's args currently accepts JSON objects only.") : QString());
     arguments_->setPlaceholderText(composite ? QStringLiteral("{\n  \"commands\": [\n    \"host.newTab\",\n    {\"command\": \"pane.split.right\", \"args\": {}}\n  ]\n}")
-        : QCoreApplication::translate("WindowSystem", "参数（JSON 对象，可留空）"));
+        : QCoreApplication::translate("WindowSystem", "Arguments (JSON object, optional)"));
     rebuildBindings();
 }
 
@@ -380,9 +379,9 @@ bool ShortcutsPage::readArguments(QVariantMap& args, QString& error) const
         QJsonParseError diagnostic;
         const auto document = QJsonDocument::fromJson(text.toUtf8(), &diagnostic);
         if (diagnostic.error != QJsonParseError::NoError || !document.isObject()) {
-            error = QCoreApplication::translate("WindowSystem", "参数必须是有效的 JSON 对象：%1")
+            error = QCoreApplication::translate("WindowSystem", "Arguments must be a valid JSON object: %1")
                 .arg(diagnostic.error == QJsonParseError::NoError
-                    ? QCoreApplication::translate("WindowSystem", "顶层不能是数组或其他类型") : diagnostic.errorString());
+                    ? QCoreApplication::translate("WindowSystem", "The top level must be an object, not an array or another value") : diagnostic.errorString());
             return false;
         }
         args = document.object().toVariantMap();
@@ -390,18 +389,18 @@ bool ShortcutsPage::readArguments(QVariantMap& args, QString& error) const
     if (selectedId_ != QStringLiteral("runCommands")) return true;
     const auto commands = QJsonObject::fromVariantMap(args).value(QStringLiteral("commands"));
     if (!commands.isArray() || commands.toArray().isEmpty()) {
-        error = QCoreApplication::translate("WindowSystem", "组合命令需要非空的 commands 数组，按数组顺序执行。");
+        error = QCoreApplication::translate("WindowSystem", "A command sequence requires a nonempty commands array and runs in order.");
         return false;
     }
     for (const auto& entry : commands.toArray()) {
         const auto object = entry.toObject();
         const auto id = entry.isString() ? entry.toString() : object.value(QStringLiteral("command")).toString();
         if (id.isEmpty() || !manager_ || !manager_->commands().find(id)) {
-            error = QCoreApplication::translate("WindowSystem", "组合命令包含未知或缺失的命令 ID：%1").arg(id);
+            error = QCoreApplication::translate("WindowSystem", "The command sequence contains an unknown or missing command ID: %1").arg(id);
             return false;
         }
         if (entry.isObject() && object.contains(QStringLiteral("args")) && !object.value(QStringLiteral("args")).isObject()) {
-            error = QCoreApplication::translate("WindowSystem", "组合命令中每一步的 args 必须是 JSON 对象。");
+            error = QCoreApplication::translate("WindowSystem", "Each command step's args must be a JSON object.");
             return false;
         }
     }
@@ -422,7 +421,7 @@ void ShortcutsPage::updateDiagnostic()
         currentBindings[selectedBinding_] != originalBinding_)) {
         apply_->setEnabled(false);
         clear_->setEnabled(false);
-        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "此绑定已在其他位置修改。请重新选择命令后编辑。"));
+        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "This binding changed elsewhere. Select the command again before editing."));
         return;
     }
     QVariantMap args;
@@ -450,15 +449,15 @@ void ShortcutsPage::updateDiagnostic()
     prefixes.removeDuplicates();
     apply_->setEnabled(duplicates.isEmpty() && (!sequence.isEmpty() || selectedBinding_ >= 0));
     if (!duplicates.isEmpty()) {
-        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "此快捷键已绑定到：%1。请先移除其他绑定。")
+        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "This shortcut is already bound to: %1. Remove the other binding first.")
             .arg(duplicates.join(QStringLiteral("、"))));
     } else if (!prefixes.isEmpty()) {
-        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "此按键序列与以下命令有前缀关系：%1。")
+        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "This key sequence shares a prefix with: %1.")
             .arg(prefixes.join(QStringLiteral("、"))));
     } else if (sequence.isEmpty()) {
-        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "录入按键后应用；清空现有按键并应用可移除此绑定。"));
+        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "Record keys and apply. Clear the keys and apply to remove this binding."));
     } else {
-        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "最多 4 段按键；例如 Ctrl+K、G、1。应用后立即生效。"));
+        diagnostic_->setText(QCoreApplication::translate("WindowSystem", "Up to 4 key strokes, such as Ctrl+K, G, 1. Changes take effect immediately."));
     }
 }
 

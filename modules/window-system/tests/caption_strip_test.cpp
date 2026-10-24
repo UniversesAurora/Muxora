@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "translation_checks.hpp"
 #include "menu_hover.hpp"
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
@@ -154,8 +155,9 @@ bool reserveTitleWidth(WorkspaceWindow* window, int contentWidth)
 
 class CaptionStripTest final : public QObject {
     Q_OBJECT
+    translation_test::ChineseUiCatalog chineseUi_;
 private slots:
-    void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
+    void initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
     void controlsCanGrowAndMoveButNeverCompressOrBecomeElastic_data() { addWindowKinds(); }
     void controlsCanGrowAndMoveButNeverCompressOrBecomeElastic();

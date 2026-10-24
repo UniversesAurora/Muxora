@@ -18,8 +18,13 @@ qt_add_lrelease(TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     QM_FILES_OUTPUT_VARIABLE muxora_translation_files LRELEASE_TARGET muxora_lrelease OPTIONS -nounfinished)
 qt_add_resources(muxora muxora_translations PREFIX "/muxora/i18n"
     BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${muxora_translation_files})
-qt_add_lupdate(SOURCE_TARGETS muxora TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
-    LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete)
+set(QT_I18N_SOURCE_LANGUAGE en)
+file(GLOB_RECURSE muxora_i18n_sources CONFIGURE_DEPENDS
+    "*.hpp" "../workspace_host/*.hpp" "../workspace_host/*.cpp")
+list(FILTER muxora_i18n_sources EXCLUDE REGEX "/tests/")
+qt_add_lupdate(SOURCE_TARGETS muxora SOURCES ${muxora_i18n_sources}
+    TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
+    LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete -source-language en)
 target_link_libraries(muxora PRIVATE WindowSystemLua::Host)
 if(WIN32)
     target_link_libraries(muxora PRIVATE winmm)
@@ -34,10 +39,12 @@ endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
-    qt_add_executable(muxora-localization-test tests/localization_test.cpp ../workspace_host/placeholder_content.cpp)
-    target_link_libraries(muxora-localization-test PRIVATE WindowSystem::Widgets Qt6::Test)
+    qt_add_executable(muxora-localization-test tests/localization_test.cpp user_preferences.cpp ../workspace_host/placeholder_content.cpp)
+    target_link_libraries(muxora-localization-test PRIVATE WindowSystemLua::Host Qt6::Test)
     target_compile_features(muxora-localization-test PRIVATE cxx_std_20)
     target_include_directories(muxora-localization-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_compile_definitions(muxora-localization-test PRIVATE MUXORA_APPLICATION_PATH="$<TARGET_FILE:muxora>")
+    add_dependencies(muxora-localization-test muxora)
     set_target_properties(muxora-localization-test PROPERTIES AUTOMOC ON)
     qt_add_resources(muxora-localization-test muxora_test_translations PREFIX "/muxora/i18n"
         BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${muxora_translation_files})
@@ -76,6 +83,8 @@ if(BUILD_TESTING)
     target_compile_features(muxora-scripting-test PRIVATE cxx_std_20)
     target_include_directories(muxora-scripting-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set_target_properties(muxora-scripting-test PROPERTIES AUTOMOC ON)
+    qt_add_resources(muxora-scripting-test muxora_scripting_translations PREFIX "/muxora/i18n"
+        BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${muxora_translation_files})
     qt_add_executable(muxora-scripting-exit-child tests/scripting_exit_child.cpp
         scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp user_preferences.cpp)
     muxora_use_utf8_process_manifest(muxora-scripting-exit-child)

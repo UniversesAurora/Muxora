@@ -11,18 +11,18 @@ namespace window_system {
 namespace {
 struct BarDescription { WindowBar bar; const char* key; const char* name; };
 constexpr BarDescription bars[] = {
-    {WindowBar::Toolbars, "toolbars", QT_TRANSLATE_NOOP("WindowSystem", "工具栏")}, {WindowBar::StatusBar, "statusBar", QT_TRANSLATE_NOOP("WindowSystem", "状态栏")},
-    {WindowBar::TabBars, "tabBars", QT_TRANSLATE_NOOP("WindowSystem", "标签栏")}, {WindowBar::SideBars, "sideBars", QT_TRANSLATE_NOOP("WindowSystem", "侧边收纳条")}};
+    {WindowBar::Toolbars, "toolbars", QT_TRANSLATE_NOOP("WindowSystem", "Toolbars")}, {WindowBar::StatusBar, "statusBar", QT_TRANSLATE_NOOP("WindowSystem", "Status bar")},
+    {WindowBar::TabBars, "tabBars", QT_TRANSLATE_NOOP("WindowSystem", "Tab bar")}, {WindowBar::SideBars, "sideBars", QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide sidebars")}};
 struct ModeDescription { ViewMode mode; const char* key; const char* name; };
 constexpr ModeDescription modes[] = {
-    {ViewMode::WindowFullscreen, "windowFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "窗口全屏")},
-    {ViewMode::GroupFullscreen, "groupFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "标签组全屏")},
-    {ViewMode::PaneFullscreen, "paneFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "窗格全屏")}};
+    {ViewMode::WindowFullscreen, "windowFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "Window fullscreen")},
+    {ViewMode::GroupFullscreen, "groupFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "Tab group fullscreen")},
+    {ViewMode::PaneFullscreen, "paneFullscreen", QT_TRANSLATE_NOOP("WindowSystem", "Pane fullscreen")}};
 struct CaptionOrderDescription { CaptionButtonOrder order; const char* name; };
 constexpr CaptionOrderDescription captionOrders[] = {
-    {CaptionButtonOrder::Windows, QT_TRANSLATE_NOOP("WindowSystem", "Windows：最小化、最大化、关闭（靠右）")},
-    {CaptionButtonOrder::Reversed, QT_TRANSLATE_NOOP("WindowSystem", "反向：关闭、最大化、最小化（靠左）")},
-    {CaptionButtonOrder::MacOS, QT_TRANSLATE_NOOP("WindowSystem", "macOS：关闭、最小化、最大化（靠左）")}};
+    {CaptionButtonOrder::Windows, QT_TRANSLATE_NOOP("WindowSystem", "Windows: Minimize, Maximize, Close (right)")},
+    {CaptionButtonOrder::Reversed, QT_TRANSLATE_NOOP("WindowSystem", "Reversed: Close, Maximize, Minimize (left)")},
+    {CaptionButtonOrder::MacOS, QT_TRANSLATE_NOOP("WindowSystem", "macOS: Close, Minimize, Maximize (left)")}};
 bool shown(const BarVisibility& visibility, WindowBar bar)
 {
     switch (bar) {
@@ -42,15 +42,15 @@ WindowId SettingsPage::settingsWindow() const
 }
 void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
 {
-    addCategory(parent, rows, "window/display", QCoreApplication::translate("WindowSystem", "显示"));
-    hideSingleWorkbench_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "完整窗口只有一个标签时隐藏标签栏"), parent);
+    addCategory(parent, rows, "window/display", QCoreApplication::translate("WindowSystem", "Visibility"));
+    hideSingleWorkbench_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "Hide the tab bar when a workbench window has one tab"), parent);
     hideSingleWorkbench_->setObjectName("HideSingleTabWorkbench");
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "完整窗口的单标签栏"), "window.hideSingleTabWorkbench",
-        QCoreApplication::translate("WindowSystem", "按整个窗口的标签数量判断；固定面板和侧边收纳条保持显示。"), hideSingleWorkbench_));
-    hideSingleFloating_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "轻量浮窗只有一个标签时隐藏标签栏"), parent);
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Single-tab bar in workbench windows"), "window.hideSingleTabWorkbench",
+        QCoreApplication::translate("WindowSystem", "Count tabs across the whole window. Pinned panels and auto-hide sidebars remain visible."), hideSingleWorkbench_));
+    hideSingleFloating_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "Hide the tab bar when a floating window has one tab"), parent);
     hideSingleFloating_->setObjectName("HideSingleTabFloating");
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "轻量浮窗的单标签栏"), "window.hideSingleTabFloating",
-        QCoreApplication::translate("WindowSystem", "默认开启；出现第二个标签时恢复标签栏。"), hideSingleFloating_));
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Single-tab bar in floating windows"), "window.hideSingleTabFloating",
+        QCoreApplication::translate("WindowSystem", "Enabled by default. The tab bar returns when a second tab is added."), hideSingleFloating_));
     const auto changeSingleTabPolicy = [this](bool floating, bool enabled) {
         if (!manager_) return;
         auto next = manager_->behavior();
@@ -61,10 +61,10 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
         [changeSingleTabPolicy](bool enabled) { changeSingleTabPolicy(false, enabled); });
     connect(hideSingleFloating_, &QCheckBox::toggled, this,
         [changeSingleTabPolicy](bool enabled) { changeSingleTabPolicy(true, enabled); });
-    hideToolbarOptionsWhenLocked_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "锁定工具栏且没有收起按钮时隐藏工具条选项"), parent);
+    hideToolbarOptionsWhenLocked_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "Hide toolbar options when locked with no overflow"), parent);
     hideToolbarOptionsWhenLocked_->setObjectName("HideToolbarOptionsWhenLocked");
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "精简锁定工具条"), "window.hideToolbarOptionsWhenLocked",
-        QCoreApplication::translate("WindowSystem", "工具栏锁定且全部按钮可见时隐藏末尾选项；有按钮被收起时仍然显示。"), hideToolbarOptionsWhenLocked_));
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Compact locked toolbars"), "window.hideToolbarOptionsWhenLocked",
+        QCoreApplication::translate("WindowSystem", "Hide the options button when toolbars are locked and all buttons are visible. Keep it visible when buttons overflow."), hideToolbarOptionsWhenLocked_));
     connect(hideToolbarOptionsWhenLocked_, &QCheckBox::toggled, this, [this](bool enabled) {
         if (!manager_) return;
         auto behavior = manager_->behavior(); behavior.hideToolbarOptionsWhenLocked = enabled;
@@ -73,8 +73,8 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     captionButtonOrder_ = new ThemedComboBox(parent); captionButtonOrder_->setObjectName("CaptionButtonOrder");
     for (const auto& item : captionOrders)
         captionButtonOrder_->addItem(QCoreApplication::translate("WindowSystem", item.name), int(item.order));
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "窗口控制按钮顺序"), "window.captionButtonOrder",
-        QCoreApplication::translate("WindowSystem", "后两种把按钮靠左对齐，关闭按钮在最左侧，适合把窗口控制工具条移到左上角。"), captionButtonOrder_));
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Window control button order"), "window.captionButtonOrder",
+        QCoreApplication::translate("WindowSystem", "The last two align the buttons to the left with Close outermost, for a window controls toolbar in the top-left corner."), captionButtonOrder_));
     connect(captionButtonOrder_, &QComboBox::currentIndexChanged, this, [this] {
         if (!manager_) return;
         auto behavior = manager_->behavior(); behavior.captionButtonOrder = CaptionButtonOrder(captionButtonOrder_->currentData().toInt());
@@ -82,19 +82,19 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     });
     zenFullscreenMode_ = new ThemedComboBox(parent); zenFullscreenMode_->setObjectName("ZenFullscreenMode");
     for (const auto& mode : modes) zenFullscreenMode_->addItem(QCoreApplication::translate("WindowSystem", mode.name), int(mode.mode));
-    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "禅模式默认全屏范围"), "window.zenFullscreenMode",
-        QCoreApplication::translate("WindowSystem", "在普通窗口启用禅模式时使用。已经全屏时保留当前范围；退出禅模式恢复各栏，但保留全屏。"), zenFullscreenMode_));
+    rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Default fullscreen scope for Zen mode"), "window.zenFullscreenMode",
+        QCoreApplication::translate("WindowSystem", "Used when entering Zen mode from a normal window. Keep the current scope if already fullscreen. Exiting Zen mode restores the bars and keeps fullscreen."), zenFullscreenMode_));
     connect(zenFullscreenMode_, &QComboBox::currentIndexChanged, this, [this] {
         if (!manager_) return;
         auto behavior = manager_->behavior(); behavior.zenFullscreenMode = ViewMode(zenFullscreenMode_->currentData().toInt());
         manager_->setBehavior(behavior);
     });
     for (const auto& bar : bars) {
-        auto* control = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "显示%1").arg(QCoreApplication::translate("WindowSystem", bar.name)), parent);
+        auto* control = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "Show %1").arg(QCoreApplication::translate("WindowSystem", bar.name)), parent);
         const auto key = QStringLiteral("window.visibility.") + QString::fromLatin1(bar.key);
         control->setObjectName(key); visibilityControls_.append({bar.bar, control});
         rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", bar.name), key,
-            QCoreApplication::translate("WindowSystem", "各栏显隐与全屏无关，在当前窗口生效并随布局保存。禅模式临时隐藏全部栏。"), control));
+            QCoreApplication::translate("WindowSystem", "Bar visibility is independent of fullscreen, applies to the current window, and is saved with the layout. Zen mode temporarily hides every bar."), control));
         connect(control, &QCheckBox::toggled, this, [this, bar](bool visible) {
             if (!manager_) return;
             const auto window = settingsWindow();

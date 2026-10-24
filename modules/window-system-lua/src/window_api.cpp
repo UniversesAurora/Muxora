@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "script_host_p.hpp"
 #include <window_system/localization.hpp>
 #include <QApplication>
@@ -50,7 +51,7 @@ ViewMode viewMode(QString mode) {
         return ViewMode::GroupFullscreen;
     if (mode == "pane")
         return ViewMode::PaneFullscreen;
-    throw std::runtime_error("Unknown fullscreen mode");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown fullscreen mode").toUtf8().constData());
 }
 QString modeName(ViewMode mode) {
     switch (mode) {
@@ -70,14 +71,14 @@ ToolbarArea toolbarArea(QString area) {
         return ToolbarArea::Top;
     if (area == "bottom")
         return ToolbarArea::Bottom;
-    throw std::runtime_error("Toolbar area must be top or bottom");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Toolbar area must be top or bottom").toUtf8().constData());
 }
 WindowKind windowKind(QString kind) {
     if (kind == "floating")
         return WindowKind::Floating;
     if (kind == "workbench")
         return WindowKind::Workbench;
-    throw std::runtime_error("Window kind must be floating or workbench");
+    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Window kind must be floating or workbench").toUtf8().constData());
 }
 bool boolField(const QVariantMap &map, const QString &key, bool fallback) {
     return map.contains(key) ? boolean({map.value(key)}, 0) : fallback;
@@ -86,7 +87,7 @@ FloatingPanelOptions panelOptions(const Args &args) {
     const auto spec = object(args, 1);
     for (auto it = spec.cbegin(); it != spec.cend(); ++it)
         if (it.key() != "modal" && it.key() != "dismiss_on_outside")
-            throw std::runtime_error("Unknown panel option");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown panel option").toUtf8().constData());
     return {boolField(spec, "dismiss_on_outside", true), boolField(spec, "modal", false)};
 }
 } // namespace
@@ -132,7 +133,7 @@ void ScriptHost::Private::installWindowApi() {
                 options.contains("owner") ? identifier({options.value("owner")}, 0) : current(c).window;
             const auto *record = manager->model().window(source);
             if (!record)
-                return failure("Floating window owner does not exist");
+                return failure(QCoreApplication::translate("WindowSystem", "Floating window owner does not exist"));
             parent = manager->model().familyRoot(record->familyId);
         }
         const QPointer<WindowManager> windows(manager);
@@ -164,7 +165,7 @@ void ScriptHost::Private::installWindowApi() {
         auto values = object(a, 1);
         for (const auto &key : values.keys())
             if (key != "tabs" && key != "sidebar" && key != "toolbars" && key != "status")
-                throw std::runtime_error("Unknown visibility bar");
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown visibility bar").toUtf8().constData());
         for (auto it = values.cbegin(); it != values.cend(); ++it)
             boolean({it.value()}, 0);
         const QPointer<WindowManager> windows(manager);
@@ -239,7 +240,7 @@ void ScriptHost::Private::installWindowApi() {
                                 : state == "minimized" ? "window.minimize"
                                                        : QString{};
         if (command.isEmpty())
-            return failure("Window state must be normal, maximized or minimized");
+            return failure(QCoreApplication::translate("WindowSystem", "Window state must be normal, maximized or minimized"));
         return result(manager->executeInContext(command, manager->context(id)));
     };
     handlers["groups.list"] = [this](const Args &a, const Context &c) {
@@ -267,7 +268,7 @@ void ScriptHost::Private::installWindowApi() {
         else if (!requestedGroup.isNull()) {
             const auto *group = manager->model().group(requestedGroup);
             if (!group)
-                return failure("Tab group does not exist");
+                return failure(QCoreApplication::translate("WindowSystem", "Tab group does not exist"));
             window = group->windowId;
         } else
             window = current(c).window;
@@ -321,7 +322,7 @@ void ScriptHost::Private::installWindowApi() {
                                  "opened_descending",      "visited_ascending",       "visited_descending"};
         int order = orders.indexOf(text(a, 1));
         if (order < 0)
-            throw std::runtime_error("Unknown tab sort order");
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown tab sort order").toUtf8().constData());
         return result(manager->sortTabs(target(a, 0, c, Target::Group), TabSortOrder(order)));
     };
     handlers["tabs.set_bar_sharing"] = [this](const Args &a, const Context &c) {
@@ -332,7 +333,7 @@ void ScriptHost::Private::installWindowApi() {
             return result(manager->setTabTopBarSharing(id, sharing));
         if (pos == "bottom")
             return result(manager->setTabBottomBarSharing(id, sharing));
-        throw std::runtime_error("Bar must be top or bottom");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar must be top or bottom").toUtf8().constData());
     };
     handlers["groups.close"] = [this](const Args &a, const Context &c) {
         return result(manager->closeGroup(target(a, 0, c, Target::Group)));

@@ -43,7 +43,7 @@
 
 组件批量修改绑定时可使用 `setBindingsBatch()`：先校验整批绑定，再提交并通知一次，观察者不会看到部分更新。动态添加和移除命令同样通知 `commandsChanged`，菜单回收已移除命令及不再使用的动态分类。
 
-[TranslationManager](include/window_system/localization.hpp) 由宿主在创建界面前构造、安装语言并保留生命周期，提供 `System`、`SimplifiedChinese` 和 `English`。宿主可通过 `addCatalog` 增加自己的翻译目录，通过 `requestedLanguageChanged` 持久化重启偏好。语言切换不会重建业务内容或修改用户名称。目录维护入口为 CMake 的 `window_system_lupdate`、`window_system_lrelease`；应用目录使用 `muxora_lupdate`、`muxora_lrelease`。新增文本更新两种语言的 `.ts` 后统一构建和测试。
+[TranslationManager](include/window_system/localization.hpp) 由宿主在创建界面前构造、安装语言并保留生命周期，提供 `System`、`SimplifiedChinese` 和 `English`。宿主可通过 `addCatalog` 增加自己的翻译目录，通过 `requestedLanguageChanged` 持久化重启偏好。语言切换不会重建业务内容或修改用户名称。目录维护入口为 CMake 的 `window_system_lupdate`、`window_system_lrelease`；应用目录使用 `muxora_lupdate`、`muxora_lrelease`。源文本使用英文，中文由目录提供；未安装目录时显示英文。新增文本更新两种语言的 `.ts` 后，运行 [翻译覆盖检查](../../docs/development/testing-design.md#翻译覆盖) 再构建和测试。模型及 Lua 适配诊断沿用 `WindowSystem` 上下文，不为翻译增加 Widgets 链接依赖。内置菜单的显示文字与持久化路径分开，宿主提供的标题、类别和用户路径不按文字内容二次翻译。
 
 默认主题的配色和形状见 [交互细则 · 默认视觉](../../docs/design/window-interaction-design.md#默认视觉)；宿主通过 [Theme](include/window_system/theme.hpp) 令牌取色，例如普通按钮悬停用 `Theme.buttonHover`。
 

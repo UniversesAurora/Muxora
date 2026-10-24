@@ -27,18 +27,18 @@ void registerTabPresentationCommands(WindowManager* manager)
                 return retained->setTabAppearance(next);
             }, {QStringLiteral("视图"), QStringLiteral("标签栏")}});
     };
-    registerFlag("presentation.toggleIcons", QCoreApplication::translate("WindowSystem", "显示标签图标"), &TabAppearance::showIcons);
-    registerFlag("presentation.toggleNewTabButton", QCoreApplication::translate("WindowSystem", "显示新建标签按钮"), &TabAppearance::showNewTabButton);
-    registerFlag("presentation.toggleNumbers", QCoreApplication::translate("WindowSystem", "显示标签编号"), &TabAppearance::showNumbers);
-    registerFlag("presentation.toggleSidebarIcons", QCoreApplication::translate("WindowSystem", "显示侧边栏标签图标"), &TabAppearance::showSidebarIcons);
-    registerFlag("presentation.toggleSidebarNumbers", QCoreApplication::translate("WindowSystem", "显示侧边栏标签编号"), &TabAppearance::showSidebarNumbers);
+    registerFlag("presentation.toggleIcons", QCoreApplication::translate("WindowSystem", "Show tab icons"), &TabAppearance::showIcons);
+    registerFlag("presentation.toggleNewTabButton", QCoreApplication::translate("WindowSystem", "Show new tab button"), &TabAppearance::showNewTabButton);
+    registerFlag("presentation.toggleNumbers", QCoreApplication::translate("WindowSystem", "Show tab numbers"), &TabAppearance::showNumbers);
+    registerFlag("presentation.toggleSidebarIcons", QCoreApplication::translate("WindowSystem", "Show sidebar tab icons"), &TabAppearance::showSidebarIcons);
+    registerFlag("presentation.toggleSidebarNumbers", QCoreApplication::translate("WindowSystem", "Show sidebar tab numbers"), &TabAppearance::showSidebarNumbers);
     registerFlag("presentation.toggleTitleClipping", QCoreApplication::translate("WindowSystem", "Clip long regular and pinned tab titles"), &TabAppearance::clipTitles);
     registerFlag("presentation.toggleSidebarTitleClipping", QCoreApplication::translate("WindowSystem", "Clip long auto-hide sidebar tab titles"), &TabAppearance::clipSidebarTitles);
-    registerFlag("presentation.toggleMultiline", QCoreApplication::translate("WindowSystem", "多行显示标签"), &TabAppearance::multiline);
-    registerFlag("presentation.toggleWheelExpandRows", QCoreApplication::translate("WindowSystem", "滚轮展开标签行"), &TabAppearance::wheelExpandRows);
+    registerFlag("presentation.toggleMultiline", QCoreApplication::translate("WindowSystem", "Show tabs in multiple rows"), &TabAppearance::multiline);
+    registerFlag("presentation.toggleWheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"), &TabAppearance::wheelExpandRows);
     for (const bool pinned : {false, true}) manager->commands().add({
         pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement"),
-        pinned ? QCoreApplication::translate("WindowSystem", "固定侧栏标签位置") : QCoreApplication::translate("WindowSystem", "普通标签栏位置"), QStringLiteral("视图"), {}, {},
+        pinned ? QCoreApplication::translate("WindowSystem", "Pinned sidebar tab position") : QCoreApplication::translate("WindowSystem", "Central tab bar position"), QStringLiteral("视图"), {}, {},
         [retained, pinned](const CommandContext& context) {
             if (!retained || context.args.value("position").metaType().id() != QMetaType::QString) return false;
             const auto position = context.args.value("position").toString();
@@ -83,12 +83,12 @@ void appendTabPresentationActions(QMenu* menu, WindowManager* manager, const Com
     const auto id = pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement");
     const auto appearance = manager->tabAppearance();
     const auto current = pinned ? appearance.pinnedPlacement : appearance.centralPlacement;
-    auto* placements = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "标签栏位置"), menu);
+    auto* placements = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "Tab bar position"), menu);
     placements->setObjectName(QStringLiteral("TabBarPlacementMenu"));
     menu->addMenu(placements);
     for (const auto placement : {TabBarPlacement::Top, TabBarPlacement::Bottom}) {
         const auto position = placement == TabBarPlacement::Top ? QStringLiteral("top") : QStringLiteral("bottom");
-        auto* action = placements->addAction(placement == TabBarPlacement::Top ? QCoreApplication::translate("WindowSystem", "顶部") : QCoreApplication::translate("WindowSystem", "底部"));
+        auto* action = placements->addAction(placement == TabBarPlacement::Top ? QCoreApplication::translate("WindowSystem", "Top") : QCoreApplication::translate("WindowSystem", "Bottom"));
         action->setObjectName(id + "." + position); action->setData(id); action->setCheckable(true);
         action->setChecked(current == placement); action->setProperty("windowSystemHandledAction", true);
         QObject::connect(action, &QAction::triggered, menu, [owner = QPointer<WindowManager>(manager), captured, id, position] {

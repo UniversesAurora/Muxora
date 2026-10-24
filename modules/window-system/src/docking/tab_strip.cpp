@@ -44,10 +44,10 @@ public:
         row->setContentsMargins(0, 0, 0, 0); row->setSpacing(createButtonGap);
         add = new CompactToolButton(this, QSize(newTabButtonWidth, theme.metrics.tabHeight));
         add->setObjectName("NewTabButton"); add->setIcon(iconFor("add", theme));
-        add->setToolTip(QCoreApplication::translate("WindowSystem", "新建标签")); add->setAccessibleName(add->toolTip());
+        add->setToolTip(QCoreApplication::translate("WindowSystem", "New tab")); add->setAccessibleName(add->toolTip());
         types = new CompactToolButton(this, QSize(listButtonWidth, theme.metrics.tabHeight));
         types->setObjectName("NewTabTypeButton"); types->setIcon(iconFor("chevron-down", theme));
-        types->setToolTip(QCoreApplication::translate("WindowSystem", "选择新建标签类型")); types->setAccessibleName(types->toolTip());
+        types->setToolTip(QCoreApplication::translate("WindowSystem", "Choose new tab type")); types->setAccessibleName(types->toolTip());
         row->addWidget(add); row->addWidget(types);
         add->installEventFilter(this); types->installEventFilter(this);
     }
@@ -560,7 +560,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     auto* actions = new QHBoxLayout(headerActions_); actions->setContentsMargins(0, 0, 0, 0); actions->setSpacing(0);
     list_ = new CompactToolButton(headerActions_, QSize(listButtonWidth, theme.metrics.tabHeight)); list_->setObjectName("TabListButton");
     list_->installEventFilter(this); list_->setMouseTracking(true);
-    list_->setIcon(iconFor("chevron-down", theme)); list_->setToolTip(QCoreApplication::translate("WindowSystem", "所有标签"));
+    list_->setIcon(iconFor("chevron-down", theme)); list_->setToolTip(QCoreApplication::translate("WindowSystem", "All tabs"));
     list_->setAccessibleName(list_->toolTip());
     actions->addWidget(list_);
     row->addWidget(strip, 1); row->addWidget(headerActions_,0,Qt::AlignBottom);
@@ -947,8 +947,8 @@ void GroupTabs::setDragHover(QPoint global) {
 }
 void GroupTabs::setPinnedActions(std::function<void()> current, std::function<void()> all) {
     auto* row = qobject_cast<QHBoxLayout*>(list_->parentWidget()->layout());
-    for (auto item : {std::tuple{std::move(current), QCoreApplication::translate("WindowSystem", "取消固定当前标签"), QStringLiteral("unpin")},
-                      std::tuple{std::move(all), QCoreApplication::translate("WindowSystem", "取消固定这一侧全部标签"), QStringLiteral("unpin-all")}}) {
+    for (auto item : {std::tuple{std::move(current), QCoreApplication::translate("WindowSystem", "Unpin current tab"), QStringLiteral("unpin")},
+                      std::tuple{std::move(all), QCoreApplication::translate("WindowSystem", "Unpin all sidebar tabs"), QStringLiteral("unpin-all")}}) {
         auto* button = new CompactToolButton(list_->parentWidget()); button->setIcon(iconFor(std::get<2>(item), theme_));
         button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
         button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
@@ -1009,7 +1009,7 @@ void GroupTabs::showTabList() {
         auto* row = new TabListRow(bar_->tabText(index), appearance_.showIcons ? bar_->tabIcon(index) : QIcon{},
             preset ? preset->groupInactive.line : QColor{}, index == bar_->currentIndex(), menu);
         row->setProperty("tabId", bar_->tabData(index));
-        row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "关闭标签"));
+        row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab"));
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);
         row->activate = [self, popup, index] { if (popup) popup->close(); if (self) self->setCurrentIndex(index); };
         QObject::connect(row->closeButton, &QToolButton::clicked, menu, [self, popup, index] {

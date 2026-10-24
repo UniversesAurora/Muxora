@@ -405,7 +405,7 @@ void WorkspaceWindow::createChrome()
     menus_ = new ApplicationCommandMenus(menu, manager_, id_, floating
         ? CommandMenuSurface::FloatingApplication : CommandMenuSurface::Application);
     menus_->structureChanged = [this] { if (strips_) strips_->refreshLayout(); };
-    strips_->addStrip(floating ? "floating-menu" : "menu", QCoreApplication::translate("WindowSystem", "菜单"), menu, 0);
+    strips_->addStrip(floating ? "floating-menu" : "menu", QCoreApplication::translate("WindowSystem", "Menu"), menu, 0);
     if (kind_ == WindowKind::Workbench) {
         QList<QAction*> toolActions;
         const QVector<QPair<QString, QString>> buttons = {{"host.newTab", "add"},
@@ -427,14 +427,14 @@ void WorkspaceWindow::createChrome()
                 QTimer::singleShot(0, manager, [manager, window, id] { manager->execute(id, {}, window); });
             });
         }
-        strips_->addActionStrip("workspace", QCoreApplication::translate("WindowSystem", "工作区"), toolActions, 1);
+        strips_->addActionStrip("workspace", QCoreApplication::translate("WindowSystem", "Workspace"), toolActions, 1);
         auto* status = new WorkspaceStatusBar(manager_, id_, this);
         status->setHiddenItems(options_.hiddenStatusItems);
         status_ = status; column_->addWidget(status_);
     }
     caption_ = new WindowTitleLabel(options_.title, strips_); caption_->setObjectName("CaptionTitle");
     caption_->setProperty("windowDragArea", true);
-    strips_->addStrip("title", QCoreApplication::translate("WindowSystem", "窗口标题"), caption_, 0, CommandStripHost::StripSizing::Elastic);
+    strips_->addStrip("title", QCoreApplication::translate("WindowSystem", "Window title"), caption_, 0, CommandStripHost::StripSizing::Elastic);
     if (auto* strip = strips_->stripWidget("title"))
         if (auto* handle = strip->findChild<QWidget*>("StripHandle")) handle->setToolTip({});
     strips_->setStripOptionsEnabled("title", false);
@@ -455,16 +455,16 @@ void WorkspaceWindow::createChrome()
         controlRow->addWidget(button); QObject::connect(button, &QToolButton::clicked, this, callback);
         return button;
     };
-    addCaption("minimize", QCoreApplication::translate("WindowSystem", "最小化"), [this] { showMinimized(); });
-    maximizeButton_ = addCaption("maximize", QCoreApplication::translate("WindowSystem", "最大化"), [this] {
+    addCaption("minimize", QCoreApplication::translate("WindowSystem", "Minimize"), [this] { showMinimized(); });
+    maximizeButton_ = addCaption("maximize", QCoreApplication::translate("WindowSystem", "Maximize"), [this] {
         if (!manager_) return;
         if (viewState_.mode != ViewMode::Normal) manager_->setViewMode(id_, ViewMode::Normal);
         else isMaximized() ? showNormal() : showMaximized();
     });
-    addCaption("close", QCoreApplication::translate("WindowSystem", "关闭窗口"), [this] { close(); });
+    addCaption("close", QCoreApplication::translate("WindowSystem", "Close window"), [this] { close(); });
     captionControls_ = controls;
     setCaptionButtonOrder(manager_->behavior().captionButtonOrder);
-    strips_->addStrip("caption-controls", QCoreApplication::translate("WindowSystem", "窗口控制"), controls, 0);
+    strips_->addStrip("caption-controls", QCoreApplication::translate("WindowSystem", "Window controls"), controls, 0);
     strips_->setStripOptionsEnabled("caption-controls", false);
     strips_->setStripConstraints("caption-controls", {false, false, 12, false, true});
     for (auto* area : strips_->windowDragAreas()) area->installEventFilter(this);
@@ -484,7 +484,7 @@ void WorkspaceWindow::updateWindowControlState()
     if (!manager_ || !maximizeButton_) return;
     const bool expanded = isMaximized() || viewState_.mode != ViewMode::Normal;
     const auto role = expanded ? QStringLiteral("restore") : QStringLiteral("maximize");
-    const auto title = expanded ? QCoreApplication::translate("WindowSystem", "还原") : QCoreApplication::translate("WindowSystem", "最大化");
+    const auto title = expanded ? QCoreApplication::translate("WindowSystem", "Restore") : QCoreApplication::translate("WindowSystem", "Maximize");
     maximizeButton_->setProperty("role", role);
     maximizeButton_->setIcon(iconFor(role, manager_->theme()));
     maximizeButton_->setToolTip(title);
@@ -558,13 +558,13 @@ void WorkspaceWindow::showTabPresentationMenu(const QPoint& global)
         });
         return true;
     };
-    if (!add(QStringLiteral("presentation.toggleIcons"), QCoreApplication::translate("WindowSystem", "显示标签图标"), appearance.showIcons, true)) return;
-    if (!add(QStringLiteral("presentation.toggleNewTabButton"), QCoreApplication::translate("WindowSystem", "显示新建标签按钮"), appearance.showNewTabButton, true)) return;
-    if (!add(QStringLiteral("presentation.toggleNumbers"), QCoreApplication::translate("WindowSystem", "显示标签编号"), appearance.showNumbers, true)) return;
+    if (!add(QStringLiteral("presentation.toggleIcons"), QCoreApplication::translate("WindowSystem", "Show tab icons"), appearance.showIcons, true)) return;
+    if (!add(QStringLiteral("presentation.toggleNewTabButton"), QCoreApplication::translate("WindowSystem", "Show new tab button"), appearance.showNewTabButton, true)) return;
+    if (!add(QStringLiteral("presentation.toggleNumbers"), QCoreApplication::translate("WindowSystem", "Show tab numbers"), appearance.showNumbers, true)) return;
     if (!add(QStringLiteral("presentation.toggleTitleClipping"), QCoreApplication::translate("WindowSystem", "Clip long regular and pinned tab titles"), appearance.clipTitles, true)) return;
     if (!add(QStringLiteral("presentation.toggleSidebarTitleClipping"), QCoreApplication::translate("WindowSystem", "Clip long auto-hide sidebar tab titles"), appearance.clipSidebarTitles, true)) return;
     menu->addSeparator();
-    if (!add(QStringLiteral("group.close"), QCoreApplication::translate("WindowSystem", "关闭此标签组"), false, false)) return;
+    if (!add(QStringLiteral("group.close"), QCoreApplication::translate("WindowSystem", "Close this tab group"), false, false)) return;
     menu->popup(global);
 }
 void WorkspaceWindow::addWindowMenuActions(QMenu* menu)
@@ -599,7 +599,7 @@ void WorkspaceWindow::updateCaption()
     const auto ctx = manager_->context(id_);
     const auto* tab = manager_->model().tab(ctx.tab);
     const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + options_.title;
-    setWindowTitle(title + (kind_ == WindowKind::Floating ? QCoreApplication::translate("WindowSystem", " · 浮动窗口") : QString()));
+    setWindowTitle(title + (kind_ == WindowKind::Floating ? QCoreApplication::translate("WindowSystem", " · Floating window") : QString()));
     if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setWorkspace(
         tab ? tab->title : QString(), manager_->model().orderedTabs(id_).size());
     if (caption_) {

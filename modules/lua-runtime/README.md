@@ -15,3 +15,5 @@ Qt Core 与官方 Lua 5.5.1 的嵌入运行时。它不依赖窗口、终端、S
 `isRunning`／`runningChanged` 描述正在执行 Lua 或同步标准库调用，等待宿主回复不算执行时间。连续执行两秒后 `isLongRunning`／`longRunningChanged` 提示宿主显示停止入口，不会中止脚本。重置两秒仍未完成时发出 `resetBlocked`，原重置在阻塞调用返回后继续完成。析构最多等待工作线程 1.9 秒；仍在标准库调用中时，线程、解释器及分配统计继续存活，调用返回后自行清理。不会强杀线程，也不会销毁运行中的 `QThread`。
 
 Lua 标准库中的本地算法不能被指令 hook 强制抢占，这不是恶意代码的进程隔离。Lua 按 C++ 静态链接，不支持外部 C 模块；`package.cpath` 为空，`package.loadlib` 保留。垃圾回收钩子的嵌入适配见 [依赖说明](../../third_party/lua/README.md)。实际测试结果见项目预览记录，不能把存在测试入口当作已经通过。
+
+运行时自有诊断使用 Qt Core 的翻译接口及 `WindowSystem` 上下文；不安装目录的宿主得到英文源文本。宿主负责安装、持有自己的 `QTranslator`，窗口宿主可直接使用 WindowSystem 的目录。用户脚本的 `print`、`error`、标准 Lua 错误和堆栈内容不按最终字符串匹配翻译；覆盖维护见 [翻译检查](../../docs/development/testing-design.md#翻译覆盖)。

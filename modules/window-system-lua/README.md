@@ -17,7 +17,7 @@
 
 在 GUI 线程创建 [ScriptHost](include/window_system_lua/script_host.hpp)，传入仍然有效的 `WindowManager`。通过 `setModuleDirectory()` 指定纯 Lua 模块目录，再调用 `initialize(source, name)`；结果由 `initialized` 异步返回。该目录的 `?.lua` 和 `?/init.lua` 模板放在标准 `package.path` 的默认路径之前，加载与缓存遵循 Lua。引导脚本以可让出的 Lua 调用标准搜索器和加载器，模块顶层可以直接调用 `muxora.*`，用法见 [Lua 使用说明](../../docs/development/lua-guide.md#标准库与模块)。`ready()` 为真后可调用 `run()` 或通过命令注册表执行脚本命令。脚本线程等待 UI 回执时让出，GUI 线程不等待 Lua 执行结束。
 
-`scriptError` 与 `logMessage` 由宿主接收和展示。`unload()` 撤销脚本资源并取消旧任务；重新 `initialize()` 建立新一代 VM。运行时的重置完成通知核验最新代次，延迟到达的旧通知不会重新启动初始化。相同 ID 的工具条更新定义且保留布局，不再声明的贡献被移除。宿主应在清理脚本贡献前保存需要保留的窗口布局。
+`scriptError` 与 `logMessage` 由宿主接收和展示。适配器自有诊断在产生处使用 `WindowSystem` 翻译上下文，随宿主安装的目录显示；用户脚本输出及 Lua 标准加载器错误保持原文。文字覆盖检查见 [测试要求](../../docs/development/testing-design.md#翻译覆盖)。`unload()` 撤销脚本资源并取消旧任务；重新 `initialize()` 建立新一代 VM。运行时的重置完成通知核验最新代次，延迟到达的旧通知不会重新启动初始化。相同 ID 的工具条更新定义且保留布局，不再声明的贡献被移除。宿主应在清理脚本贡献前保存需要保留的窗口布局。
 
 `windows.state(id)` 查询最小化、最大化和全屏范围；`windows.set_state(id, state)` 接受 `normal`、`maximized`、`minimized`，使用与菜单相同的窗口命令。`ui.command_palette(id, options)` 和 `ui.window_selector(id, options)` 的 `options` 接受 `modal`、`dismiss_on_outside`，默认分别为 `false`、`true`。面板打开后脚本继续执行，不使用嵌套事件循环。
 

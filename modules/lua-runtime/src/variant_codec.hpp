@@ -10,7 +10,7 @@ namespace lua_runtime::detail {
 
 class ValueError final : public std::runtime_error {
   public:
-    explicit ValueError(const char *message) : std::runtime_error(message) {}
+    explicit ValueError(const QString &message) : std::runtime_error(message.toUtf8().constData()) {}
 };
 
 // One budget covers an entire argument/result list, rather than resetting for

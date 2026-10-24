@@ -179,19 +179,19 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     initialWindow_ = manager->context().window;
     setObjectName(QStringLiteral("SettingsPage"));
     setProperty("windowSystemSettingsKind", QStringLiteral("window_system.settings"));
-    auto* layout = pageLayout(this, QCoreApplication::translate("WindowSystem", "设置"),
-        QCoreApplication::translate("WindowSystem", "修改立即生效。窗口行为随工作区布局保存。"));
+    auto* layout = pageLayout(this, QCoreApplication::translate("WindowSystem", "Settings"),
+        QCoreApplication::translate("WindowSystem", "Changes take effect immediately. Window behavior is saved with the workspace layout."));
     search_ = new QLineEdit(this);
     search_->setObjectName(QStringLiteral("SettingsSearch"));
-    search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "搜索设置名称、说明或设置 ID…"));
-    search_->setAccessibleName(QCoreApplication::translate("WindowSystem", "搜索设置"));
+    search_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Search setting names, descriptions, or IDs…"));
+    search_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Search settings"));
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto* body = new QHBoxLayout;
     body->setSpacing(12);
     categories_ = new CategoryNavigation(manager, this);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
-    categories_->setAccessibleName(QCoreApplication::translate("WindowSystem", "设置分类"));
+    categories_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Setting categories"));
     categories_->setHeaderHidden(true);
     categories_->setFrameShape(QFrame::NoFrame);
     categories_->setColumnCount(1);
@@ -226,13 +226,13 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     rows->setSpacing(18);
 
     if (auto* translations = TranslationManager::applicationInstance()) {
-        addCategory(contents, rows, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "应用"));
+        addCategory(contents, rows, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "Application"));
         language_ = new ThemedComboBox(contents);
         language_->setObjectName(QStringLiteral("DisplayLanguage"));
-        language_->setAccessibleName(QCoreApplication::translate("WindowSystem", "界面语言"));
+        language_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Display language"));
         for (const auto language : supportedUiLanguages()) language_->addItem(uiLanguageName(language), uiLanguageId(language));
-        rows->addWidget(addRow(contents, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "界面语言"),
-            QStringLiteral("workbench.language"), QCoreApplication::translate("WindowSystem", "重启应用后生效。此设置独立于窗口布局。"), language_));
+        rows->addWidget(addRow(contents, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "Display language"),
+            QStringLiteral("workbench.language"), QCoreApplication::translate("WindowSystem", "Restart the application to apply. This setting is independent of the window layout."), language_));
         const QPointer<TranslationManager> controller(translations);
         QObject::connect(language_, &QComboBox::currentIndexChanged, this, [this, controller] {
             if (!controller) return;
@@ -243,51 +243,51 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         QObject::connect(translations, &TranslationManager::requestedLanguageChanged, this, [this] { syncControls(); });
         QObject::connect(translations, &QObject::destroyed, language_, [this] { language_->setEnabled(false); });
     }
-    addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "窗口"));
+    addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window"));
     newTabPosition_ = new ThemedComboBox(contents);
     newTabPosition_->setObjectName(QStringLiteral("NewTabPosition"));
-    newTabPosition_->setAccessibleName(QCoreApplication::translate("WindowSystem", "新建标签的位置"));
-    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "当前标签之后（默认）"), NewTabPosition::AfterActive},
-                             std::pair{QCoreApplication::translate("WindowSystem", "当前标签之前"), NewTabPosition::BeforeActive},
-                             std::pair{QCoreApplication::translate("WindowSystem", "标签组开头"), NewTabPosition::Beginning},
-                             std::pair{QCoreApplication::translate("WindowSystem", "标签组末尾"), NewTabPosition::End}})
+    newTabPosition_->setAccessibleName(QCoreApplication::translate("WindowSystem", "New tab position"));
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "After the active tab (default)"), NewTabPosition::AfterActive},
+                             std::pair{QCoreApplication::translate("WindowSystem", "Before the active tab"), NewTabPosition::BeforeActive},
+                             std::pair{QCoreApplication::translate("WindowSystem", "Start of tab group"), NewTabPosition::Beginning},
+                             std::pair{QCoreApplication::translate("WindowSystem", "End of tab group"), NewTabPosition::End}})
         newTabPosition_->addItem(entry.first, int(entry.second));
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "新建标签的位置"),
-        QStringLiteral("window.newTabPosition"), QCoreApplication::translate("WindowSystem", "适用于加号、类型菜单和命令创建的标签。"), newTabPosition_));
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "New tab position"),
+        QStringLiteral("window.newTabPosition"), QCoreApplication::translate("WindowSystem", "Applies to tabs created using the plus button, type menu, or commands."), newTabPosition_));
     detachKind_ = new ThemedComboBox(contents);
     detachKind_->setObjectName(QStringLiteral("DetachWindowKind"));
-    detachKind_->setAccessibleName(QCoreApplication::translate("WindowSystem", "拖出标签的窗口形态"));
-    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "轻量浮窗（保留所属窗口）"), int(WindowKind::Floating));
-    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "完整工作窗口"), int(WindowKind::Workbench));
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "拖出标签的形态"),
+    detachKind_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Detached tab window type"));
+    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "Floating window (keeps its owner)"), int(WindowKind::Floating));
+    detachKind_->addItem(QCoreApplication::translate("WindowSystem", "Workbench window"), int(WindowKind::Workbench));
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window type for detached tabs"),
         QStringLiteral("window.dragOutsideKind"),
-        QCoreApplication::translate("WindowSystem", "将标签拖出时使用轻量浮窗或完整工作窗口。"), detachKind_));
+        QCoreApplication::translate("WindowSystem", "Choose a floating or workbench window when detaching a tab."), detachKind_));
 
     emptyPolicy_ = new ThemedComboBox(contents);
     emptyPolicy_->setObjectName(QStringLiteral("EmptyWorkbenchPolicy"));
-    emptyPolicy_->setAccessibleName(QCoreApplication::translate("WindowSystem", "完整窗口移空后的行为"));
-    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "保留空的完整窗口"), false);
-    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "自动关闭空的完整窗口"), true);
-    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "移空后的行为"),
+    emptyPolicy_->setAccessibleName(QCoreApplication::translate("WindowSystem", "When a workbench window becomes empty"));
+    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "Keep the empty workbench window"), false);
+    emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "Automatically close the empty workbench window"), true);
+    rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "When the window becomes empty"),
         QStringLiteral("window.closeEmptyWorkbench"),
-        QCoreApplication::translate("WindowSystem", "如果还有从属轻量浮窗，完整窗口会继续保留。"), emptyPolicy_));
+        QCoreApplication::translate("WindowSystem", "The workbench window remains open while it owns floating windows."), emptyPolicy_));
 
-    addCategory(contents, rows, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "拖拽"));
-    reveal_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "悬停时抬起被遮挡的目标窗口"), contents);
+    addCategory(contents, rows, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "Dragging"));
+    reveal_ = new ThemedCheckBox(QCoreApplication::translate("WindowSystem", "Bring an obscured target window forward on hover"), contents);
     reveal_->setObjectName(QStringLiteral("RevealDuringDrag"));
-    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "显示目标窗口"),
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "Reveal target window"),
         QStringLiteral("window.revealDuringDrag"),
-        QCoreApplication::translate("WindowSystem", "拖动标签停留在目标窗口位置时，显示该窗口以便投放。"), reveal_));
+        QCoreApplication::translate("WindowSystem", "Hover a dragged tab over a target window to bring it forward for dropping."), reveal_));
 
     delay_ = new ThemedSpinBox(contents);
     delay_->setObjectName(QStringLiteral("RevealDelayMs"));
-    delay_->setAccessibleName(QCoreApplication::translate("WindowSystem", "显示拖拽目标的悬停时间"));
+    delay_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Target window hover delay"));
     delay_->setRange(200, 2000);
     delay_->setSingleStep(100);
-    delay_->setSuffix(QCoreApplication::translate("WindowSystem", " 毫秒"));
-    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "悬停时间"),
+    delay_->setSuffix(QCoreApplication::translate("WindowSystem", " ms"));
+    rows->addWidget(addRow(contents, QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "Hover delay"),
         QStringLiteral("window.revealDelayMs"),
-        QCoreApplication::translate("WindowSystem", "显示被遮挡窗口前的等待时间。"), delay_));
+        QCoreApplication::translate("WindowSystem", "Delay before bringing an obscured window forward."), delay_));
     addViewOptions(contents, rows);
     addTabAppearanceOptions(contents, rows);
     rows->addStretch();
@@ -466,7 +466,7 @@ void SettingsPage::filterRows()
         if (section.heading) section.heading->setVisible(visible);
         section.item->setHidden(!visible);
     }
-    results_->setText(count ? QCoreApplication::translate("WindowSystem", "%1 项设置").arg(count) : QCoreApplication::translate("WindowSystem", "没有匹配的设置"));
+    results_->setText(count ? QCoreApplication::translate("WindowSystem", "%n settings", nullptr, count) : QCoreApplication::translate("WindowSystem", "No matching settings"));
     scroll_->widget()->layout()->activate();
     syncNavigation();
     // QScrollArea updates its range after child layouts respond to visibility.

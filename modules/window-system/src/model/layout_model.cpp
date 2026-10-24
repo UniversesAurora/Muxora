@@ -1,3 +1,4 @@
+#include <QCoreApplication>
 #include <window_system/layout_model.hpp>
 
 #include <QJsonArray>
@@ -170,10 +171,10 @@ QJsonObject peekPolicyJson(const PeekSizePolicy& size)
 
 OperationResult readPeekPolicy(const QJsonValue& value, PeekSizePolicy& policy)
 {
-    if (!value.isObject()) return failure("A directional peek size must be an object.");
+    if (!value.isObject()) return failure(QCoreApplication::translate("WindowSystem", "A directional peek size must be an object."));
     const auto object = value.toObject();
     for (const auto& key : object.keys())
-        if (key != "width" && key != "height") return failure("A directional peek size has an unknown axis.");
+        if (key != "width" && key != "height") return failure(QCoreApplication::translate("WindowSystem", "A directional peek size has an unknown axis."));
     for (const auto* key : {"width", "height"}) {
         if (!object.contains(QLatin1String(key))) continue;
         const auto dimension = object.value(QLatin1String(key));
@@ -181,7 +182,7 @@ OperationResult readPeekPolicy(const QJsonValue& value, PeekSizePolicy& policy)
         const auto minimum = QLatin1String(key) == QLatin1String("width") ? minimumPeekWidth : minimumPeekHeight;
         if (!dimension.isDouble() || !std::isfinite(number) || number < minimum
             || number > maximumPeekDimension || std::floor(number) != number)
-            return failure("Directional peek dimensions must be bounded integers.");
+            return failure(QCoreApplication::translate("WindowSystem", "Directional peek dimensions must be bounded integers."));
         if (QLatin1String(key) == QLatin1String("width")) policy.width = int(number);
         else policy.height = int(number);
     }
@@ -197,12 +198,12 @@ public:
     {
         const auto value = object.value(QLatin1String(key));
         if (!value.isString()) {
-            fail(QStringLiteral("Field %1 must be a UUID string.").arg(QLatin1String(key)));
+            fail(QCoreApplication::translate("WindowSystem", "Field %1 must be a UUID string.").arg(QLatin1String(key)));
             return {};
         }
         const QUuid result(value.toString());
         if (result.isNull() && (!nullable || !value.toString().isEmpty()))
-            fail(QStringLiteral("Field %1 contains an invalid UUID.").arg(QLatin1String(key)));
+            fail(QCoreApplication::translate("WindowSystem", "Field %1 contains an invalid UUID.").arg(QLatin1String(key)));
         return result;
     }
 
@@ -211,12 +212,12 @@ public:
         QVector<QUuid> result;
         const auto value = object.value(QLatin1String(key));
         if (!value.isArray() || value.toArray().size() > maximumRecords) {
-            fail(QStringLiteral("Field %1 must be a bounded UUID array.").arg(QLatin1String(key)));
+            fail(QCoreApplication::translate("WindowSystem", "Field %1 must be a bounded UUID array.").arg(QLatin1String(key)));
             return result;
         }
         for (const auto& item : value.toArray()) {
             if (!item.isString() || QUuid(item.toString()).isNull()) {
-                fail(QStringLiteral("Field %1 contains an invalid UUID.").arg(QLatin1String(key)));
+                fail(QCoreApplication::translate("WindowSystem", "Field %1 contains an invalid UUID.").arg(QLatin1String(key)));
                 return {};
             }
             result.append(QUuid(item.toString()));
@@ -228,7 +229,7 @@ public:
     {
         if (value.isNull()) return {};
         if (!value.isObject() || depth > maximumTreeDepth || ++nodeCount > maximumRecords) {
-            fail("A layout tree is malformed or exceeds the resource limit.");
+            fail(QCoreApplication::translate("WindowSystem", "A layout tree is malformed or exceeds the resource limit."));
             return {};
         }
         const auto object = value.toObject();
@@ -236,18 +237,18 @@ public:
         node.id = id(object, "id");
         if (object.contains("itemId")) {
             if (object.contains("first") || object.contains("second"))
-                fail("A leaf cannot also contain children.");
+                fail(QCoreApplication::translate("WindowSystem", "A leaf cannot also contain children."));
             node.itemId = id(object, "itemId");
         } else {
             const auto orientation = object.value("orientation").toString();
             if (orientation != "horizontal" && orientation != "vertical")
-                fail("A split has an invalid orientation.");
+                fail(QCoreApplication::translate("WindowSystem", "A split has an invalid orientation."));
             node.orientation = orientation == "horizontal" ? Qt::Horizontal : Qt::Vertical;
-            if (!object.value("ratio").isDouble()) fail("A split ratio must be numeric.");
+            if (!object.value("ratio").isDouble()) fail(QCoreApplication::translate("WindowSystem", "A split ratio must be numeric."));
             node.ratio = object.value("ratio").toDouble();
             node.first = tree(object.value("first"), depth + 1);
             node.second = tree(object.value("second"), depth + 1);
-            if (!node.first || !node.second) fail("A split needs two children.");
+            if (!node.first || !node.second) fail(QCoreApplication::translate("WindowSystem", "A split needs two children."));
         }
         return std::make_shared<LayoutNode>(std::move(node));
     }
@@ -438,7 +439,7 @@ WindowId LayoutModel::createWindow(WindowKind kind, WindowId ownerWorkbench)
         if (kind == WindowKind::Floating) {
             const auto* owner = model.window(ownerWorkbench);
             if (!owner || owner->kind != WindowKind::Workbench)
-                return failure("A floating window needs an existing workbench owner.");
+                return failure(QCoreApplication::translate("WindowSystem", "A floating window needs an existing workbench owner."));
         }
         created = model.createWindowUnchecked(kind, ownerWorkbench);
         return success();
@@ -462,12 +463,12 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
 {
     TabId created;
     const auto result = transact([&](LayoutModel& model) {
-        if (!model.window(windowId)) return failure("The target window does not exist.");
+        if (!model.window(windowId)) return failure(QCoreApplication::translate("WindowSystem", "The target window does not exist."));
         auto target = targetGroup;
         if (!target.isNull()) {
             const auto* record = model.group(target);
             if (!record || record->windowId != windowId)
-                return failure("The target group does not belong to the window.");
+                return failure(QCoreApplication::translate("WindowSystem", "The target group does not belong to the window."));
         } else {
             target = model.windows_[windowId].activeGroup;
             if (target.isNull()) target = model.createGroupUnchecked(windowId);
@@ -480,7 +481,7 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
         tabRecord.openedOrder = tabRecord.visitedOrder = model.nextTabOrder();
         model.tabs_.insert(created, std::move(tabRecord));
         auto& record = model.groups_[target];
-        if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure("The insertion index is invalid.");
+        if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure(QCoreApplication::translate("WindowSystem", "The insertion index is invalid."));
         // New tabs are never sticky; "at the beginning" starts after the run.
         attachTabUnchecked(record, created, insertionIndex < 0 ? -1 : std::max<qsizetype>(insertionIndex, record.stickyTabs), false);
         record.activeTab = created;
@@ -497,7 +498,7 @@ TabId LayoutModel::addTabToNewGroup(WindowId windowId, QString title, GroupId ta
         if (!model.window(windowId) || !target || target->windowId != windowId
             || target->location == GroupLocation::AutoHide
             || placement < Placement::Left || placement > Placement::Bottom)
-            return failure("An adjacent group needs a visible target in its window and a split direction.");
+            return failure(QCoreApplication::translate("WindowSystem", "An adjacent group needs a visible target in its window and a split direction."));
         created = QUuid::createUuid();
         const auto pane = QUuid::createUuid();
         TabRecord record;
@@ -516,7 +517,7 @@ TabId LayoutModel::addTabToNewGroup(WindowId windowId, QString title, GroupId ta
 OperationResult LayoutModel::renameTab(TabId id, QString title)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.tab(id)) return failure("The tab does not exist.");
+        if (!model.tab(id)) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         model.tabs_[id].title = std::move(title);
         return success();
     });
@@ -547,12 +548,12 @@ OperationResult LayoutModel::activateTab(TabId id)
 {
     if (indexValid_) {
         const auto groupId = tabGroup_.value(id);
-        if (groupId.isNull()) return failure("The tab does not exist.");
+        if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         if (activateIndexed(id, groupId, {})) return success();
     }
     return transact([&](LayoutModel& model) {
         const auto groupId = model.groupForTab(id);
-        if (groupId.isNull()) return failure("The tab does not exist.");
+        if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         auto& record = model.groups_[groupId];
         if (record.activeTab != id) model.tabs_[id].visitedOrder = model.nextTabOrder();
         record.activeTab = id;
@@ -565,11 +566,11 @@ OperationResult LayoutModel::activatePane(TabId tabId, PaneId paneId)
     if (indexValid_) {
         const auto owner = paneTab_.constFind(paneId);
         if (owner == paneTab_.cend() || owner.value() != tabId)
-            return failure("The pane does not belong to the tab.");
+            return failure(QCoreApplication::translate("WindowSystem", "The pane does not belong to the tab."));
         if (activateIndexed(tabId, tabGroup_.value(tabId), paneId)) return success();
     }
     return transact([&](LayoutModel& model) {
-        if (!model.panes(tabId).contains(paneId)) return failure("The pane does not belong to the tab.");
+        if (!model.panes(tabId).contains(paneId)) return failure(QCoreApplication::translate("WindowSystem", "The pane does not belong to the tab."));
         model.tabs_[tabId].activePane = paneId;
         const auto groupId = model.groupForTab(tabId);
         if (model.groups_[groupId].activeTab != tabId) model.tabs_[tabId].visitedOrder = model.nextTabOrder();
@@ -644,10 +645,10 @@ OperationResult LayoutModel::setTabSticky(TabId tabId, bool sticky)
     if (tab(tabId) && isTabSticky(tabId) == sticky) return success();
     return transact([&](LayoutModel& model) {
         const auto groupId = model.groupForTab(tabId);
-        if (groupId.isNull()) return failure("The tab does not exist.");
+        if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         auto& record = model.groups_[groupId];
         if (sticky && record.location == GroupLocation::AutoHide)
-            return failure("Tabs in an auto-hide rail cannot be sticky.");
+            return failure(QCoreApplication::translate("WindowSystem", "Tabs in an auto-hide rail cannot be sticky."));
         detachTabUnchecked(record, record.tabs.indexOf(tabId));
         // Sticking appends to the run; unsticking leads the remaining tabs.
         record.tabs.insert(record.stickyTabs, tabId);
@@ -661,13 +662,13 @@ OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
     const auto sourceId = groupForTab(tabId);
     if (sourceId.isNull() || !groups_.contains(targetGroup)
         || placement < Placement::Center || placement > Placement::Bottom)
-        return failure("The source tab or target group no longer exists.");
+        return failure(QCoreApplication::translate("WindowSystem", "The source tab or target group no longer exists."));
     auto destinationId = targetGroup;
     const auto targetWindow = groups_[targetGroup].windowId;
     if (placement != Placement::Center) {
         const auto targetRecord = groups_[targetGroup];
         if (targetRecord.location == GroupLocation::AutoHide)
-            return failure("Directional splitting requires a visible target group.");
+            return failure(QCoreApplication::translate("WindowSystem", "Directional splitting requires a visible target group."));
         synchronizePinnedLayouts();
         destinationId = QUuid::createUuid();
         GroupRecord destination;
@@ -707,7 +708,7 @@ OperationResult LayoutModel::moveTab(TabId tabId, GroupId targetGroup, Placement
 OperationResult LayoutModel::moveTabToWindow(TabId tabId, WindowId targetWindow, Placement placement)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.window(targetWindow)) return failure("The target window does not exist.");
+        if (!model.window(targetWindow)) return failure(QCoreApplication::translate("WindowSystem", "The target window does not exist."));
         auto target = model.windows_[targetWindow].activeGroup;
         auto effectivePlacement = placement;
         if (target.isNull()) {
@@ -723,7 +724,7 @@ OperationResult LayoutModel::moveTabToWindow(TabId tabId, WindowId targetWindow,
 OperationResult LayoutModel::moveGroupToEdge(GroupId groupId, Edge edge, bool pinned)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.group(groupId)) return failure("The group does not exist.");
+        if (!model.group(groupId)) return failure(QCoreApplication::translate("WindowSystem", "The group does not exist."));
         const auto windowId = model.groups_[groupId].windowId;
         model.unlinkGroupUnchecked(groupId);
         auto& record = model.groups_[groupId];
@@ -750,7 +751,7 @@ OperationResult LayoutModel::moveTabToEdge(TabId tabId, Edge edge, bool pinned)
 {
     return transact([&](LayoutModel& model) {
         auto source = model.groupForTab(tabId);
-        if (source.isNull()) return failure("The tab does not exist.");
+        if (source.isNull()) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         if (model.groups_[source].tabs.size() > 1) {
             const auto window = model.groups_[source].windowId;
             const auto isolated = model.createGroupUnchecked(window);
@@ -774,9 +775,9 @@ QVector<TabId> LayoutModel::autoHiddenTabs(WindowId windowId, Edge edge) const
 OperationResult LayoutModel::moveTabToEdgeBarUnchecked(TabId tabId, WindowId targetWindow, Edge edge, int insertionIndex)
 {
     const auto sourceId = groupForTab(tabId);
-    if (sourceId.isNull() || !window(targetWindow)) return failure("The source tab or target window does not exist.");
+    if (sourceId.isNull() || !window(targetWindow)) return failure(QCoreApplication::translate("WindowSystem", "The source tab or target window does not exist."));
     if (edge < Edge::Left || edge > Edge::Bottom || insertionIndex < -1)
-        return failure("The edge or insertion index is invalid.");
+        return failure(QCoreApplication::translate("WindowSystem", "The edge or insertion index is invalid."));
     auto visibleTabs = autoHiddenTabs(targetWindow, edge);
     visibleTabs.removeAll(tabId);
     const int index = insertionIndex < 0 ? int(visibleTabs.size())
@@ -818,10 +819,10 @@ OperationResult LayoutModel::moveAllTabsToEdgeBar(WindowId sourceWindow, WindowI
 {
     return transact([&](LayoutModel& model) {
         if (!model.window(sourceWindow) || !model.window(targetWindow) || sourceWindow == targetWindow)
-            return failure("Whole-window movement requires two existing, different windows.");
+            return failure(QCoreApplication::translate("WindowSystem", "Whole-window movement requires two existing, different windows."));
         const auto payload = model.orderedTabs(sourceWindow);
-        if (payload.isEmpty()) return failure("The source window has no tabs.");
-        if (insertionIndex < -1) return failure("The insertion index is invalid.");
+        if (payload.isEmpty()) return failure(QCoreApplication::translate("WindowSystem", "The source window has no tabs."));
+        if (insertionIndex < -1) return failure(QCoreApplication::translate("WindowSystem", "The insertion index is invalid."));
         const int count = int(model.autoHiddenTabs(targetWindow, edge).size());
         int index = insertionIndex < 0 ? count : std::clamp(insertionIndex, 0, count);
         for (const auto tab : payload) {
@@ -837,7 +838,7 @@ OperationResult LayoutModel::setGroupPinned(GroupId groupId, bool pinned)
     return transact([&](LayoutModel& model) {
         const auto* record = model.group(groupId);
         if (!record || record->location == GroupLocation::Central)
-            return failure("Only an edge group can change its pinned state.");
+            return failure(QCoreApplication::translate("WindowSystem", "Only an edge group can change its pinned state."));
         if ((record->location == GroupLocation::Pinned) == pinned) return success();
         if (!pinned) model.rememberPinnedPositionsUnchecked(record->windowId, record->edge);
         model.groups_[groupId].location = pinned ? GroupLocation::Pinned : GroupLocation::AutoHide;
@@ -895,7 +896,7 @@ OperationResult LayoutModel::setTabPinnedUnchecked(TabId tabId, bool pinned)
     const auto sourceId = groupForTab(tabId);
     const auto* source = group(sourceId);
     if (!source || source->location == GroupLocation::Central)
-        return failure("Only an edge tab can change its pinned state.");
+        return failure(QCoreApplication::translate("WindowSystem", "Only an edge tab can change its pinned state."));
     if ((source->location == GroupLocation::Pinned) == pinned) return success();
     const auto windowId = source->windowId;
     const auto edge = source->edge;
@@ -972,9 +973,9 @@ OperationResult LayoutModel::setEdgePinned(WindowId windowId, Edge edge, bool pi
 {
     return transact([&](LayoutModel& model) {
         const auto* window = model.window(windowId);
-        if (!window) return failure("The window does not exist.");
+        if (!window) return failure(QCoreApplication::translate("WindowSystem", "The window does not exist."));
         if (edge != Edge::Left && edge != Edge::Right && edge != Edge::Top && edge != Edge::Bottom)
-            return failure("The edge direction is invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "The edge direction is invalid."));
         QVector<TabId> tabs;
         auto groupOrder = window->edgeGroups;
         if (pinned) std::reverse(groupOrder.begin(), groupOrder.end());
@@ -1004,7 +1005,7 @@ OperationResult LayoutModel::setEdgeGroupExtent(GroupId groupId, int extent)
     return transact([&](LayoutModel& model) {
         const auto* group = model.group(groupId);
         if (!group || group->location == GroupLocation::Central || extent < 32 || extent > 32768)
-            return failure("Edge extents require an edge group and a size between 32 and 32768.");
+            return failure(QCoreApplication::translate("WindowSystem", "Edge extents require an edge group and a size between 32 and 32768."));
         model.groups_[groupId].edgeExtent = extent;
         return success();
     });
@@ -1020,9 +1021,9 @@ PeekSizePolicy LayoutModel::peekSizePolicy(TabId tabId, Edge edge) const
 OperationResult LayoutModel::setPeekSizePolicy(TabId tabId, Edge edge, PeekSizePolicy size)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.tab(tabId)) return failure("The tab does not exist.");
-        if (edgeText(edge).isEmpty()) return failure("The peek edge is invalid.");
-        if (!validPeekPolicy(size)) return failure("Directional peek dimensions are outside the supported range.");
+        if (!model.tab(tabId)) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
+        if (edgeText(edge).isEmpty()) return failure(QCoreApplication::translate("WindowSystem", "The peek edge is invalid."));
+        if (!validPeekPolicy(size)) return failure(QCoreApplication::translate("WindowSystem", "Directional peek dimensions are outside the supported range."));
         auto& record = model.tabs_[tabId];
         (edge == Edge::Left || edge == Edge::Right ? record.verticalPeekSize : record.horizontalPeekSize) = size;
         return success();
@@ -1031,12 +1032,12 @@ OperationResult LayoutModel::setPeekSizePolicy(TabId tabId, Edge edge, PeekSizeP
 OperationResult LayoutModel::moveGroupToCenter(GroupId groupId, GroupId targetGroup, Placement placement)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.group(groupId)) return failure("The source group does not exist.");
+        if (!model.group(groupId)) return failure(QCoreApplication::translate("WindowSystem", "The source group does not exist."));
         const auto sourceWindow = model.groups_[groupId].windowId;
         auto target = targetGroup;
-        if (target == groupId) return failure("A group cannot be inserted into itself.");
+        if (target == groupId) return failure(QCoreApplication::translate("WindowSystem", "A group cannot be inserted into itself."));
         if (!target.isNull() && (!model.group(target) || model.groups_[target].location != GroupLocation::Central))
-            return failure("The target must be a central group.");
+            return failure(QCoreApplication::translate("WindowSystem", "The target must be a central group."));
         if (target.isNull()) {
             auto central = model.centralGroups(sourceWindow);
             central.removeAll(groupId);
@@ -1069,7 +1070,7 @@ WindowId LayoutModel::detachTab(TabId tabId, WindowKind kind)
     WindowId created;
     const auto result = transact([&](LayoutModel& model) {
         const auto source = model.groupForTab(tabId);
-        if (source.isNull()) return failure("The tab does not exist.");
+        if (source.isNull()) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         const auto family = model.windows_[model.groups_[source].windowId].familyId;
         created = model.createWindowUnchecked(kind, model.familyRoot(family));
         const auto target = model.createGroupUnchecked(created);
@@ -1084,7 +1085,7 @@ OperationResult LayoutModel::promoteWindow(WindowId windowId)
     return transact([&](LayoutModel& model) {
         const auto* record = model.window(windowId);
         if (!record || record->kind != WindowKind::Floating)
-            return failure("Only a floating window can become a workbench.");
+            return failure(QCoreApplication::translate("WindowSystem", "Only a floating window can become a workbench."));
         model.windows_[windowId].kind = WindowKind::Workbench;
         model.windows_[windowId].familyId = QUuid::createUuid();
         return success();
@@ -1097,7 +1098,7 @@ OperationResult LayoutModel::demoteWindow(WindowId windowId, WindowId targetWork
         const auto* target = model.window(targetWorkbench);
         if (!source || source->kind != WindowKind::Workbench || !target
             || target->kind != WindowKind::Workbench || windowId == targetWorkbench)
-            return failure("Demotion requires two different workbench windows.");
+            return failure(QCoreApplication::translate("WindowSystem", "Demotion requires two different workbench windows."));
         const auto previousFamily = source->familyId;
         const auto nextFamily = target->familyId;
         for (auto& record : model.windows_)
@@ -1112,7 +1113,7 @@ OperationResult LayoutModel::reassignFamily(WindowId windowId, WindowId targetWo
         const auto* source = model.window(windowId);
         const auto* target = model.window(targetWorkbench);
         if (!source || source->kind != WindowKind::Floating || !target || target->kind != WindowKind::Workbench)
-            return failure("Reassignment needs a floating window and a workbench.");
+            return failure(QCoreApplication::translate("WindowSystem", "Reassignment needs a floating window and a workbench."));
         model.windows_[windowId].familyId = target->familyId;
         return success();
     });
@@ -1167,9 +1168,9 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
     const auto* source = window(sourceWindow);
     const auto* target = group(targetGroup);
     if (!source || !target || target->windowId == sourceWindow)
-        return failure("Whole-window movement requires a different target window.");
+        return failure(QCoreApplication::translate("WindowSystem", "Whole-window movement requires a different target window."));
     const auto ordered = orderedTabs(sourceWindow);
-    if (ordered.isEmpty()) return failure("The source window has no tabs.");
+    if (ordered.isEmpty()) return failure(QCoreApplication::translate("WindowSystem", "The source window has no tabs."));
     const auto targetWindow = target->windowId;
     const auto destination = *target;
     const auto activeGroup = source->activeGroup;
@@ -1185,7 +1186,7 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
         windows_[targetWindow].activeGroup = targetGroup;
     } else {
         if (destination.location == GroupLocation::AutoHide)
-            return failure("Directional whole-window movement needs a visible target group.");
+            return failure(QCoreApplication::translate("WindowSystem", "Directional whole-window movement needs a visible target group."));
         const auto carried = takeWindowTreeUnchecked(sourceWindow, targetWindow);
         if (destination.location == GroupLocation::Pinned) {
             QVector<QUuid> carriedGroups;
@@ -1214,8 +1215,8 @@ OperationResult LayoutModel::moveAllTabsToWindow(WindowId sourceWindow, WindowId
         const auto* source = model.window(sourceWindow);
         const auto* target = model.window(targetWindow);
         if (!source || !target || sourceWindow == targetWindow)
-            return failure("Whole-window movement requires two existing, different windows.");
-        if (model.orderedTabs(sourceWindow).isEmpty()) return failure("The source window has no tabs.");
+            return failure(QCoreApplication::translate("WindowSystem", "Whole-window movement requires two existing, different windows."));
+        if (model.orderedTabs(sourceWindow).isEmpty()) return failure(QCoreApplication::translate("WindowSystem", "The source window has no tabs."));
         if (!target->activeGroup.isNull())
             return model.moveAllTabsUnchecked(sourceWindow, target->activeGroup, placement);
         if (placement == Placement::Center) {
@@ -1234,8 +1235,8 @@ OperationResult LayoutModel::moveAllTabsToEdge(WindowId sourceWindow, WindowId t
 {
     return transact([&](LayoutModel& model) {
         if (!model.window(sourceWindow) || !model.window(targetWindow) || sourceWindow == targetWindow)
-            return failure("Whole-window edge movement needs two existing, different windows.");
-        if (model.orderedTabs(sourceWindow).isEmpty()) return failure("The source window has no tabs.");
+            return failure(QCoreApplication::translate("WindowSystem", "Whole-window edge movement needs two existing, different windows."));
+        if (model.orderedTabs(sourceWindow).isEmpty()) return failure(QCoreApplication::translate("WindowSystem", "The source window has no tabs."));
         // Create an isolated destination directly. No temporary window, family,
         // central target or transient merge with unrelated tabs is needed.
         const auto destination = model.createGroupUnchecked(targetWindow);
@@ -1261,7 +1262,7 @@ void LayoutModel::eraseTabUnchecked(TabId tabId)
 OperationResult LayoutModel::removeTab(TabId tabId)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.tab(tabId)) return failure("The tab does not exist.");
+        if (!model.tab(tabId)) return failure(QCoreApplication::translate("WindowSystem", "The tab does not exist."));
         model.eraseTabUnchecked(tabId);
         model.eraseEmptyFloatingWindows();
         return success();
@@ -1271,7 +1272,7 @@ OperationResult LayoutModel::closeWindow(WindowId windowId)
 {
     return transact([&](LayoutModel& model) {
         const auto* record = model.window(windowId);
-        if (!record) return failure("The window does not exist.");
+        if (!record) return failure(QCoreApplication::translate("WindowSystem", "The window does not exist."));
         QVector<WindowId> closing;
         for (auto id : model.windowOrder_)
             if (id == windowId || (record->kind == WindowKind::Workbench && model.windows_[id].familyId == record->familyId))
@@ -1289,7 +1290,7 @@ PaneId LayoutModel::splitPane(TabId tabId, PaneId paneId, Placement placement)
     PaneId created;
     const auto result = transact([&](LayoutModel& model) {
         if (placement == Placement::Center || !model.panes(tabId).contains(paneId))
-            return failure("Pane splitting needs a valid pane and a direction.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pane splitting needs a valid pane and a direction."));
         created = QUuid::createUuid();
         auto& record = model.tabs_[tabId];
         record.panes = replace(record.panes, paneId,
@@ -1302,7 +1303,7 @@ PaneId LayoutModel::splitPane(TabId tabId, PaneId paneId, Placement placement)
 OperationResult LayoutModel::removePane(TabId tabId, PaneId paneId)
 {
     return transact([&](LayoutModel& model) {
-        if (!model.panes(tabId).contains(paneId)) return failure("The pane does not belong to the tab.");
+        if (!model.panes(tabId).contains(paneId)) return failure(QCoreApplication::translate("WindowSystem", "The pane does not belong to the tab."));
         auto& record = model.tabs_[tabId];
         record.panes = replace(record.panes, paneId, {});
         if (!record.panes) model.eraseTabUnchecked(tabId);
@@ -1316,12 +1317,12 @@ OperationResult LayoutModel::movePane(TabId sourceTab, PaneId paneId, TabId targ
 {
     return transact([&](LayoutModel& model) {
         if (sourceTab == targetTab || !model.panes(sourceTab).contains(paneId) || !model.tab(targetTab))
-            return failure("Pane transfer needs different existing source and target tabs.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pane transfer needs different existing source and target tabs."));
         if (placement != Placement::Left && placement != Placement::Right
             && placement != Placement::Top && placement != Placement::Bottom)
-            return failure("Pane transfer needs a split direction.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pane transfer needs a split direction."));
         if (targetPane.isNull()) targetPane = model.tabs_[targetTab].activePane;
-        if (!model.panes(targetTab).contains(targetPane)) return failure("The target pane does not belong to the target tab.");
+        if (!model.panes(targetTab).contains(targetPane)) return failure(QCoreApplication::translate("WindowSystem", "The target pane does not belong to the target tab."));
         const auto carried = findLeaf(model.tabs_[sourceTab].panes, paneId);
         auto& destination = model.tabs_[targetTab];
         destination.panes = replace(destination.panes, targetPane,
@@ -1343,7 +1344,7 @@ OperationResult LayoutModel::swapPanes(TabId tabId, PaneId first, PaneId second)
     return transact([&](LayoutModel& model) {
         const auto panes = model.panes(tabId);
         if (first == second || !panes.contains(first) || !panes.contains(second))
-            return failure("Pane swapping needs two different panes in the same tab.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pane swapping needs two different panes in the same tab."));
         model.tabs_[tabId].panes = swapLeafItems(model.tabs_[tabId].panes, first, second);
         return success();
     });
@@ -1354,10 +1355,10 @@ TabId LayoutModel::movePaneToWindow(TabId sourceTab, PaneId paneId, WindowId tar
     TabId destination;
     const auto result = transact([&](LayoutModel& model) {
         if (!model.panes(sourceTab).contains(paneId) || !model.window(targetWindow))
-            return failure("The source pane or target window does not exist.");
+            return failure(QCoreApplication::translate("WindowSystem", "The source pane or target window does not exist."));
         const auto* sourceGroup = model.group(model.groupForTab(sourceTab));
         if (!sourceGroup || sourceGroup->windowId == targetWindow)
-            return failure("Window transfer needs a different target window.");
+            return failure(QCoreApplication::translate("WindowSystem", "Window transfer needs a different target window."));
         const auto targetGroup = model.windows_[targetWindow].activeGroup;
         if (const auto* group = model.group(targetGroup)) {
             destination = group->activeTab;
@@ -1365,10 +1366,10 @@ TabId LayoutModel::movePaneToWindow(TabId sourceTab, PaneId paneId, WindowId tar
         }
         if (placement != Placement::Left && placement != Placement::Right
             && placement != Placement::Top && placement != Placement::Bottom)
-            return failure("Pane transfer needs a split direction.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pane transfer needs a split direction."));
         const auto createdGroup = model.createGroupUnchecked(targetWindow);
         destination = model.extractPane(sourceTab, paneId, createdGroup);
-        return destination.isNull() ? failure("The pane could not be transferred.") : success();
+        return destination.isNull() ? failure(QCoreApplication::translate("WindowSystem", "The pane could not be transferred.")) : success();
     });
     return result ? destination : TabId{};
 }
@@ -1377,7 +1378,7 @@ TabId LayoutModel::extractPane(TabId sourceTab, PaneId paneId, GroupId targetGro
     TabId created;
     const auto result = transact([&](LayoutModel& model) {
         if (!model.panes(sourceTab).contains(paneId) || !model.group(targetGroup))
-            return failure("The source pane or target group does not exist.");
+            return failure(QCoreApplication::translate("WindowSystem", "The source pane or target group does not exist."));
         const auto sourceGroup = model.groupForTab(sourceTab);
         // Insert first so extraction of the last pane into its own group cannot
         // invalidate that destination during the transaction.
@@ -1406,9 +1407,9 @@ OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
         // Only the owning tree is path-copied. Node identities, membership and
         // the index stay the same, and a bounded ratio keeps the tree valid.
         if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 0.95)
-            return failure("Split ratios must stay between 0.05 and 0.95.");
+            return failure(QCoreApplication::translate("WindowSystem", "Split ratios must stay between 0.05 and 0.95."));
         const auto owner = ownerOfNode(nodeId);
-        if (!owner) return failure("The split node does not exist.");
+        if (!owner) return failure(QCoreApplication::translate("WindowSystem", "The split node does not exist."));
         auto& tree = owner->kind == NodeOwner::Kind::Tab ? tabs_[owner->owner].panes
             : owner->kind == NodeOwner::Kind::Central ? windows_[owner->owner].central
             : windows_[owner->owner].pinnedLayouts[size_t(owner->edge)];
@@ -1421,29 +1422,29 @@ OperationResult LayoutModel::setSplitRatio(QUuid nodeId, double ratio)
     }
     return transact([&](LayoutModel& model) {
         if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 0.95)
-            return failure("Split ratios must stay between 0.05 and 0.95.");
+            return failure(QCoreApplication::translate("WindowSystem", "Split ratios must stay between 0.05 and 0.95."));
         bool found = false;
         for (auto& record : model.windows_) {
             record.central = replaceRatio(record.central, nodeId, ratio, found);
             for (auto& tree : record.pinnedLayouts) tree = replaceRatio(tree, nodeId, ratio, found);
         }
         for (auto& record : model.tabs_) record.panes = replaceRatio(record.panes, nodeId, ratio, found);
-        return found ? success() : failure("The split node does not exist.");
+        return found ? success() : failure(QCoreApplication::translate("WindowSystem", "The split node does not exist."));
     });
 }
 
 OperationResult LayoutModel::validate() const
 {
-    if (orderCounter_ > maximumTabOrder) return failure("The ordering counter exceeds the exact JSON integer range.");
+    if (orderCounter_ > maximumTabOrder) return failure(QCoreApplication::translate("WindowSystem", "The ordering counter exceeds the exact JSON integer range."));
     if (windows_.size() > maximumRecords || groups_.size() > maximumRecords || tabs_.size() > maximumRecords)
-        return failure("The layout exceeds the record limit.");
-    if (windowOrder_.size() != windows_.size()) return failure("Window ordering is incomplete.");
+        return failure(QCoreApplication::translate("WindowSystem", "The layout exceeds the record limit."));
+    if (windowOrder_.size() != windows_.size()) return failure(QCoreApplication::translate("WindowSystem", "Window ordering is incomplete."));
     QSet<QUuid> objectIds;
     QSet<QUuid> orderedWindows;
     QHash<FamilyId, int> roots;
     QSet<FamilyId> families;
     for (auto id : windowOrder_) {
-        if (!windows_.contains(id) || orderedWindows.contains(id)) return failure("Window ordering contains invalid references.");
+        if (!windows_.contains(id) || orderedWindows.contains(id)) return failure(QCoreApplication::translate("WindowSystem", "Window ordering contains invalid references."));
         orderedWindows.insert(id);
     }
     auto registerId = [&](QUuid id) {
@@ -1454,44 +1455,44 @@ OperationResult LayoutModel::validate() const
     for (auto iterator = windows_.cbegin(); iterator != windows_.cend(); ++iterator) {
         const auto& record = iterator.value();
         if (iterator.key() != record.id || !registerId(record.id) || record.familyId.isNull())
-            return failure("Window identities are invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "Window identities are invalid."));
         if (record.kind != WindowKind::Workbench && record.kind != WindowKind::Floating)
-            return failure("A window kind is invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "A window kind is invalid."));
         families.insert(record.familyId);
         if (record.kind == WindowKind::Workbench) ++roots[record.familyId];
         if (!record.activeGroup.isNull() && (!groups_.contains(record.activeGroup)
-            || groups_[record.activeGroup].windowId != record.id)) return failure("The active group is not in its window.");
+            || groups_[record.activeGroup].windowId != record.id)) return failure(QCoreApplication::translate("WindowSystem", "The active group is not in its window."));
     }
     for (auto family : families)
-        if (roots.value(family) != 1) return failure("Each window family must have exactly one workbench root.");
+        if (roots.value(family) != 1) return failure(QCoreApplication::translate("WindowSystem", "Each window family must have exactly one workbench root."));
     for (auto iterator = groups_.cbegin(); iterator != groups_.cend(); ++iterator) {
         const auto& record = iterator.value();
         if (iterator.key() != record.id || !registerId(record.id) || !windows_.contains(record.windowId))
-            return failure("Group identities or window references are invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "Group identities or window references are invalid."));
         if ((record.edge != Edge::Left && record.edge != Edge::Right && record.edge != Edge::Top && record.edge != Edge::Bottom)
             || (record.location != GroupLocation::Central && record.location != GroupLocation::Pinned
-                && record.location != GroupLocation::AutoHide)) return failure("A group placement is invalid.");
+                && record.location != GroupLocation::AutoHide)) return failure(QCoreApplication::translate("WindowSystem", "A group placement is invalid."));
         if (record.tabs.isEmpty() || !record.tabs.contains(record.activeTab))
-            return failure("Groups must contain tabs and a valid active tab.");
+            return failure(QCoreApplication::translate("WindowSystem", "Groups must contain tabs and a valid active tab."));
         if (record.stickyTabs < 0 || record.stickyTabs > record.tabs.size()
             || (record.location == GroupLocation::AutoHide && record.stickyTabs))
-            return failure("A group's sticky tab count is invalid.");
-        if (record.edgeExtent < 32 || record.edgeExtent > 32768) return failure("An edge extent is invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "A group's sticky tab count is invalid."));
+        if (record.edgeExtent < 32 || record.edgeExtent > 32768) return failure(QCoreApplication::translate("WindowSystem", "An edge extent is invalid."));
     }
     for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
-        if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure("Tab identities are invalid.");
+        if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure(QCoreApplication::translate("WindowSystem", "Tab identities are invalid."));
         if (iterator->colorId.size() > 128 || iterator->openedOrder > orderCounter_ || iterator->visitedOrder > orderCounter_)
-            return failure("Tab appearance or ordering metadata is invalid.");
+            return failure(QCoreApplication::translate("WindowSystem", "Tab appearance or ordering metadata is invalid."));
         if ((iterator->verticalPeekSize && !validPeekPolicy(*iterator->verticalPeekSize))
             || (iterator->horizontalPeekSize && !validPeekPolicy(*iterator->horizontalPeekSize)))
-            return failure("A directional peek size is outside the supported dimensions.");
+            return failure(QCoreApplication::translate("WindowSystem", "A directional peek size is outside the supported dimensions."));
         if (const auto& saved = iterator->pinnedPosition) {
             if (saved->window.isNull() || saved->group.isNull() || saved->groupIndex < 0
                 || saved->groupIndex > maximumRecords || saved->tabIndex < 0 || saved->tabIndex > maximumRecords
                 || saved->extent < 32 || saved->extent > 32768
                 || (saved->edge != Edge::Left && saved->edge != Edge::Right
                     && saved->edge != Edge::Top && saved->edge != Edge::Bottom))
-                return failure("A pinned position is malformed.");
+                return failure(QCoreApplication::translate("WindowSystem", "A pinned position is malformed."));
         }
     }
 
@@ -1501,7 +1502,7 @@ OperationResult LayoutModel::validate() const
     QSet<GroupId> dormantGroupIds;
     for (const auto& record : tabs_) if (record.pinnedPosition && !groups_.contains(record.pinnedPosition->group)) {
         const auto id = record.pinnedPosition->group;
-        if (objectIds.contains(id)) return failure("A dormant pinned group identity collides with another object.");
+        if (objectIds.contains(id)) return failure(QCoreApplication::translate("WindowSystem", "A dormant pinned group identity collides with another object."));
         dormantGroupIds.insert(id);
     }
 
@@ -1515,16 +1516,16 @@ OperationResult LayoutModel::validate() const
         if (!tree) return success();
         if (depth > maximumTreeDepth || ++nodeCount > maximumRecords || tree->id.isNull()
             || treeIds.contains(tree->id) || objectIds.contains(tree->id) || dormantGroupIds.contains(tree->id))
-            return failure("Tree nodes are duplicated, invalid or exceed the resource limit.");
+            return failure(QCoreApplication::translate("WindowSystem", "Tree nodes are duplicated, invalid or exceed the resource limit."));
         treeIds.insert(tree->id);
         if (tree->isLeaf()) {
-            if (tree->itemId.isNull()) return failure("A tree leaf has no item.");
+            if (tree->itemId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "A tree leaf has no item."));
             return visit(tree->itemId);
         }
         if (!tree->itemId.isNull() || !tree->first || !tree->second
             || (tree->orientation != Qt::Horizontal && tree->orientation != Qt::Vertical)
             || !std::isfinite(tree->ratio) || tree->ratio < 0.05 || tree->ratio > 0.95)
-            return failure("A split node is malformed.");
+            return failure(QCoreApplication::translate("WindowSystem", "A split node is malformed."));
         auto result = walk(tree->first, depth + 1, visit);
         return result ? walk(tree->second, depth + 1, visit) : result;
     };
@@ -1532,7 +1533,7 @@ OperationResult LayoutModel::validate() const
         auto result = walk(windowRecord.central, 0, [&](QUuid groupId) {
             const auto* record = group(groupId);
             if (!record || record->windowId != windowRecord.id || record->location != GroupLocation::Central
-                || placedGroups.contains(groupId)) return failure("Central groups have invalid or duplicate placement.");
+                || placedGroups.contains(groupId)) return failure(QCoreApplication::translate("WindowSystem", "Central groups have invalid or duplicate placement."));
             placedGroups.insert(groupId);
             return success();
         });
@@ -1540,7 +1541,7 @@ OperationResult LayoutModel::validate() const
         for (auto groupId : windowRecord.edgeGroups) {
             const auto* record = group(groupId);
             if (!record || record->windowId != windowRecord.id || record->location == GroupLocation::Central
-                || placedGroups.contains(groupId)) return failure("Edge groups have invalid or duplicate placement.");
+                || placedGroups.contains(groupId)) return failure(QCoreApplication::translate("WindowSystem", "Edge groups have invalid or duplicate placement."));
             placedGroups.insert(groupId);
         }
         QSet<GroupId> pinnedGroups;
@@ -1550,7 +1551,7 @@ OperationResult LayoutModel::validate() const
                 if (!record || record->windowId != windowRecord.id || record->edge != edge
                     || record->location != GroupLocation::Pinned || pinnedGroups.contains(groupId)
                     || !windowRecord.edgeGroups.contains(groupId))
-                    return failure("Pinned trees have invalid or duplicate group placement.");
+                    return failure(QCoreApplication::translate("WindowSystem", "Pinned trees have invalid or duplicate group placement."));
                 pinnedGroups.insert(groupId);
                 return success();
             });
@@ -1558,7 +1559,7 @@ OperationResult LayoutModel::validate() const
         }
         for (const auto groupId : windowRecord.edgeGroups)
             if (group(groupId)->location == GroupLocation::Pinned && !pinnedGroups.contains(groupId))
-                return failure("A pinned group is missing from its side's layout tree.");
+                return failure(QCoreApplication::translate("WindowSystem", "A pinned group is missing from its side's layout tree."));
         QSet<GroupId> dormantSlots;
         for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
             const auto remembered = windowRecord.pinnedRestoreLayouts[size_t(edge)];
@@ -1569,7 +1570,7 @@ OperationResult LayoutModel::validate() const
                 if (current->edge != edge || current->location != GroupLocation::AutoHide) continue;
                 for (const auto tabId : current->tabs) {
                     const auto* currentTab = tab(tabId);
-                    if (!currentTab) return failure("A dormant pinned layout references an unknown tab.");
+                    if (!currentTab) return failure(QCoreApplication::translate("WindowSystem", "A dormant pinned layout references an unknown tab."));
                     const auto& saved = currentTab->pinnedPosition;
                     if (saved && saved->window == windowRecord.id && saved->edge == edge) {
                         const auto* previous = group(saved->group);
@@ -1584,40 +1585,40 @@ OperationResult LayoutModel::validate() const
                 const bool liveAnchor = current && current->windowId == windowRecord.id && current->edge == edge
                     && current->location == GroupLocation::Pinned;
                 if ((!liveAnchor && !hiddenReferences.contains(groupId)) || dormantSlots.contains(groupId))
-                    return failure("Dormant pinned layouts contain invalid or duplicate group slots.");
+                    return failure(QCoreApplication::translate("WindowSystem", "Dormant pinned layouts contain invalid or duplicate group slots."));
                 dormantSlots.insert(groupId);
                 restorable |= hiddenReferences.contains(groupId);
                 return success();
             });
             if (!result) return result;
-            if (!restorable) return failure("A dormant pinned layout has no restorable slot.");
+            if (!restorable) return failure(QCoreApplication::translate("WindowSystem", "A dormant pinned layout has no restorable slot."));
         }
         if ((!windowRecord.central && windowRecord.edgeGroups.isEmpty()) != windowRecord.activeGroup.isNull())
-            return failure("A window's active group does not match its contents.");
+            return failure(QCoreApplication::translate("WindowSystem", "A window's active group does not match its contents."));
     }
-    if (placedGroups.size() != groups_.size()) return failure("The layout contains orphan groups.");
+    if (placedGroups.size() != groups_.size()) return failure(QCoreApplication::translate("WindowSystem", "The layout contains orphan groups."));
     for (const auto& record : groups_)
         for (auto tabId : record.tabs) {
-            if (!tabs_.contains(tabId) || placedTabs.contains(tabId)) return failure("Tabs have invalid or duplicate placement.");
+            if (!tabs_.contains(tabId) || placedTabs.contains(tabId)) return failure(QCoreApplication::translate("WindowSystem", "Tabs have invalid or duplicate placement."));
             placedTabs.insert(tabId);
         }
-    if (placedTabs.size() != tabs_.size()) return failure("The layout contains orphan tabs.");
+    if (placedTabs.size() != tabs_.size()) return failure(QCoreApplication::translate("WindowSystem", "The layout contains orphan tabs."));
     for (const auto& record : tabs_) {
-        if (!record.panes) return failure("A tab must contain at least one pane.");
+        if (!record.panes) return failure(QCoreApplication::translate("WindowSystem", "A tab must contain at least one pane."));
         QSet<PaneId> localPanes;
         auto result = walk(record.panes, 0, [&](QUuid paneId) {
             if (objectIds.contains(paneId) || treeIds.contains(paneId) || placedPanes.contains(paneId)
                 || dormantGroupIds.contains(paneId))
-                return failure("Pane identities are duplicated or invalid.");
+                return failure(QCoreApplication::translate("WindowSystem", "Pane identities are duplicated or invalid."));
             placedPanes.insert(paneId);
             localPanes.insert(paneId);
             return success();
         });
         if (!result) return result;
-        if (!localPanes.contains(record.activePane)) return failure("A tab's active pane is invalid.");
+        if (!localPanes.contains(record.activePane)) return failure(QCoreApplication::translate("WindowSystem", "A tab's active pane is invalid."));
     }
     for (auto id : treeIds)
-        if (placedPanes.contains(id)) return failure("A pane identity collides with a tree node.");
+        if (placedPanes.contains(id)) return failure(QCoreApplication::translate("WindowSystem", "A pane identity collides with a tree node."));
     if (indexValid_) {
         // A mutation path that skipped rebuildIndex() leaves stale lookups.
         QHash<TabId, GroupId> tabGroup;
@@ -1625,7 +1626,7 @@ OperationResult LayoutModel::validate() const
         QHash<QUuid, NodeOwner> nodeOwner;
         scanIndex(tabGroup, paneTab, nodeOwner);
         if (tabGroup != tabGroup_ || paneTab != paneTab_ || nodeOwner != nodeOwner_)
-            return failure("The lookup index is stale.");
+            return failure(QCoreApplication::translate("WindowSystem", "The lookup index is stale."));
     }
     return success();
 }
@@ -1683,91 +1684,91 @@ QJsonObject LayoutModel::toJson() const
 OperationResult LayoutModel::fromJson(const QJsonObject& json)
 {
     if (!json.value("schemaVersion").isDouble() || json.value("schemaVersion").toDouble() != 1.0)
-        return failure("Unsupported layout schema version.");
+        return failure(QCoreApplication::translate("WindowSystem", "Unsupported layout schema version."));
     for (const auto* key : {"windows", "groups", "tabs"})
         if (!json.value(QLatin1String(key)).isArray() || json.value(QLatin1String(key)).toArray().size() > maximumRecords)
-            return failure("Layout records must be bounded arrays.");
+            return failure(QCoreApplication::translate("WindowSystem", "Layout records must be bounded arrays."));
     LayoutModel candidate;
     JsonReader reader;
     const auto counter = json.value("orderCounter");
     if (!counter.isDouble() || counter.toDouble() < 0 || counter.toDouble() > double(maximumTabOrder)
-        || std::floor(counter.toDouble()) != counter.toDouble()) return failure("Invalid ordering counter.");
+        || std::floor(counter.toDouble()) != counter.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "Invalid ordering counter."));
     candidate.orderCounter_ = quint64(counter.toDouble());
     for (const auto& value : json.value("windows").toArray()) {
-        if (!value.isObject()) return failure("A window record must be an object.");
+        if (!value.isObject()) return failure(QCoreApplication::translate("WindowSystem", "A window record must be an object."));
         const auto object = value.toObject();
         WindowRecord record;
         record.id = reader.id(object, "id");
         record.familyId = reader.id(object, "familyId");
         const auto kind = object.value("kind").toString();
-        if (kind != "workbench" && kind != "floating") reader.fail("Invalid window kind.");
+        if (kind != "workbench" && kind != "floating") reader.fail(QCoreApplication::translate("WindowSystem", "Invalid window kind."));
         record.kind = kind == "workbench" ? WindowKind::Workbench : WindowKind::Floating;
         record.central = reader.tree(object.value("central"));
         record.edgeGroups = reader.ids(object, "edgeGroups");
         const auto layouts = object.value("pinnedLayouts");
         if (!layouts.isArray() || layouts.toArray().size() != 4)
-            return failure("Pinned layouts must contain exactly four side trees.");
+            return failure(QCoreApplication::translate("WindowSystem", "Pinned layouts must contain exactly four side trees."));
         for (int index = 0; index < 4; ++index)
             record.pinnedLayouts[size_t(index)] = reader.tree(layouts.toArray()[index]);
         if (object.contains("pinnedRestoreLayouts")) {
             const auto remembered = object.value("pinnedRestoreLayouts");
             if (!remembered.isArray() || remembered.toArray().size() != 4)
-                return failure("Dormant pinned layouts must contain exactly four side trees.");
+                return failure(QCoreApplication::translate("WindowSystem", "Dormant pinned layouts must contain exactly four side trees."));
             for (int index = 0; index < 4; ++index)
                 record.pinnedRestoreLayouts[size_t(index)] = reader.tree(remembered.toArray()[index]);
         }
         record.activeGroup = reader.id(object, "activeGroup", true);
-        if (candidate.windows_.contains(record.id)) reader.fail("Duplicate window identity.");
+        if (candidate.windows_.contains(record.id)) reader.fail(QCoreApplication::translate("WindowSystem", "Duplicate window identity."));
         candidate.windows_.insert(record.id, record);
         candidate.windowOrder_.append(record.id);
     }
     for (const auto& value : json.value("groups").toArray()) {
-        if (!value.isObject()) return failure("A group record must be an object.");
+        if (!value.isObject()) return failure(QCoreApplication::translate("WindowSystem", "A group record must be an object."));
         const auto object = value.toObject();
         GroupRecord record;
         record.id = reader.id(object, "id");
         record.windowId = reader.id(object, "windowId");
         const auto location = object.value("location").toString();
-        if (location != "central" && location != "pinned" && location != "autoHide") reader.fail("Invalid group location.");
+        if (location != "central" && location != "pinned" && location != "autoHide") reader.fail(QCoreApplication::translate("WindowSystem", "Invalid group location."));
         record.location = location == "central" ? GroupLocation::Central
             : location == "pinned" ? GroupLocation::Pinned : GroupLocation::AutoHide;
         const auto edge = object.value("edge").toString();
-        if (edge != "left" && edge != "right" && edge != "top" && edge != "bottom") reader.fail("Invalid edge direction.");
+        if (edge != "left" && edge != "right" && edge != "top" && edge != "bottom") reader.fail(QCoreApplication::translate("WindowSystem", "Invalid edge direction."));
         record.edge = edge == "left" ? Edge::Left : edge == "right" ? Edge::Right
             : edge == "top" ? Edge::Top : Edge::Bottom;
         record.tabs = reader.ids(object, "tabs");
         if (object.contains("stickyTabs")) {
             const auto sticky = object.value("stickyTabs");
             if (!sticky.isDouble() || sticky.toDouble() < 0 || sticky.toDouble() > double(record.tabs.size())
-                || std::floor(sticky.toDouble()) != sticky.toDouble()) return failure("A sticky tab count must be a bounded integer.");
+                || std::floor(sticky.toDouble()) != sticky.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "A sticky tab count must be a bounded integer."));
             record.stickyTabs = sticky.toInt();
         }
         record.activeTab = reader.id(object, "activeTab");
         if (object.contains("edgeExtent")) {
             const auto extent = object.value("edgeExtent");
             if (!extent.isDouble() || extent.toDouble() < 32 || extent.toDouble() > 32768
-                || std::floor(extent.toDouble()) != extent.toDouble()) return failure("An edge extent must be a bounded integer.");
+                || std::floor(extent.toDouble()) != extent.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "An edge extent must be a bounded integer."));
             record.edgeExtent = extent.toInt();
         } else if (record.edge == Edge::Top || record.edge == Edge::Bottom) record.edgeExtent = 170;
-        if (candidate.groups_.contains(record.id)) reader.fail("Duplicate group identity.");
+        if (candidate.groups_.contains(record.id)) reader.fail(QCoreApplication::translate("WindowSystem", "Duplicate group identity."));
         candidate.groups_.insert(record.id, record);
     }
     for (const auto& value : json.value("tabs").toArray()) {
-        if (!value.isObject()) return failure("A tab record must be an object.");
+        if (!value.isObject()) return failure(QCoreApplication::translate("WindowSystem", "A tab record must be an object."));
         const auto object = value.toObject();
         TabRecord record;
         record.id = reader.id(object, "id");
-        if (!object.value("title").isString()) reader.fail("A tab title must be a string.");
+        if (!object.value("title").isString()) reader.fail(QCoreApplication::translate("WindowSystem", "A tab title must be a string."));
         record.title = object.value("title").toString();
         record.panes = reader.tree(object.value("panes"));
         record.activePane = reader.id(object, "activePane");
         if (object.contains("colorId") && (!object.value("colorId").isString() || object.value("colorId").toString().size() > 128))
-            return failure("Invalid tab color identity.");
+            return failure(QCoreApplication::translate("WindowSystem", "Invalid tab color identity."));
         record.colorId = object.value("colorId").toString();
         for (auto key : {"openedOrder", "visitedOrder"}) {
             const auto order = object.value(key);
             if (!order.isDouble() || order.toDouble() < 0 || order.toDouble() > double(maximumTabOrder)
-                || std::floor(order.toDouble()) != order.toDouble()) return failure("Invalid tab ordering value.");
+                || std::floor(order.toDouble()) != order.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "Invalid tab ordering value."));
             (QLatin1String(key) == QLatin1String("openedOrder") ? record.openedOrder : record.visitedOrder) = quint64(order.toDouble());
         }
         for (const auto* key : {"verticalPeekSize", "horizontalPeekSize"}) {
@@ -1778,32 +1779,32 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             (QLatin1String(key) == QLatin1String("verticalPeekSize") ? record.verticalPeekSize : record.horizontalPeekSize) = policy;
         }
         if (object.contains("pinnedPosition")) {
-            if (!object.value("pinnedPosition").isObject()) return failure("A pinned position must be an object.");
+            if (!object.value("pinnedPosition").isObject()) return failure(QCoreApplication::translate("WindowSystem", "A pinned position must be an object."));
             const auto savedObject = object.value("pinnedPosition").toObject();
             TabRecord::PinnedPosition saved;
             saved.window = reader.id(savedObject, "window"); saved.group = reader.id(savedObject, "group");
             const auto edge = savedObject.value("edge").toString();
             if (edge != "left" && edge != "right" && edge != "top" && edge != "bottom")
-                return failure("A pinned position has an invalid edge.");
+                return failure(QCoreApplication::translate("WindowSystem", "A pinned position has an invalid edge."));
             saved.edge = edge == "left" ? Edge::Left : edge == "right" ? Edge::Right
                 : edge == "top" ? Edge::Top : Edge::Bottom;
             for (const auto* key : {"groupIndex", "tabIndex"}) {
                 const auto index = savedObject.value(QLatin1String(key));
                 if (!index.isDouble() || index.toDouble() < 0 || index.toDouble() > maximumRecords
                     || std::floor(index.toDouble()) != index.toDouble())
-                    return failure("Pinned position indices must be bounded integers.");
+                    return failure(QCoreApplication::translate("WindowSystem", "Pinned position indices must be bounded integers."));
             }
             saved.groupIndex = savedObject.value("groupIndex").toInt();
             saved.tabIndex = savedObject.value("tabIndex").toInt();
             if (savedObject.contains("extent")) {
                 const auto extent = savedObject.value("extent");
                 if (!extent.isDouble() || extent.toDouble() < 32 || extent.toDouble() > 32768
-                    || std::floor(extent.toDouble()) != extent.toDouble()) return failure("A pinned position extent is invalid.");
+                    || std::floor(extent.toDouble()) != extent.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "A pinned position extent is invalid."));
                 saved.extent = extent.toInt();
             }
             record.pinnedPosition = saved;
         }
-        if (candidate.tabs_.contains(record.id)) reader.fail("Duplicate tab identity.");
+        if (candidate.tabs_.contains(record.id)) reader.fail(QCoreApplication::translate("WindowSystem", "Duplicate tab identity."));
         candidate.tabs_.insert(record.id, record);
     }
     if (!reader.error.isEmpty()) return failure(reader.error);

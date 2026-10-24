@@ -367,7 +367,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **风险**：盲目替换中文会改变内部菜单路径、存储标识或用户数据；只改现有目录会漏掉原本未标记的文字。扫描和运行时覆盖要相互核对，不能用宽泛排除规则掩盖遗漏。
 
-**状态**：未开始。
+**状态**：迁移、目录及候选核查已实现，定向验证进行中。Release 首轮全量保留一项既有菜单交互首报；独立模块、外部宿主、部署与统一入口接入尚待收尾，见 [记录](../../development/verification-log/2026-10.md#英文源文本与覆盖检查2026-10-24)。
 
 ---
 

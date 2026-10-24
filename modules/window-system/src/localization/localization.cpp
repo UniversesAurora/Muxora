@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/localization.hpp>
+#include "display_names.hpp"
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QPointer>
@@ -43,7 +45,7 @@ UiLanguage resolved(UiLanguage language)
 struct TranslationManager::Private {
     UiLanguage requested = UiLanguage::System;
     UiLanguage installed = UiLanguage::System;
-    UiLanguage active = UiLanguage::SimplifiedChinese;
+    UiLanguage active = UiLanguage::English;
     QStringList prefixes{QStringLiteral(":/window_system/i18n/window_system")};
     std::vector<std::unique_ptr<QTranslator>> translators;
     bool installedOnce = false;
@@ -74,11 +76,38 @@ QList<UiLanguage> supportedUiLanguages()
 QString uiLanguageName(UiLanguage language)
 {
     switch (language) {
-    case UiLanguage::System: return QCoreApplication::translate("WindowSystem", "跟随系统");
+    case UiLanguage::System: return QCoreApplication::translate("WindowSystem", "Follow system");
     case UiLanguage::SimplifiedChinese: return QStringLiteral("简体中文");
     case UiLanguage::English: return QStringLiteral("English");
     }
     return {};
+}
+
+QString commandCategoryDisplayName(const QString& identity)
+{
+    static const QHash<QString, const char*> names{
+        {QStringLiteral("文件"), QT_TRANSLATE_NOOP("WindowSystem", "File")},
+        {QStringLiteral("视图"), QT_TRANSLATE_NOOP("WindowSystem", "View")},
+        {QStringLiteral("布局"), QT_TRANSLATE_NOOP("WindowSystem", "Layout")},
+        {QStringLiteral("窗口"), QT_TRANSLATE_NOOP("WindowSystem", "Window")},
+        {QStringLiteral("工具"), QT_TRANSLATE_NOOP("WindowSystem", "Tools")},
+        {QStringLiteral("帮助"), QT_TRANSLATE_NOOP("WindowSystem", "Help")},
+        {QStringLiteral("命令"), QT_TRANSLATE_NOOP("WindowSystem", "Command")},
+        {QStringLiteral("其他"), QT_TRANSLATE_NOOP("WindowSystem", "Other")},
+        {QStringLiteral("扩展"), QT_TRANSLATE_NOOP("WindowSystem", "Extensions")},
+        {QStringLiteral("层级转换"), QT_TRANSLATE_NOOP("WindowSystem", "Hierarchy conversions")},
+        {QStringLiteral("标签外观"), QT_TRANSLATE_NOOP("WindowSystem", "Tab appearance")},
+        {QStringLiteral("排列标签"), QT_TRANSLATE_NOOP("WindowSystem", "Sort tabs")},
+        {QStringLiteral("标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Tab group")},
+        {QStringLiteral("交换标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab groups")},
+        {QStringLiteral("合并标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Merge tab groups")},
+        {QStringLiteral("移动标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Move tab groups")},
+        {QStringLiteral("标签栏"), QT_TRANSLATE_NOOP("WindowSystem", "Tab bar")},
+        {QStringLiteral("工具条"), QT_TRANSLATE_NOOP("WindowSystem", "Toolbar strips")},
+        {QStringLiteral("新建标签"), QT_TRANSLATE_NOOP("WindowSystem", "New tab")}};
+    const auto found = names.constFind(identity);
+    if (found != names.cend()) return QCoreApplication::translate("WindowSystem", *found);
+    return identity;
 }
 
 TranslationManager::TranslationManager(QObject* parent) : QObject(parent), d(std::make_unique<Private>())

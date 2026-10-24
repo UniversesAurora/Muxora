@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "script_host_p.hpp"
 #include <QDir>
 #include <QSignalBlocker>
@@ -35,7 +36,7 @@ muxora.runtime = api('runtime','stats')
 muxora.clock = api('clock','now')
 muxora.commands = api('commands', 'list execute remove')
 function muxora.commands.register(spec, fn)
-  assert(type(spec)=='table' and type(fn)=='function', 'register expects a descriptor and function')
+  assert(type(spec)=='table' and type(fn)=='function', registrationError)
   return registerCallback(fn,function(id) return host('commands.register',spec,id) end)
 end
 muxora.keymap = api('keymap','remove')
@@ -136,15 +137,15 @@ ScriptHost::Private::Private(ScriptHost *owner, window_system::WindowManager *wi
 }
 window_system::CommandContext ScriptHost::Private::current(const Context &source) const {
     if (!manager)
-        throw std::runtime_error("Window host is no longer available");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Window host is no longer available").toUtf8().constData());
     const QUuid window(source.value("window").toString());
     if (!window.isNull() && !manager->model().window(window))
-        throw std::runtime_error("Source window no longer exists");
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Source window no longer exists").toUtf8().constData());
     return manager->context(window);
 }
 Reply ScriptHost::Private::dispatch(QString method, Args args, Context context) {
     if (unloading || !manager)
-        return failure(QStringLiteral("Script host is unavailable"));
+        return failure(QCoreApplication::translate("WindowSystem", "Script host is unavailable"));
     try {
         const auto it = handlers.constFind(method);
         if (it != handlers.cend()) {
@@ -157,7 +158,7 @@ Reply ScriptHost::Private::dispatch(QString method, Args args, Context context) 
             return handler(std::move(method), std::move(args), std::move(context));
         }
         return services ? services(std::move(method), std::move(args), std::move(context))
-                        : failure(QStringLiteral("Unknown Lua host method: %1").arg(method));
+                        : failure(QCoreApplication::translate("WindowSystem", "Unknown Lua host method: %1").arg(method));
     } catch (const std::exception &error) {
         return failure(QString::fromUtf8(error.what()));
     }
@@ -241,11 +242,13 @@ ScriptHost::ScriptHost(window_system::WindowManager *manager, QObject *parent)
     connect(d->engine, &lua_runtime::ScriptRuntime::resetFinished, this, [this] {
         if (d->initializing) {
             const auto directory = QDir::fromNativeSeparators(d->moduleDirectory);
-            const auto source = QStringLiteral("local moduleDirectory = %1\n").arg(luaString(directory)) +
+            const auto source = QStringLiteral("local moduleDirectory = %1; local registrationError = %2\n")
+                                    .arg(luaString(directory), luaString(QCoreApplication::translate(
+                                        "WindowSystem", "register expects a descriptor and function"))) +
                                 QString::fromUtf8(bootstrap);
             d->bootstrapJob = d->engine->execute(source, QStringLiteral("@muxora/api"));
             if (!d->bootstrapJob)
-                d->finishInitialization(false, QStringLiteral("Lua runtime is overloaded"));
+                d->finishInitialization(false, QCoreApplication::translate("WindowSystem", "Lua runtime is overloaded"));
         }
     });
     connect(d->engine, &lua_runtime::ScriptRuntime::finished, this, [this](quint64 job, Reply reply) {
@@ -285,7 +288,7 @@ ScriptHost::ScriptHost(window_system::WindowManager *manager, QObject *parent)
             }
             d->initializeJob = d->engine->execute(std::move(d->pendingSource), std::move(d->pendingName));
             if (!d->initializeJob)
-                d->finishInitialization(false, QStringLiteral("Lua runtime is overloaded"));
+                d->finishInitialization(false, QCoreApplication::translate("WindowSystem", "Lua runtime is overloaded"));
             return;
         }
         if (d->initializing && job == d->initializeJob) {
@@ -411,9 +414,9 @@ void ScriptHost::publishEvent(QString name, QVariant payload, QVariantMap contex
                 bytes > limits.maximumQueuedBytes - d->eventBacklogBytes) {
                 d->removeSubscription(it.key());
                 emit scriptError(
-                    QStringLiteral("Event subscription %1 (%2) stopped: %3")
+                    QCoreApplication::translate("WindowSystem", "Event subscription %1 (%2) stopped: %3")
                         .arg(it.key(), name,
-                             error.isEmpty() ? QStringLiteral("event backlog limit exceeded") : error));
+                             error.isEmpty() ? QCoreApplication::translate("WindowSystem", "event backlog limit exceeded") : error));
                 if (!owner)
                     return;
                 continue;
@@ -460,7 +463,7 @@ bool ScriptHost::Private::scheduleResource(const QString &resource, const QStrin
     if (const auto timerCallback = timerCallbacks.take(resource); !timerCallback.isEmpty())
         engine->releaseCallback(timerCallback);
     removeSubscription(resource);
-    emit q->scriptError(QStringLiteral("Lua runtime is overloaded; stopped resource %1").arg(resource));
+    emit q->scriptError(QCoreApplication::translate("WindowSystem", "Lua runtime is overloaded; stopped resource %1").arg(resource));
     return false;
 }
 bool ScriptHost::ready() const { return d->isReady; }

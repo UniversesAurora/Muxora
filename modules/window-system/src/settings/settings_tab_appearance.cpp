@@ -21,15 +21,15 @@ namespace window_system {
 
 void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
 {
-    addCategory(parent, rows, "window/tabs", QCoreApplication::translate("WindowSystem", "标签外观"));
+    addCategory(parent, rows, "window/tabs", QCoreApplication::translate("WindowSystem", "Tab appearance"));
     const auto placementControl = [this, parent, rows](const char* name, const char* key,
         const QString& title, bool pinned) {
         auto* control = new ThemedComboBox(parent);
         control->setObjectName(QString::fromLatin1(name));
-        control->addItem(QCoreApplication::translate("WindowSystem", "顶部"), int(TabBarPlacement::Top));
-        control->addItem(QCoreApplication::translate("WindowSystem", "底部"), int(TabBarPlacement::Bottom));
+        control->addItem(QCoreApplication::translate("WindowSystem", "Top"), int(TabBarPlacement::Top));
+        control->addItem(QCoreApplication::translate("WindowSystem", "Bottom"), int(TabBarPlacement::Bottom));
         rows->addWidget(addRow(parent, "window/tabs", title, QString::fromLatin1(key),
-            pinned ? QCoreApplication::translate("WindowSystem", "单独设置固定侧栏面板的标签位置。") : QCoreApplication::translate("WindowSystem", "普通标签栏可放在内容顶部或底部。"), control));
+            pinned ? QCoreApplication::translate("WindowSystem", "Choose the tab position for pinned sidebar panels independently.") : QCoreApplication::translate("WindowSystem", "Place central tab bars above or below the content."), control));
         connect(control, &QComboBox::currentIndexChanged, this, [this, control, pinned] {
             if (!manager_) return;
             auto next = manager_->tabAppearance();
@@ -38,8 +38,8 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         });
         return control;
     };
-    centralPlacement_ = placementControl("CentralTabPlacement", "tabs.centralPlacement", QCoreApplication::translate("WindowSystem", "普通标签栏位置"), false);
-    pinnedPlacement_ = placementControl("PinnedTabPlacement", "tabs.pinnedPlacement", QCoreApplication::translate("WindowSystem", "固定侧栏标签位置"), true);
+    centralPlacement_ = placementControl("CentralTabPlacement", "tabs.centralPlacement", QCoreApplication::translate("WindowSystem", "Central tab bar position"), false);
+    pinnedPlacement_ = placementControl("PinnedTabPlacement", "tabs.pinnedPlacement", QCoreApplication::translate("WindowSystem", "Pinned sidebar tab position"), true);
     const auto flagControl = [this, parent, rows](const char* name, const char* key, const QString& title,
         const QString& explanation, bool TabAppearance::*field) {
         auto* control = new ThemedCheckBox(title, parent); control->setObjectName(QString::fromLatin1(name));
@@ -52,20 +52,20 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         });
         return control;
     };
-    multiline_ = flagControl("MultilineTabs", "tabs.multiline", QCoreApplication::translate("WindowSystem", "多行显示标签"),
-        QCoreApplication::translate("WindowSystem", "标签排满一行后换行，不使用横向滚动条。"), &TabAppearance::multiline);
-    wheelExpandRows_ = flagControl("WheelExpandTabRows", "tabs.wheelExpandRows", QCoreApplication::translate("WindowSystem", "滚轮展开标签行"),
-        QCoreApplication::translate("WindowSystem", "多行模式下向下滚动展开全部行，向上滚动只显示当前标签所在行。"), &TabAppearance::wheelExpandRows);
-    showIcons_ = flagControl("ShowTabIcons", "tabs.showIcons", QCoreApplication::translate("WindowSystem", "显示标签图标"),
-        QCoreApplication::translate("WindowSystem", "控制普通中央标签栏，不影响侧边栏；仍遵循宿主为单个标签隐藏图标的设置。"), &TabAppearance::showIcons);
-    showNewTabButton_ = flagControl("ShowNewTabButton", "tabs.showNewTabButton", QCoreApplication::translate("WindowSystem", "显示新建标签按钮"),
-        QCoreApplication::translate("WindowSystem", "显示标签尾部的加号和类型下拉。隐藏后仍可使用菜单、命令或快捷键新建。"), &TabAppearance::showNewTabButton);
-    showNumbers_ = flagControl("ShowTabNumbers", "tabs.showNumbers", QCoreApplication::translate("WindowSystem", "显示标签编号"),
-        QCoreApplication::translate("WindowSystem", "普通中央标签栏的编号显示在图标左侧，按本栏顺序从 1 开始。"), &TabAppearance::showNumbers);
-    showSidebarIcons_ = flagControl("ShowSidebarTabIcons", "tabs.showSidebarIcons", QCoreApplication::translate("WindowSystem", "显示侧边栏标签图标"),
-        QCoreApplication::translate("WindowSystem", "独立控制固定侧栏标签栏和非固定收纳条的图标，默认隐藏；仍遵循单个标签的图标设置。"), &TabAppearance::showSidebarIcons);
-    showSidebarNumbers_ = flagControl("ShowSidebarTabNumbers", "tabs.showSidebarNumbers", QCoreApplication::translate("WindowSystem", "显示侧边栏标签编号"),
-        QCoreApplication::translate("WindowSystem", "独立控制固定侧栏标签栏和非固定收纳条的编号，默认隐藏；固定组按本栏、非固定收纳条按同一侧全部标签顺序从 1 开始。"), &TabAppearance::showSidebarNumbers);
+    multiline_ = flagControl("MultilineTabs", "tabs.multiline", QCoreApplication::translate("WindowSystem", "Show tabs in multiple rows"),
+        QCoreApplication::translate("WindowSystem", "Wrap tabs to additional rows instead of using a horizontal scrollbar."), &TabAppearance::multiline);
+    wheelExpandRows_ = flagControl("WheelExpandTabRows", "tabs.wheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"),
+        QCoreApplication::translate("WindowSystem", "In multiline mode, scroll down to show all rows and up to show only the active tab's row."), &TabAppearance::wheelExpandRows);
+    showIcons_ = flagControl("ShowTabIcons", "tabs.showIcons", QCoreApplication::translate("WindowSystem", "Show tab icons"),
+        QCoreApplication::translate("WindowSystem", "Applies to central tab bars independently of sidebars. Per-tab icon visibility set by the host still applies."), &TabAppearance::showIcons);
+    showNewTabButton_ = flagControl("ShowNewTabButton", "tabs.showNewTabButton", QCoreApplication::translate("WindowSystem", "Show new tab button"),
+        QCoreApplication::translate("WindowSystem", "Show the plus button and type menu after the last tab. When hidden, menus, commands, and shortcuts can still create tabs."), &TabAppearance::showNewTabButton);
+    showNumbers_ = flagControl("ShowTabNumbers", "tabs.showNumbers", QCoreApplication::translate("WindowSystem", "Show tab numbers"),
+        QCoreApplication::translate("WindowSystem", "Show central tab numbers before the icon, starting at 1 in each tab bar."), &TabAppearance::showNumbers);
+    showSidebarIcons_ = flagControl("ShowSidebarTabIcons", "tabs.showSidebarIcons", QCoreApplication::translate("WindowSystem", "Show sidebar tab icons"),
+        QCoreApplication::translate("WindowSystem", "Show icons in pinned and auto-hide sidebar bars independently. Hidden by default; per-tab icon visibility still applies."), &TabAppearance::showSidebarIcons);
+    showSidebarNumbers_ = flagControl("ShowSidebarTabNumbers", "tabs.showSidebarNumbers", QCoreApplication::translate("WindowSystem", "Show sidebar tab numbers"),
+        QCoreApplication::translate("WindowSystem", "Show numbers in pinned and auto-hide sidebar bars independently. Hidden by default. Number pinned bars separately and each auto-hide side continuously, starting at 1."), &TabAppearance::showSidebarNumbers);
     clipTitles_ = flagControl("ClipTabTitles", "tabs.clipTitles", QCoreApplication::translate("WindowSystem", "Clip long regular and pinned tab titles"),
         QCoreApplication::translate("WindowSystem", "Clip titles that exceed the display limit without adding an ellipsis. Applies to regular tabs and pinned sidebar tab bars."), &TabAppearance::clipTitles);
     const auto widthControl = [parent](const char* name, const QString& title) {
@@ -104,21 +104,21 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     auto* layout = new QVBoxLayout(editor); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(4);
     tabColors_ = new QPlainTextEdit(editor); tabColors_->setObjectName("TabColorPresetsJson");
     tabColors_->setMinimumHeight(150); tabColors_->setMaximumHeight(240);
-    tabColors_->setAccessibleName(QCoreApplication::translate("WindowSystem", "标签颜色定义 JSON"));
+    tabColors_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Tab color definitions JSON"));
     layout->addWidget(tabColors_);
     tabColorDiagnostic_ = new QLabel(editor); tabColorDiagnostic_->setObjectName("TabColorPresetsDiagnostic");
     tabColorDiagnostic_->setWordWrap(true); layout->addWidget(tabColorDiagnostic_);
-    auto* apply = new QPushButton(QCoreApplication::translate("WindowSystem", "应用颜色列表"), editor); apply->setObjectName("ApplyTabColorPresets");
+    auto* apply = new QPushButton(QCoreApplication::translate("WindowSystem", "Apply color list"), editor); apply->setObjectName("ApplyTabColorPresets");
     layout->addWidget(apply, 0, Qt::AlignLeft);
-    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "标签颜色"), "tabs.colors",
-        QCoreApplication::translate("WindowSystem", "编辑严格 JSON 数组，可覆盖默认颜色列表。每项包含稳定 ID、名称，以及普通栏和收纳条各自的选中／未选中状态。每种状态包括背景、文字、下划线和图标颜色，写为 #RRGGBB 或 #AARRGGBB。"), editor));
+    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Tab colors"), "tabs.colors",
+        QCoreApplication::translate("WindowSystem", "Edit a strict JSON array to override the default palette. Each entry has a stable ID, name, and active/inactive states for central and auto-hide bars. Each state contains background, text, underline, and icon colors in #RRGGBB or #AARRGGBB format."), editor));
     connect(tabColors_, &QPlainTextEdit::textChanged, this, [this] { tabColorsDirty_ = true; });
     connect(apply, &QPushButton::clicked, this, [this] {
         if (!manager_) return;
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(tabColors_->toPlainText().toUtf8(), &error);
         if (error.error != QJsonParseError::NoError || !document.isArray()) {
-            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "颜色列表未修改：请输入有效 JSON 数组。")); return;
+            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "Color list unchanged: enter a valid JSON array.")); return;
         }
         auto definition = tabAppearanceToJson(manager_->tabAppearance()); definition.insert("colors", document.array());
         TabAppearance next;
@@ -127,7 +127,7 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         const QPointer<SettingsPage> self(this);
         tabColorsDirty_ = false;
         if (manager_->setTabAppearance(next) && self) {
-            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "颜色列表已应用。")); syncTabAppearanceOptions();
+            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "Color list applied.")); syncTabAppearanceOptions();
         }
     });
 }

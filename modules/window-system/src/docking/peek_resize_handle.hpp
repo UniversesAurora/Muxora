@@ -29,7 +29,7 @@ public:
         const bool height = resizeEdges.testFlag(Qt::TopEdge) || resizeEdges.testFlag(Qt::BottomEdge);
         setCursor(width && height ? (resizeEdges.testFlag(Qt::LeftEdge) == resizeEdges.testFlag(Qt::TopEdge)
             ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor) : width ? Qt::SizeHorCursor : Qt::SizeVerCursor);
-        setAccessibleName(QCoreApplication::translate("WindowSystem", "调整临时展开面板大小"));
+        setAccessibleName(QCoreApplication::translate("WindowSystem", "Resize auto-hide panel"));
     }
     std::function<PeekSizePolicy()> requestedSize;
     std::function<void(PeekSizePolicy)> resizeRequested;
