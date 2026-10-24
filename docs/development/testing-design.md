@@ -61,6 +61,12 @@
 
 提供共享 CMake build／test presets 和明确的快速、集成、桌面、诊断、压力、性能、发行包测试入口，供本机与 CI 使用。Windows 脚本优先使用 `pwsh`。入口返回真实退出状态，保存报告，不能吞掉子进程失败；选定的必需测试组收集到零个用例时也应失败。
 
+`tools/verify.ps1` 默认运行 Debug、Release、独立模块、外部宿主和部署检查，并先执行下面的翻译检查及其反向用例。步骤明确要求仅验证 Release 时，可传 `-ReleaseOnly`：仅省去 Debug 全量，其余检查仍全部执行，失败仍立即退出。
+
+```powershell
+pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1 -ReleaseOnly
+```
+
 ### 翻译覆盖
 
 ```powershell
@@ -73,6 +79,8 @@ pwsh tools/tests/translations-test.ps1
 `tools/translation-exemptions.json` 按文件、原文和出现次数列出非界面候选及理由；增减次数会失败，禁止整目录豁免。新增候选先判断显示路径，面向用户的文字在产生处标记翻译，其余才加入具体豁免。翻译行为见 [源文本与覆盖](../design/settings-and-commands-design.md#83-翻译源文本与覆盖)。
 
 脚本接受 `-QtRoot`，沿用构建脚本的 kit 发现方式。`-Catalog WindowSystem` 或 `Muxora` 只查对应目录；默认检查全部。`-SourceRoot` 用于临时源码夹具，`-Report` 可指定 JSON 报告。反向用例脚本在系统临时目录修改副本，核验每项改坏的输入都因指定原因失败，并在结束时删除副本；它不修改工作区，也不操作桌面。
+
+`tools/tests/application-language-test.ps1 -PackageDirectory <部署目录>` 用独立中英文设置检查部署程序的命令行帮助。它移除 SDK 和插件搜索环境，检查语言、稳定参数及未创建工作区，结果写入 `out/test-results/application-language.json`；统一验证入口会执行它，单独运行时也经桌面隔离入口。
 
 ### 测试结果与排查文件
 

@@ -1,10 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$QtRoot,
-    [string]$PackageDirectory
+    [string]$PackageDirectory,
+    [switch]$ReleaseOnly
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'check-translations.ps1') -QtRoot $QtRoot
+& (Join-Path $PSScriptRoot 'tests/translations-test.ps1') -QtRoot $QtRoot
 & (Join-Path $PSScriptRoot 'tests/deployment-test.ps1')
 & (Join-Path $PSScriptRoot 'tests/toolchain-test.ps1')
 $taskBuildArguments = @{}
@@ -16,7 +19,9 @@ $taskPackage = if ($PackageDirectory) {
 }
 $taskReleaseArguments = $taskBuildArguments.Clone()
 if ($PackageDirectory) { $taskReleaseArguments.PackageDirectory = $taskPackage }
-& (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
+if (-not $ReleaseOnly) {
+    & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Debug -Test @taskBuildArguments
+}
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Test -Package @taskReleaseArguments
 . (Join-Path $PSScriptRoot 'deployment.ps1')
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
@@ -82,8 +87,10 @@ try {
     @{ checkedAtUtc = [DateTime]::UtcNow.ToString('o'); exitCode = $taskProcess.ExitCode;
        sdkRemovedFromPath = $true; statePathWithSpaces = $true } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/package-smoke.json') -Encoding utf8NoBOM
+    & (Join-Path $PSScriptRoot 'tests/application-language-test.ps1') -PackageDirectory $taskPackage
     & (Join-Path $PSScriptRoot 'tests/application-exit-test.ps1') -PackageDirectory $taskPackage
     & (Join-Path $PSScriptRoot 'tests/application-view-test.ps1') -PackageDirectory $taskPackage
     & (Join-Path $PSScriptRoot 'tests/lua-deployment-test.ps1') -PackageDirectory $taskPackage
-    Write-Host 'Verification passed: debug, release, standalone, installed API and Lua host, deployed application, exit/restart, view-state restart and Lua deployment.'
+    $taskConfigurations = if ($ReleaseOnly) { 'release' } else { 'debug, release' }
+    Write-Host "Verification passed: translations, $taskConfigurations, standalone, installed API and Lua host, deployed application, exit/restart, view-state restart and Lua deployment."
 } finally { Exit-Toolchain $taskToolchain }

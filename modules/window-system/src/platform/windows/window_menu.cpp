@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "window_menu.hpp"
 
+#include <QCoreApplication>
 #include <QPointer>
 #include <QScopeGuard>
 #include <QString>
@@ -23,7 +24,12 @@ const std::array<std::wstring, 6>& systemCommandLabels()
 {
     static const auto labels = [] {
         std::array<std::wstring, 6> result{
-            L"&Restore", L"&Move", L"&Size", L"Mi&nimize", L"Ma&ximize", L"&Close\tAlt+F4"};
+            QCoreApplication::translate("WindowSystem", "&Restore").toStdWString(),
+            QCoreApplication::translate("WindowSystem", "&Move").toStdWString(),
+            QCoreApplication::translate("WindowSystem", "&Size").toStdWString(),
+            QCoreApplication::translate("WindowSystem", "Mi&nimize").toStdWString(),
+            QCoreApplication::translate("WindowSystem", "Ma&ximize").toStdWString(),
+            QCoreApplication::translate("WindowSystem", "&Close\tAlt+F4").toStdWString()};
         // Ask a hidden standard Win32 window for the system's localized labels.
         // This HWND is never shown and is destroyed before returning. Changing
         // the real window's styles to obtain a menu would disrupt Snap/DWM.

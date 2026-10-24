@@ -49,6 +49,8 @@
 
 ## 翻译提取
 
+### 用 JSON 项目描述保留 Unicode 路径
+
 - **现象**：相同翻译覆盖检查在普通目录通过，临时副本的路径含中文后，`lupdate` 报源文件不存在。
 - **原因**：Qt 的 `@list` 输入按本地代码页解码，UTF-8 文件中的路径会损坏；给每行路径加引号也会把引号当作文件名的一部分。依据见 [Qt lupdate 源码](https://github.com/qt/qttools/blob/6.12/src/linguist/lupdate/main.cpp)。
 - **做法**：使用 `lupdate -project` 的 UTF-8 JSON 项目描述传入源文件清单，保留 Unicode 路径，也避免命令行长度限制。临时夹具目录包含中文和空格，正反向用例都经同一入口。

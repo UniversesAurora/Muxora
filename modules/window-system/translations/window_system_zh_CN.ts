@@ -4,7 +4,7 @@
     <context>
         <name>WindowSystem</name>
         <message>
-            <location filename="../src/localization/localization.cpp" line="78"></location>
+            <location filename="../src/localization/localization.cpp" line="79"></location>
             <source>Follow system</source>
             <translation>跟随系统</translation>
         </message>
@@ -3682,6 +3682,36 @@ Ctrl+Shift+P 打开命令面板</translation>
             <location filename="../src/docking/peek_resize_handle.hpp" line="32"></location>
             <source>Resize auto-hide panel</source>
             <translation>调整临时展开面板大小</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="27"></location>
+            <source>&amp;Restore</source>
+            <translation>还原(&amp;R)</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="28"></location>
+            <source>&amp;Move</source>
+            <translation>移动(&amp;M)</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="29"></location>
+            <source>&amp;Size</source>
+            <translation>大小(&amp;S)</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="30"></location>
+            <source>Mi&amp;nimize</source>
+            <translation>最小化(&amp;N)</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="31"></location>
+            <source>Ma&amp;ximize</source>
+            <translation>最大化(&amp;X)</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="32"></location>
+            <source>&amp;Close	Alt+F4</source>
+            <translation>关闭(&amp;C)	Alt+F4</translation>
         </message>
     </context>
 </TS>

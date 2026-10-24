@@ -17,7 +17,10 @@ int main(int argc, char** argv)
     app.setQuitOnLastWindowClosed(false);
     window_system::TranslationManager translations;
     if (!translations.installLanguage(window_system::UiLanguage::English)) return 120;
-    if (QCoreApplication::translate("WindowSystem", "设置") != QStringLiteral("Settings")) return 121;
+    if (QCoreApplication::translate("WindowSystem", "Settings") != QStringLiteral("Settings")) return 121;
+    if (!translations.installLanguage(window_system::UiLanguage::SimplifiedChinese)) return 122;
+    if (QCoreApplication::translate("WindowSystem", "Settings") != QStringLiteral("设置")) return 123;
+    if (!translations.installLanguage(window_system::UiLanguage::English)) return 124;
     window_system::WindowManager windows;
     const auto root = windows.createWindow();
     {

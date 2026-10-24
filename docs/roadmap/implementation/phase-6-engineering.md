@@ -185,7 +185,7 @@
 1. Runner：`windows-2025`（或当时最新的 Windows 镜像）。
 2. Qt 获取：先验证可行性——[工程设计 §6.1](../../development/engineering-design.md) 记录了 aqtinstall 在 Qt 6.11 之后的仓库布局问题。依次尝试：(1) 新版 `install-qt-action`／aqtinstall 是否已支持 6.12 的 `msvc2022_64` 套件；(2) 官方在线安装器的无人值守模式（需要 Qt 账号，凭据放在仓库机密中）。两者都不可行时，CI 只构建不依赖 Qt 的部分是没有意义的——记录为“环境阻塞”，不要用其他 Qt 版本代替。
 3. 缓存：Qt kit（按版本和编译器做键）、Lua 源码包（`FetchContent` 下载目录）。
-4. PR 工作流：配置 → 构建 → `ctest -L "model|widget" --output-junit` → 上传 `out/test-results/` 和失败时的 `out/diagnostics/`。
+4. PR 工作流：配置 Qt → `tools/check-translations.ps1` 与 `tools/tests/translations-test.ps1`（[用法](../../development/testing-design.md#翻译覆盖)）→ 构建 → `ctest -L "model|widget" --output-junit` → 上传 `out/test-results/` 和失败时的 `out/diagnostics/`。
 5. 每日工作流：全量 `ctest`、`tools/verify.ps1` 的独立模块与外部宿主部分、`-Package` 加部署夹具。桌面层在托管 runner 上可能因没有交互桌面而失败；如果失败原因是环境，结果单独标注，不与代码失败混在一起。
 6. CI 结果与本地结果分开记录；本地验证仍按 [README](README.md#验证) 执行。
 

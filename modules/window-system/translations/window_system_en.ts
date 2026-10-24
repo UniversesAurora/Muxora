@@ -4,7 +4,7 @@
     <context>
         <name>WindowSystem</name>
         <message>
-            <location filename="../src/localization/localization.cpp" line="78"></location>
+            <location filename="../src/localization/localization.cpp" line="79"></location>
             <source>Follow system</source>
             <translation>Follow system</translation>
         </message>
@@ -3689,6 +3689,36 @@ Ctrl+Shift+P opens the command palette</translation>
             <location filename="../src/docking/peek_resize_handle.hpp" line="32"></location>
             <source>Resize auto-hide panel</source>
             <translation>Resize auto-hide panel</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="27"></location>
+            <source>&amp;Restore</source>
+            <translation>&amp;Restore</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="28"></location>
+            <source>&amp;Move</source>
+            <translation>&amp;Move</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="29"></location>
+            <source>&amp;Size</source>
+            <translation>&amp;Size</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="30"></location>
+            <source>Mi&amp;nimize</source>
+            <translation>Mi&amp;nimize</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="31"></location>
+            <source>Ma&amp;ximize</source>
+            <translation>Ma&amp;ximize</translation>
+        </message>
+        <message>
+            <location filename="../src/platform/windows/window_menu.cpp" line="32"></location>
+            <source>&amp;Close	Alt+F4</source>
+            <translation>&amp;Close	Alt+F4</translation>
         </message>
     </context>
 </TS>

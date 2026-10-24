@@ -67,7 +67,9 @@ pwsh ./tools/package-portable.ps1
 pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 ```
 
-该脚本运行 Debug / Release 自动化测试，单独配置窗口模块并运行其测试，安装模块后构建 C++ 和 Lua 两个外部宿主夹具，最后移除 SDK 和编译器路径，检查实际部署程序的启动、退出、重启、显隐、全屏、禅模式、底部工具条恢复和 Lua 脚本。入口存在与验证通过分别记录；最近一次结果见下文，历史结果见 [验证日志](verification-log/2026-10.md)。
+该脚本先运行翻译覆盖与反向检查，再运行 Debug / Release 自动化测试，单独配置窗口模块并运行其测试，安装模块后构建 C++ 和 Lua 两个外部宿主夹具，最后移除 SDK 和编译器路径，检查实际部署程序的启动、退出、重启、显隐、全屏、禅模式、底部工具条恢复和 Lua 脚本。入口存在与验证通过分别记录；最近一次结果见下文，历史结果见 [验证日志](verification-log/2026-10.md)。
+
+只需执行 Release 验证时使用 `verify.ps1 -ReleaseOnly`，范围见 [测试入口](testing-design.md#3-工具与统一入口)；默认完整验证命令不变。
 
 完整窗口系统设计见 [窗口模块](../design/window-system-design.md)、[工作区](../design/workspace-design.md) 和 [浮动窗口](../design/floating-window-design.md)。本次以能交互的基础版本为起点，继续根据试用结果修订。
 
@@ -133,9 +135,9 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-钉住标签（8.15a）、标签长度变化时的条带滚动、外观原地更新和工具条重置命令的修正各有回归验证。在 `f5fffa6` 和 `9a4b98d` 上完整 `verify.ps1` 各通过一次：Debug 63/63、Release 63/63、独立模块 56/56、两个外部宿主、应用退出、视图状态和 Lua 部署检查。此前全量中偶发的 `toolbar-popup` 前台失败已查明并修正，详见 [前台记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)。
+英文源文本迁移、本地源码覆盖和部署语言检查已完成本机验证。Release 全量 63/63、独立 WindowSystem 全量 56/56；最后六处 Windows 系统菜单备用文字加入目录后，相关本地化与原生窗口 3/3、独立模块 2/2、两个外部宿主及部署检查通过。完整经过和未解决的首报见 [8.12 收尾记录](verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。CI 尚未建立，接入留在 6.6。
 
-本轮未做便携包、混合 DPI、多屏、三主题截图审查和真实试用；`tab-strip-layout` 先前偶发失败的原因没有单独确认。当前步骤及下一步见 [实现计划](../roadmap/implementation/README.md#推荐执行顺序)。
+本轮没有重复 Debug 全量，也未做便携包、混合 DPI、多屏、三主题截图审查和真实试用；既有菜单交互和 `tab-strip-layout` 偶发首报的原因没有单独确认。当前步骤及下一步见 [实现计划](../roadmap/implementation/README.md#推荐执行顺序)。
 
 ## 待完成与验证范围
 
