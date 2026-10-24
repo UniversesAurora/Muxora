@@ -1340,6 +1340,11 @@ void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
       assert(muxora.settings.update({sticky_tab_sizing='compact'}))
       assert(muxora.tabs.appearance().sticky_tab_sizing=='compact')
       assert(muxora.tabs.set_appearance({sticky_tab_sizing='shrink'}))
+      assert(muxora.settings.get().sticky_tabs_on_separate_row==false)
+      assert(muxora.settings.update({sticky_tabs_on_separate_row=true}))
+      assert(muxora.tabs.appearance().sticky_tabs_on_separate_row==true)
+      assert(not pcall(muxora.tabs.set_appearance,{sticky_tabs_on_separate_row='false'}))
+      assert(muxora.tabs.appearance().sticky_tabs_on_separate_row==true)
       for _,invalid in ipairs({'tiny','Compact',1,true}) do
         assert(not pcall(muxora.settings.update,{sticky_tab_sizing=invalid,multiline=true}))
         assert(not pcall(muxora.tabs.set_appearance,{sticky_tab_sizing=invalid}))

@@ -155,7 +155,7 @@ assert(muxora.tabs.sticky())        -- 钉住当前标签
 assert(muxora.tabs.sticky(nil, false))
 ```
 
-钉住标签的尺寸是标签外观字段 `sticky_tab_sizing`，取 `'normal'`、`'compact'` 或 `'shrink'`，`tabs.appearance()`／`tabs.set_appearance()` 和 `settings.get()`／`settings.update()` 都能读写，含义见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；其他值报告错误，不部分应用。
+钉住标签的尺寸是标签外观字段 `sticky_tab_sizing`，取 `'normal'`、`'compact'` 或 `'shrink'`；布尔字段 `sticky_tabs_on_separate_row` 让钉住标签单独占一行。两者都能用 `tabs.appearance()`／`tabs.set_appearance()` 和 `settings.get()`／`settings.update()` 读写，含义见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；类型或取值不对时报告错误，不部分应用。
 
 ```lua
 assert(muxora.tabs.set_appearance({ sticky_tab_sizing = 'compact' }))

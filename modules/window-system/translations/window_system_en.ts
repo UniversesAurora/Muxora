@@ -3755,5 +3755,15 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</source>
             <translation>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</translation>
         </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="150"></location>
+            <source>Show sticky tabs on a separate row</source>
+            <translation>Show sticky tabs on a separate row</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="154"></location>
+            <source>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</source>
+            <translation>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</translation>
+        </message>
     </context>
 </TS>

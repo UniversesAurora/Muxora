@@ -39,7 +39,10 @@ public:
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky = false);
+    void setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky = false,
+                             std::optional<bool> stickyRow = {});
+    // Whether a point is over the group's row of sticky tabs; empty without one.
+    [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint point) const;
     // Whether a drop at the group's insertion preview makes the tab sticky.
     [[nodiscard]] bool insertionSticky(GroupId group) const;
     void setEdgeInsertionPreview(Edge edge, int index, int extent);

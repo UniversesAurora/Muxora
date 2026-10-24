@@ -147,6 +147,17 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         auto next = manager_->tabAppearance(); next.stickySizing = StickyTabSizing(stickySizing_->currentData().toInt());
         manager_->setTabAppearance(next);
     });
+    const auto separateTitle = QCoreApplication::translate("WindowSystem", "Show sticky tabs on a separate row");
+    stickyTabsOnSeparateRow_ = new ThemedCheckBox(separateTitle, parent);
+    stickyTabsOnSeparateRow_->setObjectName("StickyTabsOnSeparateRow");
+    rows->addWidget(addRow(parent, "window/tabs/sticky", separateTitle, "tabs.stickyTabsOnSeparateRow",
+        QCoreApplication::translate("WindowSystem", "Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it."),
+        stickyTabsOnSeparateRow_));
+    connect(stickyTabsOnSeparateRow_, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.stickyTabsOnSeparateRow = enabled;
+        manager_->setTabAppearance(next);
+    });
 }
 
 void SettingsPage::syncTabAppearanceOptions()
@@ -173,6 +184,8 @@ void SettingsPage::syncTabAppearanceOptions()
     {
         const QSignalBlocker block(stickySizing_);
         stickySizing_->setCurrentIndex(stickySizing_->findData(int(appearance.stickySizing)));
+        const QSignalBlocker separate(stickyTabsOnSeparateRow_);
+        stickyTabsOnSeparateRow_->setChecked(appearance.stickyTabsOnSeparateRow);
     }
     if (!tabColorsDirty_) {
         const QSignalBlocker block(tabColors_);

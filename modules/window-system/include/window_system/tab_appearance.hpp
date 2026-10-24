@@ -62,6 +62,9 @@ struct TabAppearance {
     // Compact and shrunk sticky tabs stay in view while the other tabs of a
     // single-row strip scroll under them.
     StickyTabSizing stickySizing = StickyTabSizing::Normal;
+    // Sticky tabs take a row of their own above the other tabs, as VS Code's
+    // workbench.editor.pinnedTabsOnSeparateRow.
+    bool stickyTabsOnSeparateRow = false;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

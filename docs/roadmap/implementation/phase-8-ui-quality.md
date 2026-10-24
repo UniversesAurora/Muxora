@@ -419,10 +419,10 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 **8.15b 外观与保护（进行中）**：用户 2026-10-24 确认四项都做，前三项照 VS Code 做成设置，选项和默认值与 VS Code 相同。设置放在设置页“标签外观”下的“钉住标签”分类。
 
 1. 设置 `tabs.stickySizing`（VS Code `workbench.editor.pinnedTabSizing`）：`normal`（默认）、`compact`（只显示图标或首字）、`shrink`（固定窄宽度显示部分标题）。紧凑和收缩时，钉住段在标签栏滚动时不离开视野，其余标签在它后面滚动。**已完成**。
-2. 设置 `tabs.stickyTabsOnSeparateRow`（VS Code `workbench.editor.pinnedTabsOnSeparateRow`）：钉住标签单独显示在上方一行，两行之间拖动即钉住或取消。
+2. 设置 `tabs.stickyTabsOnSeparateRow`（VS Code `workbench.editor.pinnedTabsOnSeparateRow`）：钉住标签单独显示在上方一行，两行之间拖动即钉住或取消。**已完成**。
 3. 设置 `tabs.preventStickyClose`（VS Code `workbench.editor.preventPinnedEditorClose`）：按键、中键、两者都不关闭钉住标签或都关闭，默认两者都不关闭。前置的中键关闭标签已实现。按键关闭指关闭当前标签的快捷键；被拦住时和 VS Code 一样改为切到本组下一个未钉住的标签。不需要 3.x 的上下文按键条件：快捷键分发时就知道来源。
 4. 完整标签列表中标出钉住标签。
 
 **测试**：8.15a 见模型、标签条、命令与 Lua 用例；8.15b 各项需要真实拖动、滚动和像素断言，三种主题下截图。
 
-**状态**：8.15a 已完成；8.15b 第 1 项和前置的中键关闭已完成，见 [记录](../../development/verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；第 2、3、4 项进行中。
+**状态**：8.15a 已完成；8.15b 第 1、2 项和前置的中键关闭已完成，见 [记录](../../development/verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；第 3、4 项进行中。

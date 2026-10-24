@@ -98,6 +98,7 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.maximumSidebarTitleWidth` | 非固定收纳条的文字最大长度，单位、默认值和范围与 `tabs.maximumTitleWidth` 相同，数值独立保存。 |
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
 | `tabs.stickySizing` | 钉住标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，不显示钉子）、`shrink`（宽 80，显示编号、图标和标题开头，保留钉子）。紧凑和收缩时，单行标签栏滚动时钉住标签留在视口开头，其他标签从它们下面滚过，最后一个钉住标签右侧有一条主题边框色的分隔线；多行时不固定。 |
+| `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后有钉住标签的组把它们放在其他标签上方单独的行里，放不下时在这几行里换行；其他标签从下一行开始，单行时照常横向滚动，钉住的行不动。多行收起时显示钉住的行和活动标签所在的行。尺寸设置照样生效，两行之间不画分隔线。 |
 
 钉住标签的设置在设置页“标签外观”下单独的“钉住标签”分类里，没有右键菜单入口（VS Code 也没有）。
 

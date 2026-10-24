@@ -155,7 +155,8 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers},
         {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth},
         {"clipSidebarTitles", appearance.clipSidebarTitles}, {"maximumSidebarTitleWidth", appearance.maximumSidebarTitleWidth},
-        {"stickySizing", stickySizingName(appearance.stickySizing)}, {"colors", colors}};
+        {"stickySizing", stickySizingName(appearance.stickySizing)},
+        {"stickyTabsOnSeparateRow", appearance.stickyTabsOnSeparateRow}, {"colors", colors}};
 }
 
 OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance)
@@ -171,7 +172,8 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
         std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
         std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}, std::pair{"clipTitles", &candidate.clipTitles},
-        std::pair{"clipSidebarTitles", &candidate.clipSidebarTitles}}) {
+        std::pair{"clipSidebarTitles", &candidate.clipSidebarTitles},
+        std::pair{"stickyTabsOnSeparateRow", &candidate.stickyTabsOnSeparateRow}}) {
         const auto field = object.value(entry.first);
         if (!field.isUndefined() && !field.isBool()) return {false, QCoreApplication::translate("WindowSystem", "Invalid tab visibility setting type")};
         if (field.isBool()) *entry.second = field.toBool();

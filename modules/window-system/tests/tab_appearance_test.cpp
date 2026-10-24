@@ -53,7 +53,7 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
     QVERIFY(appearance.showIcons); QVERIFY(appearance.showNewTabButton); QVERIFY(!appearance.showNumbers);
     QVERIFY(!appearance.clipTitles); QCOMPARE(appearance.maximumTitleWidth, defaultTabTitleWidth);
     QVERIFY(!appearance.clipSidebarTitles); QCOMPARE(appearance.maximumSidebarTitleWidth, defaultTabTitleWidth);
-    QCOMPARE(appearance.stickySizing, StickyTabSizing::Normal);
+    QCOMPARE(appearance.stickySizing, StickyTabSizing::Normal); QVERIFY(!appearance.stickyTabsOnSeparateRow);
     QCOMPARE(appearance.colors.size(), 9);
     for (const auto& preset : appearance.colors) {
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
@@ -242,6 +242,7 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
     QTest::newRow("unknownStickySizing") << QString("stickySizing") << QJsonValue("tiny");
     QTest::newRow("stickySizingCase") << QString("stickySizing") << QJsonValue("Compact");
     QTest::newRow("stickySizingNumber") << QString("stickySizing") << QJsonValue(1);
+    QTest::newRow("stickyRowString") << QString("stickyTabsOnSeparateRow") << QJsonValue("true");
     QTest::newRow("paletteObject") << QString("colors") << QJsonValue(QJsonObject{});
     QTest::newRow("incompletePreset") << QString("colors") << QJsonValue(QJsonArray{QJsonObject{{"id", "blue"}, {"name", "蓝色"}}});
     auto palette = tabAppearanceToJson(TabAppearance{}).value("colors").toArray();

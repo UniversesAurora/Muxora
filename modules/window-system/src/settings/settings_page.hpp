@@ -88,6 +88,7 @@ private:
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;
     QComboBox* stickySizing_ = nullptr;
+    QCheckBox* stickyTabsOnSeparateRow_ = nullptr;
     WindowId initialWindow_;
     struct VisibilityControl { WindowBar bar; QCheckBox* control; };
     QVector<VisibilityControl> visibilityControls_;

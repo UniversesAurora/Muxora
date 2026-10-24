@@ -3748,5 +3748,15 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</source>
             <translation>紧凑和收缩时，单行标签栏滚动时钉住的标签留在开头，其他标签在它们下面滚动。</translation>
         </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="150"></location>
+            <source>Show sticky tabs on a separate row</source>
+            <translation>钉住标签单独显示一行</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="154"></location>
+            <source>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</source>
+            <translation>钉住的标签显示在其他标签上方单独的一行，其他标签滚动时它们不动。在两行之间拖动标签即可钉住或取消钉住。</translation>
+        </message>
     </context>
 </TS>

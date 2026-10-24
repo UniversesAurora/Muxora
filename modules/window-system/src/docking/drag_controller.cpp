@@ -303,6 +303,7 @@ DropTarget DragController::hit(QPoint global)
         result.placement = Placement::Center;
         result.groupRect = surface->groupRects().value(barGroup);
         result.insertionIndex = surface->tabInsertionIndex(barGroup, global);
+        result.insertionRow = surface->tabInsertionRow(barGroup, global);
     }
     const auto strips = surface->tabBarRects().values();
     result.guides = dockGuides(result.windowRect, result.groupRect, result.splitGroup, strips, edgeBars);
@@ -364,7 +365,7 @@ void DragController::update(QPoint global)
             else {
                 // Stickiness is the tab's before the drag; a tear-out window does not change it.
                 surface->setInsertionPreview(target_.group, target_.insertionIndex, extent,
-                    !tab_.isNull() && originalModel_.isTabSticky(tab_));
+                    !tab_.isNull() && originalModel_.isTabSticky(tab_), target_.insertionRow);
                 target_.insertionSticky = surface->insertionSticky(target_.group);
             }
             target_.preview = target_.toEdgeBar ? surface->edgeInsertionPreviewRect(target_.edge)
@@ -410,7 +411,8 @@ bool DragController::updateSourceStrip(QPoint global)
     const int extent = surface->dragLabelExtent(tab_, sourceIsEdge_);
     if (sourceIsEdge_) surface->setEdgeInsertionPreview(sourceEdge_, target_.insertionIndex, extent);
     else {
-        surface->setInsertionPreview(sourceGroup_, target_.insertionIndex, extent, originalModel_.isTabSticky(tab_));
+        target_.insertionRow = surface->tabInsertionRow(sourceGroup_, global);
+        surface->setInsertionPreview(sourceGroup_, target_.insertionIndex, extent, originalModel_.isTabSticky(tab_), target_.insertionRow);
         target_.insertionSticky = surface->insertionSticky(sourceGroup_);
     }
     surface->setDragHover(global);

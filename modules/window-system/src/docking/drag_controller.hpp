@@ -26,6 +26,8 @@ struct DropTarget {
     int insertionIndex = -1;
     // Whether the strip showed the insertion among its sticky tabs.
     bool insertionSticky = false;
+    // Whether the pointer is over the strip's own row of sticky tabs.
+    std::optional<bool> insertionRow;
     QVector<DockGuide> guides;
 };
 class DragController final : public QObject {

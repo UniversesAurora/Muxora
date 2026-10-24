@@ -22,7 +22,8 @@ constexpr std::array appearanceBooleans{std::pair{"multiline", &TabAppearance::m
                                         std::pair{"show_sidebar_numbers", &TabAppearance::showSidebarNumbers},
                                         std::pair{"clip_tab_titles", &TabAppearance::clipTitles},
                                         std::pair{"clip_sidebar_titles", &TabAppearance::clipSidebarTitles},
-                                        std::pair{"show_new_tab_button", &TabAppearance::showNewTabButton}};
+                                        std::pair{"show_new_tab_button", &TabAppearance::showNewTabButton},
+                                        std::pair{"sticky_tabs_on_separate_row", &TabAppearance::stickyTabsOnSeparateRow}};
 constexpr std::array themeColors{std::pair{"background", &Theme::background},
                                  std::pair{"surface", &Theme::surface},
                                  std::pair{"raisedSurface", &Theme::raisedSurface},

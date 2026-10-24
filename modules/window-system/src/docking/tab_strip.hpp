@@ -42,8 +42,13 @@ public:
     // sticky tabs scroll with the others.
     [[nodiscard]] int stickyRunExtent() const;
     // `carriedSticky` says whether the dropped tab was sticky; dropping it
-    // right after the sticky tabs then keeps it sticky.
-    void setInsertionPreview(int index, int extent, QColor color, bool carriedSticky = false);
+    // right after the sticky tabs then keeps it sticky. With sticky tabs on
+    // their own row, `stickyRow` is the row the pointer is over and decides.
+    void setInsertionPreview(int index, int extent, QColor color, bool carriedSticky = false,
+                             std::optional<bool> stickyRow = {});
+    // Whether a point is over the sticky tabs' own row; empty without one.
+    [[nodiscard]] std::optional<bool> insertionRowAt(QPoint local) const;
+    [[nodiscard]] int lineHeight() const { return lineHeight_; }
     // Whether a drop at the insertion preview makes the tab sticky.
     [[nodiscard]] bool insertionSticky() const { return insertionSticky_; }
     [[nodiscard]] bool insertionCarriesSticky() const { return carriedSticky_; }
@@ -81,6 +86,8 @@ private:
     bool isCompactSticky(int index) const;
     // Sticky tabs, and a sticky insertion preview, stay in view.
     bool stickyFloats() const;
+    // Sticky tabs take rows of their own above the others.
+    bool separateRow() const;
     int stickyShift() const;
     void updateInsertionSticky();
     void refreshSizeHints();
@@ -96,6 +103,9 @@ private:
     int stickyCount_ = 0;
     int stickyOffset_ = 0;
     int stickyRunEnd_ = 0;
+    int stickyRowsHeight_ = 0;
+    int lineHeight_ = 28;
+    std::optional<bool> stickyRow_;
     bool carriedSticky_ = false;
     bool insertionSticky_ = false;
     int insertionIndex_ = -1;
@@ -148,8 +158,9 @@ public:
     QRect viewportRectGlobal() const;
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(int index, int extent, bool carriedSticky = false);
+    void setInsertionPreview(int index, int extent, bool carriedSticky = false, std::optional<bool> stickyRow = {});
     [[nodiscard]] bool insertionSticky() const;
+    [[nodiscard]] std::optional<bool> insertionRow(QPoint global) const;
     void setDraggedTab(TabId tab);
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
     void setDragPresentation(bool compact, bool edge);
@@ -203,6 +214,7 @@ private:
     TabAppearance appearance_;
     bool pinned_ = false;
     bool rowsExpanded_ = true;
+    std::optional<bool> stickyRow_;
 };
 
 } // namespace window_system

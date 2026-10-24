@@ -784,6 +784,10 @@ int DockSurface::tabInsertionIndex(GroupId group, QPoint point) const
 {
     const auto widget = groups_.value(group); return widget ? widget->insertionIndex(point) : -1;
 }
+std::optional<bool> DockSurface::tabInsertionRow(GroupId group, QPoint point) const
+{
+    const auto widget = groups_.value(group); return widget ? widget->insertionRow(point) : std::nullopt;
+}
 int DockSurface::dragLabelExtent(TabId tab, bool edge) const
 {
     const auto* record = manager_->model().tab(tab);
@@ -875,10 +879,11 @@ void DockSurface::setDragHover(QPoint point)
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(point);
 }
-void DockSurface::setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky)
+void DockSurface::setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky, std::optional<bool> stickyRow)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent, it.key() == group && carriedSticky);
+        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent, it.key() == group && carriedSticky,
+                                                        it.key() == group ? stickyRow : std::nullopt);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
 }
 void DockSurface::setEdgeInsertionPreview(Edge edge, int index, int extent)
