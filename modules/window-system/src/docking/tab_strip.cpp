@@ -138,18 +138,21 @@ public:
         setProperty("emphasized", active);
         setMouseTracking(true);
         auto* layout = new QHBoxLayout(this);
-        layout->setContentsMargins(8, 2, 5, 2); layout->setSpacing(7);
+        layout->setContentsMargins(8, 2, 4, 2); layout->setSpacing(7);
         if (!icon.isNull()) {
             auto* image = new QLabel(this); image->setPixmap(icon.pixmap(16, 16)); layout->addWidget(image);
         }
         title_ = new TabListTitle(text, this); title_->setToolTip(text);
         title_->setObjectName("TabListTitle");
         title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
-        const auto actionButton = [this, layout](const char* name) {
+        // The row's actions sit together at its end, apart from the title.
+        auto* actions = new QHBoxLayout; actions->setContentsMargins({}); actions->setSpacing(2);
+        layout->addLayout(actions);
+        const auto actionButton = [this, actions](const char* name) {
             auto* button = new CompactToolButton(this, 18);
             button->setObjectName(name);
             button->setStyleSheet("QToolButton{padding:0;min-height:0;min-width:0;}");
-            layout->addWidget(button);
+            actions->addWidget(button);
             return button;
         };
         // Keep the unstick action visible even before the row is hovered.
@@ -1321,22 +1324,21 @@ void GroupTabs::showTabList() {
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab"));
         row->closeButton->setAccessibleName(row->closeButton->toolTip());
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);
-        row->activate = [self, popup, index] { if (popup) popup->close(); if (self) self->setCurrentIndex(index); };
-        QObject::connect(row->closeButton, &QToolButton::clicked, menu, [self, popup, index] {
-            if (popup) popup->close();
-            if (self) { const auto callback = self->closeRequested; if (callback) callback(index); }
-        });
-        if (row->unstickButton)
-            QObject::connect(row->unstickButton, &QToolButton::clicked, menu, [self, popup, id = bar_->tabData(index)] {
+        // Closing a popup can run host callbacks that reorder the tabs. Each
+        // action resolves its stable tab ID afterwards, not the listed index.
+        const auto act = [self, popup, id = bar_->tabData(index)](auto action) {
+            return [self, popup, id, action] {
                 if (popup) popup->close();
                 if (!self) return;
-                // Closing a popup can run host callbacks. Resolve the stable
-                // tab ID afterwards instead of acting on an outdated index.
-                for (int i = 0; i < self->bar_->count(); ++i) if (self->bar_->tabData(i) == id) {
-                    const auto callback = self->unstickRequested; if (callback) callback(i);
-                    return;
-                }
-            });
+                for (int i = 0; i < self->bar_->count(); ++i) if (self->bar_->tabData(i) == id) { action(self.data(), i); return; }
+            };
+        };
+        row->activate = act([](GroupTabs* tabs, int i) { tabs->setCurrentIndex(i); });
+        QObject::connect(row->closeButton, &QToolButton::clicked, menu,
+            act([](GroupTabs* tabs, int i) { const auto callback = tabs->closeRequested; if (callback) callback(i); }));
+        if (row->unstickButton)
+            QObject::connect(row->unstickButton, &QToolButton::clicked, menu,
+                act([](GroupTabs* tabs, int i) { const auto callback = tabs->unstickRequested; if (callback) callback(i); }));
         action->setDefaultWidget(row); menu->addAction(action);
     }
     setPopupAnchor(menu,QRect(list_->mapToGlobal(QPoint()),list_->size()));

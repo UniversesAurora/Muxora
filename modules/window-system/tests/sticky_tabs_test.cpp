@@ -540,6 +540,9 @@ void StickyTabsTest::tabListMarksStickyTabs()
             QVERIFY(pin->isVisible()); QVERIFY(!pin->icon().isNull());
             auto* close = row->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close);
             QCOMPARE(pin->size(), close->size()); QCOMPARE(pin->geometry().center().y(), close->geometry().center().y());
+            // The actions sit together at the row's end (tab strip design §8.2).
+            QCOMPARE(close->geometry().left() - pin->geometry().right() - 1, 2);
+            QCOMPARE(row->width() - close->geometry().right() - 1, 4);
             QCOMPARE(pin->toolTip(), QCoreApplication::translate("WindowSystem", "Unstick tab"));
             QCOMPARE(pin->accessibleName(), pin->toolTip());
         }

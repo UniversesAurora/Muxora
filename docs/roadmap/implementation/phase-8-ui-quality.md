@@ -557,6 +557,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 2. 控件：只读布局结果做绘制、命中、提示和可访问性（设计 §10）；滚动、渐隐、细滚动条按段处理；动画器先接入出现、消失和展开收起（设计 §7）。
 3. 设置：`tabs.collapseRows`、`tabs.wheelExpandRows` 的新含义、位置取值增加 `left`／`right`（竖向在 8.23 实现前设置页不提供）；按 [工程设计 §2.4](../../development/engineering-design.md#24-当前配置格式) 只维护当前格式。
 4. 现有的单行滚动保护规则（设计“条带尺寸变化”）原样保留并迁到新控件。
+5. 标签内容垂直居中：用户 2026-10-25 觉得图标偏上，开启编号时更明显；离屏测量没有复现（见 [验证日志](../../development/verification-log/2026-10.md#完整标签列表的按钮间距2026-10-25)），先在真实应用的中文字体和图标下测量，再按新外观统一处理。
 
 **测试**：按测试要求 §2 新写：布局模块的组合表、边界和随机序列（不重叠、顺序、范围、被收起数、命中与绘制一致）；控件接线用例；外观规格用例（尺寸集中检查一次，三主题）；可访问性断言。原有标签栏套件（`tab-strip-layout`、`tab-bar-presentation`、`sticky-tabs`、`tab-viewport`、`tab-appearance`、`tab-creation` 中涉及标签栏的部分）按 8.20 的退役规则重写或退役，验证日志列出对照。
 
