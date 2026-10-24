@@ -972,91 +972,6 @@
             <translation>下方</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="122"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>left</source>
-            <translation>左</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="122"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>right</source>
-            <translation>右</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="123"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>up</source>
-            <translation>上</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="123"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>down</source>
-            <translation>下</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="124"></location>
-            <location filename="../src/commands/window_commands.cpp" line="407"></location>
-            <source>above</source>
-            <translation>上</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
-            <location filename="../src/commands/window_commands.cpp" line="408"></location>
-            <source>below</source>
-            <translation>下</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
-            <location filename="../src/commands/window_commands.cpp" line="409"></location>
-            <source>to the left</source>
-            <translation>左</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
-            <location filename="../src/commands/window_commands.cpp" line="410"></location>
-            <source>to the right</source>
-            <translation>右</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
-            <location filename="../src/commands/window_commands.cpp" line="411"></location>
-            <source>top</source>
-            <translation>上</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
-            <location filename="../src/commands/window_commands.cpp" line="412"></location>
-            <source>bottom</source>
-            <translation>下</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="131"></location>
-            <source>Swap tab group %1</source>
-            <translation>向%1交换标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="134"></location>
-            <source>Merge into the tab group %1</source>
-            <translation>合并到%1方标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="137"></location>
-            <source>Move current tab group beyond the adjacent group %1</source>
-            <translation>将当前标签组移到%1侧相邻组的外侧</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="142"></location>
-            <source>Pin tab group to the %1 sidebar</source>
-            <translation>标签组固定到%1侧边栏</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="144"></location>
-            <source>Auto-hide tab group on the %1 sidebar</source>
-            <translation>标签组收纳到%1侧边栏</translation>
-        </message>
-        <message>
             <location filename="../src/commands/tab_group_commands.cpp" line="147"></location>
             <source>Swap with a selected tab group…</source>
             <translation>与指定标签组交换…</translation>
@@ -1312,23 +1227,6 @@
             <translation>返回所属完整工作窗口</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <source>Switch %1: %2</source>
-            <translation>切换%1：%2</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <location filename="../src/commands/window_commands.cpp" line="347"></location>
-            <source>next</source>
-            <translation>下一个</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <location filename="../src/commands/window_commands.cpp" line="347"></location>
-            <source>previous</source>
-            <translation>上一个</translation>
-        </message>
-        <message>
             <location filename="../src/commands/window_commands.cpp" line="277"></location>
             <source>Dock the floating window back into its owner</source>
             <translation>浮窗整体停靠回所属窗口</translation>
@@ -1352,21 +1250,6 @@
             <location filename="../src/commands/window_commands.cpp" line="323"></location>
             <source>Merge current pane into a selected tab…</source>
             <translation>将当前窗格并入指定标签…</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="348"></location>
-            <source>Move current tab to the %1 window</source>
-            <translation>将当前标签移到%1窗口</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="351"></location>
-            <source>Merge current pane into active tab of %1 window</source>
-            <translation>将当前窗格并入%1窗口的活动标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="354"></location>
-            <source>Merge current pane into %1 tab in this group</source>
-            <translation>将当前窗格并入本组%1标签</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="359"></location>
@@ -1399,59 +1282,9 @@
             <translation>整窗标签收纳到目标边栏</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="413"></location>
-            <source>Focus tab group %1</source>
-            <translation>聚焦%1侧标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="415"></location>
-            <source>Focus pane %1</source>
-            <translation>聚焦%1侧窗格</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="417"></location>
-            <source>Move current tab to the tab group %1</source>
-            <translation>将当前标签移到%1侧标签组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="420"></location>
-            <source>Merge current pane into the active tab of the group %1</source>
-            <translation>将当前窗格并入%1侧标签组的活动标签</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="423"></location>
-            <source>Swap with the pane %1</source>
-            <translation>与%1侧窗格交换位置</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="426"></location>
-            <source>Resize tab group %1</source>
-            <translation>向%1调整标签组边界</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="428"></location>
-            <source>Resize pane %1</source>
-            <translation>向%1调整窗格边界</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="430"></location>
-            <source>Create tab group %1</source>
-            <translation>新建%1侧标签组</translation>
-        </message>
-        <message>
             <location filename="../src/commands/window_commands.cpp" line="435"></location>
             <source> · New group</source>
             <translation> · 新组</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="446"></location>
-            <source>Split pane %1</source>
-            <translation>向%1拆分窗格</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="457"></location>
-            <source>Auto-hide current tab on the %1 sidebar</source>
-            <translation>当前标签收纳到%1边栏</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="461"></location>
@@ -3592,6 +3425,366 @@ Ctrl+Shift+P 打开命令面板</translation>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="162"></location>
             <source>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</source>
             <translation>钉住标签尺寸为“收缩”时每个钉住标签的宽度，标题放不下的部分被裁掉。</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group left</source>
+            <translation>向左交换标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group right</source>
+            <translation>向右交换标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group up</source>
+            <translation>向上交换标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group down</source>
+            <translation>向下交换标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group to the left</source>
+            <translation>合并到左方标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group to the right</source>
+            <translation>合并到右方标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group above</source>
+            <translation>合并到上方标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group below</source>
+            <translation>合并到下方标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group to the left</source>
+            <translation>将当前标签组移到左侧相邻组的外侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group to the right</source>
+            <translation>将当前标签组移到右侧相邻组的外侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group above</source>
+            <translation>将当前标签组移到上侧相邻组的外侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group below</source>
+            <translation>将当前标签组移到下侧相邻组的外侧</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the left sidebar</source>
+            <translation>标签组固定到左侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the right sidebar</source>
+            <translation>标签组固定到右侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the top sidebar</source>
+            <translation>标签组固定到上侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the bottom sidebar</source>
+            <translation>标签组固定到下侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the left sidebar</source>
+            <translation>标签组收纳到左侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the right sidebar</source>
+            <translation>标签组收纳到右侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the top sidebar</source>
+            <translation>标签组收纳到上侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the bottom sidebar</source>
+            <translation>标签组收纳到下侧边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="288"></location>
+            <source>Switch to next window in family</source>
+            <translation>切换所属窗口族：下一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="288"></location>
+            <source>Switch to previous window in family</source>
+            <translation>切换所属窗口族：上一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="289"></location>
+            <source>Switch to next window</source>
+            <translation>切换全部窗口：下一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="289"></location>
+            <source>Switch to previous window</source>
+            <translation>切换全部窗口：上一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="290"></location>
+            <source>Switch to next workbench window</source>
+            <translation>切换完整窗口：下一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="290"></location>
+            <source>Switch to previous workbench window</source>
+            <translation>切换完整窗口：上一个</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="369"></location>
+            <source>Move current tab to the next window</source>
+            <translation>将当前标签移到下一个窗口</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="369"></location>
+            <source>Move current tab to the previous window</source>
+            <translation>将当前标签移到上一个窗口</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="372"></location>
+            <source>Merge current pane into the active tab of the next window</source>
+            <translation>将当前窗格并入下一个窗口的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="372"></location>
+            <source>Merge current pane into the active tab of the previous window</source>
+            <translation>将当前窗格并入上一个窗口的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="375"></location>
+            <source>Merge current pane into the next tab in this group</source>
+            <translation>将当前窗格并入本组下一个标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="375"></location>
+            <source>Merge current pane into the previous tab in this group</source>
+            <translation>将当前窗格并入本组上一个标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group to the left</source>
+            <translation>聚焦左侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group to the right</source>
+            <translation>聚焦右侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group above</source>
+            <translation>聚焦上侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group below</source>
+            <translation>聚焦下侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane to the left</source>
+            <translation>聚焦左侧窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane to the right</source>
+            <translation>聚焦右侧窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane above</source>
+            <translation>聚焦上侧窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane below</source>
+            <translation>聚焦下侧窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group to the left</source>
+            <translation>将当前标签移到左侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group to the right</source>
+            <translation>将当前标签移到右侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group above</source>
+            <translation>将当前标签移到上侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group below</source>
+            <translation>将当前标签移到下侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group to the left</source>
+            <translation>将当前窗格并入左侧标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group to the right</source>
+            <translation>将当前窗格并入右侧标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group above</source>
+            <translation>将当前窗格并入上侧标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group below</source>
+            <translation>将当前窗格并入下侧标签组的活动标签</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane to the left</source>
+            <translation>与左侧窗格交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane to the right</source>
+            <translation>与右侧窗格交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane above</source>
+            <translation>与上侧窗格交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane below</source>
+            <translation>与下侧窗格交换位置</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group left</source>
+            <translation>向左调整标签组边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group right</source>
+            <translation>向右调整标签组边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group up</source>
+            <translation>向上调整标签组边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group down</source>
+            <translation>向下调整标签组边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane left</source>
+            <translation>向左调整窗格边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane right</source>
+            <translation>向右调整窗格边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane up</source>
+            <translation>向上调整窗格边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane down</source>
+            <translation>向下调整窗格边界</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group to the left</source>
+            <translation>新建左侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group to the right</source>
+            <translation>新建右侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group above</source>
+            <translation>新建上侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group below</source>
+            <translation>新建下侧标签组</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane left</source>
+            <translation>向左拆分窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane right</source>
+            <translation>向右拆分窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane up</source>
+            <translation>向上拆分窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane down</source>
+            <translation>向下拆分窗格</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the left sidebar</source>
+            <translation>当前标签收纳到左边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the right sidebar</source>
+            <translation>当前标签收纳到右边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the top sidebar</source>
+            <translation>当前标签收纳到上边栏</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the bottom sidebar</source>
+            <translation>当前标签收纳到下边栏</translation>
         </message>
     </context>
 </TS>

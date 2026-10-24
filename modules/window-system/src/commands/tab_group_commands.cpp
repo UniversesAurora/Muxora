@@ -118,30 +118,34 @@ void WindowManager::registerTabGroupCommands()
         return QPair{selected->data().toUuid(), choosePlacement
             ? Placement(selected->property("groupPlacement").toInt()) : Placement::Center};
     };
-    struct Direction { const char* id; const char* title; Placement direction; };
-    for (const auto& direction : {Direction{"left", QT_TRANSLATE_NOOP("WindowSystem", "left"), Placement::Left}, Direction{"right", QT_TRANSLATE_NOOP("WindowSystem", "right"), Placement::Right},
-        Direction{"up", QT_TRANSLATE_NOOP("WindowSystem", "up"), Placement::Top}, Direction{"down", QT_TRANSLATE_NOOP("WindowSystem", "down"), Placement::Bottom}}) {
-        const auto positionLabel = direction.direction == Placement::Top ? QCoreApplication::translate("WindowSystem", "above")
-            : direction.direction == Placement::Bottom ? QCoreApplication::translate("WindowSystem", "below")
-            : direction.direction == Placement::Left ? QCoreApplication::translate("WindowSystem", "to the left")
-            : QCoreApplication::translate("WindowSystem", "to the right");
-        const auto edgeLabel = direction.direction == Placement::Top ? QCoreApplication::translate("WindowSystem", "top")
-            : direction.direction == Placement::Bottom ? QCoreApplication::translate("WindowSystem", "bottom")
-            : QCoreApplication::translate("WindowSystem", direction.title);
-        add(QStringLiteral("group.swap.") + direction.id, QCoreApplication::translate("WindowSystem", "Swap tab group %1").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"layout", "swapGroups"},
+    // Whole titles per direction, ordered left, right, up, down; joining
+    // translated fragments would fix one language's word order.
+    struct GroupTitles { const char* swap[4]; const char* merge[4]; const char* move[4]; const char* pin[4]; const char* hide[4]; };
+    static constexpr GroupTitles groupTitles{
+        {QT_TRANSLATE_NOOP("WindowSystem", "Swap tab group left"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab group right"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab group up"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab group down")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Merge into the tab group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Merge into the tab group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Merge into the tab group above"), QT_TRANSLATE_NOOP("WindowSystem", "Merge into the tab group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Move current tab group beyond the adjacent group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab group beyond the adjacent group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab group beyond the adjacent group above"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab group beyond the adjacent group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Pin tab group to the left sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Pin tab group to the right sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Pin tab group to the top sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Pin tab group to the bottom sidebar")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide tab group on the left sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide tab group on the right sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide tab group on the top sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide tab group on the bottom sidebar")}};
+    struct Direction { const char* id; Placement direction; };
+    const Direction directions[] = {{"left", Placement::Left}, {"right", Placement::Right}, {"up", Placement::Top}, {"down", Placement::Bottom}};
+    for (int index = 0; index < 4; ++index) {
+        const auto& direction = directions[index];
+        const auto title = [index](const char* const (&titles)[4]) { return QCoreApplication::translate("WindowSystem", titles[index]); };
+        add(QStringLiteral("group.swap.") + direction.id, title(groupTitles.swap), {"layout", "swapGroups"},
             [this, direction](const CommandContext& c) { return swapGroupDirection(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction).isNull(); });
-        add(QStringLiteral("group.merge.") + direction.id, QCoreApplication::translate("WindowSystem", "Merge into the tab group %1").arg(positionLabel), {"layout", "mergeGroups"},
+        add(QStringLiteral("group.merge.") + direction.id, title(groupTitles.merge), {"layout", "mergeGroups"},
             [this, direction](const CommandContext& c) { return mergeGroupDirection(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction).isNull(); });
-        add(QStringLiteral("group.move.") + direction.id, QCoreApplication::translate("WindowSystem", "Move current tab group beyond the adjacent group %1").arg(positionLabel), {"layout", "moveGroups"},
+        add(QStringLiteral("group.move.") + direction.id, title(groupTitles.move), {"layout", "moveGroups"},
             [this, direction](const CommandContext& c) { return moveGroupToAdjacentGroup(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction, true).isNull(); });
         const Edge edge = direction.direction == Placement::Left ? Edge::Left : direction.direction == Placement::Right ? Edge::Right
             : direction.direction == Placement::Top ? Edge::Top : Edge::Bottom;
-        add(QStringLiteral("group.moveEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Pin tab group to the %1 sidebar").arg(edgeLabel), {"layout", "moveGroups"},
+        add(QStringLiteral("group.moveEdge.") + direction.id, title(groupTitles.pin), {"layout", "moveGroups"},
             [this, edge](const CommandContext& c) { return moveGroupToEdge(c.group, c.window, edge, true); }, visible);
-        add(QStringLiteral("group.hideEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Auto-hide tab group on the %1 sidebar").arg(edgeLabel), {"layout", "moveGroups"},
+        add(QStringLiteral("group.hideEdge.") + direction.id, title(groupTitles.hide), {"layout", "moveGroups"},
             [this, edge](const CommandContext& c) { return moveGroupToEdge(c.group, c.window, edge, false); }, visible);
     }
     add("group.swap", QCoreApplication::translate("WindowSystem", "Swap with a selected tab group…"), {"layout", "swapGroups"}, [this, chooseTarget](const CommandContext& c) {

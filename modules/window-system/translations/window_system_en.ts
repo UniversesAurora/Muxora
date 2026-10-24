@@ -975,91 +975,6 @@
             <translation>Below</translation>
         </message>
         <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="122"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>left</source>
-            <translation>left</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="122"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>right</source>
-            <translation>right</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="123"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>up</source>
-            <translation>up</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="123"></location>
-            <location filename="../src/commands/window_commands.cpp" line="406"></location>
-            <source>down</source>
-            <translation>down</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="124"></location>
-            <location filename="../src/commands/window_commands.cpp" line="407"></location>
-            <source>above</source>
-            <translation>above</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
-            <location filename="../src/commands/window_commands.cpp" line="408"></location>
-            <source>below</source>
-            <translation>below</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
-            <location filename="../src/commands/window_commands.cpp" line="409"></location>
-            <source>to the left</source>
-            <translation>to the left</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
-            <location filename="../src/commands/window_commands.cpp" line="410"></location>
-            <source>to the right</source>
-            <translation>to the right</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
-            <location filename="../src/commands/window_commands.cpp" line="411"></location>
-            <source>top</source>
-            <translation>top</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
-            <location filename="../src/commands/window_commands.cpp" line="412"></location>
-            <source>bottom</source>
-            <translation>bottom</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="131"></location>
-            <source>Swap tab group %1</source>
-            <translation>Swap tab group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="134"></location>
-            <source>Merge into the tab group %1</source>
-            <translation>Merge into the tab group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="137"></location>
-            <source>Move current tab group beyond the adjacent group %1</source>
-            <translation>Move current tab group beyond the adjacent group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="142"></location>
-            <source>Pin tab group to the %1 sidebar</source>
-            <translation>Pin tab group to the %1 sidebar</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/tab_group_commands.cpp" line="144"></location>
-            <source>Auto-hide tab group on the %1 sidebar</source>
-            <translation>Auto-hide tab group on the %1 sidebar</translation>
-        </message>
-        <message>
             <location filename="../src/commands/tab_group_commands.cpp" line="147"></location>
             <source>Swap with a selected tab group…</source>
             <translation>Swap with a selected tab group…</translation>
@@ -1315,23 +1230,6 @@
             <translation>Return to owner workbench</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <source>Switch %1: %2</source>
-            <translation>Switch %1: %2</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <location filename="../src/commands/window_commands.cpp" line="347"></location>
-            <source>next</source>
-            <translation>next</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="274"></location>
-            <location filename="../src/commands/window_commands.cpp" line="347"></location>
-            <source>previous</source>
-            <translation>previous</translation>
-        </message>
-        <message>
             <location filename="../src/commands/window_commands.cpp" line="277"></location>
             <source>Dock the floating window back into its owner</source>
             <translation>Dock the floating window back into its owner</translation>
@@ -1355,21 +1253,6 @@
             <location filename="../src/commands/window_commands.cpp" line="323"></location>
             <source>Merge current pane into a selected tab…</source>
             <translation>Merge current pane into a selected tab…</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="348"></location>
-            <source>Move current tab to the %1 window</source>
-            <translation>Move current tab to the %1 window</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="351"></location>
-            <source>Merge current pane into active tab of %1 window</source>
-            <translation>Merge current pane into active tab of %1 window</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="354"></location>
-            <source>Merge current pane into %1 tab in this group</source>
-            <translation>Merge current pane into %1 tab in this group</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="359"></location>
@@ -1402,59 +1285,9 @@
             <translation>Auto-hide all window tabs in target sidebar</translation>
         </message>
         <message>
-            <location filename="../src/commands/window_commands.cpp" line="413"></location>
-            <source>Focus tab group %1</source>
-            <translation>Focus tab group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="415"></location>
-            <source>Focus pane %1</source>
-            <translation>Focus pane %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="417"></location>
-            <source>Move current tab to the tab group %1</source>
-            <translation>Move current tab to the tab group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="420"></location>
-            <source>Merge current pane into the active tab of the group %1</source>
-            <translation>Merge current pane into the active tab of the group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="423"></location>
-            <source>Swap with the pane %1</source>
-            <translation>Swap with the pane %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="426"></location>
-            <source>Resize tab group %1</source>
-            <translation>Resize tab group %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="428"></location>
-            <source>Resize pane %1</source>
-            <translation>Resize pane %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="430"></location>
-            <source>Create tab group %1</source>
-            <translation>Create tab group %1</translation>
-        </message>
-        <message>
             <location filename="../src/commands/window_commands.cpp" line="435"></location>
             <source> · New group</source>
             <translation> · New group</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="446"></location>
-            <source>Split pane %1</source>
-            <translation>Split pane %1</translation>
-        </message>
-        <message>
-            <location filename="../src/commands/window_commands.cpp" line="457"></location>
-            <source>Auto-hide current tab on the %1 sidebar</source>
-            <translation>Auto-hide current tab on the %1 sidebar</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="461"></location>
@@ -3599,6 +3432,366 @@ Ctrl+Shift+P opens the command palette</translation>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="162"></location>
             <source>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</source>
             <translation>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group left</source>
+            <translation>Swap tab group left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group right</source>
+            <translation>Swap tab group right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group up</source>
+            <translation>Swap tab group up</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>
+            <source>Swap tab group down</source>
+            <translation>Swap tab group down</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group to the left</source>
+            <translation>Merge into the tab group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group to the right</source>
+            <translation>Merge into the tab group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group above</source>
+            <translation>Merge into the tab group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="126"></location>
+            <source>Merge into the tab group below</source>
+            <translation>Merge into the tab group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group to the left</source>
+            <translation>Move current tab group beyond the adjacent group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group to the right</source>
+            <translation>Move current tab group beyond the adjacent group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group above</source>
+            <translation>Move current tab group beyond the adjacent group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="127"></location>
+            <source>Move current tab group beyond the adjacent group below</source>
+            <translation>Move current tab group beyond the adjacent group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the left sidebar</source>
+            <translation>Pin tab group to the left sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the right sidebar</source>
+            <translation>Pin tab group to the right sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the top sidebar</source>
+            <translation>Pin tab group to the top sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="128"></location>
+            <source>Pin tab group to the bottom sidebar</source>
+            <translation>Pin tab group to the bottom sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the left sidebar</source>
+            <translation>Auto-hide tab group on the left sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the right sidebar</source>
+            <translation>Auto-hide tab group on the right sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the top sidebar</source>
+            <translation>Auto-hide tab group on the top sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/tab_group_commands.cpp" line="129"></location>
+            <source>Auto-hide tab group on the bottom sidebar</source>
+            <translation>Auto-hide tab group on the bottom sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="288"></location>
+            <source>Switch to next window in family</source>
+            <translation>Switch to next window in family</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="288"></location>
+            <source>Switch to previous window in family</source>
+            <translation>Switch to previous window in family</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="289"></location>
+            <source>Switch to next window</source>
+            <translation>Switch to next window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="289"></location>
+            <source>Switch to previous window</source>
+            <translation>Switch to previous window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="290"></location>
+            <source>Switch to next workbench window</source>
+            <translation>Switch to next workbench window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="290"></location>
+            <source>Switch to previous workbench window</source>
+            <translation>Switch to previous workbench window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="369"></location>
+            <source>Move current tab to the next window</source>
+            <translation>Move current tab to the next window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="369"></location>
+            <source>Move current tab to the previous window</source>
+            <translation>Move current tab to the previous window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="372"></location>
+            <source>Merge current pane into the active tab of the next window</source>
+            <translation>Merge current pane into the active tab of the next window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="372"></location>
+            <source>Merge current pane into the active tab of the previous window</source>
+            <translation>Merge current pane into the active tab of the previous window</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="375"></location>
+            <source>Merge current pane into the next tab in this group</source>
+            <translation>Merge current pane into the next tab in this group</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="375"></location>
+            <source>Merge current pane into the previous tab in this group</source>
+            <translation>Merge current pane into the previous tab in this group</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group to the left</source>
+            <translation>Focus tab group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group to the right</source>
+            <translation>Focus tab group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group above</source>
+            <translation>Focus tab group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="429"></location>
+            <source>Focus tab group below</source>
+            <translation>Focus tab group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane to the left</source>
+            <translation>Focus pane to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane to the right</source>
+            <translation>Focus pane to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane above</source>
+            <translation>Focus pane above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="430"></location>
+            <source>Focus pane below</source>
+            <translation>Focus pane below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group to the left</source>
+            <translation>Move current tab to the tab group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group to the right</source>
+            <translation>Move current tab to the tab group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group above</source>
+            <translation>Move current tab to the tab group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="431"></location>
+            <source>Move current tab to the tab group below</source>
+            <translation>Move current tab to the tab group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group to the left</source>
+            <translation>Merge current pane into the active tab of the group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group to the right</source>
+            <translation>Merge current pane into the active tab of the group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group above</source>
+            <translation>Merge current pane into the active tab of the group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="432"></location>
+            <source>Merge current pane into the active tab of the group below</source>
+            <translation>Merge current pane into the active tab of the group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane to the left</source>
+            <translation>Swap with the pane to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane to the right</source>
+            <translation>Swap with the pane to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane above</source>
+            <translation>Swap with the pane above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="433"></location>
+            <source>Swap with the pane below</source>
+            <translation>Swap with the pane below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group left</source>
+            <translation>Resize tab group left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group right</source>
+            <translation>Resize tab group right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group up</source>
+            <translation>Resize tab group up</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="434"></location>
+            <source>Resize tab group down</source>
+            <translation>Resize tab group down</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane left</source>
+            <translation>Resize pane left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane right</source>
+            <translation>Resize pane right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane up</source>
+            <translation>Resize pane up</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="435"></location>
+            <source>Resize pane down</source>
+            <translation>Resize pane down</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group to the left</source>
+            <translation>Create tab group to the left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group to the right</source>
+            <translation>Create tab group to the right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group above</source>
+            <translation>Create tab group above</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="436"></location>
+            <source>Create tab group below</source>
+            <translation>Create tab group below</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane left</source>
+            <translation>Split pane left</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane right</source>
+            <translation>Split pane right</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane up</source>
+            <translation>Split pane up</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="437"></location>
+            <source>Split pane down</source>
+            <translation>Split pane down</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the left sidebar</source>
+            <translation>Auto-hide current tab on the left sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the right sidebar</source>
+            <translation>Auto-hide current tab on the right sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the top sidebar</source>
+            <translation>Auto-hide current tab on the top sidebar</translation>
+        </message>
+        <message>
+            <location filename="../src/commands/window_commands.cpp" line="438"></location>
+            <source>Auto-hide current tab on the bottom sidebar</source>
+            <translation>Auto-hide current tab on the bottom sidebar</translation>
         </message>
     </context>
 </TS>

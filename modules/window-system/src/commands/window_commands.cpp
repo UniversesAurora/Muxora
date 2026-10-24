@@ -283,14 +283,18 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Floating; });
     add("window.focusOwner", QCoreApplication::translate("WindowSystem", "Return to owner workbench"), "window", QKeySequence("Ctrl+Alt+Home"),
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); if (!w) return false; const auto root = d->model.familyRoot(w->familyId); showWindow(root); activateTab(context(root).tab); return true; }, hasWindow);
-    const QVector<QPair<QString, QString>> scopes = {{"family", QCoreApplication::translate("WindowSystem", "Window family")}, {"all", QCoreApplication::translate("WindowSystem", "All windows")}, {"workbenches", QCoreApplication::translate("WindowSystem", "Workbench windows")}};
+    struct CycleScope { QString id; const char* next; const char* previous; };
+    const CycleScope scopes[] = {
+        {"family", QT_TRANSLATE_NOOP("WindowSystem", "Switch to next window in family"), QT_TRANSLATE_NOOP("WindowSystem", "Switch to previous window in family")},
+        {"all", QT_TRANSLATE_NOOP("WindowSystem", "Switch to next window"), QT_TRANSLATE_NOOP("WindowSystem", "Switch to previous window")},
+        {"workbenches", QT_TRANSLATE_NOOP("WindowSystem", "Switch to next workbench window"), QT_TRANSLATE_NOOP("WindowSystem", "Switch to previous workbench window")}};
     for (const auto& scope : scopes) for (const bool forward : {true, false}) {
         QString key;
-        if (scope.first == "family") key = forward ? "Ctrl+Alt+PgDown" : "Ctrl+Alt+PgUp";
-        if (scope.first == "all") key = forward ? "Ctrl+Alt+Shift+PgDown" : "Ctrl+Alt+Shift+PgUp";
-        const auto id = QStringLiteral("window.focus%1.%2").arg(forward ? "Next" : "Previous", scope.first);
-        add(id, QCoreApplication::translate("WindowSystem", "Switch %1: %2").arg(scope.second, forward ? QCoreApplication::translate("WindowSystem", "next") : QCoreApplication::translate("WindowSystem", "previous")), "window", QKeySequence(key),
-            [this, forward, scope](const CommandContext&) { focusWindowCycle(forward, scope.first); return true; });
+        if (scope.id == "family") key = forward ? "Ctrl+Alt+PgDown" : "Ctrl+Alt+PgUp";
+        if (scope.id == "all") key = forward ? "Ctrl+Alt+Shift+PgDown" : "Ctrl+Alt+Shift+PgUp";
+        const auto id = QStringLiteral("window.focus%1.%2").arg(forward ? "Next" : "Previous", scope.id);
+        add(id, QCoreApplication::translate("WindowSystem", forward ? scope.next : scope.previous), "window", QKeySequence(key),
+            [this, forward, scope](const CommandContext&) { focusWindowCycle(forward, scope.id); return true; });
     }
     add("window.redock", QCoreApplication::translate("WindowSystem", "Dock the floating window back into its owner"), "window", {},
         [this](const CommandContext& c) {
@@ -362,14 +366,13 @@ void WindowManager::registerWindowCommands()
         }, hasPane);
     for (const bool forward : {false, true}) {
         const auto suffix = forward ? QStringLiteral("next") : QStringLiteral("previous");
-        const auto label = forward ? QCoreApplication::translate("WindowSystem", "next") : QCoreApplication::translate("WindowSystem", "previous");
-        add("workspace.moveTabToWindow." + suffix, QCoreApplication::translate("WindowSystem", "Move current tab to the %1 window").arg(label), "window", {},
+        add("workspace.moveTabToWindow." + suffix, forward ? QCoreApplication::translate("WindowSystem", "Move current tab to the next window") : QCoreApplication::translate("WindowSystem", "Move current tab to the previous window"), "window", {},
             [this, forward](const CommandContext& c) { return moveTabToWindowCycle(c.tab, forward); },
             [this](const CommandContext& c) { return d->model.tab(c.tab) && d->model.windowOrder().size() > 1; });
-        add("pane.moveToWindow." + suffix, QCoreApplication::translate("WindowSystem", "Merge current pane into active tab of %1 window").arg(label), "window", {},
+        add("pane.moveToWindow." + suffix, forward ? QCoreApplication::translate("WindowSystem", "Merge current pane into the active tab of the next window") : QCoreApplication::translate("WindowSystem", "Merge current pane into the active tab of the previous window"), "window", {},
             [this, forward](const CommandContext& c) { return movePaneToWindowCycle(c.tab, c.pane, forward); },
             [this, hasPane](const CommandContext& c) { return hasPane(c) && d->model.windowOrder().size() > 1; });
-        add("pane.moveToTab." + suffix, QCoreApplication::translate("WindowSystem", "Merge current pane into %1 tab in this group").arg(label), "layout",
+        add("pane.moveToTab." + suffix, forward ? QCoreApplication::translate("WindowSystem", "Merge current pane into the next tab in this group") : QCoreApplication::translate("WindowSystem", "Merge current pane into the previous tab in this group"), "layout",
             QKeySequence(forward ? "Alt+PgDown" : "Alt+PgUp"),
             [this, forward](const CommandContext& c) { return movePaneToAdjacentTab(c.tab, c.pane, forward); },
             [this, hasPane](const CommandContext& c) { const auto* group = d->model.group(c.group); return hasPane(c) && group && group->tabs.size() > 1; });
@@ -419,33 +422,42 @@ void WindowManager::registerWindowCommands()
             return moveAllTabsToEdge(source, target, static_cast<Edge>(c.args.value("edge", 0).toInt()), c.args.value("pinned").toBool());
         }, hasWindow);
     const QVector<QPair<QString, Placement>> directions = {{"left", Placement::Left}, {"right", Placement::Right}, {"up", Placement::Top}, {"down", Placement::Bottom}};
-    for (const auto& direction : directions) {
+    // Whole titles per direction, ordered left, right, up, down; joining
+    // translated fragments would fix one language's word order.
+    struct DirectionTitles { const char* focusGroup[4]; const char* focusPane[4]; const char* moveTab[4]; const char* movePane[4]; const char* swapPane[4]; const char* resizeGroup[4]; const char* resizePane[4]; const char* createGroup[4]; const char* splitPane[4]; const char* hideTab[4]; };
+    static constexpr DirectionTitles directionTitles{
+        {QT_TRANSLATE_NOOP("WindowSystem", "Focus tab group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Focus tab group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Focus tab group above"), QT_TRANSLATE_NOOP("WindowSystem", "Focus tab group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Focus pane to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Focus pane to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Focus pane above"), QT_TRANSLATE_NOOP("WindowSystem", "Focus pane below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Move current tab to the tab group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab to the tab group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab to the tab group above"), QT_TRANSLATE_NOOP("WindowSystem", "Move current tab to the tab group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Merge current pane into the active tab of the group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Merge current pane into the active tab of the group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Merge current pane into the active tab of the group above"), QT_TRANSLATE_NOOP("WindowSystem", "Merge current pane into the active tab of the group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Swap with the pane to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Swap with the pane to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Swap with the pane above"), QT_TRANSLATE_NOOP("WindowSystem", "Swap with the pane below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Resize tab group left"), QT_TRANSLATE_NOOP("WindowSystem", "Resize tab group right"), QT_TRANSLATE_NOOP("WindowSystem", "Resize tab group up"), QT_TRANSLATE_NOOP("WindowSystem", "Resize tab group down")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Resize pane left"), QT_TRANSLATE_NOOP("WindowSystem", "Resize pane right"), QT_TRANSLATE_NOOP("WindowSystem", "Resize pane up"), QT_TRANSLATE_NOOP("WindowSystem", "Resize pane down")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Create tab group to the left"), QT_TRANSLATE_NOOP("WindowSystem", "Create tab group to the right"), QT_TRANSLATE_NOOP("WindowSystem", "Create tab group above"), QT_TRANSLATE_NOOP("WindowSystem", "Create tab group below")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Split pane left"), QT_TRANSLATE_NOOP("WindowSystem", "Split pane right"), QT_TRANSLATE_NOOP("WindowSystem", "Split pane up"), QT_TRANSLATE_NOOP("WindowSystem", "Split pane down")},
+        {QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide current tab on the left sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide current tab on the right sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide current tab on the top sidebar"), QT_TRANSLATE_NOOP("WindowSystem", "Auto-hide current tab on the bottom sidebar")}};
+    for (int index = 0; index < directions.size(); ++index) {
+        const auto& direction = directions[index];
+        const auto title = [index](const char* const (&titles)[4]) { return QCoreApplication::translate("WindowSystem", titles[index]); };
         const auto keyName = direction.first == "up" ? "Up" : direction.first == "down" ? "Down" : direction.first == "left" ? "Left" : "Right";
-        const auto label = direction.first == "up" ? QCoreApplication::translate("WindowSystem", "up") : direction.first == "down" ? QCoreApplication::translate("WindowSystem", "down") : direction.first == "left" ? QCoreApplication::translate("WindowSystem", "left") : QCoreApplication::translate("WindowSystem", "right");
-        const auto positionLabel = direction.first == "up" ? QCoreApplication::translate("WindowSystem", "above")
-            : direction.first == "down" ? QCoreApplication::translate("WindowSystem", "below")
-            : direction.first == "left" ? QCoreApplication::translate("WindowSystem", "to the left")
-            : QCoreApplication::translate("WindowSystem", "to the right");
-        const auto edgeLabel = direction.first == "up" ? QCoreApplication::translate("WindowSystem", "top")
-            : direction.first == "down" ? QCoreApplication::translate("WindowSystem", "bottom") : label;
-        add("workspace.focusGroup." + direction.first, QCoreApplication::translate("WindowSystem", "Focus tab group %1").arg(positionLabel), "layout", QKeySequence("Ctrl+Alt+" + QString(keyName)),
+        add("workspace.focusGroup." + direction.first, title(directionTitles.focusGroup), "layout", QKeySequence("Ctrl+Alt+" + QString(keyName)),
             [this, direction](const CommandContext& c) { return navigate(direction.second, false, c); });
-        add("pane.focus." + direction.first, QCoreApplication::translate("WindowSystem", "Focus pane %1").arg(positionLabel), "layout", QKeySequence("Alt+" + QString(keyName)),
+        add("pane.focus." + direction.first, title(directionTitles.focusPane), "layout", QKeySequence("Alt+" + QString(keyName)),
             [this, direction](const CommandContext& c) { return navigate(direction.second, true, c); });
-        add("workspace.moveTabToGroup." + direction.first, QCoreApplication::translate("WindowSystem", "Move current tab to the tab group %1").arg(positionLabel), "layout", {},
+        add("workspace.moveTabToGroup." + direction.first, title(directionTitles.moveTab), "layout", {},
             [this, direction](const CommandContext& c) { return moveTabToAdjacentGroup(c.tab, direction.second); },
             [this, direction](const CommandContext& c) { return !adjacentGroup(c.tab, direction.second).isNull(); });
-        add("pane.moveToGroup." + direction.first, QCoreApplication::translate("WindowSystem", "Merge current pane into the active tab of the group %1").arg(positionLabel), "layout", {},
+        add("pane.moveToGroup." + direction.first, title(directionTitles.movePane), "layout", {},
             [this, direction](const CommandContext& c) { return movePaneToAdjacentGroup(c.tab, c.pane, direction.second); },
             [this, direction, hasPane](const CommandContext& c) { return hasPane(c) && !adjacentGroup(c.tab, direction.second).isNull(); });
-        add("pane.swap." + direction.first, QCoreApplication::translate("WindowSystem", "Swap with the pane %1").arg(positionLabel), "layout", {},
+        add("pane.swap." + direction.first, title(directionTitles.swapPane), "layout", {},
             [this, direction](const CommandContext& c) { return swapPaneDirection(c.tab, c.pane, direction.second); },
             [this, direction](const CommandContext& c) { return !adjacentPane(c.tab, c.pane, direction.second).isNull(); });
-        add("workspace.resizeGroup." + direction.first, QCoreApplication::translate("WindowSystem", "Resize tab group %1").arg(label), "layout", QKeySequence("Ctrl+Alt+Shift+" + QString(keyName)),
+        add("workspace.resizeGroup." + direction.first, title(directionTitles.resizeGroup), "layout", QKeySequence("Ctrl+Alt+Shift+" + QString(keyName)),
             [this, direction](const CommandContext& c) { resizeActive(direction.second, false, c); return true; });
-        add("pane.resize." + direction.first, QCoreApplication::translate("WindowSystem", "Resize pane %1").arg(label), "layout", QKeySequence("Alt+Shift+" + QString(keyName)),
+        add("pane.resize." + direction.first, title(directionTitles.resizePane), "layout", QKeySequence("Alt+Shift+" + QString(keyName)),
             [this, direction](const CommandContext& c) { resizeActive(direction.second, true, c); return true; });
-        add("workspace.splitGroup." + direction.first, QCoreApplication::translate("WindowSystem", "Create tab group %1").arg(positionLabel), "layout", {},
+        add("workspace.splitGroup." + direction.first, title(directionTitles.createGroup), "layout", {},
             [this, direction](const CommandContext& c) {
                 if (!d->model.tab(c.tab)) return false;
                 const auto* target = d->model.group(c.group);
@@ -461,7 +473,7 @@ void WindowManager::registerWindowCommands()
                 if (tab.isNull()) { delete content.data(); return false; }
                 return !self.isNull();
             }, [this](const CommandContext& c) { const auto* group = d->model.group(c.group); return d->model.tab(c.tab) && group && group->location != GroupLocation::AutoHide; });
-        add("pane.split." + direction.first, QCoreApplication::translate("WindowSystem", "Split pane %1").arg(label), "layout",
+        add("pane.split." + direction.first, title(directionTitles.splitPane), "layout",
             direction.second == Placement::Right ? QKeySequence("Ctrl+Shift+E") : direction.second == Placement::Bottom ? QKeySequence("Ctrl+Shift+O") : QKeySequence{},
             [this, direction](const CommandContext& c) {
                 const QPointer<WindowManager> self(this);
@@ -472,7 +484,7 @@ void WindowManager::registerWindowCommands()
                 if (pane.isNull()) { delete content.data(); return false; } return !self.isNull();
             }, hasTab);
         const auto edge = direction.second == Placement::Left ? Edge::Left : direction.second == Placement::Right ? Edge::Right : direction.second == Placement::Top ? Edge::Top : Edge::Bottom;
-        add("workspace.hideToEdge." + direction.first, QCoreApplication::translate("WindowSystem", "Auto-hide current tab on the %1 sidebar").arg(edgeLabel), "layout", {},
+        add("workspace.hideToEdge." + direction.first, title(directionTitles.hideTab), "layout", {},
             [this, edge](const CommandContext& c) { return moveTabToEdge(c.tab, edge); }, hasTab);
     }
     for (const bool next : {true, false}) add(next ? "workspace.nextTab" : "workspace.previousTab",
