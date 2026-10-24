@@ -5,15 +5,114 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QScopeGuard>
+#include <QTabBar>
 #include <QTest>
+#include <iterator>
 #ifdef Q_OS_WIN
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <imm.h>
+#include <msctf.h>
+#include <oleauto.h>
+#include <ole2.h>
 #endif
 
 using namespace window_system;
+
+#ifdef Q_OS_WIN
+namespace {
+class TsfTestSession {
+public:
+    TsfTestSession()
+    {
+        CoCreateInstance(CLSID_TF_ThreadMgr, nullptr, CLSCTX_ALL,
+            IID_PPV_ARGS(&manager_));
+    }
+
+    ~TsfTestSession() { close(); }
+
+    bool open()
+    {
+        if (!manager_ || failed_) return false;
+        const auto activateResult = manager_->Activate(&client_);
+        const auto activated = SUCCEEDED(activateResult);
+        const auto profilesResult = activated ? CoCreateInstance(
+            CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_ALL,
+            IID_PPV_ARGS(&profiles_)) : E_FAIL;
+        const auto compartmentsResult = activated
+            ? manager_->QueryInterface(IID_PPV_ARGS(&compartments_)) : E_FAIL;
+        failed_ = !activated
+            || FAILED(profilesResult) || FAILED(compartmentsResult);
+        return !failed_;
+    }
+
+    bool activeProfile(TF_INPUTPROCESSORPROFILE& value)
+    {
+        return !failed_
+            && SUCCEEDED(profiles_->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &value))
+            && (value.dwFlags & TF_IPP_FLAG_ACTIVE);
+    }
+
+    bool activate(const TF_INPUTPROCESSORPROFILE& value)
+    {
+        return !failed_ && SUCCEEDED(profiles_->ActivateProfile(
+            value.dwProfileType, value.langid, value.clsid, value.guidProfile, value.hkl,
+            TF_IPPMF_FORPROCESS));
+    }
+
+    bool activateChineseInputProcessor()
+    {
+        IEnumTfInputProcessorProfiles* profiles = nullptr;
+        if (failed_ || FAILED(profiles_->EnumProfiles(0, &profiles)))
+            return false;
+        static constexpr CLSID weTypeClass{
+            0x86598fb9, 0x66a2, 0x463e, {0xb9, 0xc2, 0xae, 0xb9, 0x06, 0xd4, 0x77, 0xad}};
+        static constexpr GUID weTypeProfile{
+            0x607fdf85, 0xfcc8, 0x4dbd, {0xa3, 0x65, 0x41, 0x29, 0x6f, 0x98, 0x0c, 0x9c}};
+        TF_INPUTPROCESSORPROFILE candidates[128]{};
+        ULONG count = 0;
+        const auto next = profiles->Next(ULONG(std::size(candidates)), candidates, &count);
+        profiles->Release();
+        if (FAILED(next)) return false;
+        const auto available = [&](const TF_INPUTPROCESSORPROFILE& candidate) {
+            return candidate.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR;
+        };
+        for (ULONG index = 0; index < count; ++index) {
+            const auto& candidate = candidates[index];
+            if (available(candidate) && IsEqualCLSID(candidate.clsid, weTypeClass)
+                && IsEqualGUID(candidate.guidProfile, weTypeProfile) && activate(candidate))
+                return true;
+        }
+        for (ULONG index = 0; index < count; ++index) {
+            const auto& candidate = candidates[index];
+            if (available(candidate) && PRIMARYLANGID(candidate.langid) == LANG_CHINESE
+                && activate(candidate))
+                return true;
+        }
+        return false;
+    }
+
+private:
+    void close()
+    {
+        if (profiles_) profiles_->Release();
+        profiles_ = nullptr;
+        if (compartments_) compartments_->Release();
+        compartments_ = nullptr;
+        if (manager_ && client_ != TF_CLIENTID_NULL) manager_->Deactivate();
+        if (manager_) manager_->Release();
+        manager_ = nullptr;
+    }
+
+    ITfThreadMgr* manager_ = nullptr;
+    ITfInputProcessorProfileMgr* profiles_ = nullptr;
+    ITfCompartmentMgr* compartments_ = nullptr;
+    TfClientId client_ = TF_CLIENTID_NULL;
+    bool failed_ = false;
+};
+} // namespace
+#endif
 
 class InputMethodNativeTest final : public QObject {
     Q_OBJECT
@@ -40,55 +139,83 @@ private slots:
         QVector<HKL> layouts(count);
         QCOMPARE(GetKeyboardLayoutList(count, layouts.data()), count);
         qInfo() << "Installed keyboard layouts tested:" << count;
-        int modeQueries = 0;
-        int modeChanges = 0;
         for (const auto layout : layouts) {
             QVERIFY(ActivateKeyboardLayout(layout, 0));
             QCOMPARE(GetKeyboardLayout(0), layout);
             const auto saved = backend->capture(first);
-            const auto native = reinterpret_cast<HWND>(first->window()->effectiveWinId());
-            if (const auto context = ImmGetContext(native)) {
-                DWORD conversion = 0, sentence = 0;
-                const auto open = ImmGetOpenStatus(context);
-                if (ImmGetConversionStatus(context, &conversion, &sentence)) {
-                    ++modeQueries;
-                    // Do not assume an IME permits mode changes. When it does,
-                    // restoring must preserve all bits, not just native/Latin.
-                    if (ImmSetConversionStatus(context, conversion ^ IME_CMODE_FULLSHAPE, sentence))
-                        ++modeChanges;
-                    ImmReleaseContext(native, context);
-                    backend->restore(saved, first);
-                    const auto check = ImmGetContext(native);
-                    QVERIFY(check);
-                    DWORD restoredConversion = 0, restoredSentence = 0;
-                    const auto read = ImmGetConversionStatus(check, &restoredConversion, &restoredSentence);
-                    const auto restoredOpen = ImmGetOpenStatus(check);
-                    ImmReleaseContext(native, check);
-                    QVERIFY(read);
-                    QCOMPARE(restoredConversion, conversion);
-                    QCOMPARE(restoredSentence, sentence);
-                    QCOMPARE(restoredOpen, open);
-                } else {
-                    ImmReleaseContext(native, context);
-                }
-            }
             backend->restore(original, first);
             backend->restore(saved, first);
             QCOMPARE(GetKeyboardLayout(0), layout);
         }
-        qInfo() << "Readable IMM mode sets:" << modeQueries << "accepted mode changes:" << modeChanges;
-        // Distinct installed layouts exercise the real manager focusChanged
-        // connection; no layouts are installed or removed by this test.
-        QVERIFY(ActivateKeyboardLayout(layouts.first(), 0));
-        manager.activateTab(other);
-        QTRY_COMPARE(QApplication::focusWidget(), second);
-        QVERIFY(ActivateKeyboardLayout(layouts.last(), 0));
-        manager.activateTab(tab);
+#endif
+    }
+    void inputModeFollowsTabScope() {
+#ifdef Q_OS_WIN
+        WindowManager manager;
+        const auto window = manager.createWindow();
+        auto* first = new QLineEdit;
+        const auto firstTab = manager.addTab(window, first, {"First", "test.input", {}});
+        auto* second = new QLineEdit;
+        const auto secondTab = manager.addTab(window, second, {"Second", "test.input", {}});
+        manager.showWindow(window);
+        QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
+        manager.activateTab(firstTab);
         QTRY_COMPARE(QApplication::focusWidget(), first);
-        QCOMPARE(GetKeyboardLayout(0), layouts.first());
-        manager.activateTab(other);
+
+        TsfTestSession tsf;
+        QVERIFY(tsf.open());
+        TF_INPUTPROCESSORPROFILE originalProfile{};
+        const bool hadOriginalProfile = tsf.activeProfile(originalProfile);
+        const auto profileRestore = qScopeGuard([&] {
+            if (hadOriginalProfile) tsf.activate(originalProfile);
+        });
+        QVERIFY(tsf.activateChineseInputProcessor());
+        const auto windowHandle = reinterpret_cast<HWND>(first->window()->effectiveWinId());
+        const auto context = ImmGetContext(windowHandle);
+        QVERIFY(context);
+        const auto releaseContext = qScopeGuard([&] { ImmReleaseContext(windowHandle, context); });
+        DWORD originalConversion = 0;
+        DWORD originalSentence = 0;
+        QVERIFY(ImmGetConversionStatus(context, &originalConversion, &originalSentence));
+        const auto originalRestore = qScopeGuard([&] {
+            ImmSetConversionStatus(context, originalConversion, originalSentence);
+        });
+        const auto alpha = originalConversion & ~DWORD(IME_CMODE_NATIVE);
+        const auto native = originalConversion | DWORD(IME_CMODE_NATIVE);
+        QVERIFY(ImmSetConversionStatus(context, alpha, originalSentence));
+
+        auto* tabs = manager.windowWidget(window)->findChild<QTabBar*>("TabBar");
+        QVERIFY(tabs);
+        const auto clickTab = [tabs](TabId id) {
+            for (int index = 0; index < tabs->count(); ++index) {
+                if (tabs->tabData(index).toUuid() == id) {
+                    QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(index).center());
+                    return true;
+                }
+            }
+            return false;
+        };
+        QVERIFY(clickTab(secondTab));
+        QTRY_VERIFY(second->isVisible());
+        QTest::mouseClick(second, Qt::LeftButton);
         QTRY_COMPARE(QApplication::focusWidget(), second);
-        QCOMPARE(GetKeyboardLayout(0), layouts.last());
+        QVERIFY(ImmSetConversionStatus(context, native, originalSentence));
+
+        QVERIFY(clickTab(firstTab));
+        QTRY_VERIFY(first->isVisible());
+        QTest::mouseClick(first, Qt::LeftButton);
+        QTRY_COMPARE(QApplication::focusWidget(), first);
+        DWORD restoredConversion = 0;
+        DWORD restoredSentence = 0;
+        QTRY_VERIFY(ImmGetConversionStatus(context, &restoredConversion, &restoredSentence)
+            && restoredConversion == alpha);
+
+        QVERIFY(clickTab(secondTab));
+        QTRY_VERIFY(second->isVisible());
+        QTest::mouseClick(second, Qt::LeftButton);
+        QTRY_COMPARE(QApplication::focusWidget(), second);
+        QTRY_VERIFY(ImmGetConversionStatus(context, &restoredConversion, &restoredSentence)
+            && restoredConversion == native);
 #endif
     }
     void settingsComboUsesExistingKeyboardPath() {

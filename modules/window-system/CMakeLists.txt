@@ -123,7 +123,7 @@ qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -source-language en)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
-    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32)
+    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid)
 endif()
 foreach(target WindowSystemModel WindowSystemWidgets)
     if(MSVC)

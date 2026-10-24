@@ -94,7 +94,7 @@ set_tests_properties(window-system.movement-model PROPERTIES LABELS model)
 
 if(WIN32)
     target_link_libraries(window-system-memory-lifecycle-test PRIVATE psapi user32)
-    target_link_libraries(window-system-input-method-native-test PRIVATE user32 imm32)
+    target_link_libraries(window-system-input-method-native-test PRIVATE user32 imm32 ole32 uuid)
     qt_add_executable(window-system-native-frame-test native_frame_test.cpp)
     target_link_libraries(window-system-native-frame-test PRIVATE WindowSystem::Widgets Qt6::Test)
     target_include_directories(window-system-native-frame-test PRIVATE ../src)
