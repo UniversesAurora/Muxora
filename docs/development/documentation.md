@@ -10,7 +10,7 @@ Muxora 由几个助手轮流开发，彼此只通过仓库交接，所以文档�
 | --- | --- | --- |
 | 助手必须遵守的规则、常用命令 | [AGENTS.md](../../AGENTS.md)（只写规则本身，细节链接到下面各文档） | 个人全局配置；细则 |
 | 提交拆分、提交信息格式、整合方式 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | AGENTS.md 只写一句并链接 |
-| 产品行为与界面要求（最终目标） | `docs/design/`；窗口交互的具体规则在 [窗口交互细则](../design/window-interaction-design.md)，概要文档只写结构 | 实现计划、预览说明 |
+| 产品行为与界面要求（最终目标） | `docs/design/`；窗口交互的具体规则在 [窗口交互细则](../design/window-interaction-design.md)，标签栏的在 [标签栏设计](../design/tab-strip-design.md)，概要文档只写结构 | 实现计划、预览说明 |
 | 有长期影响的决定及理由 | [ADR](../adr/README.md) | 设计文档只写结论并链接 |
 | 工程、代码、资源规范 | [工程设计](engineering-design.md) | AGENTS.md |
 | 测试规则、测试入口用法 | [测试要求](testing-design.md) | AGENTS.md 只写必须用的命令 |

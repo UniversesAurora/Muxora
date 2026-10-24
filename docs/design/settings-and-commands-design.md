@@ -60,11 +60,11 @@ Windows 用户配置目录建议为 `%APPDATA%\Muxora\User`，机器状态目录
 | 界面语言 `workbench.language` | `settings.json` | 用户偏好 |
 | 窗口行为 `window.*`：拖出方式、空窗口、拖动时唤起、新标签位置、单标签时隐藏标签栏、锁定时隐藏选项、窗口控制按钮顺序、禅模式全屏范围、输入法记忆范围 | `settings.json` | 用户偏好，对所有窗口生效 |
 | 各范围当前输入法和输入模式 | 不保存 | 只在本次运行中有效，见 [输入法状态](window-interaction-design.md#输入法状态) |
-| 标签外观 `tabs.*`：位置、多行、图标、编号、标题裁切、钉住标签、配色列表 | `settings.json` | 同上；配色列表是用户定义的数据，跟着用户走 |
+| 标签外观 `tabs.*`：位置、多行、图标、编号、标题裁切、置顶标签、配色列表 | `settings.json` | 同上；配色列表是用户定义的数据，跟着用户走 |
 | 快捷键 | `keybindings.json` | 用户偏好，规则列表单独成文件 |
 | SSH 私钥 | `~/.ssh` 或 `User/keys/`（系统账户加密），由 `ssh.keys.storage` 决定 | 机密，按 [SSH 私钥存放设计](ssh-key-storage-design.md) |
 | 代理的使用记录 | `runtime.json` | 丢了不影响使用 |
-| 窗口、标签组、分割、标签、钉住和侧栏收纳、单个标签选的颜色 | `window-layout.json` | 工作区状态 |
+| 窗口、标签组、分割、标签、置顶和侧栏收纳、单个标签选的颜色 | `window-layout.json` | 工作区状态 |
 | 每种窗口新开时各栏的默认显隐，以及每个窗口自己的显隐 | `window-layout.json` | 随窗口形态变化，属于布局（见文首） |
 | 工具条排布：有哪些工具条、在哪一行、宽度、锁定、隐藏的菜单项和状态项 | `window-layout.json` | 由拖动和右键菜单产生，结构复杂且和窗口形态绑定；和 VS Code 的视图位置一样存为状态 |
 
@@ -116,10 +116,12 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 
 | 图形设置键 | 值与默认值 |
 | --- | --- |
-| `tabs.centralPlacement` | 普通标签栏位置：`top`（默认）或 `bottom`。 |
-| `tabs.pinnedPlacement` | 固定侧栏标签栏位置：`top`（默认）或 `bottom`，独立于普通栏。 |
-| `tabs.multiline` | 多行排列，默认 `false`；开启后排满换行，取消横向滚动条。 |
-| `tabs.wheelExpandRows` | 默认 `false`，只在多行时起作用：滚轮向下展开全部行，向上仅显示活动行。关闭多行时保留这个值（用户 2026-10-24 决定），设置页和菜单里显示为不可用，重新开启多行就恢复。 |
+| `tabs.centralPlacement` | 普通标签栏位置：`top`（默认）、`bottom`、`left` 或 `right`；左右是竖向标签栏，见 [标签栏设计 §4](tab-strip-design.md#4-竖向标签栏)（`left`／`right` 随 8.23 实现）。 |
+| `tabs.pinnedPlacement` | 固定侧栏标签栏位置，取值同上，默认 `top`，独立于普通栏。 |
+| `tabs.verticalWidth` | 竖向标签栏的默认宽度，`px`，整数 `140–480`，默认 `220`；拖动调整后的宽度保存在各组的布局里。 |
+| `tabs.multiline` | 多行排列，默认 `false`；开启后排满换行，取消横向滚动条。只用于横向标签栏。 |
+| `tabs.collapseRows` | 多行时是否收起，见 [标签栏设计 §3.4](tab-strip-design.md#34-收起与展开)：`off`（默认，全部显示）、`push`（收起，展开时推开内容）、`overlay`（收起，展开时浮层盖在内容上）。不是多行时保留值、不生效。 |
+| `tabs.wheelExpandRows` | 默认 `false`，只在多行且 `tabs.collapseRows` 不是 `off` 时起作用：滚轮向下展开，向上收起。不起作用时保留这个值（用户 2026-10-24 决定），设置页和菜单里显示为不可用。 |
 | `tabs.showIcons` | 默认 `true`；仅控制中央标签栏，开启时仍尊重单标签的宿主设置。 |
 | `tabs.showNewTabButton` | 默认 `true`，同时控制末尾加号与类型下拉，隐藏不移除新建命令。 |
 | `tabs.showNumbers` | 默认 `false`；编号位于图标左侧，使用本栏当前顺序，从 1 开始。 |
@@ -130,12 +132,12 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.clipSidebarTitles` | 默认 `false`；独立控制四边非固定收纳条的标题裁切，不影响普通及固定标签栏。 |
 | `tabs.maximumSidebarTitleWidth` | 非固定收纳条的文字最大长度，单位、默认值和范围与 `tabs.maximumTitleWidth` 相同，数值独立保存。 |
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
-| `tabs.stickySizing` | 钉住标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，不显示钉子）、`shrink`（显示编号、图标和标题开头，标题长度由 `tabs.shrinkStickyTitleWidth` 限制，保留钉子）。紧凑和收缩时，单行标签栏滚动时钉住标签留在视口开头，其他标签从它们下面滚过，最后一个钉住标签右侧有一条主题边框色的分隔线；多行时不固定。 |
-| `tabs.shrinkStickyTitleWidth` | 收缩时钉住标签的标题最大长度，和 `tabs.maximumTitleWidth` 一样只限制文字，编号、图标和钉子另占位置；单位、范围和控件与它相同（`px`，整数 `0–1000000`，`0` 不显示标题文字），默认 `40`，有图标时整个标签和 VS Code 固定的 80 差不多宽。标题短于限制时按原长显示。和普通标题裁切分开算：`tabs.clipTitles` 开关和长度都不影响收缩的钉住标签（用户 2026-10-24 决定）。VS Code 没有这一项，是用户 2026-10-24 要求加的；只在 `tabs.stickySizing` 为 `shrink` 时生效，设置页里其他尺寸下不可编辑但保留数值。 |
-| `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后有钉住标签的组把它们放在其他标签上方单独的行里，放不下时在这几行里换行；其他标签从下一行开始，单行时照常横向滚动，钉住的行不动。多行收起时显示钉住的行和活动标签所在的行。尺寸设置照样生效，两行之间不画分隔线。 |
-| `tabs.preventStickyClose` | 哪些关闭方式不关钉住标签，对应 VS Code 的 `workbench.editor.preventPinnedEditorClose`：`keyboardAndMouse`（默认）、`keyboard`、`mouse`、`never`。按键指从快捷键执行的关闭当前标签（`workspace.closeTab`），以及会连带关闭标签的关闭窗格（`pane.close`，标签只剩这一个窗格时）；被拦下时和 VS Code 一样切到本组第一个未钉住的标签，本组没有就切到同一窗口其他组的第一个未钉住标签，都没有就什么也不做。鼠标指中键点击。菜单、命令面板、标签列表的关闭按钮、API 和 Lua 照常关闭。Lua 中取值写作 `keyboard_and_mouse`、`keyboard`、`mouse`、`never`。 |
+| `tabs.stickySizing` | 置顶标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，没有置顶按钮）、`shrink`（显示编号、图标和标题开头，标题长度由 `tabs.shrinkStickyTitleWidth` 限制，保留置顶按钮）。紧凑和收缩时，单行标签栏滚动时置顶标签留在视口开头，其他标签从它们下面滚过，最后一个置顶标签右侧有一条主题边框色的分隔线；多行时不固定。 |
+| `tabs.shrinkStickyTitleWidth` | 收缩时置顶标签的标题最大长度，和 `tabs.maximumTitleWidth` 一样只限制文字，编号、图标和置顶按钮另占位置；单位、范围和控件与它相同（`px`，整数 `0–1000000`，`0` 不显示标题文字），默认 `40`，有图标时整个标签和 VS Code 固定的 80 差不多宽。标题短于限制时按原长显示。和普通标题裁切分开算：`tabs.clipTitles` 开关和长度都不影响收缩的置顶标签（用户 2026-10-24 决定）。VS Code 没有这一项，是用户 2026-10-24 要求加的；只在 `tabs.stickySizing` 为 `shrink` 时生效，设置页里其他尺寸下不可编辑但保留数值。 |
+| `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后有置顶标签的组把它们放在其他标签上方单独的行里，两段按同样的方式排列：单行时各自横向滚动，多行时各自换行、收起时各显示一行，见 [标签栏设计 §3.6](tab-strip-design.md#36-置顶标签单独一行)。只用于横向标签栏。 |
+| `tabs.preventStickyClose` | 哪些关闭方式不关置顶标签，对应 VS Code 的 `workbench.editor.preventPinnedEditorClose`：`keyboardAndMouse`（默认）、`keyboard`、`mouse`、`never`。按键指从快捷键执行的关闭当前标签（`workspace.closeTab`），以及会连带关闭标签的关闭窗格（`pane.close`，标签只剩这一个窗格时）；被拦下时和 VS Code 一样切到本组第一个未置顶的标签，本组没有就切到同一窗口其他组的第一个未置顶标签，都没有就什么也不做。鼠标指中键点击。菜单、命令面板、标签列表的关闭按钮、API 和 Lua 照常关闭。Lua 中取值写作 `keyboard_and_mouse`、`keyboard`、`mouse`、`never`。 |
 
-钉住标签的设置在设置页“标签外观”下单独的“钉住标签”分类里，没有右键菜单入口（VS Code 也没有）。
+置顶标签的设置在设置页“标签外观”下单独的“置顶标签”分类里，没有右键菜单入口（VS Code 也没有）。
 
 图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时滚轮展开保留原值、暂不生效，滚轮展开命令在单行时不可用。
 

@@ -152,7 +152,7 @@ muxora.ui.command_palette(nil, {
 
 ## 钉住标签
 
-`tabs.sticky(tab_id, sticky)` 钉住或取消钉住标签，`sticky` 省略时为 `true`，`tab_id` 为 `nil` 时使用当前标签；非固定收纳条里的标签不能钉住，返回 `false`。`groups.list()` 每个组的 `sticky_tabs` 是钉住标签的数量，它们就是 `tabs` 列表开头的那几个。规则见 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+`tabs.sticky(tab_id, sticky)` 钉住或取消钉住标签，`sticky` 省略时为 `true`，`tab_id` 为 `nil` 时使用当前标签；非固定收纳条里的标签不能钉住，返回 `false`。`groups.list()` 每个组的 `sticky_tabs` 是钉住标签的数量，它们就是 `tabs` 列表开头的那几个。规则见 [标签栏设计 · 置顶标签](../design/tab-strip-design.md#5-置顶标签)。
 
 ```lua
 assert(muxora.tabs.sticky())        -- 钉住当前标签
