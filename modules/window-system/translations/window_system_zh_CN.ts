@@ -2641,10 +2641,6 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>钉住标签关闭保护只能是 keyboard_and_mouse、keyboard、mouse 或 never</translation>
     </message>
     <message>
-        <source>Sticky tab</source>
-        <translation>已钉住</translation>
-    </message>
-    <message>
         <source>Shrunk sticky tab title width</source>
         <translation>收缩时钉住标签标题最大显示宽度</translation>
     </message>

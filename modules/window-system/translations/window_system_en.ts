@@ -2648,10 +2648,6 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</translation>
     </message>
     <message>
-        <source>Sticky tab</source>
-        <translation>Sticky tab</translation>
-    </message>
-    <message>
         <source>Shrunk sticky tab title width</source>
         <translation>Shrunk sticky tab title width</translation>
     </message>

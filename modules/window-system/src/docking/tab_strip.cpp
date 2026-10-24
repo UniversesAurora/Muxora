@@ -9,6 +9,7 @@
 #include <QBoxLayout>
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QHelpEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
@@ -144,22 +145,29 @@ public:
         title_ = new TabListTitle(text, this); title_->setToolTip(text);
         title_->setObjectName("TabListTitle");
         title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
-        // A sticky tab always shows the pin it has on the strip.
+        const auto actionButton = [this, layout](const char* name) {
+            auto* button = new CompactToolButton(this, 18);
+            button->setObjectName(name);
+            button->setStyleSheet("QToolButton{padding:0;min-height:0;min-width:0;}");
+            layout->addWidget(button);
+            return button;
+        };
+        // Keep the unstick action visible even before the row is hovered.
         if (!sticky.isNull()) {
-            auto* pin = new QLabel(this); pin->setObjectName("TabListStickyMarker");
-            pin->setPixmap(sticky.pixmap(16, 16)); pin->setToolTip(QCoreApplication::translate("WindowSystem", "Sticky tab"));
-            layout->addWidget(pin);
+            unstickButton = actionButton("TabListUnstickButton");
+            unstickButton->setIcon(sticky);
+            unstickButton->setToolTip(QCoreApplication::translate("WindowSystem", "Unstick tab"));
+            unstickButton->setAccessibleName(unstickButton->toolTip());
         }
-        closeButton = new CompactToolButton(this, 18);
-        closeButton->setObjectName("TabListCloseButton");
-        closeButton->setStyleSheet("QToolButton{padding:0;min-height:0;min-width:0;}");
+        closeButton = actionButton("TabListCloseButton");
         auto policy = closeButton->sizePolicy(); policy.setRetainSizeWhenHidden(true);
-        closeButton->setSizePolicy(policy); closeButton->hide(); layout->addWidget(closeButton);
+        closeButton->setSizePolicy(policy); closeButton->hide();
         setMinimumWidth(240); setMaximumWidth(520);
         if (auto* menu = qobject_cast<QMenu*>(parent))
             QObject::connect(menu, &QMenu::hovered, this, [this] { updateEmphasis(); });
     }
     QToolButton* closeButton;
+    QToolButton* unstickButton = nullptr;
     std::function<void()> activate;
 protected:
     void enterEvent(QEnterEvent* event) override {
@@ -522,12 +530,32 @@ QRect DragTabBar::closeRect(int index) const {
     return tabBarCloseRect(displayTabRect(index), layoutDirection());
 }
 bool DragTabBar::event(QEvent* event) {
-    // QTabBar finds the tooltip's tab in its own single-row layout, which a
-    // custom layout no longer matches.
-    if (event->type() == QEvent::ToolTip && customLayout_) {
+    // Painting, button input and help must agree on the displayed tab, even
+    // when custom rows no longer match QTabBar's own single-row layout.
+    if (event->type() == QEvent::ToolTip) {
         auto* help = static_cast<QHelpEvent*>(event);
         const auto index = displayedTabAt(help->pos());
-        if (index >= 0 && !tabToolTip(index).isEmpty()) QToolTip::showText(help->globalPos(), tabToolTip(index), this);
+        QString text; QRect area;
+        if (index >= 0) {
+            area = displayTabRect(index);
+            const auto button = closeRect(index);
+            if (button.contains(help->pos())) {
+                area = button;
+                text = index < stickyCount_ ? QCoreApplication::translate("WindowSystem", "Unstick tab")
+                    : QCoreApplication::translate("WindowSystem", "Close tab");
+            } else {
+                text = tabToolTip(index);
+                // Leaving the title for its action must dismiss the title's
+                // already visible tip, although both belong to one widget.
+                if (!button.isEmpty()) {
+                    if (help->pos().x() < button.left()) area.setRight(button.left() - 1);
+                    else if (help->pos().x() > button.right()) area.setLeft(button.right() + 1);
+                    else if (help->pos().y() < button.top()) area.setBottom(button.top() - 1);
+                    else area.setTop(button.bottom() + 1);
+                }
+            }
+        }
+        if (!text.isEmpty()) QToolTip::showText(help->globalPos(), text, this, area);
         else { QToolTip::hideText(); event->ignore(); }
         return true;
     }
@@ -1291,12 +1319,24 @@ void GroupTabs::showTabList() {
             index < bar_->stickyCount() ? iconFor("pin", theme_) : QIcon{}, menu);
         row->setProperty("tabId", bar_->tabData(index));
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab"));
+        row->closeButton->setAccessibleName(row->closeButton->toolTip());
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);
         row->activate = [self, popup, index] { if (popup) popup->close(); if (self) self->setCurrentIndex(index); };
         QObject::connect(row->closeButton, &QToolButton::clicked, menu, [self, popup, index] {
             if (popup) popup->close();
             if (self) { const auto callback = self->closeRequested; if (callback) callback(index); }
         });
+        if (row->unstickButton)
+            QObject::connect(row->unstickButton, &QToolButton::clicked, menu, [self, popup, id = bar_->tabData(index)] {
+                if (popup) popup->close();
+                if (!self) return;
+                // Closing a popup can run host callbacks. Resolve the stable
+                // tab ID afterwards instead of acting on an outdated index.
+                for (int i = 0; i < self->bar_->count(); ++i) if (self->bar_->tabData(i) == id) {
+                    const auto callback = self->unstickRequested; if (callback) callback(i);
+                    return;
+                }
+            });
         action->setDefaultWidget(row); menu->addAction(action);
     }
     setPopupAnchor(menu,QRect(list_->mapToGlobal(QPoint()),list_->size()));

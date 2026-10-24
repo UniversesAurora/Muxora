@@ -5,6 +5,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
+#include <QHelpEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
@@ -16,6 +17,7 @@
 #include <QScrollBar>
 #include <QTest>
 #include <QToolButton>
+#include <QToolTip>
 
 using namespace window_system;
 
@@ -116,6 +118,11 @@ private slots:
     void closeProtectionFollowsTheSetting();
     void blockedCloseShortcutShowsAnotherGroupsTab();
     void tabListMarksStickyTabs();
+    void tabActionTooltipsDescribeTheAction_data();
+    void tabActionTooltipsDescribeTheAction();
+    void tabListCanUnstickWithoutActivatingOrClosing_data();
+    void tabListCanUnstickWithoutActivatingOrClosing();
+    void tabListUnstickResolvesItsTargetAfterPopupCallbacks();
 };
 
 void StickyTabsTest::sizedStickyTabsUseTheirWidths()
@@ -527,16 +534,120 @@ void StickyTabsTest::tabListMarksStickyTabs()
     const auto rows = menu->findChildren<QWidget*>("TabListRow"); QCOMPARE(rows.size(), ids.size());
     for (auto* row : rows) {
         const int index = ids.indexOf(row->property("tabId").toUuid()); QVERIFY(index >= 0);
-        auto* marker = row->findChild<QLabel*>("TabListStickyMarker");
-        QCOMPARE(bool(marker), index < 2);
-        if (marker) { QVERIFY(marker->isVisible()); QVERIFY(!marker->pixmap().isNull()); }
+        auto* pin = row->findChild<QToolButton*>("TabListUnstickButton");
+        QCOMPARE(bool(pin), index < 2);
+        if (pin) {
+            QVERIFY(pin->isVisible()); QVERIFY(!pin->icon().isNull());
+            auto* close = row->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close);
+            QCOMPARE(pin->size(), close->size()); QCOMPARE(pin->geometry().center().y(), close->geometry().center().y());
+            QCOMPARE(pin->toolTip(), QCoreApplication::translate("WindowSystem", "Unstick tab"));
+            QCOMPARE(pin->accessibleName(), pin->toolTip());
+        }
     }
-    // The marker is not a control: the row's close button still closes.
+    // The separate close button keeps its original action on sticky rows.
     auto* first = rows.first(); QCOMPARE(first->property("tabId").toUuid(), ids.first());
     QEnterEvent enter(QPointF(8, 8), QPointF(8, 8), first->mapToGlobal(QPoint(8, 8)));
     QApplication::sendEvent(first, &enter);
     auto* close = first->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close && close->isVisible());
     close->click(); QCOMPARE(closed, 0);
+}
+
+void StickyTabsTest::tabActionTooltipsDescribeTheAction_data()
+{
+    QTest::addColumn<int>("rows"); QTest::addColumn<int>("sizing");
+    for (int rows = 0; rows < 4; ++rows)
+        for (const auto sizing : {StickyTabSizing::Normal, StickyTabSizing::Compact, StickyTabSizing::Shrink})
+            QTest::newRow(qPrintable(QString("rows-%1-size-%2").arg(rows).arg(int(sizing)))) << rows << int(sizing);
+}
+void StickyTabsTest::tabActionTooltipsDescribeTheAction()
+{
+    QFETCH(int, rows); QFETCH(int, sizing);
+    const auto hideTip = qScopeGuard([] { QToolTip::hideText(); });
+    auto appearance = sized(StickyTabSizing(sizing));
+    appearance.stickyTabsOnSeparateRow = rows == 1 || rows == 3;
+    appearance.multiline = rows >= 2; appearance.wheelExpandRows = rows == 3;
+    GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 6, 2, appearance);
+    tabs.setCurrentIndex(2); tabs.resize(600, 250); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar();
+    const auto showTip = [&](QPoint point) {
+        sendBarMouse(bar, QEvent::MouseMove, point, Qt::NoButton, Qt::NoButton);
+        QHelpEvent help(QEvent::ToolTip, point, bar->mapToGlobal(point));
+        QApplication::sendEvent(bar, &help);
+    };
+    for (const int index : {0, 2}) {
+        const auto label = bar->displayTabRect(index); QVERIFY(!label.isEmpty());
+        const auto action = tabBarCloseRect(label, bar->layoutDirection());
+        const auto title = tabBarLabelArea(label, bar->layoutDirection()).center();
+        showTip(title); QCOMPARE(QToolTip::text(), bar->tabToolTip(index));
+        showTip(action.center());
+        const auto expected = index == 0 && StickyTabSizing(sizing) == StickyTabSizing::Compact ? bar->tabToolTip(index)
+            : QCoreApplication::translate("WindowSystem", index == 0 ? "Unstick tab" : "Close tab");
+        QCOMPARE(QToolTip::text(), expected);
+        showTip(title); QCOMPARE(QToolTip::text(), bar->tabToolTip(index));
+    }
+    QCOMPARE(tabs.currentIndex(), 2);
+}
+void StickyTabsTest::tabListCanUnstickWithoutActivatingOrClosing_data()
+{
+    QTest::addColumn<bool>("active"); QTest::newRow("active") << true; QTest::newRow("inactive") << false;
+}
+void StickyTabsTest::tabListCanUnstickWithoutActivatingOrClosing()
+{
+    QFETCH(bool, active);
+    WindowManager manager; const auto window = manager.createWindow();
+    auto* content = new QLabel("Sticky content");
+    const auto moving = manager.addTab(window, content, {"First", "label", {}});
+    const auto other = manager.addTab(window, new QLabel("Other"), {"Second", "label", {}});
+    const auto plain = manager.addTab(window, new QLabel("Plain"), {"Third", "label", {}});
+    const auto pane = manager.model().tab(moving)->activePane;
+    QVERIFY(manager.setTabSticky(moving, true)); QVERIFY(manager.setTabSticky(other, true));
+    const auto selected = active ? moving : plain; QVERIFY(manager.activateTab(selected));
+    manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    const auto group = manager.model().groupForTab(moving);
+    auto* view = groupView(manager.windowWidget(window), group); QVERIFY(view);
+    auto* list = view->findChild<QToolButton*>("TabListButton"); QVERIFY(list); list->click();
+    QPointer<QMenu> menu = view->findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
+    QWidget* row = nullptr;
+    for (auto* candidate : menu->findChildren<QWidget*>("TabListRow"))
+        if (candidate->property("tabId").toUuid() == moving) row = candidate;
+    QVERIFY(row);
+    auto* pin = row->findChild<QToolButton*>("TabListUnstickButton"); QVERIFY(pin && pin->isVisible());
+    QTest::mouseClick(pin, Qt::LeftButton);
+    QVERIFY(!manager.isTabSticky(moving)); QVERIFY(manager.isTabSticky(other));
+    QCOMPARE(manager.model().group(group)->activeTab, selected);
+    QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{other, moving, plain}));
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(!menu || !menu->isVisible());
+    view = groupView(manager.windowWidget(window), group); QVERIFY(view);
+    list = view->findChild<QToolButton*>("TabListButton"); QVERIFY(list); list->click();
+    menu = view->findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
+    for (auto* candidate : menu->findChildren<QWidget*>("TabListRow")) {
+        const auto id = candidate->property("tabId").toUuid();
+        QCOMPARE(bool(candidate->findChild<QToolButton*>("TabListUnstickButton")), id == other);
+    }
+    menu->close(); QVERIFY(manager.model().validate());
+}
+
+void StickyTabsTest::tabListUnstickResolvesItsTargetAfterPopupCallbacks()
+{
+    GroupTabs tabs(defaultTheme(), nullptr); const auto ids = populate(tabs, 5, 2, sized(StickyTabSizing::Normal));
+    tabs.setCurrentIndex(2); tabs.resize(600, 250); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    TabId unstuck; int closed = -1;
+    tabs.unstickRequested = [&](int index) { unstuck = tabs.tabBar()->tabData(index).toUuid(); };
+    tabs.closeRequested = [&](int index) { closed = index; };
+    auto* list = tabs.findChild<QToolButton*>("TabListButton"); QVERIFY(list); list->click();
+    auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
+    QToolButton* pin = nullptr;
+    for (auto* row : menu->findChildren<QWidget*>("TabListRow"))
+        if (row->property("tabId").toUuid() == ids[1]) pin = row->findChild<QToolButton*>("TabListUnstickButton");
+    QVERIFY(pin && pin->isVisible());
+    QObject::connect(menu, &QMenu::aboutToHide, &tabs, [&] {
+        // A host can synchronously remove a preceding tab when the popup
+        // closes. The requested tab then moves from index one to zero.
+        QVERIFY(tabs.takePage(ids[0])); tabs.setStickyCount(1);
+    });
+    QTest::mouseClick(pin, Qt::LeftButton);
+    QCOMPARE(unstuck, ids[1]); QCOMPARE(closed, -1);
+    QCOMPARE(tabs.tabBar()->tabData(tabs.currentIndex()).toUuid(), ids[2]);
 }
 
 QTEST_MAIN(StickyTabsTest)
