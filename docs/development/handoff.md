@@ -55,7 +55,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **本轮完成**：
   - [8.1 窗口缩放区移到外侧](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 的代码、测试和设计（`window-system/frame: Move the resize border outside the visible window`）。窗口去掉了 Qt 的无边框标志，左、右、下保留系统缩放边框，DWM 在客户区外画这三边的边框。过程中修了全屏切换、新窗口高度、`QWidget::pos()` 偏移、拖动预览偏 1 像素和多余系统菜单，记录见 [8.1 验证记录](verification-log/2026-10.md#81-缩放区移到外侧2026-10-24)，机制见 [Windows 平台经验 · 窗口框架](lessons/windows-platform.md#窗口框架)。
   - 设计了窗格活动（通知、进度、运行状态）和状态项的点击与悬停，排进 8.17–8.19、7.15，见 [窗格活动设计](../design/pane-activity-design.md)。同类开源项目的源码克隆在仓库下被忽略的 `reference/` 目录里。
-- **进行中**：8.1 剩一个间歇出现的问题，交给下一位排查（见“下一步”）。没有部署预览，没有真实试用。
+- **进行中**：8.1 剩一个间歇出现的问题，交给下一位排查（见“下一步”）。Release 预览已部署给用户试用，试用结果还没有。
 - **下一步**（给执行者，用户 2026-10-24 指定）：
   1. **先查清 8.1 的右上角闪烁并修好。** 现象和已经排除的方向都在 [8.1 验证记录](verification-log/2026-10.md#81-缩放区移到外侧2026-10-24) 的“剩余问题”里，先读完再动手。
      - 复现：`NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption` 的 layout-1、layout-2 行，Release 全量里每次都失败，单独跑套件有时通过，所以每次修改要连跑几轮整个 `native-frame` 套件，再跑一次全量。命令按 AGENTS.md 经 `quiet-desktop.ps1 -Elevate`。

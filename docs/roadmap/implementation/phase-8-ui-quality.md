@@ -82,7 +82,7 @@
 **状态**：进行中（Claude 实现，2026-10-24 交给 Codex 查一个剩余问题）。代码和测试已提交（`window-system/frame: Move the resize border outside the visible window`），做法见 [窗口交互设计 · 窗口缩放边框](../../design/window-interaction-design.md#窗口缩放边框)，过程中查到的 Qt 行为见 [Windows 平台经验 · 窗口框架](../../development/lessons/windows-platform.md#窗口框架)。
 
 - **剩余问题**：整窗拖到标签条上变成紧凑呈现、再拖出来时，约 180 毫秒后客户区右上角（系统最大化按钮的位置）有一块淡出的暗色，持续一两帧。`NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption` 的 layout-1、layout-2 行间歇失败，旧代码上没有出现过。排查记录见 [验证日志](../../development/verification-log/2026-10.md#81-缩放区移到外侧2026-10-24)。
-- **未做**：Windows 11 真实试用（四边四角缩放、Snap 浮窗、系统贴靠、不同 DPI 的屏幕之间移动）；Windows 10 未验证。部署预览也留到剩余问题解决后。
+- **未做**：Windows 11 真实试用（四边四角缩放、Snap 浮窗、系统贴靠、不同 DPI 的屏幕之间移动）；Windows 10 未验证。Release 预览已部署给用户试用（2026-10-24）。
 
 实现与计划的差别：
 
