@@ -1066,22 +1066,15 @@ void ScriptRuntimeTest::retainedCoroutineCountHookKeepsItsInterval() {
     ScriptWorker worker(RuntimeLimits{}, statistics);
     QVERIFY(ScriptWorkerTestAccess::initializedState(worker));
     QSignalSpy finished(&worker, &ScriptWorker::jobFinished);
-    std::mutex readyMutex;
-    std::condition_variable_any readyCondition;
-    bool enteredCoroutine = false;
+    bool cancellationRequested = false;
     connect(&worker, &ScriptWorker::logReady, &worker, [&](const QString &message) {
         if (message != QStringLiteral("counted coroutine ready"))
             return;
-        {
-            const std::lock_guard lock(readyMutex);
-            enteredCoroutine = true;
-        }
-        readyCondition.notify_all();
-    });
-    std::jthread cancellation([&](std::stop_token stop) {
-        std::unique_lock lock(readyMutex);
-        if (readyCondition.wait(lock, stop, [&] { return enteredCoroutine; }))
-            statistics->cancellation.fetch_add(1, std::memory_order_acq_rel);
+        // Request the stop before any user count callback can run. A separate
+        // thread may instead cancel inside that callback, where Lua cannot
+        // yield and the coroutine dies rather than remaining suspended.
+        cancellationRequested = true;
+        statistics->cancellation.fetch_add(1, std::memory_order_acq_rel);
     });
     ScriptJob first;
     first.id = 1;
@@ -1103,8 +1096,10 @@ coroutine.resume(counted)
 )lua";
     worker.enqueue(std::move(first));
     QTRY_COMPARE(finished.size(), 1);
-    QVERIFY(!qvariant_cast<ScriptResult>(finished.constFirst().at(1)).ok);
-    cancellation.join();
+    const auto stopped = qvariant_cast<ScriptResult>(finished.constFirst().at(1));
+    QVERIFY(!stopped.ok);
+    QVERIFY2(stopped.error.contains(QStringLiteral("cancelled")), qPrintable(stopped.error));
+    QVERIFY(cancellationRequested);
 
     ScriptJob second;
     second.id = 2;
