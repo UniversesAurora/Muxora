@@ -26,6 +26,9 @@
 | 8.11 | 界面字体渲染核查 | 2.5（组件画廊） |
 | 8.12 | 英文源文本与全量翻译核查 | 无；推荐在 M1 下一步执行 |
 | 8.13 | 选项卡长标题裁切 | 无；用户指定先实现 |
+| 8.14 | 可访问性核查 | 2.9 |
+| 8.15 | 钉住标签 | 无 |
+| 8.16 | 按层级保存输入法状态 | 无；用户要求 |
 
 设置页与快捷键页的界面按规范 §4.9、§4.10 分别在 [4.3](phase-4-settings.md#43-设置页由声明生成) 和 [3.8](phase-3-keybindings.md#38-快捷键编辑器重做) 中实现，本阶段不重复。
 
@@ -426,3 +429,24 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 **测试**：8.15a 见模型、标签条、命令与 Lua 用例；8.15b 各项需要真实拖动、滚动和像素断言，三种主题下截图。
 
 **状态**：8.15a 已完成；8.15b 四项和前置的中键关闭已完成，相关自动验证见 [记录](../../development/verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；只在默认主题下截图核对过，三主题截图和用户真实试用未做。
+
+---
+
+## 8.16 按层级保存输入法状态
+
+**目标**：按 [交互细则 · 输入法状态](../../design/window-interaction-design.md#输入法状态) 实现：设置 `window.inputMethodScope`（默认 `tab`）选择在哪一层分开记输入法状态，焦点切到另一个范围时恢复那里的状态。用户 2026-10-24 提出并确认：输入法和它的全部模式一起记，不只针对中英文；默认按标签；轻量浮窗是窗口下面的一层。
+
+**前置**：无。设置先按现有方式加入 `WindowBehavior` 和设置页，4.2 时接入注册表，ID 加进阶段 4 的表格。设置页的下拉框属于新界面，由 Claude 做。
+
+**涉及文件**：新建 `modules/window-system/src/platform/input_method_state.{hpp,cpp}`（平台接口和 Windows 实现）、`src/input_method_scopes.{hpp,cpp}`（范围跟踪）；`window_manager.{hpp,cpp}`（`WindowBehavior::inputMethodScope`、焦点变化）；`settings/settings_page.cpp`；`layout_persistence.cpp`（随行为保存）；Lua 设置接口和指南；新测试 `tests/input_method_scope_test.cpp`。
+
+**实现**：
+
+1. 平台接口只有“读出当前状态”和“恢复一个状态”两个操作，状态对上层是不透明的值。Windows 实现：输入法或键盘布局用 `GetKeyboardLayout`／`ActivateKeyboardLayout`；开关和模式在焦点窗口的输入上下文上用 `ImmGetOpenStatus`／`ImmGetConversionStatus` 读，用对应的 `Set` 函数恢复，全部模式位原样保存。其他平台先用空实现，不报错。
+2. 范围跟踪：`QApplication::focusChanged` 时，按当前层级算出新旧焦点所属的范围键（窗格、标签、标签组、顶层窗口、窗口族或整个程序）；键不同才保存旧范围、恢复新范围。临时界面（命令面板、对话框、菜单）不算范围。
+3. 新建：新范围复制创建时所在范围的状态。移动、合并、关闭：按设计更新或丢弃记下的状态，不让已删除的标签、窗格留下记录。
+4. 修改设置时清空全部记录。
+
+**测试**：范围跟踪用假的平台实现做模型测试：六种层级下焦点在两个范围之间来回切换的保存和恢复；同一范围内移动焦点不调用平台接口；新建沿用来源状态；移动、合并、关闭后的记录；修改设置后清空；临时界面不触发。Windows 实现的读写往返另有桌面用例（切换系统里已装的键盘布局），真实输入法（微软拼音、日文、韩文和第三方输入法）由用户试用，未试用的如实记录。
+
+**状态**：未开始。

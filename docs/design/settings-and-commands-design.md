@@ -89,6 +89,8 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 
 `window.zenFullscreenMode` 设置普通窗口启动禅模式时进入的全屏范围，可选窗口、标签组或窗格，默认窗口全屏。已经全屏时保留当前范围。图形设置与 `WindowBehavior::zenFullscreenMode` 使用同一值。
 
+`window.inputMethodScope` 选择输入法状态在哪一层分开保存：`application`、`window`、`floatingWindow`、`tabGroup`、`tab`（默认）或 `pane`，含义和恢复规则见 [交互细则 · 输入法状态](window-interaction-design.md#输入法状态)。设置页用下拉框，放在窗口行为分类。
+
 `window.hideToolbarOptionsWhenLocked` 默认 `false`。开启后，已锁定且没有溢出项的工具条隐藏选项入口并释放宽度；解锁或出现溢出项后恢复。标题和窗口控制条原有的禁止选项策略不变。
 
 ### 3.1 标签外观与颜色
