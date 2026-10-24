@@ -105,8 +105,9 @@ TabBarPlacement tabPlacement(const QVariant &value) {
         return TabBarPlacement::Bottom;
     throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Tab position must be top or bottom").toUtf8().constData());
 }
-// Indexed by StickyTabSizing.
+// Indexed by StickyTabSizing and StickyTabCloseGuard.
 const QStringList stickySizings{"normal", "compact", "shrink"};
+const QStringList stickyCloseGuards{"keyboard_and_mouse", "keyboard", "mouse", "never"};
 QVariantMap appearanceValue(const TabAppearance &value) {
     QVariantMap map;
     for (const auto &[name, field] : appearanceBooleans)
@@ -116,6 +117,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     map["maximum_tab_title_width"] = value.maximumTitleWidth;
     map["maximum_sidebar_title_width"] = value.maximumSidebarTitleWidth;
     map["sticky_tab_sizing"] = stickySizings.value(int(value.stickySizing));
+    map["prevent_sticky_close"] = stickyCloseGuards.value(int(value.preventStickyClose));
     QVariantList colors;
     for (const auto &preset : value.colors) {
         QVariantMap item{{"id", preset.id}, {"name", preset.name}};
@@ -132,7 +134,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
 }
 void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKnown = true) {
     QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width",
-                        "sticky_tab_sizing", "colors"};
+                        "sticky_tab_sizing", "prevent_sticky_close", "colors"};
     for (const auto &[name, field] : appearanceBooleans) {
         known.insert(name);
         if (map.contains(name))
@@ -157,6 +159,12 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
         if (index < 0)
             throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink").toUtf8().constData());
         value.stickySizing = StickyTabSizing(index);
+    }
+    if (map.contains("prevent_sticky_close")) {
+        const auto index = stickyCloseGuards.indexOf(text({map["prevent_sticky_close"]}, 0));
+        if (index < 0)
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never").toUtf8().constData());
+        value.preventStickyClose = StickyTabCloseGuard(index);
     }
     if (map.contains("colors")) {
         const auto presets = map["colors"];
@@ -209,7 +217,7 @@ void ScriptHost::Private::installAppearanceApi() {
         auto appearance = manager->tabAppearance();
         QSet<QString> known{"reveal_delay_ms", "zen_fullscreen", "drag_outside_kind",  "new_tab_position",
                             "language",        "tab_position",   "pinned_tab_position", "caption_button_order",
-                            "maximum_tab_title_width", "maximum_sidebar_title_width", "sticky_tab_sizing"};
+                            "maximum_tab_title_width", "maximum_sidebar_title_width", "sticky_tab_sizing", "prevent_sticky_close"};
         for (const auto &[name, field] : behaviorBooleans) {
             known.insert(name);
             if (map.contains(name))

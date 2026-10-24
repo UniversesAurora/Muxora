@@ -1345,6 +1345,15 @@ void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
       assert(muxora.tabs.appearance().sticky_tabs_on_separate_row==true)
       assert(not pcall(muxora.tabs.set_appearance,{sticky_tabs_on_separate_row='false'}))
       assert(muxora.tabs.appearance().sticky_tabs_on_separate_row==true)
+      assert(muxora.settings.get().prevent_sticky_close=='keyboard_and_mouse')
+      for _,guard in ipairs({'keyboard','mouse','never','keyboard_and_mouse'}) do
+        assert(muxora.tabs.set_appearance({prevent_sticky_close=guard}))
+        assert(muxora.settings.get().prevent_sticky_close==guard)
+      end
+      for _,invalid in ipairs({'keyboardAndMouse','always',false}) do
+        assert(not pcall(muxora.settings.update,{prevent_sticky_close=invalid}))
+        assert(muxora.tabs.appearance().prevent_sticky_close=='keyboard_and_mouse')
+      end
       for _,invalid in ipairs({'tiny','Compact',1,true}) do
         assert(not pcall(muxora.settings.update,{sticky_tab_sizing=invalid,multiline=true}))
         assert(not pcall(muxora.tabs.set_appearance,{sticky_tab_sizing=invalid}))

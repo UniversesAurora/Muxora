@@ -101,7 +101,7 @@ QSet<QString> allSettingKeys()
     return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.stickyTabsOnSeparateRow"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -1045,7 +1045,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data(
                                 "window.visibility.tabBars", "window.visibility.sideBars", "CentralTabPlacement", "PinnedTabPlacement",
                                 "MultilineTabs", "WheelExpandTabRows", "ShowTabIcons", "ShowNewTabButton", "ShowTabNumbers",
                                 "ClipTabTitles", "MaximumTabTitleWidth", "ClipSidebarTabTitles", "MaximumSidebarTabTitleWidth",
-                                "StickyTabSizing", "StickyTabsOnSeparateRow"}) {
+                                "StickyTabSizing", "StickyTabsOnSeparateRow", "PreventStickyTabClose"}) {
         for (const bool deleteManager : {false, true}) {
             const auto row = QByteArray(control) + (deleteManager ? "-manager" : "-page");
             QTest::newRow(row.constData()) << QString::fromLatin1(control) << deleteManager;
@@ -1119,6 +1119,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "MaximumSidebarTabTitleWidth") QCOMPARE(appearance.value("maximumSidebarTitleWidth").toInt(), 900);
     else if (control == "StickyTabSizing") QCOMPARE(appearance.value("stickySizing").toString(), QStringLiteral("shrink"));
     else if (control == "StickyTabsOnSeparateRow") QVERIFY(appearance.value("stickyTabsOnSeparateRow").toBool());
+    else if (control == "PreventStickyTabClose") QCOMPARE(appearance.value("preventStickyClose").toString(), QStringLiteral("never"));
     const auto savedWindow = saved.value("windows").toArray().first().toObject();
     QVERIFY(!savedWindow.contains("viewState"));
     if (control.startsWith("window.visibility.")) {

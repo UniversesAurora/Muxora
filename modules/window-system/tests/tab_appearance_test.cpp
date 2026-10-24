@@ -54,6 +54,7 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
     QVERIFY(!appearance.clipTitles); QCOMPARE(appearance.maximumTitleWidth, defaultTabTitleWidth);
     QVERIFY(!appearance.clipSidebarTitles); QCOMPARE(appearance.maximumSidebarTitleWidth, defaultTabTitleWidth);
     QCOMPARE(appearance.stickySizing, StickyTabSizing::Normal); QVERIFY(!appearance.stickyTabsOnSeparateRow);
+    QCOMPARE(appearance.preventStickyClose, StickyTabCloseGuard::KeyboardAndMouse);
     QCOMPARE(appearance.colors.size(), 9);
     for (const auto& preset : appearance.colors) {
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
@@ -71,6 +72,14 @@ void TabAppearanceTest::stickySizingRoundTripsThroughJsonAndLayout()
         TabAppearance appearance; appearance.stickySizing = sizing;
         const auto json = tabAppearanceToJson(appearance);
         QCOMPARE(json.value("stickySizing").toString(), QString::fromLatin1(name));
+        TabAppearance parsed; QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed, appearance);
+    }
+    for (const auto& [guard, name] : {std::pair{StickyTabCloseGuard::KeyboardAndMouse, "keyboardAndMouse"},
+                                     std::pair{StickyTabCloseGuard::Keyboard, "keyboard"}, std::pair{StickyTabCloseGuard::Mouse, "mouse"},
+                                     std::pair{StickyTabCloseGuard::Never, "never"}}) {
+        TabAppearance appearance; appearance.preventStickyClose = guard;
+        const auto json = tabAppearanceToJson(appearance);
+        QCOMPARE(json.value("preventStickyClose").toString(), QString::fromLatin1(name));
         TabAppearance parsed; QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed, appearance);
     }
     auto json = tabAppearanceToJson(TabAppearance{}); json.remove("stickySizing");
@@ -243,6 +252,9 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
     QTest::newRow("stickySizingCase") << QString("stickySizing") << QJsonValue("Compact");
     QTest::newRow("stickySizingNumber") << QString("stickySizing") << QJsonValue(1);
     QTest::newRow("stickyRowString") << QString("stickyTabsOnSeparateRow") << QJsonValue("true");
+    QTest::newRow("unknownCloseGuard") << QString("preventStickyClose") << QJsonValue("always");
+    QTest::newRow("closeGuardLuaName") << QString("preventStickyClose") << QJsonValue("keyboard_and_mouse");
+    QTest::newRow("closeGuardBoolean") << QString("preventStickyClose") << QJsonValue(true);
     QTest::newRow("paletteObject") << QString("colors") << QJsonValue(QJsonObject{});
     QTest::newRow("incompletePreset") << QString("colors") << QJsonValue(QJsonArray{QJsonObject{{"id", "blue"}, {"name", "蓝色"}}});
     auto palette = tabAppearanceToJson(TabAppearance{}).value("colors").toArray();

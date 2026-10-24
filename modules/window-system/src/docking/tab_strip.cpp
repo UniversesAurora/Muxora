@@ -2,6 +2,7 @@
 #include "tab_strip.hpp"
 #include "commands/popup_menu.hpp"
 #include "style/compact_tool_button.hpp"
+#include "style/tab_appearance_p.hpp"
 #include "style/themed_controls.hpp"
 
 #include <QApplication>
@@ -517,7 +518,8 @@ void DragTabBar::mouseMoveEvent(QMouseEvent* event) {
 void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::MiddleButton) {
         const auto index = middlePressed_; middlePressed_ = -1; event->accept();
-        if (index >= 0 && displayedTabAt(event->position().toPoint()) == index) {
+        const bool kept = index < stickyCount_ && guardsMiddleClick(appearance_.preventStickyClose);
+        if (index >= 0 && !kept && displayedTabAt(event->position().toPoint()) == index) {
             const auto callback = close; if (callback) callback(index);
         }
         return;

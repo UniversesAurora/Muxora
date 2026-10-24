@@ -50,6 +50,9 @@ struct WindowManager::Private {
     QSet<WindowId> closeRequests;
     bool closeAllPending = false;
     QKeySequence pendingKeys;
+    // Set while a command runs from a shortcut; sticky tab protection tells
+    // the close-tab shortcut from a menu or palette this way.
+    bool dispatchingShortcut = false;
     WindowId keyWindow;
     QPointer<QWidget> keyFocus;
     CommandContext keyContext;

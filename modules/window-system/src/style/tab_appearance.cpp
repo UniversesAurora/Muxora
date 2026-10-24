@@ -64,8 +64,23 @@ bool parsePlacement(const QJsonValue& value, TabBarPlacement& placement)
 
 constexpr std::array stickySizingNames{std::pair{StickyTabSizing::Normal, "normal"},
     std::pair{StickyTabSizing::Compact, "compact"}, std::pair{StickyTabSizing::Shrink, "shrink"}};
+constexpr std::array stickyCloseGuardNames{std::pair{StickyTabCloseGuard::KeyboardAndMouse, "keyboardAndMouse"},
+    std::pair{StickyTabCloseGuard::Keyboard, "keyboard"}, std::pair{StickyTabCloseGuard::Mouse, "mouse"},
+    std::pair{StickyTabCloseGuard::Never, "never"}};
 
 } // namespace
+
+QString stickyCloseGuardName(StickyTabCloseGuard guard)
+{
+    for (const auto& [value, name] : stickyCloseGuardNames) if (value == guard) return QString::fromLatin1(name);
+    return {};
+}
+
+std::optional<StickyTabCloseGuard> stickyCloseGuardFromName(const QString& name)
+{
+    for (const auto& [value, text] : stickyCloseGuardNames) if (name == QLatin1String(text)) return value;
+    return {};
+}
 
 QString stickySizingName(StickyTabSizing sizing)
 {
@@ -130,6 +145,7 @@ bool validTabAppearance(const TabAppearance& appearance)
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
         || (appearance.wheelExpandRows && !appearance.multiline) || stickySizingName(appearance.stickySizing).isEmpty()
+        || stickyCloseGuardName(appearance.preventStickyClose).isEmpty()
         || appearance.colors.size() > 128) return false;
     QSet<QString> ids;
     for (const auto& preset : appearance.colors) {
@@ -156,7 +172,8 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth},
         {"clipSidebarTitles", appearance.clipSidebarTitles}, {"maximumSidebarTitleWidth", appearance.maximumSidebarTitleWidth},
         {"stickySizing", stickySizingName(appearance.stickySizing)},
-        {"stickyTabsOnSeparateRow", appearance.stickyTabsOnSeparateRow}, {"colors", colors}};
+        {"stickyTabsOnSeparateRow", appearance.stickyTabsOnSeparateRow},
+        {"preventStickyClose", stickyCloseGuardName(appearance.preventStickyClose)}, {"colors", colors}};
 }
 
 OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance)
@@ -194,6 +211,12 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
         if (!sizing.isString() || !parsed)
             return {false, QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink")};
         candidate.stickySizing = *parsed;
+    }
+    if (const auto guard = object.value("preventStickyClose"); !guard.isUndefined()) {
+        const auto parsed = stickyCloseGuardFromName(guard.toString());
+        if (!guard.isString() || !parsed)
+            return {false, QCoreApplication::translate("WindowSystem", "Sticky tab close protection must be keyboardAndMouse, keyboard, mouse or never")};
+        candidate.preventStickyClose = *parsed;
     }
     const auto palette = object.value("colors");
     if (!palette.isUndefined()) {

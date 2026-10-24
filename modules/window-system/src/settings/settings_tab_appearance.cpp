@@ -158,6 +158,22 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         auto next = manager_->tabAppearance(); next.stickyTabsOnSeparateRow = enabled;
         manager_->setTabAppearance(next);
     });
+    preventStickyClose_ = new ThemedComboBox(parent);
+    preventStickyClose_->setObjectName("PreventStickyTabClose");
+    preventStickyClose_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Keep sticky tabs open"));
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "On the close shortcut and middle click (default)"), StickyTabCloseGuard::KeyboardAndMouse},
+                             std::pair{QCoreApplication::translate("WindowSystem", "On the close shortcut"), StickyTabCloseGuard::Keyboard},
+                             std::pair{QCoreApplication::translate("WindowSystem", "On middle click"), StickyTabCloseGuard::Mouse},
+                             std::pair{QCoreApplication::translate("WindowSystem", "Never"), StickyTabCloseGuard::Never}})
+        preventStickyClose_->addItem(entry.first, int(entry.second));
+    rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Keep sticky tabs open"), "tabs.preventStickyClose",
+        QCoreApplication::translate("WindowSystem", "A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it."),
+        preventStickyClose_));
+    connect(preventStickyClose_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.preventStickyClose = StickyTabCloseGuard(preventStickyClose_->currentData().toInt());
+        manager_->setTabAppearance(next);
+    });
 }
 
 void SettingsPage::syncTabAppearanceOptions()
@@ -186,6 +202,8 @@ void SettingsPage::syncTabAppearanceOptions()
         stickySizing_->setCurrentIndex(stickySizing_->findData(int(appearance.stickySizing)));
         const QSignalBlocker separate(stickyTabsOnSeparateRow_);
         stickyTabsOnSeparateRow_->setChecked(appearance.stickyTabsOnSeparateRow);
+        const QSignalBlocker guard(preventStickyClose_);
+        preventStickyClose_->setCurrentIndex(preventStickyClose_->findData(int(appearance.preventStickyClose)));
     }
     if (!tabColorsDirty_) {
         const QSignalBlocker block(tabColors_);

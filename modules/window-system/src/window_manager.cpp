@@ -1082,7 +1082,10 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     if (!exact.isEmpty()) {
         cancelChord(); key->accept();
         auto target = ctx; target.args = exactArgs;
+        // The command may destroy this manager; the flag lives in its state.
+        d->dispatchingShortcut = true;
         executeInContext(exact, target);
+        if (self) d->dispatchingShortcut = false;
         return true;
     }
     if (partial && validCommandContext(ctx)) {

@@ -7,6 +7,8 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QPointer>
 #include <QScopeGuard>
 #include <QScreen>
 #include <QTest>
@@ -100,6 +102,9 @@ private slots:
     void separateRowHoldsStickyTabsAboveTheOthers();
     void collapsedRowsKeepTheStickyRowShown();
     void draggingBetweenRowsSticksAndUnsticks();
+    void closeProtectionFollowsTheSetting_data();
+    void closeProtectionFollowsTheSetting();
+    void blockedCloseShortcutShowsAnotherGroupsTab();
 };
 
 void StickyTabsTest::sizedStickyTabsUseFixedWidths()
@@ -370,6 +375,88 @@ void StickyTabsTest::draggingBetweenRowsSticksAndUnsticks()
     drag(ids[4], 0, true);  // start of the sticky row: [4 0 2 | 1 3]
     QCOMPARE(manager.model().group(group)->stickyTabs, 3);
     QVERIFY(manager.model().validate());
+}
+
+void StickyTabsTest::closeProtectionFollowsTheSetting_data()
+{
+    QTest::addColumn<int>("guard");
+    QTest::newRow("keyboardAndMouse") << int(StickyTabCloseGuard::KeyboardAndMouse);
+    QTest::newRow("keyboard") << int(StickyTabCloseGuard::Keyboard);
+    QTest::newRow("mouse") << int(StickyTabCloseGuard::Mouse);
+    QTest::newRow("never") << int(StickyTabCloseGuard::Never);
+}
+
+void StickyTabsTest::closeProtectionFollowsTheSetting()
+{
+    QFETCH(int, guard);
+    const auto protection = StickyTabCloseGuard(guard);
+    const bool keyboard = protection == StickyTabCloseGuard::KeyboardAndMouse || protection == StickyTabCloseGuard::Keyboard;
+    const bool mouse = protection == StickyTabCloseGuard::KeyboardAndMouse || protection == StickyTabCloseGuard::Mouse;
+    const auto cleanup = qScopeGuard([] { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); });
+    WindowManager manager; auto appearance = manager.tabAppearance(); appearance.preventStickyClose = protection;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Close protection", {900, 400}});
+    QVector<TabId> ids; QVector<QPointer<QPlainTextEdit>> editors;
+    for (int index = 0; index < 5; ++index) {
+        auto* editor = new QPlainTextEdit; editors << editor;
+        ids << manager.addTab(window, editor, {QString("Tab %1").arg(index), "editor", {}});
+    }
+    for (const int index : {0, 1, 2}) QVERIFY(manager.setTabSticky(ids[index], true)); // [0 1 2 | 3 4]
+    const auto group = manager.model().groupForTab(ids[0]);
+    manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    const auto press = [&](int index, Qt::Key key, Qt::KeyboardModifiers modifiers) {
+        QVERIFY(manager.focusPane(ids[index], manager.model().tab(ids[index])->activePane));
+        QTest::keyClick(editors[index], key, modifiers);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    };
+    // The close shortcut keeps a sticky tab and shows the first other tab.
+    press(0, Qt::Key_W, Qt::ControlModifier);
+    QCOMPARE(bool(manager.model().tab(ids[0])), keyboard);
+    if (keyboard) QCOMPARE(manager.model().group(group)->activeTab, ids[3]);
+    // So does the close-pane shortcut, which would close the tab with its only pane.
+    press(1, Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(bool(manager.model().tab(ids[1])), keyboard);
+    // A middle click on a sticky tab.
+    auto* view = groupView(manager.windowWidget(window), group); QVERIFY(view);
+    auto* bar = view->tabBar(); const auto point = bar->displayTabRect(manager.model().group(group)->tabs.indexOf(ids[2])).center();
+    sendBarMouse(bar, QEvent::MouseButtonPress, point, Qt::MiddleButton, Qt::MiddleButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, point, Qt::MiddleButton, Qt::NoButton);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCOMPARE(bool(manager.model().tab(ids[2])), mouse);
+    // Other tabs close by shortcut, and commands close sticky tabs too.
+    press(3, Qt::Key_W, Qt::ControlModifier);
+    QVERIFY(!manager.model().tab(ids[3]));
+    for (const auto tab : {ids[0], ids[1], ids[2]}) if (manager.model().tab(tab)) {
+        auto context = manager.context(window); context.group = group; context.tab = tab;
+        context.pane = manager.model().tab(tab)->activePane;
+        QVERIFY(manager.commands().execute("workspace.closeTab", context));
+        QVERIFY(!manager.model().tab(tab));
+    }
+}
+
+void StickyTabsTest::blockedCloseShortcutShowsAnotherGroupsTab()
+{
+    const auto cleanup = qScopeGuard([] { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); });
+    WindowManager manager;
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Close protection groups", {900, 400}});
+    auto* editor = new QPlainTextEdit;
+    const auto sticky = manager.addTab(window, editor, {"Sticky", "editor", {}});
+    const auto other = manager.addTab(window, new QPlainTextEdit, {"Other", "editor", {}});
+    QVERIFY(manager.setTabSticky(sticky, true));
+    QVERIFY(manager.moveTab(other, manager.model().groupForTab(sticky), Placement::Right));
+    QVERIFY(manager.model().groupForTab(other) != manager.model().groupForTab(sticky));
+    manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(manager.focusPane(sticky, manager.model().tab(sticky)->activePane));
+    QCOMPARE(manager.context(window).tab, sticky);
+    QTest::keyClick(editor, Qt::Key_W, Qt::ControlModifier);
+    QVERIFY(manager.model().tab(sticky));
+    QCOMPARE(manager.context(window).tab, other);
+    // With no other tab at all, the shortcut does nothing.
+    QVERIFY(manager.setTabSticky(other, true));
+    QVERIFY(manager.focusPane(sticky, manager.model().tab(sticky)->activePane));
+    QTest::keyClick(editor, Qt::Key_W, Qt::ControlModifier);
+    QVERIFY(manager.model().tab(sticky)); QVERIFY(manager.model().tab(other));
+    QCOMPARE(manager.context(window).tab, sticky);
 }
 
 QTEST_MAIN(StickyTabsTest)

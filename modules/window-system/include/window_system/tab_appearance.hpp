@@ -12,6 +12,10 @@ enum class TabBarPlacement { Top, Bottom };
 // their natural width, only an icon or initial, or a fixed width that shows
 // the start of the title.
 enum class StickyTabSizing { Normal, Compact, Shrink };
+// Which ways of closing leave a sticky tab open, as VS Code's
+// workbench.editor.preventPinnedEditorClose: the close-tab shortcut, a
+// middle click, both or neither.
+enum class StickyTabCloseGuard { KeyboardAndMouse, Keyboard, Mouse, Never };
 
 inline constexpr int compactStickyTabWidth = 38;
 inline constexpr int shrinkStickyTabWidth = 80;
@@ -65,6 +69,7 @@ struct TabAppearance {
     // Sticky tabs take a row of their own above the other tabs, as VS Code's
     // workbench.editor.pinnedTabsOnSeparateRow.
     bool stickyTabsOnSeparateRow = false;
+    StickyTabCloseGuard preventStickyClose = StickyTabCloseGuard::KeyboardAndMouse;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

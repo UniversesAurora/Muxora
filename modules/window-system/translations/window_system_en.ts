@@ -3765,5 +3765,45 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</source>
             <translation>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="218"></location>
+            <source>Sticky tab close protection must be keyboardAndMouse, keyboard, mouse or never</source>
+            <translation>Sticky tab close protection must be keyboardAndMouse, keyboard, mouse or never</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="163"></location>
+            <source>Keep sticky tabs open</source>
+            <translation>Keep sticky tabs open</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="164"></location>
+            <source>On the close shortcut and middle click (default)</source>
+            <translation>On the close shortcut and middle click (default)</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="165"></location>
+            <source>On the close shortcut</source>
+            <translation>On the close shortcut</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="166"></location>
+            <source>On middle click</source>
+            <translation>On middle click</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="167"></location>
+            <source>Never</source>
+            <translation>Never</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="170"></location>
+            <source>A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it.</source>
+            <translation>A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it.</translation>
+        </message>
+        <message>
+            <location filename="../../window-system-lua/src/appearance_api.cpp" line="166"></location>
+            <source>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</source>
+            <translation>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</translation>
+        </message>
     </context>
 </TS>

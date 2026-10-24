@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include "window_manager_p.hpp"
+#include "style/tab_appearance_p.hpp"
 #include "tab_presentation_commands.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
@@ -197,8 +198,25 @@ void WindowManager::registerWindowCommands()
             const auto window = d->windows.value(c.window);
             return window && window->strips();
         });
+    // VS Code's preventPinnedEditorClose: the close shortcut leaves a sticky
+    // tab open and shows the first tab that is not sticky instead, in its
+    // group first. Menus, the palette and the tab's own controls still close.
+    const auto shortcutKeepsSticky = [this](TabId tab) {
+        if (!d->dispatchingShortcut || !d->model.isTabSticky(tab) || !guardsShortcut(d->appearance.preventStickyClose)) return false;
+        const auto groupId = d->model.groupForTab(tab);
+        const auto* group = d->model.group(groupId);
+        QVector<TabId> candidates = group ? group->tabs.mid(group->stickyTabs) : QVector<TabId>{};
+        if (group)
+            for (const auto other : d->model.orderedTabs(group->windowId)) {
+                const auto* owner = d->model.group(d->model.groupForTab(other));
+                if (owner && owner->id != groupId && owner->location != GroupLocation::AutoHide && !d->model.isTabSticky(other))
+                    candidates << other;
+            }
+        if (!candidates.isEmpty()) activateTab(candidates.first());
+        return true;
+    };
     add("workspace.closeTab", QCoreApplication::translate("WindowSystem", "Close current tab"), "文件", QKeySequence("Ctrl+W"),
-        [this](const CommandContext& c) { return closeTab(c.tab); }, hasTab);
+        [this, shortcutKeepsSticky](const CommandContext& c) { return shortcutKeepsSticky(c.tab) || closeTab(c.tab); }, hasTab);
     add("window.close", QCoreApplication::translate("WindowSystem", "Close current window"), "窗口", QKeySequence("Alt+F4"),
         [this](const CommandContext& c) { return requestCloseWindow(c.window); }, hasWindow);
     const auto setDisplayState = [this](const CommandContext& c, const QString& state) {
@@ -517,8 +535,11 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { return !extractPane(c.tab, c.pane, WindowKind::Floating).isNull(); }, hasTab);
     add("pane.extractWorkbench", QCoreApplication::translate("WindowSystem", "Move current pane to a workbench window"), "窗口", {},
         [this](const CommandContext& c) { return !extractPane(c.tab, c.pane, WindowKind::Workbench).isNull(); }, hasTab);
+    // Closing a tab's last pane closes the tab, so the same protection applies.
     add("pane.close", QCoreApplication::translate("WindowSystem", "Close current pane"), "布局", QKeySequence("Ctrl+Shift+W"),
-        [this](const CommandContext& c) { return closePane(c.tab, c.pane); }, hasTab);
+        [this, shortcutKeepsSticky](const CommandContext& c) {
+            return (d->model.panes(c.tab).size() == 1 && shortcutKeepsSticky(c.tab)) || closePane(c.tab, c.pane);
+        }, hasTab);
     add("window.toggleStripsLock", QCoreApplication::translate("WindowSystem", "Lock or unlock menus and toolbars"), "工具", {},
         [this](const CommandContext& c) {
             const auto* window = d->windows.value(c.window).data();

@@ -14,6 +14,16 @@ namespace window_system {
 // The settings and JSON names of a sizing; empty for an out-of-range value.
 [[nodiscard]] QString stickySizingName(StickyTabSizing sizing);
 [[nodiscard]] std::optional<StickyTabSizing> stickySizingFromName(const QString& name);
+[[nodiscard]] QString stickyCloseGuardName(StickyTabCloseGuard guard);
+[[nodiscard]] std::optional<StickyTabCloseGuard> stickyCloseGuardFromName(const QString& name);
+[[nodiscard]] inline bool guardsShortcut(StickyTabCloseGuard guard)
+{
+    return guard == StickyTabCloseGuard::KeyboardAndMouse || guard == StickyTabCloseGuard::Keyboard;
+}
+[[nodiscard]] inline bool guardsMiddleClick(StickyTabCloseGuard guard)
+{
+    return guard == StickyTabCloseGuard::KeyboardAndMouse || guard == StickyTabCloseGuard::Mouse;
+}
 // Translate only untouched built-in labels. Host/user preset names are content.
 [[nodiscard]] QString tabColorDisplayName(const TabColorPreset& preset);
 } // namespace window_system

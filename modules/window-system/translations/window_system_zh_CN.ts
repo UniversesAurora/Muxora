@@ -3758,5 +3758,45 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</source>
             <translation>钉住的标签显示在其他标签上方单独的一行，其他标签滚动时它们不动。在两行之间拖动标签即可钉住或取消钉住。</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="218"></location>
+            <source>Sticky tab close protection must be keyboardAndMouse, keyboard, mouse or never</source>
+            <translation>钉住标签关闭保护只能是 keyboardAndMouse、keyboard、mouse 或 never</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="163"></location>
+            <source>Keep sticky tabs open</source>
+            <translation>不关闭钉住标签</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="164"></location>
+            <source>On the close shortcut and middle click (default)</source>
+            <translation>按关闭快捷键和中键时（默认）</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="165"></location>
+            <source>On the close shortcut</source>
+            <translation>按关闭快捷键时</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="166"></location>
+            <source>On middle click</source>
+            <translation>按中键时</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="167"></location>
+            <source>Never</source>
+            <translation>从不</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="170"></location>
+            <source>A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it.</source>
+            <translation>用所选方式关闭时，钉住标签保持打开；被拦下的关闭快捷键改为切到第一个未钉住的标签。菜单和命令仍然可以关闭它。</translation>
+        </message>
+        <message>
+            <location filename="../../window-system-lua/src/appearance_api.cpp" line="166"></location>
+            <source>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</source>
+            <translation>钉住标签关闭保护只能是 keyboard_and_mouse、keyboard、mouse 或 never</translation>
+        </message>
     </context>
 </TS>
