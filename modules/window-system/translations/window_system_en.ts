@@ -3355,8 +3355,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="141"></location>
-            <source>Shrink: fixed width with the start of the title</source>
-            <translation>Shrink: fixed width with the start of the title</translation>
+            <source>Shrink: the start of the title</source>
+            <translation>Shrink: the start of the title</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="144"></location>
@@ -3419,19 +3419,14 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Sticky tab</translation>
         </message>
         <message>
-            <location filename="../src/style/tab_appearance.cpp" line="222"></location>
-            <source>The shrunk sticky tab width must be an integer number of logical pixels within the allowed range</source>
-            <translation>The shrunk sticky tab width must be an integer number of logical pixels within the allowed range</translation>
-        </message>
-        <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="150"></location>
-            <source>Shrunk sticky tab width</source>
-            <translation>Shrunk sticky tab width</translation>
+            <source>Shrunk sticky tab title width</source>
+            <translation>Shrunk sticky tab title width</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="162"></location>
-            <source>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</source>
-            <translation>The width of each sticky tab when sticky tabs shrink. The title is clipped to fit.</translation>
+            <source>Clip the title of a shrunk sticky tab that exceeds this length. Separate from the regular title clipping.</source>
+            <translation>Clip the title of a shrunk sticky tab that exceeds this length. Separate from the regular title clipping.</translation>
         </message>
         <message>
             <location filename="../src/commands/tab_group_commands.cpp" line="125"></location>

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "docking/tab_strip.hpp"
+#include "style/tab_label_geometry.hpp"
 #include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 
@@ -18,9 +19,9 @@
 
 using namespace window_system;
 
-// Sticky tab sizing and placement from 8.15b: compact and shrunk sticky tabs
-// have fixed widths and, in a single row, stay at the viewport's start while
-// the other tabs scroll under them.
+// Sticky tab sizing and placement from 8.15b: compact sticky tabs have a fixed
+// width, shrunk ones clip their titles to a limit of their own, and in a single
+// row both stay at the viewport's start while the other tabs scroll under them.
 namespace {
 TabColorPreset solidPreset(const QString& id, QColor background)
 {
@@ -92,13 +93,17 @@ TabAppearance sized(StickyTabSizing sizing)
 {
     TabAppearance appearance; appearance.showIcons = false; appearance.stickySizing = sizing; return appearance;
 }
+
+// The width of a tab without number or icon whose title fills `title`; every
+// title here is wider than the limits used.
+int shrunkWidth(int title = defaultShrinkStickyTitleWidth) { return tabBarTabWidth({0, 0, title}); }
 }
 
 class StickyTabsTest final : public QObject {
     Q_OBJECT
 private slots:
-    void sizedStickyTabsUseFixedWidths();
-    void shrunkStickyTabsTakeTheChosenWidth();
+    void sizedStickyTabsUseTheirWidths();
+    void shrunkStickyTitlesUseTheirOwnLimit();
     void compactStickyTabsShowTheirIconOrInitialWithoutAPin();
     void sizedStickyTabsStayInViewWhileOthersScroll();
     void activatingAScrolledTabRevealsItPastTheStickyTabs();
@@ -113,14 +118,15 @@ private slots:
     void tabListMarksStickyTabs();
 };
 
-void StickyTabsTest::sizedStickyTabsUseFixedWidths()
+void StickyTabsTest::sizedStickyTabsUseTheirWidths()
 {
     for (const auto sizing : {StickyTabSizing::Normal, StickyTabSizing::Compact, StickyTabSizing::Shrink}) {
         GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 4, 2, sized(sizing));
         tabs.resize(900, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
         auto* bar = tabs.tabBar();
         const int expected = sizing == StickyTabSizing::Compact ? compactStickyTabWidth
-            : sizing == StickyTabSizing::Shrink ? defaultShrinkStickyTabWidth : bar->naturalTabWidth(0);
+            : sizing == StickyTabSizing::Shrink ? shrunkWidth() : bar->naturalTabWidth(0);
+        if (sizing == StickyTabSizing::Shrink) QVERIFY(expected < bar->naturalTabWidth(0));
         QCOMPARE(bar->displayTabRect(0).width(), expected);
         QCOMPARE(bar->displayTabRect(1).width(), sizing == StickyTabSizing::Normal ? bar->naturalTabWidth(1) : expected);
         QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
@@ -133,23 +139,31 @@ void StickyTabsTest::sizedStickyTabsUseFixedWidths()
     }
 }
 
-void StickyTabsTest::shrunkStickyTabsTakeTheChosenWidth()
+void StickyTabsTest::shrunkStickyTitlesUseTheirOwnLimit()
 {
-    auto appearance = sized(StickyTabSizing::Shrink); appearance.shrinkStickyTabWidth = 140;
+    auto appearance = sized(StickyTabSizing::Shrink); appearance.shrinkStickyTitleWidth = 20;
+    // The regular clipping is separate: a tighter limit there leaves the
+    // shrunk sticky titles alone and still clips the other tabs.
+    appearance.clipTitles = true; appearance.maximumTitleWidth = 10;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 4, 2, appearance);
     tabs.resize(900, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar();
-    QCOMPARE(bar->displayTabRect(0).width(), 140); QCOMPARE(bar->displayTabRect(1).width(), 140);
-    QCOMPARE(bar->stickyRunExtent(), 280);
-    // A preview among the sticky tabs takes the same width.
+    QCOMPARE(bar->displayTabRect(0).width(), shrunkWidth(20)); QCOMPARE(bar->displayTabRect(1).width(), shrunkWidth(20));
+    QCOMPARE(bar->stickyRunExtent(), 2 * shrunkWidth(20));
+    QCOMPARE(bar->displayTabRect(2).width(), shrunkWidth(10));
+    // A preview among the sticky tabs is no wider than a shrunk tab.
     tabs.setInsertionPreview(1, 200, true);
-    QCOMPARE(bar->insertionPreviewRect().width(), 140);
+    QCOMPARE(bar->insertionPreviewRect().width(), shrunkWidth(20));
     tabs.setInsertionPreview(-1, 0);
-    // Changing the width resizes the shown tabs at once, wider than the title too.
-    appearance.shrinkStickyTabWidth = 300; tabs.setAppearance(appearance, false);
-    QCOMPARE(bar->displayTabRect(0).width(), 300); QCOMPARE(bar->displayTabRect(1).left(), 300);
-    QVERIFY(bar->naturalTabWidth(0) < 300);
-    QCOMPARE(bar->displayTabRect(2).left(), 600); QCOMPARE(bar->displayTabRect(2).width(), bar->naturalTabWidth(2));
+    // A limit above the title width shows the whole title with no space after
+    // it; the other tabs follow right after.
+    appearance.shrinkStickyTitleWidth = 300; appearance.clipTitles = false; tabs.setAppearance(appearance, false);
+    QCOMPARE(bar->displayTabRect(0).width(), bar->naturalTabWidth(0)); QVERIFY(bar->naturalTabWidth(0) < shrunkWidth(300));
+    QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
+    QCOMPARE(bar->displayTabRect(2).left(), bar->displayTabRect(1).right() + 1);
+    // Zero shows no title text at all.
+    appearance.shrinkStickyTitleWidth = 0; tabs.setAppearance(appearance, false);
+    QCOMPARE(bar->displayTabRect(0).width(), shrunkWidth(0));
 }
 
 void StickyTabsTest::compactStickyTabsShowTheirIconOrInitialWithoutAPin()
@@ -194,7 +208,7 @@ void StickyTabsTest::sizedStickyTabsStayInViewWhileOthersScroll()
         GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 20, 2, sized(sizing));
         tabs.resize(500, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
         auto* bar = tabs.tabBar(); tabs.setCurrentIndex(0);
-        const int width = sizing == StickyTabSizing::Compact ? compactStickyTabWidth : defaultShrinkStickyTabWidth;
+        const int width = sizing == StickyTabSizing::Compact ? compactStickyTabWidth : shrunkWidth();
         QCOMPARE(bar->stickyRunExtent(), 2 * width);
         tabs.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(tabs.scrollOffset() > 3 * width);
         const int offset = tabs.scrollOffset();
@@ -345,7 +359,7 @@ void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
     tabs.setAppearance(appearance);
     auto* bar = tabs.tabBar();
     // Fill the sticky rows as far as possible: the last full row ends close to the viewport edge.
-    tabs.resize(defaultShrinkStickyTabWidth * 8 + 20, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    tabs.resize(shrunkWidth() * 8 + 20, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     QVERIFY(bar->displayTabRect(11).top() > 0); QCOMPARE(bar->displayTabRect(12).top(), bar->displayTabRect(11).top() + bar->lineHeight());
     auto* create = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(create && create->isVisible());
     QCOMPARE(create->y(), bar->displayTabRect(12).top());

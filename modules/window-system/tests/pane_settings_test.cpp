@@ -101,7 +101,7 @@ QSet<QString> allSettingKeys()
     return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTabWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -636,15 +636,15 @@ void PaneSettingsTest::settingControlsUpdateImmediatelyAndReflectExternalChanges
     QCOMPARE(position->currentData().toInt(), int(NewTabPosition::End));
     // The shrunk width applies, and can be edited, only while sticky tabs shrink.
     auto* sizing = page->findChild<QComboBox*>(QStringLiteral("StickyTabSizing"));
-    auto* shrinkWidth = page->findChild<QSpinBox*>(QStringLiteral("ShrinkStickyTabWidth"));
+    auto* shrinkWidth = page->findChild<QSpinBox*>(QStringLiteral("ShrinkStickyTitleWidth"));
     QVERIFY(sizing && shrinkWidth);
-    QCOMPARE(shrinkWidth->value(), defaultShrinkStickyTabWidth); QVERIFY(!shrinkWidth->isEnabled());
-    QCOMPARE(shrinkWidth->minimum(), minimumShrinkStickyTabWidth); QCOMPARE(shrinkWidth->maximum(), maximumShrinkStickyTabWidth);
+    QCOMPARE(shrinkWidth->value(), defaultShrinkStickyTitleWidth); QVERIFY(!shrinkWidth->isEnabled());
+    QCOMPARE(shrinkWidth->minimum(), minimumTabTitleWidth); QCOMPARE(shrinkWidth->maximum(), maximumTabTitleWidth);
     sizing->setCurrentIndex(sizing->findData(int(StickyTabSizing::Shrink)));
     QVERIFY(shrinkWidth->isEnabled());
     shrinkWidth->setValue(150);
-    QCOMPARE(manager.tabAppearance().shrinkStickyTabWidth, 150);
-    auto appearance = manager.tabAppearance(); appearance.shrinkStickyTabWidth = 64; appearance.stickySizing = StickyTabSizing::Compact;
+    QCOMPARE(manager.tabAppearance().shrinkStickyTitleWidth, 150);
+    auto appearance = manager.tabAppearance(); appearance.shrinkStickyTitleWidth = 64; appearance.stickySizing = StickyTabSizing::Compact;
     QVERIFY(manager.setTabAppearance(appearance));
     QCOMPARE(shrinkWidth->value(), 64); QVERIFY(!shrinkWidth->isEnabled());
 }
@@ -1058,7 +1058,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data(
                                 "window.visibility.tabBars", "window.visibility.sideBars", "CentralTabPlacement", "PinnedTabPlacement",
                                 "MultilineTabs", "WheelExpandTabRows", "ShowTabIcons", "ShowNewTabButton", "ShowTabNumbers",
                                 "ClipTabTitles", "MaximumTabTitleWidth", "ClipSidebarTabTitles", "MaximumSidebarTabTitleWidth",
-                                "StickyTabSizing", "ShrinkStickyTabWidth", "StickyTabsOnSeparateRow", "PreventStickyTabClose"}) {
+                                "StickyTabSizing", "ShrinkStickyTitleWidth", "StickyTabsOnSeparateRow", "PreventStickyTabClose"}) {
         for (const bool deleteManager : {false, true}) {
             const auto row = QByteArray(control) + (deleteManager ? "-manager" : "-page");
             QTest::newRow(row.constData()) << QString::fromLatin1(control) << deleteManager;
@@ -1131,7 +1131,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "ClipSidebarTabTitles") QVERIFY(appearance.value("clipSidebarTitles").toBool());
     else if (control == "MaximumSidebarTabTitleWidth") QCOMPARE(appearance.value("maximumSidebarTitleWidth").toInt(), 900);
     else if (control == "StickyTabSizing") QCOMPARE(appearance.value("stickySizing").toString(), QStringLiteral("shrink"));
-    else if (control == "ShrinkStickyTabWidth") QCOMPARE(appearance.value("shrinkStickyTabWidth").toInt(), 900);
+    else if (control == "ShrinkStickyTitleWidth") QCOMPARE(appearance.value("shrinkStickyTitleWidth").toInt(), 900);
     else if (control == "StickyTabsOnSeparateRow") QVERIFY(appearance.value("stickyTabsOnSeparateRow").toBool());
     else if (control == "PreventStickyTabClose") QCOMPARE(appearance.value("preventStickyClose").toString(), QStringLiteral("never"));
     const auto savedWindow = saved.value("windows").toArray().first().toObject();

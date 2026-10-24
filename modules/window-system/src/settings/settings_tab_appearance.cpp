@@ -137,7 +137,7 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     stickySizing_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Sticky tab size"));
     for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "Normal (default)"), StickyTabSizing::Normal},
                              std::pair{QCoreApplication::translate("WindowSystem", "Compact: icon or first letter only"), StickyTabSizing::Compact},
-                             std::pair{QCoreApplication::translate("WindowSystem", "Shrink: fixed width with the start of the title"), StickyTabSizing::Shrink}})
+                             std::pair{QCoreApplication::translate("WindowSystem", "Shrink: the start of the title"), StickyTabSizing::Shrink}})
         stickySizing_->addItem(entry.first, int(entry.second));
     rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Sticky tab size"), "tabs.stickySizing",
         QCoreApplication::translate("WindowSystem", "Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll."), stickySizing_));
@@ -146,27 +146,15 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         auto next = manager_->tabAppearance(); next.stickySizing = StickyTabSizing(stickySizing_->currentData().toInt());
         manager_->setTabAppearance(next);
     });
-    {
-        const auto title = QCoreApplication::translate("WindowSystem", "Shrunk sticky tab width");
-        auto* editor = new UnitSpinBox(parent);
-        editor->setObjectName("ShrinkStickyTabWidth");
-        editor->setRange(minimumShrinkStickyTabWidth, maximumShrinkStickyTabWidth);
-        editor->setSuffix(QStringLiteral(" px"));
-        editor->setAccessibleName(title);
-        shrinkStickyTabWidth_ = new IntegerSlider(editor, minimumShrinkStickyTabWidth, 400, parent);
-        shrinkStickyTabWidth_->setObjectName("ShrinkStickyTabWidthControl");
-        shrinkStickyTabWidth_->setMaximumWidth(440);
-        shrinkStickyTabWidth_->slider()->setObjectName("ShrinkStickyTabWidthSlider");
-        shrinkStickyTabWidth_->slider()->setAccessibleName(title);
-        rows->addWidget(addRow(parent, "window/tabs/sticky", title, "tabs.shrinkStickyTabWidth",
-            QCoreApplication::translate("WindowSystem", "The width of each sticky tab when sticky tabs shrink. The title is clipped to fit."),
-            shrinkStickyTabWidth_));
-        connect(shrinkStickyTabWidth_, &IntegerSlider::valueChanged, this, [this](int width) {
-            if (!manager_) return;
-            auto next = manager_->tabAppearance(); next.shrinkStickyTabWidth = width;
-            manager_->setTabAppearance(next);
-        });
-    }
+    shrinkStickyTitleWidth_ = widthControl("ShrinkStickyTitleWidth", QCoreApplication::translate("WindowSystem", "Shrunk sticky tab title width"));
+    rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Shrunk sticky tab title width"),
+        "tabs.shrinkStickyTitleWidth", QCoreApplication::translate("WindowSystem", "Clip the title of a shrunk sticky tab that exceeds this length. Separate from the regular title clipping."),
+        shrinkStickyTitleWidth_));
+    connect(shrinkStickyTitleWidth_, &IntegerSlider::valueChanged, this, [this](int width) {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.shrinkStickyTitleWidth = width;
+        manager_->setTabAppearance(next);
+    });
     const auto separateTitle = QCoreApplication::translate("WindowSystem", "Show sticky tabs on a separate row");
     stickyTabsOnSeparateRow_ = new ThemedCheckBox(separateTitle, parent);
     stickyTabsOnSeparateRow_->setObjectName("StickyTabsOnSeparateRow");
@@ -220,9 +208,9 @@ void SettingsPage::syncTabAppearanceOptions()
     {
         const QSignalBlocker block(stickySizing_);
         stickySizing_->setCurrentIndex(stickySizing_->findData(int(appearance.stickySizing)));
-        const QSignalBlocker shrinkWidth(shrinkStickyTabWidth_);
-        shrinkStickyTabWidth_->setValue(appearance.shrinkStickyTabWidth);
-        shrinkStickyTabWidth_->setEnabled(appearance.stickySizing == StickyTabSizing::Shrink);
+        const QSignalBlocker shrinkWidth(shrinkStickyTitleWidth_);
+        shrinkStickyTitleWidth_->setValue(appearance.shrinkStickyTitleWidth);
+        shrinkStickyTitleWidth_->setEnabled(appearance.stickySizing == StickyTabSizing::Shrink);
         const QSignalBlocker separate(stickyTabsOnSeparateRow_);
         stickyTabsOnSeparateRow_->setChecked(appearance.stickyTabsOnSeparateRow);
         const QSignalBlocker guard(preventStickyClose_);

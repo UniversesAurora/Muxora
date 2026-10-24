@@ -88,7 +88,7 @@ private:
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;
     QComboBox* stickySizing_ = nullptr;
-    IntegerSlider* shrinkStickyTabWidth_ = nullptr;
+    IntegerSlider* shrinkStickyTitleWidth_ = nullptr;
     QCheckBox* stickyTabsOnSeparateRow_ = nullptr;
     QComboBox* preventStickyClose_ = nullptr;
     WindowId initialWindow_;

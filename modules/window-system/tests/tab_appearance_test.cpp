@@ -82,16 +82,16 @@ void TabAppearanceTest::stickySizingRoundTripsThroughJsonAndLayout()
         QCOMPARE(json.value("preventStickyClose").toString(), QString::fromLatin1(name));
         TabAppearance parsed; QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed, appearance);
     }
-    for (const int width : {minimumShrinkStickyTabWidth, 137, maximumShrinkStickyTabWidth}) {
-        TabAppearance appearance; appearance.shrinkStickyTabWidth = width;
+    for (const int width : {minimumTabTitleWidth, 137, maximumTabTitleWidth}) {
+        TabAppearance appearance; appearance.shrinkStickyTitleWidth = width;
         const auto json = tabAppearanceToJson(appearance);
-        QCOMPARE(json.value("shrinkStickyTabWidth").toInt(), width);
+        QCOMPARE(json.value("shrinkStickyTitleWidth").toInt(), width);
         TabAppearance parsed; QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed, appearance);
     }
-    auto json = tabAppearanceToJson(TabAppearance{}); json.remove("stickySizing"); json.remove("shrinkStickyTabWidth");
-    TabAppearance parsed; parsed.stickySizing = StickyTabSizing::Shrink; parsed.shrinkStickyTabWidth = 200;
+    auto json = tabAppearanceToJson(TabAppearance{}); json.remove("stickySizing"); json.remove("shrinkStickyTitleWidth");
+    TabAppearance parsed; parsed.stickySizing = StickyTabSizing::Shrink; parsed.shrinkStickyTitleWidth = 200;
     QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed.stickySizing, StickyTabSizing::Normal);
-    QCOMPARE(parsed.shrinkStickyTabWidth, defaultShrinkStickyTabWidth); QCOMPARE(defaultShrinkStickyTabWidth, 80);
+    QCOMPARE(parsed.shrinkStickyTitleWidth, defaultShrinkStickyTitleWidth); QCOMPARE(defaultShrinkStickyTitleWidth, 40);
     WindowManager manager; manager.createWindow();
     auto appearance = manager.tabAppearance(); appearance.stickySizing = StickyTabSizing::Compact;
     QVERIFY(manager.setTabAppearance(appearance));
@@ -227,8 +227,8 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
     case 9: candidate.maximumTitleWidth = maximumTabTitleWidth + 1; break;
     case 10: candidate.maximumSidebarTitleWidth = minimumTabTitleWidth - 1; break;
     case 11: candidate.maximumSidebarTitleWidth = maximumTabTitleWidth + 1; break;
-    case 12: candidate.shrinkStickyTabWidth = minimumShrinkStickyTabWidth - 1; break;
-    case 13: candidate.shrinkStickyTabWidth = maximumShrinkStickyTabWidth + 1; break;
+    case 12: candidate.shrinkStickyTitleWidth = minimumTabTitleWidth - 1; break;
+    case 13: candidate.shrinkStickyTitleWidth = maximumTabTitleWidth + 1; break;
     }
     QSignalSpy changed(&manager, &WindowManager::layoutChanged);
     QVERIFY(!manager.setTabAppearance(candidate)); QCOMPARE(manager.saveLayout(), before); QCOMPARE(changed.size(), 0);
@@ -262,11 +262,11 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
     QTest::newRow("stickySizingCase") << QString("stickySizing") << QJsonValue("Compact");
     QTest::newRow("stickySizingNumber") << QString("stickySizing") << QJsonValue(1);
     for (const auto& item : {std::pair{"String", QJsonValue("80")}, std::pair{"Null", QJsonValue(QJsonValue::Null)},
-        std::pair{"Fraction", QJsonValue(80.5)}, std::pair{"Small", QJsonValue(minimumShrinkStickyTabWidth - 1)},
-        std::pair{"Large", QJsonValue(maximumShrinkStickyTabWidth + 1)},
+        std::pair{"Fraction", QJsonValue(80.5)}, std::pair{"Small", QJsonValue(minimumTabTitleWidth - 1)},
+        std::pair{"Large", QJsonValue(maximumTabTitleWidth + 1)},
         std::pair{"Infinity", QJsonValue(std::numeric_limits<double>::infinity())}})
         QTest::newRow(qPrintable(QStringLiteral("shrinkWidth") + QLatin1String(item.first)))
-            << QString("shrinkStickyTabWidth") << item.second;
+            << QString("shrinkStickyTitleWidth") << item.second;
     QTest::newRow("stickyRowString") << QString("stickyTabsOnSeparateRow") << QJsonValue("true");
     QTest::newRow("unknownCloseGuard") << QString("preventStickyClose") << QJsonValue("always");
     QTest::newRow("closeGuardLuaName") << QString("preventStickyClose") << QJsonValue("keyboard_and_mouse");

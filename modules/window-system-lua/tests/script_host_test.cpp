@@ -1359,18 +1359,18 @@ void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
         assert(not pcall(muxora.tabs.set_appearance,{sticky_tab_sizing=invalid}))
         assert(muxora.settings.get().sticky_tab_sizing=='shrink' and not muxora.settings.get().multiline)
       end
-      assert(muxora.tabs.appearance().shrink_sticky_tab_width==80)
-      assert(muxora.tabs.set_appearance({shrink_sticky_tab_width=120}))
-      for _,invalid in ipairs({37,1001,'120',true}) do
-        assert(not pcall(muxora.tabs.set_appearance,{shrink_sticky_tab_width=invalid}))
-        assert(muxora.settings.get().shrink_sticky_tab_width==120)
+      assert(muxora.tabs.appearance().shrink_sticky_title_width==40)
+      assert(muxora.tabs.set_appearance({shrink_sticky_title_width=120}))
+      for _,invalid in ipairs({-1,1000001,'120',true}) do
+        assert(not pcall(muxora.tabs.set_appearance,{shrink_sticky_title_width=invalid}))
+        assert(muxora.settings.get().shrink_sticky_title_width==120)
       end
       return muxora.settings.get().sticky_tab_sizing
     )");
     QVERIFY2(reply.ok, qPrintable(reply.error));
     QCOMPARE(reply.values[0].toString(), QStringLiteral("shrink"));
     QCOMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Shrink);
-    QCOMPARE(manager.tabAppearance().shrinkStickyTabWidth, 120);
+    QCOMPARE(manager.tabAppearance().shrinkStickyTitleWidth, 120);
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {
     WindowManager manager;

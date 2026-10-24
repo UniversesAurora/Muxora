@@ -9,8 +9,7 @@ namespace window_system {
 
 enum class TabBarPlacement { Top, Bottom };
 // How sticky tabs are sized, as VS Code's workbench.editor.pinnedTabSizing:
-// their natural width, only an icon or initial, or a fixed width that shows
-// the start of the title.
+// their natural width, only an icon or initial, or the start of the title.
 enum class StickyTabSizing { Normal, Compact, Shrink };
 // Which ways of closing leave a sticky tab open, as VS Code's
 // workbench.editor.preventPinnedEditorClose: the close-tab shortcut, a
@@ -18,14 +17,14 @@ enum class StickyTabSizing { Normal, Compact, Shrink };
 enum class StickyTabCloseGuard { KeyboardAndMouse, Keyboard, Mouse, Never };
 
 inline constexpr int compactStickyTabWidth = 38;
-// Shrunk sticky tabs take a user-chosen fixed width, 80 by default as VS Code.
-inline constexpr int minimumShrinkStickyTabWidth = compactStickyTabWidth;
-inline constexpr int maximumShrinkStickyTabWidth = 1000;
-inline constexpr int defaultShrinkStickyTabWidth = 80;
 
 inline constexpr int minimumTabTitleWidth = 0;
 inline constexpr int maximumTabTitleWidth = 1000000;
 inline constexpr int defaultTabTitleWidth = 160;
+// Shrunk sticky tabs limit only their title text, separately from the regular
+// title clipping. With an icon, the default makes a tab about as wide as VS
+// Code's fixed 80.
+inline constexpr int defaultShrinkStickyTitleWidth = 40;
 
 // Every state is explicit. Hosts need not derive text or icon colors from a
 // background, and the auto-hide rail remains independent of central tabs.
@@ -69,7 +68,7 @@ struct TabAppearance {
     // Compact and shrunk sticky tabs stay in view while the other tabs of a
     // single-row strip scroll under them.
     StickyTabSizing stickySizing = StickyTabSizing::Normal;
-    int shrinkStickyTabWidth = defaultShrinkStickyTabWidth;
+    int shrinkStickyTitleWidth = defaultShrinkStickyTitleWidth;
     // Sticky tabs take a row of their own above the other tabs, as VS Code's
     // workbench.editor.pinnedTabsOnSeparateRow.
     bool stickyTabsOnSeparateRow = false;

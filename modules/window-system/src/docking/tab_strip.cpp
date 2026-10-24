@@ -257,9 +257,12 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
         if (stickyPhase) stickyWidth = std::max(stickyWidth, x);
         return area;
     };
-    // A preview among sized sticky tabs takes their width, not the carried label's.
-    const int previewExtent = insertionSticky_ && appearance_.stickySizing != StickyTabSizing::Normal ? sizedStickyWidth()
-        : insertionExtent_;
+    // A preview among compact sticky tabs takes their width, and among shrunk
+    // ones at most the width of a tab whose title fills the shrunk limit.
+    const int previewExtent = !insertionSticky_ || appearance_.stickySizing == StickyTabSizing::Normal ? insertionExtent_
+        : appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth
+        : std::min(insertionExtent_, tabBarTabWidth({appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(insertionIndex_ + 1)) : 0,
+              appearance_.showIcons ? iconSize().width() : 0, appearance_.shrinkStickyTitleWidth}));
     // The sticky run ends before the first other tab or a preview for one.
     std::optional<int> runEnd;
     stickyRowsHeight_ = 0;
@@ -352,7 +355,7 @@ bool DragTabBar::isCompactSticky(int index) const
 {
     return index >= 0 && index < stickyCount_ && appearance_.stickySizing == StickyTabSizing::Compact;
 }
-int DragTabBar::naturalTabWidth(int index) const { return tabBarTabWidth(labelParts(index)); }
+int DragTabBar::naturalTabWidth(int index) const { return tabBarTabWidth(labelParts(index, false)); }
 void DragTabBar::updateInsertionSticky()
 {
     // The model's rule: a drop inside the sticky run, or right after it for a
@@ -482,22 +485,22 @@ int DragTabBar::insertionIndexAt(QPoint local) const
     }
     return visible;
 }
-TabLabelParts DragTabBar::labelParts(int index) const {
+TabLabelParts DragTabBar::labelParts(int index, bool sized) const {
     auto& title = titleLayouts_[index];
     title.prepare(tabText(index), font(), layoutDirection(), true, this);
     const int natural = title.naturalWidth();
+    // A shrunk sticky tab has its own title limit; the regular clipping does
+    // not apply to it.
+    const bool shrunk = sized && index < stickyCount_ && appearance_.stickySizing == StickyTabSizing::Shrink;
     return {appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) : 0,
             appearance_.showIcons && !tabIcon(index).isNull() ? iconSize().width() : 0,
-            appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural};
+            shrunk ? std::min(natural, appearance_.shrinkStickyTitleWidth)
+                : appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural};
 }
 QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
-    const bool sized = index < stickyCount_ && appearance_.stickySizing != StickyTabSizing::Normal;
-    size.setWidth(sized ? sizedStickyWidth() : naturalTabWidth(index));
+    size.setWidth(isCompactSticky(index) ? compactStickyTabWidth : tabBarTabWidth(labelParts(index)));
     return size;
-}
-int DragTabBar::sizedStickyWidth() const {
-    return appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : appearance_.shrinkStickyTabWidth;
 }
 QRect DragTabBar::closeRect(int index) const {
     if (isCompactSticky(index)) return {};

@@ -79,13 +79,14 @@ protected:
     void tabRemoved(int index) override;
 private:
     QRect closeRect(int index) const;
-    TabLabelParts labelParts(int index) const;
+    // `sized` applies the shrunk sticky title limit; the natural width a
+    // carried label keeps does not.
+    TabLabelParts labelParts(int index, bool sized = true) const;
     int displayedTabAt(QPoint local) const;
     bool isDragged(int index) const;
     // A compact sticky tab shows only its icon or initial and has no pin.
     bool isCompactSticky(int index) const;
     // The fixed width of a compact or shrunk sticky tab.
-    int sizedStickyWidth() const;
     // Sticky tabs, and a sticky insertion preview, stay in view.
     bool stickyFloats() const;
     // Sticky tabs take rows of their own above the others.
