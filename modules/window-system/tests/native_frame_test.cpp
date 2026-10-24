@@ -4,6 +4,7 @@
 #include "chrome/command_strip.hpp"
 #include "docking/dock_surface.hpp"
 #include "authored_mouse_input.hpp"
+#include "native_input.hpp"
 
 #include <window_system/window_manager.hpp>
 
@@ -313,6 +314,8 @@ private slots:
     void nativePaintMessagesCannotReplaceTheCustomClient();
     void reorderedWholeWindowDragCannotRestoreTheStockCaption_data();
     void reorderedWholeWindowDragCannotRestoreTheStockCaption();
+    void compactPreviewHasNoFrameAcrossItsTransparentGap_data();
+    void compactPreviewHasNoFrameAcrossItsTransparentGap();
 };
 
 void NativeFrameTest::initTestCase()
@@ -1284,6 +1287,103 @@ void NativeFrameTest::nativePaintMessagesCannotReplaceTheCustomClient()
     const auto configuration = nativeFrameConfiguration(window);
     QVERIFY(configuration.nonClientEnabled); QCOMPARE(configuration.nonClientResult, qint32(S_OK));
     window->releaseMouse();
+}
+
+void NativeFrameTest::compactPreviewHasNoFrameAcrossItsTransparentGap_data()
+{
+    QTest::addColumn<int>("presentation"); QTest::addColumn<bool>("bottomTabs");
+    for (const auto mode : {WorkspaceWindow::DragPresentation::Tab, WorkspaceWindow::DragPresentation::Left,
+                           WorkspaceWindow::DragPresentation::Right, WorkspaceWindow::DragPresentation::Top,
+                           WorkspaceWindow::DragPresentation::Bottom})
+        QTest::newRow(qPrintable(QString("presentation-%1").arg(int(mode)))) << int(mode) << false;
+    QTest::newRow("bottom-tabs") << int(WorkspaceWindow::DragPresentation::Tab) << true;
+}
+
+void NativeFrameTest::compactPreviewHasNoFrameAcrossItsTransparentGap()
+{
+    QFETCH(int, presentation); QFETCH(bool, bottomTabs);
+    QWidget backdrop(nullptr, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    backdrop.setAutoFillBackground(true);
+    auto palette = backdrop.palette();
+    const QColor background(31, 73, 43);
+    palette.setColor(QPalette::Window, background); backdrop.setPalette(palette);
+    const auto available = qApp->primaryScreen()->availableGeometry();
+    backdrop.setGeometry(available.adjusted(12, 12, -12, -12));
+    const BOOL disableBackdropTransitions = TRUE;
+    QCOMPARE(DwmSetWindowAttribute(reinterpret_cast<HWND>(backdrop.winId()), DWMWA_TRANSITIONS_FORCEDISABLED,
+        &disableBackdropTransitions, sizeof(disableBackdropTransitions)), S_OK);
+    backdrop.show(); QVERIFY(QTest::qWaitForWindowExposed(&backdrop));
+    test::authoredMouseInput().takePriority();
+    native_input::mouse(&backdrop, backdrop.rect().bottomRight() - QPoint(4, 4));
+    QVector<COLORREF> pixels;
+    const QVector<QPoint> backdropSamples{backdrop.rect().center()};
+    QTRY_VERIFY(readScreenPixels(&backdrop, backdropSamples, pixels) && pixels == QVector<COLORREF>{RGB(31, 73, 43)});
+
+    WindowManager manager;
+    auto appearance = manager.tabAppearance();
+    appearance.centralPlacement = bottomTabs ? TabBarPlacement::Bottom : TabBarPlacement::Top;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto owner = manager.createWindow();
+    const auto moving = manager.createWindow(WindowKind::Floating, {"Preview gap", {500, 320}}, owner);
+    manager.addTab(moving, new QLabel("Live content"), {"Tab", {}, {}});
+    auto* carrier = static_cast<WorkspaceWindow*>(manager.windowWidget(moving));
+    carrier->setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    // This oracle checks the preview's stationary outline. Prepare a stable
+    // starting image; the existing whole-window drag test keeps and checks
+    // the carrier's opening animation during presentation changes.
+    const BOOL disableInitialTransition = TRUE;
+    QCOMPARE(DwmSetWindowAttribute(reinterpret_cast<HWND>(carrier->winId()), DWMWA_TRANSITIONS_FORCEDISABLED,
+        &disableInitialTransition, sizeof(disableInitialTransition)), S_OK);
+    carrier->move(backdrop.geometry().topLeft() + QPoint(40, 40));
+    manager.showWindow(moving); QVERIFY(QTest::qWaitForWindowExposed(carrier));
+    const auto geometry = carrier->geometry();
+    carrier->setDragPresentation(WorkspaceWindow::DragPresentation(presentation));
+    QCOMPARE(carrier->geometry(), geometry);
+    carrier->raise(); carrier->repaint(); QApplication::processEvents();
+    QCOMPARE(DwmFlush(), S_OK);
+    const auto handle = reinterpret_cast<HWND>(carrier->effectiveWinId());
+    RECT outer{}, client{};
+    QVERIFY(GetWindowRect(handle, &outer)); QVERIFY(GetClientRect(handle, &client));
+    POINT origin{}; QVERIFY(ClientToScreen(handle, &origin));
+    QVERIFY(OffsetRect(&client, origin.x, origin.y));
+    QCOMPARE(client.left, outer.left); QCOMPARE(client.top, outer.top);
+    QCOMPARE(client.right, outer.right); QCOMPARE(client.bottom, outer.bottom);
+    const auto ratio = carrier->devicePixelRatioF();
+    const QRegion gaps = QRegion(carrier->rect()).subtracted(carrier->mask());
+    QVERIFY(!gaps.isEmpty());
+
+    // Copy a complete frame once per sample. Repeated GetPixel calls would
+    // combine different compositor frames and are much slower for this area.
+    const auto screen = GetDC(nullptr); QVERIFY(screen);
+    const auto releaseScreen = qScopeGuard([&] { ReleaseDC(nullptr, screen); });
+    const auto memory = CreateCompatibleDC(screen); QVERIFY(memory);
+    const auto releaseMemory = qScopeGuard([&] { DeleteDC(memory); });
+    const int width = client.right - client.left, height = client.bottom - client.top;
+    BITMAPINFO bitmap{}; bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmap.bmiHeader.biWidth = width; bitmap.bmiHeader.biHeight = -height;
+    bitmap.bmiHeader.biPlanes = 1; bitmap.bmiHeader.biBitCount = 32; bitmap.bmiHeader.biCompression = BI_RGB;
+    void* bits{};
+    const auto image = CreateDIBSection(memory, &bitmap, DIB_RGB_COLORS, &bits, nullptr, 0); QVERIFY(image && bits);
+    const auto previous = SelectObject(memory, image);
+    const auto releaseImage = qScopeGuard([&] { SelectObject(memory, previous); DeleteObject(image); });
+    qsizetype samples = 0;
+    for (int frame = 0; frame < 25; ++frame) {
+        QVERIFY(BitBlt(memory, 0, 0, width, height, screen, client.left, client.top, SRCCOPY));
+        QVERIFY(GdiFlush());
+        const QImage captured(static_cast<const uchar*>(bits), width, height, QImage::Format_RGB32);
+        for (const auto& gap : gaps) for (int y = gap.top(); y <= gap.bottom(); ++y)
+            for (int x = gap.left(); x <= gap.right(); ++x) {
+                const auto color = captured.pixelColor(qRound(x * ratio), qRound(y * ratio));
+                ++samples;
+                // DWM's shadow may darken the helper. A bright frame in an
+                // otherwise transparent cutout cannot come from that shadow.
+                if (color.red() > background.red() || color.green() > background.green() || color.blue() > background.blue())
+                    QFAIL(qPrintable(QString("Preview outline in frame %1 at %2,%3: %4").arg(frame).arg(x).arg(y).arg(color.name())));
+            }
+        QTest::qWait(16);
+    }
+    QVERIFY(samples > 100);
+    verifyNativeMask(carrier);
 }
 
 void NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption_data()

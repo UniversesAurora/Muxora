@@ -79,16 +79,17 @@
 
 **风险**：这是原生帧的核心改动，影响面大。必须单独提交，提交前运行 `native-frame`、`window-placement`、`chrome-interaction`、`caption-strip`、`drag-*`、`focus-mode` 和应用部署夹具。
 
-**状态**：进行中（Claude 实现，2026-10-24 交给 Codex 查一个剩余问题）。代码和测试已提交（`window-system/frame: Move the resize border outside the visible window`），做法见 [窗口交互设计 · 窗口缩放边框](../../design/window-interaction-design.md#窗口缩放边框)，过程中查到的 Qt 行为见 [Windows 平台经验 · 窗口框架](../../development/lessons/windows-platform.md#窗口框架)。
+**状态**：进行中（实现和自动化验证完成，真实桌面试用待用户验收）。框架实现见 `window-system/frame: Move the resize border outside the visible window`，当前行为见 [窗口交互设计 · 窗口缩放边框](../../design/window-interaction-design.md#窗口缩放边框)，Qt 机制见 [Windows 平台经验 · 窗口框架](../../development/lessons/windows-platform.md#窗口框架)。本轮交办的故障处理已完成，不阻挡按交接推进后续步骤。
 
-- **排查结论**：右上角间歇暗色来自辅助目标窗口的打开动画画面；只修正测试前提，产品动画未改，见 [验证记录](../../development/verification-log/2026-10.md#81-辅助目标窗口的动画干扰2026-10-25)。用户另报紧凑拖拽预览出现白边，正在修复；修复后还需完成本步的连续套件和全量验证。
-- **未做**：Windows 11 真实试用（四边四角缩放、Snap 浮窗、系统贴靠、不同 DPI 的屏幕之间移动）；Windows 10 未验证。Release 预览已部署给用户试用（2026-10-24）。
+- **排查结论**：右上角间歇暗色来自辅助目标窗口的打开动画画面；只修正测试前提，产品动画未改，见 [验证记录](../../development/verification-log/2026-10.md#81-辅助目标窗口的动画干扰2026-10-25)。紧凑预览白边已修复，反向验证、性能对比、连续原生套件、Release 全量和部署检查见 [白边记录](../../development/verification-log/2026-10.md#81-紧凑拖拽预览的白边2026-10-25)。
+- **未做**：Windows 11 真实试用（四边四角缩放、Snap 浮窗、系统贴靠、不同 DPI 的屏幕之间移动）；Windows 10 未验证。固定 Release 预览已更新供用户试用。
 
 实现与计划的差别：
 
 - 第 2 步：窗口去掉 `Qt::FramelessWindowHint`（Qt 对无边框窗口不算边距，只缩小客户区会被裁掉），边框宽度取 `AdjustWindowRectExForDpi`，与 Qt 自己重算的边距一致；新窗口在换边框前保留系统边框，换边框时一次 `SetWindowPos` 保持客户区不动。
 - 第 3 步：客户区外的点交给 `DefWindowProc`，得到系统自己的边角；固定尺寸的方向返回 `HTBORDER`。顶部只有客户区内的 `HTTOP` 细带，左上、右上角由外侧边框提供。
 - 第 4 步：左、右、下的 1 像素可见边框是 DWM 画在客户区外的（不是计划设想的“DWM 不画”），所以自绘边框只保留顶部，窗口 QSS 边框改为只画上边。可见窗口因此在左、右、下各向外 1 像素，内容区相应变宽变高，没有补偿。
+- 紧凑预览另按窗口交互设计处理非客户区，不沿用普通窗口的外侧边距；客户区几何仍保持不变。
 - 计划中的 `resizeBorderLiesOutsideClient` 写成 `CaptionStripTest::clientEdgesBelongToContent`，另改了 `nativeCaptionDoesNotConsumeClientSpace`；`visibleBoundsUnchanged` 没有写，因为可见边界按上一条有意外扩 1 像素。
 
 ---

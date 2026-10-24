@@ -64,8 +64,9 @@ DWORD normalFrameStyle(DWORD style, bool compact = false)
     // flyout in normal windows with a completely custom client frame.
     // Our separately owned popup still dispatches the normal system commands.
     // Compact shapes also remove the caption to avoid a stock Basic frame.
-    // Without WS_DLGFRAME there is no caption; WS_BORDER stays, so the sizing
-    // frame keeps its width and the client does not move.
+    // Without WS_DLGFRAME there is no caption. Keep the remaining style bits;
+    // sizingFrame() and NCCALCSIZE remove the preview's non-client border,
+    // while applyNativeFrame() preserves the client geometry.
     const auto framed = (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP | WS_SYSMENU);
     return compact ? framed & ~DWORD(WS_DLGFRAME) : framed;
 }
@@ -191,6 +192,10 @@ int resizeBorder(HWND handle, QWidget* window)
 // caption replaces the top.
 RECT sizingFrame(HWND handle, QWidget* window)
 {
+    // A shaped preview has no usable sizing border. Its complete HWND is
+    // client content, so the compositor cannot draw a rectangular frame
+    // across the transparent part of its tab row.
+    if (window->property("windowSystemDragPresentation").toBool()) return {};
     using AdjustFunction = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
     static const auto adjustForDpi = std::bit_cast<AdjustFunction>(
         GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
@@ -609,7 +614,8 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                                   : reinterpret_cast<RECT*>(msg->lParam);
         // Qt applies the new style before it updates its window state, so the
         // style is what tells a full-screen frame apart, in both directions.
-        if (isFullScreenStyle(DWORD(GetWindowLongPtrW(msg->hwnd, GWL_STYLE))) || IsIconic(msg->hwnd)) {
+        if (isFullScreenStyle(DWORD(GetWindowLongPtrW(msg->hwnd, GWL_STYLE))) || IsIconic(msg->hwnd)
+            || window->property("windowSystemDragPresentation").toBool()) {
             // The client covers the whole window.
         } else if (IsZoomed(msg->hwnd)) {
             MONITORINFO monitor{}; monitor.cbSize = sizeof(monitor);
@@ -627,8 +633,8 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             // Keep Windows' sizing border outside the left, right and bottom
             // of the client, invisible like every Win32 window's, so the
             // client's edge pixels belong to its content. The custom caption
-            // reaches the top. Compact previews keep the same frame, so a
-            // drag never moves or resizes the client.
+            // reaches the top. Compact previews use the full client above;
+            // applyNativeFrame keeps that client fixed while changing borders.
             const RECT frame = sizingFrame(msg->hwnd, window);
             bounds->left += frame.left;
             bounds->right -= frame.right;

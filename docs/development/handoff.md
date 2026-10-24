@@ -49,26 +49,21 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude：8.1 缩放区移到外侧，交出一个右上角闪烁的排查
+## 2026-10-25 · Codex：8.1 动画干扰已定位，紧凑预览白边已修复
 
-- **最后提交**：交出时 `main` 已推送，与 `origin/main` 一致；工作区干净。
+- **最后提交**：交出时 `main` 包含本轮两笔提交，已推送并与 `origin/main` 一致；工作区干净。
 - **本轮完成**：
-  - [8.1 窗口缩放区移到外侧](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 的代码、测试和设计（`window-system/frame: Move the resize border outside the visible window`）。窗口去掉了 Qt 的无边框标志，左、右、下保留系统缩放边框，DWM 在客户区外画这三边的边框。过程中修了全屏切换、新窗口高度、`QWidget::pos()` 偏移、拖动预览偏 1 像素和多余系统菜单，记录见 [8.1 验证记录](verification-log/2026-10.md#81-缩放区移到外侧2026-10-24)，机制见 [Windows 平台经验 · 窗口框架](lessons/windows-platform.md#窗口框架)。
-  - 设计了窗格活动（通知、进度、运行状态）和状态项的点击与悬停，排进 8.17–8.19、7.15，见 [窗格活动设计](../design/pane-activity-design.md)。同类开源项目的源码克隆在仓库下被忽略的 `reference/` 目录里。
-- **进行中**：8.1 剩一个间歇出现的问题，交给下一位排查（见“下一步”）。Release 预览已部署给用户试用，试用结果还没有。
-- **下一步**（给执行者，用户 2026-10-24 指定）：
-  1. **先查清 8.1 的右上角闪烁并修好。** 现象和已经排除的方向都在 [8.1 验证记录](verification-log/2026-10.md#81-缩放区移到外侧2026-10-24) 的“剩余问题”里，先读完再动手。
-     - 复现：`NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption` 的 layout-1、layout-2 行，Release 全量里每次都失败，单独跑套件有时通过，所以每次修改要连跑几轮整个 `native-frame` 套件，再跑一次全量。命令按 AGENTS.md 经 `quiet-desktop.ps1 -Elevate`。
-     - 可以对照的基线是 8.1 之前的提交 `dea8e9d`：在 `out/` 下另建一个 git worktree 构建（路径要短，长路径会让 MSVC 报 C1083）。
-     - 还没试过的方向：拖动预览结束时样式被改了两次（两组 `WM_STYLECHANGING`，相隔约 18 毫秒），先查第二次从哪来、能否只改一次；`WM_NCPAINT` 在 DWM 非客户区渲染开启时交给 `DefWindowProc`，试在换样式的那一刻不让它画；换边框的 `SetWindowPos` 带 `SWP_NOREDRAW`，试去掉或换成 `RedrawWindow` 整窗重画。
-     - 不许放宽那条测试，不许加 `QEXPECT_FAIL`、延长等待或减少取样点。改动只放在 `src/platform/windows/window_frame.cpp` 和 `src/chrome/workspace_window.cpp` 的拖动呈现部分；需要改 8.1 已定的做法（例如紧凑样式、DWM 边框扩展）时先停下，写进本节“待用户决定”。
-     - 完成标准：`native-frame` 连续 5 轮全过，Release 全量 69/69；在验证日志 8.1 一节补上原因和修法；能归纳的写进 Windows 平台经验“窗口框架”；更新 8.1 状态（真实试用仍留给用户）。查不出来时，把做过的实验和结果写进验证日志，状态保持“进行中”。
-  2. 然后做 [1.11](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)、[1.12](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)，要求同上一节。
-  - 接手时先读 [助手协作经验](lessons/collaboration.md)，不审查上一位的提交。临时诊断代码不提交；排查文件放 `out/diagnostics/8.1-flash/`，结束时删除。
+  - `window-system/frame: Isolate the animated drop-target fixture`：同帧采样证明右上角暗色来自辅助目标窗口的打开动画残影；只关闭该辅助 HWND 的过渡，被测窗口的动画、全部原断言和等待上限保留，见 [动画干扰记录](verification-log/2026-10.md#81-辅助目标窗口的动画干扰2026-10-25)。
+  - `window-system/frame: Omit outer borders from compact previews`：按用户要求修复拖动标签回到标签栏时的白边。紧凑预览使用完整客户区，不沿用普通窗口的外侧边距；原窗口样式、DWM 合成策略和普通窗口缩放保持。新回归、旧实现反向验证、前后耗时、连续原生套件、Release 全量和部署检查均已完成，见 [白边记录](verification-log/2026-10.md#81-紧凑拖拽预览的白边2026-10-25)。
+- **进行中**：[8.1](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 的代码和自动化已完成，真实桌面试用仍待用户验收。固定 Release 预览已刷新，部署程序的退出和视图恢复检查已通过。
+- **下一步**：
+  1. Claude 接手时按 [AGENTS.md](../../AGENTS.md#轮流开发与交接) 审查本轮提交；重点区分辅助动画干扰与产品白边，原失败、排除的实验和测试前提修正在上述验证记录里。
+  2. 按原交接继续 [1.11](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)，先测 `group`、`batch-close`，再决定是否修改实现；然后做 [1.12](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。
+  3. 8.1 的 Windows 实机试用范围按步骤状态核验，不把自动化通过算成用户试用完成。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表列入计划，见 [交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md)。提交 `91956aa` 的提交说明里有一个输入法产品名和它的类标识，已推送；要不要改写历史由用户决定。
 - **请下一位回答**：无。
-- **本轮新决定**：8.1 按“缩放区在窗口外侧的不可见边框里”做，不用客户区内 3 像素窄带的备选方案（用户让 Claude 按“最优雅”自行决定，2026-10-24），见 [窗口交互设计](../design/window-interaction-design.md#窗口缩放边框)。窗格活动设计的四条建议用户已认可，见 [窗格活动设计 §7](../design/pane-activity-design.md#7-已确认的取舍)。
-- **环境与注意事项**：窗口四边的边框现在由 DWM 画，是 Windows 11 默认的半透明灰线，不再是主题的 `@border` 色（顶部仍有一条主题色线，Windows 11 上被 DWM 边框盖住）。没有跑 Debug 全量、`verify.ps1`、混合 DPI、多屏。既有交互偶发首报仍保留。
+- **本轮新决定**：用户要求紧凑预览恢复原来的无多余白边外观，现行边框规则已同步到 [窗口交互设计](../design/window-interaction-design.md#窗口缩放边框)。普通窗口外侧缩放方案不变。
+- **环境与注意事项**：本轮产品未保留暂停 DWM 动画、同步等待提交、改绘制范围等实验；临时诊断和基准代码已移除，主题诊断目录已清理。没有跑 Debug 全量、完整 `verify.ps1`、Windows 10、混合 DPI、多屏或三主题截图审查，也没有制作便携包。既有其他交互偶发首报仍保留，不由本轮全量通过推定已修复。
 
 ---
 

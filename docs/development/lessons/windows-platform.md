@@ -32,9 +32,17 @@
 
 - **现象**：想让左、右、下的缩放区像普通窗口一样落在可见边框外，只在 `WM_NCCALCSIZE` 里把客户区缩小一圈，窗口右边和下边的内容被裁掉。
 - **原因**：Qt 6.12 对没有最大化的 `Qt::FramelessWindowHint` 窗口跳过边距计算（`qwindowswindow.cpp` 的 `shouldOmitFrameAdjustment()`），始终把整个窗口矩形当成客户区。不带这个标志时，Qt 直接从 `WM_NCCALCSIZE` 的结果读出边距（`qWindowsWndProc`），之后在 `WM_SIZE` 里还会用 `AdjustWindowRectEx` 按当前样式重算一次（`calculateFullFrameMargins()`，顶部取实际差值）。
-- **做法**：窗口不带无边框标志；`WM_NCCALCSIZE` 在左、右、下按 `AdjustWindowRectExForDpi` 给出的边框内缩，顶部不缩，这样和 Qt 的重算结果一致。Qt 建窗口时按带标题栏的样式留了边距，而且建窗口的过程中和之后的标志修改都会触发边框重算：在程序自己换边框之前，`WM_NCCALCSIZE` 交给系统默认处理；换边框时用一次 `SetWindowPos` 同时改边框和外框，让客户区不动，并在 HWND 上记一个属性（`SetPropW`）表示已经换过，Qt 改标志、Windows 复用句柄号都不会弄错。`QWidget` 缓存了边框偏移（`pos()` 与 `geometry()` 的差），只在窗口报告移动或大小变化时刷新；换边框后客户区没动，要给 `QWindow` 发一个位置不变的 `QMoveEvent`，否则 `pos()`、`move()` 一直按建窗口时的标题栏高度偏移。拖动预览如果要去掉标题栏，只去掉 `WS_DLGFRAME`：`WS_CAPTION` 包含 `WS_BORDER`，连它一起去掉边框会少 1 个物理像素，窗口在预览和正常样式之间来回时客户区会挪动。
+- **做法**：窗口不带无边框标志；`WM_NCCALCSIZE` 在左、右、下按 `AdjustWindowRectExForDpi` 给出的边框内缩，顶部不缩，这样和 Qt 的重算结果一致。Qt 建窗口时按带标题栏的样式留了边距，而且建窗口的过程中和之后的标志修改都会触发边框重算：在程序自己换边框之前，`WM_NCCALCSIZE` 交给系统默认处理；换边框时用一次 `SetWindowPos` 同时改边框和外框，让客户区不动，并在 HWND 上记一个属性（`SetPropW`）表示已经换过，Qt 改标志、Windows 复用句柄号都不会弄错。`QWidget` 缓存了边框偏移（`pos()` 与 `geometry()` 的差），只在窗口报告移动或大小变化时刷新；换边框后客户区没动，要给 `QWindow` 发一个位置不变的 `QMoveEvent`，否则 `pos()`、`move()` 一直按建窗口时的标题栏高度偏移。拖动预览保留 `WS_BORDER`，但不保留实际外侧缩放边框，原因见下一条。
 - **验证**：`NativeFrameTest::nativeCaptionDoesNotConsumeClientSpace` 检查客户区与窗口矩形的关系和 Qt 几何；`EdgeTabInteractionTest::railTitleLengthChangesKeepTheLeadingTabInPlace` 在建窗口时客户区被加高标题栏高度（700×500 变成 700×529）时失败；`reorderedWholeWindowDragCannotRestoreTheStockCaption` 拖动预览来回后检查窗口位置，去掉 `WS_CAPTION` 时偏 1 像素失败；`CaptionStripTest::clientEdgesBelongToContent` 检查客户区边缘归内容、外侧是缩放命中。
 - **出处**：2026-10-24，8.1。
+
+### 不规则拖动预览不能沿用普通窗口的外侧边框
+
+- **现象**：把标签拖回标签条时，预览顶部和四周出现亮线，标签旁本应透明的区域也被一条白线贯穿。
+- **原因**：普通窗口的客户区在系统边框内，预览虽然应用了不规则 region，却仍沿用这一层边框。Qt 控件不画它，修改 QSS 或重复写 DWM 边框颜色都不能解决。
+- **做法**：正常窗口和紧凑预览分别计算非客户区；保持客户区几何，切换时重新算外框。Qt 6.12 的 `calculateFullFrameMargins()` 会在客户区和外框大小完全相同时保留 `WM_NCCALCSIZE` 给出的零边距（`QTBUG-117704`，见 [Qt 源码](https://code.qt.io/cgit/qt/qtbase.git/tree/src/plugins/platforms/windows/qwindowswindow.cpp?h=6.12)），不需要切换 Qt flags、换 HWND 或修改 DWM 合成策略。
+- **验证**：`compactPreviewHasNoFrameAcrossItsTransparentGap` 检查六种预览的原生客户区、外框和透明缺口像素；旧实现六行均因客户区仍有外侧边距而失败。原有捕获、内容身份和往返位置断言保留。
+- **出处**：2026-10-25，见 [验证记录](../verification-log/2026-10.md#81-紧凑拖拽预览的白边2026-10-25)。
 
 ### 全屏切换中途按原生样式判断是否全屏
 
