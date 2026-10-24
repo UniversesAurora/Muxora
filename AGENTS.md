@@ -43,7 +43,7 @@ Claude 和 Codex 按额度轮流在同一台电脑的同一个目录里开发，
 - **桌面测试**：桌面测试和全量测试一律经 `quiet-desktop.ps1 -Elevate` 整批以管理员权限运行，不先用普通权限试（用户 2026-10-21 决定）；脚本选项写在被测命令之前。规则见 [测试要求 §3](docs/development/testing-design.md#3-工具与统一入口)。
 - **提交**：改动完整、相关验证通过就自主提交。一个提交只做一件事，提交前核对暂存内容和受影响的文档，格式见 [参与开发](CONTRIBUTING.md#提交改动)。禁止 merge，只用 rebase 或快进；改写已推送的历史要用户明确要求；不丢弃用户的改动。
 - **文档**：每次提交都让文档反映最新状态，每类信息只写在 [文档维护规范](docs/development/documentation.md) 规定的位置，别处只链接。修复缺陷或排查花了明显工夫时，在同一提交里写 [开发经验](docs/development/lessons/README.md)。对外文字按本地 `shuorenhua` skill 处理（代码、日志、配置和命令输出除外）。
-- **配置格式**：只维护当前格式，不保留旧配置兼容层；范围和必需校验见 [工程设计 §2.4](docs/development/engineering-design.md#24-当前配置格式)。
+- **配置格式**：只维护当前格式，不保留旧配置兼容层；范围和必需校验见 [工程设计 §2.4](docs/development/engineering-design.md#24-当前配置格式)。新增要保存的数据按 [设置设计 §2](docs/design/settings-and-commands-design.md#2-文件划分) 的规则选文件，并加进那里的归属表。
 - **公开仓库**：文档、注释、经验和提交说明里不写本机的具体配置（PATH、已装软件、用户名、私人路径），只写通用描述；用户本机环境的问题在对话中告诉用户怎么改，不在仓库里加规避代码。
 - **临时文件**：只为某次排查写的脚本、状态目录和提交说明草稿放系统临时目录；测试报告和排查文件按 [测试结果与排查文件](docs/development/testing-design.md#测试结果与排查文件) 存放，证据写进验证日志，`out/diagnostics/<主题>/` 在主题结束时删除。想保留诊断脚本先问用户。
 - **部署和打包**：Release 预览固定覆盖 `out/package/muxora-preview/`，保留其中的 `data/` 和未知文件，程序被占用时正常关闭，不强杀。用户目前不需要便携包，不主动运行打包；需要时用 `tools/package-portable.ps1`，结束后清理暂存。不例行计算文件校验值。
