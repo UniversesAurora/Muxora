@@ -26,6 +26,7 @@
 #include <QStyleOptionTab>
 #include <QTest>
 #include <QToolButton>
+#include <QToolTip>
 
 using namespace window_system;
 
@@ -127,6 +128,7 @@ private slots:
     void closeTargetShowsHoverAndPressFeedback();
     void titleWidthChangesKeepTheActiveTabInPlace();
     void stickyTabsAlwaysShowTheirPin();
+    void multilineTooltipsNameTheDisplayedTab();
     void middleClickClosesTheTabUnderThePointer();
     void middleClickClosesManagedStripAndRailTabs();
     void draggingAcrossTheStickyRunChangesStickiness();
@@ -580,6 +582,21 @@ void TabStripLayoutTest::stickyTabsAlwaysShowTheirPin()
     sendBarMouse(bar, QEvent::MouseButtonPress, slot(1).center(), Qt::LeftButton, Qt::LeftButton);
     sendBarMouse(bar, QEvent::MouseButtonRelease, slot(1).center(), Qt::LeftButton, Qt::NoButton);
     QCOMPARE(closed, 1); QCOMPARE(unstuck, 1);
+}
+
+void TabStripLayoutTest::multilineTooltipsNameTheDisplayedTab()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false; appearance.multiline = true;
+    GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 8);
+    tabs.resize(320, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); QTRY_VERIFY(bar->rowCount() > 2);
+    const auto hideTip = qScopeGuard([] { QToolTip::hideText(); });
+    for (int index = 0; index < bar->count(); ++index) {
+        const auto point = bar->displayTabRect(index).center();
+        QHelpEvent help(QEvent::ToolTip, point, bar->mapToGlobal(point));
+        QApplication::sendEvent(bar, &help);
+        QTRY_COMPARE(QToolTip::text(), bar->tabToolTip(index));
+    }
 }
 
 void TabStripLayoutTest::middleClickClosesTheTabUnderThePointer()

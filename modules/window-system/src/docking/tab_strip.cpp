@@ -22,6 +22,7 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolTip>
 #include <QWheelEvent>
 #include <QWidgetAction>
 #include <QVariantMap>
@@ -371,6 +372,18 @@ QSize DragTabBar::tabSizeHint(int index) const {
 }
 QRect DragTabBar::closeRect(int index) const {
     return tabBarCloseRect(displayTabRect(index), layoutDirection());
+}
+bool DragTabBar::event(QEvent* event) {
+    // QTabBar finds the tooltip's tab in its own single-row layout, which a
+    // custom layout no longer matches.
+    if (event->type() == QEvent::ToolTip && customLayout_) {
+        auto* help = static_cast<QHelpEvent*>(event);
+        const auto index = displayedTabAt(help->pos());
+        if (index >= 0 && !tabToolTip(index).isEmpty()) QToolTip::showText(help->globalPos(), tabToolTip(index), this);
+        else { QToolTip::hideText(); event->ignore(); }
+        return true;
+    }
+    return QTabBar::event(event);
 }
 void DragTabBar::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton) { pressed_ = -1; closePressed_ = -1; event->accept(); return; }
