@@ -120,7 +120,7 @@ protected:
 
 class TabListRow final : public QWidget {
 public:
-    TabListRow(QString text, QIcon icon, QColor marker, bool active, QWidget* parent) : QWidget(parent), marker_(marker) {
+    TabListRow(QString text, QIcon icon, QColor marker, bool active, QIcon sticky, QWidget* parent) : QWidget(parent), marker_(marker) {
         setObjectName("TabListRow");
         setProperty("tabColorMarker", marker_);
         setProperty("activeTab", active);
@@ -134,6 +134,12 @@ public:
         title_ = new TabListTitle(text, this); title_->setToolTip(text);
         title_->setObjectName("TabListTitle");
         title_->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(title_, 1);
+        // A sticky tab always shows the pin it has on the strip.
+        if (!sticky.isNull()) {
+            auto* pin = new QLabel(this); pin->setObjectName("TabListStickyMarker");
+            pin->setPixmap(sticky.pixmap(16, 16)); pin->setToolTip(QCoreApplication::translate("WindowSystem", "Sticky tab"));
+            layout->addWidget(pin);
+        }
         closeButton = new CompactToolButton(this, 18);
         closeButton->setObjectName("TabListCloseButton");
         closeButton->setStyleSheet("QToolButton{padding:0;min-height:0;min-width:0;}");
@@ -1195,7 +1201,8 @@ void GroupTabs::showTabList() {
         action->setCheckable(true); action->setChecked(index == bar_->currentIndex());
         const auto* preset = bar_->tabPreset(index);
         auto* row = new TabListRow(bar_->tabText(index), appearance_.showIcons ? bar_->tabIcon(index) : QIcon{},
-            preset ? preset->groupInactive.line : QColor{}, index == bar_->currentIndex(), menu);
+            preset ? preset->groupInactive.line : QColor{}, index == bar_->currentIndex(),
+            index < bar_->stickyCount() ? iconFor("pin", theme_) : QIcon{}, menu);
         row->setProperty("tabId", bar_->tabData(index));
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab"));
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);

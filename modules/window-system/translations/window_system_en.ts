@@ -3805,5 +3805,10 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</source>
             <translation>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</translation>
         </message>
+        <message>
+            <location filename="../src/docking/tab_strip.cpp" line="140"></location>
+            <source>Sticky tab</source>
+            <translation>Sticky tab</translation>
+        </message>
     </context>
 </TS>

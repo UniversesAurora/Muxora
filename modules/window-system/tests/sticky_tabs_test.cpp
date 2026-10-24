@@ -5,6 +5,7 @@
 
 #include <QApplication>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPlainTextEdit>
@@ -12,6 +13,7 @@
 #include <QScopeGuard>
 #include <QScreen>
 #include <QTest>
+#include <QToolButton>
 
 using namespace window_system;
 
@@ -105,6 +107,7 @@ private slots:
     void closeProtectionFollowsTheSetting_data();
     void closeProtectionFollowsTheSetting();
     void blockedCloseShortcutShowsAnotherGroupsTab();
+    void tabListMarksStickyTabs();
 };
 
 void StickyTabsTest::sizedStickyTabsUseFixedWidths()
@@ -457,6 +460,28 @@ void StickyTabsTest::blockedCloseShortcutShowsAnotherGroupsTab()
     QTest::keyClick(editor, Qt::Key_W, Qt::ControlModifier);
     QVERIFY(manager.model().tab(sticky)); QVERIFY(manager.model().tab(other));
     QCOMPARE(manager.context(window).tab, sticky);
+}
+
+void StickyTabsTest::tabListMarksStickyTabs()
+{
+    GroupTabs tabs(defaultTheme(), nullptr); const auto ids = populate(tabs, 5, 2, sized(StickyTabSizing::Compact));
+    int closed = -1; tabs.closeRequested = [&closed](int index) { closed = index; };
+    tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* list = tabs.findChild<QToolButton*>("TabListButton"); QVERIFY(list); list->click();
+    auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu); QTRY_VERIFY(menu->isVisible());
+    const auto rows = menu->findChildren<QWidget*>("TabListRow"); QCOMPARE(rows.size(), ids.size());
+    for (auto* row : rows) {
+        const int index = ids.indexOf(row->property("tabId").toUuid()); QVERIFY(index >= 0);
+        auto* marker = row->findChild<QLabel*>("TabListStickyMarker");
+        QCOMPARE(bool(marker), index < 2);
+        if (marker) { QVERIFY(marker->isVisible()); QVERIFY(!marker->pixmap().isNull()); }
+    }
+    // The marker is not a control: the row's close button still closes.
+    auto* first = rows.first(); QCOMPARE(first->property("tabId").toUuid(), ids.first());
+    QEnterEvent enter(QPointF(8, 8), QPointF(8, 8), first->mapToGlobal(QPoint(8, 8)));
+    QApplication::sendEvent(first, &enter);
+    auto* close = first->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close && close->isVisible());
+    close->click(); QCOMPARE(closed, 0);
 }
 
 QTEST_MAIN(StickyTabsTest)

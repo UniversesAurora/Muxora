@@ -3798,5 +3798,10 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</source>
             <translation>钉住标签关闭保护只能是 keyboard_and_mouse、keyboard、mouse 或 never</translation>
         </message>
+        <message>
+            <location filename="../src/docking/tab_strip.cpp" line="140"></location>
+            <source>Sticky tab</source>
+            <translation>已钉住</translation>
+        </message>
     </context>
 </TS>
