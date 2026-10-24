@@ -433,7 +433,7 @@
 
 2. 新增 `TabContent* WindowManager::ensureTabView(TabId tab)`（私有）：视图不存在则创建并 `rebuild()`，返回指针。所有“需要视图”的调用点改用它。
 3. **标签栏**：`setTabTopBar()`／`setTabBottomBar()` 现在在视图不存在时返回 `false`。改为：视图不存在时把栏存入 `d->pendingTabTopBars`／`pendingTabBottomBars`（`QHash<TabId, QPointer<QWidget>>`，parent 设为存储控件并隐藏），创建视图时交给它。标签关闭时删除未交付的栏（与现有 `refresh()` 中删除窗格栏的方式一致）。这样公开 API 的成功语义不变。
-4. `GroupTabs`：允许页面为空。`addTab(nullptr, ...)` 时在 `stack_` 放一个共享的空白占位控件吗？不行——`QStackedWidget` 的索引与标签一一对应，同一控件不能加入两次。做法：为每个空页面放一个极轻量的 `QWidget`（无布局、无样式类名），首次 `currentChanged` 到该索引时，通过新回调 `pageRequested(TabId)` 让 `DockSurface` 调 `ensureTabView()`，再用真实页面替换占位控件（`stack_->insertWidget(index, real); stack_->removeWidget(placeholder); delete placeholder;`）。
+4. `GroupTabs`：允许页面为空。每个尚未创建视图的标签在 `QStackedWidget` 中放一个无布局的轻量 `QWidget` 占位；首次切到该索引时，通过 `pageRequested(TabId)` 让 `DockSurface` 调 `ensureTabView()`，再用真实页面替换占位控件。`pageRequested` 在设置当前索引之前安装，活动页首次构建不会停在占位页。
    - 一个占位 `QWidget` 仍然比 `TabContent + 分割器 + 窗格框 + 内容挂接` 小得多；如果 0.1 基准显示占位本身仍是负担，再考虑改用不依赖 `QStackedWidget` 的页面容器。
 5. `refresh()` 中第 442–448 行“为每个模型标签创建并重建视图”改为：只对已有视图的标签执行 `rebuild()`；每个组的活动标签调用 `ensureTabView()`（活动标签必须立即可见）。
 6. 内容的可见性：未创建视图的标签，其内容控件留在存储控件中、隐藏，Qt 不会绘制它们。
@@ -445,27 +445,34 @@
    void setContentVisibilityHandler(std::function<void(const QVector<ContentVisibilityChange>&)> handler);
    ```
 
-   实现：在 `refresh()`、`activateTab()`、窗口最小化／恢复（`WorkspaceWindow::changeEvent`）、侧栏面板开关之后，计算每个窗格“当前是否显示”（内容控件 `isVisible()`），与上次记录比较，把变化放入待发送列表，用 `QTimer::singleShot(0, ...)` 合并发出。处理函数可能销毁管理器，按现有方式保留并检查 `QPointer`。
+   实现：在 `refresh()`、`activateTab()`、窗口最小化／恢复（`WorkspaceWindow::changeEvent`）、侧栏面板开关之后，计算每个窗格“当前是否显示”（内容控件 `isVisible()`），与上次记录比较，把变化放入待发送列表，用 `QTimer::singleShot(0, ...)` 合并发出。跨顶层窗口移动是同步例外：先隐藏旧视图并报告相关 Pane 为隐藏，再改挂视图；通知可重入，后续每次使用它之前重新检查模型和管理器。处理函数可能销毁管理器，按现有方式保留并检查 `QPointer`。
 
 **测试**：
 
-- `inactiveTabsHaveNoView`：一组 100 个标签，只激活最后一个；断言 `findChildren<TabContent*>()`（或按对象名 `TabPage`）数量为 1；逐个激活后数量递增。
-- `barsSetBeforeFirstActivationAreDelivered`：对未激活标签调用 `setTabTopBar()` 返回 `true`，激活后栏出现在视图中；关闭未激活标签时栏被删除（`QPointer` 变空）。
-- `visibilityChangesAreCoalesced`：切换标签、最小化窗口、打开和关闭侧栏面板，断言处理函数收到的变化列表与预期一致，且同一事件循环内的多次切换只通知一次。
+- `restoredInactiveTabsCreateViewsOnFirstActivation`：一组 100 个标签，只激活最后一个；断言 `TabPage` 数量为 1；通过标签条首次激活另一个标签后增加到 2，再逐个激活时继续递增，宿主内容实例不变。
+- `pendingTabBarsFollowLazyActivationAndRemoval`、`pendingTabBarsSurviveHierarchyConversion`、`restoringLayoutDiscardsPendingTabBars`：首次显示前设置、替换、清空和层级转换附加栏，关闭标签或恢复新布局时释放未交付栏。
+- `contentVisibilityNotificationsAreCoalesced`、`contentVisibilityTracksWindowStateAndPeek`、`crossWindowMoveReportsHiddenBeforeReparent`：安装后发送完整快照；同一事件循环内多次切换只通知一次；最小化、恢复、临时侧栏和跨窗口改挂前报告预期显隐。
 - 现有所有测试必须通过；特别是依赖“所有标签都有视图”的测试，如果断言了非活动标签的框，说明测试依赖实现细节，按测试规范提交独立证据后修订，并保留等效覆盖。
 
-**验证**：全量一次；基准 create、memory 场景。
+**验证**：全量一次；基准 `restore` 和 memory 场景。`create` 会逐个添加并激活标签，按“激活过的标签保留视图”的语义不能衡量本步骤收益，因此基准另建完整模型快照，再调用一次 `restoreLayout()`。改前和改后使用同一基准源码，1000 个标签各跑三次；产物为 `bench-1.7-before*.json` 和 `bench-1.7-after*.json`。
 
 **完成标准**：
 
-- [ ] 基准中 1000 个标签的每标签控件数和私有内存下降（写出数字）。
-- [ ] 外部宿主夹具调用一次 `setContentVisibilityHandler()`。
-- [ ] `modules/window-system/README.md` 说明可见性通知的时机。
-- [ ] [通用窗口系统设计](../../design/window-system-design.md) 写明内容控件的挂接契约：同一顶层窗口内移动不改 parent；跨顶层窗口只改一次 parent，并在此之前通过可见性通知让宿主释放 GPU 资源（来自 [性能计划 §5](../review-2026-10/performance-plan.md#5-gpu-渲染与终端视图契约)，终端接入前必须成立）。
+- [x] 基准中 1000 个标签的每标签控件数和私有内存下降（写出数字）。
+- [x] 外部宿主夹具调用一次 `setContentVisibilityHandler()`。
+- [x] `modules/window-system/README.md` 说明可见性通知的时机。
+- [x] [通用窗口系统设计](../../design/window-system-design.md) 写明内容控件的挂接契约：同一顶层窗口内移动不改 parent；跨顶层窗口只改一次 parent，并在此之前通过可见性通知让宿主释放 GPU 资源（来自 [性能计划 §5](../review-2026-10/performance-plan.md#5-gpu-渲染与终端视图契约)，终端接入前必须成立）。
 
 **风险**：拖拽中的标签预览（`dragLabelPixmap`）和完整标签列表可能读取非活动标签的视图；逐个检查 `drag_controller.cpp`、`tab_strip.cpp` 中对页面的访问。
 
-**状态**：未开始。
+**状态**：已完成。实现提交 `bc16ecf`，基准场景与按场景运行入口提交 `b504ee8`。
+
+实现与计划的差别：
+
+- 视图只为中央组／固定组活动标签、实际展开的自动隐藏标签、组全屏和窗格全屏目标按需创建；显示过的标签保留视图，符合“激活过的标签才有 `TabContent`”，切回时不重建宿主内容。
+- 未访问标签的 Tab 上下附加栏先放在隐藏存储中，视图第一次创建时交付；关闭、层级转换和整份布局恢复分别处理未交付栏，不会遗留旧栏。
+- `setContentVisibilityHandler()` 在安装后发送完整快照；之后按事件循环合并。跨顶层窗口移动不使用异步合并，而是在改挂前同步报告隐藏，保证宿主先释放旧窗口的 GPU 资源。窗格内容控件的直接 parent 和业务实例不变。
+- 1000 个标签完整恢复的三次中位数从 4687.85 ms 降到 1744.71 ms；每标签私有提交从 94658.56 B 降到 71479.30 B，每标签控件从 3.92 个降到 2.96 个。单次测量、来源与未覆盖范围见 [验证记录](../../development/verification-log/2026-10.md#17-非活动标签按需创建视图2026-10-24)。
 
 ---
 
