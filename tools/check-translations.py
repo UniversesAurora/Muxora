@@ -4,7 +4,9 @@
 Extracts each catalog group again with lupdate and compares the result with the
 committed catalogs: source and target language, missing and stale messages,
 unfinished or empty translations, placeholders, plural forms, line breaks,
-mnemonics and markup. It also scans the sources for text that looks like UI
+mnemonics and markup. Running lupdate over each committed catalog must leave it
+byte for byte unchanged, so catalogs are only ever written by the lupdate
+build targets, never formatted by hand. It also scans the sources for text that looks like UI
 prose but is not marked for translation; tools/translation-exemptions.json
 lists the known exceptions with their exact counts.
 
@@ -24,11 +26,14 @@ import xml.etree.ElementTree as ElementTree
 
 GROUPS = [
     {'name': 'WindowSystem', 'stem': 'window_system', 'directory': 'modules/window-system/translations',
+     'target': 'window_system_lupdate',
      'roots': ['modules/window-system/include', 'modules/window-system/src',
                'modules/window-system-lua/include', 'modules/window-system-lua/src']},
     {'name': 'LuaRuntime', 'stem': 'lua_runtime', 'directory': 'modules/lua-runtime/translations',
+     'target': 'lua_runtime_lupdate',
      'roots': ['modules/lua-runtime/include', 'modules/lua-runtime/src']},
     {'name': 'Muxora', 'stem': 'muxora', 'directory': 'src/app/translations',
+     'target': 'muxora_lupdate',
      'roots': ['src/app', 'src/workspace_host']},
 ]
 EXTENSIONS = {'.cpp', '.hpp', '.h', '.ui', '.qml', '.lua', '.json', '.html', '.qrc', '.in'}
@@ -275,6 +280,19 @@ def main():
                     checker.errors.append(f'{path}: missing extracted message: {key.replace(chr(10), " | ")}')
                 for key in sorted(actual - expected):
                     checker.errors.append(f'{path}: message no longer extracted: {key.replace(chr(10), " | ")}')
+                # lupdate owns the file's layout. A catalog edited by hand, or one
+                # whose build target was not run, changes when lupdate rewrites it.
+                rewritten = pathlib.Path(temporary) / f'{group["stem"]}_{language}.ts'
+                shutil.copyfile(repository / path, rewritten)
+                update = subprocess.run(
+                    [str(lupdate), '-project', str(project), '-no-obsolete', '-locations', 'none',
+                     '-source-language', 'en', '-ts', str(rewritten)],
+                    capture_output=True, text=True, errors='replace')
+                if update.returncode != 0:
+                    raise SystemExit(f'lupdate failed for {path}: {update.stdout}{update.stderr}')
+                if rewritten.read_bytes() != (repository / path).read_bytes():
+                    checker.errors.append(f'{path}: differs from what lupdate writes; build the {group["target"]} '
+                                          'target and edit only the translations')
                 checker.counts.append({'catalog': path, 'sourceFiles': len(sources),
                                        'extracted': len(expected), 'messages': len(actual)})
 

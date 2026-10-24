@@ -74,7 +74,7 @@ python tools/check-translations.py
 python tools/tests/translations-test.py
 ```
 
-`check-translations.py` 用 `lupdate` 重新提取第一方源码，与三组目录逐项比较：窗口模块（含 Lua 适配）、LuaRuntime 和应用。它检查源语言、缺失或多余条目、未完成和空译文、占位符、复数、换行、助记符及富文本结构；另扫描未标记的中英文文字候选，包括内嵌 Lua。扫描不以现有目录为范围，测试代码和第三方代码不参与产品提取。新增资源或模板时，同时检查它是否进入提取范围，不能仅凭候选启发式判断完整覆盖。
+`check-translations.py` 用 `lupdate` 重新提取第一方源码，与三组目录逐项比较：窗口模块（含 Lua 适配）、LuaRuntime 和应用。它检查源语言、缺失或多余条目、未完成和空译文、占位符、复数、换行、助记符及富文本结构，并对每份目录再跑一次 `lupdate`，结果和提交的文件逐字节不同就失败（目录被手工排版过，或忘了构建 lupdate 目标）；另扫描未标记的中英文文字候选，包括内嵌 Lua。扫描不以现有目录为范围，测试代码和第三方代码不参与产品提取。新增资源或模板时，同时检查它是否进入提取范围，不能仅凭候选启发式判断完整覆盖。
 
 全量测试里的 `translations.coverage` 和 `translations.checker` 就是这两个脚本：配置测试时 CMake 必须找到 Python 3.10 或更新版本，并把构建所用 Qt 的 `lupdate` 用 `--lupdate` 传给它们。C++ 测试本身不调用脚本。
 

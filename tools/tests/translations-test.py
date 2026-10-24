@@ -31,15 +31,15 @@ class Fixture:
     def change_source(self, relative, change):
         path = self.root / relative
         original = path.read_text(encoding='utf-8')
-        self.originals[path] = original
+        self.originals[path] = path.read_bytes()
         replacement = change(original)
         if replacement == original:
             raise SystemExit(f'Mutation did not change {relative}')
-        path.write_text(replacement, encoding='utf-8')
+        path.write_bytes(replacement.encode('utf-8'))
 
     def change_catalog(self, source, change):
         path = self.root / CATALOG
-        self.originals[path] = path.read_text(encoding='utf-8')
+        self.originals[path] = path.read_bytes()
         tree = ElementTree.parse(path)
         found = [(context, message) for context in tree.getroot().iter('context')
                  for message in context.iter('message') if message.findtext('source') == source]
@@ -71,7 +71,7 @@ class Fixture:
             print(f'PASS: {name}')
         finally:
             for path, original in self.originals.items():
-                path.write_text(original, encoding='utf-8')
+                path.write_bytes(original)
             self.originals.clear()
 
 
@@ -137,6 +137,9 @@ def main():
             'incorrect plural form count: %n tabs')
         fixture.check('damaged mnemonic', lambda: fixture.change_catalog('&File', set_translation('文件')),
                       'mnemonics or markup differ: &File')
+        fixture.check('catalog formatted by hand', lambda: fixture.change_catalog(
+            'Settings', lambda context, message: None),
+            'differs from what lupdate writes')
         fixture.check('valid fixture after every mutation is undone')
 
     if arguments.report:

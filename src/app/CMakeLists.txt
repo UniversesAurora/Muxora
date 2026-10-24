@@ -24,7 +24,7 @@ file(GLOB_RECURSE muxora_i18n_sources CONFIGURE_DEPENDS
 list(FILTER muxora_i18n_sources EXCLUDE REGEX "/tests/")
 qt_add_lupdate(SOURCE_TARGETS muxora SOURCES ${muxora_i18n_sources}
     TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
-    LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete -source-language en)
+    LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 target_link_libraries(muxora PRIVATE WindowSystemLua::Host)
 if(WIN32)
     target_link_libraries(muxora PRIVATE winmm)

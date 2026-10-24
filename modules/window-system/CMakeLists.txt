@@ -120,7 +120,7 @@ file(GLOB_RECURSE window_system_i18n_sources CONFIGURE_DEPENDS
 qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     SOURCES ${window_system_i18n_sources}
     TS_FILES ${window_system_translation_sources}
-    LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -source-language en)
+    LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid)

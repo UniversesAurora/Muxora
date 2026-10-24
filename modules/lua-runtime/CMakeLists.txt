@@ -44,7 +44,7 @@ target_sources(LuaRuntime PRIVATE ${lua_runtime_translation_resource})
 add_dependencies(LuaRuntime lua_runtime_lrelease)
 set(QT_I18N_SOURCE_LANGUAGE en)
 qt_add_lupdate(SOURCE_TARGETS LuaRuntime TS_FILES ${lua_runtime_translation_sources}
-    LUPDATE_TARGET lua_runtime_lupdate OPTIONS -no-obsolete -source-language en)
+    LUPDATE_TARGET lua_runtime_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 
 if(MSVC)
     target_compile_options(LuaRuntime PRIVATE /W4 /permissive- /utf-8)
