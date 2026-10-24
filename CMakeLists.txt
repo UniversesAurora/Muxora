@@ -10,12 +10,15 @@ add_subdirectory(src/app)
 
 if(BUILD_TESTING)
     # Compares a fresh extraction of every first-party source with the
-    # catalogs. The check is a PowerShell 7 script, which runs on each
-    # platform Qt supports, and uses this build's own lupdate.
+    # catalogs, using this build's own lupdate, and checks that the checker
+    # rejects each broken input it is meant to catch.
     find_package(Qt6 6.9 REQUIRED COMPONENTS LinguistTools)
-    find_program(MUXORA_PWSH NAMES pwsh REQUIRED)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
     add_test(NAME translations.coverage
-        COMMAND "${MUXORA_PWSH}" -NoProfile -File "${PROJECT_SOURCE_DIR}/tools/check-translations.ps1"
-            -Lupdate "$<TARGET_FILE:Qt6::lupdate>")
-    set_tests_properties(translations.coverage PROPERTIES TIMEOUT 120 LABELS model)
+        COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/check-translations.py"
+            --lupdate "$<TARGET_FILE:Qt6::lupdate>")
+    add_test(NAME translations.checker
+        COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/tests/translations-test.py"
+            --lupdate "$<TARGET_FILE:Qt6::lupdate>")
+    set_tests_properties(translations.coverage translations.checker PROPERTIES TIMEOUT 300 LABELS model)
 endif()

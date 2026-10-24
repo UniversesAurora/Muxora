@@ -345,7 +345,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **前置**：无。排在 1.7 之前，先完成迁移，再继续会新增文字的主题、设置、终端等步骤。
 
-**涉及文件**：`modules/` 与 `src/` 中全部第一方源码及其文字资源；重点为 `modules/window-system/src/`、`modules/window-system-lua/src/`、`modules/lua-runtime/src/`、`src/app/`、`src/workspace_host/`；窗口模块与应用的 CMake、翻译目录、`localization_test.cpp` 及其他含旧查找键的测试；`tools/check-translations.ps1`（新增覆盖检查入口）。
+**涉及文件**：`modules/` 与 `src/` 中全部第一方源码及其文字资源；重点为 `modules/window-system/src/`、`modules/window-system-lua/src/`、`modules/lua-runtime/src/`、`src/app/`、`src/workspace_host/`；窗口模块与应用的 CMake、翻译目录、`localization_test.cpp` 及其他含旧查找键的测试；`tools/check-translations.ps1`（新增覆盖检查入口，2026-10-24 改写为 `check-translations.py`）。
 
 **实现**：
 

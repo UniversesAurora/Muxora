@@ -14,7 +14,7 @@ Windows x64 已发布的便携版见 [GitHub 预发布](https://github.com/Unive
 
 ## 构建与运行
 
-需要 PowerShell 7、Git、CMake、Ninja，以及包含匹配 C++ 编译器和 Linguist 翻译工具的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](docs/adr/0009-msvc-toolchain.md)）。Qt 安装在仓库外，不提交 SDK 或构建产物。
+需要 PowerShell 7、Python 3.10 或更新版本、Git、CMake、Ninja，以及包含匹配 C++ 编译器和 Linguist 翻译工具的 Qt 6 SDK。当前 Windows 预览使用 Qt 6.12 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](docs/adr/0009-msvc-toolchain.md)）。Qt 安装在仓库外，不提交 SDK 或构建产物。
 
 首次构建会从 Lua 官方下载固定的 5.5.1 源码，在构建目录编译并静态链接；无需另外安装 Lua。嵌入版本的构建方式及垃圾回收 hook 适配见 [依赖说明](third_party/lua/README.md)。
 

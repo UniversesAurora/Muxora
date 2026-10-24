@@ -301,9 +301,16 @@ Muxora/
 │   ├── overlays/              # 必要 vcpkg overlay
 │   └── patches/               # 必要补丁及说明
 ├── packaging/windows/
-├── tools/                     # 开发／验证脚本，Windows 优先 pwsh
+├── tools/                     # 开发／验证脚本，语言见下文
 └── out/                       # 忽略提交的构建、下载与缓存产物
 ```
+
+`tools/` 里的脚本按用途选语言（用户 2026-10-24 决定）：
+
+- 构建和测试只经 CMake 和 CTest，任何平台上 `cmake --preset`、`cmake --build`、`ctest` 就能完成，不需要项目脚本。
+- 和平台无关的检查和工具用 Python 3（只用标准库），例如翻译检查和文档检查；需要进 CTest 的由 CMake 找到 Python 后运行。
+- 只在 Windows 上做的事用 PowerShell 7，例如查找 MSVC 和 Qt 套件、部署和打包、桌面隔离；以后支持别的平台时，按那个平台的工具另写，不硬改成一份通用脚本。
+- `build.ps1`、`verify.ps1` 这类入口只是把上面几步串起来，方便本机使用。
 
 按功能组织代码，功能内区分模型、适配与视图；不会把所有界面代码堆进一个巨大窗口，也不会建立堆放任意内容的 `utils` 目录。
 
