@@ -36,6 +36,7 @@ QVariant step(const QString& id, QVariantMap args = {}) { return QVariantMap{{"c
 class ShortcutDispatchTest : public QObject {
     Q_OBJECT
 private slots:
+    void findSurvivesRemovalInTheMiddle();
     void multipleBindingsRetainArgumentsAndPrimaryCompatibility();
     void bindingValidationIsAtomicAndNotifiesOnlyChanges();
     void compositeCommandsRetainTargetsAndUseIndividualArguments();
@@ -64,6 +65,29 @@ private slots:
     void bindingSignalsCanDestroyTheManager();
     void dispatchFollowsCatalogAndBindingChanges();
 };
+
+void ShortcutDispatchTest::findSurvivesRemovalInTheMiddle()
+{
+    CommandRegistry registry;
+    const auto add = [&registry](const QString& id) {
+        return registry.add({id, id, "Test", {}, {}, [](const CommandContext&) { return true; }});
+    };
+    QVERIFY(add(QStringLiteral("custom.a")));
+    QVERIFY(add(QStringLiteral("custom.b")));
+    QVERIFY(add(QStringLiteral("custom.c")));
+    QVERIFY(registry.remove(QStringLiteral("custom.b")));
+
+    const auto* command = registry.find(QStringLiteral("custom.c"));
+    QVERIFY(command);
+    QCOMPARE(command->id, QStringLiteral("custom.c"));
+    QCOMPARE(command->title, QStringLiteral("custom.c"));
+    QVERIFY(!registry.find(QStringLiteral("custom.b")));
+
+    QStringList ids;
+    for (const auto& entry : registry.commands()) ids.append(entry.id);
+    QCOMPARE(ids, (QStringList{QStringLiteral("runCommands"), QStringLiteral("custom.a"),
+                               QStringLiteral("custom.c")}));
+}
 
 void ShortcutDispatchTest::multipleBindingsRetainArgumentsAndPrimaryCompatibility()
 {

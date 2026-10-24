@@ -557,7 +557,7 @@
 
 **测试**：`shortcut_dispatch_test` 中已有注册、删除、回调中修改注册表的用例；新增 `findSurvivesRemovalInTheMiddle`：注册 A、B、C，删除 B，`find("C")` 返回正确命令，`commands()` 顺序为 A、C。
 
-**状态**：未开始。
+**状态**：已完成（提交标题 “Index commands by ID”）。`State` 增加按稳定 ID 指向命令向量下标的 `QHash`；新增命令追加后登记，删除后按剩余顺序重建，查找不再遍历全部命令。注册、删除、回调重入和菜单相关套件通过，验证见 [记录](../../development/verification-log/2026-10.md#110-命令注册表-id-索引2026-10-24)。
 
 ---
 

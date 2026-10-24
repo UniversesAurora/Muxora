@@ -74,6 +74,7 @@ struct CommandRegistry::State {
     std::function<void()> catalogChanged;
     bool alive = true;
     QVector<Command> commands;
+    QHash<QString, qsizetype> indexById;
     std::function<void()> bindingsChanged;
     std::function<bool(const CommandContext&)> validator;
     std::function<std::optional<CommandContext>(const CommandContext&)> compositeResolver;
@@ -84,9 +85,16 @@ struct CommandRegistry::State {
     std::shared_ptr<Invocation> invocation;
 
     const Command* find(const QString& id) const {
-        const auto it = std::find_if(commands.cbegin(), commands.cend(),
-                                   [&](const auto& command) { return command.id == id; });
-        return it == commands.cend() ? nullptr : &*it;
+        const auto index = indexById.constFind(id);
+        return index == indexById.cend() ? nullptr : &commands[*index];
+    }
+
+    void rebuildIndex()
+    {
+        indexById.clear();
+        indexById.reserve(commands.size());
+        for (qsizetype index = 0; index < commands.size(); ++index)
+            indexById.insert(commands[index].id, index);
     }
 
     bool run(const QString& id, const CommandContext& context, const std::shared_ptr<Invocation>& call,
@@ -135,6 +143,7 @@ CommandRegistry::CommandRegistry() : state_(std::make_shared<State>())
 {
     state_->commands.append({QStringLiteral("runCommands"), QCoreApplication::translate("WindowSystem", "Run commands"), QStringLiteral("commands"),
                              {}, {}, [](const CommandContext&) { return false; }});
+    state_->rebuildIndex();
 }
 CommandRegistry::~CommandRegistry() { state_->alive = false; }
 
@@ -156,7 +165,9 @@ bool CommandRegistry::add(Command command)
     } else if (!command.shortcut.isEmpty() && command.bindings.first().sequence != command.shortcut) return false;
     if (!normalizeBindings(command.bindings)) return false;
     command.shortcut = command.bindings.isEmpty() ? QKeySequence{} : command.bindings.first().sequence;
+    const auto index = state->commands.size();
     state->commands.append(std::move(command));
+    state->indexById.insert(state->commands[index].id, index);
     const auto changed = state->catalogChanged;
     if (changed) changed();
     return state->alive;
@@ -169,6 +180,7 @@ bool CommandRegistry::remove(const QString& id)
         [&](const Command& command) { return command.id == id; });
     if (found == state->commands.end()) return false;
     state->commands.erase(found);
+    state->rebuildIndex();
     const auto changed = state->catalogChanged;
     if (changed) changed();
     return state->alive;
