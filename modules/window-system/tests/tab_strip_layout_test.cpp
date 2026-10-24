@@ -149,6 +149,7 @@ private slots:
     void detachedMultilineTabDropsIntoAnotherGroupAtItsVisibleRow();
     void wheelExpandedRowsSurviveApiReconstructionUntilExplicitCollapse_data();
     void wheelExpandedRowsSurviveApiReconstructionUntilExplicitCollapse();
+    void draggingTheOnlyTabOfTheLastRowAlongItKeepsItsSlot();
     void activeOnlyLaterRowDragNeverFallsBackToFirstRow_data();
     void activeOnlyLaterRowDragNeverFallsBackToFirstRow();
 };
@@ -1238,6 +1239,49 @@ void TabStripLayoutTest::wheelExpandedRowsSurviveApiReconstructionUntilExplicitC
     QVERIFY(!collapsedTab.isNull()); view = groupView(manager.windowWidget(window), group); QVERIFY(view);
     QCOMPARE(view->tabBar()->height(), defaultTheme().metrics.tabHeight);
     QCOMPARE(view->count(), 11); QVERIFY(manager.model().validate());
+}
+
+void TabStripLayoutTest::draggingTheOnlyTabOfTheLastRowAlongItKeepsItsSlot()
+{
+    // The last row holds only the dragged tab, so during the drag it holds
+    // only the insertion preview. Moving along that row, past the new-tab
+    // buttons, must keep the slot rather than aim at the row above (which
+    // moved the preview up and back on every move).
+    const auto cleanup = qScopeGuard([] {
+        test::authoredMouseInput().finish();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    });
+    WindowManager manager; auto appearance = manager.tabAppearance(); appearance.multiline = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Last row drag", {900, 360}});
+    QVector<TabId> ids;
+    for (int index = 0; index < 6; ++index)
+        ids.append(manager.addTab(window, new QLabel(QString("Content %1").arg(index)), {QString("MMMM tab %1").arg(index + 1), "label", {}}));
+    auto* main = manager.windowWidget(window);
+    main->move(qApp->primaryScreen()->availableGeometry().topLeft() + QPoint(12, 12));
+    manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(main));
+    const auto group = manager.model().groupForTab(ids.first());
+    auto* view = groupView(main, group); QVERIFY(view); auto* bar = view->tabBar();
+    // Narrow the window until the last tab wraps onto a row of its own.
+    for (int width = 900; width > 300 && bar->displayTabRect(5).top() == bar->displayTabRect(4).top(); width -= 10) {
+        main->resize(width, main->height()); QCoreApplication::processEvents();
+        view = groupView(main, group); QVERIFY(view); bar = view->tabBar();
+    }
+    QVERIFY(bar->displayTabRect(5).top() > bar->displayTabRect(4).top());
+    const int row = bar->displayTabRect(5).top();
+    const auto start = bar->mapToGlobal(bar->displayTabRect(5).center());
+    sendMouse(bar, QEvent::MouseButtonPress, start, Qt::LeftButton);
+    sendMouse(bar, QEvent::MouseMove, start + QPoint(QApplication::startDragDistance() + 3, 0));
+    auto* receiver = QWidget::mouseGrabber(); QVERIFY(receiver); QTRY_VERIFY(labelPreview());
+    for (int x = bar->displayTabRect(4).width(); x < view->viewportRectGlobal().width() - 4; x += 5) {
+        const QPoint point(bar->mapToGlobal(QPoint(x, 0)).x(), start.y());
+        sendMouse(receiver, QEvent::MouseMove, point);
+        QCOMPARE(view->insertionIndex(point), 5);
+        QCOMPARE(bar->insertionPreviewRect().top(), row);
+    }
+    sendMouse(receiver, QEvent::MouseButtonRelease, start, Qt::LeftButton, Qt::NoButton);
+    QTRY_VERIFY(!labelPreview());
+    QCOMPARE(manager.model().group(group)->tabs, ids);
 }
 
 void TabStripLayoutTest::activeOnlyLaterRowDragNeverFallsBackToFirstRow_data()

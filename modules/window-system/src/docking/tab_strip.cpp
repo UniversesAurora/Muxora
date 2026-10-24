@@ -433,16 +433,32 @@ int DragTabBar::insertionIndexAt(QPoint local) const
         const auto inRegion = [&](int i) { return !stickyRow || (i < stickyCount_) == *stickyRow; };
         int run = 0;
         for (int i = 0; i < std::min(stickyCount_, count()); ++i) if (!isDragged(i)) ++run;
+        // The preview counts as a member of its row. A tab dragged off a row
+        // of its own leaves only the preview there; without it, the pointer
+        // on that row would aim at the row above, moving the preview up and
+        // back again on every move.
+        const auto gap = insertionPreviewRect();
+        const bool gapCounts = !gap.isEmpty() && (!stickyRow || insertionSticky_ == *stickyRow);
         int nearestRow = -1, distance = std::numeric_limits<int>::max();
-        for (int i = 0; i < count(); ++i) if (!isDragged(i) && inRegion(i)) {
-            const auto rect = displayTabRect(i);
-            if (rect.isEmpty()) continue;
+        const auto consider = [&](const QRect& rect) {
             const int dy = local.y() < rect.top() ? rect.top() - local.y()
                 : local.y() > rect.bottom() ? local.y() - rect.bottom() : 0;
             if(dy < distance) { nearestRow=rect.top(); distance=dy; }
+        };
+        if (gapCounts) consider(gap);
+        for (int i = 0; i < count(); ++i) if (!isDragged(i) && inRegion(i)) {
+            const auto rect = displayTabRect(i);
+            if (!rect.isEmpty()) consider(rect);
         }
         int ordinal = 0, after = stickyRow && !*stickyRow ? run : 0;
+        const auto gapAt = [&](int position) {
+            return gapCounts && position == insertionIndex_ && gap.top() == nearestRow;
+        };
         for (int i = 0; i < count(); ++i) if (!isDragged(i)) {
+            if (gapAt(ordinal)) {
+                if (local.x() < gap.center().x()) return insertionIndex_;
+                after = insertionIndex_;
+            }
             const auto rect = displayTabRect(i);
             if (inRegion(i) && !rect.isEmpty() && rect.top() == nearestRow) {
                 if(local.x() < rect.center().x()) return ordinal;
@@ -450,6 +466,7 @@ int DragTabBar::insertionIndexAt(QPoint local) const
             }
             ++ordinal;
         }
+        if (gapAt(ordinal)) after = insertionIndex_;
         if (nearestRow < 0) return stickyRow ? run : insertionIndex_ >= 0 ? insertionIndex_ : 0;
         return after;
     }
