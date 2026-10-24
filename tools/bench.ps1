@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9._-]+$')][string]$Name,
     [string]$Tabs = '100,500,1000',
     [ValidateRange(1, 100000)][int]$Repeat = 30,
+    [ValidateSet('all', 'restore', 'create', 'close', 'move', 'split', 'ratio', 'keys', 'save', 'cycle')]
+    [string[]]$Scenario = @(),
     [switch]$Visible,
     [string]$QtRoot
 )
@@ -43,8 +45,12 @@ try {
     New-Item -ItemType Directory -Path $taskResults -Force | Out-Null
     if ($Visible) { Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
     else { $env:QT_QPA_PLATFORM = 'offscreen' }
-    Invoke-Checked $taskBenchmark @('--tabs', $Tabs, '--repeat', "$Repeat",
-        '--commit', $taskCommit, '--out', $taskOutput)
+    $taskBenchmarkArguments = @('--tabs', $Tabs, '--repeat', "$Repeat")
+    foreach ($taskScenario in $Scenario) {
+        $taskBenchmarkArguments += @('--scenario', $taskScenario)
+    }
+    $taskBenchmarkArguments += @('--commit', $taskCommit, '--out', $taskOutput)
+    Invoke-Checked $taskBenchmark $taskBenchmarkArguments
     Write-Host "Benchmark results: $taskOutput"
 } finally {
     Exit-Toolchain $taskToolchain

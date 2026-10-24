@@ -312,6 +312,8 @@ Qt 事件模拟与离屏渲染用于快速组件检查；真实桌面测试另�
 
 长标题绘制定向基准为可选目标 `window-system-title-benchmark`，负载和输出字段定义在 [基准源码](../../modules/window-system/benchmarks/title_rendering_benchmark.cpp)。它只把真实标签控件绘制到固定大小的离屏图像，不显示窗口、不发输入，也不设置依赖机器的性能阈值。首帧单列，重复绘制均值不包含控件构造和初次尺寸计算；不能据此宣称首次排版开销消失。
 
+布局规模基准的 `restore` 场景先用模型生成完整标签和内容描述，再通过一次 `restoreLayout()` 创建全部宿主内容、显示窗口并进入事件循环；内存记录的 `workspace` 为 `restore`。它衡量“未显示标签不创建页面视图”，不能和逐个添加并激活的 `create` 场景混为一谈。可用 `pwsh tools/bench.ps1 -Name <名字> -Tabs 1000 -Repeat 1 -Scenario restore` 单独测量；前后比较必须使用同一机器、平台、参数和基准源码。
+
 ```powershell
 . ./tools/toolchain.ps1
 $tc = Enter-Toolchain (Resolve-QtKit "" (Get-Location).Path)

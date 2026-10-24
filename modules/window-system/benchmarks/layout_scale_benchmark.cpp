@@ -35,7 +35,7 @@ constexpr int kCycleIterations = 1000;
 constexpr int kCycleSampleStep = 100;
 
 const QStringList kScenarios = {
-    QStringLiteral("create"), QStringLiteral("close"), QStringLiteral("move"),
+    QStringLiteral("restore"), QStringLiteral("create"), QStringLiteral("close"), QStringLiteral("move"),
     QStringLiteral("split"), QStringLiteral("ratio"), QStringLiteral("keys"),
     QStringLiteral("save"), QStringLiteral("cycle")};
 
@@ -156,7 +156,8 @@ Options parseOptions(const QCoreApplication& app)
     const QCommandLineOption repeat(QStringLiteral("repeat"), QStringLiteral("Samples per scenario."),
         QStringLiteral("count"), QStringLiteral("30"));
     const QCommandLineOption scenario(QStringLiteral("scenario"),
-        QStringLiteral("all|create|close|move|split|ratio|keys|save|cycle; repeatable."), QStringLiteral("name"));
+        QStringLiteral("all|restore|create|close|move|split|ratio|keys|save|cycle; repeatable."),
+        QStringLiteral("name"));
     const QCommandLineOption out(QStringLiteral("out"), QStringLiteral("JSON output path; stdout when omitted."),
         QStringLiteral("path"));
     const QCommandLineOption commit(QStringLiteral("commit"), QStringLiteral("Source revision label."),
@@ -201,6 +202,81 @@ std::unique_ptr<Workspace> openWorkspace()
     return workspace;
 }
 
+QJsonObject restoreSnapshot(int tabs)
+{
+    LayoutModel model;
+    const auto window = model.createWindow(WindowKind::Workbench);
+    require(!window.isNull(), "restore: model window");
+    GroupId group;
+    QVector<TabId> ids;
+    for (int index = 0; index < tabs; ++index) {
+        const auto title = QStringLiteral("Tab %1").arg(index);
+        const TabId tab = group.isNull() ? model.addTab(window, title)
+            : index % kTabsPerGroup == 0
+                ? model.addTabToNewGroup(window, title, group,
+                    (index / kTabsPerGroup) % 2 == 1 ? Placement::Right : Placement::Bottom)
+                : model.addTab(window, title, group);
+        require(!tab.isNull(), "restore: model tab");
+        group = model.groupForTab(tab);
+        ids.append(tab);
+    }
+
+    WindowManager seed;
+    WindowOptions options;
+    options.title = QStringLiteral("Restored layout benchmark");
+    options.size = QSize(1600, 1000);
+    require(!seed.createWindow(WindowKind::Workbench, options).isNull(), "restore: seed window");
+    auto snapshot = seed.saveLayout();
+    snapshot.insert(QStringLiteral("model"), model.toJson());
+    QJsonArray panes;
+    for (const auto tab : ids) {
+        const auto* record = model.tab(tab);
+        panes.append(QJsonObject{{"id", record->activePane.toString(QUuid::WithoutBraces)},
+            {"title", record->title}, {"type", "bench.text"}, {"state", QJsonObject{}},
+            {"showIcon", true}, {"topBarSharing", "shared"}, {"bottomBarSharing", "shared"}});
+    }
+    snapshot.insert(QStringLiteral("panes"), panes);
+    auto windows = snapshot.value("windows").toArray();
+    auto metadata = windows.first().toObject();
+    metadata.insert("id", window.toString(QUuid::WithoutBraces));
+    metadata.insert("title", "Restored layout benchmark");
+    windows.replace(0, metadata);
+    snapshot.insert(QStringLiteral("windows"), windows);
+    return snapshot;
+}
+
+struct RestoreMeasurement {
+    std::unique_ptr<Workspace> workspace;
+    double elapsedMs = 0;
+    quint64 emptyBytes = 0;
+    int emptyWidgets = 0;
+};
+
+RestoreMeasurement openRestoredWorkspace(int tabs)
+{
+    RestoreMeasurement result{openWorkspace()};
+    result.emptyBytes = privateBytes();
+    result.emptyWidgets = liveWidgetCount();
+    auto& manager = *result.workspace->manager;
+    manager.setContentFactory([](const TabOptions& options, PaneId) {
+        return new QLabel(options.title);
+    });
+    QElapsedTimer timer;
+    timer.start();
+    const auto restored = manager.restoreLayout(restoreSnapshot(tabs));
+    require(restored.ok, "restoreLayout");
+    settleEventLoop();
+    result.elapsedMs = double(timer.nsecsElapsed()) / 1.0e6;
+    result.workspace->window = manager.model().windowOrder().first();
+    result.workspace->groups = manager.model().centralGroups(result.workspace->window);
+    result.workspace->tabs = manager.model().orderedTabs(result.workspace->window);
+    manager.showWindow(result.workspace->window);
+    require(QTest::qWaitForWindowExposed(manager.windowWidget(result.workspace->window)),
+            "restored window exposure");
+    settleEventLoop();
+    return result;
+}
+
 // Every 25 tabs start a new group beside the previous one, alternating
 // right and bottom so the central tree gains depth.
 void appendTab(Workspace& workspace, int index)
@@ -238,13 +314,15 @@ void buildWorkspace(Workspace& workspace, int tabs, Report& report, bool record)
     if (record) addResult(report, QStringLiteral("create"), tabs, {elapsed});
 }
 
-void recordMemory(Report& report, int tabs, quint64 emptyBytes, int emptyWidgets)
+void recordMemory(Report& report, int tabs, quint64 emptyBytes, int emptyWidgets,
+                  const QString& workspace)
 {
     drainDeferredDeletes();
     const quint64 bytes = privateBytes();
     const int widgets = liveWidgetCount();
     report.memory.append(QJsonObject{
-        {QStringLiteral("tabs"), tabs}, {QStringLiteral("privateBytes"), qint64(bytes)},
+        {QStringLiteral("workspace"), workspace}, {QStringLiteral("tabs"), tabs},
+        {QStringLiteral("privateBytes"), qint64(bytes)},
         {QStringLiteral("widgets"), widgets},
         {QStringLiteral("bytesPerTab"), (double(bytes) - double(emptyBytes)) / tabs},
         {QStringLiteral("widgetsPerTab"), double(widgets - emptyWidgets) / tabs}});
@@ -397,24 +475,37 @@ void progress(const QString& scenario, int tabs)
 void runScale(const Options& options, int tabs, Report& report)
 {
     const auto has = [&](const char* name) { return options.scenarios.contains(QLatin1String(name)); };
-    auto workspace = openWorkspace();
-    const quint64 emptyBytes = privateBytes();
-    const int emptyWidgets = liveWidgetCount();
-    progress(QStringLiteral("create"), tabs);
-    buildWorkspace(*workspace, tabs, report, has("create"));
-    recordMemory(report, tabs, emptyBytes, emptyWidgets);
-    const auto run = [&](const char* name, auto&& measure) {
-        if (!has(name)) return;
-        progress(QLatin1String(name), tabs);
-        addResult(report, QLatin1String(name), tabs, measure());
-    };
-    run("close", [&] { return measureClose(*workspace, options.repeat); });
-    run("move", [&] { return measureMove(*workspace, options.repeat); });
-    run("split", [&] { return measureSplit(*workspace, options.repeat); });
-    run("ratio", [&] { return measureRatio(*workspace, options.repeat); });
-    run("keys", [&] { return measureKeys(*workspace, options.repeat); });
-    run("save", [&] { return measureSave(*workspace, options.repeat, report, tabs); });
-    run("cycle", [&] { return measureCycle(*workspace, report, tabs); });
+    const bool needsBuiltWorkspace = has("create") || has("close") || has("move") || has("split")
+        || has("ratio") || has("keys") || has("save") || has("cycle");
+    if (needsBuiltWorkspace) {
+        auto workspace = openWorkspace();
+        const quint64 emptyBytes = privateBytes();
+        const int emptyWidgets = liveWidgetCount();
+        progress(QStringLiteral("create"), tabs);
+        buildWorkspace(*workspace, tabs, report, has("create"));
+        if (has("create"))
+            recordMemory(report, tabs, emptyBytes, emptyWidgets, QStringLiteral("create"));
+        const auto run = [&](const char* name, auto&& measure) {
+            if (!has(name)) return;
+            progress(QLatin1String(name), tabs);
+            addResult(report, QLatin1String(name), tabs, measure());
+        };
+        run("close", [&] { return measureClose(*workspace, options.repeat); });
+        run("move", [&] { return measureMove(*workspace, options.repeat); });
+        run("split", [&] { return measureSplit(*workspace, options.repeat); });
+        run("ratio", [&] { return measureRatio(*workspace, options.repeat); });
+        run("keys", [&] { return measureKeys(*workspace, options.repeat); });
+        run("save", [&] { return measureSave(*workspace, options.repeat, report, tabs); });
+        run("cycle", [&] { return measureCycle(*workspace, report, tabs); });
+    }
+    if (has("restore")) {
+        progress(QStringLiteral("restore"), tabs);
+        RestoreMeasurement restored = openRestoredWorkspace(tabs);
+        addResult(report, QStringLiteral("restore"), tabs, {restored.elapsedMs});
+        recordMemory(report, tabs, restored.emptyBytes, restored.emptyWidgets, QStringLiteral("restore"));
+        restored.workspace.reset();
+        drainDeferredDeletes();
+    }
 }
 
 QJsonObject reportJson(const Options& options, const Report& report)
