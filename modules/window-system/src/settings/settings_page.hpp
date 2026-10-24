@@ -63,6 +63,7 @@ private:
     QComboBox* language_ = nullptr;
     QComboBox* detachKind_ = nullptr;
     QComboBox* newTabPosition_ = nullptr;
+    QComboBox* inputMethodScope_ = nullptr;
     QComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;

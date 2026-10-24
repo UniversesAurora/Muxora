@@ -247,7 +247,8 @@ QJsonObject WindowManager::saveViewLayout() const
         {"toolbarProfiles", profiles},
         {"visibilityProfiles", visibilityProfilesToJson(d->visibilityProfiles)},
         {"tabAppearance", tabAppearanceToJson(d->appearance)},
-        {"behavior", QJsonObject{{"dragOutsideFloating", d->behavior.dragOutsideKind == WindowKind::Floating},
+        {"behavior", QJsonObject{{"inputMethodScope", inputMethodScopeKey(d->behavior.inputMethodScope)},
+            {"dragOutsideFloating", d->behavior.dragOutsideKind == WindowKind::Floating},
             {"closeEmptyWorkbench", d->behavior.closeEmptyWorkbench}, {"revealDuringDrag", d->behavior.revealDuringDrag},
             {"revealDelayMs", d->behavior.revealDelayMs}, {"newTabPosition", int(d->behavior.newTabPosition)},
             {"hideSingleTabWorkbench", d->behavior.hideSingleTabWorkbench}, {"hideSingleTabFloating", d->behavior.hideSingleTabFloating},
@@ -280,6 +281,13 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     QHash<WindowId, QJsonObject> restoredInactiveStrips;
     WindowBehavior restoredBehavior;
     const auto settings = snapshot.value("behavior").toObject();
+    const auto inputScope = settings.value("inputMethodScope");
+    if (!inputScope.isUndefined()) {
+        const auto parsedScope = inputMethodScopeFromKey(inputScope.toString());
+        if (!inputScope.isString() || !parsedScope)
+            return {false, QCoreApplication::translate("WindowSystem", "Invalid input method scope")};
+        restoredBehavior.inputMethodScope = *parsedScope;
+    }
     for (const auto key : {"hideSingleTabWorkbench", "hideSingleTabFloating"})
         if (settings.contains(key) && !settings.value(key).isBool()) return {false, QCoreApplication::translate("WindowSystem", "Invalid single-tab bar visibility setting")};
     restoredBehavior.hideSingleTabWorkbench = settings.value("hideSingleTabWorkbench").toBool(false);
@@ -410,6 +418,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     for (auto tab : d->tabs) if (tab) { tab->setParent(d->storage); tab->deleteLater(); }
     d->tabs.clear(); d->panes = created; d->descriptors = descriptors; d->model = std::move(candidate);
     d->options.clear(); d->viewStates.clear(); d->behavior = restoredBehavior;
+    d->inputMethods.reset();
+    d->inputMethods.setScope(restoredBehavior.inputMethodScope);
     d->appearance = std::move(restoredAppearance);
     d->toolbarProfiles = std::move(restoredProfiles);
     d->visibilityProfiles = std::move(restoredVisibilityProfiles);

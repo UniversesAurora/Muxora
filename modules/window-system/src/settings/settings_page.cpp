@@ -244,6 +244,20 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         QObject::connect(translations, &QObject::destroyed, language_, [this] { language_->setEnabled(false); });
     }
     addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window"));
+    inputMethodScope_ = new ThemedComboBox(contents);
+    inputMethodScope_->setObjectName(QStringLiteral("InputMethodScope"));
+    inputMethodScope_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Remember input method for"));
+    for (const auto& entry : {
+        std::pair{QCoreApplication::translate("WindowSystem", "Application"), InputMethodScope::Application},
+        std::pair{QCoreApplication::translate("WindowSystem", "Workbench window and its floating windows"), InputMethodScope::Window},
+        std::pair{QCoreApplication::translate("WindowSystem", "Each top-level window"), InputMethodScope::FloatingWindow},
+        std::pair{QCoreApplication::translate("WindowSystem", "Tab group"), InputMethodScope::TabGroup},
+        std::pair{QCoreApplication::translate("WindowSystem", "Tab (default)"), InputMethodScope::Tab},
+        std::pair{QCoreApplication::translate("WindowSystem", "Pane"), InputMethodScope::Pane}})
+        inputMethodScope_->addItem(entry.first, int(entry.second));
+    rows->addWidget(addRow(contents, QStringLiteral("window"),
+        QCoreApplication::translate("WindowSystem", "Remember input method for"), QStringLiteral("window.inputMethodScope"),
+        QCoreApplication::translate("WindowSystem", "Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting."), inputMethodScope_));
     newTabPosition_ = new ThemedComboBox(contents);
     newTabPosition_->setObjectName(QStringLiteral("NewTabPosition"));
     newTabPosition_->setAccessibleName(QCoreApplication::translate("WindowSystem", "New tab position"));
@@ -304,6 +318,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         next.revealDuringDrag = reveal_->isChecked();
         next.revealDelayMs = delay_->value();
         next.newTabPosition = NewTabPosition(newTabPosition_->currentData().toInt());
+        next.inputMethodScope = InputMethodScope(inputMethodScope_->currentData().toInt());
         const QPointer<SettingsPage> self(this);
         manager_->setBehavior(next);
         // Saving the change may synchronously close this page or destroy its
@@ -312,6 +327,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     };
     QObject::connect(detachKind_, &QComboBox::currentIndexChanged, this, change);
     QObject::connect(newTabPosition_, &QComboBox::currentIndexChanged, this, change);
+    QObject::connect(inputMethodScope_, &QComboBox::currentIndexChanged, this, change);
     QObject::connect(emptyPolicy_, &QComboBox::currentIndexChanged, this, change);
     QObject::connect(reveal_, &QCheckBox::toggled, this, change);
     QObject::connect(delay_, &QSpinBox::valueChanged, this, change);
@@ -437,11 +453,13 @@ void SettingsPage::syncControls()
     const auto behavior = manager_->behavior();
     const QSignalBlocker detachBlock(detachKind_);
     const QSignalBlocker positionBlock(newTabPosition_);
+    const QSignalBlocker inputScopeBlock(inputMethodScope_);
     const QSignalBlocker emptyBlock(emptyPolicy_);
     const QSignalBlocker revealBlock(reveal_);
     const QSignalBlocker delayBlock(delay_);
     detachKind_->setCurrentIndex(behavior.dragOutsideKind == WindowKind::Floating ? 0 : 1);
     newTabPosition_->setCurrentIndex(newTabPosition_->findData(int(behavior.newTabPosition)));
+    inputMethodScope_->setCurrentIndex(inputMethodScope_->findData(int(behavior.inputMethodScope)));
     emptyPolicy_->setCurrentIndex(behavior.closeEmptyWorkbench ? 1 : 0);
     reveal_->setChecked(behavior.revealDuringDrag);
     delay_->setValue(behavior.revealDelayMs);

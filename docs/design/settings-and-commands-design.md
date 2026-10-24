@@ -58,7 +58,8 @@ Windows 用户配置目录建议为 `%APPDATA%\Muxora\User`，机器状态目录
 | 数据 | 文件 | 理由 |
 | --- | --- | --- |
 | 界面语言 `workbench.language` | `settings.json` | 用户偏好 |
-| 窗口行为 `window.*`：拖出方式、空窗口、拖动时唤起、新标签位置、单标签时隐藏标签栏、锁定时隐藏选项、窗口控制按钮顺序、禅模式全屏范围 | `settings.json` | 用户偏好，对所有窗口生效 |
+| 窗口行为 `window.*`：拖出方式、空窗口、拖动时唤起、新标签位置、单标签时隐藏标签栏、锁定时隐藏选项、窗口控制按钮顺序、禅模式全屏范围、输入法记忆范围 | `settings.json` | 用户偏好，对所有窗口生效 |
+| 各范围当前输入法和输入模式 | 不保存 | 只在本次运行中有效，见 [输入法状态](window-interaction-design.md#输入法状态) |
 | 标签外观 `tabs.*`：位置、多行、图标、编号、标题裁切、钉住标签、配色列表 | `settings.json` | 同上；配色列表是用户定义的数据，跟着用户走 |
 | 快捷键 | `keybindings.json` | 用户偏好，规则列表单独成文件 |
 | SSH 私钥 | `~/.ssh` 或 `User/keys/`（系统账户加密），由 `ssh.keys.storage` 决定 | 机密，按 [SSH 私钥存放设计](ssh-key-storage-design.md) |

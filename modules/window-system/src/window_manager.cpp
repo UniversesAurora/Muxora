@@ -79,6 +79,9 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
         });
     });
     qApp->installEventFilter(this); registerWindowCommands();
+    QObject::connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* next) {
+        if (!d->destroying && !d->refreshing) d->inputMethods.focus(d->model, next);
+    });
 }
 WindowManager::~WindowManager()
 {
@@ -704,9 +707,13 @@ WindowBehavior WindowManager::behavior() const { return d->behavior; }
 void WindowManager::setBehavior(const WindowBehavior& behavior)
 {
     if (behavior.newTabPosition < NewTabPosition::Beginning || behavior.newTabPosition > NewTabPosition::End
-        || !validZenFullscreenMode(behavior.zenFullscreenMode)) return;
+        || !validZenFullscreenMode(behavior.zenFullscreenMode)
+        || inputMethodScopeKey(behavior.inputMethodScope).isEmpty()) return;
     const bool updateTabBars = behavior.hideSingleTabWorkbench != d->behavior.hideSingleTabWorkbench
         || behavior.hideSingleTabFloating != d->behavior.hideSingleTabFloating;
+    d->inputMethods.setScope(behavior.inputMethodScope);
+    d->inputMethods.synchronize(d->model);
+    d->inputMethods.focus(d->model, QApplication::focusWidget());
     d->behavior = behavior; d->behavior.revealDelayMs = qBound(200, behavior.revealDelayMs, 2000);
     const QPointer<WindowManager> self(this);
     if (updateTabBars) applyWindowViewStates();
@@ -796,6 +803,7 @@ void WindowManager::refresh(bool preserveDrag)
 {
     d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
+    d->inputMethods.synchronize(d->model);
     const QPointer<QWidget> previousFocus = QApplication::focusWidget();
     d->refreshing = true;
     if (!preserveDrag) d->drag->releaseForMutation();
@@ -872,6 +880,7 @@ void WindowManager::refresh(bool preserveDrag)
         window->updateCaption();
     }
     d->refreshing = false;
+    d->inputMethods.focus(d->model, QApplication::focusWidget());
     QPointer<WindowManager> self(this);
     const auto active = context();
     if (auto window = d->windows.value(active.window); window && window->isVisible() && window->isActiveWindow()) {

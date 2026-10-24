@@ -118,6 +118,10 @@ assert(muxora.settings.update({ clip_tab_titles = false }))
 
 非法类型、非整数或越界长度会报告错误，不部分应用其他修改；关闭开关保留设置值。`layout.snapshot()`／`layout.restore()` 同样保存和恢复此策略。
 
+## 输入法记忆
+
+`settings.get().input_method_scope` 和 `settings.update({input_method_scope='tab'})` 读写输入法记忆范围。可选值为 `application`、`window`、`floatingWindow`、`tabGroup`、`tab`（默认）、`pane`，含义见 [输入法状态](../design/window-interaction-design.md#输入法状态)。修改范围会清空本次运行记下的状态；设置值随窗口行为保存，输入法状态不跨重启。无效值会报错，同一调用里的其他设置也不会应用。
+
 ## 窗口状态与浮动面板
 
 | 调用 | 参数与结果 |

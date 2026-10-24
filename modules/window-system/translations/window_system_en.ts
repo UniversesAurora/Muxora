@@ -3788,5 +3788,33 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>Auto-hide current tab on the bottom sidebar</source>
             <translation>Auto-hide current tab on the bottom sidebar</translation>
         </message>
+        <message>
+            <source>Invalid input method scope</source>
+            <translation>Invalid input method scope</translation>
+        </message>
+        <message>
+            <source>Remember input method for</source>
+            <translation>Remember input method for</translation>
+        </message>
+        <message>
+            <source>Workbench window and its floating windows</source>
+            <translation>Workbench window and its floating windows</translation>
+        </message>
+        <message>
+            <source>Each top-level window</source>
+            <translation>Each top-level window</translation>
+        </message>
+        <message>
+            <source>Tab (default)</source>
+            <translation>Tab (default)</translation>
+        </message>
+        <message>
+            <source>Pane</source>
+            <translation>Pane</translation>
+        </message>
+        <message>
+            <source>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</source>
+            <translation>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</translation>
+        </message>
     </context>
 </TS>

@@ -98,7 +98,7 @@ QSet<QString> settingKeys(QWidget* page)
 
 QSet<QString> allSettingKeys()
 {
-    return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
+    return {"window.inputMethodScope", "window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
             "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};

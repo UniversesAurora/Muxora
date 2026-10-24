@@ -15,6 +15,7 @@
   | `window.revealDuringDrag` | `revealDuringDrag` |
   | `window.revealDelayMs` | `revealDelayMs` |
   | `window.newTabPosition` | `newTabPosition` |
+  | `window.inputMethodScope` | `inputMethodScope` |
   | `window.hideSingleTabWorkbench` | `hideSingleTabWorkbench` |
   | `window.hideSingleTabFloating` | `hideSingleTabFloating` |
   | `window.hideToolbarOptionsWhenLocked` | `hideToolbarOptionsWhenLocked` |

@@ -39,6 +39,9 @@ int main(int argc, char** argv)
             delete content; return false;
         }}) || !windows.setTabCreationCommands("external.new", {"external.new"})) return 104;
     auto behavior = windows.behavior(); behavior.newTabPosition = window_system::NewTabPosition::Beginning;
+    const auto scope = window_system::inputMethodScopeFromKey(QStringLiteral("tab"));
+    if (!scope || window_system::inputMethodScopeKey(*scope) != QStringLiteral("tab")) return 125;
+    behavior.inputMethodScope = *scope;
     windows.setBehavior(behavior);
     if (!windows.requestNewTab(root)) return 105;
     const auto firstCreated = windows.context(root).tab;

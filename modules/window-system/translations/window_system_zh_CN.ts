@@ -3781,5 +3781,33 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>Auto-hide current tab on the bottom sidebar</source>
             <translation>当前标签收纳到下边栏</translation>
         </message>
+        <message>
+            <source>Invalid input method scope</source>
+            <translation>输入法记忆范围无效</translation>
+        </message>
+        <message>
+            <source>Remember input method for</source>
+            <translation>输入法记忆范围</translation>
+        </message>
+        <message>
+            <source>Workbench window and its floating windows</source>
+            <translation>完整窗口及其轻量浮窗</translation>
+        </message>
+        <message>
+            <source>Each top-level window</source>
+            <translation>每个顶层窗口</translation>
+        </message>
+        <message>
+            <source>Tab (default)</source>
+            <translation>标签（默认）</translation>
+        </message>
+        <message>
+            <source>Pane</source>
+            <translation>窗格</translation>
+        </message>
+        <message>
+            <source>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</source>
+            <translation>在这些区域之间切换时，恢复各自的输入法和输入模式。部分输入法只允许恢复键盘布局。重启后不保留这些状态。</translation>
+        </message>
     </context>
 </TS>

@@ -24,6 +24,8 @@ target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 add_library(WindowSystemWidgets STATIC
     src/localization/localization.cpp
     src/window_manager.cpp
+    src/input_method_scopes.cpp
+    src/platform/input_method_state.cpp
     src/view_state.cpp
     src/navigation/workspace_navigation.cpp
     src/layout_persistence.cpp
@@ -121,7 +123,7 @@ qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -source-language en)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
-    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32)
+    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32)
 endif()
 foreach(target WindowSystemModel WindowSystemWidgets)
     if(MSVC)

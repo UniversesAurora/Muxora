@@ -2,6 +2,14 @@
 
 适用于 Windows 11（26200），自绘标题栏的无边框窗口。
 
+## 输入法
+
+### 读取输入法模式不能等同于输入法允许恢复模式
+
+- **依据**：Windows 的 [ImmGetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetconversionstatus) 只返回输入法支持的模式；[ImmSetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immsetconversionstatus) 明确说明，Windows 8 起部分日文 IME 按用户保持模式，获取焦点时可能拒绝模式修改。
+- **做法**：平台层整体保存键盘布局、开关和转换／句子模式位，不把状态简化为中英文布尔值。按已有输入窗口取上下文，不对编辑器调用 `winId()` 创建原生子窗口；模式写入受限时仍恢复布局，不修改用户系统设置。上层只保存不透明状态，范围生命周期用假的平台接口验证。
+- **验证**：`InputMethodNativeTest::installedLayoutsRoundTripAndTabsRestore` 检查已有布局和可读取模式的往返；真实输入法的实际编辑效果仍需用户试用。
+
 ## 标题栏与命中测试
 
 ### 只有最大化 / 还原按钮返回 `HTMAXBUTTON`

@@ -211,6 +211,7 @@ void ScriptHost::Private::installAppearanceApi() {
         const QStringList positions{"beginning", "before_active", "after_active", "end"};
         values["new_tab_position"] = positions[int(behavior.newTabPosition)];
         values["caption_button_order"] = captionOrders[int(behavior.captionButtonOrder)];
+        values["input_method_scope"] = inputMethodScopeKey(behavior.inputMethodScope);
         if (const auto *language = TranslationManager::applicationInstance())
             values["language"] = uiLanguageId(language->requestedLanguage());
         return result(values);
@@ -221,7 +222,8 @@ void ScriptHost::Private::installAppearanceApi() {
         auto appearance = manager->tabAppearance();
         QSet<QString> known{"reveal_delay_ms", "zen_fullscreen", "drag_outside_kind",  "new_tab_position",
                             "language",        "tab_position",   "pinned_tab_position", "caption_button_order",
-                            "maximum_tab_title_width", "maximum_sidebar_title_width", "sticky_tab_sizing", "prevent_sticky_close"};
+                            "maximum_tab_title_width", "maximum_sidebar_title_width", "sticky_tab_sizing", "prevent_sticky_close",
+                            "input_method_scope"};
         for (const auto &[name, field] : behaviorBooleans) {
             known.insert(name);
             if (map.contains(name))
@@ -235,6 +237,12 @@ void ScriptHost::Private::installAppearanceApi() {
             if (!known.contains(key))
                 throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Unknown setting").toUtf8().constData());
         readAppearance(map, appearance, false);
+        if (map.contains("input_method_scope")) {
+            const auto parsed = inputMethodScopeFromKey(text({map["input_method_scope"]}, 0));
+            if (!parsed)
+                throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid input method scope").toUtf8().constData());
+            behavior.inputMethodScope = *parsed;
+        }
         behavior.revealDelayMs = number(map.value("reveal_delay_ms"), behavior.revealDelayMs, 200, 2000);
         if (map.contains("zen_fullscreen"))
             behavior.zenFullscreenMode = fullscreen(text({map["zen_fullscreen"]}, 0));

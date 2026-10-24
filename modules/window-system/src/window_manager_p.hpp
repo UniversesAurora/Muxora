@@ -5,6 +5,7 @@
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
 #include "panes/tab_content.hpp"
+#include "input_method_scopes.hpp"
 #include <QPointer>
 #include <QTimer>
 #include <QSet>
@@ -34,6 +35,7 @@ struct WindowManager::Private {
     ContentFactory factory;
     CloseGuard closeGuard;
     WindowBehavior behavior;
+    InputMethodScopes inputMethods;
     QString defaultTabCommand;
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();

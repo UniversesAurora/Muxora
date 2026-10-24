@@ -90,6 +90,7 @@ class ScriptHostTest final : public QObject {
     void appearanceAndComponentBarsUseTypedDescriptions();
     void titleClippingSettingsAreTypedAtomicAndPersistent();
     void stickyTabSettingsAreTypedAndAtomic();
+    void inputMethodScopeSettingsAreTypedAndAtomic();
     void componentServicesFollowProviderLifetime();
     void rejectedRegistrationsReleaseFunctionReferences();
     void reloadingToolbarsPreservesPerWindowAndKindLayouts();
@@ -1330,6 +1331,29 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
     QVERIFY(manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 137);
     QVERIFY(manager.tabAppearance().clipSidebarTitles); QCOMPARE(manager.tabAppearance().maximumSidebarTitleWidth, 113);
 }
+void ScriptHostTest::inputMethodScopeSettingsAreTypedAndAtomic() {
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    addEditor(manager, window);
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    const auto result = run(host, R"(
+      assert(muxora.settings.get().input_method_scope == 'tab')
+      for _, scope in ipairs({'application','window','floatingWindow','tabGroup','tab','pane'}) do
+        assert(muxora.settings.update({input_method_scope=scope}))
+        assert(muxora.settings.get().input_method_scope == scope)
+      end
+      for _, invalid in ipairs({'bad','Tab',false,4,{}}) do
+        assert(not pcall(muxora.settings.update,{input_method_scope=invalid,close_empty_window=true}))
+        assert(muxora.settings.get().input_method_scope == 'pane')
+        assert(not muxora.settings.get().close_empty_window)
+      end
+      return true
+    )");
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(manager.behavior().inputMethodScope, InputMethodScope::Pane);
+}
+
 void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
     WindowManager manager;
     ScriptHost host(&manager);
