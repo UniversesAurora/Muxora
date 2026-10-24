@@ -78,7 +78,7 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 
 `keymap.set` 默认拒绝完整序列重复占用，以及短序列恰好是长序列开头的冲突，同一命令的多个绑定也检查后者。传入 `{ replace = true }` 会移除冲突的旧绑定，卸载脚本会还原。一次提供的按键列表内部不能包含前缀冲突，开启替换也会整次拒绝，不部分修改其他命令。同一命令再次设置完全相同的序列可更新其 `args`，不会增加重复绑定。
 
-命令描述可用 `menu = { '工具', 'Lua' }` 和 `order` 指定主菜单路径与顺序。`context_menus` 接受 `tab`、`pane`、`group`、`window` 目标、子菜单 `path`、`order` 和可选 `content_type` 过滤条件。脚本提供的标题、菜单名和通知文字按原文显示，不会自动翻译。
+命令描述可用 `menu = { 'tools', 'Lua' }`（内置菜单用英文 ID：`file`、`view`、`layout`、`window`、`tools`、`help`） 和 `order` 指定主菜单路径与顺序。`context_menus` 接受 `tab`、`pane`、`group`、`window` 目标、子菜单 `path`、`order` 和可选 `content_type` 过滤条件。脚本提供的标题、菜单名和通知文字按原文显示，不会自动翻译。
 
 也可以把函数直接传给 `keymap.set`，并通过第三个参数指定稳定的 `id` 和 `title`。用户快捷键编辑器仍可以覆盖脚本默认值。对一次性脚本，给 `lua.run` 绑定参数 `{ "file": "my-script.lua" }` 或 `{ "code": "..." }`；相对路径从 `User` 解析。不要同时提供 `code` 和 `file`。
 

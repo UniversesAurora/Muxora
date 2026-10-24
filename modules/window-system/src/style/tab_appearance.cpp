@@ -94,25 +94,36 @@ std::optional<StickyTabSizing> stickySizingFromName(const QString& name)
     return {};
 }
 
+namespace {
+
+// The stored names are English sources; the display name is translated only
+// while a built-in preset still has its own ID and name.
+struct Seed { const char* id; const char* name; const char* accent; const char* soft; const char* vivid; };
+constexpr Seed paletteSeeds[] = {
+    {"gray", QT_TRANSLATE_NOOP("WindowSystem", "Gray"), "#5f6368", "#edf0f2", "#a9afb5"},
+    {"blue", QT_TRANSLATE_NOOP("WindowSystem", "Blue"), "#1967d2", "#e8f0fe", "#78a4eb"},
+    {"red", QT_TRANSLATE_NOOP("WindowSystem", "Red"), "#c5221f", "#fce8e6", "#eb817e"},
+    {"yellow", QT_TRANSLATE_NOOP("WindowSystem", "Gold"), "#8b6500", "#fff4ce", "#dfbc45"},
+    {"green", QT_TRANSLATE_NOOP("WindowSystem", "Green"), "#137333", "#e6f4ea", "#78be91"},
+    {"pink", QT_TRANSLATE_NOOP("WindowSystem", "Pink"), "#b3267d", "#fce7f3", "#dc8abd"},
+    {"purple", QT_TRANSLATE_NOOP("WindowSystem", "Purple"), "#7b2abf", "#f1e7fc", "#b18ade"},
+    {"cyan", QT_TRANSLATE_NOOP("WindowSystem", "Cyan"), "#007b83", "#e0f4f5", "#63bcc4"},
+    {"orange", QT_TRANSLATE_NOOP("WindowSystem", "Orange"), "#b05a00", "#fff0df", "#e6a65f"}};
+
+} // namespace
+
 QVector<TabColorPreset> defaultTabColorPresets()
 {
-    struct Seed { const char* id; const char* name; const char* accent; const char* soft; const char* vivid; };
-    constexpr Seed seeds[] = {
-        {"gray", "灰色", "#5f6368", "#edf0f2", "#a9afb5"}, {"blue", "蓝色", "#1967d2", "#e8f0fe", "#78a4eb"},
-        {"red", "红色", "#c5221f", "#fce8e6", "#eb817e"}, {"yellow", "金色", "#8b6500", "#fff4ce", "#dfbc45"},
-        {"green", "绿色", "#137333", "#e6f4ea", "#78be91"}, {"pink", "粉色", "#b3267d", "#fce7f3", "#dc8abd"},
-        {"purple", "紫色", "#7b2abf", "#f1e7fc", "#b18ade"}, {"cyan", "青色", "#007b83", "#e0f4f5", "#63bcc4"},
-        {"orange", "橙色", "#b05a00", "#fff0df", "#e6a65f"}};
     QVector<TabColorPreset> colors;
-    colors.reserve(std::size(seeds));
-    for (const auto& seed : seeds) {
+    colors.reserve(std::size(paletteSeeds));
+    for (const auto& seed : paletteSeeds) {
         const QColor accent(seed.accent), soft(seed.soft), vivid(seed.vivid);
         // The persisted palette is an 8-bit #AARRGGBB contract. QColor's HSV
         // transforms retain 16-bit channels, which would otherwise change on
         // every save/restore comparison even though the displayed RGB matches.
         const TabVisualColors active{soft, QColor("#202124"), accent, QColor(accent.darker(110).name(QColor::HexArgb))};
         const TabVisualColors inactive{vivid, QColor("#202124"), accent, QColor(accent.darker(130).name(QColor::HexArgb))};
-        colors.append({QString::fromLatin1(seed.id), QString::fromUtf8(seed.name),
+        colors.append({QString::fromLatin1(seed.id), QString::fromLatin1(seed.name),
             active, inactive, active, inactive});
     }
     return colors;
@@ -120,20 +131,9 @@ QVector<TabColorPreset> defaultTabColorPresets()
 
 QString tabColorDisplayName(const TabColorPreset& preset)
 {
-    struct Name { const char* id; const char* storedName; const char* source; };
-    static constexpr Name names[] = {
-        {"gray", "灰色", QT_TRANSLATE_NOOP("WindowSystem", "Gray")},
-        {"blue", "蓝色", QT_TRANSLATE_NOOP("WindowSystem", "Blue")},
-        {"red", "红色", QT_TRANSLATE_NOOP("WindowSystem", "Red")},
-        {"yellow", "金色", QT_TRANSLATE_NOOP("WindowSystem", "Gold")},
-        {"green", "绿色", QT_TRANSLATE_NOOP("WindowSystem", "Green")},
-        {"pink", "粉色", QT_TRANSLATE_NOOP("WindowSystem", "Pink")},
-        {"purple", "紫色", QT_TRANSLATE_NOOP("WindowSystem", "Purple")},
-        {"cyan", "青色", QT_TRANSLATE_NOOP("WindowSystem", "Cyan")},
-        {"orange", "橙色", QT_TRANSLATE_NOOP("WindowSystem", "Orange")}};
-    for (const auto& name : names) {
-        if (preset.id == QLatin1String(name.id) && preset.name == QString::fromUtf8(name.storedName))
-            return QCoreApplication::translate("WindowSystem", name.source);
+    for (const auto& seed : paletteSeeds) {
+        if (preset.id == QLatin1String(seed.id) && preset.name == QLatin1String(seed.name))
+            return QCoreApplication::translate("WindowSystem", seed.name);
     }
     return preset.name;
 }
@@ -216,11 +216,11 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
         candidate.stickySizing = *parsed;
     }
     if (const auto width = object.value("shrinkStickyTabWidth"); !width.isUndefined()) {
-        const double value = width.toDouble();
-        if (!width.isDouble() || !std::isfinite(value) || std::trunc(value) != value
-            || value < minimumShrinkStickyTabWidth || value > maximumShrinkStickyTabWidth)
+        const double pixels = width.toDouble();
+        if (!width.isDouble() || !std::isfinite(pixels) || std::trunc(pixels) != pixels
+            || pixels < minimumShrinkStickyTabWidth || pixels > maximumShrinkStickyTabWidth)
             return {false, QCoreApplication::translate("WindowSystem", "The shrunk sticky tab width must be an integer number of logical pixels within the allowed range")};
-        candidate.shrinkStickyTabWidth = static_cast<int>(value);
+        candidate.shrinkStickyTabWidth = static_cast<int>(pixels);
     }
     if (const auto guard = object.value("preventStickyClose"); !guard.isUndefined()) {
         const auto parsed = stickyCloseGuardFromName(guard.toString());

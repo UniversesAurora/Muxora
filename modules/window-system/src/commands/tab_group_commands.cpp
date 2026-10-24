@@ -32,7 +32,7 @@ void WindowManager::registerTabGroupCommands()
 {
     const auto add = [this](QString id, QString title, QStringList path,
         std::function<bool(const CommandContext&)> run, std::function<bool(const CommandContext&)> enabled = {}) {
-        d->commands.add({std::move(id), std::move(title), QStringLiteral("布局"), {}, std::move(enabled), std::move(run), std::move(path)});
+        d->commands.add({std::move(id), std::move(title), QStringLiteral("layout"), {}, std::move(enabled), std::move(run), std::move(path)});
     };
     const auto visible = [this](const CommandContext& c) {
         const auto* group = d->model.group(c.group); return group && group->location != GroupLocation::AutoHide;
@@ -59,7 +59,7 @@ void WindowManager::registerTabGroupCommands()
         const auto* selected = menu.exec(QCursor::pos());
         return self && selected ? std::optional<QString>(selected->data().toString()) : std::nullopt;
     };
-    add("tab.color.set", QCoreApplication::translate("WindowSystem", "Set tab color…"), {"布局", "标签外观"}, [this, chooseColor](const CommandContext& c) {
+    add("tab.color.set", QCoreApplication::translate("WindowSystem", "Set tab color…"), {"layout", "tabAppearance"}, [this, chooseColor](const CommandContext& c) {
         const QPointer<WindowManager> self(this); const auto color = chooseColor(c);
         return self && color && setTabColor(c.tab, *color);
     }, [this](const CommandContext& c) { return d->model.tab(c.tab); });
@@ -68,9 +68,9 @@ void WindowManager::registerTabGroupCommands()
         QT_TRANSLATE_NOOP("WindowSystem", "Opened: oldest first"), QT_TRANSLATE_NOOP("WindowSystem", "Opened: newest first"),
         QT_TRANSLATE_NOOP("WindowSystem", "Visited: least recent first"), QT_TRANSLATE_NOOP("WindowSystem", "Visited: most recent first")};
     for (int i = 0; i < 6; ++i)
-        add(QStringLiteral("group.sort.") + sortIds[i], QCoreApplication::translate("WindowSystem", sortTitles[i]), {"布局", "排列标签"},
+        add(QStringLiteral("group.sort.") + sortIds[i], QCoreApplication::translate("WindowSystem", sortTitles[i]), {"layout", "sortTabs"},
             [this, i](const CommandContext& c) { return sortTabs(c.group, TabSortOrder(i)); }, sortable);
-    add("group.close", QCoreApplication::translate("WindowSystem", "Close this tab group"), {"布局", "标签组"}, [this](const CommandContext& c) { return closeGroup(c.group); },
+    add("group.close", QCoreApplication::translate("WindowSystem", "Close this tab group"), {"layout", "tabGroup"}, [this](const CommandContext& c) { return closeGroup(c.group); },
         [this](const CommandContext& c) { return d->model.group(c.group); });
     // The picker captures stable IDs, never widget pointers. Closing the menu
     // or deleting its source during its nested event loop changes no layout.
@@ -128,27 +128,27 @@ void WindowManager::registerTabGroupCommands()
         const auto edgeLabel = direction.direction == Placement::Top ? QCoreApplication::translate("WindowSystem", "top")
             : direction.direction == Placement::Bottom ? QCoreApplication::translate("WindowSystem", "bottom")
             : QCoreApplication::translate("WindowSystem", direction.title);
-        add(QStringLiteral("group.swap.") + direction.id, QCoreApplication::translate("WindowSystem", "Swap tab group %1").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"布局", "交换标签组"},
+        add(QStringLiteral("group.swap.") + direction.id, QCoreApplication::translate("WindowSystem", "Swap tab group %1").arg(QCoreApplication::translate("WindowSystem", direction.title)), {"layout", "swapGroups"},
             [this, direction](const CommandContext& c) { return swapGroupDirection(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction).isNull(); });
-        add(QStringLiteral("group.merge.") + direction.id, QCoreApplication::translate("WindowSystem", "Merge into the tab group %1").arg(positionLabel), {"布局", "合并标签组"},
+        add(QStringLiteral("group.merge.") + direction.id, QCoreApplication::translate("WindowSystem", "Merge into the tab group %1").arg(positionLabel), {"layout", "mergeGroups"},
             [this, direction](const CommandContext& c) { return mergeGroupDirection(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction).isNull(); });
-        add(QStringLiteral("group.move.") + direction.id, QCoreApplication::translate("WindowSystem", "Move current tab group beyond the adjacent group %1").arg(positionLabel), {"布局", "移动标签组"},
+        add(QStringLiteral("group.move.") + direction.id, QCoreApplication::translate("WindowSystem", "Move current tab group beyond the adjacent group %1").arg(positionLabel), {"layout", "moveGroups"},
             [this, direction](const CommandContext& c) { return moveGroupToAdjacentGroup(c.group, direction.direction); },
             [this, direction](const CommandContext& c) { return !adjacentVisibleGroup(c.group, direction.direction, true).isNull(); });
         const Edge edge = direction.direction == Placement::Left ? Edge::Left : direction.direction == Placement::Right ? Edge::Right
             : direction.direction == Placement::Top ? Edge::Top : Edge::Bottom;
-        add(QStringLiteral("group.moveEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Pin tab group to the %1 sidebar").arg(edgeLabel), {"布局", "移动标签组"},
+        add(QStringLiteral("group.moveEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Pin tab group to the %1 sidebar").arg(edgeLabel), {"layout", "moveGroups"},
             [this, edge](const CommandContext& c) { return moveGroupToEdge(c.group, c.window, edge, true); }, visible);
-        add(QStringLiteral("group.hideEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Auto-hide tab group on the %1 sidebar").arg(edgeLabel), {"布局", "移动标签组"},
+        add(QStringLiteral("group.hideEdge.") + direction.id, QCoreApplication::translate("WindowSystem", "Auto-hide tab group on the %1 sidebar").arg(edgeLabel), {"layout", "moveGroups"},
             [this, edge](const CommandContext& c) { return moveGroupToEdge(c.group, c.window, edge, false); }, visible);
     }
-    add("group.swap", QCoreApplication::translate("WindowSystem", "Swap with a selected tab group…"), {"布局", "交换标签组"}, [this, chooseTarget](const CommandContext& c) {
+    add("group.swap", QCoreApplication::translate("WindowSystem", "Swap with a selected tab group…"), {"layout", "swapGroups"}, [this, chooseTarget](const CommandContext& c) {
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, false);
         return self && target && swapGroups(c.group, target->first);
     }, hasTarget);
-    add("group.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab group…"), {"布局", "合并标签组"}, [this, chooseTarget](const CommandContext& c) {
+    add("group.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab group…"), {"layout", "mergeGroups"}, [this, chooseTarget](const CommandContext& c) {
         int insertionIndex = -1;
         if (c.args.contains("insertionIndex")) {
             const auto parsed = integerArgument(c.args.value("insertionIndex"), -1, std::numeric_limits<int>::max());
@@ -158,14 +158,14 @@ void WindowManager::registerTabGroupCommands()
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, false);
         return self && target && mergeGroups(c.group, target->first, insertionIndex);
     }, hasTarget);
-    add("group.moveToGroup", QCoreApplication::translate("WindowSystem", "Move beside a selected tab group…"), {"布局", "移动标签组"}, [this, chooseTarget](const CommandContext& c) {
+    add("group.moveToGroup", QCoreApplication::translate("WindowSystem", "Move beside a selected tab group…"), {"layout", "moveGroups"}, [this, chooseTarget](const CommandContext& c) {
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, true);
         return self && target && moveGroup(c.group, target->first, target->second);
     }, hasTarget);
     for (bool forward : {false, true})
         add(forward ? "group.moveWindow.next" : "group.moveWindow.previous", forward ? QCoreApplication::translate("WindowSystem", "Move tab group to next window") : QCoreApplication::translate("WindowSystem", "Move tab group to previous window"),
-            {"布局", "移动标签组"}, [this, forward](const CommandContext& c) { return moveGroupToWindowCycle(c.group, forward); }, hasWindow);
-    add("group.moveWindow", QCoreApplication::translate("WindowSystem", "Move tab group to a selected window…"), {"布局", "移动标签组"}, [this](const CommandContext& c) {
+            {"layout", "moveGroups"}, [this, forward](const CommandContext& c) { return moveGroupToWindowCycle(c.group, forward); }, hasWindow);
+    add("group.moveWindow", QCoreApplication::translate("WindowSystem", "Move tab group to a selected window…"), {"layout", "moveGroups"}, [this](const CommandContext& c) {
         if (c.args.contains("targetWindow")) return moveGroupToWindow(c.group, c.args.value("targetWindow").toUuid());
         DismissOnlyMenu menu; applyTheme(&menu, theme());
         for (const auto id : d->model.windowOrder()) if (id != c.window) {
@@ -176,7 +176,7 @@ void WindowManager::registerTabGroupCommands()
     }, hasWindow);
     for (const bool floating : {true, false})
         add(floating ? "group.detachFloating" : "group.detachWorkbench", floating ? QCoreApplication::translate("WindowSystem", "Move tab group to a new floating window") : QCoreApplication::translate("WindowSystem", "Move tab group to a new workbench window"),
-            {"布局", "移动标签组"}, [this, floating](const CommandContext& c) {
+            {"layout", "moveGroups"}, [this, floating](const CommandContext& c) {
                 return !detachGroup(c.group, floating ? WindowKind::Floating : WindowKind::Workbench).isNull();
             }, visible);
 }

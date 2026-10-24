@@ -15,7 +15,7 @@ void registerTabPresentationCommands(WindowManager* manager)
 {
     const QPointer<WindowManager> retained(manager);
     const auto registerFlag = [manager, retained](const char* id, const QString& title, bool TabAppearance::*field) {
-        manager->commands().add({QString::fromLatin1(id), title, QStringLiteral("视图"), {},
+        manager->commands().add({QString::fromLatin1(id), title, QStringLiteral("view"), {},
             [retained, field](const CommandContext&) {
                 return retained && (field != &TabAppearance::wheelExpandRows || retained->tabAppearance().multiline);
             }, [retained, field](const CommandContext& context) {
@@ -26,7 +26,7 @@ void registerTabPresentationCommands(WindowManager* manager)
                 // value while they are off, so turning them on restores it.
                 next.*field = context.args.contains("visible") ? context.args.value("visible").toBool() : !(next.*field);
                 return retained->setTabAppearance(next);
-            }, {QStringLiteral("视图"), QStringLiteral("标签栏")}});
+            }, {QStringLiteral("view"), QStringLiteral("tabBar")}});
     };
     registerFlag("presentation.toggleIcons", QCoreApplication::translate("WindowSystem", "Show tab icons"), &TabAppearance::showIcons);
     registerFlag("presentation.toggleNewTabButton", QCoreApplication::translate("WindowSystem", "Show new tab button"), &TabAppearance::showNewTabButton);
@@ -39,7 +39,7 @@ void registerTabPresentationCommands(WindowManager* manager)
     registerFlag("presentation.toggleWheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"), &TabAppearance::wheelExpandRows);
     for (const bool pinned : {false, true}) manager->commands().add({
         pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement"),
-        pinned ? QCoreApplication::translate("WindowSystem", "Pinned sidebar tab position") : QCoreApplication::translate("WindowSystem", "Central tab bar position"), QStringLiteral("视图"), {}, {},
+        pinned ? QCoreApplication::translate("WindowSystem", "Pinned sidebar tab position") : QCoreApplication::translate("WindowSystem", "Central tab bar position"), QStringLiteral("view"), {}, {},
         [retained, pinned](const CommandContext& context) {
             if (!retained || context.args.value("position").metaType().id() != QMetaType::QString) return false;
             const auto position = context.args.value("position").toString();

@@ -195,8 +195,8 @@ void PopupMenuTest::cascadingMenusDoNotRemoveItemsOrToggleParentSeparators()
     manager.showWindow(first); auto* window = manager.windowWidget(first);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* bar = window->findChild<QMenuBar*>("MenuStrip"); QVERIFY(bar);
-    auto* parent = menuAt(bar, {"窗口"}); auto* child = menuAt(bar, {"窗口", "切换窗口"});
-    auto* grandchild = menuAt(bar, {"窗口", "切换窗口", "所属窗口族"});
+    auto* parent = menuAt(bar, {"window"}); auto* child = menuAt(bar, {"window", "switchWindow"});
+    auto* grandchild = menuAt(bar, {"window", "switchWindow", "family"});
     QVERIFY(parent && child && grandchild);
     parent->popup(bar->mapToGlobal(QPoint(0, bar->height())));
     QVERIFY(QTest::qWaitForWindowExposed(parent));

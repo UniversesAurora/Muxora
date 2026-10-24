@@ -42,7 +42,7 @@ private slots:
     {
         WindowManager manager; const auto original=manager.createWindow(); manager.addTab(original,new QLabel("old"),{"old","notes",{}});
         auto behavior=manager.behavior();behavior.closeEmptyWorkbench=true;manager.setBehavior(behavior);
-        int created=0; QVERIFY(manager.commands().add({"host.new","new","文件",{},{},[&](const CommandContext& c){++created;return !manager.addTab(c.window,new QLabel("new"),{"new","notes",{}},c.group).isNull();}}));
+        int created=0; QVERIFY(manager.commands().add({"host.new","new","file",{},{},[&](const CommandContext& c){++created;return !manager.addTab(c.window,new QLabel("new"),{"new","notes",{}},c.group).isNull();}}));
         QVERIFY(manager.setTabCreationCommands("host.new",{"host.new"})); QVERIFY(manager.execute("window.new",{},original));
         QCoreApplication::processEvents(); QCOMPARE(created,1); QCOMPARE(manager.model().windows().size(),2);
         const auto fresh=manager.model().windowOrder().last(); QVERIFY(fresh!=original);
@@ -52,7 +52,7 @@ private slots:
     void newWindowCreationChecksFactoryLifetime()
     {
         auto manager=std::make_unique<WindowManager>(); const auto w=manager->createWindow(); manager->addTab(w,new QLabel("a"),{"a","notes",{}});
-        QPointer<WindowManager> observed(manager.get()); QVERIFY(manager->commands().add({"host.new","new","文件",{},{},[&](const CommandContext&){manager.reset();return true;}}));
+        QPointer<WindowManager> observed(manager.get()); QVERIFY(manager->commands().add({"host.new","new","file",{},{},[&](const CommandContext&){manager.reset();return true;}}));
         QVERIFY(manager->setTabCreationCommands("host.new",{"host.new"})); QVERIFY(!manager->execute("window.new",{},w)); QVERIFY(!observed);
     }
     void adjacentPreparationHonorsParticipantLifetimes_data()

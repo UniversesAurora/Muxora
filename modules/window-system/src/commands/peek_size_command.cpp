@@ -117,9 +117,9 @@ bool setSize(WindowManager* manager, const CommandContext& context)
 void registerPeekSizeCommands(WindowManager* manager)
 {
     const auto enabled = [manager](const CommandContext& context) { return isAutoHideTab(manager, targetTab(context)); };
-    manager->commands().add({"tab.peek.setSize", QCoreApplication::translate("WindowSystem", "Set auto-hide panel size…"), "布局", {}, enabled,
+    manager->commands().add({"tab.peek.setSize", QCoreApplication::translate("WindowSystem", "Set auto-hide panel size…"), "layout", {}, enabled,
         [manager](const CommandContext& context) { return setSize(manager, context); }});
-    manager->commands().add({"tab.peek.resetSize", QCoreApplication::translate("WindowSystem", "Reset auto-hide panel size"), "布局", {}, enabled,
+    manager->commands().add({"tab.peek.resetSize", QCoreApplication::translate("WindowSystem", "Reset auto-hide panel size"), "layout", {}, enabled,
         [manager](const CommandContext& context) {
             const auto tab = targetTab(context);
             return manager->resetPeekSize(tab, targetEdge(manager, tab));

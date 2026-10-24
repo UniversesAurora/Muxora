@@ -86,25 +86,25 @@ QString uiLanguageName(UiLanguage language)
 QString commandCategoryDisplayName(const QString& identity)
 {
     static const QHash<QString, const char*> names{
-        {QStringLiteral("文件"), QT_TRANSLATE_NOOP("WindowSystem", "File")},
-        {QStringLiteral("视图"), QT_TRANSLATE_NOOP("WindowSystem", "View")},
-        {QStringLiteral("布局"), QT_TRANSLATE_NOOP("WindowSystem", "Layout")},
-        {QStringLiteral("窗口"), QT_TRANSLATE_NOOP("WindowSystem", "Window")},
-        {QStringLiteral("工具"), QT_TRANSLATE_NOOP("WindowSystem", "Tools")},
-        {QStringLiteral("帮助"), QT_TRANSLATE_NOOP("WindowSystem", "Help")},
-        {QStringLiteral("命令"), QT_TRANSLATE_NOOP("WindowSystem", "Command")},
-        {QStringLiteral("其他"), QT_TRANSLATE_NOOP("WindowSystem", "Other")},
-        {QStringLiteral("扩展"), QT_TRANSLATE_NOOP("WindowSystem", "Extensions")},
-        {QStringLiteral("层级转换"), QT_TRANSLATE_NOOP("WindowSystem", "Hierarchy conversions")},
-        {QStringLiteral("标签外观"), QT_TRANSLATE_NOOP("WindowSystem", "Tab appearance")},
-        {QStringLiteral("排列标签"), QT_TRANSLATE_NOOP("WindowSystem", "Sort tabs")},
-        {QStringLiteral("标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Tab group")},
-        {QStringLiteral("交换标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab groups")},
-        {QStringLiteral("合并标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Merge tab groups")},
-        {QStringLiteral("移动标签组"), QT_TRANSLATE_NOOP("WindowSystem", "Move tab groups")},
-        {QStringLiteral("标签栏"), QT_TRANSLATE_NOOP("WindowSystem", "Tab bar")},
-        {QStringLiteral("工具条"), QT_TRANSLATE_NOOP("WindowSystem", "Toolbar strips")},
-        {QStringLiteral("新建标签"), QT_TRANSLATE_NOOP("WindowSystem", "New tab")}};
+        {QStringLiteral("file"), QT_TRANSLATE_NOOP("WindowSystem", "File")},
+        {QStringLiteral("view"), QT_TRANSLATE_NOOP("WindowSystem", "View")},
+        {QStringLiteral("layout"), QT_TRANSLATE_NOOP("WindowSystem", "Layout")},
+        {QStringLiteral("window"), QT_TRANSLATE_NOOP("WindowSystem", "Window")},
+        {QStringLiteral("tools"), QT_TRANSLATE_NOOP("WindowSystem", "Tools")},
+        {QStringLiteral("help"), QT_TRANSLATE_NOOP("WindowSystem", "Help")},
+        {QStringLiteral("commands"), QT_TRANSLATE_NOOP("WindowSystem", "Command")},
+        {QStringLiteral("other"), QT_TRANSLATE_NOOP("WindowSystem", "Other")},
+        {QStringLiteral("extensions"), QT_TRANSLATE_NOOP("WindowSystem", "Extensions")},
+        {QStringLiteral("hierarchy"), QT_TRANSLATE_NOOP("WindowSystem", "Hierarchy conversions")},
+        {QStringLiteral("tabAppearance"), QT_TRANSLATE_NOOP("WindowSystem", "Tab appearance")},
+        {QStringLiteral("sortTabs"), QT_TRANSLATE_NOOP("WindowSystem", "Sort tabs")},
+        {QStringLiteral("tabGroup"), QT_TRANSLATE_NOOP("WindowSystem", "Tab group")},
+        {QStringLiteral("swapGroups"), QT_TRANSLATE_NOOP("WindowSystem", "Swap tab groups")},
+        {QStringLiteral("mergeGroups"), QT_TRANSLATE_NOOP("WindowSystem", "Merge tab groups")},
+        {QStringLiteral("moveGroups"), QT_TRANSLATE_NOOP("WindowSystem", "Move tab groups")},
+        {QStringLiteral("tabBar"), QT_TRANSLATE_NOOP("WindowSystem", "Tab bar")},
+        {QStringLiteral("toolbars"), QT_TRANSLATE_NOOP("WindowSystem", "Toolbar strips")},
+        {QStringLiteral("newTab"), QT_TRANSLATE_NOOP("WindowSystem", "New tab")}};
     const auto found = names.constFind(identity);
     if (found != names.cend()) return QCoreApplication::translate("WindowSystem", *found);
     return identity;

@@ -65,13 +65,13 @@ int main(int argc, char* argv[])
         return file.commit();
     };
     int count = 1;
-    windows.commands().add({"host.newTab", QCoreApplication::translate("Muxora", "New workspace tab"), "文件", QKeySequence("Ctrl+T"), {},
+    windows.commands().add({"host.newTab", QCoreApplication::translate("Muxora", "New workspace tab"), "file", QKeySequence("Ctrl+T"), {},
         [&windows, &count](const window_system::CommandContext& ctx) {
             window_system::TabOptions options{QCoreApplication::translate("Muxora", "Workspace %1").arg(++count), "notes", {}};
             auto* content = muxora::createPlaceholder(options, &windows);
             const auto id = windows.addTab(ctx.window, content, options, ctx.group);
             if (id.isNull()) { delete content; return false; } return true;
-        }, {"文件", "新建标签"}, 10});
+        }, {"file", "newTab"}, 10});
     struct TabKind { const char* command; const char* type; const char* title; };
     const TabKind previewKinds[] = {
         {"host.newFilesTab", "files", QT_TRANSLATE_NOOP("Muxora", "Files")},
@@ -82,40 +82,40 @@ int main(int argc, char* argv[])
     for (const auto& kind : previewKinds) {
         const auto title = QCoreApplication::translate("Muxora", kind.title);
         const auto type = QString::fromLatin1(kind.type);
-        windows.commands().add({kind.command, QCoreApplication::translate("Muxora", "New %1 tab").arg(title), "文件", {}, {},
+        windows.commands().add({kind.command, QCoreApplication::translate("Muxora", "New %1 tab").arg(title), "file", {}, {},
             [&windows, title, type](const window_system::CommandContext& ctx) {
                 const window_system::TabOptions options{title, type, {}};
                 auto* content = muxora::createPlaceholder(options, &windows);
                 if (!windows.addTab(ctx.window, content, options, ctx.group).isNull()) return true;
                 delete content;
                 return false;
-            }, {"文件", "新建标签"}, creationOrder++});
+            }, {"file", "newTab"}, creationOrder++});
     }
     windows.setTabCreationCommands("host.newTab",
         {"host.newTab", "host.newFilesTab", "host.newSessionsTab", "host.newTransfersTab"});
-    windows.commands().add({"layout.save", QCoreApplication::translate("Muxora", "Save workspace layout"), "文件", QKeySequence("Ctrl+S"), {},
-        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QCoreApplication::translate("Muxora", "Layout saved") : QCoreApplication::translate("Muxora", "Failed to save layout")); return ok; }, {"文件"}, 40});
+    windows.commands().add({"layout.save", QCoreApplication::translate("Muxora", "Save workspace layout"), "file", QKeySequence("Ctrl+S"), {},
+        [&windows, &save](const window_system::CommandContext& ctx) { const auto ok = save(); windows.setStatus(ctx.window, ok ? QCoreApplication::translate("Muxora", "Layout saved") : QCoreApplication::translate("Muxora", "Failed to save layout")); return ok; }, {"file"}, 40});
     bool applicationExitPending = false;
-    windows.commands().add({"application.exit", QCoreApplication::translate("Muxora", "Exit"), "文件", QKeySequence(QKeySequence::Quit),
+    windows.commands().add({"application.exit", QCoreApplication::translate("Muxora", "Exit"), "file", QKeySequence(QKeySequence::Quit),
         [&windows](const window_system::CommandContext&) { return !windows.model().windows().isEmpty(); },
         [&windows, &save, &applicationExitPending](const window_system::CommandContext& ctx) {
             if (applicationExitPending) return false;
             QScopedValueRollback<bool> exiting(applicationExitPending, true);
             if (!save()) { windows.setStatus(ctx.window, QCoreApplication::translate("Muxora", "Failed to save layout; application remains open")); return false; }
             return windows.requestCloseAllWindows();
-        }, {"文件"}, 100});
-    windows.commands().add({"layout.reset", QCoreApplication::translate("Muxora", "Reset workspace layout"), "布局", {}, {},
+        }, {"file"}, 100});
+    windows.commands().add({"layout.reset", QCoreApplication::translate("Muxora", "Reset workspace layout"), "layout", {}, {},
         [&windows](const window_system::CommandContext&) {
             const auto current = windows.model().windowOrder();
             for (const auto id : current) if (windows.model().window(id)) windows.requestCloseWindow(id);
             const auto id = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
             muxora::populateInitialWorkspace(windows, id); windows.showWindow(id); return true;
-        }, {"布局"}, 1000});
-    windows.commands().add({"help.about", QCoreApplication::translate("Muxora", "About Muxora"), "帮助", {}, {},
+        }, {"layout"}, 1000});
+    windows.commands().add({"help.about", QCoreApplication::translate("Muxora", "About Muxora"), "help", {}, {},
         [&windows](const window_system::CommandContext& ctx) {
             QMessageBox::about(windows.windowWidget(ctx.window), QStringLiteral("Muxora"),
                 QCoreApplication::translate("Muxora", "Muxora 0.1.0\nFirst window system preview\n\nQt / Native C++, open source under MIT.\nRemote connections and file operations will follow after the window system is ready.")); return true;
-        }, {"帮助"}, 10});
+        }, {"help"}, 10});
     // Persist provider layouts before script owners unregister their chrome.
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [&] { if (!parser.isSet("smoke")) save(); });
     muxora::AppScriptingSetup scripting(&windows, preferences);

@@ -59,11 +59,11 @@ void verifySeparators(QMenu* menu)
 void contributeApplicationCommands(WindowManager& manager)
 {
     for (const auto& command : QVector<Command>{
-        {"application.exit", "退出", "文件", {}, {}, [](const CommandContext&) { return true; }, {"文件"}, 100},
-        {"help.about", "关于宿主", "帮助", {}, {}, [](const CommandContext&) { return true; }, {"帮助"}, 10},
-        {"layout.reset", "恢复初始工作区布局", "视图", {}, {}, [](const CommandContext&) { return true; }, {"布局"}, 1000},
-        {"layout.save", "保存工作区布局", "文件", QKeySequence("Ctrl+S"), {}, [](const CommandContext&) { return true; }, {"文件"}, 40},
-        {"host.newTab", "新建工作区标签", "文件", {}, {}, [](const CommandContext&) { return true; }, {"文件"}, 10}})
+        {"application.exit", "退出", "file", {}, {}, [](const CommandContext&) { return true; }, {"file"}, 100},
+        {"help.about", "关于宿主", "help", {}, {}, [](const CommandContext&) { return true; }, {"help"}, 10},
+        {"layout.reset", "恢复初始工作区布局", "view", {}, {}, [](const CommandContext&) { return true; }, {"layout"}, 1000},
+        {"layout.save", "保存工作区布局", "file", QKeySequence("Ctrl+S"), {}, [](const CommandContext&) { return true; }, {"file"}, 40},
+        {"host.newTab", "新建工作区标签", "file", {}, {}, [](const CommandContext&) { return true; }, {"file"}, 10}})
         QVERIFY(manager.commands().add(command));
 }
 } // namespace
@@ -107,11 +107,11 @@ void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
     auto* bar = menuBar(manager, window); QVERIFY(bar);
     QStringList roots;
     for (auto* action : bar->actions()) if (action->isVisible()) roots.append(action->objectName());
-    QCOMPARE(roots, (QStringList{"文件", "视图", "布局", "窗口", "工具", "帮助"}));
-    QCOMPARE(ids(menuAt(bar, {"文件"})), (QStringList{"host.newTab", "window.new", "layout.save", "workspace.closeTab", "window.close", "application.exit"}));
-    QCOMPARE(ids(menuAt(bar, {"工具"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
+    QCOMPARE(roots, (QStringList{"file", "view", "layout", "window", "tools", "help"}));
+    QCOMPARE(ids(menuAt(bar, {"file"})), (QStringList{"host.newTab", "window.new", "layout.save", "workspace.closeTab", "window.close", "application.exit"}));
+    QCOMPARE(ids(menuAt(bar, {"tools"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
     QCOMPARE(manager.commands().find("window.settings")->title, QStringLiteral("设置"));
-    const auto layoutActions = menuAt(bar, {"布局"})->actions();
+    const auto layoutActions = menuAt(bar, {"layout"})->actions();
     QCOMPARE(layoutActions.last()->data().toString(), QStringLiteral("layout.reset"));
     QHash<QString, int> occurrences;
     for (auto* action : bar->actions()) if (action->menu()) { walk(action->menu(), occurrences); verifySeparators(action->menu()); }
@@ -133,19 +133,19 @@ void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
     manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
     auto* bar = menuBar(manager, window);
     const QList<QPair<QStringList, QString>> families{
-        {{"视图", "聚焦标签组"}, "workspace.focusGroup."}, {{"视图", "聚焦窗格"}, "pane.focus."},
-        {{"布局", "当前标签组", "在此组旁新建标签组"}, "workspace.splitGroup."},
-        {{"布局", "当前标签组", "调整此组边界"}, "workspace.resizeGroup."},
-        {{"布局", "当前标签组", "移动此标签组", "放到相邻标签组旁"}, "group.move."},
-        {{"布局", "当前窗格", "拆分此窗格"}, "pane.split."},
-        {{"布局", "当前窗格", "与同一标签内的窗格交换位置"}, "pane.swap."},
-        {{"布局", "当前标签", "移动此标签", "移入相邻标签组"}, "workspace.moveTabToGroup."},
-        {{"布局", "当前窗格", "移动此窗格", "并入相邻标签组的活动标签"}, "pane.moveToGroup."}};
+        {{"view", "focusGroup"}, "workspace.focusGroup."}, {{"view", "focusPane"}, "pane.focus."},
+        {{"layout", "currentGroup", "createGroup"}, "workspace.splitGroup."},
+        {{"layout", "currentGroup", "resizeGroup"}, "workspace.resizeGroup."},
+        {{"layout", "currentGroup", "moveGroup", "placeBesideGroup"}, "group.move."},
+        {{"layout", "currentPane", "splitPane"}, "pane.split."},
+        {{"layout", "currentPane", "swapPane"}, "pane.swap."},
+        {{"layout", "currentTab", "moveTab", "moveToAdjacentGroup"}, "workspace.moveTabToGroup."},
+        {{"layout", "currentPane", "movePane", "mergeIntoAdjacentGroup"}, "pane.moveToGroup."}};
     for (const auto& [path, prefix] : families) {
         auto* menu = menuAt(bar, path); QVERIFY2(menu, qPrintable(path.join('/')));
         QCOMPARE(ids(menu, false), (QStringList{prefix + "left", prefix + "right", prefix + "up", prefix + "down"}));
     }
-    QCOMPARE(ids(menuAt(bar, {"窗口", "切换窗口", "全部窗口"})),
+    QCOMPARE(ids(menuAt(bar, {"window", "switchWindow", "allWindows"})),
         (QStringList{"window.focusPrevious.all", "window.focusNext.all"}));
 }
 
@@ -153,28 +153,28 @@ void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
 {
     WindowManager manager; const auto window = manager.createWindow();
     manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
-    auto* bar = menuBar(manager, window); auto* layout = menuAt(bar, {"布局"}); QVERIFY(layout);
+    auto* bar = menuBar(manager, window); auto* layout = menuAt(bar, {"layout"}); QVERIFY(layout);
     QStringList objectNames, objectTitles;
     for (auto* action : layout->actions()) if (auto* child = action->menu()) {
         objectNames.append(child->objectName()); objectTitles.append(child->title());
     }
     QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.panes"}));
     QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前窗格"}));
-    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签组", "转换组内内容"}), false),
+    QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "convertGroup"}), false),
         (QStringList{"group.convertToTab", "group.moveIntoTab"}));
-    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签", "转换此标签的内容"}), false),
+    QCOMPARE(ids(menuAt(bar, {"layout", "currentTab", "convertTab"}), false),
         (QStringList{"tab.convertToGroup", "tab.moveIntoTab"}));
-    const auto paneMoves = ids(menuAt(bar, {"布局", "当前窗格", "移动此窗格"}), false);
+    const auto paneMoves = ids(menuAt(bar, {"layout", "currentPane", "movePane"}), false);
     QCOMPARE(paneMoves, QStringList{"pane.extractToTab"});
-    const auto withinTabBar = ids(menuAt(bar, {"布局", "当前标签", "调整此标签在栏内的位置"}), false);
+    const auto withinTabBar = ids(menuAt(bar, {"layout", "currentTab", "reorderTab"}), false);
     QCOMPARE(withinTabBar, (QStringList{"workspace.reorderTab.previous", "workspace.reorderTab.next"}));
-    QCOMPARE(ids(menuAt(bar, {"布局", "当前标签组", "排列此组内的标签"}), false),
+    QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "sortGroup"}), false),
         (QStringList{"group.sort.alphabeticalAscending", "group.sort.alphabeticalDescending", "group.sort.openedAscending",
             "group.sort.openedDescending", "group.sort.visitedAscending", "group.sort.visitedDescending"}));
     const QList<QPair<QStringList, QStringList>> scoped{
-        {{"布局", "当前标签组"}, {"group.convertToTab", "group.moveIntoTab", "group.moveToGroup", "group.swap", "group.merge", "group.close"}},
-        {{"布局", "当前标签"}, {"tab.convertToGroup", "tab.moveIntoTab", "workspace.moveTabToWindow", "workspace.pinTab", "tab.peek.setSize"}},
-        {{"布局", "当前窗格"}, {"pane.extractToTab", "pane.moveToTab", "pane.moveToWindow", "pane.close"}}};
+        {{"layout", "currentGroup"}, {"group.convertToTab", "group.moveIntoTab", "group.moveToGroup", "group.swap", "group.merge", "group.close"}},
+        {{"layout", "currentTab"}, {"tab.convertToGroup", "tab.moveIntoTab", "workspace.moveTabToWindow", "workspace.pinTab", "tab.peek.setSize"}},
+        {{"layout", "currentPane"}, {"pane.extractToTab", "pane.moveToTab", "pane.moveToWindow", "pane.close"}}};
     QHash<QString, int> all;
     for (const auto& [path, commands] : scoped) {
         auto* source = menuAt(bar, path); QVERIFY(source);
@@ -211,17 +211,17 @@ void MenuStructureTest::groupContextMenusDoNotPretendToOperateOnASingleTab()
 void MenuStructureTest::lateContributionsRespectMetadataAndPreserveExistingMenus()
 {
     WindowManager manager; const auto window = manager.createWindow(); auto* bar = menuBar(manager, window);
-    QPointer<QMenu> file = menuAt(bar, {"文件"}); QVERIFY(file);
+    QPointer<QMenu> file = menuAt(bar, {"file"}); QVERIFY(file);
     auto* close = file->findChild<QAction*>("window.close"); QVERIFY(close);
-    QVERIFY(manager.commands().add({"extension.last", "Late last", "文件", {}, {}, [](const CommandContext&) { return true; }, {"视图", "诊断"}, 30}));
-    QVERIFY(manager.commands().add({"extension.first", "Late first", "工具", {}, {}, [](const CommandContext&) { return true; }, {"视图", "诊断"}, 10}));
+    QVERIFY(manager.commands().add({"extension.last", "Late last", "file", {}, {}, [](const CommandContext&) { return true; }, {"view", "诊断"}, 30}));
+    QVERIFY(manager.commands().add({"extension.first", "Late first", "tools", {}, {}, [](const CommandContext&) { return true; }, {"view", "诊断"}, 10}));
     QMetaObject::invokeMethod(file, "aboutToShow");
-    auto* diagnostics = menuAt(bar, {"视图", "诊断"}); QVERIFY(diagnostics);
+    auto* diagnostics = menuAt(bar, {"view", "诊断"}); QVERIFY(diagnostics);
     QCOMPARE(ids(diagnostics), (QStringList{"extension.first", "extension.last"}));
-    QCOMPARE(menuAt(bar, {"文件"}), file.data()); QCOMPARE(file->findChild<QAction*>("window.close"), close);
+    QCOMPARE(menuAt(bar, {"file"}), file.data()); QCOMPARE(file->findChild<QAction*>("window.close"), close);
     QCOMPARE(diagnostics->findChildren<QAction*>("extension.first").size(), 1);
     QMetaObject::invokeMethod(file, "aboutToShow"); QCOMPARE(ids(diagnostics).size(), 2);
-    QVERIFY(!menuAt(bar, {"文件", "扩展"}));
+    QVERIFY(!menuAt(bar, {"file", "extensions"}));
     QVERIFY(diagnostics->style()->styleHint(QStyle::SH_Menu_Scrollable, nullptr, diagnostics));
 }
 
@@ -230,11 +230,11 @@ void MenuStructureTest::unknownCategoriesStayVisibleAndSortIndependentlyOfRegist
     WindowManager manager; const auto window = manager.createWindow(); auto* bar = menuBar(manager, window);
     QVERIFY(manager.commands().add({"z.custom", "Zulu", "远程管理", {}, {}, [](const CommandContext&) { return true; }}));
     QVERIFY(manager.commands().add({"a.custom", "Alpha", "远程管理", {}, {}, [](const CommandContext&) { return true; }}));
-    QVERIFY(manager.commands().add({"host.other", "Other view action", "视图", {}, {}, [](const CommandContext&) { return true; }}));
-    QMetaObject::invokeMethod(menuAt(bar, {"文件"}), "aboutToShow");
-    auto* custom = menuAt(bar, {"扩展", "远程管理"}); QVERIFY(custom);
+    QVERIFY(manager.commands().add({"host.other", "Other view action", "view", {}, {}, [](const CommandContext&) { return true; }}));
+    QMetaObject::invokeMethod(menuAt(bar, {"file"}), "aboutToShow");
+    auto* custom = menuAt(bar, {"extensions", "远程管理"}); QVERIFY(custom);
     QCOMPARE(ids(custom), (QStringList{"a.custom", "z.custom"}));
-    QCOMPARE(ids(menuAt(bar, {"视图", "扩展"})), (QStringList{"host.other"}));
+    QCOMPARE(ids(menuAt(bar, {"view", "extensions"})), (QStringList{"host.other"}));
     QVERIFY(custom->menuAction()->isVisible()); QVERIFY(custom->style()->styleHint(QStyle::SH_Menu_Scrollable, nullptr, custom));
     for (auto* action : bar->actions()) if (action->menu()) verifySeparators(action->menu());
 }
@@ -243,11 +243,11 @@ void MenuStructureTest::menuExecutionAndShortcutsUseTheRegistryExactlyOnce()
 {
     WindowManager manager; bool allowed = true; int executions = 0; WindowId executedWindow;
     QVERIFY(manager.commands().add({"host.action", "Host action", "错误旧类别", QKeySequence("Ctrl+Alt+F8"),
-        [&](const CommandContext&) { return allowed; }, [&](const CommandContext& c) { executedWindow = c.window; ++executions; return true; }, {"文件"}, 40}));
+        [&](const CommandContext&) { return allowed; }, [&](const CommandContext& c) { executedWindow = c.window; ++executions; return true; }, {"file"}, 40}));
     const auto window = manager.createWindow(); auto* content = new QLabel("Content");
     manager.addTab(window, content, {"One", "label", {}}); manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
-    auto* file = menuAt(menuBar(manager, window), {"文件"}); auto* action = file->findChild<QAction*>("host.action"); QVERIFY(action);
+    auto* file = menuAt(menuBar(manager, window), {"file"}); auto* action = file->findChild<QAction*>("host.action"); QVERIFY(action);
     QVERIFY(action->shortcut().isEmpty()); action->trigger(); QTRY_COMPARE(executions, 1); QCOMPARE(executedWindow, window);
     QTest::keyClick(content, Qt::Key_F8, Qt::ControlModifier | Qt::AltModifier); QCOMPARE(executions, 2);
     QVERIFY(manager.commands().setShortcut("host.action", QKeySequence("Ctrl+Alt+F9")));
@@ -268,10 +268,10 @@ void MenuStructureTest::stateRefreshKeepsChecksVisibilityAndIndependentWindows()
     QVERIFY(!bar->findChild<QAction*>("window.promote")->isVisible());
     QVERIFY(!bar->findChild<QAction*>("workspace.pinTab")->isVisible());
     QVERIFY(manager.moveTabToEdge(tab, Edge::Left));
-    QMetaObject::invokeMethod(menuAt(bar, {"布局"}), "aboutToShow");
+    QMetaObject::invokeMethod(menuAt(bar, {"layout"}), "aboutToShow");
     QVERIFY(bar->findChild<QAction*>("workspace.pinTab")->isVisible());
     QVERIFY(!bar->findChild<QAction*>("workspace.unpinTab")->isVisible());
-    QVERIFY(manager.pinTab(tab, true)); QMetaObject::invokeMethod(menuAt(bar, {"布局"}), "aboutToShow");
+    QVERIFY(manager.pinTab(tab, true)); QMetaObject::invokeMethod(menuAt(bar, {"layout"}), "aboutToShow");
     QVERIFY(!bar->findChild<QAction*>("workspace.pinTab")->isVisible()); QVERIFY(bar->findChild<QAction*>("workspace.unpinTab")->isVisible());
 }
 
@@ -381,11 +381,11 @@ void MenuStructureTest::lateTopLevelMenusJoinToolbarCustomizationWithoutResettin
 {
     WindowManager manager; const auto window = manager.createWindow();
     auto* view = static_cast<WorkspaceWindow*>(manager.windowWidget(window)); auto* bar = menuBar(manager, window);
-    QVERIFY(view->strips()->setStripItemVisible("menu", "视图", false));
+    QVERIFY(view->strips()->setStripItemVisible("menu", "view", false));
     QVERIFY(manager.commands().add({"extension.top", "Inspect", "宿主", {}, {}, [](const CommandContext&) { return true; }, {"审计"}, 10}));
-    QMetaObject::invokeMethod(menuAt(bar, {"文件"}), "aboutToShow");
+    QMetaObject::invokeMethod(menuAt(bar, {"file"}), "aboutToShow");
     auto* audit = menuAt(bar, {"审计"}); QVERIFY(audit); QVERIFY(audit->menuAction()->isVisible());
-    QVERIFY(!view->strips()->isStripItemVisible("menu", "视图")); QVERIFY(!menuAt(bar, {"视图"})->menuAction()->isVisible());
+    QVERIFY(!view->strips()->isStripItemVisible("menu", "view")); QVERIFY(!menuAt(bar, {"view"})->menuAction()->isVisible());
     const auto saved = view->strips()->saveLayout(); QVERIFY(!saved.isEmpty());
     std::unique_ptr<QMenu> options(view->strips()->createOverflowMenu("menu", view));
     auto* customize = options->findChild<QMenu*>("StripCustomizeMenu"); QVERIFY(customize);
@@ -434,9 +434,9 @@ void MenuStructureTest::externalMenuHostCanOutliveItsManager()
     QMenuBar externalBar; auto manager = std::make_unique<WindowManager>();
     const auto window = manager->createWindow(); int executions = 0;
     QVERIFY(manager->commands().add({"宿主.检查", "检查宿主", "宿主", {}, {},
-        [&](const CommandContext&) { ++executions; return true; }, {"工具", "检查"}, 10}));
+        [&](const CommandContext&) { ++executions; return true; }, {"tools", "检查"}, 10}));
     QPointer<ApplicationCommandMenus> presentation = new ApplicationCommandMenus(&externalBar, manager.get(), window);
-    auto* tools = menuAt(&externalBar, {"工具", "检查"}); QVERIFY(tools);
+    auto* tools = menuAt(&externalBar, {"tools", "检查"}); QVERIFY(tools);
     QPointer<QAction> action = tools->findChild<QAction*>("宿主.检查"); QVERIFY(action);
     QCOMPARE(action->data().toString(), QStringLiteral("宿主.检查")); QVERIFY(action->isEnabled());
     action->trigger(); manager.reset(); QCoreApplication::processEvents();
@@ -458,8 +458,8 @@ void MenuStructureTest::floatingMenusAreLocalAndExcludeWholeApplicationOperation
     manager.addTab(floating, new QLabel("Floating content"), {"floating", {}, {}});
     auto* view = static_cast<WorkspaceWindow*>(manager.windowWidget(floating));
     auto* bar = menuBar(manager, floating); QVERIFY(bar);
-    QCOMPARE(ids(menuAt(bar, {"文件"})), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
-    QCOMPARE(ids(menuAt(bar, {"工具"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
+    QCOMPARE(ids(menuAt(bar, {"file"})), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
+    QCOMPARE(ids(menuAt(bar, {"tools"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
     const QStringList excluded{"application.exit", "layout.save", "layout.reset", "window.new", "window.statusBar.toggle", "window.demote"};
     for (const auto& id : excluded) {
         QVERIFY2(!floatingMenuExclusion(id).isEmpty(), qPrintable(id));
@@ -487,15 +487,15 @@ void MenuStructureTest::floatingMenuExecutionKeepsItsTabAndPaneContext()
     const auto localPane = manager.splitPane(localTab, firstPane, new QLabel("Local second pane"), Placement::Right);
     QVERIFY(manager.focusPane(localTab, localPane));
     int executions = 0; CommandContext captured;
-    QVERIFY(manager.commands().add({"host.inspectLocal", "检查当前窗格", "工具", {}, {},
-        [&](const CommandContext& context) { captured = context; ++executions; return true; }, {"工具", "检查"}, 10}));
+    QVERIFY(manager.commands().add({"host.inspectLocal", "检查当前窗格", "tools", {}, {},
+        [&](const CommandContext& context) { captured = context; ++executions; return true; }, {"tools", "检查"}, 10}));
     manager.showWindow(owner); manager.showWindow(floating);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(floating)));
     QVERIFY(manager.focusPane(localTab, localPane));
     QVERIFY(manager.activateTab(ownerTab));
     QCOMPARE(manager.context(owner).tab, ownerTab);
     auto* bar = menuBar(manager, floating); QVERIFY(bar);
-    QMetaObject::invokeMethod(menuAt(bar, {"工具"}), "aboutToShow");
+    QMetaObject::invokeMethod(menuAt(bar, {"tools"}), "aboutToShow");
     auto* action = bar->findChild<QAction*>("host.inspectLocal"); QVERIFY(action);
     QVERIFY(action->shortcut().isEmpty()); action->trigger();
     QTRY_COMPARE(executions, 1);
@@ -514,14 +514,14 @@ void MenuStructureTest::floatingMenuContributionsStayIncrementalAndClassified()
     const auto floating = manager.createWindow(WindowKind::Floating, {}, owner);
     manager.addTab(floating, new QLabel("Local"), {"local", {}, {}});
     auto* bar = menuBar(manager, floating); QVERIFY(bar);
-    QPointer<QMenu> file = menuAt(bar, {"文件"}); QVERIFY(file);
+    QPointer<QMenu> file = menuAt(bar, {"file"}); QVERIFY(file);
     QPointer<QAction> close = file->findChild<QAction*>("window.close"); QVERIFY(close);
     contributeApplicationCommands(manager);
-    QVERIFY(manager.commands().add({"host.localLate", "本地工具", "工具", {}, {}, [](const CommandContext&) { return true; }, {"工具", "检查"}, 20}));
+    QVERIFY(manager.commands().add({"host.localLate", "本地工具", "tools", {}, {}, [](const CommandContext&) { return true; }, {"tools", "检查"}, 20}));
     QMetaObject::invokeMethod(file, "aboutToShow");
-    QCOMPARE(menuAt(bar, {"文件"}), file.data()); QCOMPARE(file->findChild<QAction*>("window.close"), close.data());
+    QCOMPARE(menuAt(bar, {"file"}), file.data()); QCOMPARE(file->findChild<QAction*>("window.close"), close.data());
     QVERIFY(!bar->findChild<QAction*>("application.exit")); QVERIFY(!bar->findChild<QAction*>("layout.reset"));
-    QCOMPARE(ids(menuAt(bar, {"工具", "检查"})), (QStringList{"host.localLate"}));
+    QCOMPARE(ids(menuAt(bar, {"tools", "检查"})), (QStringList{"host.localLate"}));
     QCOMPARE(ids(file), (QStringList{"host.newTab", "workspace.closeTab", "window.close"}));
     QMetaObject::invokeMethod(file, "aboutToShow"); QCOMPARE(bar->findChildren<QAction*>("host.localLate").size(), 1);
 }
@@ -540,7 +540,7 @@ void MenuStructureTest::windowListGroupsFamiliesAtTheEndAndRefreshesStableItems(
     manager.addTab(firstChild, new QLabel("Child one"), {"Child one", {}, {}});
     manager.addTab(secondChild, new QLabel("Child two"), {"Child two", {}, {}});
     manager.addTab(anotherFirstChild, new QLabel("Child three"), {"Child three", {}, {}});
-    auto* menu = menuAt(menuBar(manager, first), {"窗口"}); QVERIFY(menu);
+    auto* menu = menuAt(menuBar(manager, first), {"window"}); QVERIFY(menu);
     QMetaObject::invokeMethod(menu, "aboutToShow");
     QVector<WindowId> listed; QHash<WindowId, QPointer<QAction>> retained;
     for (auto* action : menu->actions()) if (const auto id = action->property("windowSystemWindow").toUuid(); !id.isNull()) {
@@ -574,7 +574,7 @@ void MenuStructureTest::windowListActivatesAndRestoresTheChosenWindow()
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(floating)));
     manager.windowWidget(floating)->showMinimized();
     QVERIFY(manager.activateWindow(owner));
-    auto* menu = menuAt(menuBar(manager, owner), {"窗口"}); QVERIFY(menu);
+    auto* menu = menuAt(menuBar(manager, owner), {"window"}); QVERIFY(menu);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QAction* target = nullptr;
     for (auto* action : menu->actions()) if (action->property("windowSystemWindow").toUuid() == floating) target = action;
     QVERIFY(target); target->trigger();
@@ -609,7 +609,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
     const auto pane = manager.model().tab(tab)->activePane;
     auto* bar = menuBar(manager, window); QVERIFY(bar);
     const bool sidebar = id == "presentation.toggleSidebarTitleClipping";
-    auto* menu = menuAt(bar, {"视图", sidebar ? "侧边栏标签" : "标签栏"}); QVERIFY(menu);
+    auto* menu = menuAt(bar, {"view", sidebar ? "sidebarAppearance" : "tabBar"}); QVERIFY(menu);
     const QStringList expected = sidebar ? QStringList{"presentation.toggleSidebarIcons", "presentation.toggleSidebarNumbers", "presentation.toggleSidebarTitleClipping"}
         : QStringList{"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
             "presentation.toggleTitleClipping", "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"};
@@ -661,7 +661,7 @@ void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
     WindowManager manager; const auto owner = manager.createWindow();
     const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, owner) : owner;
     const auto tab = manager.addTab(window, new QLabel("Retained"), {"Retained", "label", {}});
-    auto* menu = menuAt(menuBar(manager, window), {"视图", "标签栏"}); QVERIFY(menu);
+    auto* menu = menuAt(menuBar(manager, window), {"view", "tabBar"}); QVERIFY(menu);
     auto* multiline = menu->findChild<QAction*>("presentation.toggleMultiline");
     auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
     QVERIFY(multiline && wheel); QVERIFY(multiline->isCheckable() && wheel->isCheckable());

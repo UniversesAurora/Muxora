@@ -59,10 +59,10 @@ int main(int argc, char** argv)
         || toolbar->parentWidget()->parentWidget()->property("toolbarArea").toString() != "bottom") return 91;
     int menuExecutions = 0;
     if (!windows.commands().add({"external.menu", "External menu action", "Host", {}, {},
-        [&menuExecutions](const window_system::CommandContext&) { ++menuExecutions; return true; }, {"工具", "外部宿主"}, 20})) return 80;
+        [&menuExecutions](const window_system::CommandContext&) { ++menuExecutions; return true; }, {"tools", "外部宿主"}, 20})) return 80;
     auto* menuBar = windows.windowWidget(root)->findChild<QMenuBar*>("MenuStrip");
     if (!menuBar) return 81;
-    auto* fileMenu = menuBar->findChild<QMenu*>("文件");
+    auto* fileMenu = menuBar->findChild<QMenu*>("file");
     if (!fileMenu || !QMetaObject::invokeMethod(fileMenu, "aboutToShow")) return 82;
     auto* externalAction = menuBar->findChild<QAction*>("external.menu");
     if (!externalAction || !externalAction->isVisible() || !externalAction->shortcut().isEmpty()) return 83;

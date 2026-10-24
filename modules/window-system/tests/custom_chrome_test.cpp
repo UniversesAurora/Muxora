@@ -37,11 +37,11 @@ QLabel *statusItem(WindowManager &manager, WindowId window, const QString &id) {
 void addCommand(WindowManager &manager, const QString &id, std::function<bool(const CommandContext &)> run) {
     QVERIFY(manager.commands().add({id,
                                     QStringLiteral("Custom action"),
-                                    QStringLiteral("工具"),
+                                    QStringLiteral("tools"),
                                     {},
                                     {},
                                     std::move(run),
-                                    {QStringLiteral("工具"), QStringLiteral("Extensions")}}));
+                                    {QStringLiteral("tools"), QStringLiteral("Extensions")}}));
 }
 } // namespace
 

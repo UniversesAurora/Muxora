@@ -88,7 +88,7 @@ bool moveToolbar(WindowManager* manager, const CommandContext& context)
 
 void registerToolbarMoveCommand(WindowManager* manager)
 {
-    manager->commands().add({"window.toolbar.move", QCoreApplication::translate("WindowSystem", "Move toolbar…"), "视图", {},
+    manager->commands().add({"window.toolbar.move", QCoreApplication::translate("WindowSystem", "Move toolbar…"), "view", {},
         [manager](const CommandContext& context) { return manager->model().window(context.window) != nullptr; },
         [manager](const CommandContext& context) { return moveToolbar(manager, context); }});
 }

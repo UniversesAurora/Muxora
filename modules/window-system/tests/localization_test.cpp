@@ -77,7 +77,7 @@ void LocalizationTest::embeddedCatalogsTranslateCommandsAndMenus()
             qPrintable(definition.id + QStringLiteral(": ") + definition.title));
     }
     // Source keys used for menus/categories are stable regardless of language.
-    QCOMPARE(command->category, QStringLiteral("工具"));
+    QCOMPARE(command->category, QStringLiteral("tools"));
 }
 
 void LocalizationTest::requestedLanguageNeedsRestart()
@@ -124,13 +124,14 @@ void LocalizationTest::standardQtDialogsUseEmbeddedChineseCatalog()
 void LocalizationTest::customColorNamesRemainContent()
 {
     TranslationManager translations;
-    QVERIFY(translations.installLanguage(UiLanguage::English));
+    QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
     auto preset = defaultTabColorPresets().first();
-    QCOMPARE(preset.name, QStringLiteral("灰色"));
-    QCOMPARE(tabColorDisplayName(preset), QStringLiteral("Gray"));
+    // The stored name is the English ID-like source; only its display is translated.
+    QCOMPARE(preset.name, QStringLiteral("Gray"));
+    QCOMPARE(tabColorDisplayName(preset), QStringLiteral("灰色"));
     preset.name = QStringLiteral("我的颜色");
     QCOMPARE(tabColorDisplayName(preset), preset.name);
-    preset.id = QStringLiteral("custom"); preset.name = QStringLiteral("灰色");
+    preset.id = QStringLiteral("custom"); preset.name = QStringLiteral("Gray");
     QCOMPARE(tabColorDisplayName(preset), preset.name);
 }
 
@@ -218,8 +219,8 @@ void LocalizationTest::dynamicMenuTextIsTranslated()
     QVERIFY(translations.installLanguage(chinese ? UiLanguage::SimplifiedChinese : UiLanguage::English));
     WindowManager manager;
     const auto window = manager.createWindow();
-    QVERIFY(manager.commands().add({"host.dynamic", "User command", "工具", {}, {},
-        [](const CommandContext&) { return true; }, {"工具", "新建标签"}}));
+    QVERIFY(manager.commands().add({"host.dynamic", "User command", "tools", {}, {},
+        [](const CommandContext&) { return true; }, {"tools", "newTab"}}));
     QVERIFY(manager.commands().add({"host.custom", "自定义 command", "Settings", {}, {},
         [](const CommandContext&) { return true; }, {"用户菜单", "Settings"}}));
     const auto find = [&](const QStringList& path) -> QMenu* {
@@ -227,17 +228,17 @@ void LocalizationTest::dynamicMenuTextIsTranslated()
             if (menu->property("commandMenuPath").toStringList() == path) return menu;
         return nullptr;
     };
-    QTRY_VERIFY(find({QStringLiteral("工具"), QStringLiteral("新建标签")}));
-    auto* dynamic = find({QStringLiteral("工具"), QStringLiteral("新建标签")});
+    QTRY_VERIFY(find({QStringLiteral("tools"), QStringLiteral("newTab")}));
+    auto* dynamic = find({QStringLiteral("tools"), QStringLiteral("newTab")});
     QVERIFY(dynamic);
     QCOMPARE(dynamic->title(), chinese ? QStringLiteral("新建标签") : QStringLiteral("New tab"));
     auto* custom = find({QStringLiteral("用户菜单"), QStringLiteral("Settings")});
     QVERIFY(custom);
     QCOMPARE(custom->title(), QStringLiteral("Settings"));
-    QCOMPARE(commandCategoryDisplayName(QStringLiteral("工具")), chinese ? QStringLiteral("工具") : QStringLiteral("Tools"));
+    QCOMPARE(commandCategoryDisplayName(QStringLiteral("tools")), chinese ? QStringLiteral("工具") : QStringLiteral("Tools"));
     QCOMPARE(commandCategoryDisplayName(QStringLiteral("Settings")), QStringLiteral("Settings"));
     QCOMPARE(manager.commands().find(QStringLiteral("host.dynamic"))->menuPath,
-        QStringList({QStringLiteral("工具"), QStringLiteral("新建标签")}));
+        QStringList({QStringLiteral("tools"), QStringLiteral("newTab")}));
     QCOMPARE(manager.commands().find(QStringLiteral("host.custom"))->title, QStringLiteral("自定义 command"));
 }
 

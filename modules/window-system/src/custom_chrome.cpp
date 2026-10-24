@@ -316,11 +316,11 @@ void WindowManager::registerCustomChromeCommands() {
                                                     std::function<bool(const CommandContext &)> run) {
         d->commands.add({std::move(id),
                          std::move(title),
-                         QStringLiteral("视图"),
+                         QStringLiteral("view"),
                          {},
                          hasWindow,
                          std::move(run),
-                         {QStringLiteral("视图"), QStringLiteral("工具条")}});
+                         {QStringLiteral("view"), QStringLiteral("toolbars")}});
     };
     registerCommand(QStringLiteral("window.toolbar.setVisible"),
                     QCoreApplication::translate("WindowSystem", "Set toolbar visibility"),
@@ -364,7 +364,7 @@ void WindowManager::registerCustomChromeCommands() {
                     });
     d->commands.add({QStringLiteral("window.statusItem.setText"),
                      QCoreApplication::translate("WindowSystem", "Set status item text"),
-                     QStringLiteral("视图"),
+                     QStringLiteral("view"),
                      {},
                      {},
                      [owner](const CommandContext &c) {
@@ -379,7 +379,7 @@ void WindowManager::registerCustomChromeCommands() {
                      }});
     d->commands.add({QStringLiteral("tab.rename"),
                      QCoreApplication::translate("WindowSystem", "Rename tab…"),
-                     QStringLiteral("布局"),
+                     QStringLiteral("layout"),
                      {},
                      [owner](const CommandContext &c) { return owner && owner->model().tab(c.tab); },
                      [owner](const CommandContext &c) {
@@ -404,7 +404,7 @@ void WindowManager::registerCustomChromeCommands() {
                              return false;
                          return !accepted || owner->renameTab(c.tab, title);
                      },
-                     {QStringLiteral("布局"), QStringLiteral("标签外观")}});
+                     {QStringLiteral("layout"), QStringLiteral("tabAppearance")}});
 }
 
 void WorkspaceWindow::syncCustomChrome() {

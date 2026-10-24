@@ -133,7 +133,7 @@ struct CommandRegistry::State {
 
 CommandRegistry::CommandRegistry() : state_(std::make_shared<State>())
 {
-    state_->commands.append({QStringLiteral("runCommands"), QCoreApplication::translate("WindowSystem", "Run commands"), QStringLiteral("命令"),
+    state_->commands.append({QStringLiteral("runCommands"), QCoreApplication::translate("WindowSystem", "Run commands"), QStringLiteral("commands"),
                              {}, {}, [](const CommandContext&) { return false; }});
 }
 CommandRegistry::~CommandRegistry() { state_->alive = false; }

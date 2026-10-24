@@ -418,7 +418,7 @@ void CaptionStripTest::floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkben
     auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id));
     QVERIFY(window->strips()->moveStrip("menu", CommandStripHost::Area::Bottom, 0, 0));
     QVERIFY(window->strips()->moveStrip("title", CommandStripHost::Area::Bottom, 1, 0));
-    QVERIFY(window->strips()->setStripItemVisible("menu", "视图", false));
+    QVERIFY(window->strips()->setStripItemVisible("menu", "view", false));
     const auto complete = window->saveStripLayout();
     QVERIFY(manager.demoteWindow(id, owner));
     QVERIFY(window->strips()->moveStrip("floating-menu", CommandStripHost::Area::Bottom, 0, 0));
@@ -445,7 +445,7 @@ void CaptionStripTest::floatingMenuRestoresBesideTheTitleWithoutMovingTheWorkben
         QCOMPARE(strips->stripArea("menu"), CommandStripHost::Area::Bottom);
         QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 0), (QStringList{"menu"}));
         QCOMPARE(strips->stripOrder(CommandStripHost::Area::Bottom, 1), (QStringList{"title"}));
-        QVERIFY(!strips->isStripItemVisible("menu", "视图"));
+        QVERIFY(!strips->isStripItemVisible("menu", "view"));
         QCOMPARE(strips->saveLayout(), complete);
         QCOMPARE(window->findChildren<QMenuBar*>("MenuStrip").size(), 1);
         QCOMPARE(manager.paneWidget(pane), content);

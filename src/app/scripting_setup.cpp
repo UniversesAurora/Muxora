@@ -81,7 +81,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
         };
         manager_->commands().add({QStringLiteral("lua.run"),
                                   QCoreApplication::translate("Muxora", "Run Lua script…"),
-                                  QStringLiteral("工具"),
+                                  QStringLiteral("tools"),
                                   {},
                                   [self](const window_system::CommandContext &) {
                                       return self && self->host_->ready() && !self->loading_ &&
@@ -90,12 +90,12 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
                                   [self](const window_system::CommandContext &context) {
                                       return self && self->runCommand(context);
                                   },
-                                  {QStringLiteral("工具"), QStringLiteral("Lua")},
+                                  {QStringLiteral("tools"), QStringLiteral("Lua")},
                                   10});
         manager_->commands().add(
             {QStringLiteral("lua.stop"),
              QCoreApplication::translate("Muxora", "Stop running Lua scripts"),
-             QStringLiteral("工具"),
+             QStringLiteral("tools"),
              {},
              [self](const window_system::CommandContext &) {
                  return self && !self->shuttingDown_ && self->host_->runtime()->isRunning();
@@ -106,21 +106,21 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
                  self->host_->runtime()->cancelAll();
                  return true;
              },
-             {QStringLiteral("工具"), QStringLiteral("Lua")},
+             {QStringLiteral("tools"), QStringLiteral("Lua")},
              15});
         manager_->commands().add(
             {QStringLiteral("lua.reload"),
              QCoreApplication::translate("Muxora", "Reload Lua configuration"),
-             QStringLiteral("工具"),
+             QStringLiteral("tools"),
              {},
              available,
              [self](const window_system::CommandContext &) { return self && self->reload(); },
-             {QStringLiteral("工具"), QStringLiteral("Lua")},
+             {QStringLiteral("tools"), QStringLiteral("Lua")},
              20});
         manager_->commands().add(
             {QStringLiteral("lua.openConfig"),
              QCoreApplication::translate("Muxora", "Open Lua configuration"),
-             QStringLiteral("工具"),
+             QStringLiteral("tools"),
              {},
              available,
              [self](const window_system::CommandContext &) {
@@ -131,7 +131,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
                  self->report(QCoreApplication::translate("Muxora", "Could not open the Lua configuration file."));
                  return false;
              },
-             {QStringLiteral("工具"), QStringLiteral("Lua")},
+             {QStringLiteral("tools"), QStringLiteral("Lua")},
              30});
         connect(manager_, &window_system::WindowManager::commandsChanged, this,
                 &AppScriptingSetup::stageBindings);

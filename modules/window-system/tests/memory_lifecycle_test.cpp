@@ -139,7 +139,7 @@ void MemoryLifecycleTest::kindChangesKeepOneCommandSubscriptionPerWindow() {
                                         return true;
                                     },
                                     [](const CommandContext &) { return true; },
-                                    {QStringLiteral("工具")}}));
+                                    {QStringLiteral("tools")}}));
     const auto owner = manager.createWindow();
     const auto target = manager.createWindow();
     QVERIFY(!manager
@@ -277,7 +277,7 @@ void MemoryLifecycleTest::removedCommandsReleaseDynamicMenus() {
     WindowManager manager;
     const auto root = manager.createWindow();
     const auto floating = manager.createWindow(WindowKind::Floating, {}, root);
-    const QStringList sharedPath{QStringLiteral("工具"), QStringLiteral("Shared runtime")};
+    const QStringList sharedPath{QStringLiteral("tools"), QStringLiteral("Shared runtime")};
     QVERIFY(manager.commands().add({QStringLiteral("test.retainedContribution"),
                                     QStringLiteral("Keep shared menu"),
                                     {},
@@ -310,7 +310,7 @@ void MemoryLifecycleTest::removedCommandsReleaseDynamicMenus() {
             path = {QStringLiteral("Temporary %1").arg(iteration), QStringLiteral("Nested"),
                     QStringLiteral("Commands")};
         else if (iteration % 3 == 1)
-            path = {QStringLiteral("工具"), QStringLiteral("Temporary %1").arg(iteration)};
+            path = {QStringLiteral("tools"), QStringLiteral("Temporary %1").arg(iteration)};
         QVERIFY(manager.commands().add({id,
                                         QStringLiteral("Temporary command"),
                                         {},
@@ -352,8 +352,8 @@ void MemoryLifecycleTest::removedCommandsReleaseDynamicMenus() {
         QVERIFY(menu.isNull());
     for (const auto &bar : bars) {
         // Core placeholders remain even if their host command is not present.
-        QVERIFY(bar->findChild<QMenu *>(QStringLiteral("文件")));
-        QVERIFY(bar->findChild<QMenu *>(QStringLiteral("工具")));
+        QVERIFY(bar->findChild<QMenu *>(QStringLiteral("file")));
+        QVERIFY(bar->findChild<QMenu *>(QStringLiteral("tools")));
     }
     recordSample(manager, "register-remove-menu", 100);
 }

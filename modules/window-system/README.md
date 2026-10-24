@@ -47,7 +47,7 @@
 
 默认主题的配色和形状见 [交互细则 · 默认视觉](../../docs/design/window-interaction-design.md#默认视觉)；宿主通过 [Theme](include/window_system/theme.hpp) 令牌取色，例如普通按钮悬停用 `Theme.buttonHover`。
 
-`Command::menuPath` 指定主菜单与子菜单，例如 `{"文件"}` 或 `{"工具", "扩展"}`；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
+`Command::menuPath` 指定主菜单与子菜单，例如 `{"file"}` 或 `{"tools", "extensions"}`；路径的每一段是英文 ID，内置菜单是 `file`、`view`、`layout`、`window`、`tools`、`help`，显示名由窗口系统翻译，其他名称按原文显示；`menuOrder` 控制同组顺序。未指定路径的宿主命令按类别放入扩展分组。菜单增量接收新命令，显示当前快捷键，执行时仍走注册表；内部带参数的操作及工具条定制项不重复堆进主菜单。完整窗口默认采用“文件、视图、布局、窗口、工具、帮助”，设置统一从“工具 → 设置”打开。标签、窗格和窗口右键菜单复用同一组语义分类。
 
 `Command::contextMenus` 为右键菜单贡献 `ContextMenuPlacement`，可选择 Tab、Pane、Group 或 Window，并设置子菜单 `path`、`order` 和可选 `contentType`。内容类型按目标标签的 `TabOptions::contentType` 过滤，空类型匹配全部；菜单操作使用打开菜单时捕获的上下文，目标失效后不会改为操作当前焦点。未来 SSH／SFTP 组件可以通过这些元数据增加菜单，不需要修改窗口类。命令的显示文本由提供者负责翻译。
 

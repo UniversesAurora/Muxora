@@ -91,8 +91,8 @@ void ScriptHost::Private::installScriptApi() {
         Command command;
         command.id = id;
         command.title = text({spec.value("title")}, 0, id);
-        command.category = "工具";
-        command.menuPath = {QStringLiteral("工具"), QStringLiteral("Lua")};
+        command.category = "tools";
+        command.menuPath = {QStringLiteral("tools"), QStringLiteral("Lua")};
         if (spec.contains("menu")) {
             command.menuPath = stringList(spec["menu"]);
             if (command.menuPath.isEmpty() || command.menuPath.size() > 5)

@@ -140,13 +140,13 @@ void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
 
     older->strips()->setLocked(false);
     const auto menu = floating ? "floating-menu" : "menu";
-    QVERIFY(older->strips()->setStripItemVisible(menu, "视图", false));
+    QVERIFY(older->strips()->setStripItemVisible(menu, "view", false));
     const auto updated = profile(manager.saveLayout(), floating);
     QCOMPARE(updated.value("rows"), sorted.value("rows"));
     QCOMPARE(updated.value("locked"), QJsonValue(false));
     const auto settings = updated.value("strips").toObject();
     QCOMPARE(settings.value(menu).toObject().value("width"), QJsonValue(232));
-    QVERIFY(settings.value(menu).toObject().value("excluded").toArray().contains(QStringLiteral("视图")));
+    QVERIFY(settings.value(menu).toObject().value("excluded").toArray().contains(QStringLiteral("view")));
     // The old window can keep its displayed order without publishing it.
     QCOMPARE(older->saveStripLayout().value("rows"), oldOrder);
     WindowManager restarted; QVERIFY(restarted.restoreLayout(manager.saveLayout()));
@@ -154,7 +154,7 @@ void ToolbarProfileTest::unrelatedEditsInOlderWindowsKeepTheNewestOrder()
     const auto freshLayout = view(restarted, fresh)->saveStripLayout();
     QCOMPARE(freshLayout.value("rows"), sorted.value("rows"));
     QCOMPARE(freshLayout.value("locked"), QJsonValue(false));
-    QVERIFY(!view(restarted, fresh)->strips()->isStripItemVisible(menu, "视图"));
+    QVERIFY(!view(restarted, fresh)->strips()->isStripItemVisible(menu, "view"));
 
     // Moving a strip in the old instance explicitly replaces the order
     // dimension, while retaining a newer width it has never adjusted.
@@ -174,7 +174,7 @@ void ToolbarProfileTest::windowKindsRestoreTheirOwnLayoutAndLiveContent()
     const auto pane = manager.model().tab(tab)->activePane;
     auto* window = view(manager, root);
     QVERIFY(window->strips()->moveStrip("menu", CommandStripHost::Area::Bottom, 0, 0));
-    QVERIFY(window->strips()->setStripItemVisible("menu", "视图", false));
+    QVERIFY(window->strips()->setStripItemVisible("menu", "view", false));
     QVERIFY(window->strips()->setStripVisible("workspace", false));
     const auto workbench = window->saveStripLayout();
     QVERIFY(manager.demoteWindow(root, owner));
@@ -382,16 +382,16 @@ void ToolbarProfileTest::exclusionsMergePerButton()
     const auto second = manager.createWindow(floating ? WindowKind::Floating : WindowKind::Workbench, {}, root);
     auto* newer = view(manager, first); auto* older = view(manager, second);
     const auto menu = floating ? "floating-menu" : "menu";
-    QVERIFY(newer->strips()->setStripItemVisible(menu, "文件", false));
-    QVERIFY(older->strips()->setStripItemVisible(menu, "视图", false));
+    QVERIFY(newer->strips()->setStripItemVisible(menu, "file", false));
+    QVERIFY(older->strips()->setStripItemVisible(menu, "view", false));
     auto excluded = profile(manager.saveLayout(), floating).value("strips").toObject().value(menu).toObject().value("excluded").toArray();
-    QCOMPARE(excluded.size(), 2); QVERIFY(excluded.contains("文件")); QVERIFY(excluded.contains("视图"));
-    QVERIFY(older->strips()->setStripItemVisible(menu, "视图", true));
+    QCOMPARE(excluded.size(), 2); QVERIFY(excluded.contains("file")); QVERIFY(excluded.contains("view"));
+    QVERIFY(older->strips()->setStripItemVisible(menu, "view", true));
     excluded = profile(manager.saveLayout(), floating).value("strips").toObject().value(menu).toObject().value("excluded").toArray();
-    QCOMPARE(excluded, QJsonArray{"文件"});
+    QCOMPARE(excluded, QJsonArray{"file"});
     const auto next = manager.createWindow(floating ? WindowKind::Floating : WindowKind::Workbench, {}, root);
-    QVERIFY(!view(manager, next)->strips()->isStripItemVisible(menu, "文件"));
-    QVERIFY(view(manager, next)->strips()->isStripItemVisible(menu, "视图"));
+    QVERIFY(!view(manager, next)->strips()->isStripItemVisible(menu, "file"));
+    QVERIFY(view(manager, next)->strips()->isStripItemVisible(menu, "view"));
 }
 
 void ToolbarProfileTest::synchronousSavingObservesOnlyTheCompletedRestore()

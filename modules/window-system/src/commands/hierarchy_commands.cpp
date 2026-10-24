@@ -27,11 +27,11 @@ void WindowManager::registerHierarchyCommands() {
                             std::function<bool(const CommandContext &)> enabled) {
         d->commands.add({std::move(id),
                          QCoreApplication::translate("WindowSystem", title),
-                         QStringLiteral("布局"),
+                         QStringLiteral("layout"),
                          {},
                          std::move(enabled),
                          std::move(run),
-                         {QStringLiteral("布局"), QStringLiteral("层级转换")}});
+                         {QStringLiteral("layout"), QStringLiteral("hierarchy")}});
     };
     const auto visibleGroup = [this](GroupId id) {
         const auto *group = d->model.group(id);
