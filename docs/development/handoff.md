@@ -81,7 +81,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `docs: Design SSH private key storage and the Muxora agent`：私钥放 `~/.ssh`（默认）或 Muxora 保管库，外部工具通过独立的无界面代理使用保管库密钥；新设计文档和实现步骤 7.13、7.14。只改文档。
 - **进行中**：无。
 - **下一步**：
-  1. [8.16 按层级保存输入法状态](../roadmap/implementation/phase-8-ui-quality.md#816-按层级保存输入法状态)：用户 2026-10-24 指定交给 Codex，不着急。Codex 做平台接口和 Windows 实现、范围跟踪、`WindowBehavior::inputMethodScope` 及其保存、Lua 设置接口和测试。设置页里的下拉框是新的设置项，按 AGENTS.md 留给 Claude：做到这里停下，在交接记录里写明，不自行加控件。微软拼音、日文、韩文和第三方输入法的真实效果由用户试用。
+  1. [8.16 按层级保存输入法状态](../roadmap/implementation/phase-8-ui-quality.md#816-按层级保存输入法状态)：用户指定交给 Codex。平台接口和 Windows 实现、范围跟踪、`WindowBehavior::inputMethodScope` 及其保存、Lua 设置接口、设置页复用现有下拉框及测试均由 Codex 完成。微软拼音、日文、韩文和第三方输入法的真实效果由用户试用。
   2. 然后按原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。

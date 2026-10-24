@@ -436,7 +436,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **目标**：按 [交互细则 · 输入法状态](../../design/window-interaction-design.md#输入法状态) 实现：设置 `window.inputMethodScope`（默认 `tab`）选择在哪一层分开记输入法状态，焦点切到另一个范围时恢复那里的状态。用户 2026-10-24 提出并确认：输入法和它的全部模式一起记，不只针对中英文；默认按标签；轻量浮窗是窗口下面的一层。
 
-**前置**：无。设置先按现有方式加入 `WindowBehavior` 和设置页，4.2 时接入注册表，ID 加进阶段 4 的表格。设置页的下拉框属于新界面，由 Claude 做。
+**前置**：无。设置先按现有方式加入 `WindowBehavior` 和设置页，复用现有下拉框和样式，由执行本步骤的助手完成；4.2 时接入注册表，ID 加进阶段 4 的表格。控件按设置类型选择，特殊形式可单项指定，见 [设置设计 §3](../../design/settings-and-commands-design.md#3-全局设置与编辑)。
 
 **涉及文件**：新建 `modules/window-system/src/platform/input_method_state.{hpp,cpp}`（平台接口和 Windows 实现）、`src/input_method_scopes.{hpp,cpp}`（范围跟踪）；`window_manager.{hpp,cpp}`（`WindowBehavior::inputMethodScope`、焦点变化）；`settings/settings_page.cpp`；`layout_persistence.cpp`（随行为保存）；Lua 设置接口和指南；新测试 `tests/input_method_scope_test.cpp`。
 
