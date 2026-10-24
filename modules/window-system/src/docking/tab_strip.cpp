@@ -1033,8 +1033,12 @@ void GroupTabs::updateBarGeometry() {
 void GroupTabs::updateCanvasGeometry()
 {
     if (!canvas_ || !createButtons_) return;
-    const int naturalWidth = bar_->width() + (appearance_.multiline || createButtons_->isHidden() ? 0 : createButtons_->width());
-    canvas_->setFixedSize(naturalWidth, bar_->height());
+    // A single row extends to the new-tab buttons after its last tab. With
+    // sticky tabs on rows of their own, those rows can be wider than the row
+    // holding the buttons, which then need no space beyond them.
+    const int buttonsEnd = appearance_.multiline || createButtons_->isHidden() ? 0
+        : bar_->creationPosition().x() + createButtons_->width();
+    canvas_->setFixedSize(std::max(bar_->width(), buttonsEnd), bar_->height());
 }
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
 {

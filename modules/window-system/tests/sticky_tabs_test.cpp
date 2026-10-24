@@ -12,6 +12,7 @@
 #include <QPointer>
 #include <QScopeGuard>
 #include <QScreen>
+#include <QScrollBar>
 #include <QTest>
 #include <QToolButton>
 
@@ -103,6 +104,7 @@ private slots:
     void draggingIntoAndOutOfASizedRunUsesEachSegmentsWidth();
     void separateRowHoldsStickyTabsAboveTheOthers();
     void collapsedRowsKeepTheStickyRowShown();
+    void fullStickyRowsDoNotMakeTheStripScroll();
     void draggingBetweenRowsSticksAndUnsticks();
     void closeProtectionFollowsTheSetting_data();
     void closeProtectionFollowsTheSetting();
@@ -311,6 +313,25 @@ void StickyTabsTest::separateRowHoldsStickyTabsAboveTheOthers()
     appearance.stickySizing = StickyTabSizing::Compact; narrow.setAppearance(appearance);
     QCOMPARE(rows->displayTabRect(2).top(), 0); QCOMPARE(rows->displayTabRect(2).width(), compactStickyTabWidth);
     QCOMPARE(rows->displayTabRect(3).top(), rows->lineHeight());
+}
+
+void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
+{
+    // The sticky rows wrap within the viewport and the new-tab buttons follow
+    // the few other tabs on the next row; nothing overflows, so nothing scrolls.
+    auto appearance = sized(StickyTabSizing::Shrink); appearance.stickyTabsOnSeparateRow = true;
+    appearance.showNewTabButton = true;
+    GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 14, 12, appearance);
+    tabs.setAppearance(appearance);
+    auto* bar = tabs.tabBar();
+    // Fill the sticky rows as far as possible: the last full row ends close to the viewport edge.
+    tabs.resize(shrinkStickyTabWidth * 8 + 20, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    QVERIFY(bar->displayTabRect(11).top() > 0); QCOMPARE(bar->displayTabRect(12).top(), bar->displayTabRect(11).top() + bar->lineHeight());
+    auto* create = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(create && create->isVisible());
+    QCOMPARE(create->y(), bar->displayTabRect(12).top());
+    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar);
+    QTRY_COMPARE(scrollbar->maximum(), 0); QCOMPARE(tabs.scrollOffset(), 0);
+    QCOMPARE(bar->displayTabRect(12).left(), 0);
 }
 
 void StickyTabsTest::collapsedRowsKeepTheStickyRowShown()
