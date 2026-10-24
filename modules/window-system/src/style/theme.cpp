@@ -232,6 +232,7 @@ QWidget { color: @text; }
 QWidget:disabled { color: @muted; }
 QDialog { background: @surface; }
 QWidget#WorkspaceWindow { background: @background; border: 1px solid @border; }
+QWidget#WorkspaceWindow[windowSystemNativeSides="true"] { border-width: 1px 0 0 0; }
 QWidget#WorkspaceWindow[windowSystemExpanded="true"] { border: 0; }
 QWidget#WindowHeader, QWidget#CommandStripHost, QWidget#CommandStrip, QLabel#StripDragPreview { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }

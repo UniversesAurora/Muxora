@@ -127,12 +127,13 @@ void showNativeSystemMenu(QWidget* window, quintptr nativeWindow)
     const auto menu = menuFor(window);
     if (!menu->handle) return;
     refreshCommands(window, menu->handle, handle);
-    RECT bounds{};
-    if (!GetWindowRect(handle, &bounds)) return;
+    // The client is the visible window; the sizing border lies outside it.
+    POINT origin{};
+    if (!ClientToScreen(handle, &origin)) return;
     const int inset = std::max(1, qRound(8 * window->devicePixelRatioF()));
     const int titleHeight = std::max(1, qRound(32 * window->devicePixelRatioF()));
     const UINT command = TrackPopupMenuEx(menu->handle, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_RIGHTBUTTON,
-        bounds.left + inset, bounds.top + titleHeight, handle, nullptr);
+        origin.x + inset, origin.y + titleHeight, handle, nullptr);
     if (!retainedWindow || retainedWindow->effectiveWinId() != WId(nativeWindow) || !IsWindow(handle)) return;
     if (command) PostMessageW(handle, WM_SYSCOMMAND, command, 0);
 }

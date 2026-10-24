@@ -147,12 +147,21 @@ QJsonObject mergeToolbarEdit(QJsonObject latest, const QJsonObject& before, cons
 } // namespace
 
 WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const WindowOptions& options)
-    : QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint | Qt::WindowMinMaxButtonsHint
-        | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint), manager_(manager), id_(id),
+    : QWidget(nullptr, Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint
+#ifndef Q_OS_WIN
+        // Windows keeps the native frame for its invisible sizing border
+        // (window_frame.cpp); elsewhere the custom chrome is the whole frame.
+        | Qt::FramelessWindowHint
+#endif
+        ), manager_(manager), id_(id),
       options_(options), column_(new QVBoxLayout(this)), surface_(new DockSurface(manager, id, this)),
       placementTimer_(new QTimer(this))
 {
     setObjectName("WorkspaceWindow"); setProperty("windowId", id);
+#ifdef Q_OS_WIN
+    // DWM draws the left, right and bottom border outside the client.
+    setProperty("windowSystemNativeSides", true);
+#endif
     // The content split tree defines the window's real minimum. A fixed outer
     // minimum would override larger child-layout hints and allow overlap.
     column_->setSizeConstraint(QLayout::SetDefaultConstraint);
@@ -526,8 +535,8 @@ void WorkspaceWindow::updateFrameMargins()
 {
     const bool expanded = isMaximized() || isFullScreen() || viewState_.mode != ViewMode::Normal;
     const bool frameless = expanded || dragPresentation_ != DragPresentation::Window;
-    const int margin = frameless ? 0 : 1;
-    column_->setContentsMargins(margin, margin, margin, margin);
+    const bool nativeSides = property("windowSystemNativeSides").toBool();
+    column_->setContentsMargins(frameless ? QMargins() : nativeSides ? QMargins(0, 1, 0, 0) : QMargins(1, 1, 1, 1));
     if (property("windowSystemExpanded").toBool() != expanded) {
         setProperty("windowSystemExpanded", expanded);
         style()->unpolish(this); style()->polish(this); update();
@@ -758,8 +767,8 @@ void WorkspaceWindow::fitInitialPlacement()
     if (!hasNormalPlacement() || !screen()) return;
     initialPlacementChecked_ = true;
     const auto available = screen()->availableGeometry();
-    // The custom frame's NCCALCSIZE makes the entire native window a client
-    // area, so its complete logical rectangle is the client rectangle.
+    // The client is the whole visible window. Like any Win32 window, its
+    // invisible sizing border may extend past the work area.
     const auto original = geometry();
     auto fitted = normalizeWindowPlacement(original, {available}, minimumSize());
     // A host may require more space than one screen provides. Keep the

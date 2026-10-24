@@ -73,6 +73,11 @@ void verifyNativeMask(QWidget* window)
         DeleteObject(part);
         QVERIFY(combined != ERROR);
     }
+    // A window region is in window coordinates; the client starts inside the
+    // sizing border.
+    RECT outer{}; QVERIFY(GetWindowRect(handle, &outer));
+    POINT origin{}; QVERIFY(ClientToScreen(handle, &origin));
+    QVERIFY(OffsetRgn(expected, origin.x - outer.left, origin.y - outer.top) != ERROR);
     QVERIFY(EqualRgn(actual, expected));
     if (!window->isVisible()) return;
     // Native input must follow the shape, including the empty part of the tab
@@ -104,14 +109,16 @@ void verifyNativeStyle(QWidget* window)
         QVERIFY(window->windowFlags().testFlag(flag));
         QVERIFY(window->windowHandle()->flags().testFlag(flag));
     }
-    QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
+    // Qt keeps its framed-window bookkeeping, so geometry() is the client
+    // that WM_NCCALCSIZE leaves inside Windows' sizing border.
+    QVERIFY(!window->windowFlags().testFlag(Qt::FramelessWindowHint));
     const auto style = DWORD(GetWindowLongPtrW(handle, GWL_STYLE));
     const bool compact = window->property("windowSystemDragPresentation").toBool();
     // The restored-window Snap flyout was independently reproduced with real
     // mouse input only after removing WS_SYSMENU. Keep every other overlapped
     // capability exact; a custom-owned menu preserves the system commands.
     const auto framedStyle = DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_SYSMENU);
-    const auto expectedStyle = compact ? framedStyle & ~DWORD(WS_CAPTION) : framedStyle;
+    const auto expectedStyle = compact ? framedStyle & ~DWORD(WS_DLGFRAME) : framedStyle;
     QCOMPARE(style & DWORD(WS_OVERLAPPEDWINDOW), expectedStyle);
     QCOMPARE(style & DWORD(WS_SYSMENU), DWORD(0));
     QCOMPARE(style & DWORD(WS_POPUP), DWORD(0));
@@ -439,7 +446,7 @@ void NativeFrameTest::captionlessRegionKeepsCompositingAfterNativeShowAndRecalcu
     const auto unregister = qScopeGuard([instance] { UnregisterClassW(L"MuxoraIndependentCaptionlessRegionFixture", instance); });
     const DWORD initialStyle = hasSystemMenu ? DWORD(WS_OVERLAPPEDWINDOW)
                                             : DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_SYSMENU);
-    const DWORD style = initialStyle & ~DWORD(WS_CAPTION);
+    const DWORD style = initialStyle & ~DWORD(WS_DLGFRAME);
     const auto handle = CreateWindowExW(0, type.lpszClassName, L"Captionless", initialStyle, 100, 100, 600, 400, nullptr, nullptr, instance, nullptr);
     QVERIFY(handle); const auto destroy = qScopeGuard([handle] { DestroyWindow(handle); });
     const DWMNCRENDERINGPOLICY initialPolicy = DWMNCRP_ENABLED;
@@ -683,10 +690,17 @@ void NativeFrameTest::nativeCaptionDoesNotConsumeClientSpace()
     QVERIFY(GetClientRect(handle, &client));
     POINT origin{};
     QVERIFY(ClientToScreen(handle, &origin));
-    QCOMPARE(origin.x, outer.left);
+    // No caption above the client. Windows' sizing border stays outside the
+    // left, right and bottom, as in every Win32 window.
+    const UINT dpi = GetDpiForWindow(handle); QVERIFY(dpi != 0);
+    const int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    QCOMPARE(origin.x, outer.left + border);
     QCOMPARE(origin.y, outer.top);
-    QCOMPARE(client.right - client.left, outer.right - outer.left);
-    QCOMPARE(client.bottom - client.top, outer.bottom - outer.top);
+    QCOMPARE(client.right - client.left, outer.right - outer.left - 2 * border);
+    QCOMPARE(client.bottom - client.top, outer.bottom - outer.top - border);
+    // Qt's geometry is that client, so placement and size apply to it.
+    const qreal ratio = window->devicePixelRatioF();
+    QCOMPARE(window->geometry().size(), QSize(qRound(client.right / ratio), qRound(client.bottom / ratio)));
     verifyNativeStyle(window);
 }
 
@@ -766,7 +780,6 @@ void NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners()
     const auto verifyExpandedFrame = [window] {
         const auto configuration = nativeFrameConfiguration(window);
         QVERIFY(configuration.attempted); QVERIFY(configuration.expanded);
-        QCOMPARE(configuration.clientMargin, 0);
         QCOMPARE(configuration.cornerPreference, quint32(1));
         QCOMPARE(configuration.borderColor, quint32(0xfffffffe));
         QCOMPARE(window->layout()->contentsMargins(), QMargins(0, 0, 0, 0));
@@ -803,9 +816,10 @@ void NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners()
     QVERIFY(manager.setViewMode(id, ViewMode::Normal)); QTRY_COMPARE(window->geometry(), normal);
     const auto restored = nativeFrameConfiguration(window);
     QVERIFY(!restored.expanded); QVERIFY(!restored.fullscreen);
-    QCOMPARE(restored.clientMargin, 1); QCOMPARE(restored.cornerPreference, quint32(2));
+    QCOMPARE(restored.cornerPreference, quint32(2));
     QCOMPARE(restored.borderColor, quint32(0xffffffff));
-    QCOMPARE(window->layout()->contentsMargins(), QMargins(1, 1, 1, 1));
+    // DWM draws the left, right and bottom border outside the client.
+    QCOMPARE(window->layout()->contentsMargins(), QMargins(0, 1, 0, 0));
     QCOMPARE(manager.paneWidget(pane), content.data()); QVERIFY(manager.model().validate().ok);
 }
 
@@ -902,10 +916,15 @@ void NativeFrameTest::publicSizeLimitsRemainEffective()
     const qreal ratio = window->devicePixelRatioF();
     MINMAXINFO hints{};
     SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&hints));
-    QCOMPARE(hints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)));
-    QCOMPARE(hints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)));
-    QCOMPARE(hints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)));
-    QCOMPARE(hints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)));
+    // Tracking sizes are outer sizes; the client limits hold inside the
+    // invisible sizing border.
+    RECT outer{}, inner{}; QVERIFY(GetWindowRect(handle, &outer)); QVERIFY(GetClientRect(handle, &inner));
+    const LONG frameX = (outer.right - outer.left) - inner.right, frameY = (outer.bottom - outer.top) - inner.bottom;
+    QVERIFY(frameX > 0); QVERIFY(frameY > 0);
+    QCOMPARE(hints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)) + frameX);
+    QCOMPARE(hints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)) + frameY);
+    QCOMPARE(hints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)) + frameX);
+    QCOMPARE(hints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)) + frameY);
     MONITORINFO monitor{sizeof(MONITORINFO)};
     QVERIFY(GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor));
     // Maximization is bounded by the monitor's physical work area as well as
@@ -929,10 +948,10 @@ void NativeFrameTest::publicSizeLimitsRemainEffective()
     window->showNormal(); QTRY_COMPARE(window->geometry(), normal);
     MINMAXINFO restoredHints{};
     SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&restoredHints));
-    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)));
-    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)));
-    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)));
-    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)));
+    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)) + frameX);
+    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)) + frameY);
+    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)) + frameX);
+    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)) + frameY);
 
     // The native system-menu path starts before Qt requests a maximized state.
     // It must preserve the same exact client limits and restore geometry.
@@ -948,10 +967,10 @@ void NativeFrameTest::publicSizeLimitsRemainEffective()
     QTRY_COMPARE(window->geometry(), normal);
     restoredHints = {};
     SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&restoredHints));
-    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)));
-    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)));
-    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)));
-    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)));
+    QCOMPARE(restoredHints.ptMinTrackSize.x, LONG(std::ceil(650 * ratio)) + frameX);
+    QCOMPARE(restoredHints.ptMinTrackSize.y, LONG(std::ceil(480 * ratio)) + frameY);
+    QCOMPARE(restoredHints.ptMaxTrackSize.x, LONG(std::floor(900 * ratio)) + frameX);
+    QCOMPARE(restoredHints.ptMaxTrackSize.y, LONG(std::floor(680 * ratio)) + frameY);
     QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
 }
 
@@ -1037,7 +1056,7 @@ void NativeFrameTest::compactFirstShowAlreadyHasThePreparedNativeFrame()
     QVERIFY(!probe.samples.isEmpty());
     for (const auto& sample : probe.samples) {
         QCOMPARE(sample.result, S_OK); QVERIFY(sample.enabled);
-        QCOMPARE(sample.style & DWORD(WS_OVERLAPPEDWINDOW), DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_CAPTION | WS_SYSMENU));
+        QCOMPARE(sample.style & DWORD(WS_OVERLAPPEDWINDOW), DWORD(WS_OVERLAPPEDWINDOW) & ~DWORD(WS_DLGFRAME | WS_SYSMENU));
     }
     QCOMPARE(reinterpret_cast<HWND>(window->effectiveWinId()), handle);
 }

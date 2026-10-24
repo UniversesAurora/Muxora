@@ -895,6 +895,9 @@ void EdgeTabInteractionTest::appearanceChangesRelabelRailsInPlace()
     QTRY_VERIFY(sideContent->isVisible());
     const QPointer<QAbstractButton> button = edgeButton(host, side); QVERIFY(button);
     const int before = button->height();
+    // The first show reports the window placement from a zero-delay timer.
+    // Let it run so the spy counts only the appearance change.
+    QCoreApplication::processEvents();
     QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     appearance.maximumSidebarTitleWidth = 40; QVERIFY(manager.setTabAppearance(appearance));
     QCoreApplication::processEvents();

@@ -1,6 +1,6 @@
 # Windows 平台经验
 
-适用于 Windows 11（26200），自绘标题栏的无边框窗口。
+适用于 Windows 11（26200），自绘标题栏的窗口。
 
 ## 输入法
 
@@ -25,6 +25,24 @@
 ### 窗口里出现原生子窗口会破坏命中测试
 
 子控件变成原生窗口后，鼠标所在位置的 `WM_NCHITTEST` 发给子窗口而不是顶层窗口，顶层窗口的 `HTMAXBUTTON` 不再生效，Snap 浮窗消失。原因和避免方法见 [Qt Widgets：不要对还没有句柄的弹窗调用 `winId()`](qt-widgets.md#不要对还没有句柄的弹窗调用-winid)。排查时先枚举子窗口，见 [调试方法](debugging.md#枚举原生子窗口)。
+
+## 窗口框架
+
+### 自绘标题栏要保留系统缩放边框，就不能设 Qt 的无边框标志
+
+- **现象**：想让左、右、下的缩放区像普通窗口一样落在可见边框外，只在 `WM_NCCALCSIZE` 里把客户区缩小一圈，窗口右边和下边的内容被裁掉。
+- **原因**：Qt 6.12 对没有最大化的 `Qt::FramelessWindowHint` 窗口跳过边距计算（`qwindowswindow.cpp` 的 `shouldOmitFrameAdjustment()`），始终把整个窗口矩形当成客户区。不带这个标志时，Qt 直接从 `WM_NCCALCSIZE` 的结果读出边距（`qWindowsWndProc`），之后在 `WM_SIZE` 里还会用 `AdjustWindowRectEx` 按当前样式重算一次（`calculateFullFrameMargins()`，顶部取实际差值）。
+- **做法**：窗口不带无边框标志；`WM_NCCALCSIZE` 在左、右、下按 `AdjustWindowRectExForDpi` 给出的边框内缩，顶部不缩，这样和 Qt 的重算结果一致。Qt 建窗口时按带标题栏的样式留了边距，而且建窗口的过程中和之后的标志修改都会触发边框重算：在程序自己换边框之前，`WM_NCCALCSIZE` 交给系统默认处理；换边框时用一次 `SetWindowPos` 同时改边框和外框，让客户区不动，并在 HWND 上记一个属性（`SetPropW`）表示已经换过，Qt 改标志、Windows 复用句柄号都不会弄错。`QWidget` 缓存了边框偏移（`pos()` 与 `geometry()` 的差），只在窗口报告移动或大小变化时刷新；换边框后客户区没动，要给 `QWindow` 发一个位置不变的 `QMoveEvent`，否则 `pos()`、`move()` 一直按建窗口时的标题栏高度偏移。拖动预览如果要去掉标题栏，只去掉 `WS_DLGFRAME`：`WS_CAPTION` 包含 `WS_BORDER`，连它一起去掉边框会少 1 个物理像素，窗口在预览和正常样式之间来回时客户区会挪动。
+- **验证**：`NativeFrameTest::nativeCaptionDoesNotConsumeClientSpace` 检查客户区与窗口矩形的关系和 Qt 几何；`EdgeTabInteractionTest::railTitleLengthChangesKeepTheLeadingTabInPlace` 在建窗口时客户区被加高标题栏高度（700×500 变成 700×529）时失败；`reorderedWholeWindowDragCannotRestoreTheStockCaption` 拖动预览来回后检查窗口位置，去掉 `WS_CAPTION` 时偏 1 像素失败；`CaptionStripTest::clientEdgesBelongToContent` 检查客户区边缘归内容、外侧是缩放命中。
+- **出处**：2026-10-24，8.1。
+
+### 全屏切换中途按原生样式判断是否全屏
+
+- **现象**：浮动窗口进入全屏后高度占满，左右两边却各留一道缝；退出全屏后窗口比原来小一圈（`Unable to set geometry` 警告）。
+- **原因**：Qt 6.12 用没有 `WS_THICKFRAME` 的弹出样式模拟全屏，并且先改原生样式、后更新 `QWindow` 的状态（`QWindow::setWindowStates` 先调平台再赋值）；进入全屏时它在中途同步处理几何变化，会顺带补发此前排队的旧窗口状态事件，`QWidget` 和 `QWindow` 短暂地报告“最大化”“普通”。按这些状态决定边框，就会在全屏中途套回普通边框，或在退出时按无边框计算客户区。
+- **做法**：`WM_NCCALCSIZE` 和 `WM_STYLECHANGING` 只看原生样式：有 `WS_POPUP`、没有 `WS_THICKFRAME` 就是 Qt 的全屏样式，不改它、不留边框。其他地方判断全屏时把原生样式也算进去。
+- **验证**：`NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners` 的浮动窗口三行，以及 `FocusModeTest::paneScopePreservesNestedSplitsAndBars` 退出全屏后的窗格位置；按 Qt 状态判断时两者都失败。
+- **出处**：2026-10-24，8.1。
 
 ## DPI
 

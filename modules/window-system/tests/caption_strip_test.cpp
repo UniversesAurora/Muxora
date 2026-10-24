@@ -20,10 +20,12 @@
 #include <QPointer>
 #include <QScreen>
 #include <QTest>
+#include <QtMath>
 #include <QToolButton>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <dwmapi.h>
 #include <windowsx.h>
 #endif
 
@@ -179,6 +181,8 @@ private slots:
     void maximizeEntireRectangleRetainsNativeSnapHitAndQtHover();
     void captionHitPriorityPreservesResizeEdgesAndCorners_data() { addWindowKinds(); }
     void captionHitPriorityPreservesResizeEdgesAndCorners();
+    void clientEdgesBelongToContent_data() { addWindowKinds(); }
+    void clientEdgesBelongToContent();
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap_data() { addWindowKinds(); }
     void disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap();
     void maximizedCaptionControlsOwnTheActualScreenEdge_data();
@@ -606,6 +610,39 @@ void CaptionStripTest::captionHitPriorityPreservesResizeEdgesAndCorners()
     for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), hit.second);
 }
 
+void CaptionStripTest::clientEdgesBelongToContent()
+{
+    // A normal window resizes from Windows' invisible border outside its left,
+    // right and bottom edges, so a panel against the edge keeps its own
+    // handle. Only the top, which has no border outside, keeps a band inside.
+    QFETCH(bool, floating);
+    WindowManager manager; const auto id = createFixture(manager, floating);
+    auto* window = static_cast<WorkspaceWindow*>(manager.windowWidget(id)); QVERIFY(window);
+    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    RECT client{}; QVERIFY(GetClientRect(handle, &client));
+    QVERIFY(MapWindowPoints(handle, nullptr, reinterpret_cast<POINT*>(&client), 2) != 0);
+    // The visible window adds only DWM's thin border on the left, right and
+    // bottom, as on every Win32 window; the custom caption reaches the top.
+    RECT visible{};
+    QCOMPARE(DwmGetWindowAttribute(handle, DWMWA_EXTENDED_FRAME_BOUNDS, &visible, sizeof(visible)), S_OK);
+    const int line = client.left - visible.left;
+    QVERIFY(line > 0); QVERIFY(line <= qCeil(window->devicePixelRatioF()));
+    QCOMPARE(visible.top, client.top);
+    QCOMPARE(visible.right - client.right, line); QCOMPARE(visible.bottom - client.bottom, line);
+    const int midX = (client.left + client.right) / 2, midY = (client.top + client.bottom) / 2;
+    const auto hit = [handle](int x, int y) { return SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(x, y)); };
+    QCOMPARE(hit(client.left, midY), LRESULT(HTCLIENT));
+    QCOMPARE(hit(client.right - 1, midY), LRESULT(HTCLIENT));
+    QCOMPARE(hit(midX, client.bottom - 1), LRESULT(HTCLIENT));
+    QCOMPARE(hit(client.left - 1, midY), LRESULT(HTLEFT));
+    QCOMPARE(hit(client.right, midY), LRESULT(HTRIGHT));
+    QCOMPARE(hit(midX, client.bottom), LRESULT(HTBOTTOM));
+    QCOMPARE(hit(midX, client.top), LRESULT(HTTOP));
+    QCOMPARE(hit(client.left - 1, client.top), LRESULT(HTTOPLEFT));
+    QCOMPARE(hit(client.right, client.top), LRESULT(HTTOPRIGHT));
+}
+
 void CaptionStripTest::disabledHiddenCompactAndFullscreenCaptionsRejectNativeSnap()
 {
     QFETCH(bool, floating);
@@ -803,8 +840,9 @@ void CaptionStripTest::restoredCaptionControlsTouchTheWindowBorder()
     QVERIFY(!window->isMaximized() && !window->isFullScreen());
     auto* close = captionButton(window, "close"); QVERIFY(close && close->isVisible());
     // Like native caption buttons, only the restored window's one-pixel
-    // border separates the outermost button from the window edge.
-    QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width() - 1);
+    // border separates the outermost button from the window edge. DWM draws
+    // it outside the client on the sides; the custom frame draws the top.
+    QTRY_COMPARE(close->mapTo(window, QPoint(close->width(), 0)).x(), window->width());
     QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
     // Ordinary toolbars touch the border as well: the menu is the first
     // strip of the default row.
@@ -812,10 +850,10 @@ void CaptionStripTest::restoredCaptionControlsTouchTheWindowBorder()
     const auto menuId = floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
     auto* menu = strips->stripWidget(menuId); QVERIFY(menu);
     QCOMPARE(strips->stripOrder(0).first(), menuId);
-    QCOMPARE(menu->mapTo(window, QPoint()).x(), 1);
+    QCOMPARE(menu->mapTo(window, QPoint()).x(), 0);
     auto behavior = manager.behavior(); behavior.captionButtonOrder = CaptionButtonOrder::MacOS; manager.setBehavior(behavior);
     QVERIFY(strips->moveStrip("caption-controls", CommandStripHost::Area::Top, 0, 0));
-    QTRY_COMPARE(close->mapTo(window, QPoint()).x(), 1);
+    QTRY_COMPARE(close->mapTo(window, QPoint()).x(), 0);
     QCOMPARE(close->mapTo(window, QPoint()).y(), 1);
     // The menu follows directly after the three buttons.
     auto* controls = strips->stripWidget("caption-controls"); QVERIFY(controls);
@@ -1215,12 +1253,16 @@ void CaptionStripTest::fixedResizeAxesRemainRespected()
     window->setFixedWidth(window->width()); QCoreApplication::processEvents();
     RECT bounds{}; QVERIFY(GetWindowRect(handle, &bounds));
     const int midY = (bounds.top + bounds.bottom) / 2;
-    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.left + 1, midY)), LRESULT(HTCLIENT));
-    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.right - 2, midY)), LRESULT(HTCLIENT));
+    // The sizing border lies outside the client; where it cannot resize it
+    // is a plain border, as on any fixed-size Win32 window.
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.left + 1, midY)), LRESULT(HTBORDER));
+    QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.right - 2, midY)), LRESULT(HTBORDER));
     QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(bounds.left + 1, bounds.top + 1)), LRESULT(HTTOP));
     window->setFixedHeight(window->height()); QCoreApplication::processEvents();
     QVERIFY(GetWindowRect(handle, &bounds));
-    for (const auto& hit : resizeHits(bounds)) QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), LRESULT(HTCLIENT));
+    // Only the top band lies inside the client.
+    for (const auto& hit : resizeHits(bounds))
+        QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, hit.first), LRESULT(hit.second == HTTOP ? HTCLIENT : HTBORDER));
 }
 #endif
 

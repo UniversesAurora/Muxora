@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QMoveEvent>
 #include <QPointer>
 #include <QScopeGuard>
 #include <QVariant>
@@ -31,14 +32,29 @@ constexpr auto frameStateName = "_windowSystemNativeFrameState";
 // FramelessHelper's Windows backend. These are not public Win32 API contracts:
 // https://github.com/wangwenx190/framelesshelper/blob/main/src/core/framelesshelper_win.cpp#L1247-L1285
 constexpr UINT wmNcUahDrawCaption = 0x00ae;
+// Marks an HWND whose frame applyNativeFrame() has switched over. Stored on the
+// HWND itself: it survives Qt's style and flag changes and dies with the HWND,
+// even when Windows recycles the numeric handle.
+constexpr auto frameAppliedProperty = L"WindowSystemCustomFrame";
 constexpr UINT wmNcUahDrawFrame = 0x00af;
+
+// Qt emulates full screen with a captionless popup style. Our own frame style
+// always keeps WS_THICKFRAME, so this style can only be Qt's full screen.
+bool isFullScreenStyle(DWORD style)
+{
+    return (style & WS_POPUP) && !(style & WS_THICKFRAME);
+}
 
 bool fullScreenRequested(QWidget* window)
 {
     // QWindow is updated before QWidget receives WindowStateChange. Consult
     // both while Qt is applying a full-screen transition to the native style.
-    return window->isFullScreen() || (window->windowHandle()
-        && window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen));
+    if (window->isFullScreen() || (window->windowHandle()
+        && window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen))) return true;
+    // Qt flushes queued state events in the middle of that transition, so
+    // both can briefly report an earlier state. The native style cannot.
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    return handle && isFullScreenStyle(DWORD(GetWindowLongPtrW(handle, GWL_STYLE)));
 }
 
 DWORD normalFrameStyle(DWORD style, bool compact = false)
@@ -48,8 +64,10 @@ DWORD normalFrameStyle(DWORD style, bool compact = false)
     // flyout in normal windows with a completely custom client frame.
     // Our separately owned popup still dispatches the normal system commands.
     // Compact shapes also remove the caption to avoid a stock Basic frame.
+    // Without WS_DLGFRAME there is no caption; WS_BORDER stays, so the sizing
+    // frame keeps its width and the client does not move.
     const auto framed = (style | DWORD(WS_OVERLAPPEDWINDOW)) & ~DWORD(WS_POPUP | WS_SYSMENU);
-    return compact ? framed & ~DWORD(WS_CAPTION) : framed;
+    return compact ? framed & ~DWORD(WS_DLGFRAME) : framed;
 }
 
 class NativeFrameState final : public QObject {
@@ -128,7 +146,8 @@ private:
 NativeFrameState* findFrameState(QWidget* window)
 {
     for (auto* child : window->children()) {
-        if (child->objectName() == QString::fromLatin1(frameStateName)) {
+        // Runs for every native message; compare without allocating.
+        if (child->objectName() == QLatin1StringView(frameStateName)) {
             if (auto* state = dynamic_cast<NativeFrameState*>(child)) return state;
         }
     }
@@ -165,6 +184,31 @@ int resizeBorder(HWND handle, QWidget* window)
         return std::max(1, metricsForDpi(SM_CXSIZEFRAME, dpi) + metricsForDpi(SM_CXPADDEDBORDER, dpi));
     }
     return std::max(1, qRound(6.0 * window->devicePixelRatioF()));
+}
+
+// The frame WM_NCCALCSIZE keeps outside a normal window's client: Windows'
+// own left, right and bottom border for this style and DPI. The custom
+// caption replaces the top.
+RECT sizingFrame(HWND handle, QWidget* window)
+{
+    using AdjustFunction = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+    static const auto adjustForDpi = std::bit_cast<AdjustFunction>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+    const auto style = DWORD(GetWindowLongPtrW(handle, GWL_STYLE));
+    const auto extendedStyle = DWORD(GetWindowLongPtrW(handle, GWL_EXSTYLE));
+    RECT frame{};
+    const BOOL adjusted = adjustForDpi ? adjustForDpi(&frame, style, FALSE, extendedStyle, windowDpi(handle, window))
+                                       : AdjustWindowRectEx(&frame, style, FALSE, extendedStyle);
+    if (!adjusted) return {};
+    return {-frame.left, 0, frame.right, frame.bottom};
+}
+
+bool clientScreenRect(HWND handle, RECT* client)
+{
+    if (!GetClientRect(handle, client)) return false;
+    // A zero result is also a valid offset for a client at the screen origin.
+    MapWindowPoints(handle, nullptr, reinterpret_cast<POINT*>(client), 2);
+    return true;
 }
 
 POINT screenPosition(LPARAM position)
@@ -224,6 +268,21 @@ LRESULT captionHit(const QAbstractButton* button)
     return role == QStringLiteral("close") ? HTCLOSE : role == QStringLiteral("minimize") ? HTMINBUTTON : HTMAXBUTTON;
 }
 
+// Drops the axes a fixed window size cannot change from a native sizing hit.
+// What remains of a corner is its other edge; nothing left is a plain border.
+LRESULT allowedResizeHit(LRESULT hit, bool resizeX, bool resizeY)
+{
+    if (hit < HTLEFT || hit > HTBOTTOMRIGHT) return hit;
+    const bool left = resizeX && (hit == HTLEFT || hit == HTTOPLEFT || hit == HTBOTTOMLEFT);
+    const bool right = resizeX && (hit == HTRIGHT || hit == HTTOPRIGHT || hit == HTBOTTOMRIGHT);
+    const bool top = resizeY && (hit == HTTOP || hit == HTTOPLEFT || hit == HTTOPRIGHT);
+    const bool bottom = resizeY && (hit == HTBOTTOM || hit == HTBOTTOMLEFT || hit == HTBOTTOMRIGHT);
+    if (!left && !right && !top && !bottom) return HTBORDER;
+    return top ? (left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP) :
+        bottom ? (left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM) :
+        left ? HTLEFT : HTRIGHT;
+}
+
 bool isCaptionHit(WPARAM hit)
 {
     return hit == HTMAXBUTTON || hit == HTMINBUTTON || hit == HTCLOSE;
@@ -252,7 +311,7 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     const auto revision = state->configuration.revision + 1;
     // Retain DWM composition in every presentation. Switching it off invalidates
     // the extended frame and allows an intermediate basic non-client frame.
-    // Compact previews change margins/corners, never the compositor's policy.
+    // Compact previews change corners and border, never the compositor's policy.
     const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
     const HRESULT policyResult = DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
     if (!retained) return;
@@ -263,8 +322,9 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     const HRESULT transitionResult = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED,
         &forceDisableTransitions, sizeof(forceDisableTransitions));
     if (!retained) return;
-    const int clientMargin = compact || expanded ? 0 : 1;
-    const MARGINS margins{clientMargin, clientMargin, clientMargin, clientMargin};
+    // The real sizing frame gives the window its DWM shadow and border, so
+    // nothing extends into the client.
+    const MARGINS margins{};
     const HRESULT marginsResult = DwmExtendFrameIntoClientArea(handle, &margins);
     if (!retained) return;
     // DWMWA_WINDOW_CORNER_PREFERENCE / DWMWCP_ROUND. Older Windows returns
@@ -279,7 +339,7 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     state->configuredHandle = handle;
     state->transitions = {true, qint32(transitionResult), forceDisableTransitions != FALSE};
     state->configuration = {true, compact, true, qint32(policyResult), qint32(marginsResult), revision,
-        expanded, fullscreen, clientMargin, quint32(cornerPreference), qint32(cornerResult), quint32(borderColor), qint32(borderResult)};
+        expanded, fullscreen, quint32(cornerPreference), qint32(cornerResult), quint32(borderColor), qint32(borderResult)};
     state->attributesReady = SUCCEEDED(policyResult) && SUCCEEDED(transitionResult) && SUCCEEDED(marginsResult);
 }
 
@@ -305,8 +365,11 @@ bool finishCaptionClick(QWidget* window, MSG* message, NativeFrameState* state, 
 void applyNativeFrame(QWidget* window)
 {
 #ifdef Q_OS_WIN
-    if (!window || !window->isWindow() || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return;
-    auto* state = frameState(window); // Observe HWND creation/replacement before requesting it.
+    if (!window || !window->isWindow()) return;
+    // Applying the frame opts the window in: handleNativeFrame() serves only
+    // windows that have this state. Create it to observe HWND creation and
+    // replacement before requesting the handle.
+    auto* state = frameState(window);
     if (state->configuring) return;
     const QPointer<NativeFrameState> retained(state);
     const QPointer<QWidget> observed(window);
@@ -326,15 +389,37 @@ void applyNativeFrame(QWidget* window)
         if (desired != original) {
             SetWindowLongPtrW(handle, GWL_STYLE, desired);
             if (!observed) return;
+            // Qt copies the window menu while a new HWND still has WS_SYSMENU.
+            // Drop that copy: our own menu is the only system menu.
+            if (original & WS_SYSMENU) GetSystemMenu(handle, TRUE);
         }
         if (desired != original || presentationChanged) {
-            // Region removal does not change WS_CAPTION. Recalculate the
+            // Region removal does not change the style. Recalculate the
             // custom client when leaving a compact presentation as well, so
             // Windows cannot retain the shaped HWND's previous NC geometry.
-            const BOOL recalculated = SetWindowPos(handle, nullptr, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW);
+            // The client never moves or resizes: a new HWND still has Qt's
+            // standard caption frame, so place the outer rectangle around
+            // the current client in the same call that removes it.
+            RECT client{}, outer{};
+            UINT flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW;
+            if (!IsZoomed(handle) && !IsIconic(handle) && clientScreenRect(handle, &client)) {
+                const RECT frame = sizingFrame(handle, window);
+                outer = {client.left - frame.left, client.top, client.right + frame.right, client.bottom + frame.bottom};
+            } else flags |= SWP_NOMOVE | SWP_NOSIZE;
+            SetPropW(handle, frameAppliedProperty, HANDLE(1));
+            const BOOL recalculated = SetWindowPos(handle, nullptr, outer.left, outer.top,
+                outer.right - outer.left, outer.bottom - outer.top, flags);
             if (!observed) return;
             if (recalculated) {
+                // QWidget caches its frame offset and refreshes it only when
+                // the window reports a move or resize. The client stayed in
+                // place, so report the unchanged position: Qt then reads the
+                // new margins instead of keeping its creation caption's.
+                if (auto* qtWindow = window->windowHandle()) {
+                    QMoveEvent moved(qtWindow->position(), qtWindow->position());
+                    QCoreApplication::sendEvent(qtWindow, &moved);
+                    if (!observed) return;
+                }
                 state->recalculatedHandle = handle; state->recalculatedCompact = compact;
                 ++state->paintGuards.clientRecalculations;
             } else state->recalculatedHandle = nullptr;
@@ -392,8 +477,7 @@ bool hasNormalNativePlacement(const QWidget* window)
 bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
 {
 #ifdef Q_OS_WIN
-    if (!window || !message || !result || !window->isWindow()
-        || !window->windowFlags().testFlag(Qt::FramelessWindowHint)) return false;
+    if (!window || !message || !result || !window->isWindow() || !findFrameState(window)) return false;
     auto* msg = static_cast<MSG*>(message);
     // Client mouse messages carry client coordinates; the wheel messages carry
     // screen coordinates. Qt goes on to translate this same message.
@@ -401,17 +485,18 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         && msg->message != WM_MOUSEWHEEL && msg->message != WM_MOUSEHWHEEL) keepEdgePointerInside(window, msg);
     switch (msg->message) {
     case WM_STYLECHANGING:
-        if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam && !fullScreenRequested(window)) {
+        if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam) {
+            // Leave Qt's full-screen style alone. Its state may still be stale.
             auto* styles = reinterpret_cast<STYLESTRUCT*>(msg->lParam);
-            if (!(styles->styleNew & WS_CHILD)) styles->styleNew = normalFrameStyle(styles->styleNew, window->property("windowSystemDragPresentation").toBool());
+            if (!(styles->styleNew & WS_CHILD) && !isFullScreenStyle(styles->styleNew))
+                styles->styleNew = normalFrameStyle(styles->styleNew, window->property("windowSystemDragPresentation").toBool());
         }
         // Keep Qt's window flags, state bookkeeping and style-change dispatch.
         return false;
     case WM_GETMINMAXINFO:
         if (msg->lParam && !fullScreenRequested(window)) {
             // Initialize the Win32 defaults, then apply the host's public Qt
-            // limits without adding a normal painted caption's frame margins.
-            // This custom client owns the full normal window rectangle.
+            // limits to the client, without a native caption's height.
             DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
             MONITORINFO monitor{};
             monitor.cbSize = sizeof(MONITORINFO);
@@ -441,14 +526,16 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 const LONG maximumClientHeight = std::max(sizes->ptMinTrackSize.y, nativeSize(maximum.height(), false));
                 const bool maximized = IsZoomed(msg->hwnd) || window->isMaximized()
                     || (window->windowHandle() && window->windowHandle()->windowStates().testFlag(Qt::WindowMaximized));
-                // In normal state the custom client owns the whole rectangle.
-                // A maximized HWND has invisible resize borders; its native
-                // tracking cap must include them without relaxing normal drag.
-                const int trackingFrame = maximized ? 2 * border : 0;
                 const auto framed = [](LONG extent, int extra) {
                     return LONG(std::min<qint64>(std::numeric_limits<LONG>::max(), qint64(extent) + extra));
                 };
-                sizes->ptMaxTrackSize = {framed(maximumClientWidth, trackingFrame), framed(maximumClientHeight, trackingFrame)};
+                // Tracking sizes are outer sizes: add the invisible borders
+                // outside the client. A maximized HWND has them on all sides.
+                const RECT frame = sizingFrame(msg->hwnd, window);
+                const int frameX = maximized ? 2 * border : int(frame.left + frame.right);
+                const int frameY = maximized ? 2 * border : int(frame.bottom);
+                sizes->ptMinTrackSize = {framed(sizes->ptMinTrackSize.x, frameX), framed(sizes->ptMinTrackSize.y, frameY)};
+                sizes->ptMaxTrackSize = {framed(maximumClientWidth, frameX), framed(maximumClientHeight, frameY)};
                 sizes->ptMaxSize = {
                     framed(std::min(monitor.rcWork.right - monitor.rcWork.left, maximumClientWidth), 2 * border),
                     framed(std::min(monitor.rcWork.bottom - monitor.rcWork.top, maximumClientHeight), 2 * border)};
@@ -514,10 +601,17 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         *result = 0;
         return true;
     case WM_NCCALCSIZE: {
-        if (!msg->lParam) return false;
-        if (IsZoomed(msg->hwnd) && !IsIconic(msg->hwnd) && !fullScreenRequested(window)) {
-            auto* bounds = msg->wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam)->rgrc[0]
-                                      : reinterpret_cast<RECT*>(msg->lParam);
+        // Until applyNativeFrame() switches a new HWND over, keep the frame Qt
+        // created it with, so Qt's creation geometry holds; the switch then
+        // keeps the client in place.
+        if (!msg->lParam || !GetPropW(msg->hwnd, frameAppliedProperty)) return false;
+        auto* bounds = msg->wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam)->rgrc[0]
+                                  : reinterpret_cast<RECT*>(msg->lParam);
+        // Qt applies the new style before it updates its window state, so the
+        // style is what tells a full-screen frame apart, in both directions.
+        if (isFullScreenStyle(DWORD(GetWindowLongPtrW(msg->hwnd, GWL_STYLE))) || IsIconic(msg->hwnd)) {
+            // The client covers the whole window.
+        } else if (IsZoomed(msg->hwnd)) {
             MONITORINFO monitor{}; monitor.cbSize = sizeof(monitor);
             if (GetMonitorInfoW(MonitorFromRect(bounds, MONITOR_DEFAULTTONEAREST), &monitor)) {
                 // Windows retains invisible resize borders around a maximized
@@ -529,8 +623,18 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 bounds->right = std::min(bounds->right - border, monitor.rcWork.right);
                 bounds->bottom = std::min(bounds->bottom - border, monitor.rcWork.bottom);
             }
+        } else {
+            // Keep Windows' sizing border outside the left, right and bottom
+            // of the client, invisible like every Win32 window's, so the
+            // client's edge pixels belong to its content. The custom caption
+            // reaches the top. Compact previews keep the same frame, so a
+            // drag never moves or resizes the client.
+            const RECT frame = sizingFrame(msg->hwnd, window);
+            bounds->left += frame.left;
+            bounds->right -= frame.right;
+            bounds->bottom -= frame.bottom;
         }
-        *result = 0; // Keep the full client area; do not add a native caption.
+        *result = 0; // No native caption.
         return true;
     }
     case WM_NCHITTEST: {
@@ -545,19 +649,20 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         // edge/corner retains its ordinary resize hit.
         if (const auto* button = nativeCaptionButtonAt(window, position)) { *result = captionHit(button); return true; }
         if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) {
-            const int border = resizeBorder(msg->hwnd, window);
             const bool resizeX = window->minimumWidth() < window->maximumWidth();
             const bool resizeY = window->minimumHeight() < window->maximumHeight();
-            const bool left = resizeX && point.x < bounds.left + border;
-            const bool right = resizeX && point.x >= bounds.right - border;
-            const bool top = resizeY && point.y < bounds.top + border;
-            const bool bottom = resizeY && point.y >= bounds.bottom - border;
-            if (left || right || top || bottom) {
-                *result = top ? (left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP) :
-                    bottom ? (left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM) :
-                    left ? HTLEFT : HTRIGHT;
+            RECT client{};
+            GetClientRect(msg->hwnd, &client);
+            MapWindowPoints(msg->hwnd, nullptr, reinterpret_cast<POINT*>(&client), 2);
+            if (!PtInRect(&client, point)) {
+                // The invisible left, right and bottom border: Windows' own
+                // edges and corners, less the axes a fixed size cannot change.
+                *result = allowedResizeHit(DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam), resizeX, resizeY);
                 return true;
             }
+            // The top has no border outside the client. A thin band at the
+            // top of the custom caption resizes instead.
+            if (resizeY && point.y < bounds.top + resizeBorder(msg->hwnd, window)) { *result = HTTOP; return true; }
         }
         *result = HTCLIENT;
         // Keep title movement in Qt: a floating title carries the whole-window
@@ -619,6 +724,9 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         *result = 0;
         return true;
     }
+    case WM_NCDESTROY:
+        RemovePropW(msg->hwnd, frameAppliedProperty);
+        return false;
     case WM_CANCELMODE:
     case WM_CAPTURECHANGED:
         frameState(window)->cancelPress();

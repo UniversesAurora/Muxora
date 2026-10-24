@@ -37,7 +37,6 @@ struct NativeFrameConfiguration {
     quint64 revision = 0;
     bool expanded = false;
     bool fullscreen = false;
-    int clientMargin = 1;
     quint32 cornerPreference = 2;
     qint32 cornerResult = 0;
     quint32 borderColor = 0xffffffff;
