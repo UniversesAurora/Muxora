@@ -43,3 +43,4 @@
 | ZMODEM、Kitty 图形、下拉终端、串口与 Telnet | [实现阶段 7.9](implementation/phase-7-terminal-and-sessions.md#79-后续完善) |
 | RDP／VNC、原生 Wayland 转发、FTP／WebDAV、插件市场、多人协作 | [V0 设计 §3](../design/v0-design.md#3-v0-范围) 末尾 |
 | macOS 与 Linux 版本 | [工程设计 §1](../development/engineering-design.md#1-windows-首发与平台边界) |
+| 按工作目录或 SSH 主机自动建标签夹，像 Kero 按项目分组会话（用户 2026-10-25 提出） | [标签栏设计 §12](../design/tab-strip-design.md#12-标签夹) |
