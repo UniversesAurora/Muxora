@@ -31,7 +31,7 @@ QWidget* createPlaceholder(const TabOptions& options, WindowManager* windows)
     if (options.contentType == "sessions") {
         auto* tree = new QTreeWidget; tree->setHeaderHidden(true); tree->setObjectName("SessionPlaceholder");
         auto* group = new QTreeWidgetItem(tree, {QCoreApplication::translate("Muxora", "Sessions · Layout preview")});
-        for (const auto& text : {QCoreApplication::translate("Muxora", "Development server"), QCoreApplication::translate("Muxora", "Test server"), QCoreApplication::translate("Muxora", "Personal computer")}) {
+        for (const auto& text : {QCoreApplication::translate("Muxora", "Development server"), QCoreApplication::translate("Muxora", "Test server"), QCoreApplication::translate("Muxora", "Personal host")}) {
             auto* item = new QTreeWidgetItem(group, {text}); item->setIcon(0, iconFor("terminal", windows->theme()));
         }
         group->setExpanded(true); tree->setMinimumWidth(160); return tree;

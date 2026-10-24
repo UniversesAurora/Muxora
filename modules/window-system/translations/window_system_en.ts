@@ -463,8 +463,8 @@
         </message>
         <message>
             <location filename="../src/chrome/command_strip.cpp" line="174"></location>
-            <source> toolbar drag handle</source>
-            <translation> toolbar drag handle</translation>
+            <source>%1 toolbar drag handle</source>
+            <translation>%1 toolbar drag handle</translation>
         </message>
         <message>
             <location filename="../src/chrome/command_strip.cpp" line="865"></location>
@@ -1499,18 +1499,18 @@
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="491"></location>
-            <source>Stick Tab to Front</source>
-            <translation>Stick Tab to Front</translation>
+            <source>Stick tab to front</source>
+            <translation>Stick tab to front</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="493"></location>
-            <source>Unstick Tab</source>
-            <translation>Unstick Tab</translation>
+            <source>Unstick tab</source>
+            <translation>Unstick tab</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="495"></location>
-            <source>Stick or Unstick Tab</source>
-            <translation>Stick or Unstick Tab</translation>
+            <source>Stick or unstick tab</source>
+            <translation>Stick or unstick tab</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="499"></location>
@@ -1982,8 +1982,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/style/tab_appearance.cpp" line="191"></location>
-            <source>Tab appearance contains invalid colors, duplicate IDs, or incompatible wheel settings</source>
-            <translation>Tab appearance contains invalid colors, duplicate IDs, or incompatible wheel settings</translation>
+            <source>Tab appearance contains invalid colors or duplicate IDs</source>
+            <translation>Tab appearance contains invalid colors or duplicate IDs</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="183"></location>

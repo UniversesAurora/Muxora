@@ -171,7 +171,7 @@ public:
         handle->setObjectName("StripHandle");
         handle->setProperty("stripId", id);
         handle->setToolTip(QCoreApplication::translate("WindowSystem", "Drag to move the toolbar or resize the preceding toolbar"));
-        handle->setAccessibleName(title + QCoreApplication::translate("WindowSystem", " toolbar drag handle"));
+        handle->setAccessibleName(QCoreApplication::translate("WindowSystem", "%1 toolbar drag handle").arg(title));
         viewport->setObjectName("StripViewport");
         setProperty("windowDragArea", true);
         viewport->setProperty("windowDragArea", true);

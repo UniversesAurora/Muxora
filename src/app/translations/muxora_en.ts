@@ -143,23 +143,23 @@ Remote connections and file operations will follow after the window system is re
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="83"></location>
-            <source>Run Lua Script…</source>
-            <translation>Run Lua Script…</translation>
+            <source>Run Lua script…</source>
+            <translation>Run Lua script…</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="97"></location>
-            <source>Stop Running Lua Scripts</source>
-            <translation>Stop Running Lua Scripts</translation>
+            <source>Stop running Lua scripts</source>
+            <translation>Stop running Lua scripts</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="113"></location>
-            <source>Reload Lua Configuration</source>
-            <translation>Reload Lua Configuration</translation>
+            <source>Reload Lua configuration</source>
+            <translation>Reload Lua configuration</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="122"></location>
-            <source>Open Lua Configuration</source>
-            <translation>Open Lua Configuration</translation>
+            <source>Open Lua configuration</source>
+            <translation>Open Lua configuration</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="131"></location>
@@ -193,8 +193,8 @@ Remote connections and file operations will follow after the window system is re
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="250"></location>
-            <source>Run Lua Script</source>
-            <translation>Run Lua Script</translation>
+            <source>Run Lua script</source>
+            <translation>Run Lua script</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="251"></location>
@@ -355,8 +355,8 @@ Ctrl+Shift+D     Move to floating window
         </message>
         <message>
             <location filename="../../workspace_host/placeholder_content.cpp" line="34"></location>
-            <source>Personal computer</source>
-            <translation>Personal computer</translation>
+            <source>Personal host</source>
+            <translation>Personal host</translation>
         </message>
         <message>
             <location filename="../../workspace_host/placeholder_content.cpp" line="41"></location>

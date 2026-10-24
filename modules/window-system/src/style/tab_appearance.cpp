@@ -246,7 +246,7 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
             candidate.colors.append(std::move(preset));
         }
     }
-    if (!validTabAppearance(candidate)) return {false, QCoreApplication::translate("WindowSystem", "Tab appearance contains invalid colors, duplicate IDs, or incompatible wheel settings")};
+    if (!validTabAppearance(candidate)) return {false, QCoreApplication::translate("WindowSystem", "Tab appearance contains invalid colors or duplicate IDs")};
     appearance = std::move(candidate);
     return {true, {}};
 }

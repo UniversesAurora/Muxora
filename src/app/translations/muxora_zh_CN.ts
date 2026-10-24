@@ -143,22 +143,22 @@ Qt / 原生 C++，MIT 开源。
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="83"></location>
-            <source>Run Lua Script…</source>
+            <source>Run Lua script…</source>
             <translation>运行 Lua 脚本…</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="97"></location>
-            <source>Stop Running Lua Scripts</source>
+            <source>Stop running Lua scripts</source>
             <translation>停止正在运行的 Lua 脚本</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="113"></location>
-            <source>Reload Lua Configuration</source>
+            <source>Reload Lua configuration</source>
             <translation>重新加载 Lua 配置</translation>
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="122"></location>
-            <source>Open Lua Configuration</source>
+            <source>Open Lua configuration</source>
             <translation>打开 Lua 配置文件</translation>
         </message>
         <message>
@@ -193,7 +193,7 @@ Qt / 原生 C++，MIT 开源。
         </message>
         <message>
             <location filename="../scripting_setup.cpp" line="250"></location>
-            <source>Run Lua Script</source>
+            <source>Run Lua script</source>
             <translation>运行 Lua 脚本</translation>
         </message>
         <message>
@@ -355,7 +355,7 @@ Ctrl+Shift+D     移到轻量浮窗
         </message>
         <message>
             <location filename="../../workspace_host/placeholder_content.cpp" line="34"></location>
-            <source>Personal computer</source>
+            <source>Personal host</source>
             <translation>个人主机</translation>
         </message>
         <message>

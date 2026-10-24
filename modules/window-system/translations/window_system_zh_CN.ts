@@ -461,8 +461,8 @@
         </message>
         <message>
             <location filename="../src/chrome/command_strip.cpp" line="174"></location>
-            <source> toolbar drag handle</source>
-            <translation>工具条拖动把手</translation>
+            <source>%1 toolbar drag handle</source>
+            <translation>%1工具条拖动把手</translation>
         </message>
         <message>
             <location filename="../src/chrome/command_strip.cpp" line="865"></location>
@@ -1496,17 +1496,17 @@
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="491"></location>
-            <source>Stick Tab to Front</source>
+            <source>Stick tab to front</source>
             <translation>钉住标签</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="493"></location>
-            <source>Unstick Tab</source>
+            <source>Unstick tab</source>
             <translation>取消钉住标签</translation>
         </message>
         <message>
             <location filename="../src/commands/window_commands.cpp" line="495"></location>
-            <source>Stick or Unstick Tab</source>
+            <source>Stick or unstick tab</source>
             <translation>钉住或取消钉住标签</translation>
         </message>
         <message>
@@ -1976,8 +1976,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/style/tab_appearance.cpp" line="191"></location>
-            <source>Tab appearance contains invalid colors, duplicate IDs, or incompatible wheel settings</source>
-            <translation>标签外观包含无效颜色、重复 ID 或不适用的滚轮设置</translation>
+            <source>Tab appearance contains invalid colors or duplicate IDs</source>
+            <translation>标签外观包含无效颜色或重复 ID</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="183"></location>

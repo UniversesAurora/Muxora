@@ -506,11 +506,11 @@ void WindowManager::registerWindowCommands()
         return g && g->location != GroupLocation::AutoHide && !d->model.isTabSticky(c.tab);
     };
     const auto isSticky = [this](const CommandContext& c) { return d->model.isTabSticky(c.tab); };
-    add("tab.stick", QCoreApplication::translate("WindowSystem", "Stick Tab to Front"), "布局", {},
+    add("tab.stick", QCoreApplication::translate("WindowSystem", "Stick tab to front"), "布局", {},
         [this](const CommandContext& c) { return setTabSticky(c.tab, true); }, canStick);
-    add("tab.unstick", QCoreApplication::translate("WindowSystem", "Unstick Tab"), "布局", {},
+    add("tab.unstick", QCoreApplication::translate("WindowSystem", "Unstick tab"), "布局", {},
         [this](const CommandContext& c) { return setTabSticky(c.tab, false); }, isSticky);
-    add("tab.toggleSticky", QCoreApplication::translate("WindowSystem", "Stick or Unstick Tab"), "布局", {},
+    add("tab.toggleSticky", QCoreApplication::translate("WindowSystem", "Stick or unstick tab"), "布局", {},
         [this](const CommandContext& c) { return setTabSticky(c.tab, !d->model.isTabSticky(c.tab)); },
         [canStick, isSticky](const CommandContext& c) { return canStick(c) || isSticky(c); });
     for (const auto& scope : {QStringLiteral("left"), QStringLiteral("right"), QStringLiteral("others"), QStringLiteral("all")}) {

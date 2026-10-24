@@ -80,7 +80,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
             return self && !self->shuttingDown_;
         };
         manager_->commands().add({QStringLiteral("lua.run"),
-                                  QCoreApplication::translate("Muxora", "Run Lua Script…"),
+                                  QCoreApplication::translate("Muxora", "Run Lua script…"),
                                   QStringLiteral("工具"),
                                   {},
                                   [self](const window_system::CommandContext &) {
@@ -94,7 +94,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
                                   10});
         manager_->commands().add(
             {QStringLiteral("lua.stop"),
-             QCoreApplication::translate("Muxora", "Stop Running Lua Scripts"),
+             QCoreApplication::translate("Muxora", "Stop running Lua scripts"),
              QStringLiteral("工具"),
              {},
              [self](const window_system::CommandContext &) {
@@ -110,7 +110,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
              15});
         manager_->commands().add(
             {QStringLiteral("lua.reload"),
-             QCoreApplication::translate("Muxora", "Reload Lua Configuration"),
+             QCoreApplication::translate("Muxora", "Reload Lua configuration"),
              QStringLiteral("工具"),
              {},
              available,
@@ -119,7 +119,7 @@ AppScriptingSetup::AppScriptingSetup(window_system::WindowManager *manager, User
              20});
         manager_->commands().add(
             {QStringLiteral("lua.openConfig"),
-             QCoreApplication::translate("Muxora", "Open Lua Configuration"),
+             QCoreApplication::translate("Muxora", "Open Lua configuration"),
              QStringLiteral("工具"),
              {},
              available,
@@ -247,7 +247,7 @@ bool AppScriptingSetup::runCommand(const window_system::CommandContext &context)
     input_ = input;
     input->setObjectName(QStringLiteral("LuaScriptInput"));
     input->setAttribute(Qt::WA_DeleteOnClose);
-    input->setWindowTitle(QCoreApplication::translate("Muxora", "Run Lua Script"));
+    input->setWindowTitle(QCoreApplication::translate("Muxora", "Run Lua script"));
     input->setLabelText(QCoreApplication::translate("Muxora", "Enter Lua script:"));
     input->setOption(QInputDialog::UsePlainTextEditForTextInput);
     input->resize(640, 360);
