@@ -49,7 +49,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude 交出：8.15b 钉住标签并入 main，审查 Codex 的 8.12，内部标识改英文
+## 2026-10-24 · Claude 交出：8.15b 钉住标签、审查 8.12 后的跟进、布局恢复，8.16 交给 Codex
 
 - **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。8.15b 先在分支 `claude/8.15b-sticky-tabs` 上开发，Codex 推送 8.12 后变基到 `main` 并快进合入，分支和工作树已删除。
 - **本轮完成**（用户要求 8.15b 四项都做，前三项照 VS Code 做成设置）：
@@ -77,12 +77,17 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
     - `app: Recover what it can from an invalid layout file`：布局里一类设置无效时只重置那一类，窗口和标签照常恢复；失败时都先留副本并在状态栏说明，修正了一处值无效就丢掉整个布局的缺陷。
     - `docs: Decide where each kind of setting and state is stored`：设置设计 §2 加上数据归属表，阶段 4 计划补上控件指定方式和遗漏的设置 ID。
     - 在全部改动上 Release 全量经隔离桌面 67/67 通过（323.55 秒）。
+  - 只改文档的两个提交：`docs: Plan per-scope input method state`（用户提出的新需求，设计写进交互细则，实现步骤为 8.16）；`docs: Give a rule for where new saved data goes`（新增要保存的数据按设置设计 §2 的七条规则选文件，AGENTS.md 指向它）。文档检查通过，没有代码改动，没有另跑测试。
 - **进行中**：无。
-- **下一步**：按 Codex 原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
+- **下一步**：
+  1. [8.16 按层级保存输入法状态](../roadmap/implementation/phase-8-ui-quality.md#816-按层级保存输入法状态)：用户 2026-10-24 指定交给 Codex，不着急。Codex 做平台接口和 Windows 实现、范围跟踪、`WindowBehavior::inputMethodScope` 及其保存、Lua 设置接口和测试。设置页里的下拉框是新的设置项，按 AGENTS.md 留给 Claude：做到这里停下，在交接记录里写明，不自行加控件。微软拼音、日文、韩文和第三方输入法的真实效果由用户试用。
+  2. 然后按原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。
-- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。内部标识（命令分类、菜单路径、配色等）一律用英文 ID，以后新增的也一样，写在 [设置与命令设计 §8.3](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 [工程设计 §2.1](engineering-design.md#21-可读性与依赖)。脚本按用途选语言：构建和测试只经 CMake／CTest，和平台无关的检查用 Python，只在 Windows 上做的事用 PowerShell，写在 [工程设计 §8](engineering-design.md#8-推荐目录组织)。收缩的钉住标签只限制标题长度，和普通标题裁切分开算，写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。每类数据放哪个文件、控件默认按类型生成且可单独指定、布局文件部分无效时只重置无效的那几类，写在 [设置设计 §2–4](../design/settings-and-commands-design.md#2-文件划分) 和 [阶段 4](../roadmap/implementation/phase-4-settings.md)。输入法状态可以按层级分开记：输入法和它的全部模式一起记，不只针对中英文；默认按标签；轻量浮窗是窗口下面的一层；新建时沿用来源状态，不跨重启保存，先做 Windows，写在 [交互细则 · 输入法状态](../design/window-interaction-design.md#输入法状态)，实现步骤是 [8.16](../roadmap/implementation/phase-8-ui-quality.md#816-按层级保存输入法状态)。
+- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。内部标识（命令分类、菜单路径、配色等）一律用英文 ID，以后新增的也一样，写在 [设置与命令设计 §8.3](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 [工程设计 §2.1](engineering-design.md#21-可读性与依赖)。脚本按用途选语言：构建和测试只经 CMake／CTest，和平台无关的检查用 Python，只在 Windows 上做的事用 PowerShell，写在 [工程设计 §8](engineering-design.md#8-推荐目录组织)。收缩的钉住标签只限制标题长度，和普通标题裁切分开算，写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。每类数据放哪个文件、控件默认按类型生成且可单独指定、布局文件部分无效时只重置无效的那几类，写在 [设置设计 §2–4](../design/settings-and-commands-design.md#2-文件划分) 和 [阶段 4](../roadmap/implementation/phase-4-settings.md)。输入法状态可以按层级分开记：输入法和它的全部模式一起记，不只针对中英文；默认按标签；轻量浮窗是窗口下面的一层；新建时沿用来源状态，不跨重启保存，先做 Windows，写在 [交互细则 · 输入法状态](../design/window-interaction-design.md#输入法状态)，实现步骤是 [8.16](../roadmap/implementation/phase-8-ui-quality.md#816-按层级保存输入法状态)。以后新增要保存的数据按 [设置设计 §2](../design/settings-and-commands-design.md#2-文件划分) 的规则选文件，并加进归属表。
 - **环境与注意事项**：
+  - 检查脚本改成了 Python，旧的 `.ps1` 已删除：配置测试需要 Python 3.10 或更新版本，提交前用 `python tools/check-docs.py`，翻译检查是 `python tools/check-translations.py`（全量测试里的 `translations.coverage`、`translations.checker` 就是它和它的反向用例）。
+  - 设置 `tabs.shrinkStickyTabWidth` 已改名为 `tabs.shrinkStickyTitleWidth`，含义改为标题文字的最大长度。
   - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
   - 只在默认主题下截图核对过外观；三主题截图、Debug 构建和用户真实试用未做。
 
