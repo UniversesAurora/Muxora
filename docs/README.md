@@ -17,6 +17,7 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [Lua 扩展 API](design/lua-extension-api-design.md) | 对话框与通知、自定义界面、终端读写、会话与文件等扩展接口，以及运行时的多任务挂起 |
 | [Lua 脚本与组件扩展](design/lua-scripting-design.md) | 运行时、脚本 API、停止与资源上限及未来组件扩展 |
 | [终端 Normal / Visual 模式](design/terminal-mark-mode-design.md) | 本地键盘浏览、选择、搜索与复制 |
+| [窗格活动](design/pane-activity-design.md) | 通知、进度和运行状态：以窗格为单位记录，显示在标签、状态栏、任务栏和 Windows 通知中 |
 | [SSH 私钥存放与代理](design/ssh-key-storage-design.md) | 私钥放 `~/.ssh` 或 Muxora 保管库；切换时的迁移；让外部工具使用保管库密钥的独立代理 |
 | [SSH config 修改与同步](design/ssh-config-sync-design.md) | 默认只读；可选的写回原文件与应用会话双向同步，无损解析、最小修改、`Include` 接入、冲突与开关切换 |
 | [启动时恢复会话](design/session-restore-design.md) | 恢复布局、连接目标与终端历史，重新连接的顺序、限流与登录处理，tmux 选项 |
