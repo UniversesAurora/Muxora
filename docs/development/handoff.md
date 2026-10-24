@@ -59,7 +59,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/tabs: Show sticky tabs on a separate row`：`tabs.stickyTabsOnSeparateRow`，两行之间拖动按指针所在行决定钉住。
   - `window-system/tabs: Keep sticky tabs open on the close shortcut and middle click`：`tabs.preventStickyClose`，默认与 VS Code 相同（快捷键和中键都拦），因此 Ctrl+W 对钉住标签改为切到未钉住的标签。
   - `window-system/tabs: Mark sticky tabs in the tab list`：完整标签列表中钉住标签带钉子标记。
-  - 用户试用预览后的修正：多行拖动最后一行唯一的标签时插入位置来回跳（原有问题，[记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)）；关闭多行时保留滚轮展开（[记录](verification-log/2026-10.md#关闭多行时保留滚轮展开2026-10-24)）；钉住行占满时多出的滚动条（[记录](verification-log/2026-10.md#钉住行占满时单行标签栏多出滚动条2026-10-24)）；收缩宽度可调，新增 `tabs.shrinkStickyTabWidth`（[记录](verification-log/2026-10.md#收缩的钉住标签宽度可调2026-10-24)）。
+  - 用户试用预览后的修正：多行拖动最后一行唯一的标签时插入位置来回跳（原有问题，[记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)）；关闭多行时保留滚轮展开（[记录](verification-log/2026-10.md#关闭多行时保留滚轮展开2026-10-24)）；钉住行占满时多出的滚动条（[记录](verification-log/2026-10.md#钉住行占满时单行标签栏多出滚动条2026-10-24)）；收缩宽度可调，当时新增 `tabs.shrinkStickyTabWidth`，后来改为限制标题长度（[记录](verification-log/2026-10.md#收缩的钉住标签宽度可调2026-10-24)）。
   - 每项的实现要点、新增用例和反向验证见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`。
   - 变基到 8.12 之后，Release 全量 64/64 通过（经隔离桌面，325.86 秒），翻译检查和文档检查通过。
   - 审查 Codex 的六个 8.12 提交（用户要求，重点是翻译）：迁移没有功能错误。`treewide: Use sentence case and whole sentences in English UI text` 统一英文命令名大小写、改掉一处字符串拼接和一条过时的报错；`docs: Tidy the 8.12 records after review` 恢复 ADR 0010 原文、精简 Codex 的验证记录。发现、修正和留着没改的事项见 [审查记录](verification-log/2026-10.md#审查-codex-的-812-提交2026-10-24)，修正后受影响的 20 个套件通过。
@@ -69,11 +69,15 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
     - `window-system/commands: Give each direction command a whole title`：72 条方向和上一个／下一个命令各用整句源文本，中文与原拼接结果相同。
     - `test: Run the translation coverage check as its own CTest`：覆盖检查改为 CTest 项 `translations.coverage`，C++ 测试不再调用 PowerShell。
     - 在全部改动上 Release 全量经隔离桌面 65/65 通过（320.20 秒）。
+  - 随后按用户决定，[记录](verification-log/2026-10.md#跨平台检查改用-python收缩的钉住标签改为限制标题长度2026-10-24)：
+    - `tools: Port the translation check to Python` 和 `tools: Port the docs check to Python`：和平台无关的三个检查脚本改写成 Python，反向用例也进了 CTest（`translations.checker`）。
+    - `window-system/tabs: Limit only the title of shrunk sticky tabs`：`tabs.shrinkStickyTabWidth` 改为 `tabs.shrinkStickyTitleWidth`，只限制标题文字，默认 40 px，和普通标题裁切分开算。
+    - 在全部改动上 Release 全量经隔离桌面 66/66 通过（312.96 秒）。
 - **进行中**：无。
 - **下一步**：按 Codex 原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。
-- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。内部标识（命令分类、菜单路径、配色等）一律用英文 ID，以后新增的也一样，写在 [设置与命令设计 §8.3](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 [工程设计 §2.1](engineering-design.md#21-可读性与依赖)。
+- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。内部标识（命令分类、菜单路径、配色等）一律用英文 ID，以后新增的也一样，写在 [设置与命令设计 §8.3](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 [工程设计 §2.1](engineering-design.md#21-可读性与依赖)。脚本按用途选语言：构建和测试只经 CMake／CTest，和平台无关的检查用 Python，只在 Windows 上做的事用 PowerShell，写在 [工程设计 §8](engineering-design.md#8-推荐目录组织)。收缩的钉住标签只限制标题长度，和普通标题裁切分开算，写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。
 - **环境与注意事项**：
   - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
   - 只在默认主题下截图核对过外观；三主题截图、Debug 构建和用户真实试用未做。
