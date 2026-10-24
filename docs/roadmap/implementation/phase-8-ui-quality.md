@@ -367,7 +367,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **风险**：盲目替换中文会改变内部菜单路径、存储标识或用户数据；只改现有目录会漏掉原本未标记的文字。扫描和运行时覆盖要相互核对，不能用宽泛排除规则掩盖遗漏。
 
-**状态**：迁移、源码覆盖和本机统一入口已实现，本机验证完成，见 [记录](../../development/verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。CI 尚未建立，接入未完成；已列入 [6.6](phase-6-engineering.md#66-持续集成) 的必需检查，是否随该步完成待用户决定，不标记全部验收完成。
+**状态**：已完成（`a04fa57`、`27d0266`）。英文源文本迁移、源码覆盖、本机统一入口和验证均已完成，见 [记录](../../development/verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。用户决定将 CI 接入留到 [6.6](phase-6-engineering.md#66-持续集成) 统一实施，不影响本步骤完成。
 
 ---
 

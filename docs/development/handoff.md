@@ -57,13 +57,12 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `treewide: Use English source text and check translation coverage`：迁移英文源键、双语目录、动态显示文字、错误和脚本模板；保留内部标识与用户内容。源码检查、反向夹具和运行时覆盖见[迁移记录](verification-log/2026-10.md#英文源文本与覆盖检查2026-10-24)。
   - `lua: Cancel the count-hook fixture at its ready event`：通过迁移前后对照定位到用例的随机取消点，只修正测试前提；产品代码未改，原断言和反向验证保留，见[计数钩子记录](verification-log/2026-10.md#计数钩子恢复用例的取消时机2026-10-24)。
   - `treewide: Finish local English translation verification`：补齐 Windows 系统菜单备用文字、安装后宿主双语检查及部署帮助检查。本机 Release 全量 63/63、独立模块 56/56；最后改动后的定向套件、两个外部宿主和部署检查通过，见[收尾记录](verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。
-- **进行中**：无。8.12 的本机实现与验证完成；CI 未接入，列在“待用户决定”。
-- **下一步**：确认 8.12 的 CI 接入安排后，按原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12，再按测量决定 1.9／6.1。本轮没有开始这些步骤。新增外观仍由 Claude 做。
+- **进行中**：无。8.12 已完成，CI 接入按用户决定留到 6.6。
+- **下一步**：按原顺序做 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12，再按测量决定 1.9／6.1。本轮没有开始这些步骤。新增外观仍由 Claude 做。
 - **待用户决定**：
-  - 8.12 要求接入 CI，但仓库尚无工作流，[6.6](../roadmap/implementation/phase-6-engineering.md#66-持续集成) 尚未实施。是否允许 CI 接入随 6.6 一并完成；本轮仅把翻译检查列入其必需步骤，不擅自降低 8.12 完成标准。
   - 8.10 尺寸规格统一；8.15b 第 3 项做成设置还是固定规则，见[计划](../roadmap/implementation/phase-8-ui-quality.md#815-钉住标签)。
 - **请下一位回答**：无。
-- **本轮新决定**：无，按已有英文源文本迁移要求执行。
+- **本轮新决定**：用户确认翻译检查的 CI 接入留到 [6.6](../roadmap/implementation/phase-6-engineering.md#66-持续集成) 统一实施；8.12 按现有本机实现和验证完成。
 - **环境与注意事项**：
   - 首次 `toolbar-popup` 外点关闭和首次 Release 全量 `chrome-interaction` 二次点击关闭失败，后续通过仍不能证明原因已消除；没有改动断言或阈值。历史设置页滚动与拖拽首报也没有在本轮定位。
   - 桌面验证经隔离入口，先等收起结束再测，等测试进程全部退出再恢复。没有使用 computer use 测试。
