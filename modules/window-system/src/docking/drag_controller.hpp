@@ -24,6 +24,8 @@ struct DropTarget {
     QRect groupRect;
     QRect windowRect;
     int insertionIndex = -1;
+    // Whether the strip showed the insertion among its sticky tabs.
+    bool insertionSticky = false;
     QVector<DockGuide> guides;
 };
 class DragController final : public QObject {

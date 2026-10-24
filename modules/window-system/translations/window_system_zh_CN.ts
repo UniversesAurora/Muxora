@@ -3713,5 +3713,40 @@ Ctrl+Shift+P 打开命令面板</translation>
             <source>&amp;Close	Alt+F4</source>
             <translation>关闭(&amp;C)	Alt+F4</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="193"></location>
+            <source>Sticky tab sizing must be normal, compact or shrink</source>
+            <translation>钉住标签尺寸只能是 normal、compact 或 shrink</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="135"></location>
+            <source>Sticky tabs</source>
+            <translation>钉住标签</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="138"></location>
+            <source>Sticky tab size</source>
+            <translation>钉住标签尺寸</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="139"></location>
+            <source>Normal (default)</source>
+            <translation>正常（默认）</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="140"></location>
+            <source>Compact: icon or first letter only</source>
+            <translation>紧凑：只显示图标或首字</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="141"></location>
+            <source>Shrink: fixed width with the start of the title</source>
+            <translation>收缩：固定宽度，显示标题开头</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="144"></location>
+            <source>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</source>
+            <translation>紧凑和收缩时，单行标签栏滚动时钉住的标签留在开头，其他标签在它们下面滚动。</translation>
+        </message>
     </context>
 </TS>

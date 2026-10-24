@@ -200,6 +200,10 @@ DragTabBar::DragTabBar(QWidget* parent) : QTabBar(parent)
 void DragTabBar::setAppearance(const TabAppearance& appearance)
 {
     appearance_ = appearance;
+    updateInsertionSticky(); refreshSizeHints();
+}
+void DragTabBar::refreshSizeHints()
+{
     // QTabBar caches native size hints. Appearance changes can remove icon
     // space or add a number even when the text/icon identities are unchanged.
     QEvent styleChange(QEvent::StyleChange); QApplication::sendEvent(this,&styleChange);
@@ -225,7 +229,7 @@ QPoint DragTabBar::creationPosition() const { return creationPosition_; }
 int DragTabBar::rowCount() const { return rowCount_; }
 void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth)
 {
-    customLayout_ = appearance_.multiline;
+    customLayout_ = appearance_.multiline || stickyFloats();
     displayedRects_.clear(); previewRect_ = {};
     const int lineHeight = std::max(24, count() ? tabSizeHint(0).height() : 28);
     // Expanded rows use the full bar width. Only the final row reserves the
@@ -238,20 +242,32 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
         if (appearance_.multiline && x && x + width > limit) { x = 0; y += lineHeight; }
         const QRect area(x, y, width, lineHeight); x += width; return area;
     };
+    // A preview among sized sticky tabs takes their width, not the carried label's.
+    const int previewExtent = insertionSticky_ && appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth
+        : insertionSticky_ && appearance_.stickySizing == StickyTabSizing::Shrink ? shrinkStickyTabWidth : insertionExtent_;
+    // The sticky run ends before the first other tab or a preview for one.
+    std::optional<int> runEnd;
+    const auto endRun = [&] { if (!runEnd) runEnd = x; };
     for (int i = 0; i < count(); ++i) {
         if (isDragged(i)) continue;
         if (insertionIndex_ == ordinal && insertionExtent_) {
+            if (!insertionSticky_) endRun();
             // Keep the insertion on the row of the label it precedes. A short
             // carried label must not fill the previous row's leftover space
             // and change the hit target when only the active row is displayed.
             const int followingWidth = std::min(tabSizeHint(i).width(), limit);
             if (appearance_.multiline && x && x + followingWidth > limit) { x = 0; y += lineHeight; }
-            previewRect_ = append(insertionExtent_);
+            previewRect_ = append(previewExtent);
         }
+        if (i >= stickyCount_) endRun();
         ++ordinal;
         displayedRects_[i] = append(tabSizeHint(i).width());
     }
-    if (insertionIndex_ == ordinal && insertionExtent_) previewRect_ = append(insertionExtent_);
+    if (insertionIndex_ == ordinal && insertionExtent_) {
+        if (!insertionSticky_) endRun();
+        previewRect_ = append(previewExtent);
+    }
+    endRun(); stickyRunEnd_ = *runEnd;
     creationPosition_ = {x,y};
     const int creationWidth = appearance_.showNewTabButton ? newTabButtonWidth + listButtonWidth + createButtonGap : 0;
     if (appearance_.multiline && x && x + creationWidth + trailingActionsWidth > limit) {
@@ -283,12 +299,39 @@ void DragTabBar::setStickyIcon(QIcon icon) { stickyIcon_ = std::move(icon); upda
 void DragTabBar::setStickyCount(int count)
 {
     if (stickyCount_ == count) return;
-    stickyCount_ = count; update();
+    stickyCount_ = count; updateInsertionSticky();
+    // Sized sticky tabs change width with the count.
+    if (appearance_.stickySizing != StickyTabSizing::Normal) refreshSizeHints(); else update();
+}
+void DragTabBar::setStickyOffset(int offset)
+{
+    if (stickyOffset_ == offset) return;
+    stickyOffset_ = offset;
+    if (stickyFloats()) update();
+}
+bool DragTabBar::stickyFloats() const
+{
+    return !appearance_.multiline && appearance_.stickySizing != StickyTabSizing::Normal && (stickyCount_ || insertionSticky_);
+}
+int DragTabBar::stickyShift() const { return stickyFloats() ? std::max(0, stickyOffset_) : 0; }
+int DragTabBar::stickyRunExtent() const { return stickyFloats() ? stickyRunEnd_ : 0; }
+bool DragTabBar::isCompactSticky(int index) const
+{
+    return index >= 0 && index < stickyCount_ && appearance_.stickySizing == StickyTabSizing::Compact;
+}
+int DragTabBar::naturalTabWidth(int index) const { return tabBarTabWidth(labelParts(index)); }
+void DragTabBar::updateInsertionSticky()
+{
+    // The model's rule: a drop inside the sticky run, or right after it for a
+    // tab that was sticky, makes the tab sticky.
+    const int run = stickyCount_ - (draggedIndex_ >= 0 && draggedIndex_ < stickyCount_ ? 1 : 0);
+    insertionSticky_ = insertionIndex_ >= 0 && (insertionIndex_ < run || (insertionIndex_ == run && carriedSticky_));
 }
 void DragTabBar::setDraggedTab(TabId tab)
 {
     draggedIndex_ = -1;
     for (int i = 0; i < count(); ++i) if (!tab.isNull() && tabData(i).toUuid() == tab) draggedIndex_ = i;
+    updateInsertionSticky();
     update();
 }
 bool DragTabBar::isDragged(int index) const { return index == draggedIndex_; }
@@ -296,19 +339,21 @@ int DragTabBar::draggedExtent() const
 {
     return draggedIndex_ < 0 ? 0 : tabRect(draggedIndex_).width();
 }
-void DragTabBar::setInsertionPreview(int index, int extent, QColor color)
+void DragTabBar::setInsertionPreview(int index, int extent, QColor color, bool carriedSticky)
 {
     int moved = 0; for(int i=0;i<count();++i) if(isDragged(i)) ++moved;
     insertionIndex_ = index < 0 ? -1 : qBound(0, index, count() - moved);
     insertionExtent_ = insertionIndex_ < 0 ? 0 : qMax(1, extent);
     insertionColor_ = color;
+    carriedSticky_ = insertionIndex_ >= 0 && carriedSticky;
+    updateInsertionSticky();
     setProperty("insertionIndex", insertionIndex_);
     update();
 }
 QRect DragTabBar::insertionPreviewRect() const
 {
     if (insertionIndex_ < 0) return {};
-    if (customLayout_) return previewRect_;
+    if (customLayout_) return insertionSticky_ ? previewRect_.translated(stickyShift(), 0) : previewRect_;
     int x = 0, visible = 0;
     for (int i = 0; i < count() && visible < insertionIndex_; ++i)
         if (i != draggedIndex_) { x += tabRect(i).width(); ++visible; }
@@ -316,7 +361,10 @@ QRect DragTabBar::insertionPreviewRect() const
 }
 QRect DragTabBar::displayTabRect(int index) const
 {
-    if (customLayout_) return displayedRects_.value(index);
+    if (customLayout_) {
+        const auto rect = displayedRects_.value(index);
+        return index < stickyCount_ && !rect.isEmpty() ? rect.translated(stickyShift(), 0) : rect;
+    }
     auto result = tabRect(index);
     if (index == draggedIndex_) return {};
     const int visibleIndex = index - (draggedIndex_ >= 0 && index > draggedIndex_ ? 1 : 0);
@@ -326,6 +374,20 @@ QRect DragTabBar::displayTabRect(int index) const
 }
 int DragTabBar::insertionIndexAt(QPoint local) const
 {
+    if (customLayout_ && stickyFloats()) {
+        if (insertionPreviewRect().contains(local)) return insertionIndex_;
+        // Over the sticky tabs only they count; elsewhere only the other
+        // tabs do, including those partly scrolled under the sticky ones.
+        const bool overRun = local.x() < stickyShift() + stickyRunEnd_;
+        int ordinal = 0;
+        for (int i = 0; i < count(); ++i) if (!isDragged(i)) {
+            const bool sticky = i < stickyCount_;
+            if (overRun && !sticky) return ordinal;
+            if (sticky == overRun && local.x() < displayTabRect(i).center().x()) return ordinal;
+            ++ordinal;
+        }
+        return ordinal;
+    }
     if (customLayout_) {
         if (previewRect_.contains(local)) return insertionIndex_;
         int nearestRow = -1, distance = std::numeric_limits<int>::max();
@@ -367,10 +429,13 @@ TabLabelParts DragTabBar::labelParts(int index) const {
 }
 QSize DragTabBar::tabSizeHint(int index) const {
     auto size = QTabBar::tabSizeHint(index);
-    size.setWidth(tabBarTabWidth(labelParts(index)));
+    const bool sized = index < stickyCount_ && appearance_.stickySizing != StickyTabSizing::Normal;
+    size.setWidth(!sized ? naturalTabWidth(index)
+        : appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : shrinkStickyTabWidth);
     return size;
 }
 QRect DragTabBar::closeRect(int index) const {
+    if (isCompactSticky(index)) return {};
     return tabBarCloseRect(displayTabRect(index), layoutDirection());
 }
 bool DragTabBar::event(QEvent* event) {
@@ -470,6 +535,25 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             painter.fillRect(option.rect, colors->background);
             painter.fillRect(QRect(option.rect.left(), option.rect.bottom() - 1, option.rect.width(), 2), colors->line);
         } else painter.drawControl(QStyle::CE_TabBarTabShape, option);
+        if (isCompactSticky(index)) {
+            // Only the icon, or the title's first letter without one, centered.
+            if (appearance_.showIcons && !option.icon.isNull()) {
+                const QRect iconArea(QPoint(), iconSize());
+                const auto target = iconArea.translated(option.rect.center() - iconArea.center());
+                if (colors) {
+                    auto pixmap = option.icon.pixmap(iconSize());
+                    QPainter iconPainter(&pixmap); iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                    iconPainter.fillRect(pixmap.rect(), colors->icon); iconPainter.end(); painter.drawPixmap(target, pixmap);
+                } else option.icon.paint(&painter, target, Qt::AlignCenter,
+                                         isTabEnabled(index) ? QIcon::Normal : QIcon::Disabled,
+                                         index == currentIndex() ? QIcon::On : QIcon::Off);
+            } else {
+                auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText, colors->text);
+                painter.drawItemText(option.rect, Qt::AlignCenter | Qt::TextSingleLine, textPalette, isTabEnabled(index),
+                                     tabText(index).left(1).toUpper(), QPalette::WindowText);
+            }
+            return;
+        }
         const auto label = layoutTabLabel(tabBarLabelArea(option.rect, layoutDirection()), labelParts(index), layoutDirection());
         if (!label.number.isEmpty()) {
             painter.setPen(colors ? colors->text : palette().color(QPalette::WindowText));
@@ -502,18 +586,34 @@ void DragTabBar::paintEvent(QPaintEvent* event) {
             painter.restore();
         }
     };
-    for (int index = 0; index < count(); ++index) if (index != currentIndex()) draw(index);
-    if (currentIndex() >= 0) draw(currentIndex());
+    // The current tab is drawn last, over its neighbours. Sticky tabs kept in
+    // view are drawn over the tabs scrolling under them.
+    const bool floating = stickyFloats();
+    const auto drawRange = [&](int first, int last) {
+        for (int index = first; index < last; ++index) if (index != currentIndex()) draw(index);
+        if (currentIndex() >= first && currentIndex() < last) draw(currentIndex());
+    };
+    if (floating) {
+        drawRange(stickyCount_, count()); drawRange(0, std::min(stickyCount_, count()));
+        // A border after the last one separates them from the tabs scrolling
+        // under them, as VS Code's tab.lastPinnedBorder.
+        if (stickyRunEnd_ > 0)
+            painter.fillRect(QRect(stickyShift() + stickyRunEnd_ - 1, 0, 1, height()), stickyBorder_);
+    } else drawRange(0, count());
     const auto gap = insertionPreviewRect();
     if (!gap.isEmpty()) {
+        painter.save();
+        if (floating && !insertionSticky_) painter.setClipRect(QRect(stickyShift() + stickyRunEnd_, 0, width(), height()));
         painter.fillRect(gap.adjusted(1, 1, -1, -1), insertionColor_);
         painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
         painter.drawRect(gap.adjusted(1, 1, -2, -2));
+        painter.restore();
     }
     // A sticky tab always shows its pin; other tabs show close on hover.
     for (int index = 0; index < std::min(stickyCount_, count()); ++index)
-        if (index != hovered_ && index != draggedIndex_ && isTabVisible(index)) stickyIcon_.paint(&painter, closeRect(index));
-    if (hovered_ >= 0 && hovered_ != draggedIndex_) {
+        if (index != hovered_ && index != draggedIndex_ && isTabVisible(index) && !isCompactSticky(index))
+            stickyIcon_.paint(&painter, closeRect(index));
+    if (hovered_ >= 0 && hovered_ != draggedIndex_ && !isCompactSticky(hovered_)) {
         const auto target = closeRect(hovered_);
         if (closeHovered_ || closePressed_ == hovered_) {
             // A translucent wash of the tab's own text color reads on every
@@ -562,6 +662,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     scroll_->viewport()->installEventFilter(this); scroll_->viewport()->setMouseTracking(true);
     canvas_ = new QWidget; canvas_->setObjectName("TabStripCanvas"); canvas_->installEventFilter(this);
     bar_ = new DragTabBar(canvas_); bar_->setCloseIcon(iconFor("close", theme)); bar_->setStickyIcon(iconFor("pin", theme));
+    bar_->setStickyBorderColor(theme.border);
     bar_->setIconSize(QSize(theme.metrics.iconSize, theme.metrics.iconSize));
     bar_->installEventFilter(this); scroll_->setWidget(canvas_);
     auto* create = new TabCreateButtons(theme, canvas_); createButtons_ = create;
@@ -613,6 +714,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         updateScrollBarVisibility();
     });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, scrollbar_, &QScrollBar::setValue);
+    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, bar_, [this](int value) { bar_->setStickyOffset(value); });
     QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this] {
         if (!applyingViewportState_ && !pendingViewportState_ && !pendingScrollOffset_) {
             settledViewport_ = currentViewportState();
@@ -684,7 +786,8 @@ void GroupTabs::setCurrentIndex(int index, bool reveal) {
     if (reveal && index >= 0) {
         cancelViewportReflow();
         const auto area = bar_->displayTabRect(index); auto* scroll = scroll_->horizontalScrollBar();
-        if (area.left() < scroll->value()) scroll->setValue(area.left());
+        const int inset = stickyInset(index);
+        if (area.left() < scroll->value() + inset) scroll->setValue(area.left() - inset);
         else if (area.right() >= scroll->value() + scroll_->viewport()->width())
             scroll->setValue(area.right() - scroll_->viewport()->width() + 1);
     }
@@ -703,9 +806,13 @@ TabViewportState GroupTabs::currentViewportState() const
         state.activeTab = bar_->tabData(current).toUuid();
         const auto area = bar_->displayTabRect(current);
         state.activeFullyVisible = !area.isEmpty() && !state.bounds.isEmpty()
-            && area.left() >= state.offset && area.right() < state.offset + state.bounds.width();
+            && area.left() >= state.offset + stickyInset(current) && area.right() < state.offset + state.bounds.width();
     }
     return state;
+}
+int GroupTabs::stickyInset(int index) const
+{
+    return index >= bar_->stickyCount() ? bar_->stickyRunExtent() : 0;
 }
 TabViewportState GroupTabs::captureViewportState() const
 {
@@ -767,12 +874,13 @@ bool GroupTabs::applyPendingViewportState()
     if (old.activeFullyVisible && old.activeTab == current.activeTab) {
         const auto area = bar_->displayTabRect(bar_->currentIndex());
         if (!area.isEmpty()) {
+            const int inset = stickyInset(bar_->currentIndex());
             const int rightLimit = area.right() - current.bounds.width() + 1;
             // Only move as far as needed to keep the active tab readable.
             // An oversized label exposes its beginning; no extra blank extent
             // is manufactured for a last tab or an underfilled strip.
-            offset = current.bounds.width() >= area.width()
-                ? qBound(rightLimit, offset, area.left()) : area.left();
+            offset = current.bounds.width() - inset >= area.width()
+                ? qBound(rightLimit, offset, area.left() - inset) : area.left() - inset;
         }
     }
     updateCanvasGeometry();
@@ -883,12 +991,14 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
         const int width = scroll_->viewport()->width();
         const int current = bar_->currentIndex();
         const auto active = current >= 0 ? bar_->displayTabRect(current) : QRect{};
-        if (!active.isEmpty() && active.left() >= offset && active.right() < offset + width) {
+        if (!active.isEmpty() && active.left() >= offset + stickyInset(current) && active.right() < offset + width) {
             anchor = Anchor{current, active.left() - offset, true};
         } else {
-            int leading = 0;
-            while (leading + 1 < bar_->count() && bar_->displayTabRect(leading).right() < offset) ++leading;
-            anchor = Anchor{leading, bar_->displayTabRect(leading).left() - offset, false};
+            // Sticky tabs kept in view cannot anchor the scrolled ones.
+            const int inset = bar_->stickyRunExtent();
+            int leading = inset ? std::min(bar_->stickyCount(), bar_->count() - 1) : 0;
+            while (leading + 1 < bar_->count() && bar_->displayTabRect(leading).right() < offset + inset) ++leading;
+            anchor = Anchor{leading, bar_->displayTabRect(leading).left() - offset - inset, false};
         }
     }
     appearance_ = appearance; pinned_ = pinned;
@@ -907,11 +1017,14 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     if (!anchor || anchor->tab >= bar_->count()) return;
     updateCanvasGeometry();
     const auto area = bar_->displayTabRect(anchor->tab);
-    // A partly scrolled-off leading tab keeps its hidden part, within its new width.
-    int offset = area.left() - std::max(anchor->shift, -std::max(0, area.width() - 1));
+    const int inset = stickyInset(anchor->tab);
+    int offset = area.left() - anchor->shift;
     if (anchor->active) {
         const int width = scroll_->viewport()->width();
-        offset = width >= area.width() ? qBound(area.right() - width + 1, offset, area.left()) : area.left();
+        offset = width - inset >= area.width() ? qBound(area.right() - width + 1, offset, area.left() - inset) : area.left() - inset;
+    } else {
+        // A partly scrolled-off leading tab keeps its hidden part, within its new width.
+        offset = area.left() - inset - std::max(anchor->shift, -std::max(0, area.width() - 1));
     }
     // The scroll bar limits the offset to the real content range. A reflow
     // queued by the resize above still holds the old widths; this replaces it.
@@ -919,7 +1032,11 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     pendingViewportState_.reset();
     settledViewport_ = currentViewportState();
 }
-void GroupTabs::setStickyCount(int count) { bar_->setStickyCount(count); }
+void GroupTabs::setStickyCount(int count)
+{
+    if (bar_->stickyCount() == count) return;
+    bar_->setStickyCount(count); updateBarGeometry();
+}
 void GroupTabs::setTabMetadata(int index,const TabRecord& tab)
 {
     bar_->setTabMetadata(index,tab); updateBarGeometry();
@@ -931,12 +1048,14 @@ QRect GroupTabs::viewportRectGlobal() const {
 int GroupTabs::insertionIndex(QPoint global) const {
     return bar_->insertionIndexAt(bar_->mapFromGlobal(global));
 }
-void GroupTabs::setInsertionPreview(int index, int extent)
+void GroupTabs::setInsertionPreview(int index, int extent, bool carriedSticky)
 {
-    if (bar_->property("insertionIndex").toInt() == index && bar_->insertionExtent() == (index < 0 ? 0 : extent)) return;
-    bar_->setInsertionPreview(index, extent, theme_.accentSoft);
+    if (bar_->property("insertionIndex").toInt() == index && bar_->insertionExtent() == (index < 0 ? 0 : extent)
+        && bar_->insertionCarriesSticky() == (index >= 0 && carriedSticky)) return;
+    bar_->setInsertionPreview(index, extent, theme_.accentSoft, carriedSticky);
     updateBarGeometry();
 }
+bool GroupTabs::insertionSticky() const { return bar_->insertionSticky(); }
 void GroupTabs::setDraggedTab(TabId tab)
 {
     bar_->setDraggedTab(tab); updateBarGeometry();
@@ -958,7 +1077,9 @@ void GroupTabs::setDragPresentation(bool compact, bool edge)
 void GroupTabs::setDragHover(QPoint global) {
     const auto area = viewportRectGlobal();
     dragHovered_ = area.contains(global);
-    const int direction = appearance_.multiline || !area.contains(global) ? 0 : global.x() < area.left() + 24 ? -1
+    // Sticky tabs kept in view move the start zone past them.
+    const int direction = appearance_.multiline || !area.contains(global) ? 0
+        : global.x() >= area.left() + bar_->stickyRunExtent() && global.x() < area.left() + bar_->stickyRunExtent() + 24 ? -1
         : global.x() > area.right() - 24 ? 1 : 0;
     if (direction != scrollDirection_) autoScroll_->stop();
     scrollDirection_ = direction;

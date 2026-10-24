@@ -810,14 +810,18 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
         const auto* bar = group->tabBar();
         for (int i = 0; i < bar->count(); ++i) {
             if (bar->tabData(i).toUuid() != tab) continue;
+            // A sized sticky tab carries its natural width; the target strip
+            // sizes a preview among its own sticky tabs.
+            const int width = i < bar->stickyCount() && manager_->tabAppearance().stickySizing != StickyTabSizing::Normal
+                ? bar->naturalTabWidth(i) : bar->tabRect(i).width();
             if (manager_->tabAppearance().multiline) {
                 const int viewportWidth = group->viewportRectGlobal().width();
                 // Single-tab floating windows can hide their strip. A hidden
                 // hit region has zero width, but its carried label still has
                 // a real extent before entering the target presentation.
-                return std::min(bar->tabRect(i).width(), std::max(1, viewportWidth > 0 ? viewportWidth : group->width()));
+                return std::min(width, std::max(1, viewportWidth > 0 ? viewportWidth : group->width()));
             }
-            return bar->tabRect(i).width();
+            return width;
         }
     }
     // Not in a strip yet: measure it as an unnumbered tab of the target bar.
@@ -871,10 +875,10 @@ void DockSurface::setDragHover(QPoint point)
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(point);
 }
-void DockSurface::setInsertionPreview(GroupId group, int index, int extent)
+void DockSurface::setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent);
+        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent, it.key() == group && carriedSticky);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
 }
 void DockSurface::setEdgeInsertionPreview(Edge edge, int index, int extent)
@@ -887,6 +891,11 @@ void DockSurface::clearInsertionPreviews()
 {
     for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, 0);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
+}
+bool DockSurface::insertionSticky(GroupId group) const
+{
+    const auto widget = groups_.value(group);
+    return widget && widget->insertionSticky();
 }
 QRect DockSurface::insertionPreviewRect(GroupId group) const
 {

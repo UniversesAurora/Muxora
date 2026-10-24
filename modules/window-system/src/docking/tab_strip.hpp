@@ -31,8 +31,24 @@ public:
     std::function<void(int)> unstick;
     void setCloseIcon(QIcon icon);
     void setStickyIcon(QIcon icon);
+    // Separates sticky tabs kept in view from the tabs scrolling under them.
+    void setStickyBorderColor(QColor color) { stickyBorder_ = color; update(); }
     void setStickyCount(int count);
-    void setInsertionPreview(int index, int extent, QColor color);
+    [[nodiscard]] int stickyCount() const { return stickyCount_; }
+    // The strip's scroll offset. Compact and shrunk sticky tabs of a single
+    // row are drawn this far along, so they stay at the viewport's start.
+    void setStickyOffset(int offset);
+    // The width those sticky tabs cover at the viewport's start; 0 when the
+    // sticky tabs scroll with the others.
+    [[nodiscard]] int stickyRunExtent() const;
+    // `carriedSticky` says whether the dropped tab was sticky; dropping it
+    // right after the sticky tabs then keeps it sticky.
+    void setInsertionPreview(int index, int extent, QColor color, bool carriedSticky = false);
+    // Whether a drop at the insertion preview makes the tab sticky.
+    [[nodiscard]] bool insertionSticky() const { return insertionSticky_; }
+    [[nodiscard]] bool insertionCarriesSticky() const { return carriedSticky_; }
+    // The width of a tab with its sticky sizing ignored.
+    [[nodiscard]] int naturalTabWidth(int index) const;
     void setDraggedTab(TabId tab);
     [[nodiscard]] int draggedExtent() const;
     [[nodiscard]] QRect insertionPreviewRect() const;
@@ -61,6 +77,13 @@ private:
     TabLabelParts labelParts(int index) const;
     int displayedTabAt(QPoint local) const;
     bool isDragged(int index) const;
+    // A compact sticky tab shows only its icon or initial and has no pin.
+    bool isCompactSticky(int index) const;
+    // Sticky tabs, and a sticky insertion preview, stay in view.
+    bool stickyFloats() const;
+    int stickyShift() const;
+    void updateInsertionSticky();
+    void refreshSizeHints();
     QPoint start_;
     int pressed_ = -1;
     int closePressed_ = -1;
@@ -69,7 +92,12 @@ private:
     bool closeHovered_ = false;
     QIcon closeIcon_;
     QIcon stickyIcon_;
+    QColor stickyBorder_;
     int stickyCount_ = 0;
+    int stickyOffset_ = 0;
+    int stickyRunEnd_ = 0;
+    bool carriedSticky_ = false;
+    bool insertionSticky_ = false;
     int insertionIndex_ = -1;
     int insertionExtent_ = 0;
     QColor insertionColor_;
@@ -120,7 +148,8 @@ public:
     QRect viewportRectGlobal() const;
     int insertionIndex(QPoint global) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(int index, int extent);
+    void setInsertionPreview(int index, int extent, bool carriedSticky = false);
+    [[nodiscard]] bool insertionSticky() const;
     void setDraggedTab(TabId tab);
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
     void setDragPresentation(bool compact, bool edge);
@@ -143,6 +172,9 @@ private:
     bool applyPendingViewportState();
     void cancelViewportReflow();
     [[nodiscard]] TabViewportState currentViewportState() const;
+    // The part of the viewport's start that sticky tabs kept in view cover
+    // for the tab at `index`; 0 for those sticky tabs themselves.
+    [[nodiscard]] int stickyInset(int index) const;
     void updateCanvasGeometry();
     QWidget* header_ = nullptr;
     QWidget* headerActions_ = nullptr;

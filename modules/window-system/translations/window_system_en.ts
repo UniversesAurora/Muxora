@@ -3720,5 +3720,40 @@ Ctrl+Shift+P opens the command palette</translation>
             <source>&amp;Close	Alt+F4</source>
             <translation>&amp;Close	Alt+F4</translation>
         </message>
+        <message>
+            <location filename="../src/style/tab_appearance.cpp" line="193"></location>
+            <source>Sticky tab sizing must be normal, compact or shrink</source>
+            <translation>Sticky tab sizing must be normal, compact or shrink</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="135"></location>
+            <source>Sticky tabs</source>
+            <translation>Sticky tabs</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="138"></location>
+            <source>Sticky tab size</source>
+            <translation>Sticky tab size</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="139"></location>
+            <source>Normal (default)</source>
+            <translation>Normal (default)</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="140"></location>
+            <source>Compact: icon or first letter only</source>
+            <translation>Compact: icon or first letter only</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="141"></location>
+            <source>Shrink: fixed width with the start of the title</source>
+            <translation>Shrink: fixed width with the start of the title</translation>
+        </message>
+        <message>
+            <location filename="../src/settings/settings_tab_appearance.cpp" line="144"></location>
+            <source>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</source>
+            <translation>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</translation>
+        </message>
     </context>
 </TS>

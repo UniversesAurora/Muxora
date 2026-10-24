@@ -39,7 +39,9 @@ public:
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(GroupId group, int index, int extent);
+    void setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky = false);
+    // Whether a drop at the group's insertion preview makes the tab sticky.
+    [[nodiscard]] bool insertionSticky(GroupId group) const;
     void setEdgeInsertionPreview(Edge edge, int index, int extent);
     void clearInsertionPreviews();
     [[nodiscard]] QRect insertionPreviewRect(GroupId group) const;

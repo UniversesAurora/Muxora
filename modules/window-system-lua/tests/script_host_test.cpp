@@ -89,6 +89,7 @@ class ScriptHostTest final : public QObject {
     void layoutSnapshotsPreserveEmptyArrays();
     void appearanceAndComponentBarsUseTypedDescriptions();
     void titleClippingSettingsAreTypedAtomicAndPersistent();
+    void stickyTabSettingsAreTypedAndAtomic();
     void componentServicesFollowProviderLifetime();
     void rejectedRegistrationsReleaseFunctionReferences();
     void reloadingToolbarsPreservesPerWindowAndKindLayouts();
@@ -1328,6 +1329,27 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
     QCOMPARE(restored.value("maximum_sidebar_title_width").toInt(), 113);
     QVERIFY(manager.tabAppearance().clipTitles); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 137);
     QVERIFY(manager.tabAppearance().clipSidebarTitles); QCOMPARE(manager.tabAppearance().maximumSidebarTitleWidth, 113);
+}
+void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
+    WindowManager manager;
+    ScriptHost host(&manager);
+    QVERIFY(initialize(host));
+    auto reply = run(host, R"(
+      assert(muxora.settings.get().sticky_tab_sizing=='normal')
+      assert(muxora.tabs.appearance().sticky_tab_sizing=='normal')
+      assert(muxora.settings.update({sticky_tab_sizing='compact'}))
+      assert(muxora.tabs.appearance().sticky_tab_sizing=='compact')
+      assert(muxora.tabs.set_appearance({sticky_tab_sizing='shrink'}))
+      for _,invalid in ipairs({'tiny','Compact',1,true}) do
+        assert(not pcall(muxora.settings.update,{sticky_tab_sizing=invalid,multiline=true}))
+        assert(not pcall(muxora.tabs.set_appearance,{sticky_tab_sizing=invalid}))
+        assert(muxora.settings.get().sticky_tab_sizing=='shrink' and not muxora.settings.get().multiline)
+      end
+      return muxora.settings.get().sticky_tab_sizing
+    )");
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values[0].toString(), QStringLiteral("shrink"));
+    QCOMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Shrink);
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {
     WindowManager manager;

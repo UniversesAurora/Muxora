@@ -40,6 +40,7 @@ private slots:
     void titleClippingRetainsWidthAndDefaultsOmittedFields();
     void sidebarTitleClippingIsIndependentInLayoutSnapshots();
     void sidebarTitleClippingControlsStayIndependent();
+    void stickySizingRoundTripsThroughJsonAndLayout();
 };
 
 void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
@@ -52,6 +53,7 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
     QVERIFY(appearance.showIcons); QVERIFY(appearance.showNewTabButton); QVERIFY(!appearance.showNumbers);
     QVERIFY(!appearance.clipTitles); QCOMPARE(appearance.maximumTitleWidth, defaultTabTitleWidth);
     QVERIFY(!appearance.clipSidebarTitles); QCOMPARE(appearance.maximumSidebarTitleWidth, defaultTabTitleWidth);
+    QCOMPARE(appearance.stickySizing, StickyTabSizing::Normal);
     QCOMPARE(appearance.colors.size(), 9);
     for (const auto& preset : appearance.colors) {
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
@@ -60,6 +62,27 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
         QCOMPARE(preset.autoHideInactive, preset.groupInactive);
     }
     QVERIFY(!manager.tabColorPreset("missing")); QVERIFY(!manager.tabColorPreset({}));
+}
+
+void TabAppearanceTest::stickySizingRoundTripsThroughJsonAndLayout()
+{
+    for (const auto& [sizing, name] : {std::pair{StickyTabSizing::Normal, "normal"}, std::pair{StickyTabSizing::Compact, "compact"},
+                                      std::pair{StickyTabSizing::Shrink, "shrink"}}) {
+        TabAppearance appearance; appearance.stickySizing = sizing;
+        const auto json = tabAppearanceToJson(appearance);
+        QCOMPARE(json.value("stickySizing").toString(), QString::fromLatin1(name));
+        TabAppearance parsed; QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed, appearance);
+    }
+    auto json = tabAppearanceToJson(TabAppearance{}); json.remove("stickySizing");
+    TabAppearance parsed; parsed.stickySizing = StickyTabSizing::Shrink;
+    QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed.stickySizing, StickyTabSizing::Normal);
+    WindowManager manager; manager.createWindow();
+    auto appearance = manager.tabAppearance(); appearance.stickySizing = StickyTabSizing::Compact;
+    QVERIFY(manager.setTabAppearance(appearance));
+    WindowManager restored; QVERIFY(restored.restoreLayout(manager.saveLayout()));
+    QCOMPARE(restored.tabAppearance().stickySizing, StickyTabSizing::Compact);
+    appearance.stickySizing = StickyTabSizing(7);
+    QVERIFY(!manager.setTabAppearance(appearance)); QCOMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Compact);
 }
 
 void TabAppearanceTest::defaultPaletteKeepsColorIdentityAndReadableForegrounds()
@@ -216,6 +239,9 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
         QTest::newRow(qPrintable(QStringLiteral("sidebarTitleWidth") + QLatin1String(item.first)))
             << QString("maximumSidebarTitleWidth") << item.second;
     QTest::newRow("wheelWithoutMultiline") << QString("wheelExpandRows") << QJsonValue(true);
+    QTest::newRow("unknownStickySizing") << QString("stickySizing") << QJsonValue("tiny");
+    QTest::newRow("stickySizingCase") << QString("stickySizing") << QJsonValue("Compact");
+    QTest::newRow("stickySizingNumber") << QString("stickySizing") << QJsonValue(1);
     QTest::newRow("paletteObject") << QString("colors") << QJsonValue(QJsonObject{});
     QTest::newRow("incompletePreset") << QString("colors") << QJsonValue(QJsonArray{QJsonObject{{"id", "blue"}, {"name", "蓝色"}}});
     auto palette = tabAppearanceToJson(TabAppearance{}).value("colors").toArray();

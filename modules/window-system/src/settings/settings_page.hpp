@@ -87,6 +87,7 @@ private:
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;
+    QComboBox* stickySizing_ = nullptr;
     WindowId initialWindow_;
     struct VisibilityControl { WindowBar bar; QCheckBox* control; };
     QVector<VisibilityControl> visibilityControls_;

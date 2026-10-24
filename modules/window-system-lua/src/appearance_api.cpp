@@ -104,6 +104,8 @@ TabBarPlacement tabPlacement(const QVariant &value) {
         return TabBarPlacement::Bottom;
     throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Tab position must be top or bottom").toUtf8().constData());
 }
+// Indexed by StickyTabSizing.
+const QStringList stickySizings{"normal", "compact", "shrink"};
 QVariantMap appearanceValue(const TabAppearance &value) {
     QVariantMap map;
     for (const auto &[name, field] : appearanceBooleans)
@@ -112,6 +114,7 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     map["pinned_tab_position"] = value.pinnedPlacement == TabBarPlacement::Top ? "top" : "bottom";
     map["maximum_tab_title_width"] = value.maximumTitleWidth;
     map["maximum_sidebar_title_width"] = value.maximumSidebarTitleWidth;
+    map["sticky_tab_sizing"] = stickySizings.value(int(value.stickySizing));
     QVariantList colors;
     for (const auto &preset : value.colors) {
         QVariantMap item{{"id", preset.id}, {"name", preset.name}};
@@ -127,7 +130,8 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     return map;
 }
 void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKnown = true) {
-    QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width", "colors"};
+    QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width",
+                        "sticky_tab_sizing", "colors"};
     for (const auto &[name, field] : appearanceBooleans) {
         known.insert(name);
         if (map.contains(name))
@@ -147,6 +151,12 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
     if (map.contains("maximum_sidebar_title_width"))
         value.maximumSidebarTitleWidth = number(map["maximum_sidebar_title_width"], value.maximumSidebarTitleWidth,
             minimumTabTitleWidth, maximumTabTitleWidth);
+    if (map.contains("sticky_tab_sizing")) {
+        const auto index = stickySizings.indexOf(text({map["sticky_tab_sizing"]}, 0));
+        if (index < 0)
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink").toUtf8().constData());
+        value.stickySizing = StickyTabSizing(index);
+    }
     if (map.contains("colors")) {
         const auto presets = map["colors"];
         if (presets.metaType().id() != QMetaType::QVariantList)
@@ -198,7 +208,7 @@ void ScriptHost::Private::installAppearanceApi() {
         auto appearance = manager->tabAppearance();
         QSet<QString> known{"reveal_delay_ms", "zen_fullscreen", "drag_outside_kind",  "new_tab_position",
                             "language",        "tab_position",   "pinned_tab_position", "caption_button_order",
-                            "maximum_tab_title_width", "maximum_sidebar_title_width"};
+                            "maximum_tab_title_width", "maximum_sidebar_title_width", "sticky_tab_sizing"};
         for (const auto &[name, field] : behaviorBooleans) {
             known.insert(name);
             if (map.contains(name))

@@ -130,6 +130,23 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
             tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "Color list applied.")); syncTabAppearanceOptions();
         }
     });
+
+    // The sticky tab options follow VS Code's pinned editor settings.
+    addCategory(parent, rows, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Sticky tabs"));
+    stickySizing_ = new ThemedComboBox(parent);
+    stickySizing_->setObjectName("StickyTabSizing");
+    stickySizing_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Sticky tab size"));
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "Normal (default)"), StickyTabSizing::Normal},
+                             std::pair{QCoreApplication::translate("WindowSystem", "Compact: icon or first letter only"), StickyTabSizing::Compact},
+                             std::pair{QCoreApplication::translate("WindowSystem", "Shrink: fixed width with the start of the title"), StickyTabSizing::Shrink}})
+        stickySizing_->addItem(entry.first, int(entry.second));
+    rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Sticky tab size"), "tabs.stickySizing",
+        QCoreApplication::translate("WindowSystem", "Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll."), stickySizing_));
+    connect(stickySizing_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.stickySizing = StickyTabSizing(stickySizing_->currentData().toInt());
+        manager_->setTabAppearance(next);
+    });
 }
 
 void SettingsPage::syncTabAppearanceOptions()
@@ -153,6 +170,10 @@ void SettingsPage::syncTabAppearanceOptions()
     const QSignalBlocker sidebarTitleWidth(maximumSidebarTitleWidth_);
     maximumSidebarTitleWidth_->setValue(appearance.maximumSidebarTitleWidth);
     maximumSidebarTitleWidth_->setEnabled(appearance.clipSidebarTitles);
+    {
+        const QSignalBlocker block(stickySizing_);
+        stickySizing_->setCurrentIndex(stickySizing_->findData(int(appearance.stickySizing)));
+    }
     if (!tabColorsDirty_) {
         const QSignalBlocker block(tabColors_);
         tabColors_->setPlainText(QString::fromUtf8(QJsonDocument(tabAppearanceToJson(appearance).value("colors").toArray()).toJson(QJsonDocument::Indented)));

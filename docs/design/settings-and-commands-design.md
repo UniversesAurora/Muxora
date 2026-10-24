@@ -97,6 +97,9 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.clipSidebarTitles` | 默认 `false`；独立控制四边非固定收纳条的标题裁切，不影响普通及固定标签栏。 |
 | `tabs.maximumSidebarTitleWidth` | 非固定收纳条的文字最大长度，单位、默认值和范围与 `tabs.maximumTitleWidth` 相同，数值独立保存。 |
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
+| `tabs.stickySizing` | 钉住标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，不显示钉子）、`shrink`（宽 80，显示编号、图标和标题开头，保留钉子）。紧凑和收缩时，单行标签栏滚动时钉住标签留在视口开头，其他标签从它们下面滚过，最后一个钉住标签右侧有一条主题边框色的分隔线；多行时不固定。 |
+
+钉住标签的设置在设置页“标签外观”下单独的“钉住标签”分类里，没有右键菜单入口（VS Code 也没有）。
 
 图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时清除滚轮展开开关，不能留下不适用的组合。
 

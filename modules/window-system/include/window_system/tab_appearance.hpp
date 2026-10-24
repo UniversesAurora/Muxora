@@ -8,6 +8,13 @@
 namespace window_system {
 
 enum class TabBarPlacement { Top, Bottom };
+// How sticky tabs are sized, as VS Code's workbench.editor.pinnedTabSizing:
+// their natural width, only an icon or initial, or a fixed width that shows
+// the start of the title.
+enum class StickyTabSizing { Normal, Compact, Shrink };
+
+inline constexpr int compactStickyTabWidth = 38;
+inline constexpr int shrinkStickyTabWidth = 80;
 
 inline constexpr int minimumTabTitleWidth = 0;
 inline constexpr int maximumTabTitleWidth = 1000000;
@@ -52,6 +59,9 @@ struct TabAppearance {
     // Auto-hide rails have a separate text extent from regular and pinned bars.
     bool clipSidebarTitles = false;
     int maximumSidebarTitleWidth = defaultTabTitleWidth;
+    // Compact and shrunk sticky tabs stay in view while the other tabs of a
+    // single-row strip scroll under them.
+    StickyTabSizing stickySizing = StickyTabSizing::Normal;
     QVector<TabColorPreset> colors = defaultTabColorPresets();
     bool operator==(const TabAppearance&) const = default;
 };

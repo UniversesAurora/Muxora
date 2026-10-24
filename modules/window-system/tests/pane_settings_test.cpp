@@ -101,7 +101,7 @@ QSet<QString> allSettingKeys()
     return {"window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -371,9 +371,12 @@ void PaneSettingsTest::settingsCategoryNavigationScrollsAndFollowsTheViewport()
     QCOMPARE(categories->currentItem(), display);
     QVERIFY(display->font(0).bold());
     scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+    // The last category is the sticky tab options nested under the tab appearance.
     auto* tabs = root->child(2);
-    QCOMPARE(categories->currentItem(), tabs);
-    QVERIFY(tabs->font(0).bold());
+    auto* sticky = tabs->child(0);
+    QCOMPARE(categories->currentItem(), sticky);
+    QVERIFY(sticky->font(0).bold());
+    QVERIFY(!tabs->font(0).bold());
     QVERIFY(!display->font(0).bold());
     QVERIFY(!drag->font(0).bold());
     QVERIFY(!root->font(0).bold());
@@ -551,18 +554,25 @@ void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()
     auto* drag = root->child(0);
     auto* display = root->child(1);
     const auto headings = page->findChildren<QLabel*>(QStringLiteral("SettingsCategoryHeading"));
-    QCOMPARE(headings.size(), 4);
+    QCOMPARE(headings.size(), 5);
     QSet<QString> headingIds;
     for (auto* heading : headings) headingIds.insert(heading->property("categoryId").toString());
-    QCOMPARE(headingIds, (QSet<QString>{"window", "window/drag", "window/display", "window/tabs"}));
+    QCOMPARE(headingIds, (QSet<QString>{"window", "window/drag", "window/display", "window/tabs", "window/tabs/sticky"}));
     search->setText(QStringLiteral("window.revealDelayMs"));
     QCOMPARE(visibleSettingRows(page), 1);
     QVERIFY(!root->isHidden());
     QVERIFY(!drag->isHidden());
     QVERIFY(display->isHidden());
     for (auto* heading : headings)
-        QCOMPARE(heading->isHidden(), heading->property("categoryId").toString() == QStringLiteral("window/display")
-            || heading->property("categoryId").toString() == QStringLiteral("window/tabs"));
+        QCOMPARE(heading->isHidden(), heading->property("categoryId").toString().startsWith(QStringLiteral("window/display"))
+            || heading->property("categoryId").toString().startsWith(QStringLiteral("window/tabs")));
+    // A nested category keeps both of its ancestors.
+    search->setText(QStringLiteral("tabs.stickySizing"));
+    QCOMPARE(visibleSettingRows(page), 1);
+    for (auto* heading : headings) {
+        const auto id = heading->property("categoryId").toString();
+        QCOMPARE(heading->isHidden(), id != QStringLiteral("window") && id != QStringLiteral("window/tabs") && id != QStringLiteral("window/tabs/sticky"));
+    }
     search->setText(QStringLiteral("window.closeEmptyWorkbench"));
     QCOMPARE(visibleSettingRows(page), 1);
     QVERIFY(!root->isHidden());
@@ -1034,7 +1044,8 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction_data(
                                 "ZenFullscreenMode", "HideToolbarOptionsWhenLocked", "CaptionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
                                 "window.visibility.tabBars", "window.visibility.sideBars", "CentralTabPlacement", "PinnedTabPlacement",
                                 "MultilineTabs", "WheelExpandTabRows", "ShowTabIcons", "ShowNewTabButton", "ShowTabNumbers",
-                                "ClipTabTitles", "MaximumTabTitleWidth", "ClipSidebarTabTitles", "MaximumSidebarTabTitleWidth"}) {
+                                "ClipTabTitles", "MaximumTabTitleWidth", "ClipSidebarTabTitles", "MaximumSidebarTabTitleWidth",
+                                "StickyTabSizing"}) {
         for (const bool deleteManager : {false, true}) {
             const auto row = QByteArray(control) + (deleteManager ? "-manager" : "-page");
             QTest::newRow(row.constData()) << QString::fromLatin1(control) << deleteManager;
@@ -1106,6 +1117,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "MaximumTabTitleWidth") QCOMPARE(appearance.value("maximumTitleWidth").toInt(), 900);
     else if (control == "ClipSidebarTabTitles") QVERIFY(appearance.value("clipSidebarTitles").toBool());
     else if (control == "MaximumSidebarTabTitleWidth") QCOMPARE(appearance.value("maximumSidebarTitleWidth").toInt(), 900);
+    else if (control == "StickyTabSizing") QCOMPARE(appearance.value("stickySizing").toString(), QStringLiteral("shrink"));
     const auto savedWindow = saved.value("windows").toArray().first().toObject();
     QVERIFY(!savedWindow.contains("viewState"));
     if (control.startsWith("window.visibility.")) {

@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QSet>
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace window_system {
@@ -61,7 +62,22 @@ bool parsePlacement(const QJsonValue& value, TabBarPlacement& placement)
     return true;
 }
 
+constexpr std::array stickySizingNames{std::pair{StickyTabSizing::Normal, "normal"},
+    std::pair{StickyTabSizing::Compact, "compact"}, std::pair{StickyTabSizing::Shrink, "shrink"}};
+
 } // namespace
+
+QString stickySizingName(StickyTabSizing sizing)
+{
+    for (const auto& [value, name] : stickySizingNames) if (value == sizing) return QString::fromLatin1(name);
+    return {};
+}
+
+std::optional<StickyTabSizing> stickySizingFromName(const QString& name)
+{
+    for (const auto& [value, text] : stickySizingNames) if (name == QLatin1String(text)) return value;
+    return {};
+}
 
 QVector<TabColorPreset> defaultTabColorPresets()
 {
@@ -113,7 +129,8 @@ bool validTabAppearance(const TabAppearance& appearance)
     if (!validPlacement(appearance.centralPlacement) || !validPlacement(appearance.pinnedPlacement)
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
-        || (appearance.wheelExpandRows && !appearance.multiline) || appearance.colors.size() > 128) return false;
+        || (appearance.wheelExpandRows && !appearance.multiline) || stickySizingName(appearance.stickySizing).isEmpty()
+        || appearance.colors.size() > 128) return false;
     QSet<QString> ids;
     for (const auto& preset : appearance.colors) {
         if (preset.id.isEmpty() || preset.id.size() > 128 || preset.name.isEmpty() || preset.name.size() > 256
@@ -138,7 +155,7 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers},
         {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth},
         {"clipSidebarTitles", appearance.clipSidebarTitles}, {"maximumSidebarTitleWidth", appearance.maximumSidebarTitleWidth},
-        {"colors", colors}};
+        {"stickySizing", stickySizingName(appearance.stickySizing)}, {"colors", colors}};
 }
 
 OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance)
@@ -169,6 +186,12 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
                 return {false, QCoreApplication::translate("WindowSystem", "The maximum tab title width must be an integer number of logical pixels within the allowed range")};
             *entry.second = static_cast<int>(width);
         }
+    }
+    if (const auto sizing = object.value("stickySizing"); !sizing.isUndefined()) {
+        const auto parsed = stickySizingFromName(sizing.toString());
+        if (!sizing.isString() || !parsed)
+            return {false, QCoreApplication::translate("WindowSystem", "Sticky tab sizing must be normal, compact or shrink")};
+        candidate.stickySizing = *parsed;
     }
     const auto palette = object.value("colors");
     if (!palette.isUndefined()) {

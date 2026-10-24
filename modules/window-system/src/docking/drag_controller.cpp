@@ -151,7 +151,7 @@ void DragController::beginTab(TabId tab, QPoint global)
         const int index = sourceIsEdge_ ? manager_->model().autoHiddenTabs(sourceWindow_, sourceEdge_).indexOf(tab)
             : manager_->model().group(sourceGroup_)->tabs.indexOf(tab);
         if (sourceIsEdge_) source->surface()->setEdgeInsertionPreview(sourceEdge_, index, extent);
-        else source->surface()->setInsertionPreview(sourceGroup_, index, extent);
+        else source->surface()->setInsertionPreview(sourceGroup_, index, extent, originalModel_.isTabSticky(tab));
         source->surface()->restoreStripScrollOffsets();
     } else if (!detach(global)) { if (self) originalLayout_ = {}; return; }
     if (self) start(global);
@@ -361,7 +361,12 @@ void DragController::update(QPoint global)
         auto* surface = window->surface();
         if (id == target_.window && insertion) {
             if (target_.toEdgeBar) surface->setEdgeInsertionPreview(target_.edge, target_.insertionIndex, extent);
-            else surface->setInsertionPreview(target_.group, target_.insertionIndex, extent);
+            else {
+                // Stickiness is the tab's before the drag; a tear-out window does not change it.
+                surface->setInsertionPreview(target_.group, target_.insertionIndex, extent,
+                    !tab_.isNull() && originalModel_.isTabSticky(tab_));
+                target_.insertionSticky = surface->insertionSticky(target_.group);
+            }
             target_.preview = target_.toEdgeBar ? surface->edgeInsertionPreviewRect(target_.edge)
                 : surface->insertionPreviewRect(target_.group);
         } else surface->clearInsertionPreviews();
@@ -404,7 +409,10 @@ bool DragController::updateSourceStrip(QPoint global)
         : surface->tabInsertionIndex(sourceGroup_, global);
     const int extent = surface->dragLabelExtent(tab_, sourceIsEdge_);
     if (sourceIsEdge_) surface->setEdgeInsertionPreview(sourceEdge_, target_.insertionIndex, extent);
-    else surface->setInsertionPreview(sourceGroup_, target_.insertionIndex, extent);
+    else {
+        surface->setInsertionPreview(sourceGroup_, target_.insertionIndex, extent, originalModel_.isTabSticky(tab_));
+        target_.insertionSticky = surface->insertionSticky(sourceGroup_);
+    }
     surface->setDragHover(global);
     if (labelPreview_) labelPreview_->follow(global);
     if (overlay_) overlay_->hide();
@@ -470,7 +478,13 @@ void DragController::finish(QPoint global)
              {"placement", int(target.placement)}, {"index", target.insertionIndex}}, source);
         else if (target.group.isNull()) success = manager_->execute("workspace.moveTabToWindow",
             {{"tab", tab}, {"targetWindow", target.window}, {"placement", int(target.placement)}}, moving);
-        else success = manager_->moveTab(tab, target.group, target.placement, target.insertionIndex);
+        else {
+            success = manager_->moveTab(tab, target.group, target.placement, target.insertionIndex);
+            // The drop follows the preview, which also decides a drop right
+            // after the sticky tabs by where the strip showed it.
+            if (success && self && target.insertionIndex >= 0 && manager_->isTabSticky(tab) != target.insertionSticky)
+                success = manager_->setTabSticky(tab, target.insertionSticky);
+        }
     } else if (detached_ && !tab.isNull() && manager_->behavior().dragOutsideKind == WindowKind::Workbench)
         success = manager_->promoteWindow(moving);
     if (!self) return;

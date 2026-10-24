@@ -27,7 +27,7 @@
 
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
-`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签钉在本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询；模型中 `GroupRecord::stickyTabs` 是开头连续钉住的标签数，规则见 [交互细则 · 钉住标签](../../docs/design/window-interaction-design.md#钉住标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
+`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签钉在本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询，尺寸由 `TabAppearance::stickySizing` 决定；模型中 `GroupRecord::stickyTabs` 是开头连续钉住的标签数，规则见 [交互细则 · 钉住标签](../../docs/design/window-interaction-design.md#钉住标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
 达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互细则](../../docs/design/window-interaction-design.md)。
 
