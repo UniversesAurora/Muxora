@@ -1327,6 +1327,13 @@ void NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption()
                  (QStringList{"caption-controls", "floating-menu", "title"}));
     }
     for (auto* window : {destination, carrier}) window->setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    // Only the carrier's native transitions are under test. DWM can keep
+    // the helper's opening animation above a newer HWND even while native
+    // hit testing correctly reports the carrier. Its caption then pollutes
+    // the screen-pixel oracle; no carrier assertion or animation is changed.
+    const BOOL disableHelperTransitions = TRUE;
+    QCOMPARE(DwmSetWindowAttribute(reinterpret_cast<HWND>(destination->winId()),
+        DWMWA_TRANSITIONS_FORCEDISABLED, &disableHelperTransitions, sizeof(disableHelperTransitions)), S_OK);
     destination->move(available.topLeft() + QPoint(12, 12)); manager.showWindow(target);
     carrier->move(available.topLeft() + QPoint(36, 36)); manager.showWindow(moving);
     QVERIFY(QTest::qWaitForWindowExposed(carrier));
