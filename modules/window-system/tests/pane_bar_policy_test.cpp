@@ -60,6 +60,7 @@ private slots:
     void replacingTabBarsDefersDeletionLikePaneBars();
     void layoutRestoresPolicyWithoutSerializingWidgets();
     void invalidCallsLeaveThePoliciesUnchanged();
+    void aTabBarBelongsToOneOwner();
 };
 
 void PaneBarPolicyTest::initTestCase()
@@ -383,6 +384,24 @@ void PaneBarPolicyTest::invalidCallsLeaveThePoliciesUnchanged()
     QCOMPARE(manager.tabOptions(tab).topBarSharing, PaneBarSharing::Shared);
     QCOMPARE(manager.tabOptions(tab).bottomBarSharing, PaneBarSharing::Shared);
     QCOMPARE(manager.saveLayout(), snapshot);
+}
+
+void PaneBarPolicyTest::aTabBarBelongsToOneOwner()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    const auto first = manager.addTab(window, new QPlainTextEdit, {QStringLiteral("first"), {}, {}});
+    const auto second = manager.addTab(window, new QPlainTextEdit, {QStringLiteral("second"), {}, {}});
+    manager.showWindow(window);
+    QVERIFY(manager.activateTab(first));
+    QPointer<QWidget> bar = new QLabel(QStringLiteral("bar"));
+    QVERIFY(manager.setTabTopBar(first, bar));
+    // A bar already handed to a tab view is rejected everywhere else.
+    QVERIFY(!manager.setTabTopBar(second, bar));
+    QVERIFY(!manager.setTabBottomBar(first, bar));
+    QVERIFY(!manager.setPaneTopBar(manager.model().tab(second)->activePane, bar));
+    QVERIFY(manager.addTab(window, bar, {QStringLiteral("content"), {}, {}}).isNull());
+    QVERIFY(bar); QVERIFY(tabPage(bar));
 }
 
 QTEST_MAIN(PaneBarPolicyTest)

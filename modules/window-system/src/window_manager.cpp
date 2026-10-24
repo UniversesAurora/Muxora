@@ -347,48 +347,22 @@ TabContent* WindowManager::ensureTabView(TabId tab)
     return self ? d->tabs.value(tab).data() : nullptr;
 }
 void WindowManager::setCloseGuard(CloseGuard guard) { d->closeGuard = std::move(guard); }
-bool WindowManager::setTabTopBar(TabId tab, QWidget* bar)
+bool WindowManager::setTabTopBar(TabId tab, QWidget* bar) { return setTabBar(tab, bar, true); }
+bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar) { return setTabBar(tab, bar, false); }
+bool WindowManager::setTabBar(TabId tab, QWidget* bar, bool top)
 {
     if (!d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
+    if (bar) bar->setProperty("windowSystemManaged", true);
     if (auto view = d->tabs.value(tab)) {
-        view->setTopBar(bar);
+        top ? view->setTopBar(bar) : view->setBottomBar(bar);
         return true;
     }
-    auto& bars = d->pendingTabTopBars;
-    if (bars.value(tab) == bar) return true;
+    // A tab never shown has no view yet; ensureTabView() delivers the bar.
+    auto& bars = top ? d->pendingTabTopBars : d->pendingTabBottomBars;
     if (auto previous = bars.take(tab)) {
-        previous->setParent(d->storage);
-        previous->hide();
-        previous->deleteLater();
+        previous->setParent(d->storage); previous->hide(); previous->deleteLater();
     }
-    if (bar) {
-        bar->setProperty("windowSystemManaged", true);
-        bar->setParent(d->storage);
-        bar->hide();
-        bars.insert(tab, bar);
-    }
-    return true;
-}
-bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar)
-{
-    if (!d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
-    if (auto view = d->tabs.value(tab)) {
-        view->setBottomBar(bar);
-        return true;
-    }
-    auto& bars = d->pendingTabBottomBars;
-    if (bars.value(tab) == bar) return true;
-    if (auto previous = bars.take(tab)) {
-        previous->setParent(d->storage);
-        previous->hide();
-        previous->deleteLater();
-    }
-    if (bar) {
-        bar->setProperty("windowSystemManaged", true);
-        bar->setParent(d->storage);
-        bar->hide();
-        bars.insert(tab, bar);
-    }
+    if (bar) { bar->setParent(d->storage); bar->hide(); bars.insert(tab, bar); }
     return true;
 }
 bool WindowManager::setPaneTopBar(PaneId pane, QWidget* bar) { return setPaneBar(pane, bar, true); }

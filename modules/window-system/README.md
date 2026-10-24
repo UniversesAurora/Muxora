@@ -27,9 +27,9 @@
 
 成功添加内容后模块接管 QWidget parent；添加失败保持调用者所有权。观察内容用稳定 ID 或 QPointer。移动、拆出及窗口形态转换保留原内容实例；关闭许可由宿主回调控制，完整根关闭先检查整个窗口族。
 
-标签页只在首次需要显示时创建 `TabContent`。未显示过的标签仍创建宿主内容并停在隐藏的存储控件中，标签条只保留轻量页面占位；活动过的标签继续保留视图，切回时不重建内容。首次显示包括中央组或固定组活动标签、临时侧栏展开、组全屏和窗格全屏目标。`setTabTopBar()` / `setTabBottomBar()` 可在首次显示前调用，栏会隐藏保存并在视图创建时交付；标签关闭或恢复新布局会释放未交付的栏。
+标签页视图（`TabContent`）在标签第一次显示时才创建，显示过的保留。宿主内容照常在添加或恢复时创建，未显示时留在隐藏的存储控件里。`setTabTopBar()` / `setTabBottomBar()` 在视图创建前也可以调用。
 
-`setContentVisibilityHandler()` 接收每个 Pane 的实际内容控件显隐。安装处理函数后，模块在下一事件循环发送一次完整快照；之后把本次事件循环内的变化合并成一批。窗口显示／隐藏、最小化／恢复、标签激活、侧栏临时展开、全屏范围和标签页创建都会触发重新计算。跨顶层窗口移动标签时，模块会在视图容器改挂前同步发送相关 Pane 的隐藏状态，宿主可据此释放该窗口的 GPU 或绘制资源；内容控件自身的直接 parent 和业务对象保持。回调可能同步关闭、移动内容或销毁管理器，调用方按设计中的重入规则处理。完整契约见 [通用窗口系统设计 §3.1](../../docs/design/window-system-design.md#31-标签视图与内容可见性)。
+`setContentVisibilityHandler()` 报告每个 Pane 的内容是否实际可见，供宿主释放 GPU 缓存这类只在显示时需要的资源。安装后先收到一次完整快照，之后每个事件循环最多一批；跨顶层窗口移动时在改挂前同步报告隐藏。哪些情况算显示、回调里能做什么，见 [通用窗口系统设计 §3.1](../../docs/design/window-system-design.md#31-标签视图与内容可见性)。
 
 `setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签钉在本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询，尺寸由 `TabAppearance::stickySizing` 和 `shrinkStickyTitleWidth` 决定；模型中 `GroupRecord::stickyTabs` 是开头连续钉住的标签数，规则见 [交互细则 · 钉住标签](../../docs/design/window-interaction-design.md#钉住标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
@@ -119,7 +119,7 @@
 
 新建标签默认插在本组当前标签之后。`WindowBehavior.newTabPosition` 可选择 `Beginning`、`BeforeActive`、`AfterActive`、`End`；图形设置同步该值并随布局保存。`WindowManager::addTab` 的末尾参数 `insertionIndex` 为非负数时使用显式位置，-1 跟随行为设置；独立 `LayoutModel::addTab` 的 -1 仍表示追加，避免模型依赖宿主偏好。
 
-`WindowBehavior::inputMethodScope` 选择输入法记忆范围，默认 `InputMethodScope::Tab`。`inputMethodScopeKey()`／`inputMethodScopeFromKey()` 在枚举与稳定字符串之间转换，未知值返回空字符串／`nullopt`；`setBehavior()` 拒绝无效枚举且不部分应用。设置页复用现有下拉框，选择范围随行为保存，实际输入状态不序列化。层级、继承和临时界面的规则见 [输入法状态](../../docs/design/window-interaction-design.md#输入法状态)。Windows 后端整体保存键盘布局、IMM 开关及转换／句子模式；其他平台暂不读写系统状态。
+`WindowBehavior::inputMethodScope` 选择输入法记忆范围，默认 `InputMethodScope::Tab`。`inputMethodScopeKey()`／`inputMethodScopeFromKey()` 在枚举与稳定字符串之间转换，未知值返回空字符串／`nullopt`；`setBehavior()` 拒绝无效枚举且不部分应用。设置页复用现有下拉框，选择范围随行为保存，实际输入状态不序列化。层级、继承和临时界面的规则见 [输入法状态](../../docs/design/window-interaction-design.md#输入法状态)。Windows 后端保存活动 TSF 配置、键盘布局和全部输入模式；其他平台暂不读写系统状态。
 
 每组最后一个标签后是组合的新建按钮与类型下拉，中间保留 1 个逻辑像素细缝；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
 

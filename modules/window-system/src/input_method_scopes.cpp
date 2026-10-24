@@ -61,13 +61,13 @@ QUuid InputMethodScopes::widgetKey(const LayoutModel& model, QWidget* widget) co
     // Popup/dialog windows can have a pane as QObject parent. Stop at the
     // actual top-level so they never become a remembered content range.
     auto* top = widget->window();
-    if (!model.window(top->property("windowId").toUuid())) return {};
+    const auto* window = model.window(top->property("windowId").toUuid());
+    if (!window) return {};
     for (auto* current = widget; current; current = current->parentWidget()) {
         const auto pane = current->property("paneId").toUuid();
         if (!pane.isNull()) return key(model, pane);
         if (current == top) break;
     }
-    const auto* window = model.window(top->property("windowId").toUuid());
     const auto* group = model.group(window->activeGroup);
     const auto* tab = group ? model.tab(group->activeTab) : nullptr;
     return tab ? key(model, tab->activePane) : QUuid{};

@@ -4,18 +4,13 @@
 
 ## 输入法
 
-### 读取输入法模式不能等同于输入法允许恢复模式
+### 输入法状态要把 TSF 配置和 IMM 模式一起保存
 
-- **依据**：Windows 的 [ImmGetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immgetconversionstatus) 只返回输入法支持的模式；[ImmSetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immsetconversionstatus) 明确说明，Windows 8 起部分日文 IME 按用户保持模式，获取焦点时可能拒绝模式修改。
-- **做法**：平台层整体保存活动 TSF 输入处理器配置、键盘布局、开关和转换／句子模式位，不把状态简化为中英文布尔值。恢复时先激活原 TSF 配置，再写 TSF 隔离区，最后对缺失项使用 IMM。按已有输入窗口取上下文，不对编辑器调用 `winId()` 创建原生子窗口；模式写入受限时仍恢复布局，不修改用户系统设置。上层只保存不透明状态，范围生命周期用假的平台接口验证。
-- **验证**：`InputMethodNativeTest::installedLayoutsRoundTripAndTabsRestore` 检查已有布局和模式往返；`inputProcessorModeFollowsTabScope` 遍历已安装的 TSF 输入处理器，通过真实标签点击验证可读写模式。真实输入法的候选窗和文字输入效果仍需用户试用。
-
-### Qt 编辑器的 TSF 配置和 IMM 模式需要一起保存
-
-- **现象**：TSF 输入法在不同标签设置不同输入模式，切回后没有恢复。
-- **判断**：活动输入处理器由 TSF 配置接口给出，但 Qt 的编辑控件不一定建立可读的 TSF 转换模式隔离区；当前窗口的 IMM 仍能读出和设置准确模式位。只保存其中之一，会在不同输入法上缺一部分状态。
-- **做法**：在 GUI 线程缓存 TSF 会话；捕获活动配置和所有可读隔离区，并同时读取 IMM 状态。恢复配置后再写隔离区，空项回退 IMM。用真实 `QTabBar` 点击和编辑器点击复现，不用单独调用管理器 API 代替用户操作。
-- **验证**：当前 Windows 11 环境存在三个键盘布局；测试遍历已安装的 TSF 输入处理器并选择第一个可写模式，在两个真实标签点击切换间往返通过。其他输入法拒绝写模式的情况仍按平台限制处理。
+- **现象**：TSF 输入法在两个标签里设成不同的输入模式，切回后没有恢复。最初只保存键盘布局和 IMM 模式。
+- **原因**：活动输入处理器只能从 TSF 配置接口取得；Qt 的编辑控件不一定有可读的 TSF 转换模式隔离区，这时准确的模式位只在输入窗口的 IMM 上下文里。只保存一层，换一种输入法就缺一部分状态。另外，读得到模式不等于写得回去：[ImmSetConversionStatus](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immsetconversionstatus) 说明 Windows 8 起部分日文 IME 按用户保持模式，获得焦点时可能拒绝修改。
+- **做法**：平台层把活动 TSF 配置、键盘布局、TSF 隔离区和 IMM 开关／转换／句子模式作为一个不透明状态整体保存，不简化成中英文布尔值。恢复时先激活 TSF 配置，再写隔离区，缺的项用 IMM 补；写入被拒绝时不报错，也不改用户的系统设置。IMM 上下文取顶层窗口已有的句柄，不对编辑器调用 `winId()`，否则会建出原生子窗口（见 [原生子窗口会破坏命中测试](#窗口里出现原生子窗口会破坏命中测试)）。复现要用真实的标签点击和编辑器点击，不用直接调用管理器 API 代替。
+- **验证**：`InputMethodNativeTest::installedLayoutsRoundTripAndTabsRestore` 检查已装布局和模式往返；`inputProcessorModeFollowsTabScope` 遍历系统里的 TSF 输入处理器，取第一个能写模式的，在两个真实标签之间切换并逐次读取。候选窗和实际输入效果要用户试用。
+- **出处**：2026-10-24，`26696f8`、`91956aa`、`a13a17c`。
 
 ## 标题栏与命中测试
 

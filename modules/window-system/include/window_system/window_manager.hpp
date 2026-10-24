@@ -300,6 +300,7 @@ private:
     void reportPanesHiddenBeforeReparent(const QVector<PaneId>& panes);
     bool approveClose(const QVector<TabId>& tabs);
     bool setPaneBar(PaneId pane, QWidget* bar, bool top);
+    bool setTabBar(TabId tab, QWidget* bar, bool top);
     bool setTabBarSharing(TabId tab, PaneBarSharing sharing, bool top);
     QWidget* createContent(const TabOptions& options, PaneId pane);
     bool focusGroup(GroupId group);

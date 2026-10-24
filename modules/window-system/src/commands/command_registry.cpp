@@ -176,10 +176,9 @@ bool CommandRegistry::remove(const QString& id)
 {
     if (id == QStringLiteral("runCommands")) return false;
     const auto state = state_;
-    const auto found = std::find_if(state->commands.begin(), state->commands.end(),
-        [&](const Command& command) { return command.id == id; });
-    if (found == state->commands.end()) return false;
-    state->commands.erase(found);
+    const auto found = state->indexById.constFind(id);
+    if (found == state->indexById.cend()) return false;
+    state->commands.removeAt(*found);
     state->rebuildIndex();
     const auto changed = state->catalogChanged;
     if (changed) changed();

@@ -48,8 +48,7 @@ public:
     {
         if (FAILED(CoCreateInstance(
                 CLSID_TF_ThreadMgr, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&manager_)))
-            || !manager_) return;
-        if (!manager_ || FAILED(manager_->Activate(&client_))) return;
+            || !manager_ || FAILED(manager_->Activate(&client_))) return;
         active_ = true;
         manager_->QueryInterface(IID_PPV_ARGS(&compartments_));
         CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_ALL,

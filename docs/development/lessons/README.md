@@ -17,7 +17,7 @@
 | 文档 | 类型 | 内容 |
 | --- | --- | --- |
 | [Qt Widgets](qt-widgets.md) | 技术 | 窗口激活与实际焦点、原生子窗口、弹出菜单、滚轮事件、工具提示、样式表、翻译边界 |
-| [Windows 平台](windows-platform.md) | 技术 | 非客户区命中测试、Snap 浮窗、系统提示、DPI 虚拟化、窗口句柄 |
+| [Windows 平台](windows-platform.md) | 技术 | 输入法状态、非客户区命中测试、Snap 浮窗、系统提示、DPI 虚拟化、窗口句柄 |
 | [桌面测试](desktop-testing.md) | 流程 | 遮挡与前台锁、真实输入的风险、环境隔离与元数据收尾、全量失败与定向诊断、旧代码反向验证 |
 | [构建与工具链](build-toolchain.md) | 技术 | MSVC 的源码编码与版本兼容、头文件依赖与代码页、换编译器时的 CMake 缓存、翻译提取路径 |
 | [Lua 运行时](lua-runtime.md) | 技术 | 用户钩子中的停止、阻塞 C 调用的生命周期、标准 require 的让出边界 |
