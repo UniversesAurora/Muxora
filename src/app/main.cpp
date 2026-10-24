@@ -5,6 +5,7 @@
 #include "workspace_host/placeholder_content.hpp"
 #include "state_paths.hpp"
 #include "user_preferences.hpp"
+#include "layout_file.hpp"
 #include "scripting_setup.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -131,19 +132,15 @@ int main(int argc, char* argv[])
             windows.setStatus(windows.context().window, preferences.diagnostic());
         });
     QObject::connect(&windows, &window_system::WindowManager::commandFailed, &windows, [&windows](const QString& text) { windows.setStatus(windows.context().window, text); });
-    bool restored = false;
-    if (!parser.isSet("fresh")) {
-        QFile file(stateFile);
-        if (file.open(QIODevice::ReadOnly) && file.size() <= 4 * 1024 * 1024) {
-            QJsonParseError error; const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
-            if (error.error == QJsonParseError::NoError && doc.isObject()) {
-                restored = windows.restoreLayout(doc.object()).ok;
-            }
-        }
-    }
-    if (!restored || windows.model().windows().isEmpty()) {
+    muxora::LayoutFileRestore restore;
+    if (!parser.isSet("fresh")) restore = muxora::restoreLayoutFile(windows, stateFile);
+    if (!restore.restored || windows.model().windows().isEmpty()) {
         const auto window = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
         muxora::populateInitialWorkspace(windows, window); windows.showWindow(window);
+    }
+    if (!restore.message.isEmpty()) {
+        qWarning().noquote() << restore.message;
+        windows.setStatus(windows.context().window, restore.message);
     }
     QObject::connect(&scripting, &muxora::AppScriptingSetup::initialized, &app, [&](bool ok, const QString&) {
         if (parser.isSet("command") && (!ok || !windows.execute(parser.value("command")))) app.exit(4);

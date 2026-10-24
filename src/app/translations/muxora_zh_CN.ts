@@ -461,6 +461,61 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
                 <numerusform>%n 项  ·  文件功能尚未接入</numerusform>
             </translation>
         </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>tab appearance</source>
+            <translation>标签外观</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>window behavior</source>
+            <translation>窗口行为</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>default bar visibility</source>
+            <translation>各栏的默认显隐</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>default toolbar layout</source>
+            <translation>默认工具条排布</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The file could not be copied and will be replaced at the next save.</source>
+            <translation>无法复制原文件，下次保存时会被覆盖。</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The original file was kept as %1.</source>
+            <translation>原文件已保存为 %1。</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>the file exceeds 4 MiB</source>
+            <translation>文件超过 4 MiB</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>the file does not contain a JSON object</source>
+            <translation>文件内容不是 JSON 对象</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The saved layout could not be read (%1), so the default layout is shown.</source>
+            <translation>无法读取保存的布局（%1），已显示默认布局。</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>Some settings in the saved layout were invalid (%1). Reset to defaults: %2.</source>
+            <translation>保存的布局中有设置无效（%1），以下设置已恢复默认值：%2。</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The saved layout could not be restored (%1), so the default layout is shown.</source>
+            <translation>无法恢复保存的布局（%1），已显示默认布局。</translation>
+        </message>
     </context>
     <context>
         <name>WindowSystem</name>

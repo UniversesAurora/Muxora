@@ -462,6 +462,61 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
                 <numerusform>%n items  ·  File operations are not connected yet</numerusform>
             </translation>
         </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>tab appearance</source>
+            <translation>tab appearance</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>window behavior</source>
+            <translation>window behavior</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>default bar visibility</source>
+            <translation>default bar visibility</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>default toolbar layout</source>
+            <translation>default toolbar layout</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The file could not be copied and will be replaced at the next save.</source>
+            <translation>The file could not be copied and will be replaced at the next save.</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The original file was kept as %1.</source>
+            <translation>The original file was kept as %1.</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>the file exceeds 4 MiB</source>
+            <translation>the file exceeds 4 MiB</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>the file does not contain a JSON object</source>
+            <translation>the file does not contain a JSON object</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The saved layout could not be read (%1), so the default layout is shown.</source>
+            <translation>The saved layout could not be read (%1), so the default layout is shown.</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>Some settings in the saved layout were invalid (%1). Reset to defaults: %2.</source>
+            <translation>Some settings in the saved layout were invalid (%1). Reset to defaults: %2.</translation>
+        </message>
+        <message>
+            <location filename="../layout_file.cpp" line="0"></location>
+            <source>The saved layout could not be restored (%1), so the default layout is shown.</source>
+            <translation>The saved layout could not be restored (%1), so the default layout is shown.</translation>
+        </message>
     </context>
     <context>
         <name>WindowSystem</name>
