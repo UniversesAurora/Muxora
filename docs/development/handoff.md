@@ -65,7 +65,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `test: Name the window that refuses native input` 和 `test: Keep the foreground handoff inside the quiet desktop runner`：全量中偶发的 `toolbar-popup` 失败查明是测试窗口刚激活就被 Windows 外壳窗口夺走前台；现在 `quiet-desktop.ps1` 用一个透明小窗口接住交出的前台（[记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)）。
   - `tools: Clean up the deployment check output`：部署检查的日志移到 `test-results/`，临时状态在检查通过后删除。
   - 完整 `verify.ps1` 在 `f5fffa6` 和 `9a4b98d` 上各通过一次：Debug 63/63、Release 63/63、独立模块 56/56、两个外部宿主、应用退出、视图状态和 Lua 部署检查；固定 Release 预览已刷新。
-- **进行中**：无。
+- **进行中**：Codex 接手核对后开始 8.12 的源码文字与提取路径盘点，尚未迁移。接手检查见 [记录](verification-log/2026-10.md#英文源文本迁移接手核对2026-10-24)。
 - **下一步**（Codex，按顺序；分工规则见 [AGENTS.md](../../AGENTS.md#轮流开发与交接)，这些步骤都不需要新外观）：
   1. [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)：独占进行，期间不做其他会新增文字的步骤。中文界面显示的文字保持现状；英文源文本由代码含义决定，拿不准的条目列进验证日志交 Claude 复核；不改菜单归属和持久化标识。
   2. [1.10 命令注册表 ID 索引](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12)。
@@ -77,6 +77,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **请下一位回答**：无。
 - **本轮新决定**：新外观的工作由 Claude 做，Codex 做不涉及外观的步骤（用户 2026-10-24，写在 [AGENTS.md](../../AGENTS.md#轮流开发与交接)）；标签长度变化时的条带滚动规则（[交互细则](../design/window-interaction-design.md#条带尺寸变化)，用户确认“活动标签不动、碰边再推”）；钉住标签的行为与拖动规则（用户 2026-10-24）；测试证据写进验证日志、排查文件按主题删除（[测试要求](testing-design.md#测试结果与排查文件)）。
 - **环境与注意事项**：
+  - Codex 在 `c4149e9` 上接手构建成功；六个相关 Release 套件中五个通过，`toolbar-popup` 的 `mouseOpenedMenuDoesNotLeaveAnOutline(outside)` 在 `visibleBeforeClose` 处失败，不能沿用上一轮的全绿结论。桌面恢复首次报错，随后 `quiet-desktop.ps1 -Elevate -Restore` 成功；未修改测试或产品代码。
   - 修改公开接口的生命周期或行为时，搜索所有调用它的测试，不能只跑“相关”套件；本轮因此漏了一个用例并推送了失败。
   - 未做三主题截图审查、混合 DPI、多屏和真实试用；`chrome-interaction` 菜单首报仍未查明。
   - 用户报告 Codex 版本中调标题长度时设置页会自动滚动，在 `d31eaa8` 和当前版本都没有复现，原因未找到；`PaneSettingsTest::titleWidthUpdatesKeepScrollPositions` 守着当前行为。
