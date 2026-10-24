@@ -533,3 +533,14 @@ bool setTabIndicator(TabId tab, TabIndicator indicator, QString tooltip = {});
 
 **状态**：未开始（需先展开子步骤并评审）。
 
+---
+
+## 7.15 终端活动协议
+
+**目标**：终端会话识别 OSC 9;4、OSC 7501（含查询应答）、OSC 9／777／99 通知、BEL、OSC 133／633 命令边界和进程退出，转成 [窗格活动](../../design/pane-activity-design.md#3-状态从哪里来) 报告给窗口模块；长命令结束可选发通知。
+
+**前置**：7.1（终端核心）、8.18。
+
+**要求**：识别在会话里进行，不依赖视图是否存在；远端通知文本只显示、有长度上限；`terminal.allowProgramStatus` 关闭时忽略远端的状态和通知。测试用录制的字节序列覆盖每种序列和 OSC 9 的两种含义。
+
+**状态**：未开始。
