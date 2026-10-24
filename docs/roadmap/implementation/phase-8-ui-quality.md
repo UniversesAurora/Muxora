@@ -416,11 +416,11 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **8.15a 基本行为（已完成）**：模型用每组的钉住数表示开头的连续钉住段，所有增删、移动、排序、合并、拆分和恢复都维持这一段；非固定收纳条没有钉住段。`WindowManager::setTabSticky()`／`isTabSticky()`、命令 `tab.stick`／`tab.unstick`／`tab.toggleSticky`、标签右键与“布局 → 当前标签”菜单、批量关闭跳过钉住标签、标签栏的钉子图标（点击取消钉住）、布局保存及 Lua `tabs.sticky()`、`groups.list()` 的 `sticky_tabs`。
 
-**8.15b 外观与保护（未开始）**：
+**8.15b 外观与保护（未开始）**：第 1、2 项用户 2026-10-24 确认要做；第 3 项待用户决定，见下文。
 
 1. 设置 `tabs.stickySizing`：`normal`（默认）、`compact`（只显示图标或首字）、`shrink`（固定窄宽度显示部分标题）。紧凑和收缩时，钉住段在标签栏滚动时不离开视野，其余标签在它后面滚动。
 2. 设置 `tabs.stickyTabsOnSeparateRow`：钉住标签单独显示在上方一行，两行之间拖动即钉住或取消。
-3. 设置 `tabs.preventStickyClose`：按键、中键或两者都不关闭钉住标签。依赖 3.x 的上下文按键条件区分来源；中键关闭标签本身也要先实现（[界面设计规范](../../design/ui-design-system.md) 已规定中键关闭）。
+3. 设置 `tabs.preventStickyClose`（参照 VS Code 的 `workbench.editor.preventPinnedEditorClose`；同类终端大多没有钉住标签，也没有这项）：按键、中键或两者都不关闭钉住标签。Claude 的建议是不做成设置：中键关闭实现时直接规定中键不关闭钉住标签，快捷键关闭照常生效，误关正在运行的会话交给会话的关闭确认处理。依赖 3.x 的上下文按键条件区分来源；中键关闭标签本身也要先实现（[界面设计规范](../../design/ui-design-system.md) 已规定中键关闭）。
 4. 完整标签列表中标出钉住标签。
 
 **测试**：8.15a 见模型、标签条、命令与 Lua 用例；8.15b 各项需要真实拖动、滚动和像素断言，三种主题下截图。
