@@ -6,7 +6,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
-& (Join-Path $PSScriptRoot 'check-translations.ps1') -QtRoot $QtRoot
 & (Join-Path $PSScriptRoot 'tests/translations-test.ps1') -QtRoot $QtRoot
 & (Join-Path $PSScriptRoot 'tests/deployment-test.ps1')
 & (Join-Path $PSScriptRoot 'tests/toolchain-test.ps1')

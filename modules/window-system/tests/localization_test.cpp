@@ -37,7 +37,6 @@ private slots:
     void languageSettingsStaySynchronizedAndSeparateFromLayout();
     void catalogsHaveNoUnfinishedMessages();
     void sourceLanguageIsEnglish();
-    void sourceAndCatalogCoverage();
     void dynamicMenuTextIsTranslated_data();
     void dynamicMenuTextIsTranslated();
     void pluralMessagesUseCorrectForms_data();
@@ -197,12 +196,6 @@ void LocalizationTest::sourceLanguageIsEnglish()
         for (const auto& message : catalog.messages)
             QVERIFY2(!message.source.contains(QRegularExpression(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"))), qPrintable(message.source));
     }
-}
-
-void LocalizationTest::sourceAndCatalogCoverage()
-{
-    const auto error = translation_test::checkSourceCoverage(QStringLiteral("WindowSystem"));
-    QVERIFY2(error.isEmpty(), qPrintable(error));
 }
 
 void LocalizationTest::dynamicMenuTextIsTranslated_data()

@@ -42,7 +42,9 @@ if(BUILD_TESTING)
     qt_add_executable(muxora-localization-test tests/localization_test.cpp user_preferences.cpp ../workspace_host/placeholder_content.cpp)
     target_link_libraries(muxora-localization-test PRIVATE WindowSystemLua::Host Qt6::Test)
     target_compile_features(muxora-localization-test PRIVATE cxx_std_20)
-    target_include_directories(muxora-localization-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    # Shares the catalog readers of the WindowSystem localization tests.
+    target_include_directories(muxora-localization-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${PROJECT_SOURCE_DIR}/modules/window-system/tests)
     target_compile_definitions(muxora-localization-test PRIVATE MUXORA_APPLICATION_PATH="$<TARGET_FILE:muxora>")
     add_dependencies(muxora-localization-test muxora)
     set_target_properties(muxora-localization-test PROPERTIES AUTOMOC ON)

@@ -3,7 +3,7 @@
 #include <window_system/localization.hpp>
 #include <window_system_lua/script_host.hpp>
 #include "../user_preferences.hpp"
-#include "../../../modules/window-system/tests/translation_checks.hpp"
+#include "translation_checks.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -17,6 +17,7 @@
 #include <QTest>
 #include <QTreeWidget>
 #include <QSignalSpy>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QXmlStreamReader>
 #include <memory>
@@ -44,7 +45,6 @@ private slots:
     void multilineHostTextMatchesExactCatalogKeys_data();
     void multilineHostTextMatchesExactCatalogKeys();
     void sourceLanguageIsEnglish();
-    void sourceAndCatalogCoverage();
     void dynamicMenuTextIsTranslated_data();
     void dynamicMenuTextIsTranslated();
     void pluralMessagesUseCorrectForms_data();
@@ -174,12 +174,6 @@ void AppLocalizationTest::sourceLanguageIsEnglish()
         for (const auto& message : catalog.messages)
             QVERIFY2(!message.source.contains(QRegularExpression(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"))), qPrintable(message.source));
     }
-}
-
-void AppLocalizationTest::sourceAndCatalogCoverage()
-{
-    const auto error = translation_test::checkSourceCoverage(QStringLiteral("Muxora"));
-    QVERIFY2(error.isEmpty(), qPrintable(error));
 }
 
 void AppLocalizationTest::dynamicMenuTextIsTranslated_data()

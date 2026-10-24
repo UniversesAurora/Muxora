@@ -2,15 +2,19 @@
 param(
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$QtRoot,
+    # Qt's lupdate; CTest passes the build's own, so no kit lookup is needed.
+    [string]$Lupdate,
     [ValidateSet('All', 'WindowSystem', 'LuaRuntime', 'Muxora')][string]$Catalog = 'All',
     [string]$Report
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $PSScriptRoot 'toolchain.ps1')
 $taskRepository = [IO.Path]::GetFullPath($SourceRoot)
-$taskQt = Resolve-QtKit $QtRoot (Split-Path -Parent $PSScriptRoot)
-$taskLupdate = Join-Path $taskQt 'bin/lupdate.exe'
+$taskLupdate = if ($Lupdate) { $Lupdate } else {
+    . (Join-Path $PSScriptRoot 'toolchain.ps1')
+    Join-Path (Resolve-QtKit $QtRoot (Split-Path -Parent $PSScriptRoot)) ('bin/lupdate' + $(if ($IsWindows) { '.exe' } else { '' }))
+}
+if (-not (Test-Path -LiteralPath $taskLupdate -PathType Leaf)) { throw "lupdate was not found: $taskLupdate" }
 $taskTemporary = Join-Path ([IO.Path]::GetTempPath()) ('muxora-translations-' + [guid]::NewGuid().ToString('N'))
 $taskErrors = [Collections.Generic.List[string]]::new()
 $taskGroups = @(

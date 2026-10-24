@@ -5,10 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QLibraryInfo>
-#include <QProcess>
 #include <QRegularExpression>
-#include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QTranslator>
 #include <window_system/localization.hpp>
@@ -102,25 +99,6 @@ inline QString validateCatalog(const Catalog& catalog)
             if (placeholders(form) != placeholders(message.source)) return QStringLiteral("Placeholders: ") + message.source;
         }
     }
-    return {};
-}
-
-inline QString checkSourceCoverage(const QString& catalog)
-{
-    const auto program = QStandardPaths::findExecutable(QStringLiteral("pwsh"));
-    if (program.isEmpty()) return QStringLiteral("pwsh is required for source extraction coverage");
-    QProcess checker;
-    checker.setProcessChannelMode(QProcess::MergedChannels);
-    checker.start(program, {QStringLiteral("-NoProfile"), QStringLiteral("-File"),
-        QDir(repositoryPath()).filePath(QStringLiteral("tools/check-translations.ps1")),
-        QStringLiteral("-Catalog"), catalog, QStringLiteral("-QtRoot"), QLibraryInfo::path(QLibraryInfo::PrefixPath)});
-    if (!checker.waitForStarted()) return checker.errorString();
-    if (!checker.waitForFinished(30'000)) {
-        checker.kill(); checker.waitForFinished();
-        return QStringLiteral("Source extraction coverage timed out");
-    }
-    if (checker.exitStatus() != QProcess::NormalExit || checker.exitCode() != 0)
-        return QString::fromUtf8(checker.readAll());
     return {};
 }
 

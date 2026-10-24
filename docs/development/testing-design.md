@@ -61,7 +61,7 @@
 
 提供共享 CMake build／test presets 和明确的快速、集成、桌面、诊断、压力、性能、发行包测试入口，供本机与 CI 使用。Windows 脚本优先使用 `pwsh`。入口返回真实退出状态，保存报告，不能吞掉子进程失败；选定的必需测试组收集到零个用例时也应失败。
 
-`tools/verify.ps1` 默认运行 Debug、Release、独立模块、外部宿主和部署检查，并先执行下面的翻译检查及其反向用例。步骤明确要求仅验证 Release 时，可传 `-ReleaseOnly`：仅省去 Debug 全量，其余检查仍全部执行，失败仍立即退出。
+`tools/verify.ps1` 默认运行 Debug、Release、独立模块、外部宿主和部署检查，并先执行下面翻译检查的反向用例（覆盖检查本身在全量测试里）。步骤明确要求仅验证 Release 时，可传 `-ReleaseOnly`：仅省去 Debug 全量，其余检查仍全部执行，失败仍立即退出。
 
 ```powershell
 pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1 -ReleaseOnly
@@ -74,11 +74,13 @@ pwsh tools/check-translations.ps1
 pwsh tools/tests/translations-test.ps1
 ```
 
-`check-translations.ps1` 用当前 Qt kit 的 `lupdate` 重新提取第一方源码，与窗口模块及应用的中英文目录逐项比较。它检查源语言、缺失或多余条目、未完成和空译文、占位符、复数、换行、助记符及富文本结构；另扫描未标记的中英文文字候选，包括内嵌 Lua。扫描不以现有目录为范围，测试代码和第三方代码不参与产品提取。新增资源或模板时，同时检查它是否进入提取范围，不能仅凭候选启发式判断完整覆盖。
+`check-translations.ps1` 用 `lupdate` 重新提取第一方源码，与三组目录逐项比较：窗口模块（含 Lua 适配）、LuaRuntime 和应用。它检查源语言、缺失或多余条目、未完成和空译文、占位符、复数、换行、助记符及富文本结构；另扫描未标记的中英文文字候选，包括内嵌 Lua。扫描不以现有目录为范围，测试代码和第三方代码不参与产品提取。新增资源或模板时，同时检查它是否进入提取范围，不能仅凭候选启发式判断完整覆盖。
 
-`tools/translation-exemptions.json` 按文件、原文和出现次数列出非界面候选及理由；增减次数会失败，禁止整目录豁免。新增候选先判断显示路径，面向用户的文字在产生处标记翻译，其余才加入具体豁免。翻译行为见 [源文本与覆盖](../design/settings-and-commands-design.md#83-翻译源文本与覆盖)。
+全量测试里的 `translations.coverage` 就是这项检查：CTest 用构建所用 Qt 的 `lupdate`（`-Lupdate` 参数）运行它，不再找 Qt kit。脚本只需要 PowerShell 7，Windows、Linux 和 macOS 上都能运行，所以配置测试时必须能找到 `pwsh`；C++ 测试本身不调用脚本。
 
-脚本接受 `-QtRoot`，沿用构建脚本的 kit 发现方式。`-Catalog WindowSystem` 或 `Muxora` 只查对应目录；默认检查全部。`-SourceRoot` 用于临时源码夹具，`-Report` 可指定 JSON 报告。反向用例脚本在系统临时目录修改副本，核验每项改坏的输入都因指定原因失败，并在结束时删除副本；它不修改工作区，也不操作桌面。
+`tools/translation-exemptions.json` 按文件、原文和出现次数列出非界面候选及理由；增减次数会失败，禁止整目录豁免。新增候选先判断显示路径，面向用户的文字在产生处标记翻译，其余才加入具体豁免。内部标识一律用英文 ID，不需要豁免。翻译行为见 [源文本与覆盖](../design/settings-and-commands-design.md#83-翻译源文本与覆盖)。
+
+单独运行时，脚本接受 `-QtRoot`，沿用构建脚本的 kit 发现方式，或用 `-Lupdate` 直接指定程序。`-Catalog WindowSystem`、`LuaRuntime` 或 `Muxora` 只查对应目录；默认检查全部。`-SourceRoot` 用于临时源码夹具，`-Report` 可指定 JSON 报告。反向用例脚本 `translations-test.ps1` 在系统临时目录修改副本，核验每项改坏的输入都因指定原因失败，并在结束时删除副本；它不修改工作区，也不操作桌面，由 `verify.ps1` 运行。
 
 `tools/tests/application-language-test.ps1 -PackageDirectory <部署目录>` 用独立中英文设置检查部署程序的命令行帮助。它移除 SDK 和插件搜索环境，检查语言、稳定参数及未创建工作区，结果写入 `out/test-results/application-language.json`；统一验证入口会执行它，单独运行时也经桌面隔离入口。
 
