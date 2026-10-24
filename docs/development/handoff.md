@@ -49,6 +49,32 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-10-24 · Claude 交出：8.15b 钉住标签（在单独分支上，未并入 main）
+
+- **最后提交**：8.15b 全部在分支 `claude/8.15b-sticky-tabs` 上，已推送到同名远端分支；这个分支从 Codex 的 `390f20f`（8.12 源码迁移，尚未推送到 `origin/main`）开出，**没有并入 `main`**。工作目录是单独的 git 工作树 `../Muxora-8.15b`，主目录里 Codex 的 8.12 未提交改动（9 个文件）原样未动。
+- **本轮完成**（用户要求 8.15b 四项都做，前三项照 VS Code 做成设置）：
+  - `window-system/tabs: Close tabs with the middle button`：标签栏和收纳条的中键关闭（界面规范早有规定，一直没实现）。
+  - `window-system/tabs: Show tooltips for the displayed tab in custom layouts`：修复多行标签栏第二行起悬停提示错误（反向验证过）。
+  - `window-system/tabs: Size sticky tabs and keep them in view`：`tabs.stickySizing`（normal／compact／shrink），紧凑和收缩时单行滚动钉住标签留在开头。
+  - `window-system/tabs: Show sticky tabs on a separate row`：`tabs.stickyTabsOnSeparateRow`，两行之间拖动按指针所在行决定钉住。
+  - `window-system/tabs: Keep sticky tabs open on the close shortcut and middle click`：`tabs.preventStickyClose`，默认与 VS Code 相同（快捷键和中键都拦），因此 Ctrl+W 对钉住标签改为切到未钉住的标签。
+  - `window-system/tabs: Mark sticky tabs in the tab list`：完整标签列表中钉住标签带钉子标记。
+  - 每项的实现要点、新增用例、反向验证和运行过的套件见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`（16 行）。Release 全量结果见“环境与注意事项”。
+- **进行中**：无。
+- **下一步**：
+  1. Codex 完成并推送 8.12 后，把本分支变基到 `main` 上再快进：`git switch claude/8.15b-sticky-tabs`、`git rebase main`，冲突大概率只在 `CHANGELOG.md`、`docs/development/verification-log/2026-10.md`、`docs/development/window-system-preview.md`、翻译目录和本文件，两边内容都保留；翻译目录冲突时以 `check-translations.ps1` 通过为准。变基后跑 `sticky-tabs`、`tab-strip-layout`、`pane-settings` 和翻译检查，再 `git switch main`、`git merge --ff-only claude/8.15b-sticky-tabs` 并推送。之后删除工作树 `../Muxora-8.15b`（`git worktree remove`）和本地、远端的这个分支。
+  2. 然后按 Codex 原顺序 1.10 → 1.7 → 1.11 → 1.12。
+- **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
+- **请下一位回答**：无。
+- **本轮新决定**：8.15b 的三个设置照 VS Code 的名称、选项和默认值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+- **环境与注意事项**：
+  - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
+  - Release 全量在 `f68b388`（本分支全部 8.15b 提交）上 64/64 通过（经隔离桌面，约 324 秒）。
+  - 只在默认主题下截图核对过外观；三主题截图、Debug 构建和用户真实试用未做。
+
+---
+## 2026-10-24 · Codex 进行中：英文源文本与翻译覆盖
+
 ## 2026-10-24 · Codex：英文源文本迁移收尾
 
 - **最后提交**：`main` 已包含本轮全部提交，交出时已推送并与 `origin/main` 一致；工作区干净。
@@ -91,22 +117,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - 审查中记录、未改动：设置页滑条每次数值变化都整体刷新外观，实测每次约 8.5 ms，可接受；`restoreLayout()` 只对窗口记录用字段白名单拒绝未知字段，`saveViewLayout()` 新增字段时必须同步白名单；Lua 中 JSON `null` 的哨兵只能从宿主数据取得，脚本不能直接构造；`out/diagnostics/` 根目录堆积了大量历史排查文件，部分被验证日志引用，本轮未清理。
   - 仍未完成：完整 `verify.ps1`；Release `chrome-interaction` 菜单首报原因未查明；`verify.ps1` smoke 状态清理缺口；未做三主题截图审查和真实试用。
 
----
-
-## 2026-10-23 · Codex 交出：标题长度调节与输入焦点修复
-
-- **最后提交**：本轮分项提交已纳入 `main`，交出时与 `origin/main` 一致，工作区干净。
-- **本轮完成**：`window-system/settings: Add reusable integer slider controls` 完成两套长度的同排滑条和 Qt 数字框，单位后缀及解析独立于组合组件，连续拖动保留页面。相关套件、Lua 定向用例及部署版设置启动检查通过，原失败和前后测量见 [记录](verification-log/2026-10.md#标题长度滑条与可复用数值组件2026-10-23)。`window-system/settings: Keep focus while editing title widths` 已单独修复输入跳到搜索框，证据见 [焦点记录](verification-log/2026-10.md#标题长度连续输入的焦点修复2026-10-23)。此前 [6.9](../roadmap/implementation/phase-6-engineering.md#69-清除旧配置兼容层) 已完成，交付见 [记录](verification-log/2026-10.md#当前配置清理交付与接手状态2026-10-23)。此前实现分别提交：
-  - `repo: Keep only the current configuration format`：确定工程约束并清理现行计划中的双写、旧字段导入、别名和转发周期。
-  - `window-system/persistence: Preserve explicit saved titles and colors`：删除标题和内置配色升级，显式值恢复回归通过。
-  - `test: Drop recovery of obsolete desktop snapshots`：删除旧句柄快照恢复，自身无窗口／原生模式均通过。
-  - `window-system/settings: Keep the view command fixture current`：补齐既有标题设置的预期集合，没有改产品行为。
-  - `lua: Preserve explicit null values across host calls`：修复严格结构回归发现的 Lua 空值丢失，运行时及应用相关检查通过，记录同机前后样本。
-  - `window-system/model: Remove obsolete snapshot reconstruction`：删除固定树／顺序补建和旧跨方向尺寸 API，相关模型及界面回归、安装宿主通过。
-  - `window-system/persistence: Remove obsolete chrome layout conversion`：删除工具条混合转换、默认补建、临时全屏字段读取和假空行，相关回归通过。
-- **进行中**：无未提交或中断的实现。此前 8.13 与 9.8 的真实试用范围、既有菜单／悬停及多行拖拽首报继续保留；本轮未宣称完整入口全绿，未执行无关全量或 Debug。
-- **下一步**：Claude 接手后先答复下方保留的 Q3，按结论补齐现行计划引用或缺项；随后按 [推荐顺序](../roadmap/implementation/README.md#推荐执行顺序) 做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，完成后再进入 1.7。开始前完整阅读步骤及引用；不因文档或构建类型变化重复已完成测试。
-- **待用户决定**：8.10 尺寸规格统一。
-- **请下一位回答**：Q3（冻结审查尾项是否被计划覆盖）已由 Claude 答复，结论见 [验证日志 · A3](verification-log/2026-10.md#冻结审查尾项的计划覆盖a32026-10-23)。
-- **本轮新决定**：用户确定滑条与 Qt 数字框同排，保留上下微调；单位显示 `px`，后缀被改动后按数字前缀读取并恢复显示，不弹窗；支持零值和大数值。组合组件不处理单位或标签业务，说明只描述设置效果。权威要求在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [输入组件](../design/ui-design-system.md#47-输入控件)。
-- **环境与注意事项**：固定预览已覆盖，测试和部署进程已退出，无待恢复快照；本轮临时状态与辅助脚本已删除。此前基准的临时构建产物删除被工具自动审批拒绝，残留在仓库外，见当前配置清理交付记录。首报均保留；本轮确认部分 Ninja 对象的头文件依赖为空，旧目标混用不同范围常量，清理重建后相关检查通过，但依赖采集失效的原因仍待排查，见 [经验](lessons/build-toolchain.md#本地化的-cl-让头文件依赖随控制台代码页丢失)。`verify.ps1` smoke 状态清理的既有收尾缺口未混入本次。历史交互问题的逐项重复见 [记录](verification-log/2026-10.md#先前失败用例逐项重复2026-10-22)，不能据此认定已修复。
