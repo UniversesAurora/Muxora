@@ -14,6 +14,7 @@
 #include <QPointer>
 #include <QScrollBar>
 #include <QScreen>
+#include <QStackedWidget>
 #include <QTest>
 
 using namespace window_system;
@@ -81,6 +82,10 @@ private slots:
     void guidesTrackWindowGeometryWithoutMouseMovement();
     void tabTargetKeepsCarrierAndLiveContent_data();
     void tabTargetKeepsCarrierAndLiveContent();
+    void stickyRowPreviewKeepsTheLabelAgainstItsContent_data();
+    void stickyRowPreviewKeepsTheLabelAgainstItsContent();
+    void compactPreviewMaskFollowsTheDisplayedRows_data();
+    void compactPreviewMaskFollowsTheDisplayedRows();
     void edgeTargetMirrorsTheLabelAndClearsOnCancel_data();
     void edgeTargetMirrorsTheLabelAndClearsOnCancel();
     void stationaryDragScrollsAndStops_data();
@@ -560,6 +565,128 @@ void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent()
     QCOMPARE(manager.paneWidget(pane), content); QVERIFY(!manager.model().window(carrierId));
     QVERIFY(groupView(targetWindow, manager.model().groupForTab(a))->insertionPreviewRectGlobal().isEmpty());
     QVERIFY(!QWidget::mouseGrabber()); QVERIFY(manager.model().validate()); Q_UNUSED(before)
+}
+void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent_data()
+{
+    QTest::addColumn<bool>("bottom"); QTest::addColumn<int>("rows"); QTest::addColumn<int>("sizing");
+    for (const bool bottom : {false, true}) for (int rows = 0; rows < 3; ++rows)
+        for (const auto sizing : {StickyTabSizing::Normal, StickyTabSizing::Compact, StickyTabSizing::Shrink})
+            QTest::newRow(qPrintable(QString("%1-rows-%2-size-%3").arg(bottom ? "bottom" : "top").arg(rows).arg(int(sizing))))
+                << bottom << rows << int(sizing);
+}
+void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent()
+{
+    QFETCH(bool, bottom); QFETCH(int, rows); QFETCH(int, sizing);
+    WindowManager manager;
+    auto appearance = manager.tabAppearance();
+    appearance.stickyTabsOnSeparateRow = true; appearance.stickySizing = StickyTabSizing(sizing);
+    appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
+    appearance.multiline = rows != 0; appearance.wheelExpandRows = rows == 2;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto source = manager.createWindow(WindowKind::Workbench, {"Source", {600, 300}});
+    auto* content = new QLabel("Sticky content");
+    const auto tab = manager.addTab(source, content, {"Sticky", "label", {}});
+    const auto pane = manager.model().tab(tab)->activePane;
+    manager.addTab(source, new QLabel("Other"), {"Other", "label", {}});
+    QVERIFY(manager.setTabSticky(tab, true));
+    const auto target = manager.createWindow(WindowKind::Workbench, {"Target", {600, 300}});
+    const auto targetTab = manager.addTab(target, new QLabel("Target"), {"Target", "label", {}});
+    auto* sourceWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(source));
+    auto* targetWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(target));
+    const auto origin = qApp->primaryScreen()->availableGeometry().topLeft();
+    showFixture(sourceWindow, origin + QPoint(12, 12)); showFixture(targetWindow, origin + QPoint(100, 140));
+    QVERIFY(QTest::qWaitForWindowExposed(sourceWindow)); QVERIFY(QTest::qWaitForWindowExposed(targetWindow));
+    auto* sourceGroup = groupView(sourceWindow, manager.model().groupForTab(tab)); QVERIFY(sourceGroup);
+    auto* sourceBar = sourceGroup->tabBar();
+    const auto start = sourceBar->mapToGlobal(sourceBar->displayTabRect(0).center());
+    test::authoredMouseInput().takePriority();
+    QMouseEvent press(QEvent::MouseButtonPress, sourceBar->mapFromGlobal(start), start,
+        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(sourceBar, &press);
+    // Pressing activates the tab before the drag transaction begins.
+    const auto committed = manager.saveLayout();
+    moveMouse(sourceBar, start + QPoint(QApplication::startDragDistance() + 3, 0));
+    QCOMPARE(QWidget::mouseGrabber(), sourceWindow);
+    // Leaving the entire two-row source creates the real carrier, rather
+    // than mistaking a move onto the other row for a detach.
+    const auto outside = sourceWindow->mapToGlobal(QPoint(8, sourceWindow->height() / 2));
+    moveMouse(sourceWindow, outside);
+    QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(QWidget::mouseGrabber());
+    QVERIFY(carrier && carrier != sourceWindow);
+    const auto hwnd = carrier->winId();
+    auto* targetGroup = groupView(targetWindow, manager.model().groupForTab(targetTab)); QVERIFY(targetGroup);
+    const auto point = targetGroup->tabBar()->mapToGlobal(targetGroup->tabBar()->displayTabRect(0).center());
+    for (int visit = 0; visit < 2; ++visit) {
+        moveMouse(carrier, point);
+        QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
+        auto* preview = groupView(carrier, manager.model().groupForTab(tab)); QVERIFY(preview);
+        auto* bar = preview->tabBar();
+        auto* stack = preview->findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly); QVERIFY(stack);
+        const QRect label(bar->mapTo(carrier, bar->displayTabRect(0).topLeft()), bar->displayTabRect(0).size());
+        const QRect body(stack->mapTo(carrier, QPoint()), stack->size());
+        QCOMPARE(bar->height(), bar->lineHeight());
+        if (bottom) QCOMPARE(label.top(), body.bottom() + 1);
+        else QCOMPARE(body.top(), label.bottom() + 1);
+        QCOMPARE(carrier->mask(), QRegion(body) + label);
+        QCOMPARE(carrier->dragLabelAnchor(), label.center());
+        QCOMPARE(carrier->winId(), hwnd); QCOMPARE(QWidget::mouseGrabber(), carrier.data());
+        QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
+        QCOMPARE(manager.saveLayout(), committed); QVERIFY(manager.isTabSticky(tab));
+        moveMouse(carrier, outside);
+        QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Window);
+        QVERIFY(carrier->mask().isEmpty());
+        QCOMPARE(preview->tabBar()->height(), 2 * preview->tabBar()->lineHeight());
+    }
+    QTest::keyClick(carrier, Qt::Key_Escape); QApplication::processEvents();
+    QVERIFY(!QWidget::mouseGrabber()); QCOMPARE(manager.saveLayout(), committed);
+    QCOMPARE(manager.paneWidget(pane), content); QVERIFY(manager.isTabSticky(tab)); QVERIFY(manager.model().validate());
+}
+void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows_data()
+{
+    QTest::addColumn<bool>("bottom"); QTest::addColumn<bool>("collapsed"); QTest::addColumn<bool>("sticky");
+    for (const bool bottom : {false, true}) for (const bool collapsed : {false, true}) for (const bool sticky : {false, true})
+        QTest::newRow(qPrintable(QString("bottom-%1-collapsed-%2-sticky-%3").arg(bottom).arg(collapsed).arg(sticky)))
+            << bottom << collapsed << sticky;
+}
+void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
+{
+    QFETCH(bool, bottom); QFETCH(bool, collapsed); QFETCH(bool, sticky);
+    WindowManager manager;
+    auto appearance = manager.tabAppearance();
+    appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
+    appearance.multiline = true; appearance.wheelExpandRows = collapsed; appearance.stickyTabsOnSeparateRow = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Rows", {400, 350}});
+    QVector<TabId> tabs;
+    for (int i = 0; i < 10; ++i) {
+        tabs.append(manager.addTab(window, new QLabel("Content"), {QString("Preview tab %1").arg(i), "label", {}}));
+        if (sticky && i < 3) QVERIFY(manager.setTabSticky(tabs.back(), true));
+    }
+    auto* carrier = static_cast<WorkspaceWindow*>(manager.windowWidget(window));
+    showFixture(carrier, qApp->primaryScreen()->availableGeometry().topLeft() + QPoint(20, 20));
+    QVERIFY(QTest::qWaitForWindowExposed(carrier));
+    auto* group = groupView(carrier, manager.model().groupForTab(tabs.back())); QVERIFY(group);
+    auto* bar = group->tabBar();
+    const auto normalHeight = bar->height();
+    const auto hwnd = carrier->winId();
+    carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Tab);
+    auto* stack = group->findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly); QVERIFY(stack);
+    const QRect body(stack->mapTo(carrier, QPoint()), stack->size());
+    QRegion expected(body); QRect first;
+    const auto viewport = group->viewportRectGlobal();
+    for (int i = 0; i < bar->count(); ++i) {
+        const auto shown = bar->displayTabRect(i);
+        if (shown.isEmpty()) continue;
+        const QRect label(bar->mapTo(carrier, shown.topLeft()), shown.size());
+        QVERIFY(viewport.contains(QRect(bar->mapToGlobal(shown.topLeft()), shown.size())));
+        if (first.isEmpty()) first = label;
+        expected += label;
+    }
+    QVERIFY(!first.isEmpty());
+    QCOMPARE(carrier->mask(), expected); QCOMPARE(carrier->dragLabelAnchor(), first.center());
+    if (collapsed && !sticky) QVERIFY(bar->displayTabRect(0).isEmpty());
+    carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+    QCOMPARE(bar->height(), normalHeight); QVERIFY(carrier->mask().isEmpty()); QCOMPARE(carrier->winId(), hwnd);
 }
 void DragPresentationTest::edgeTargetMirrorsTheLabelAndClearsOnCancel_data()
 {

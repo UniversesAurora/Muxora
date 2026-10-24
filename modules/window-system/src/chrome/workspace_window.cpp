@@ -258,7 +258,10 @@ QPoint WorkspaceWindow::dragLabelAnchor() const
         return host->mapTo(this, host->labelAnchor());
     for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget)) {
         const auto* bar = group->tabBar();
-        if (bar->count() && bar->isVisible()) return bar->mapTo(this, bar->tabRect(0).center());
+        if (bar->isVisible()) for (int i = 0; i < bar->count(); ++i) {
+            const auto label = bar->displayTabRect(i);
+            if (!label.isEmpty()) return bar->mapTo(this, label.center());
+        }
     }
     return {80, 13};
 }
@@ -273,11 +276,19 @@ void WorkspaceWindow::updateDragMask()
         for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()) {
             const auto origin = group->mapTo(this, QPoint());
             const auto strip = group->viewportRectGlobal();
-            const int header = strip.height();
-            visible += QRect(origin + QPoint(0, header), QSize(group->width(), qMax(0, group->height() - header)));
+            // The header can be below the content and can span several rows.
+            // Use its actual position and the same label rectangles as paint.
+            QRegion body(QRect(origin, group->size()));
+            if (!strip.isEmpty())
+                body -= QRect(origin.x(), mapFromGlobal(strip.topLeft()).y(), group->width(), strip.height());
+            visible += body;
             const auto* bar = group->tabBar();
-            for (int i = 0; i < bar->count(); ++i)
-                visible += QRect(bar->mapTo(this, bar->tabRect(i).topLeft()), bar->tabRect(i).size());
+            for (int i = 0; i < bar->count(); ++i) {
+                const auto label = bar->displayTabRect(i);
+                if (label.isEmpty()) continue;
+                const auto shown = QRect(bar->mapToGlobal(label.topLeft()), label.size()).intersected(strip);
+                if (!shown.isEmpty()) visible += QRect(mapFromGlobal(shown.topLeft()), shown.size());
+            }
         }
     }
     if (visible.isEmpty()) return;

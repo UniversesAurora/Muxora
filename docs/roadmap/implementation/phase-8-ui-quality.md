@@ -442,7 +442,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **测试**：8.15a 见模型、标签条、命令与 Lua 用例；8.15b 各项需要真实拖动、滚动和像素断言，三种主题下截图。
 
-**状态**：8.15a 已完成；8.15b 四项和前置的中键关闭已完成，相关自动验证见 [记录](../../development/verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；只在默认主题下截图核对过，三主题截图和用户真实试用未做。
+**状态**：8.15a 已完成；8.15b 四项和前置的中键关闭已完成，相关自动验证见 [记录](../../development/verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)。用户试用发现的独占一行拖拽预览分离已修复，见 [回归记录](../../development/verification-log/2026-10.md#钉住标签独占一行时的拖拽预览2026-10-25)；三主题截图和修正后的用户真实试用未完成。
 
 ---
 

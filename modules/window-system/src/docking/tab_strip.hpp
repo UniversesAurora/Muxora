@@ -63,7 +63,7 @@ public:
     void setAppearance(const TabAppearance& appearance);
     void setTabMetadata(int index, const TabRecord& tab);
     [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
-    void layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth = 0);
+    void layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth = 0, bool trailingControls = true);
     [[nodiscard]] QSize displayedSize() const;
     [[nodiscard]] QPoint creationPosition() const;
     [[nodiscard]] int rowCount() const;
@@ -222,6 +222,7 @@ private:
     bool updatingBarGeometry_ = false;
     TabAppearance appearance_;
     bool pinned_ = false;
+    bool compactPresentation_ = false;
     bool rowsExpanded_ = true;
     std::optional<bool> stickyRow_;
 };

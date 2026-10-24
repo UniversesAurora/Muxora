@@ -244,7 +244,7 @@ int DragTabBar::displayedTabAt(QPoint local) const
 QSize DragTabBar::displayedSize() const { return displayedSize_; }
 QPoint DragTabBar::creationPosition() const { return creationPosition_; }
 int DragTabBar::rowCount() const { return rowCount_; }
-void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth)
+void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth, bool trailingControls)
 {
     customLayout_ = appearance_.multiline || stickyFloats();
     displayedRects_.clear(); previewRect_ = {};
@@ -276,10 +276,13 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
     // The sticky run ends before the first other tab or a preview for one.
     std::optional<int> runEnd;
     stickyRowsHeight_ = 0;
-    const auto endRun = [&] {
+    const auto endRun = [&](bool otherRow = true) {
         if (runEnd) return;
         runEnd = x;
-        if (stickyPhase) { stickyPhase = false; y += lineHeight; stickyRowsHeight_ = y; x = 0; }
+        if (stickyPhase) {
+            stickyPhase = false; stickyRowsHeight_ = y + lineHeight;
+            if (otherRow) { y += lineHeight; x = 0; }
+        }
     };
     for (int i = 0; i < count(); ++i) {
         if (isDragged(i)) continue;
@@ -302,9 +305,11 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
         if (!insertionSticky_) endRun();
         previewRect_ = append(previewExtent);
     }
-    endRun(); stickyRunEnd_ = *runEnd;
+    // A compact carrier hides every trailing control. With only sticky tabs
+    // there is no other row to reserve between their labels and the content.
+    endRun(trailingControls); stickyRunEnd_ = *runEnd;
     creationPosition_ = {x,y};
-    const int creationWidth = appearance_.showNewTabButton ? newTabButtonWidth + listButtonWidth + createButtonGap : 0;
+    const int creationWidth = trailingControls && appearance_.showNewTabButton ? newTabButtonWidth + listButtonWidth + createButtonGap : 0;
     if (appearance_.multiline && x && x + creationWidth + trailingActionsWidth > limit) {
         creationPosition_ = {0, y + lineHeight}; y += lineHeight;
     }
@@ -320,7 +325,7 @@ void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActio
         else if (!active.isEmpty() && active.top() >= stickyRowsHeight_) activeLogicalRow_ = active.top() / lineHeight;
         activeLogicalRow_ = std::clamp(activeLogicalRow_, firstOtherRow, std::max(firstOtherRow, rowCount_ - 1));
     }
-    if (appearance_.multiline && !expanded) {
+    if (appearance_.multiline && !expanded && rowCount_ > firstOtherRow) {
         const int activeY = activeLogicalRow_ * lineHeight, shown = stickyRowsHeight_;
         const auto collapse = [&](const QRect& rect) {
             return rect.isEmpty() || rect.top() < shown ? rect : rect.top() == activeY ? rect.translated(0, shown - activeY) : QRect{};
@@ -1046,12 +1051,12 @@ void GroupTabs::updateBarGeometry() {
     if (updatingBarGeometry_) return;
     QScopedValueRollback updating(updatingBarGeometry_, true);
     auto* headerLayout = static_cast<QHBoxLayout*>(header_->layout());
-    const int actionsWidth = headerActions_->sizeHint().width();
+    const int actionsWidth = compactPresentation_ ? 0 : headerActions_->sizeHint().width();
     const bool inLayout = headerLayout->indexOf(headerActions_) >= 0;
     if (appearance_.multiline && inLayout) headerLayout->removeWidget(headerActions_);
     else if (!appearance_.multiline && !inLayout) headerLayout->addWidget(headerActions_, 0, Qt::AlignBottom);
     headerLayout->activate();
-    bar_->layoutTabs(scroll_->viewport()->width(),rowsExpanded_,appearance_.multiline ? actionsWidth : 0);
+    bar_->layoutTabs(scroll_->viewport()->width(), rowsExpanded_, appearance_.multiline ? actionsWidth : 0, !compactPresentation_);
     const auto hint = bar_->displayedSize();
     bar_->setFixedSize(qMax(1, hint.width()), qMax(24, hint.height()));
     // Sticky tabs on a row of their own make even a single-row strip taller.
@@ -1136,7 +1141,7 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     // Wheel expansion keeps its value with a single row, where it does nothing.
     rowsExpanded_ = !(appearance_.multiline && appearance_.wheelExpandRows);
     bar_->setAppearance(appearance_);
-    createButtons_->setVisible(appearance_.showNewTabButton);
+    createButtons_->setVisible(!compactPresentation_ && appearance_.showNewTabButton);
     auto* box = qobject_cast<QVBoxLayout*>(layout());
     const auto placement = pinned ? appearance_.pinnedPlacement : appearance_.centralPlacement;
     box->removeWidget(header_);
@@ -1197,6 +1202,7 @@ QRect GroupTabs::insertionPreviewRectGlobal() const
 }
 void GroupTabs::setDragPresentation(bool compact, bool edge)
 {
+    compactPresentation_ = compact;
     list_->setVisible(!compact);
     createButtons_->setVisible(!compact && appearance_.showNewTabButton);
     for (const auto name : {"UnpinCurrentButton", "UnpinAllButton"})
