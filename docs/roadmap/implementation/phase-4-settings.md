@@ -4,6 +4,7 @@
 
 **阶段约束**：
 
+- 每类数据放在哪个文件按 [设置设计 §2](../../design/settings-and-commands-design.md#2-文件划分) 的表格。
 - 设置 ID 沿用现有设置页已经显示的 ID，不改名：
 
   | 现有 ID | 对应字段 |
@@ -18,7 +19,8 @@
   | `window.hideSingleTabFloating` | `hideSingleTabFloating` |
   | `window.hideToolbarOptionsWhenLocked` | `hideToolbarOptionsWhenLocked` |
   | `window.zenFullscreenMode` | `zenFullscreenMode` |
-  | `tabs.centralPlacement`、`tabs.pinnedPlacement`、`tabs.multiline`、`tabs.wheelExpandRows`、`tabs.showIcons`、`tabs.showNewTabButton`、`tabs.showNumbers`、`tabs.showSidebarIcons`、`tabs.showSidebarNumbers`、`tabs.colors` | `TabAppearance` 各字段 |
+  | `window.captionButtonOrder` | `captionButtonOrder` |
+  | `tabs.centralPlacement`、`tabs.pinnedPlacement`、`tabs.multiline`、`tabs.wheelExpandRows`、`tabs.showIcons`、`tabs.showNewTabButton`、`tabs.showNumbers`、`tabs.showSidebarIcons`、`tabs.showSidebarNumbers`、`tabs.clipTitles`、`tabs.maximumTitleWidth`、`tabs.clipSidebarTitles`、`tabs.maximumSidebarTitleWidth`、`tabs.stickySizing`、`tabs.shrinkStickyTitleWidth`、`tabs.stickyTabsOnSeparateRow`、`tabs.preventStickyClose`、`tabs.colors` | `TabAppearance` 各字段 |
   | `window.visibility.*` | 四栏显隐（属于窗口状态，见 4.4） |
 
 - 模块不读写文件。注册表只保存“值”和“是否修改过”，由宿主负责持久化。
@@ -37,6 +39,13 @@
    ```cpp
    enum class SettingType { Boolean, Integer, Number, String, Enum, StringList, Color, Json };
    struct SettingEnumValue { QString value; QString label; QString description; };
+   // 不填时按类型生成控件。滑条只覆盖常用的一段，数字框、文件和 Lua 仍按
+   // minimum／maximum 校验。
+   struct SettingEditor {
+       enum class Kind { Default, SliderWithNumber } kind = Kind::Default;
+       int sliderMinimum = 0, sliderMaximum = 0;
+       QString unit;                                // 只用于显示，例如 "px"
+   };
    struct SettingDefinition {
        QString id;                     // [a-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)+，≤ 128
        QString category;               // 设置页分类路径，例如 "window/drag"
@@ -44,7 +53,8 @@
        QString description;
        SettingType type = SettingType::Boolean;
        QVariant defaultValue;
-       std::optional<double> minimum, maximum;     // Integer / Number
+       std::optional<double> minimum, maximum;     // Integer / Number，程序能正确处理的范围
+       SettingEditor editor;
        QVector<SettingEnumValue> enumValues;        // Enum
        QStringList tags;                            // 搜索用
        bool requiresRestart = false;
@@ -110,6 +120,7 @@
 
 1. 控件工厂：`QWidget* createEditor(const SettingDefinition&, SettingsRegistry&, QWidget* parent)`：
    - `Boolean` → `ThemedCheckBox`；`Enum` → `ThemedComboBox`；`Integer`／`Number` → 现有主题数字框；`String` → `QLineEdit`；`StringList` → 列表加“添加／删除”按钮；`Color` → 色块按钮加 `QColorDialog`；`Json` → 现有 `tabs.colors` 使用的多行编辑框，失焦时校验。
+   - 定义里指定了 `editor` 时用对应控件：`SliderWithNumber` 用现有的 `IntegerSlider`，标题长度这几项（`0–1000` 的滑条）照此声明。
    - 控件的 `objectName` 使用设置 ID；同步更新按对象名查找控件的测试，不建立旧对象名映射。
 2. 有特殊交互的设置（`window.visibility.*` 的四个开关属于当前窗口，`workbench.language` 需要 `TranslationManager`）用“自定义编辑器”注册：`registerSettingEditor(id, factory)`，设置页优先使用。
 3. 每行布局：标题、ID（灰色小字）、说明、控件；修改过的行在左侧显示 2 像素的强调色竖条，行尾齿轮按钮菜单：“重置此设置”“复制设置 ID”“复制为 JSON”。
@@ -134,7 +145,8 @@
 2. 启动顺序（`main.cpp`）：创建 `WindowManager` → 读取 `settings.json` → `manager.settings().load(values, diagnostics)` → 恢复布局。诊断显示在状态栏，与现有语言设置的处理一致。
 3. 行为与标签外观值只由设置注册表及 `settings.json` 保存；同步从布局读写中移除对应字段，不导入旧布局或双写。
 4. 未指定的设置使用注册表默认值；布局恢复不修改全局设置。
-5. `window.visibility.*` 是逐窗口状态，继续随布局保存，不进入 `settings.json`。
+5. `window.visibility.*` 是逐窗口状态，继续随布局保存，不进入 `settings.json`；工具条排布同样留在布局里。
+5a. 布局文件不再带行为和标签外观后，`src/app/layout_file.cpp` 的分类恢复只剩各栏默认显隐和默认工具条排布两类，同步删掉另外两类。
 6. 外部修改监听：与 3.7 相同的 `QFileSystemWatcher` 加去抖动；重新加载时只应用变化的项。
 
 **测试**：
