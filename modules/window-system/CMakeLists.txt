@@ -50,6 +50,7 @@ add_library(WindowSystemWidgets STATIC
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
+    src/docking/tab_layout.cpp
     src/docking/edge_strip.cpp
     src/docking/drag_presentation.cpp
     src/docking/edge_tab_button.cpp

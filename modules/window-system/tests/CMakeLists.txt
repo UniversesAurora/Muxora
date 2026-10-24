@@ -47,7 +47,7 @@ add_dependencies(window-system-drag-test window-system-overlay-fixture)
 # Layers follow docs/development/testing-design.md: desktop suites show
 # windows or drive native input and run serially; model and widget suites
 # create no visible window and may run in parallel.
-set(window_system_model_suites pinned-layout pinned-positions)
+set(window_system_model_suites pinned-layout pinned-positions tab-layout)
 set(window_system_widget_suites hierarchy-conversion visibility-profile tab-appearance tab-title-layout shortcut-settings localization input-method-scope)
 set(window_system_desktop_suites pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
 list(APPEND window_system_desktop_suites integer-slider)
