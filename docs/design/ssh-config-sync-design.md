@@ -77,6 +77,8 @@ OpenSSH 对每个参数采用**第一次得到的值**：按文件顺序，所�
 
 ## 4. 同步应用会话（`syncAppSessions`）
 
+应用会话的私钥放在 Muxora 保管库时，同步出去的块怎么写由 [SSH 私钥存放设计 §2](ssh-key-storage-design.md#2-设置) 决定。
+
 ### 4.1 管理文件
 
 应用会话写入一个独立文件（默认 `~/.ssh/muxora/config`），而不是直接写进用户的 `~/.ssh/config`：
