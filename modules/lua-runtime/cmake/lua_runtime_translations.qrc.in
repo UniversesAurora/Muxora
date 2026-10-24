@@ -1,0 +1,4 @@
+<RCC>
+    <qresource prefix="/lua_runtime/i18n">
+@lua_runtime_catalog_qrc_entries@    </qresource>
+</RCC>

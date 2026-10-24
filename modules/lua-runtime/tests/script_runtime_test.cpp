@@ -15,6 +15,7 @@
 #include <QFile>
 #include <QProcess>
 #include <QCoreApplication>
+#include <QTranslator>
 #include <limits>
 #include <memory>
 #include <condition_variable>
@@ -88,6 +89,7 @@ QString sleepingChildCommand(const QString &readyPath, int milliseconds) {
 class ScriptRuntimeTest final : public QObject {
     Q_OBJECT
   private slots:
+    void translationCatalogCoversBothLanguages();
     void standardValuesAndContext();
     void hostCallsYieldToTheOwnerAndReturnMultipleValues();
     void explicitNullValuesSurviveHostRoundTrips_data();
@@ -159,6 +161,18 @@ void ScriptRuntimeTest::supersededResetRepliesDoNotReachTheNewGeneration() {
     QTRY_COMPARE(reset.size(), 1);
     QTRY_COMPARE(runtime.pendingJobs(), 0);
     QVERIFY(evaluate(runtime, "return 42").ok);
+}
+
+void ScriptRuntimeTest::translationCatalogCoversBothLanguages() {
+    // Without the catalog the diagnostics are the English sources.
+    QCOMPARE(QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"), QStringLiteral("Lua task was cancelled"));
+    for (const auto &[language, expected] : {std::pair{"_zh_CN.qm", "Lua 任务已取消"}, std::pair{"_en.qm", "Lua task was cancelled"}}) {
+        QTranslator translator;
+        QVERIFY(translator.load(lua_runtime::translationCatalog() + QLatin1String(language)));
+        QVERIFY(QCoreApplication::installTranslator(&translator));
+        QCOMPARE(QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"), QString::fromUtf8(expected));
+        QVERIFY(QCoreApplication::removeTranslator(&translator));
+    }
 }
 
 void ScriptRuntimeTest::standardValuesAndContext() {

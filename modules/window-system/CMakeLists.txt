@@ -110,12 +110,10 @@ qt_add_resources(window_system_translation_resource
 target_sources(WindowSystemWidgets PRIVATE ${window_system_translation_resource})
 add_dependencies(WindowSystemWidgets window_system_lrelease)
 set(QT_I18N_SOURCE_LANGUAGE en)
-# Extract public defaults, model errors, and Lua diagnostics as well as widget
-# text. The Lua libraries depend only on Qt Core for translation; hosts install
-# this catalog when they use the WindowSystem UI.
+# Extract public defaults, model errors, and the Lua adapter's diagnostics as
+# well as widget text. LuaRuntime keeps its own catalog.
 file(GLOB_RECURSE window_system_i18n_sources CONFIGURE_DEPENDS
     "include/*.hpp" "src/*.hpp" "src/*.cpp"
-    "../lua-runtime/include/*.hpp" "../lua-runtime/src/*.hpp" "../lua-runtime/src/*.cpp"
     "../window-system-lua/include/*.hpp" "../window-system-lua/src/*.hpp" "../window-system-lua/src/*.cpp")
 qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     SOURCES ${window_system_i18n_sources}

@@ -25,20 +25,20 @@ RuntimeLimits normalizedLimits(RuntimeLimits limits) {
 
 void ValueBudget::visit(int depth) {
     if (depth > limits.maximumValueDepth || ++nodes > limits.maximumValueNodes)
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua value exceeds the configured depth or node limit"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua value exceeds the configured depth or node limit"));
     // Conservative transfer accounting includes a variant, Qt container/node
     // overhead and alignment. The VM allocator is measured separately, exactly.
     bytes += 128;
     if (bytes > limits.maximumQueuedBytes)
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua value exceeds the configured transfer byte limit"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua value exceeds the configured transfer byte limit"));
 }
 
 void ValueBudget::string(qsizetype size) {
     if (size < 0 || size > limits.maximumStringBytes)
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua string exceeds the configured byte limit"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua string exceeds the configured byte limit"));
     bytes += static_cast<quint64>(size) * 2;
     if (bytes > limits.maximumQueuedBytes)
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua value exceeds the configured transfer byte limit"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua value exceeds the configured transfer byte limit"));
 }
 
 namespace {
@@ -56,17 +56,17 @@ void measure(const QVariant &value, ValueBudget &budget, int depth) {
         return;
     case QMetaType::ULongLong:
         if (value.toULongLong() > static_cast<quint64>(std::numeric_limits<lua_Integer>::max()))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua integer is outside the signed 64-bit range"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua integer is outside the signed 64-bit range"));
         return;
     case QMetaType::Double:
     case QMetaType::Float:
         if (!std::isfinite(value.toDouble()))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua values cannot contain NaN or infinity"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua values cannot contain NaN or infinity"));
         return;
     case QMetaType::QString:
         // QString's UTF-8 encoding is at most three bytes per UTF-16 code unit.
         if (value.toString().size() > budget.limits.maximumStringBytes)
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua string exceeds the configured byte limit"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua string exceeds the configured byte limit"));
         budget.string(value.toString().toUtf8().size());
         return;
     case QMetaType::QVariantList:
@@ -87,7 +87,7 @@ void measure(const QVariant &value, ValueBudget &budget, int depth) {
     }
     default:
         throw ValueError(
-            QCoreApplication::translate("WindowSystem", "Only nil, JSON null, booleans, finite numbers, UTF-8 strings, lists and maps cross the Lua boundary"));
+            QCoreApplication::translate("LuaRuntime", "Only nil, JSON null, booleans, finite numbers, UTF-8 strings, lists and maps cross the Lua boundary"));
     }
 }
 
@@ -108,7 +108,7 @@ quint64 measureValue(const QVariant &value, const RuntimeLimits &limits) {
 void pushValue(lua_State *state, const QVariant &value, ValueBudget &budget, int depth) {
     budget.visit(depth);
     if (!lua_checkstack(state, 4))
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua stack has no space for the supplied value"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua stack has no space for the supplied value"));
     if (!value.isValid()) {
         lua_pushnil(state);
         return;
@@ -129,13 +129,13 @@ void pushValue(lua_State *state, const QVariant &value, ValueBudget &budget, int
         return;
     case QMetaType::ULongLong:
         if (value.toULongLong() > static_cast<quint64>(std::numeric_limits<lua_Integer>::max()))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua integer is outside the signed 64-bit range"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua integer is outside the signed 64-bit range"));
         lua_pushinteger(state, static_cast<lua_Integer>(value.toULongLong()));
         return;
     case QMetaType::Double:
     case QMetaType::Float:
         if (!std::isfinite(value.toDouble()))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua values cannot contain NaN or infinity"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua values cannot contain NaN or infinity"));
         lua_pushnumber(state, value.toDouble());
         return;
     case QMetaType::QString: {
@@ -174,22 +174,22 @@ void pushValue(lua_State *state, const QVariant &value, ValueBudget &budget, int
         return;
     }
     default:
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Unsupported host value type in Lua arguments"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Unsupported host value type in Lua arguments"));
     }
 }
 
 QString readText(lua_State *state, int index, ValueBudget &budget) {
     if (lua_type(state, index) != LUA_TSTRING)
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua argument must be a string"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua argument must be a string"));
     size_t length = 0;
     const auto *data = lua_tolstring(state, index, &length);
     if (length > static_cast<size_t>(std::numeric_limits<qsizetype>::max()))
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua string is too large"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua string is too large"));
     budget.string(static_cast<qsizetype>(length));
     QStringDecoder decoder(QStringDecoder::Utf8);
     QString text = decoder(QByteArrayView(data, static_cast<qsizetype>(length)));
     if (decoder.hasError())
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua strings crossing the host boundary must contain valid UTF-8"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua strings crossing the host boundary must contain valid UTF-8"));
     return text;
 }
 
@@ -204,43 +204,43 @@ QVariant readValue(lua_State *state, int index, ValueBudget &budget, int depth) 
             return QVariant::fromValue(nullptr);
         [[fallthrough]];
     case LUA_TUSERDATA:
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua functions, threads and userdata cannot cross the host boundary; register callbacks explicitly"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua functions, threads and userdata cannot cross the host boundary; register callbacks explicitly"));
     case LUA_TBOOLEAN:
         return static_cast<bool>(lua_toboolean(state, index));
     case LUA_TNUMBER:
         if (lua_isinteger(state, index))
             return QVariant::fromValue<qlonglong>(lua_tointeger(state, index));
         if (!std::isfinite(lua_tonumber(state, index)))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua values cannot contain NaN or infinity"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua values cannot contain NaN or infinity"));
         return lua_tonumber(state, index);
     case LUA_TSTRING:
         return readText(state, index, budget);
     case LUA_TTABLE: {
         const void *pointer = lua_topointer(state, index);
         if (budget.ancestors.contains(pointer))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Cyclic Lua tables cannot cross the host boundary"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Cyclic Lua tables cannot cross the host boundary"));
         budget.ancestors.insert(pointer);
         const AncestorGuard guard{budget.ancestors, pointer};
         if (!lua_checkstack(state, 3))
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Lua stack has no space for reading a table"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua stack has no space for reading a table"));
         QVariantMap map;
         QMap<qlonglong, QVariant> sequence;
         lua_pushnil(state);
         while (lua_next(state, index)) {
             if (lua_type(state, -2) == LUA_TSTRING) {
                 if (!sequence.isEmpty())
-                    throw ValueError(QCoreApplication::translate("WindowSystem", "Mixed Lua map/list tables cannot cross the host boundary"));
+                    throw ValueError(QCoreApplication::translate("LuaRuntime", "Mixed Lua map/list tables cannot cross the host boundary"));
                 const auto key = readText(state, -2, budget);
                 map.insert(key, readValue(state, -1, budget, depth + 1));
             } else if (lua_isinteger(state, -2)) {
                 if (!map.isEmpty())
-                    throw ValueError(QCoreApplication::translate("WindowSystem", "Mixed Lua map/list tables cannot cross the host boundary"));
+                    throw ValueError(QCoreApplication::translate("LuaRuntime", "Mixed Lua map/list tables cannot cross the host boundary"));
                 const auto key = lua_tointeger(state, -2);
                 if (key < 1 || key > budget.limits.maximumValueNodes)
-                    throw ValueError(QCoreApplication::translate("WindowSystem", "Lua lists must use contiguous positive integer keys"));
+                    throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua lists must use contiguous positive integer keys"));
                 sequence.insert(key, readValue(state, -1, budget, depth + 1));
             } else {
-                throw ValueError(QCoreApplication::translate("WindowSystem", "Lua map keys must be strings; list keys must be contiguous integers"));
+                throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua map keys must be strings; list keys must be contiguous integers"));
             }
             lua_pop(state, 1);
         }
@@ -255,7 +255,7 @@ QVariant readValue(lua_State *state, int index, ValueBudget &budget, int depth) 
             return map;
         }
         if (sequence.lastKey() != sequence.size())
-            throw ValueError(QCoreApplication::translate("WindowSystem", "Sparse Lua lists cannot cross the host boundary"));
+            throw ValueError(QCoreApplication::translate("LuaRuntime", "Sparse Lua lists cannot cross the host boundary"));
         QVariantList list;
         list.reserve(sequence.size());
         for (const auto &child : sequence)
@@ -263,7 +263,7 @@ QVariant readValue(lua_State *state, int index, ValueBudget &budget, int depth) 
         return list;
     }
     default:
-        throw ValueError(QCoreApplication::translate("WindowSystem", "Lua functions, threads and userdata cannot cross the host boundary; register callbacks explicitly"));
+        throw ValueError(QCoreApplication::translate("LuaRuntime", "Lua functions, threads and userdata cannot cross the host boundary; register callbacks explicitly"));
     }
 }
 

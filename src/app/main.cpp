@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <window_system/window_manager.hpp>
 #include <window_system/localization.hpp>
+#include <lua_runtime/script_runtime.hpp>
 #include "workspace_host/placeholder_content.hpp"
 #include "state_paths.hpp"
 #include "user_preferences.hpp"
@@ -38,6 +39,7 @@ int main(int argc, char* argv[])
     const auto userDirectory = muxora::resolveUserDirectory(explicitStateDirectory, QCoreApplication::applicationDirPath());
     const auto requestedLanguage = window_system::uiLanguageFromId(muxora::UserPreferences(userDirectory).language());
     window_system::TranslationManager translations(&app);
+    translations.addCatalog(lua_runtime::translationCatalog());
     translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
     if (!translations.installLanguage(requestedLanguage)) return 5;
     // Load the owned preferences after translation installation so any cached

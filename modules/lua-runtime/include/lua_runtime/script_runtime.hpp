@@ -9,6 +9,13 @@
 
 namespace lua_runtime {
 
+// The runtime's own diagnostics use the LuaRuntime translation context. This
+// is the Qt resource prefix of its catalog: prefix + "_en.qm" and prefix +
+// "_zh_CN.qm". Hosts load it with their other catalogs, for example through
+// window_system::TranslationManager::addCatalog(); without it they get the
+// English source text.
+[[nodiscard]] QString translationCatalog();
+
 struct ScriptResult {
     bool ok = false;
     QVariantList values;

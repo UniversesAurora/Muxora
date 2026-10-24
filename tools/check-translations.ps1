@@ -2,7 +2,7 @@
 param(
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$QtRoot,
-    [ValidateSet('All', 'WindowSystem', 'Muxora')][string]$Catalog = 'All',
+    [ValidateSet('All', 'WindowSystem', 'LuaRuntime', 'Muxora')][string]$Catalog = 'All',
     [string]$Report
 )
 $ErrorActionPreference = 'Stop'
@@ -16,8 +16,9 @@ $taskErrors = [Collections.Generic.List[string]]::new()
 $taskGroups = @(
     @{ Name = 'WindowSystem'; Stem = 'window_system'; Directory = 'modules/window-system/translations';
        Roots = @('modules/window-system/include', 'modules/window-system/src',
-                 'modules/lua-runtime/include', 'modules/lua-runtime/src',
                  'modules/window-system-lua/include', 'modules/window-system-lua/src') },
+    @{ Name = 'LuaRuntime'; Stem = 'lua_runtime'; Directory = 'modules/lua-runtime/translations';
+       Roots = @('modules/lua-runtime/include', 'modules/lua-runtime/src') },
     @{ Name = 'Muxora'; Stem = 'muxora'; Directory = 'src/app/translations';
        Roots = @('src/app', 'src/workspace_host') }
 )

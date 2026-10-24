@@ -16,4 +16,4 @@ Qt Core 与官方 Lua 5.5.1 的嵌入运行时。它不依赖窗口、终端、S
 
 Lua 标准库中的本地算法不能被指令 hook 强制抢占，这不是恶意代码的进程隔离。Lua 按 C++ 静态链接，不支持外部 C 模块；`package.cpath` 为空，`package.loadlib` 保留。垃圾回收钩子的嵌入适配见 [依赖说明](../../third_party/lua/README.md)。实际测试结果见项目预览记录，不能把存在测试入口当作已经通过。
 
-运行时自有诊断使用 Qt Core 的翻译接口及 `WindowSystem` 上下文；不安装目录的宿主得到英文源文本。宿主负责安装、持有自己的 `QTranslator`，窗口宿主可直接使用 WindowSystem 的目录。用户脚本的 `print`、`error`、标准 Lua 错误和堆栈内容不按最终字符串匹配翻译；覆盖维护见 [翻译检查](../../docs/development/testing-design.md#翻译覆盖)。
+运行时自有诊断使用 Qt Core 的翻译接口和 `LuaRuntime` 上下文，中英文目录 `translations/lua_runtime_*.ts` 编进本库的资源。`lua_runtime::translationCatalog()` 返回目录前缀，宿主和自己的目录一起加载（窗口宿主用 `TranslationManager::addCatalog()`）；不加载时显示英文源文本。目录用 CMake 的 `lua_runtime_lupdate`、`lua_runtime_lrelease` 维护。用户脚本的 `print`、`error`、标准 Lua 错误和堆栈内容不按最终字符串匹配翻译；覆盖维护见 [翻译检查](../../docs/development/testing-design.md#翻译覆盖)。

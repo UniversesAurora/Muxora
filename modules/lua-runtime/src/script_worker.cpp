@@ -89,7 +89,7 @@ ScriptWorker::ScriptWorker(RuntimeLimits limits, std::shared_ptr<SharedStatistic
     connect(&hostDeadline_, &QTimer::timeout, this, [this] {
         if (!active_ || !active_->awaitingHost)
             return;
-        setAbort(QCoreApplication::translate("WindowSystem", "Lua host operation timed out"));
+        setAbort(QCoreApplication::translate("LuaRuntime", "Lua host operation timed out"));
         finish(failure(active_->abortReason));
         schedulePump();
     });
@@ -142,7 +142,7 @@ bool ScriptWorker::checkCurrentStop() {
     if (!active_)
         return true;
     if (stale(active_->job))
-        setAbort(QCoreApplication::translate("WindowSystem", "Lua task was cancelled"));
+        setAbort(QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"));
     return !active_->aborted;
 }
 
@@ -162,7 +162,7 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
             lua_yield(state, 0);
             return;
         }
-        luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua task was cancelled").toUtf8().constData());
+        luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua task was cancelled").toUtf8().constData());
         return;
     }
     if (!worker->active_ || worker->cleanup_ || worker->executingUserHooks_.contains(state))
@@ -236,7 +236,7 @@ void ScriptWorker::hook(lua_State *state, lua_Debug *debug) {
         if (status != LUA_OK)
             lua_error(state);
         if (!worker->checkCurrentStop())
-            luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua task was cancelled").toUtf8().constData());
+            luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua task was cancelled").toUtf8().constData());
     }
     lua_settop(state, top);
 }
@@ -257,7 +257,7 @@ int ScriptWorker::checkStop(lua_State *state) {
         return 0;
     if (!worker->cleanup_ && lua_isyieldable(state))
         return lua_yield(state, 0);
-    return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua task was cancelled").toUtf8().constData());
+    return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua task was cancelled").toUtf8().constData());
 }
 
 int ScriptWorker::setUserHook(lua_State *state) {
@@ -387,7 +387,7 @@ bool ScriptWorker::ensureState() {
     state_ = lua_newstate(allocate, this, QRandomGenerator::global()->generate());
     if (!state_) {
         initializationError_ =
-            QCoreApplication::translate("WindowSystem", "Unable to allocate the Lua interpreter");
+            QCoreApplication::translate("LuaRuntime", "Unable to allocate the Lua interpreter");
         return false;
     }
     *static_cast<ScriptWorker **>(lua_getextraspace(state_)) = this;
@@ -418,7 +418,7 @@ void ScriptWorker::closeState() {
 
 void ScriptWorker::enqueue(ScriptJob job) {
     if (stale(job)) {
-        finishQueued(std::move(job), QCoreApplication::translate("WindowSystem", "Lua task was cancelled"));
+        finishQueued(std::move(job), QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"));
         return;
     }
     queue_.enqueue(std::move(job));
@@ -443,7 +443,7 @@ void ScriptWorker::pump() {
         return;
     ScriptJob job = queue_.dequeue();
     if (stale(job)) {
-        finishQueued(std::move(job), QCoreApplication::translate("WindowSystem", "Lua task was cancelled"));
+        finishQueued(std::move(job), QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"));
         schedulePump();
         return;
     }
@@ -485,7 +485,7 @@ int ScriptWorker::prepare(lua_State *state) {
         } else {
             const auto it = worker->callbacks_.constFind(active.job.callbackId);
             if (it == worker->callbacks_.cend())
-                return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua callback no longer exists").toUtf8().constData());
+                return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua callback no longer exists").toUtf8().constData());
             lua_rawgeti(active.coroutine, LUA_REGISTRYINDEX, it.value());
         }
         ValueBudget budget{worker->limits_};
@@ -520,7 +520,7 @@ void ScriptWorker::resume(int arguments) {
         hostDeadline_.start(limits_.hostReplyTimeoutMs);
         return;
     } else if (status != LUA_OK) {
-        finish(failure(status == LUA_YIELD ? QCoreApplication::translate("WindowSystem", "Unexpected Lua coroutine suspension")
+        finish(failure(status == LUA_YIELD ? QCoreApplication::translate("LuaRuntime", "Unexpected Lua coroutine suspension")
                                            : stackError(active_->coroutine, status)));
     } else {
         try {
@@ -539,14 +539,14 @@ void ScriptWorker::resume(int arguments) {
 int ScriptWorker::hostCall(lua_State *state) {
     auto *worker = self(state);
     if (!worker->active_ || worker->cleanup_ || !lua_isyieldable(state))
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Host operations require a yieldable Lua task").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Host operations require a yieldable Lua task").toUtf8().constData());
     if (!worker->checkCurrentStop())
         return checkStop(state);
     try {
         ValueBudget budget{worker->limits_};
         const auto method = readText(state, 1, budget);
         if (method.isEmpty())
-            return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Host method cannot be empty").toUtf8().constData());
+            return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Host method cannot be empty").toUtf8().constData());
         QVariantList arguments;
         for (int i = 2; i <= lua_gettop(state); ++i)
             arguments.append(readValue(state, i, budget));
@@ -581,7 +581,7 @@ void ScriptWorker::hostReply(quint64 job, quint64 generation, quint64 cancellati
 int ScriptWorker::hostContinuation(lua_State *state, int, lua_KContext context) {
     auto *worker = self(state);
     if (!worker->active_ || worker->active_->job.id != static_cast<quint64>(context))
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua task no longer exists").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua task no longer exists").toUtf8().constData());
     if (!worker->checkCurrentStop())
         return checkStop(state);
     auto result = std::move(worker->active_->reply);
@@ -596,7 +596,7 @@ int ScriptWorker::hostContinuation(lua_State *state, int, lua_KContext context) 
     try {
         ValueBudget budget{worker->limits_};
         if (!lua_checkstack(state, static_cast<int>(result.values.size())))
-            return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua stack has no space for host results").toUtf8().constData());
+            return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua stack has no space for host results").toUtf8().constData());
         for (const auto &value : result.values)
             pushValue(state, value, budget);
         return static_cast<int>(result.values.size());
@@ -608,11 +608,11 @@ int ScriptWorker::hostContinuation(lua_State *state, int, lua_KContext context) 
 int ScriptWorker::createCallback(lua_State *state) {
     auto *worker = self(state);
     if (!worker->active_ || worker->cleanup_)
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Cannot register a Lua callback during cleanup").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Cannot register a Lua callback during cleanup").toUtf8().constData());
     if (lua_type(state, 1) != LUA_TFUNCTION)
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Callback must be a Lua function").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Callback must be a Lua function").toUtf8().constData());
     if (worker->callbacks_.size() >= worker->limits_.maximumCallbacks)
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Lua callback count exceeds its configured limit").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Lua callback count exceeds its configured limit").toUtf8().constData());
     const auto id = QString::number(worker->stateGeneration_) + QLatin1Char(':') +
                     QString::number(++worker->nextCallback_);
     const auto encoded = id.toUtf8();
@@ -628,11 +628,11 @@ int ScriptWorker::createCallback(lua_State *state) {
 
 int ScriptWorker::releaseRetainedCallback(lua_State *state) {
     if (lua_type(state, 1) != LUA_TSTRING)
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Callback ID must be a string").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Callback ID must be a string").toUtf8().constData());
     size_t size = 0;
     const auto *data = lua_tolstring(state, 1, &size);
     if (size > 128)
-        return luaL_error(state, "%s", QCoreApplication::translate("WindowSystem", "Invalid callback ID").toUtf8().constData());
+        return luaL_error(state, "%s", QCoreApplication::translate("LuaRuntime", "Invalid callback ID").toUtf8().constData());
     self(state)->releaseCallback(QString::fromUtf8(data, static_cast<qsizetype>(size)));
     return 0;
 }
@@ -668,9 +668,9 @@ int ScriptWorker::print(lua_State *state) {
 
 QString ScriptWorker::stackError(lua_State *state, int status) const {
     if (status == LUA_ERRMEM)
-        return QCoreApplication::translate("WindowSystem", "Lua allocator could not allocate memory");
+        return QCoreApplication::translate("LuaRuntime", "Lua allocator could not allocate memory");
     if (lua_type(state, -1) != LUA_TSTRING)
-        return QCoreApplication::translate("WindowSystem", "Lua task failed with a non-string error");
+        return QCoreApplication::translate("LuaRuntime", "Lua task failed with a non-string error");
     size_t size = 0;
     const auto *message = lua_tolstring(state, -1, &size);
     const auto length = qMin(size, static_cast<size_t>(limits_.maximumLogMessageBytes));
@@ -744,7 +744,7 @@ void ScriptWorker::deliver(ScriptJob job, ScriptResult result) {
     while (true) {
         const auto others = retained - job.retainedBytes;
         if (outputBytes > limits_.maximumQueuedBytes - qMin(others, limits_.maximumQueuedBytes)) {
-            result = failure(QCoreApplication::translate("WindowSystem", "Lua result exceeds the pending transfer byte limit"));
+            result = failure(QCoreApplication::translate("LuaRuntime", "Lua result exceeds the pending transfer byte limit"));
             outputBytes = 0;
         }
         if (statistics_->queuedBytes.compare_exchange_weak(retained, others + outputBytes,
@@ -768,12 +768,12 @@ void ScriptWorker::releaseCallback(const QString &id) {
 
 void ScriptWorker::cancel() {
     if (active_ && stale(active_->job))
-        finish(failure(QCoreApplication::translate("WindowSystem", "Lua task was cancelled")));
+        finish(failure(QCoreApplication::translate("LuaRuntime", "Lua task was cancelled")));
     QQueue<ScriptJob> retained;
     while (!queue_.isEmpty()) {
         auto job = queue_.dequeue();
         if (stale(job))
-            finishQueued(std::move(job), QCoreApplication::translate("WindowSystem", "Lua task was cancelled"));
+            finishQueued(std::move(job), QCoreApplication::translate("LuaRuntime", "Lua task was cancelled"));
         else
             retained.enqueue(std::move(job));
     }

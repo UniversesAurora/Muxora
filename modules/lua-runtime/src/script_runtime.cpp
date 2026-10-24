@@ -9,7 +9,16 @@
 #include <exception>
 #include <chrono>
 
+// Resources in a static library are registered only when referenced.
+static void initializeLuaRuntimeTranslations() { Q_INIT_RESOURCE(lua_runtime_translations); }
+
 namespace lua_runtime {
+
+QString translationCatalog()
+{
+    initializeLuaRuntimeTranslations();
+    return QStringLiteral(":/lua_runtime/i18n/lua_runtime");
+}
 
 struct ScriptRuntime::Private {
     ScriptRuntime *owner;
@@ -84,7 +93,7 @@ struct ScriptRuntime::Private {
                 const QPointer<ScriptRuntime> guard(this->owner);
                 const auto handler = hostHandler;
                 const int maximumErrorLength = limits.maximumLogMessageBytes;
-                ScriptResult result{false, {}, QCoreApplication::translate("WindowSystem", "No Lua host handler is installed")};
+                ScriptResult result{false, {}, QCoreApplication::translate("LuaRuntime", "No Lua host handler is installed")};
                 try {
                     if (handler)
                         result = handler(std::move(method), std::move(arguments), std::move(context));
@@ -93,7 +102,7 @@ struct ScriptRuntime::Private {
                 } catch (const std::exception &error) {
                     result = {false, {}, QString::fromUtf8(error.what()).left(maximumErrorLength)};
                 } catch (...) {
-                    result = {false, {}, QCoreApplication::translate("WindowSystem", "Lua host handler raised an unknown exception")};
+                    result = {false, {}, QCoreApplication::translate("LuaRuntime", "Lua host handler raised an unknown exception")};
                 }
                 if (!guard)
                     return;
@@ -135,11 +144,11 @@ struct ScriptRuntime::Private {
     quint64 submit(detail::ScriptJob job) {
         const auto id = job.id;
         if (statistics->pending.load(std::memory_order_acquire) >= limits.maximumPendingJobs)
-            return reject(id, QCoreApplication::translate("WindowSystem", "Lua task queue is full"));
+            return reject(id, QCoreApplication::translate("LuaRuntime", "Lua task queue is full"));
         auto queued = statistics->queuedBytes.load(std::memory_order_acquire);
         while (true) {
             if (job.retainedBytes > limits.maximumQueuedBytes - qMin(queued, limits.maximumQueuedBytes))
-                return reject(id, QCoreApplication::translate("WindowSystem", "Lua task queue exceeds its byte limit"));
+                return reject(id, QCoreApplication::translate("LuaRuntime", "Lua task queue exceeds its byte limit"));
             if (statistics->queuedBytes.compare_exchange_weak(queued, queued + job.retainedBytes,
                                                               std::memory_order_acq_rel))
                 break;
@@ -186,12 +195,12 @@ quint64 ScriptRuntime::execute(QString source, QString name, QVariantMap context
     d->requireOwnerThread();
     const auto id = ++d->nextJob;
     if (source.size() > d->limits.maximumSourceBytes)
-        return d->reject(id, QCoreApplication::translate("WindowSystem", "Lua source exceeds its configured byte limit"));
+        return d->reject(id, QCoreApplication::translate("LuaRuntime", "Lua source exceeds its configured byte limit"));
     auto encoded = source.toUtf8();
     if (encoded.size() > d->limits.maximumSourceBytes)
-        return d->reject(id, QCoreApplication::translate("WindowSystem", "Lua source exceeds its configured byte limit"));
+        return d->reject(id, QCoreApplication::translate("LuaRuntime", "Lua source exceeds its configured byte limit"));
     if (name.size() > 4096)
-        return d->reject(id, QCoreApplication::translate("WindowSystem", "Lua source name is too long"));
+        return d->reject(id, QCoreApplication::translate("LuaRuntime", "Lua source name is too long"));
     detail::ScriptJob job;
     job.id = id;
     job.source = std::move(encoded);
@@ -210,7 +219,7 @@ quint64 ScriptRuntime::invoke(QString callbackId, QVariantMap context, QVariant 
     d->requireOwnerThread();
     const auto id = ++d->nextJob;
     if (callbackId.isEmpty() || callbackId.size() > 128)
-        return d->reject(id, QCoreApplication::translate("WindowSystem", "Invalid Lua callback ID"));
+        return d->reject(id, QCoreApplication::translate("LuaRuntime", "Invalid Lua callback ID"));
     detail::ScriptJob job;
     job.id = id;
     job.callbackId = std::move(callbackId);
