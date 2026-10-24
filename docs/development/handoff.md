@@ -49,9 +49,9 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude 交出：8.15b 钉住标签（在单独分支上，未并入 main）
+## 2026-10-24 · Claude 交出：8.15b 钉住标签并入 main
 
-- **最后提交**：8.15b 全部在分支 `claude/8.15b-sticky-tabs` 上，已推送到同名远端分支；这个分支从 Codex 的 `390f20f`（8.12 源码迁移，尚未推送到 `origin/main`）开出，**没有并入 `main`**。工作目录是单独的 git 工作树 `../Muxora-8.15b`，主目录里 Codex 的 8.12 未提交改动（9 个文件）原样未动。
+- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。8.15b 先在分支 `claude/8.15b-sticky-tabs` 上开发，Codex 推送 8.12 后变基到 `main` 并快进合入，分支和工作树已删除。
 - **本轮完成**（用户要求 8.15b 四项都做，前三项照 VS Code 做成设置）：
   - `window-system/tabs: Close tabs with the middle button`：标签栏和收纳条的中键关闭（界面规范早有规定，一直没实现）。
   - `window-system/tabs: Show tooltips for the displayed tab in custom layouts`：修复多行标签栏第二行起悬停提示错误（反向验证过）。
@@ -59,25 +59,19 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/tabs: Show sticky tabs on a separate row`：`tabs.stickyTabsOnSeparateRow`，两行之间拖动按指针所在行决定钉住。
   - `window-system/tabs: Keep sticky tabs open on the close shortcut and middle click`：`tabs.preventStickyClose`，默认与 VS Code 相同（快捷键和中键都拦），因此 Ctrl+W 对钉住标签改为切到未钉住的标签。
   - `window-system/tabs: Mark sticky tabs in the tab list`：完整标签列表中钉住标签带钉子标记。
-  - `window-system/tabs: Keep the slot of a tab dragged along its own last row`：用户试用预览时发现的多行拖动闪烁（原有问题，与钉住无关），见 [记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)。
-  - `window-system/tabs: Keep wheel expansion while tabs use one row`：用户要求关闭多行时保留滚轮展开，见 [记录](verification-log/2026-10.md#关闭多行时保留滚轮展开2026-10-24)。
-  - `window-system/tabs: Size the single-row canvas to its new-tab buttons`：钉住行占满时多出的滚动条，见 [记录](verification-log/2026-10.md#钉住行占满时单行标签栏多出滚动条2026-10-24)。
-  - `window-system/tabs: Let users choose the shrunk sticky tab width`：用户要求收缩宽度可调，新增 `tabs.shrinkStickyTabWidth`，见 [记录](verification-log/2026-10.md#收缩的钉住标签宽度可调2026-10-24)。
-  - 每项的实现要点、新增用例、反向验证和运行过的套件见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`（16 行）。Release 全量结果见“环境与注意事项”。
+  - 用户试用预览后的修正：多行拖动最后一行唯一的标签时插入位置来回跳（原有问题，[记录](verification-log/2026-10.md#多行拖动最后一行唯一的标签时插入位置来回跳2026-10-24)）；关闭多行时保留滚轮展开（[记录](verification-log/2026-10.md#关闭多行时保留滚轮展开2026-10-24)）；钉住行占满时多出的滚动条（[记录](verification-log/2026-10.md#钉住行占满时单行标签栏多出滚动条2026-10-24)）；收缩宽度可调，新增 `tabs.shrinkStickyTabWidth`（[记录](verification-log/2026-10.md#收缩的钉住标签宽度可调2026-10-24)）。
+  - 每项的实现要点、新增用例和反向验证见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`。
+  - 变基到 8.12 之后，Release 全量 64/64 通过（经隔离桌面，325.86 秒），翻译检查和文档检查通过。
 - **进行中**：无。
-- **下一步**：
-  1. Codex 完成并推送 8.12 后，把本分支变基到 `main` 上再快进：`git switch claude/8.15b-sticky-tabs`、`git rebase main`，冲突大概率只在 `CHANGELOG.md`、`docs/development/verification-log/2026-10.md`、`docs/development/window-system-preview.md`、翻译目录和本文件，两边内容都保留；翻译目录冲突时以 `check-translations.ps1` 通过为准。变基后跑 `sticky-tabs`、`tab-strip-layout`、`pane-settings` 和翻译检查，再 `git switch main`、`git merge --ff-only claude/8.15b-sticky-tabs` 并推送。之后删除工作树 `../Muxora-8.15b`（`git worktree remove`）和本地、远端的这个分支。
-  2. 然后按 Codex 原顺序 1.10 → 1.7 → 1.11 → 1.12。
+- **下一步**：按 Codex 原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
 - **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。
-- **本轮新决定**：收缩的钉住标签宽度可调（用户 2026-10-24），多行收起时不常显新建按钮、保持现状（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；关闭多行时保留滚轮展开的值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；8.15b 的三个设置照 VS Code 的名称、选项和默认值（用户 2026-10-24），写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
 - **环境与注意事项**：
   - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
-  - Release 全量在 `f68b388`（本分支全部 8.15b 提交）上 64/64 通过（经隔离桌面，约 324 秒）。
   - 只在默认主题下截图核对过外观；三主题截图、Debug 构建和用户真实试用未做。
 
 ---
-## 2026-10-24 · Codex 进行中：英文源文本与翻译覆盖
 
 ## 2026-10-24 · Codex：英文源文本迁移收尾
 
