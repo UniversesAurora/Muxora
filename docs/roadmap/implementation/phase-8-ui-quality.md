@@ -79,7 +79,13 @@
 
 **风险**：这是原生帧的核心改动，影响面大。必须单独提交，提交前运行 `native-frame`、`window-placement`、`chrome-interaction`、`caption-strip`、`drag-*`、`focus-mode` 和应用部署夹具。
 
-**状态**：未开始。
+**状态**：进行中（Claude，2026-10-24）。开工前读 Qt 6.12 源码发现上面第 2 步不能照做：
+
+- `WorkspaceWindow` 带 `Qt::FramelessWindowHint`。Qt 对非最大化的无边框窗口跳过边距计算（`qwindowswindow.cpp` 的 `shouldOmitFrameAdjustment()`），把整个窗口矩形当成客户区（`geometry_sys()` = 窗口矩形减去为 0 的边距）。只在 `WM_NCCALCSIZE` 里缩小客户区，Qt 仍按原尺寸布局，右边和下边会被裁掉一圈。
+- `Qt::ExpandedClientAreaHint`（Qt 6.9 起）在 `WM_NCCALCSIZE` 里正好左、右、下各缩一个缩放边框，但 Qt 会在窗口里放一个自己画标题按钮的原生子窗口，破坏我们的标题按钮命中（[Windows 平台经验](../../development/lessons/windows-platform.md#窗口里出现原生子窗口会破坏命中测试)），不能用。
+- 准备采用的做法：`WorkspaceWindow` 去掉 `Qt::FramelessWindowHint`（HWND 的样式本来就带标题和缩放边框，`normalFrameStyle()` 已经这样设置），`window_frame.cpp` 改用一个窗口属性识别自绘框架窗口，不再检查这个标志。Qt 对“程序自己在 `WM_NCCALCSIZE` 里去掉部分边框”的普通窗口会按实际客户区重新计算边距（`updateFullFrameMargins()`，QTBUG-117704），再减去不可见边框得到可见几何。`WM_GETMINMAXINFO` 的拖动尺寸限制在普通状态下要加上左右两个和下面一个边框宽度。要重点验证：第一次显示前的位置会不会按旧边距偏移、可见边框会不会变成 2 像素、拖动预览的紧凑窗口、全屏和最大化。
+- 原有用例 `nativeCaptionDoesNotConsumeClientSpace`、`verifyNativeStyle` 断言了客户区等于窗口矩形和无边框标志，这正是本步骤要改变的行为，改动时按测试规范说明并保留等效覆盖。
+- 原型不通时退回设计里的备选方案（客户区内留 3 像素缩放带，面板调整带在其内侧）。
 
 ---
 
