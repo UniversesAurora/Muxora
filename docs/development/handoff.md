@@ -49,7 +49,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude 交出：标签条滚动、外观原地更新、测试证据规则、钉住标签
+## 2026-10-24 · Claude 交给 Codex：钉住标签、标签条滚动、测试前台修正；Codex 接 8.12 与 M1 内部步骤
 
 - **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。
 - **本轮完成**（用户 2026-10-24 的要求，详见各验证记录）：
@@ -66,13 +66,20 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `tools: Clean up the deployment check output`：部署检查的日志移到 `test-results/`，临时状态在检查通过后删除。
   - 完整 `verify.ps1` 在 `f5fffa6` 和 `9a4b98d` 上各通过一次：Debug 63/63、Release 63/63、独立模块 56/56、两个外部宿主、应用退出、视图状态和 Lua 部署检查；固定 Release 预览已刷新。
 - **进行中**：无。
-- **下一步**：用户试用钉住标签和标签条滚动；然后按推荐顺序做 [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)，之后 1.7 → 1.11 → 1.12。
+- **下一步**（Codex，按顺序；分工规则见 [AGENTS.md](../../AGENTS.md#轮流开发与交接)，这些步骤都不需要新外观）：
+  1. [8.12 英文源文本与全量翻译核查](../roadmap/implementation/phase-8-ui-quality.md#812-英文源文本与全量翻译核查)：独占进行，期间不做其他会新增文字的步骤。中文界面显示的文字保持现状；英文源文本由代码含义决定，拿不准的条目列进验证日志交 Claude 复核；不改菜单归属和持久化标识。
+  2. [1.10 命令注册表 ID 索引](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12)。
+  3. [1.7 非活动标签按需创建视图](../roadmap/implementation/phase-1-layout-performance.md#17-非活动标签按需创建视图) → [1.11 结构变化与同步批量关闭的成本](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)（先测量，结果交 Claude 决定是否改实现）→ [1.12 窗格分割器布局期间的重入](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。
+  4. [1.9 布局保存移出 GUI 线程](../roadmap/implementation/phase-1-layout-performance.md#19-布局保存移出-gui-线程应用侧)（先看基准数据决定做多少）、[6.1 应用入口拆分](../roadmap/implementation/phase-6-engineering.md#61-应用入口拆分)。
+  - 留给 Claude：8.1 → 8.2（原生框架和面板调整，要靠真实试用把握交互手感）；M2 的主题、颜色和界面组件（2.1–2.7、8.3–8.6、8.8、8.11）；3.8 快捷键编辑器、4.3 设置页；M6 的 8.10、8.15b；以及任何新增设置项。用户试用钉住标签和标签条滚动后的反馈也由 Claude 处理。
+  - Codex 以后还可以接的、不涉及外观的步骤：3.1–3.5 上下文键与按键优先级、3.6–3.7 JSONC、4.1、4.2、4.4、4.5 设置注册表与持久化、6.2–6.6 工程、8.7 系统通知。按推荐顺序，到时由交接记录指定。
 - **待用户决定**：8.10 尺寸规格统一；8.15b 钉住标签的尺寸模式、单独一行和按键保护要不要做、先做哪项。
 - **请下一位回答**：无。
-- **本轮新决定**：标签长度变化时的条带滚动规则（[交互细则](../design/window-interaction-design.md#条带尺寸变化)，用户确认“活动标签不动、碰边再推”）；钉住标签的行为与拖动规则（用户 2026-10-24）；测试证据写进验证日志、排查文件按主题删除（[测试要求](testing-design.md#测试结果与排查文件)）。
+- **本轮新决定**：新外观的工作由 Claude 做，Codex 做不涉及外观的步骤（用户 2026-10-24，写在 [AGENTS.md](../../AGENTS.md#轮流开发与交接)）；标签长度变化时的条带滚动规则（[交互细则](../design/window-interaction-design.md#条带尺寸变化)，用户确认“活动标签不动、碰边再推”）；钉住标签的行为与拖动规则（用户 2026-10-24）；测试证据写进验证日志、排查文件按主题删除（[测试要求](testing-design.md#测试结果与排查文件)）。
 - **环境与注意事项**：
   - 修改公开接口的生命周期或行为时，搜索所有调用它的测试，不能只跑“相关”套件；本轮因此漏了一个用例并推送了失败。
   - 未做三主题截图审查、混合 DPI、多屏和真实试用；`chrome-interaction` 菜单首报仍未查明。
+  - 用户报告 Codex 版本中调标题长度时设置页会自动滚动，在 `d31eaa8` 和当前版本都没有复现，原因未找到；`PaneSettingsTest::titleWidthUpdatesKeepScrollPositions` 守着当前行为。
   - `tab-strip-layout` 的 `detachedMultilineTabDropsIntoAnotherGroupAtItsVisibleRow` 在 10-22 和本轮前两次完整 Debug 运行中整组失败、单独运行通过，修正前台交接后的完整运行通过，但原因没有单独确认；再失败时先看拖放目标点上的窗口（[记录](verification-log/2026-10.md#全量中测试窗口的前台被外壳窗口夺走2026-10-24)）。
 
 ---
