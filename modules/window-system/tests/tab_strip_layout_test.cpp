@@ -127,6 +127,8 @@ private slots:
     void closeTargetShowsHoverAndPressFeedback();
     void titleWidthChangesKeepTheActiveTabInPlace();
     void stickyTabsAlwaysShowTheirPin();
+    void middleClickClosesTheTabUnderThePointer();
+    void middleClickClosesManagedStripAndRailTabs();
     void draggingAcrossTheStickyRunChangesStickiness();
     void narrowMultilineTitlesUseHardClippingWithoutAWidthLimit();
     void tabShapeOptionsPreserveStyleStates_data();
@@ -578,6 +580,65 @@ void TabStripLayoutTest::stickyTabsAlwaysShowTheirPin()
     sendBarMouse(bar, QEvent::MouseButtonPress, slot(1).center(), Qt::LeftButton, Qt::LeftButton);
     sendBarMouse(bar, QEvent::MouseButtonRelease, slot(1).center(), Qt::LeftButton, Qt::NoButton);
     QCOMPARE(closed, 1); QCOMPARE(unstuck, 1);
+}
+
+void TabStripLayoutTest::middleClickClosesTheTabUnderThePointer()
+{
+    auto appearance = TabAppearance{}; appearance.showNewTabButton = false;
+    GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 3);
+    QVector<int> closed;
+    tabs.closeRequested = [&closed](int index) { closed << index; };
+    tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); tabs.setCurrentIndex(0);
+    const auto click = [bar](int from, int to) {
+        sendBarMouse(bar, QEvent::MouseButtonPress, bar->displayTabRect(from).center(), Qt::MiddleButton, Qt::MiddleButton);
+        sendBarMouse(bar, QEvent::MouseButtonRelease, bar->displayTabRect(to).center(), Qt::MiddleButton, Qt::NoButton);
+    };
+    // The pressed tab closes without being selected first.
+    click(2, 2); QCOMPARE(closed, QVector<int>{2}); QCOMPARE(tabs.currentIndex(), 0);
+    // Releasing on another tab cancels, as does a left click.
+    click(1, 2); QCOMPARE(closed, QVector<int>{2});
+    sendBarMouse(bar, QEvent::MouseButtonPress, bar->displayTabRect(1).center(), Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(bar, QEvent::MouseButtonRelease, bar->displayTabRect(1).center(), Qt::LeftButton, Qt::NoButton);
+    QCOMPARE(closed, QVector<int>{2}); QCOMPARE(tabs.currentIndex(), 1);
+    // An auto-hide rail tab closes the same way, without opening its panel.
+    QWidget root; applyTheme(&root);
+    EdgeTabButton button("Rail", true, defaultTheme().metrics.edgeThickness, &root); button.resize(button.sizeHint());
+    int railClosed = 0, railClicked = 0;
+    button.close = [&railClosed] { ++railClosed; };
+    QObject::connect(&button, &QAbstractButton::clicked, &button, [&railClicked] { ++railClicked; });
+    sendBarMouse(&button, QEvent::MouseButtonPress, button.rect().center(), Qt::MiddleButton, Qt::MiddleButton);
+    sendBarMouse(&button, QEvent::MouseButtonRelease, button.rect().center(), Qt::MiddleButton, Qt::NoButton);
+    QCOMPARE(railClosed, 1); QCOMPARE(railClicked, 0);
+    sendBarMouse(&button, QEvent::MouseButtonPress, button.rect().center(), Qt::MiddleButton, Qt::MiddleButton);
+    sendBarMouse(&button, QEvent::MouseButtonRelease, button.rect().bottomRight() + QPoint(5, 5), Qt::MiddleButton, Qt::NoButton);
+    QCOMPARE(railClosed, 1);
+}
+
+void TabStripLayoutTest::middleClickClosesManagedStripAndRailTabs()
+{
+    const auto cleanup = qScopeGuard([] { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); });
+    WindowManager manager;
+    const auto window = manager.createWindow(WindowKind::Workbench, {"Middle close", {900, 360}});
+    QVector<TabId> ids;
+    for (int index = 0; index < 3; ++index)
+        ids.append(manager.addTab(window, new QLabel(QString("Content %1").arg(index)), {QString("Tab %1").arg(index), "label", {}}));
+    QVERIFY(manager.moveTabToEdgeBar(ids[2], window, Edge::Left, -1));
+    manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    const auto middle = [](QWidget* target, QPoint point) {
+        sendBarMouse(target, QEvent::MouseButtonPress, point, Qt::MiddleButton, Qt::MiddleButton);
+        sendBarMouse(target, QEvent::MouseButtonRelease, point, Qt::MiddleButton, Qt::NoButton);
+    };
+    auto* view = groupView(manager.windowWidget(window), manager.model().groupForTab(ids[0])); QVERIFY(view);
+    middle(view->tabBar(), view->tabBar()->displayTabRect(1).center());
+    QTRY_VERIFY(!manager.model().tab(ids[1]));
+    QAbstractButton* rail = nullptr;
+    for (auto* button : manager.windowWidget(window)->findChildren<QAbstractButton*>())
+        if (dynamic_cast<EdgeTabButton*>(button) && button->property("tabId").toUuid() == ids[2]) rail = button;
+    QVERIFY(rail);
+    middle(rail, rail->rect().center());
+    QTRY_VERIFY(!manager.model().tab(ids[2]));
+    QVERIFY(manager.model().tab(ids[0]));
 }
 
 void TabStripLayoutTest::draggingAcrossTheStickyRunChangesStickiness()

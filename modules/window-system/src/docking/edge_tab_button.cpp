@@ -56,9 +56,16 @@ void EdgeTabButton::setPreset(std::optional<TabColorPreset> preset)
 void EdgeTabButton::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton) {
+        if (event->button() == Qt::MiddleButton) middlePressed_ = true;
         event->accept(); return;
     }
     start_ = event->position().toPoint(); QAbstractButton::mousePressEvent(event);
+}
+void EdgeTabButton::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() != Qt::MiddleButton) { QAbstractButton::mouseReleaseEvent(event); return; }
+    const bool pressed = middlePressed_; middlePressed_ = false; event->accept();
+    if (pressed && rect().contains(event->position().toPoint())) { const auto callback = close; if (callback) callback(); }
 }
 void EdgeTabButton::mouseMoveEvent(QMouseEvent* event)
 {

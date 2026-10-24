@@ -613,6 +613,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             button->setProperty("tabId", tabId);
             button->drag = [this, tabId](QPoint point) { if (manager_) manager_->beginTabDrag(tabId, point); };
             button->menu = [this, tabId](QPoint point) { if (manager_) manager_->showTabMenu(tabId, point); };
+            button->close = [this, tabId] { if (manager_) manager_->closeTab(tabId); };
             QObject::connect(button, &QAbstractButton::clicked, manager_, [this, groupId, tabId] {
                 if (peek_ && peekTab_ == tabId) closePeek();
                 else showEdgeGroup(groupId, tabId);

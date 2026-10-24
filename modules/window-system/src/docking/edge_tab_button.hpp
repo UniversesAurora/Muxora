@@ -33,15 +33,19 @@ public:
     void setTitleClipping(bool enabled, int maximumWidth);
     std::function<void(QPoint)> drag;
     std::function<void(QPoint)> menu;
+    // A middle click released on the button closes its tab.
+    std::function<void()> close;
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 private:
     bool vertical_;
     int thickness_;
     QPoint start_;
+    bool middlePressed_ = false;
     std::optional<TabColorPreset> preset_;
     int number_ = 0;
     bool clipTitles_ = false;

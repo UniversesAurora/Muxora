@@ -374,6 +374,9 @@ QRect DragTabBar::closeRect(int index) const {
 }
 void DragTabBar::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton) { pressed_ = -1; closePressed_ = -1; event->accept(); return; }
+    // A middle click closes the tab it was pressed and released on, like
+    // VS Code and browsers; it never selects or drags.
+    if (event->button() == Qt::MiddleButton) { middlePressed_ = displayedTabAt(event->position().toPoint()); event->accept(); return; }
     start_ = event->position().toPoint(); pressed_ = displayedTabAt(start_);
     if (event->button() == Qt::LeftButton && pressed_ >= 0 && closeRect(pressed_).contains(start_)) {
         closePressed_ = pressed_; pressed_ = -1; update(closeRect(closePressed_).adjusted(-2, -2, 2, 2)); event->accept(); return;
@@ -395,6 +398,13 @@ void DragTabBar::mouseMoveEvent(QMouseEvent* event) {
     QTabBar::mouseMoveEvent(event);
 }
 void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::MiddleButton) {
+        const auto index = middlePressed_; middlePressed_ = -1; event->accept();
+        if (index >= 0 && displayedTabAt(event->position().toPoint()) == index) {
+            const auto callback = close; if (callback) callback(index);
+        }
+        return;
+    }
     pressed_ = -1;
     if (closePressed_ >= 0) {
         const auto index = closePressed_; closePressed_ = -1;

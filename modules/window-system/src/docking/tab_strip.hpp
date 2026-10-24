@@ -63,6 +63,7 @@ private:
     QPoint start_;
     int pressed_ = -1;
     int closePressed_ = -1;
+    int middlePressed_ = -1;
     int hovered_ = -1;
     bool closeHovered_ = false;
     QIcon closeIcon_;
