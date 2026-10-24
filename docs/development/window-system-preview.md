@@ -135,7 +135,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 这里只写最近一次；更早的记录见 [验证日志](verification-log/2026-10.md)。
 
-8.15b 钉住标签变基到 8.12 之后，Release 全量 64/64 通过；随后审查 Codex 的 8.12 提交并修正英文措辞，受影响的 20 个套件通过，见 [审查记录](verification-log/2026-10.md#审查-codex-的-812-提交2026-10-24)。8.12 自己的验证（Release 63/63、独立模块 56/56、两个外部宿主和部署语言检查）见 [8.12 收尾记录](verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。翻译检查的 CI 接入按用户决定留到 6.6。
+审查 Codex 的 8.12 提交之后，内部标识改为英文 ID、方向命令改用整句、LuaRuntime 改用自己的翻译目录、覆盖检查改为单独的 CTest 项，Release 全量 65/65 通过，见 [记录](verification-log/2026-10.md#英文内部标识整句方向命令和-luaruntime-目录2026-10-24)；8.15b 钉住标签与审查本身的验证见 [审查记录](verification-log/2026-10.md#审查-codex-的-812-提交2026-10-24)。8.12 自己的验证（Release 63/63、独立模块 56/56、两个外部宿主和部署语言检查）见 [8.12 收尾记录](verification-log/2026-10.md#英文源文本迁移收尾2026-10-24)。翻译检查的 CI 接入按用户决定留到 6.6。
 
 没有跑 Debug 全量和完整 `verify.ps1`，也没做便携包、混合 DPI、多屏、三主题截图审查和真实试用；既有菜单交互和 `tab-strip-layout` 偶发首报的原因没有单独确认。当前步骤及下一步见 [实现计划](../roadmap/implementation/README.md#推荐执行顺序)。
 

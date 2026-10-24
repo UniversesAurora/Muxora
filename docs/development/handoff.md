@@ -49,7 +49,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
-## 2026-10-24 · Claude 交出：8.15b 钉住标签并入 main，审查 Codex 的 8.12
+## 2026-10-24 · Claude 交出：8.15b 钉住标签并入 main，审查 Codex 的 8.12，内部标识改英文
 
 - **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。8.15b 先在分支 `claude/8.15b-sticky-tabs` 上开发，Codex 推送 8.12 后变基到 `main` 并快进合入，分支和工作树已删除。
 - **本轮完成**（用户要求 8.15b 四项都做，前三项照 VS Code 做成设置）：
@@ -63,11 +63,17 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - 每项的实现要点、新增用例和反向验证见 [验证记录](verification-log/2026-10.md#钉住标签的外观与保护815b2026-10-24)；新增桌面套件 `sticky-tabs`。
   - 变基到 8.12 之后，Release 全量 64/64 通过（经隔离桌面，325.86 秒），翻译检查和文档检查通过。
   - 审查 Codex 的六个 8.12 提交（用户要求，重点是翻译）：迁移没有功能错误。`treewide: Use sentence case and whole sentences in English UI text` 统一英文命令名大小写、改掉一处字符串拼接和一条过时的报错；`docs: Tidy the 8.12 records after review` 恢复 ADR 0010 原文、精简 Codex 的验证记录。发现、修正和留着没改的事项见 [审查记录](verification-log/2026-10.md#审查-codex-的-812-提交2026-10-24)，修正后受影响的 20 个套件通过。
+  - 用户看了审查记录后决定内部标识改英文，审查里只记录的问题也一并改掉，[记录](verification-log/2026-10.md#英文内部标识整句方向命令和-luaruntime-目录2026-10-24)：
+    - `window-system: Use English IDs for menus, categories and palette names`：66 个中文分类和菜单路径标识、内置配色名换成英文，豁免清单从 161 项减到 47 项。
+    - `lua-runtime: Translate diagnostics from its own catalog`：LuaRuntime 的 42 条诊断移到自己的 `LuaRuntime` 上下文和目录，应用启动时加载。
+    - `window-system/commands: Give each direction command a whole title`：72 条方向和上一个／下一个命令各用整句源文本，中文与原拼接结果相同。
+    - `test: Run the translation coverage check as its own CTest`：覆盖检查改为 CTest 项 `translations.coverage`，C++ 测试不再调用 PowerShell。
+    - 在全部改动上 Release 全量经隔离桌面 65/65 通过（320.20 秒）。
 - **进行中**：无。
 - **下一步**：按 Codex 原顺序 [1.10](../roadmap/implementation/phase-1-layout-performance.md#110-命令注册表-id-索引r12) → 1.7 → 1.11 → 1.12。
-- **待用户决定**：命令分类和菜单路径的内部标识是否从中文字符串换成英文 ID（会改宿主接口和保存的菜单路径，见 [审查记录](verification-log/2026-10.md#审查-codex-的-812-提交2026-10-24)）；8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
+- **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表（上百个会话时用，[交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md) 有提到，实现计划里没有）列入计划。
 - **请下一位回答**：无。
-- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。
+- **本轮新决定**（均为用户 2026-10-24）：8.15b 的三个设置照 VS Code 的名称、选项和默认值；收缩的钉住标签宽度可调；关闭多行时保留滚轮展开的值；多行收起时不常显新建按钮。写在 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色) 和 [交互细则 · 钉住标签](../design/window-interaction-design.md#钉住标签)。内部标识（命令分类、菜单路径、配色等）一律用英文 ID，以后新增的也一样，写在 [设置与命令设计 §8.3](../design/settings-and-commands-design.md#83-翻译源文本与覆盖) 和 [工程设计 §2.1](engineering-design.md#21-可读性与依赖)。
 - **环境与注意事项**：
   - 翻译目录的格式和 `lupdate` 输出不同（缩进、闭合标签），直接运行 `window_system_lupdate` 会重排整个文件。本轮只按目录原格式插入新条目；以后可以考虑统一一次格式。
   - 只在默认主题下截图核对过外观；三主题截图、Debug 构建和用户真实试用未做。
