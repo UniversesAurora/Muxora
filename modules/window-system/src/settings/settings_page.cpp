@@ -231,6 +231,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         language_->setObjectName(QStringLiteral("DisplayLanguage"));
         language_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Display language"));
         for (const auto language : supportedUiLanguages()) language_->addItem(uiLanguageName(language), uiLanguageId(language));
+        language_->setDefaultData(uiLanguageId(UiLanguage::System));
         rows->addWidget(addRow(contents, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "Display language"),
             QStringLiteral("workbench.language"), QCoreApplication::translate("WindowSystem", "Restart the application to apply. This setting is independent of the window layout."), language_));
         const QPointer<TranslationManager> controller(translations);
@@ -244,6 +245,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         QObject::connect(translations, &QObject::destroyed, language_, [this] { language_->setEnabled(false); });
     }
     addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window"));
+    const WindowBehavior defaults;
     inputMethodScope_ = new ThemedComboBox(contents);
     inputMethodScope_->setObjectName(QStringLiteral("InputMethodScope"));
     inputMethodScope_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Remember input method for"));
@@ -252,20 +254,22 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         std::pair{QCoreApplication::translate("WindowSystem", "Workbench window and its floating windows"), InputMethodScope::Window},
         std::pair{QCoreApplication::translate("WindowSystem", "Each top-level window"), InputMethodScope::FloatingWindow},
         std::pair{QCoreApplication::translate("WindowSystem", "Tab group"), InputMethodScope::TabGroup},
-        std::pair{QCoreApplication::translate("WindowSystem", "Tab (default)"), InputMethodScope::Tab},
+        std::pair{QCoreApplication::translate("WindowSystem", "Tab"), InputMethodScope::Tab},
         std::pair{QCoreApplication::translate("WindowSystem", "Pane"), InputMethodScope::Pane}})
         inputMethodScope_->addItem(entry.first, int(entry.second));
+    inputMethodScope_->setDefaultData(int(defaults.inputMethodScope));
     rows->addWidget(addRow(contents, QStringLiteral("window"),
         QCoreApplication::translate("WindowSystem", "Remember input method for"), QStringLiteral("window.inputMethodScope"),
         QCoreApplication::translate("WindowSystem", "Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting."), inputMethodScope_));
     newTabPosition_ = new ThemedComboBox(contents);
     newTabPosition_->setObjectName(QStringLiteral("NewTabPosition"));
     newTabPosition_->setAccessibleName(QCoreApplication::translate("WindowSystem", "New tab position"));
-    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "After the active tab (default)"), NewTabPosition::AfterActive},
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "After the active tab"), NewTabPosition::AfterActive},
                              std::pair{QCoreApplication::translate("WindowSystem", "Before the active tab"), NewTabPosition::BeforeActive},
                              std::pair{QCoreApplication::translate("WindowSystem", "Start of tab group"), NewTabPosition::Beginning},
                              std::pair{QCoreApplication::translate("WindowSystem", "End of tab group"), NewTabPosition::End}})
         newTabPosition_->addItem(entry.first, int(entry.second));
+    newTabPosition_->setDefaultData(int(defaults.newTabPosition));
     rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "New tab position"),
         QStringLiteral("window.newTabPosition"), QCoreApplication::translate("WindowSystem", "Applies to tabs created using the plus button, type menu, or commands."), newTabPosition_));
     detachKind_ = new ThemedComboBox(contents);
@@ -273,6 +277,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     detachKind_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Detached tab window type"));
     detachKind_->addItem(QCoreApplication::translate("WindowSystem", "Floating window (keeps its owner)"), int(WindowKind::Floating));
     detachKind_->addItem(QCoreApplication::translate("WindowSystem", "Workbench window"), int(WindowKind::Workbench));
+    detachKind_->setDefaultData(int(defaults.dragOutsideKind));
     rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window type for detached tabs"),
         QStringLiteral("window.dragOutsideKind"),
         QCoreApplication::translate("WindowSystem", "Choose a floating or workbench window when detaching a tab."), detachKind_));
@@ -282,6 +287,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     emptyPolicy_->setAccessibleName(QCoreApplication::translate("WindowSystem", "When a workbench window becomes empty"));
     emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "Keep the empty workbench window"), false);
     emptyPolicy_->addItem(QCoreApplication::translate("WindowSystem", "Automatically close the empty workbench window"), true);
+    emptyPolicy_->setDefaultData(defaults.closeEmptyWorkbench);
     rows->addWidget(addRow(contents, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "When the window becomes empty"),
         QStringLiteral("window.closeEmptyWorkbench"),
         QCoreApplication::translate("WindowSystem", "The workbench window remains open while it owns floating windows."), emptyPolicy_));

@@ -5,6 +5,7 @@
 #include "docking/tab_strip.hpp"
 #include "style/themed_controls.hpp"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
 #include <QLabel>
@@ -51,6 +52,7 @@ private slots:
     void checkedIndicatorUsesWhiteAndCanFollowTheme();
     void spinButtonsShowAnOutlineOnlyUnderThePointer();
     void comboHasAnArrowWithoutAnInternalDivider();
+    void comboPopupMarksTheDefaultAndShowsDetails();
     void tabListButtonTogglesItsOpenMenu();
     void popupOutsidePressDoesNotReplayAndReopen();
     void sizingCommandChangesOnlyTheRequestedStripAndRejectsInvalidInput();
@@ -119,6 +121,47 @@ void PresentationTest::comboHasAnArrowWithoutAnInternalDivider()
     QTest::mouseClick(combo, Qt::LeftButton, Qt::NoModifier, QPoint(10, combo->height() / 2));
     QTRY_VERIFY(QApplication::activePopupWidget());
     combo->hidePopup(); QTRY_VERIFY(!QApplication::activePopupWidget());
+}
+
+void PresentationTest::comboPopupMarksTheDefaultAndShowsDetails()
+{
+    QWidget root;
+    auto* layout = new QVBoxLayout(&root);
+    auto* combo = new ThemedComboBox(&root);
+    combo->addItem("Top", 0); combo->addItem("Bottom", 1);
+    layout->addWidget(combo); applyTheme(&root);
+    auto* delegate = combo->view()->itemDelegate();
+    QStyleOptionViewItem option; option.initFrom(combo->view());
+    const auto plainWidth = delegate->sizeHint(option, combo->model()->index(0, 0)).width();
+    QCOMPARE(combo->defaultIndex(), -1);
+    QVERIFY(combo->itemData(1, Qt::AccessibleDescriptionRole).toString().isEmpty());
+
+    // The default follows the item's data, not its position or text.
+    combo->setDefaultData(1);
+    QCOMPARE(combo->defaultIndex(), 1);
+    QCOMPARE(combo->itemData(1, Qt::AccessibleDescriptionRole).toString(), QStringLiteral("Default"));
+    QVERIFY(delegate->sizeHint(option, combo->model()->index(0, 0)).width() > plainWidth);
+    combo->setItemDetail(0, "top");
+    const auto detailWidth = delegate->sizeHint(option, combo->model()->index(0, 0)).width();
+    QVERIFY(detailWidth > delegate->sizeHint(option, combo->model()->index(1, 0)).width());
+    QCOMPARE(combo->itemText(0), QStringLiteral("Top"));
+
+    root.resize(280, 80); showFixture(root); QVERIFY(QTest::qWaitForWindowExposed(&root));
+    combo->setCurrentIndex(0);
+    combo->showPopup(); QTRY_VERIFY(QApplication::activePopupWidget());
+    auto* view = combo->view();
+    QTRY_VERIFY(view->isVisible());
+    const auto row = view->visualRect(combo->model()->index(1, 0));
+    const QRect trailing(row.center().x(), row.top(), row.right() - row.center().x(), row.height());
+    QTRY_VERIFY(matchingPixels(logicalImage(view->viewport()), trailing, defaultTheme().accent, 60) >= 4);
+    combo->hidePopup(); QTRY_VERIFY(!QApplication::activePopupWidget());
+
+    // Clearing or naming no item removes the mark and its spoken description.
+    combo->setDefaultData(QVariant());
+    QCOMPARE(combo->defaultIndex(), -1);
+    QVERIFY(combo->itemData(1, Qt::AccessibleDescriptionRole).toString().isEmpty());
+    combo->setDefaultData(7);
+    QCOMPARE(combo->defaultIndex(), -1);
 }
 
 void PresentationTest::tabListButtonTogglesItsOpenMenu()

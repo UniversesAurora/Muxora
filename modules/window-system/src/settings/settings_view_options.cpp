@@ -73,6 +73,7 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     captionButtonOrder_ = new ThemedComboBox(parent); captionButtonOrder_->setObjectName("CaptionButtonOrder");
     for (const auto& item : captionOrders)
         captionButtonOrder_->addItem(QCoreApplication::translate("WindowSystem", item.name), int(item.order));
+    captionButtonOrder_->setDefaultData(int(WindowBehavior{}.captionButtonOrder));
     rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Window control button order"), "window.captionButtonOrder",
         QCoreApplication::translate("WindowSystem", "The last two align the buttons to the left with Close outermost, for a window controls toolbar in the top-left corner."), captionButtonOrder_));
     connect(captionButtonOrder_, &QComboBox::currentIndexChanged, this, [this] {
@@ -82,6 +83,7 @@ void SettingsPage::addViewOptions(QWidget* parent, QVBoxLayout* rows)
     });
     zenFullscreenMode_ = new ThemedComboBox(parent); zenFullscreenMode_->setObjectName("ZenFullscreenMode");
     for (const auto& mode : modes) zenFullscreenMode_->addItem(QCoreApplication::translate("WindowSystem", mode.name), int(mode.mode));
+    zenFullscreenMode_->setDefaultData(int(WindowBehavior{}.zenFullscreenMode));
     rows->addWidget(addRow(parent, "window/display", QCoreApplication::translate("WindowSystem", "Default fullscreen scope for Zen mode"), "window.zenFullscreenMode",
         QCoreApplication::translate("WindowSystem", "Used when entering Zen mode from a normal window. Keep the current scope if already fullscreen. Exiting Zen mode restores the bars and keeps fullscreen."), zenFullscreenMode_));
     connect(zenFullscreenMode_, &QComboBox::currentIndexChanged, this, [this] {

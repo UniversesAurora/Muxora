@@ -4,6 +4,7 @@
 #include "authored_mouse_input.hpp"
 #include "chrome/workspace_window.hpp"
 #include "docking/dock_surface.hpp"
+#include "style/themed_controls.hpp"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -143,6 +144,7 @@ private slots:
     void settingsCategoryIndicatorUsesItsOwnSpacedGutter();
     void settingsSearchKeepsMatchingCategoriesAndTheirAncestors();
     void settingControlsUpdateImmediatelyAndReflectExternalChanges();
+    void choiceControlsMarkTheirDefaults();
     void titleWidthControlsKeepFocusDuringContinuousInput_data();
     void titleWidthControlsKeepFocusDuringContinuousInput();
     void titleWidthUpdatesKeepTheSettingsPageMounted_data();
@@ -593,6 +595,34 @@ void PaneSettingsTest::settingsSearchKeepsMatchingCategoriesAndTheirAncestors()
     QVERIFY(!display->isHidden());
     QCOMPARE(settingKeys(page), allSettingKeys());
     for (auto* heading : headings) QVERIFY(!heading->isHidden());
+}
+
+void PaneSettingsTest::choiceControlsMarkTheirDefaults()
+{
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    manager.showSettings(window);
+    auto* page = pageFor(manager, QStringLiteral("window_system.settings"));
+    QVERIFY(page);
+    const WindowBehavior behavior;
+    const TabAppearance appearance;
+    const QList<QPair<QString, QVariant>> expected{
+        {"InputMethodScope", int(behavior.inputMethodScope)}, {"NewTabPosition", int(behavior.newTabPosition)},
+        {"DetachWindowKind", int(behavior.dragOutsideKind)}, {"EmptyWorkbenchPolicy", behavior.closeEmptyWorkbench},
+        {"CaptionButtonOrder", int(behavior.captionButtonOrder)}, {"ZenFullscreenMode", int(behavior.zenFullscreenMode)},
+        {"CentralTabPlacement", int(appearance.centralPlacement)}, {"PinnedTabPlacement", int(appearance.pinnedPlacement)},
+        {"StickyTabSizing", int(appearance.stickySizing)}, {"PreventStickyTabClose", int(appearance.preventStickyClose)}};
+    for (const auto& [name, value] : expected) {
+        auto* combo = dynamic_cast<ThemedComboBox*>(page->findChild<QComboBox*>(name));
+        QVERIFY2(combo, qPrintable(name));
+        QVERIFY2(combo->defaultIndex() >= 0, qPrintable(name));
+        QCOMPARE(combo->itemData(combo->defaultIndex()), value);
+    }
+    // The mark replaces "(default)" in the option text.
+    for (auto* combo : page->findChildren<QComboBox*>())
+        for (int index = 0; index < combo->count(); ++index)
+            QVERIFY2(!combo->itemText(index).contains(QStringLiteral("default"), Qt::CaseInsensitive),
+                     qPrintable(combo->itemText(index)));
 }
 
 void PaneSettingsTest::settingControlsUpdateImmediatelyAndReflectExternalChanges()

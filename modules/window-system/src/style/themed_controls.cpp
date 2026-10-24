@@ -4,7 +4,10 @@
 #include <window_system/theme.hpp>
 
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QCoreApplication>
 #include <QEvent>
+#include <QStyledItemDelegate>
 #include <QGuiApplication>
 #include <QLocale>
 #include <QScreen>
@@ -60,7 +63,97 @@ QString leadingInteger(const QString& text, const QString& prefix)
     return end > digits ? remaining.first(end).toString() : QString{};
 }
 
+// Draws a row as text, an optional muted detail and an optional trailing
+// "Default". The row background still comes from the item view style rules.
+class ComboItemDelegate final : public QStyledItemDelegate {
+public:
+    explicit ComboItemDelegate(ThemedComboBox* combo) : QStyledItemDelegate(combo), combo_(combo) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QStyleOptionViewItem item = option;
+        initStyleOption(&item, index);
+        const auto* style = item.widget ? item.widget->style() : QApplication::style();
+        const auto text = item.text;
+        item.text.clear();
+        style->drawControl(QStyle::CE_ItemViewItem, &item, painter, item.widget);
+        item.text = text;
+        auto area = style->subElementRect(QStyle::SE_ItemViewItemText, &item, item.widget)
+                        .adjusted(textMargin, 0, -textMargin, 0);
+        const bool selected = item.state & QStyle::State_Selected;
+        const auto group = item.state & QStyle::State_Enabled ? QPalette::Active : QPalette::Disabled;
+        const auto plain = item.palette.color(group, selected ? QPalette::HighlightedText : QPalette::Text);
+        const auto& metrics = item.fontMetrics;
+        painter->save();
+        painter->setFont(item.font);
+        if (combo_ && index.row() == combo_->defaultIndex()) {
+            const auto mark = defaultText();
+            painter->setPen(selected ? plain : controlColor(combo_, "accent", QPalette::Link));
+            painter->drawText(area, Qt::AlignRight | Qt::AlignVCenter, mark);
+            area.setRight(area.right() - metrics.horizontalAdvance(mark) - gap);
+        }
+        painter->setPen(plain);
+        const auto label = metrics.elidedText(text, Qt::ElideRight, area.width());
+        painter->drawText(area, Qt::AlignLeft | Qt::AlignVCenter, label);
+        const auto detail = index.data(ThemedComboBox::DetailRole).toString();
+        if (!detail.isEmpty() && label == text) {
+            area.setLeft(area.left() + metrics.horizontalAdvance(text) + gap);
+            auto muted = combo_ ? controlColor(combo_, "mutedText", QPalette::PlaceholderText) : plain;
+            if (selected) { muted = plain; muted.setAlphaF(0.75f); }
+            painter->setPen(muted);
+            painter->drawText(area, Qt::AlignLeft | Qt::AlignVCenter,
+                              metrics.elidedText(detail, Qt::ElideRight, area.width()));
+        }
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        auto size = QStyledItemDelegate::sizeHint(option, index);
+        const auto& metrics = option.fontMetrics;
+        int extra = 2 * textMargin;
+        if (const auto detail = index.data(ThemedComboBox::DetailRole).toString(); !detail.isEmpty())
+            extra += gap + metrics.horizontalAdvance(detail);
+        if (combo_ && combo_->defaultIndex() >= 0)
+            extra += gap + metrics.horizontalAdvance(defaultText());
+        size.setWidth(size.width() + extra);
+        return size;
+    }
+
+private:
+    static constexpr int textMargin = 4;
+    static constexpr int gap = 8;
+    static QString defaultText() { return QCoreApplication::translate("WindowSystem", "Default"); }
+    QPointer<ThemedComboBox> combo_;
+};
+
 } // namespace
+
+ThemedComboBox::ThemedComboBox(QWidget* parent) : QComboBox(parent)
+{
+    setItemDelegate(new ComboItemDelegate(this));
+}
+
+void ThemedComboBox::setItemDetail(int index, const QString& detail)
+{
+    setItemData(index, detail.isEmpty() ? QVariant() : QVariant(detail), DetailRole);
+}
+
+void ThemedComboBox::setDefaultData(const QVariant& value)
+{
+    if (const auto previous = defaultIndex(); previous >= 0)
+        setItemData(previous, QVariant(), Qt::AccessibleDescriptionRole);
+    defaultData_ = value;
+    // Screen readers announce the mark that sighted users see in the popup.
+    if (const auto current = defaultIndex(); current >= 0)
+        setItemData(current, QCoreApplication::translate("WindowSystem", "Default"), Qt::AccessibleDescriptionRole);
+    view()->viewport()->update();
+}
+
+int ThemedComboBox::defaultIndex() const
+{
+    return defaultData_.isValid() ? findData(defaultData_) : -1;
+}
 
 QString overlayScrollbarStyle(const Theme& theme)
 {

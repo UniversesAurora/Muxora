@@ -28,6 +28,8 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         control->setObjectName(QString::fromLatin1(name));
         control->addItem(QCoreApplication::translate("WindowSystem", "Top"), int(TabBarPlacement::Top));
         control->addItem(QCoreApplication::translate("WindowSystem", "Bottom"), int(TabBarPlacement::Bottom));
+        const TabAppearance defaults;
+        control->setDefaultData(int(pinned ? defaults.pinnedPlacement : defaults.centralPlacement));
         rows->addWidget(addRow(parent, "window/tabs", title, QString::fromLatin1(key),
             pinned ? QCoreApplication::translate("WindowSystem", "Choose the tab position for pinned sidebar panels independently.") : QCoreApplication::translate("WindowSystem", "Place central tab bars above or below the content."), control));
         connect(control, &QComboBox::currentIndexChanged, this, [this, control, pinned] {
@@ -135,10 +137,11 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     stickySizing_ = new ThemedComboBox(parent);
     stickySizing_->setObjectName("StickyTabSizing");
     stickySizing_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Sticky tab size"));
-    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "Normal (default)"), StickyTabSizing::Normal},
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "Normal"), StickyTabSizing::Normal},
                              std::pair{QCoreApplication::translate("WindowSystem", "Compact: icon or first letter only"), StickyTabSizing::Compact},
                              std::pair{QCoreApplication::translate("WindowSystem", "Shrink: the start of the title"), StickyTabSizing::Shrink}})
         stickySizing_->addItem(entry.first, int(entry.second));
+    stickySizing_->setDefaultData(int(TabAppearance{}.stickySizing));
     rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Sticky tab size"), "tabs.stickySizing",
         QCoreApplication::translate("WindowSystem", "Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll."), stickySizing_));
     connect(stickySizing_, &QComboBox::currentIndexChanged, this, [this] {
@@ -169,11 +172,12 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     preventStickyClose_ = new ThemedComboBox(parent);
     preventStickyClose_->setObjectName("PreventStickyTabClose");
     preventStickyClose_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Keep sticky tabs open"));
-    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "On the close shortcut and middle click (default)"), StickyTabCloseGuard::KeyboardAndMouse},
+    for (const auto& entry : {std::pair{QCoreApplication::translate("WindowSystem", "On the close shortcut and middle click"), StickyTabCloseGuard::KeyboardAndMouse},
                              std::pair{QCoreApplication::translate("WindowSystem", "On the close shortcut"), StickyTabCloseGuard::Keyboard},
                              std::pair{QCoreApplication::translate("WindowSystem", "On middle click"), StickyTabCloseGuard::Mouse},
                              std::pair{QCoreApplication::translate("WindowSystem", "Never"), StickyTabCloseGuard::Never}})
         preventStickyClose_->addItem(entry.first, int(entry.second));
+    preventStickyClose_->setDefaultData(int(TabAppearance{}.preventStickyClose));
     rows->addWidget(addRow(parent, "window/tabs/sticky", QCoreApplication::translate("WindowSystem", "Keep sticky tabs open"), "tabs.preventStickyClose",
         QCoreApplication::translate("WindowSystem", "A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it."),
         preventStickyClose_));

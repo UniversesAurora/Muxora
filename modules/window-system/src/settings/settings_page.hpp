@@ -7,7 +7,6 @@
 #include <QWidget>
 
 class QCheckBox;
-class QComboBox;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
@@ -22,6 +21,7 @@ class QVBoxLayout;
 namespace window_system {
 
 class IntegerSlider;
+class ThemedComboBox;
 
 // Built-in window-system preferences remain independent of the host's settings
 // service. The host saves the manager snapshot; this page edits the live model.
@@ -60,20 +60,20 @@ private:
     QTreeWidget* categories_ = nullptr;
     QScrollArea* scroll_ = nullptr;
     QLabel* results_ = nullptr;
-    QComboBox* language_ = nullptr;
-    QComboBox* detachKind_ = nullptr;
-    QComboBox* newTabPosition_ = nullptr;
-    QComboBox* inputMethodScope_ = nullptr;
-    QComboBox* emptyPolicy_ = nullptr;
+    ThemedComboBox* language_ = nullptr;
+    ThemedComboBox* detachKind_ = nullptr;
+    ThemedComboBox* newTabPosition_ = nullptr;
+    ThemedComboBox* inputMethodScope_ = nullptr;
+    ThemedComboBox* emptyPolicy_ = nullptr;
     QCheckBox* reveal_ = nullptr;
     QSpinBox* delay_ = nullptr;
-    QComboBox* zenFullscreenMode_ = nullptr;
+    ThemedComboBox* zenFullscreenMode_ = nullptr;
     QCheckBox* hideSingleWorkbench_ = nullptr;
     QCheckBox* hideSingleFloating_ = nullptr;
     QCheckBox* hideToolbarOptionsWhenLocked_ = nullptr;
-    QComboBox* captionButtonOrder_ = nullptr;
-    QComboBox* centralPlacement_ = nullptr;
-    QComboBox* pinnedPlacement_ = nullptr;
+    ThemedComboBox* captionButtonOrder_ = nullptr;
+    ThemedComboBox* centralPlacement_ = nullptr;
+    ThemedComboBox* pinnedPlacement_ = nullptr;
     QCheckBox* multiline_ = nullptr;
     QCheckBox* wheelExpandRows_ = nullptr;
     QCheckBox* showIcons_ = nullptr;
@@ -88,10 +88,10 @@ private:
     QPlainTextEdit* tabColors_ = nullptr;
     QLabel* tabColorDiagnostic_ = nullptr;
     bool tabColorsDirty_ = false;
-    QComboBox* stickySizing_ = nullptr;
+    ThemedComboBox* stickySizing_ = nullptr;
     IntegerSlider* shrinkStickyTitleWidth_ = nullptr;
     QCheckBox* stickyTabsOnSeparateRow_ = nullptr;
-    QComboBox* preventStickyClose_ = nullptr;
+    ThemedComboBox* preventStickyClose_ = nullptr;
     WindowId initialWindow_;
     struct VisibilityControl { WindowBar bar; QCheckBox* control; };
     QVector<VisibilityControl> visibilityControls_;

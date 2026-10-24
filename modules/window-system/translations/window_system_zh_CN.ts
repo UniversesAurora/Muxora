@@ -1856,8 +1856,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="250"></location>
-            <source>After the active tab (default)</source>
-            <translation>当前标签之后（默认）</translation>
+            <source>After the active tab</source>
+            <translation>当前标签之后</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="251"></location>
@@ -3338,8 +3338,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="139"></location>
-            <source>Normal (default)</source>
-            <translation>正常（默认）</translation>
+            <source>Normal</source>
+            <translation>正常</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="140"></location>
@@ -3378,8 +3378,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="164"></location>
-            <source>On the close shortcut and middle click (default)</source>
-            <translation>按关闭快捷键和中键时（默认）</translation>
+            <source>On the close shortcut and middle click</source>
+            <translation>按关闭快捷键和中键时</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="165"></location>
@@ -3798,16 +3798,17 @@ Ctrl+Shift+P 打开命令面板</translation>
             <translation>每个顶层窗口</translation>
         </message>
         <message>
-            <source>Tab (default)</source>
-            <translation>标签（默认）</translation>
-        </message>
-        <message>
             <source>Pane</source>
             <translation>窗格</translation>
         </message>
         <message>
             <source>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</source>
             <translation>在这些区域之间切换时，恢复各自的输入法和输入模式。部分输入法只允许恢复键盘布局。重启后不保留这些状态。</translation>
+        </message>
+        <message>
+            <location filename="../src/style/themed_controls.cpp" line="146"></location>
+            <source>Default</source>
+            <translation>默认</translation>
         </message>
     </context>
 </TS>

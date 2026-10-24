@@ -15,16 +15,29 @@ struct Theme;
 
 // Native input, focus and accessibility behavior are retained. Only the small
 // indicators are painted here, resolving colors from the nearest Theme root.
+//
+// Like VS Code's settings dropdowns, a popup row can show a muted detail after
+// its text (for example an identifier) and "Default" at its trailing edge.
+// Both are optional: a list without details or a default draws plain rows.
 class ThemedComboBox final : public QComboBox {
 public:
-    using QComboBox::QComboBox;
+    // Item data role for the muted text drawn after an item's text.
+    static constexpr int DetailRole = Qt::UserRole + 0x100;
+
+    explicit ThemedComboBox(QWidget* parent = nullptr);
     void showPopup() override;
+    void setItemDetail(int index, const QString& detail);
+    // Marks the item whose data equals `value` as the default. A value that
+    // matches no item, or an invalid QVariant, clears the mark.
+    void setDefaultData(const QVariant& value);
+    [[nodiscard]] int defaultIndex() const;
 protected:
     void paintEvent(QPaintEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
     void alignPopup();
     QPointer<QWidget> popup_;
+    QVariant defaultData_;
 };
 
 class ThemedSpinBox : public QSpinBox {

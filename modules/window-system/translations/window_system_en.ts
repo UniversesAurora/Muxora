@@ -1862,8 +1862,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="250"></location>
-            <source>After the active tab (default)</source>
-            <translation>After the active tab (default)</translation>
+            <source>After the active tab</source>
+            <translation>After the active tab</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_page.cpp" line="251"></location>
@@ -3345,8 +3345,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="139"></location>
-            <source>Normal (default)</source>
-            <translation>Normal (default)</translation>
+            <source>Normal</source>
+            <translation>Normal</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="140"></location>
@@ -3385,8 +3385,8 @@ Ctrl+Shift+P opens the command palette</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="164"></location>
-            <source>On the close shortcut and middle click (default)</source>
-            <translation>On the close shortcut and middle click (default)</translation>
+            <source>On the close shortcut and middle click</source>
+            <translation>On the close shortcut and middle click</translation>
         </message>
         <message>
             <location filename="../src/settings/settings_tab_appearance.cpp" line="165"></location>
@@ -3805,16 +3805,17 @@ Ctrl+Shift+P opens the command palette</translation>
             <translation>Each top-level window</translation>
         </message>
         <message>
-            <source>Tab (default)</source>
-            <translation>Tab (default)</translation>
-        </message>
-        <message>
             <source>Pane</source>
             <translation>Pane</translation>
         </message>
         <message>
             <source>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</source>
             <translation>Restore the input method and its modes when switching between these areas. Some input methods only allow the keyboard layout to be restored. States are not kept after restarting.</translation>
+        </message>
+        <message>
+            <location filename="../src/style/themed_controls.cpp" line="146"></location>
+            <source>Default</source>
+            <translation>Default</translation>
         </message>
     </context>
 </TS>

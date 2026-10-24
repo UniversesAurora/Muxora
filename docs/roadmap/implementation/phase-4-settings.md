@@ -120,11 +120,11 @@
 **实现**：
 
 1. 控件工厂：`QWidget* createEditor(const SettingDefinition&, SettingsRegistry&, QWidget* parent)`：
-   - `Boolean` → `ThemedCheckBox`；`Enum` → `ThemedComboBox`；`Integer`／`Number` → 现有主题数字框；`String` → `QLineEdit`；`StringList` → 列表加“添加／删除”按钮；`Color` → 色块按钮加 `QColorDialog`；`Json` → 现有 `tabs.colors` 使用的多行编辑框，失焦时校验。
+   - `Boolean` → `ThemedCheckBox`；`Enum` → `ThemedComboBox`，用定义的默认值调用 `setDefaultData()` 标出默认项（现有设置页已按 `WindowBehavior{}`／`TabAppearance{}` 的默认值标出）；`Integer`／`Number` → 现有主题数字框；`String` → `QLineEdit`；`StringList` → 列表加“添加／删除”按钮；`Color` → 色块按钮加 `QColorDialog`；`Json` → 现有 `tabs.colors` 使用的多行编辑框，失焦时校验。
    - 定义里指定了 `editor` 时用对应控件：`SliderWithNumber` 用现有的 `IntegerSlider`，标题长度这几项（`0–1000` 的滑条）照此声明。
    - 控件的 `objectName` 使用设置 ID；同步更新按对象名查找控件的测试，不建立旧对象名映射。
 2. 有特殊交互的设置（`window.visibility.*` 的四个开关属于当前窗口，`workbench.language` 需要 `TranslationManager`）用“自定义编辑器”注册：`registerSettingEditor(id, factory)`，设置页优先使用。
-3. 每行布局：标题、ID（灰色小字）、说明、控件；修改过的行在左侧显示 2 像素的强调色竖条，行尾齿轮按钮菜单：“重置此设置”“复制设置 ID”“复制为 JSON”。
+3. 每行布局：标题、ID（灰色小字）、说明、控件；修改过的行在左侧显示 2 像素的强调色竖条，行尾齿轮按钮菜单：“重置此设置”“复制设置 ID”“复制为 JSON”。有了修改标记和重置之后，删掉说明里“默认隐藏”“默认开启”这类写默认值的句子（目前还有三处复选框说明）。
 4. 搜索：普通文字匹配标题、说明、ID、标签；`@modified` 只显示修改过的；`@id:<前缀>`；`@tag:<标签>`。保留分类树、点击定位和随滚动同步的现有行为。
 5. 顶部增加“打开 settings.json”按钮：模块发出信号 `settingsFileRequested()`（在 `WindowManager` 上），由宿主决定打开方式。
 6. `requiresRestart` 的设置修改后，行内显示“重启后生效”。
