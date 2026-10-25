@@ -161,7 +161,9 @@ void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
     QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.folder", "layout.panes"}));
     QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前标签夹", "当前窗格"}));
     QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "convertGroup"}), false),
-        (QStringList{"group.convertToTab", "group.moveIntoTab"}));
+        (QStringList{"group.convertToTab", "group.moveIntoTab",
+            "group.convertToFolder.left", "group.convertToFolder.right",
+            "group.convertToFolder.up", "group.convertToFolder.down", "group.convertToFolder"}));
     QCOMPARE(ids(menuAt(bar, {"layout", "currentTab", "convertTab"}), false),
         (QStringList{"tab.convertToGroup", "tab.moveIntoTab"}));
     const auto paneMoves = ids(menuAt(bar, {"layout", "currentPane", "movePane"}), false);

@@ -543,7 +543,7 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **完成标准**：每个套件都有审计结论并已执行；没有一条行为因退役失去覆盖（验证日志可查）；§5、§7 已改写；Release 全量通过。
 
-**状态**：进行中。标签栏相关套件（`tab-strip-layout`、`tab-bar-presentation`、`sticky-tabs`、`tab-viewport`、`strip-drag`、`drag-presentation`、`edge-tab-interaction`、`drag-interaction`、`sidebar-presentation`、`tab-group`、`edge-strip`）已随 8.21–8.24 按标准重写或移植，新增逻辑层套件 `tab-layout`、`tab-folder-model`，对照和退役依据见 [验证日志](../../development/verification-log/2026-10.md#标签栏重做与测试重写2026-10-25)。其余套件的审计表、§5／§7 的覆盖矩阵和度量还没做。
+**状态**：进行中。标签栏相关套件（`tab-strip-layout`、`tab-bar-presentation`、`sticky-tabs`、`tab-viewport`、`strip-drag`、`drag-presentation`、`edge-tab-interaction`、`drag-interaction`、`sidebar-presentation`、`tab-group`、`edge-strip`）已随 8.21–8.24 按标准重写或移植，新增逻辑层套件 `tab-layout`、`tab-folder-model`，对照和退役依据见 [验证日志](../../development/verification-log/2026-10.md#标签栏重做与测试重写2026-10-25)。接手全量中的翻译清单和菜单旧预期已修正，失败套件均定向通过，见 [复核](../../development/verification-log/2026-10.md#标签栏重构接手复核与翻译清单2026-10-25) 与 [菜单迁移](../../development/verification-log/2026-10.md#标签夹转换菜单的测试迁移2026-10-25)。其余套件的审计表、§5／§7 的覆盖矩阵和度量还没做。
 
 ---
 
