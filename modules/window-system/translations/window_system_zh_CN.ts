@@ -673,7 +673,7 @@
     </message>
     <message>
         <source>Shortcut toggle; menus offer sticking and unsticking separately</source>
-        <translation>快捷键切换用；菜单分别提供钉住和取消钉住</translation>
+        <translation>快捷键切换用；菜单分别提供置顶和取消置顶</translation>
     </message>
     <message>
         <source>Tab context menus provide bulk close options; the File menu closes the current tab</source>
@@ -1047,15 +1047,15 @@
     </message>
     <message>
         <source>Stick tab to front</source>
-        <translation>钉住标签</translation>
+        <translation>置顶标签</translation>
     </message>
     <message>
         <source>Unstick tab</source>
-        <translation>取消钉住标签</translation>
+        <translation>取消置顶</translation>
     </message>
     <message>
         <source>Stick or unstick tab</source>
-        <translation>钉住或取消钉住标签</translation>
+        <translation>置顶或取消置顶标签</translation>
     </message>
     <message>
         <source>Close tabs to the left</source>
@@ -1954,7 +1954,7 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>A tab folder&apos;s tabs must be tabs of one tab group that are not sticky.</source>
-        <translation>标签夹中的标签必须属于同一个标签组，且不是钉住标签。</translation>
+        <translation>标签夹中的标签必须属于同一个标签组，且不是置顶标签。</translation>
     </message>
     <message>
         <source>A tab folder lists each tab once.</source>
@@ -1962,7 +1962,7 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>The tab and the tab folder must share one tab group, and the tab must not be sticky.</source>
-        <translation>标签和标签夹必须在同一个标签组，且标签不能是钉住标签。</translation>
+        <translation>标签和标签夹必须在同一个标签组，且标签不能是置顶标签。</translation>
     </message>
     <message>
         <source>Unknown tab folder.</source>
@@ -1986,7 +1986,7 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>Tabs in an auto-hide rail cannot be sticky.</source>
-        <translation>非固定收纳条中的标签不能钉住。</translation>
+        <translation>非固定收纳条中的标签不能置顶。</translation>
     </message>
     <message>
         <source>The source tab or target group no longer exists.</source>
@@ -2174,7 +2174,7 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>A group&apos;s sticky tab count is invalid.</source>
-        <translation>标签组的钉住标签数量无效。</translation>
+        <translation>标签组的置顶标签数量无效。</translation>
     </message>
     <message>
         <source>An edge extent is invalid.</source>
@@ -2334,7 +2334,7 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>A sticky tab count must be a bounded integer.</source>
-        <translation>钉住标签数量必须是有效范围内的整数。</translation>
+        <translation>置顶标签数量必须是有效范围内的整数。</translation>
     </message>
     <message>
         <source>An edge extent must be a bounded integer.</source>
@@ -2742,15 +2742,15 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>Sticky tab sizing must be normal, compact or shrink</source>
-        <translation>钉住标签尺寸只能是 normal、compact 或 shrink</translation>
+        <translation>置顶标签尺寸只能是 normal、compact 或 shrink</translation>
     </message>
     <message>
         <source>Sticky tabs</source>
-        <translation>钉住标签</translation>
+        <translation>置顶标签</translation>
     </message>
     <message>
         <source>Sticky tab size</source>
-        <translation>钉住标签尺寸</translation>
+        <translation>置顶标签尺寸</translation>
     </message>
     <message>
         <source>Normal</source>
@@ -2766,23 +2766,23 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>Compact and shrunk sticky tabs stay at the start of a single-row tab bar while the other tabs scroll.</source>
-        <translation>紧凑和收缩时，单行标签栏滚动时钉住的标签留在开头，其他标签在它们下面滚动。</translation>
+        <translation>紧凑和收缩时，单行标签栏滚动时置顶的标签留在开头，其他标签在它们下面滚动。</translation>
     </message>
     <message>
         <source>Show sticky tabs on a separate row</source>
-        <translation>钉住标签单独显示一行</translation>
+        <translation>置顶标签单独显示一行</translation>
     </message>
     <message>
         <source>Sticky tabs take their own row above the other tabs and stay in place while those scroll. Drag a tab between the rows to stick or unstick it.</source>
-        <translation>钉住的标签显示在其他标签上方单独的一行，其他标签滚动时它们不动。在两行之间拖动标签即可钉住或取消钉住。</translation>
+        <translation>置顶的标签显示在其他标签上方单独的一行，其他标签滚动时它们不动。在两行之间拖动标签即可置顶或取消置顶。</translation>
     </message>
     <message>
         <source>Sticky tab close protection must be keyboardAndMouse, keyboard, mouse or never</source>
-        <translation>钉住标签关闭保护只能是 keyboardAndMouse、keyboard、mouse 或 never</translation>
+        <translation>置顶标签关闭保护只能是 keyboardAndMouse、keyboard、mouse 或 never</translation>
     </message>
     <message>
         <source>Keep sticky tabs open</source>
-        <translation>不关闭钉住标签</translation>
+        <translation>不关闭置顶标签</translation>
     </message>
     <message>
         <source>On the close shortcut and middle click</source>
@@ -2802,19 +2802,19 @@ Ctrl+Shift+P 打开命令面板</translation>
     </message>
     <message>
         <source>A kept sticky tab stays open; the close shortcut then switches to the first tab that is not sticky. Menus and commands still close it.</source>
-        <translation>用所选方式关闭时，钉住标签保持打开；被拦下的关闭快捷键改为切到第一个未钉住的标签。菜单和命令仍然可以关闭它。</translation>
+        <translation>用所选方式关闭时，置顶标签保持打开；被拦下的关闭快捷键改为切到第一个未置顶的标签。菜单和命令仍然可以关闭它。</translation>
     </message>
     <message>
         <source>Sticky tab close protection must be keyboard_and_mouse, keyboard, mouse or never</source>
-        <translation>钉住标签关闭保护只能是 keyboard_and_mouse、keyboard、mouse 或 never</translation>
+        <translation>置顶标签关闭保护只能是 keyboard_and_mouse、keyboard、mouse 或 never</translation>
     </message>
     <message>
         <source>Shrunk sticky tab title width</source>
-        <translation>收缩时钉住标签标题最大显示宽度</translation>
+        <translation>收缩时置顶标签标题最大显示宽度</translation>
     </message>
     <message>
         <source>Clip the title of a shrunk sticky tab that exceeds this length. Separate from the regular title clipping.</source>
-        <translation>钉住标签尺寸为“收缩”时，标题超出这个长度就截断多出的文字。和普通标签的标题裁切分开设置。</translation>
+        <translation>置顶标签尺寸为“收缩”时，标题超出这个长度就截断多出的文字。和普通标签的标题裁切分开设置。</translation>
     </message>
     <message>
         <source>Swap tab group left</source>

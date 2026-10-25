@@ -181,16 +181,16 @@ local folder = muxora.folders.new(muxora.context().tab, { name = 'Servers', colo
 assert(muxora.folders.collapse(folder, true))
 ```
 
-## 钉住标签
+## 置顶标签
 
-`tabs.sticky(tab_id, sticky)` 钉住或取消钉住标签，`sticky` 省略时为 `true`，`tab_id` 为 `nil` 时使用当前标签；非固定收纳条里的标签不能钉住，返回 `false`。`groups.list()` 每个组的 `sticky_tabs` 是钉住标签的数量，它们就是 `tabs` 列表开头的那几个。规则见 [标签栏设计 · 置顶标签](../design/tab-strip-design.md#5-置顶标签)。
+`tabs.sticky(tab_id, sticky)` 置顶或取消置顶标签，`sticky` 省略时为 `true`，`tab_id` 为 `nil` 时使用当前标签；非固定收纳条里的标签不能置顶，返回 `false`。`groups.list()` 每个组的 `sticky_tabs` 是置顶标签的数量，它们就是 `tabs` 列表开头的那几个。规则见 [标签栏设计 · 置顶标签](../design/tab-strip-design.md#5-置顶标签)。
 
 ```lua
-assert(muxora.tabs.sticky())        -- 钉住当前标签
+assert(muxora.tabs.sticky())        -- 置顶当前标签
 assert(muxora.tabs.sticky(nil, false))
 ```
 
-钉住标签的尺寸是标签外观字段 `sticky_tab_sizing`，取 `'normal'`、`'compact'` 或 `'shrink'`，收缩时的标题最大长度是整数字段 `shrink_sticky_title_width`；布尔字段 `sticky_tabs_on_separate_row` 让钉住标签单独占一行；`prevent_sticky_close` 取 `'keyboard_and_mouse'`、`'keyboard'`、`'mouse'` 或 `'never'`，决定关闭快捷键和中键是否放过钉住标签。这些字段都能用 `tabs.appearance()`／`tabs.set_appearance()` 和 `settings.get()`／`settings.update()` 读写，含义见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；类型或取值不对时报告错误，不部分应用。
+置顶标签的尺寸是标签外观字段 `sticky_tab_sizing`，取 `'normal'`、`'compact'` 或 `'shrink'`，收缩时的标题最大长度是整数字段 `shrink_sticky_title_width`；布尔字段 `sticky_tabs_on_separate_row` 让置顶标签单独占一行；`prevent_sticky_close` 取 `'keyboard_and_mouse'`、`'keyboard'`、`'mouse'` 或 `'never'`，决定关闭快捷键和中键是否放过置顶标签。这些字段都能用 `tabs.appearance()`／`tabs.set_appearance()` 和 `settings.get()`／`settings.update()` 读写，含义见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)；类型或取值不对时报告错误，不部分应用。
 
 ```lua
 assert(muxora.tabs.set_appearance({ sticky_tab_sizing = 'compact' }))

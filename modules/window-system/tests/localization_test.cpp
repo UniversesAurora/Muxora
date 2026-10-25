@@ -233,6 +233,15 @@ void LocalizationTest::dynamicMenuTextIsTranslated()
     QCOMPARE(manager.commands().find(QStringLiteral("host.dynamic"))->menuPath,
         QStringList({QStringLiteral("tools"), QStringLiteral("newTab")}));
     QCOMPARE(manager.commands().find(QStringLiteral("host.custom"))->title, QStringLiteral("自定义 command"));
+    // Keeping a tab at the front is distinct from docking it in a sidebar.
+    QCOMPARE(manager.commands().find(QStringLiteral("tab.stick"))->title,
+        chinese ? QStringLiteral("置顶标签") : QStringLiteral("Stick tab to front"));
+    QCOMPARE(manager.commands().find(QStringLiteral("tab.unstick"))->title,
+        chinese ? QStringLiteral("取消置顶") : QStringLiteral("Unstick tab"));
+    QCOMPARE(manager.commands().find(QStringLiteral("tab.toggleSticky"))->title,
+        chinese ? QStringLiteral("置顶或取消置顶标签") : QStringLiteral("Stick or unstick tab"));
+    QCOMPARE(QCoreApplication::translate("WindowSystem", "Sticky tabs"),
+        chinese ? QStringLiteral("置顶标签") : QStringLiteral("Sticky tabs"));
 }
 
 void LocalizationTest::pluralMessagesUseCorrectForms_data()

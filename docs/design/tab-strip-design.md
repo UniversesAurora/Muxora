@@ -1,6 +1,6 @@
 # 标签栏设计
 
-状态：设计要求。标签夹（§12）的实施见 [8.24](../roadmap/implementation/phase-8-ui-quality.md#824-标签夹)。横向单行与多行、置顶段、新建入口、完整标签列表、颜色和排序已经实现（界面上置顶标签目前仍叫“钉住标签”）；收起计数块、浮层展开、多行高度上限、置顶段独立滚动、渐隐、Chrome 式拖动、竖向标签栏和动画尚未实现，实施见 [8.21](../roadmap/implementation/phase-8-ui-quality.md#821-标签栏布局引擎与自绘控件)、[8.22](../roadmap/implementation/phase-8-ui-quality.md#822-chrome-式标签拖动)、[8.23](../roadmap/implementation/phase-8-ui-quality.md#823-竖向标签栏)。现在能试用的行为见 [预览说明](../development/window-system-preview.md)。
+状态：设计要求。实现进度和剩余项见阶段 8 的 [8.21](../roadmap/implementation/phase-8-ui-quality.md#821-标签栏布局引擎与自绘控件) 至 [8.26](../roadmap/implementation/phase-8-ui-quality.md#826-标签组命名)，现在能试用的行为与实际验证见 [预览说明](../development/window-system-preview.md)。
 
 本文是标签组标签栏的权威规则：排列、置顶标签、收起与展开、竖向标签栏、拖动、动画、新建入口与完整列表。拖拽的整体阶段、停靠指示和收纳条见 [窗口交互细则](window-interaction-design.md#拖拽与投放)；设置项的键和取值见 [设置设计 §3.1](settings-and-commands-design.md#31-标签外观与颜色)；为什么自绘、为什么拖动时内容用画面预览，见 [ADR 0011](../adr/0011-own-tab-strip.md)。
 

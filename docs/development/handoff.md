@@ -55,7 +55,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **本轮完成**：8.21–8.26 的实现（自绘标签栏与纯布局模块 `docking/tab_layout`、Chrome 式拖动、竖向标签栏、标签夹及全部命令和 Lua 接口、标签组卡片与焦点、标签组命名），各步骤状态和剩余项写在 [阶段 8](../roadmap/implementation/phase-8-ui-quality.md)；8.20 的测试重写完成了 `tab-layout`、`tab-folder-model`、`tab-strip-layout` 及受影响套件的移植。翻译已由 lupdate 更新并补齐中英文。
   - 修正的缺陷：停靠引导的头部容差、收窄时视口记录顺序、换主题不刷新标签栏（改为 `GroupTabs::setTheme`，不重建视图）、关闭新建按钮后容器仍占位、置顶单独一行时提起的标签不换行、滚轮回调销毁管理器后访问自身、`DockSurface` 回调在表面销毁后访问 `this`（崩溃）、`GroupTabs` 尺寸提示缺卡片边距、外层 `GroupSplitter` 的尺寸提示漏算内容边距（窗口最小尺寸少 8 像素）。
 - **进行中**：测试没有全绿，交给下一位修：
-  - Codex 接手复核（基于 `3c37934`）：Release 构建成功，全量有三项失败；两项翻译检查的内部字符串清单已修正，菜单结构的旧预期正在单独迁移。逐次结果见 [接手验证](verification-log/2026-10.md#标签栏重构接手复核与翻译清单2026-10-25)。
+  - Codex 接手复核（基于 `3c37934`）：Release 构建成功，全量中的三项失败已修正并定向验证；置顶译文收尾与固定预览部署也已完成。逐次结果见 [接手验证](verification-log/2026-10.md#标签栏重构接手复核与翻译清单2026-10-25)、[菜单迁移](verification-log/2026-10.md#标签夹转换菜单的测试迁移2026-10-25) 和 [用语统一](verification-log/2026-10.md#置顶标签用语统一与预览刷新2026-10-25)。
   - 最近一次全量 Release（本轮早些时候，修正前）18/72 失败；之后逐个移植，单独复跑时 compact-ui、focus-mode、native-frame、tab-appearance、presentation、popup-menu、pane-settings、view-commands、window-placement、view-reuse、input-method-native、widgets、movement 已通过（Release 构建，`quiet-desktop.ps1 -Elevate` 逐套件运行）；之后又改了 `GroupSplitter` 和 `GroupTabs`，这些套件也要随全量重跑。
   - 未复核：`pane-minimum`（已修 `GroupSplitter` 尺寸提示和 `GroupTabs` 转发 `LayoutRequest`，修后没跑）、`menu-structure`（剩“当前标签夹”译文一项，译文已补，修后没跑）、`translations.coverage`／`translations.checker`（lupdate 后没跑）、`chrome-interaction`（上次失败疑似环境，没复查）。
   - 验证日志这一节没写，草稿要点：重写测试时发现的缺陷各由哪个用例抓到、退役用例与替代用例对照、按新设计改的预期。下一位跑完全量后写进 [验证日志](verification-log/2026-10.md)，退役对照按 [测试要求 §2](testing-design.md#退役与重写)。
@@ -73,7 +73,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `window-system/frame: Omit outer borders from compact previews`：按用户要求修复拖动标签回到标签栏时的白边。紧凑预览使用完整客户区，不沿用普通窗口的外侧边距；原窗口样式、DWM 合成策略和普通窗口缩放保持。新回归、旧实现反向验证、前后耗时、连续原生套件、Release 全量和部署检查均已完成，见 [白边记录](verification-log/2026-10.md#81-紧凑拖拽预览的白边2026-10-25)。
   - `window-system/docking: Keep sticky drag previews joined to content`：钉住标签独占一行时，紧凑预览不再保留空的普通标签行；轮廓与鼠标锚点使用实际显示矩形，覆盖上下位置、多行和折叠。专项回归、相关套件及部署程序退出检查通过，见 [预览布局记录](verification-log/2026-10.md#钉住标签独占一行时的拖拽预览2026-10-25)。
   - `window-system/tabs: Expose clear unstick actions on tab controls`：钉子与关闭按钮分别提示各自操作；完整标签列表的钉子复用关闭按钮样式，点击取消钉住但不切换或关闭内容，菜单关闭时按稳定 ID 处理回调。相关套件、翻译覆盖与文档检查通过，固定预览已更新，见 [钉住操作记录](verification-log/2026-10.md#钉住按钮提示与标签列表操作2026-10-25)。
-- **进行中**：没有遗留的代码步骤或未结束的测试。[8.1](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 与 [8.15b](../roadmap/implementation/phase-8-ui-quality.md#815-钉住标签) 新修正的完整真实试用仍待用户验收；不阻挡按原计划继续后续步骤。
+- **进行中**：没有遗留的代码步骤或未结束的测试。[8.1](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 与 [8.15b](../roadmap/implementation/phase-8-ui-quality.md#815-置顶标签) 新修正的完整真实试用仍待用户验收；不阻挡按原计划继续后续步骤。
 - **下一步**：
   1. Claude 接手时按 [AGENTS.md](../../AGENTS.md#轮流开发与交接)，使用 [review-handoff](../../.claude/skills/review-handoff/SKILL.md) 审查 `eb9406f` 之后的本轮提交。重点区分辅助动画干扰与产品白边，并检查多行预览实际几何、按钮提示和菜单关闭回调；原失败、排除的实验、反向验证与测试前提修正均在上述记录里。
   2. 按原交接继续 [1.11](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)，先测 `group`、`batch-close`，再决定是否修改实现；然后做 [1.12](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。

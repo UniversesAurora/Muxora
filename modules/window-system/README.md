@@ -31,7 +31,7 @@
 
 `setContentVisibilityHandler()` 报告每个 Pane 的内容是否实际可见，供宿主释放 GPU 缓存这类只在显示时需要的资源。安装后先收到一次完整快照，之后每个事件循环最多一批；跨顶层窗口移动时在改挂前同步报告隐藏。哪些情况算显示、回调里能做什么，见 [通用窗口系统设计 §3.1](../../docs/design/window-system-design.md#31-标签视图与内容可见性)。
 
-`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签钉在本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询，尺寸由 `TabAppearance::stickySizing` 和 `shrinkStickyTitleWidth` 决定；模型中 `GroupRecord::stickyTabs` 是开头连续钉住的标签数，规则见 [标签栏设计 · 置顶标签](../../docs/design/tab-strip-design.md#5-置顶标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
+`setPaneTopBar()` / `setPaneBottomBar()` 为 Pane 设置专属附加栏，焦点变化时显示在 Tab 的共用上下位置；`setTabTopBar()` / `setTabBottomBar()` 作为默认栏。`pinTab()` 只处理当前标签，`pinEdge()` 明确处理该侧全部标签。`setTabSticky()` 把标签置于本组标签栏最前面（与固定到侧栏无关），`isTabSticky()` 查询，尺寸由 `TabAppearance::stickySizing` 和 `shrinkStickyTitleWidth` 决定；模型中 `GroupRecord::stickyTabs` 是开头连续置顶的标签数，规则见 [标签栏设计 · 置顶标签](../../docs/design/tab-strip-design.md#5-置顶标签)。标签图标可通过 `TabOptions::showIcon` 或 `setTabIconVisible()` 控制；中央栏使用 `TabAppearance::showIcons`，固定和非固定侧栏使用 `showSidebarIcons`，开启时仍尊重单标签设置。
 
 达到拖动阈值后，鼠标仍在原标签条或收纳条内时只显示标签预览，内容留在原处。首次离条才移入真实轻量窗口并清理空组，Esc 恢复原布局和控件实例。标签条按释放位置插入，内容区不隐式合并。详见 [交互细则](../../docs/design/window-interaction-design.md)。
 
