@@ -1,135 +1,26 @@
 #pragma once
 
+#include "tab_bar.hpp"
+#include "tab_viewport_state.hpp"
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
 #include <window_system/tab_appearance.hpp>
-#include "tab_viewport_state.hpp"
-#include "style/tab_label_geometry.hpp"
-#include "style/tab_title_layout.hpp"
 #include <QFrame>
 #include <QPointer>
 #include <QSet>
-#include <QTabBar>
 #include <optional>
 
-class QScrollArea;
+class QLabel;
 class QMenu;
-class QScrollBar;
 class QStackedWidget;
 class QToolButton;
 class QTimer;
 
 namespace window_system {
 
-class DragTabBar final : public QTabBar {
-public:
-    explicit DragTabBar(QWidget* parent);
-    std::function<void(int, QPoint)> drag;
-    std::function<void(int, QPoint)> menu;
-    std::function<void(int)> close;
-    // Sticky tabs show a pin in the close slot; pressing it unsticks the tab.
-    std::function<void(int)> unstick;
-    void setCloseIcon(QIcon icon);
-    void setStickyIcon(QIcon icon);
-    // Separates sticky tabs kept in view from the tabs scrolling under them.
-    void setStickyBorderColor(QColor color) { stickyBorder_ = color; update(); }
-    void setStickyCount(int count);
-    [[nodiscard]] int stickyCount() const { return stickyCount_; }
-    // The strip's scroll offset. Compact and shrunk sticky tabs of a single
-    // row are drawn this far along, so they stay at the viewport's start.
-    void setStickyOffset(int offset);
-    // The width those sticky tabs cover at the viewport's start; 0 when the
-    // sticky tabs scroll with the others.
-    [[nodiscard]] int stickyRunExtent() const;
-    // `carriedSticky` says whether the dropped tab was sticky; dropping it
-    // right after the sticky tabs then keeps it sticky. With sticky tabs on
-    // their own row, `stickyRow` is the row the pointer is over and decides.
-    void setInsertionPreview(int index, int extent, QColor color, bool carriedSticky = false,
-                             std::optional<bool> stickyRow = {});
-    // Whether a point is over the sticky tabs' own row; empty without one.
-    [[nodiscard]] std::optional<bool> insertionRowAt(QPoint local) const;
-    [[nodiscard]] int lineHeight() const { return lineHeight_; }
-    // Whether a drop at the insertion preview makes the tab sticky.
-    [[nodiscard]] bool insertionSticky() const { return insertionSticky_; }
-    [[nodiscard]] bool insertionCarriesSticky() const { return carriedSticky_; }
-    // The width of a tab with its sticky sizing ignored.
-    [[nodiscard]] int naturalTabWidth(int index) const;
-    void setDraggedTab(TabId tab);
-    [[nodiscard]] int draggedExtent() const;
-    [[nodiscard]] QRect insertionPreviewRect() const;
-    [[nodiscard]] QRect displayTabRect(int index) const;
-    [[nodiscard]] int insertionIndexAt(QPoint local) const;
-    [[nodiscard]] int insertionExtent() const { return insertionExtent_; }
-    void setAppearance(const TabAppearance& appearance);
-    void setTabMetadata(int index, const TabRecord& tab);
-    [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
-    void layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth = 0, bool trailingControls = true);
-    [[nodiscard]] QSize displayedSize() const;
-    [[nodiscard]] QPoint creationPosition() const;
-    [[nodiscard]] int rowCount() const;
-protected:
-    bool event(QEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
-    void leaveEvent(QEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
-    void contextMenuEvent(QContextMenuEvent* event) override;
-    QSize tabSizeHint(int index) const override;
-    void tabRemoved(int index) override;
-private:
-    QRect closeRect(int index) const;
-    // `sized` applies the shrunk sticky title limit; the natural width a
-    // carried label keeps does not.
-    TabLabelParts labelParts(int index, bool sized = true) const;
-    int displayedTabAt(QPoint local) const;
-    bool isDragged(int index) const;
-    // A compact sticky tab shows only its icon or initial and has no pin.
-    bool isCompactSticky(int index) const;
-    // The fixed width of a compact or shrunk sticky tab.
-    // Sticky tabs, and a sticky insertion preview, stay in view.
-    bool stickyFloats() const;
-    // Sticky tabs take rows of their own above the others.
-    bool separateRow() const;
-    int stickyShift() const;
-    void updateInsertionSticky();
-    void refreshSizeHints();
-    QPoint start_;
-    int pressed_ = -1;
-    int closePressed_ = -1;
-    int middlePressed_ = -1;
-    int hovered_ = -1;
-    bool closeHovered_ = false;
-    QIcon closeIcon_;
-    QIcon stickyIcon_;
-    QColor stickyBorder_;
-    int stickyCount_ = 0;
-    int stickyOffset_ = 0;
-    int stickyRunEnd_ = 0;
-    int stickyRowsHeight_ = 0;
-    int lineHeight_ = 28;
-    std::optional<bool> stickyRow_;
-    bool carriedSticky_ = false;
-    bool insertionSticky_ = false;
-    int insertionIndex_ = -1;
-    int insertionExtent_ = 0;
-    QColor insertionColor_;
-    int draggedIndex_ = -1;
-    TabAppearance appearance_;
-    struct Decoration { QString colorId; };
-    QHash<int, Decoration> decorations_;
-    mutable QHash<int, TabTitleLayout> titleLayouts_;
-    QHash<int, QRect> displayedRects_;
-    QRect previewRect_;
-    QSize displayedSize_;
-    QPoint creationPosition_;
-    int rowCount_ = 1;
-    int activeLogicalRow_ = 0;
-    bool customLayout_ = false;
-};
-
-// The bar keeps natural tab widths inside a scroll viewport. Native QTabBar
-// remains the input and stable-ID surface; scrolling never selects a new tab.
+// A tab group: its strip (TabBar) beside its pages. The strip goes above,
+// below, left or right of the pages; a vertical strip has a footer with the
+// new-tab and sidebar actions and an edge that resizes it.
 class GroupTabs final : public QFrame {
 public:
     explicit GroupTabs(const Theme& theme, QWidget* parent);
@@ -145,7 +36,15 @@ public:
     std::function<void()> newTabRequested;
     std::function<QMenu*(QWidget*)> newTabMenuRequested;
     std::function<void(QPoint)> groupMenuRequested;
-    DragTabBar* tabBar() const;
+    // A vertical strip's width or icon mode changed by the user; 0 resets
+    // the width to the default.
+    std::function<void(int)> verticalWidthChanged;
+    std::function<void(bool)> iconModeChanged;
+    // Whether this is its window's active group; the strip shows its accent
+    // only while it is and the window is active.
+    std::function<bool()> isActiveGroup;
+    void refreshFocus();
+    TabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
     // Removes the tab and its page without deleting the page, which keeps
     // this group as its parent until it is added elsewhere. Returns null if
@@ -157,74 +56,111 @@ public:
     void restoreViewportState(TabViewportState state);
     void restoreScrollOffset(int offset);
     void scrollByWheel(QPoint delta);
+    // Scrolls the strip under a global point; returns whether it moved.
+    bool scrollStripAt(QPoint global, QPoint delta);
     int currentIndex() const;
     int count() const;
     // The page at a strip index, or null.
     [[nodiscard]] QWidget* page(int index) const;
     [[nodiscard]] bool pageIsPlaceholder(TabId tab) const;
     QRect viewportRectGlobal() const;
-    int insertionIndex(QPoint global) const;
+    int insertionIndex(QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(int index, int extent, bool carriedSticky = false, std::optional<bool> stickyRow = {});
+    // The carried tabs open a gap at `index`, each as wide as it will be in
+    // the section the drop position decides.
+    void setInsertionPreview(int index, const QVector<CarriedLabel>& carried, bool carriedSticky = false,
+                             TabLayoutInput::Carried kind = TabLayoutInput::Carried::Tab);
     [[nodiscard]] bool insertionSticky() const;
+    // The tab folder the preview's block joins; null for none.
+    [[nodiscard]] QUuid insertionFolder() const;
+    void setDraggedFolder(QUuid folder);
+    // Where in a folder's header a drag took hold of it.
+    [[nodiscard]] QPoint folderGrabOffset(QUuid folder, QPoint global) const;
     [[nodiscard]] std::optional<bool> insertionRow(QPoint global) const;
     void setDraggedTab(TabId tab);
+    // The dragged tab follows the pointer inside this strip; `grab` is where
+    // in the tab it was taken. Its center, not the pointer, picks the slot.
+    void setLiftedTab(QPoint global, QPoint grab);
+    void clearLiftedTab();
+    // A picture of dragged content shown over this group's pages, as if its
+    // tab were already here (tab strip design 6.4); a null pixmap removes it.
+    void setContentPreview(const QPixmap& picture);
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
     void setDragPresentation(bool compact, bool edge);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
     void setTabBarVisible(bool visible);
+    // Repaints with a new theme without rebuilding the strip.
+    void setTheme(const Theme& theme);
     void setAppearance(const TabAppearance& appearance, bool pinned = false);
     void setTabMetadata(int index, const TabRecord& tab);
+    void setGroupFocused(bool focused);
+    // A vertical strip's own width (0: the appearance default) and icon mode.
+    void setVerticalState(int width, bool iconMode);
+    // The group's name, shown at the end of its strip when not empty.
+    void setGroupName(const QString& name);
+    [[nodiscard]] QSize sizeHint() const override;
+    [[nodiscard]] QSize minimumSizeHint() const override;
 protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
 private:
-    void updateBarGeometry();
+    void layoutChildren();
+    void updateCardJoin();
+    void placeControls();
     void showTabList();
     void showNewTabMenu();
-    void updateScrollBarVisibility();
-    void updateScrollBarGeometry();
     void applyPendingScrollOffset();
     void queueViewportReflow();
     bool applyPendingViewportState();
     void cancelViewportReflow();
     [[nodiscard]] TabViewportState currentViewportState() const;
     void resolvePage(TabId tab);
-    // The part of the viewport's start that sticky tabs kept in view cover
-    // for the tab at `index`; 0 for those sticky tabs themselves.
     [[nodiscard]] int stickyInset(int index) const;
-    void updateCanvasGeometry();
-    QWidget* header_ = nullptr;
-    QWidget* headerActions_ = nullptr;
-    DragTabBar* bar_ = nullptr;
-    QWidget* canvas_ = nullptr;
+    [[nodiscard]] bool vertical() const;
+    [[nodiscard]] int columnWidth() const;
+    TabBar* bar_ = nullptr;
+    QWidget* trailing_ = nullptr;
+    QWidget* end_ = nullptr;
+    QWidget* footer_ = nullptr;
+    QWidget* resizeHandle_ = nullptr;
+    QWidget* contentPreview_ = nullptr;
+    QWidget* card_ = nullptr;
+    QLabel* name_ = nullptr;
+    // A vertical strip's title: the group's name above its column.
+    QLabel* title_ = nullptr;
+    QString groupName_;
     QWidget* createButtons_ = nullptr;
-    QScrollArea* scroll_ = nullptr;
-    QScrollBar* scrollbar_ = nullptr;
+    QToolButton* list_ = nullptr;
+    QToolButton* iconModeButton_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     QHash<TabId, QPointer<QWidget>> pages_;
     QSet<TabId> placeholders_;
-    QToolButton* list_ = nullptr;
     Theme theme_;
     QPointer<QTimer> autoScroll_;
     QPointer<QMenu> tabListMenu_;
     QPointer<QMenu> newTabMenu_;
     QPointer<QWidget> viewportWindow_;
-    int scrollDirection_ = 0;
-    QSet<QObject*> hoveredSurfaces_;
+    QPoint scrollDirection_;
+    mutable QPoint dragProbe_;
+    bool lifting_ = false;
     bool dragHovered_ = false;
     std::optional<int> pendingScrollOffset_;
     std::optional<TabViewportState> settledViewport_;
     std::optional<TabViewportState> pendingViewportState_;
     bool viewportReflowQueued_ = false;
     bool applyingViewportState_ = false;
-    bool updatingBarGeometry_ = false;
+    bool layingOut_ = false;
     TabAppearance appearance_;
     bool pinned_ = false;
     bool compactPresentation_ = false;
-    bool rowsExpanded_ = true;
-    std::optional<bool> stickyRow_;
+    bool barVisible_ = true;
+    int verticalWidth_ = 0;
+    bool iconMode_ = false;
+    // Dragging the vertical strip's edge.
+    std::optional<int> resizeOrigin_;
+    int resizeStartWidth_ = 0;
 };
 
 } // namespace window_system

@@ -14,6 +14,7 @@
 //   drag           none, a tab left its slot, that tab's gap, a carried
 //                  block into the sticky or the regular section
 //   scroll         start, far past the end
+//   folders        none, one expanded, one collapsed, two (one carried away)
 #include "docking/tab_layout.hpp"
 
 #include <QRandomGenerator>
@@ -39,14 +40,35 @@ TabLayoutInput horizontal(QVector<int> extents, int width, int sticky = 0)
     return input;
 }
 
+// Folders over the regular tabs: `kind` 0 none, 1 one expanded, 2 one
+// collapsed, 3 two with the second carried away.
+void addFolders(TabLayoutInput& input, int kind)
+{
+    const int count = int(input.extents.size()), regular = count - input.stickyCount;
+    if (kind == 0 || regular < 1) return;
+    const int first = input.stickyCount + regular / 3, size = std::max(1, regular / 3);
+    input.folders.append({first, std::min(size, count - first), 56, kind == 2});
+    if (kind == 3 && first + size < count) {
+        input.folders.append({first + size, count - first - size, 40, false});
+        input.removedFolder = 1;
+    }
+    input.folderIndent = 10;
+}
+int folderOfTab(const TabLayoutInput& input, int tab)
+{
+    for (int folder = 0; folder < input.folders.size(); ++folder)
+        if (tab >= input.folders.at(folder).first && tab < input.folders.at(folder).first + input.folders.at(folder).count) return folder;
+    return -1;
+}
+
 QString describe(const TabLayoutInput& input)
 {
     return QStringLiteral("orientation=%1 multiline=%2 separate=%3 frozen=%4 collapsed=%5 tiles=%6 sticky=%7 tabs=%8 width=%9 "
-                          "removed=%10 insertion=%11 insertionSticky=%12 block=%13 offsets=%14/%15 current=%16")
+                          "removed=%10 insertion=%11 insertionSticky=%12 block=%13 offsets=%14/%15 current=%16 folders=%17/%18")
         .arg(int(input.orientation)).arg(input.multiline).arg(input.separateStickyRow).arg(input.freezeSticky)
         .arg(input.collapsed).arg(input.stickyTiles).arg(input.stickyCount).arg(input.extents.size()).arg(input.width)
         .arg(input.removed).arg(input.insertion).arg(input.insertionSticky).arg(input.block.size())
-        .arg(input.stickyOffset).arg(input.regularOffset).arg(input.current);
+        .arg(input.stickyOffset).arg(input.regularOffset).arg(input.current).arg(input.folders.size()).arg(input.removedFolder);
 }
 } // namespace
 
@@ -70,6 +92,12 @@ private slots:
     void dropPositionDecidesStickiness();
     void aLoneStickyTabStaysStickyNearTheStart();
     void blockIntoAnEmptyRegularSectionGetsItsOwnRow();
+    void endControlsStayAtTheFirstRowsEnd();
+    void foldersJoinBetweenTheirHeaderMiddleAndLastTabEnd_data();
+    void foldersJoinBetweenTheirHeaderMiddleAndLastTabEnd();
+    void collapsedFoldersShowTheCurrentTabAndTakeDropsAtTheirEnd();
+    void carriedFoldersLandBesideOtherFolders();
+    void verticalFolderRowsAreIndented();
 private:
     void verify(const TabLayoutInput& input);
 };
@@ -81,10 +109,16 @@ void TabLayoutTest::verify(const TabLayoutInput& input)
     const int count = int(input.extents.size());
     QCOMPARE(layout.tabs.size(), count);
     const bool vertical = input.orientation == Orientation::Vertical;
-    int shown = 0;
+    int shown = 0, folded = 0;
     QVector<QRect> visible;
+    const auto carried = [&](int index) { return index == input.removed || (input.removedFolder >= 0 && folderOfTab(input, index) == input.removedFolder); };
     for (int index = 0; index < count; ++index) {
-        if (index == input.removed) { QVERIFY2(layout.lanes.at(index) < 0, context); continue; }
+        if (carried(index)) { QVERIFY2(layout.lanes.at(index) < 0, context); continue; }
+        const int folder = folderOfTab(input, index);
+        // A collapsed folder shows only the current one of its tabs.
+        if (folder >= 0 && input.folders.at(folder).collapsed && index != input.current) {
+            QVERIFY2(layout.lanes.at(index) < 0, context); ++folded; continue;
+        }
         if (layout.lanes.at(index) < 0) { QVERIFY2(input.collapsed && input.multiline && !vertical, context); continue; }
         ++shown;
         const auto& lane = layout.laneList.at(layout.lanes.at(index));
@@ -97,10 +131,34 @@ void TabLayoutTest::verify(const TabLayoutInput& input)
         for (const auto& other : visible) QVERIFY2(!other.intersects(area), context);
         visible.append(area);
     }
+    // Folder headers: shown unless carried away, owning their pixels, and
+    // ahead of their folder's first shown tab.
+    QCOMPARE(layout.headers.size(), input.folders.size());
+    for (int folder = 0; folder < input.folders.size(); ++folder) {
+        if (folder == input.removedFolder) { QVERIFY2(layout.headerLanes.at(folder) < 0, context); continue; }
+        if (layout.headerLanes.at(folder) < 0) { QVERIFY2(input.collapsed && input.multiline && !vertical, context); continue; }
+        const auto area = layout.visibleHeaderRect(folder);
+        if (area.isEmpty()) continue;
+        QVERIFY2(layout.laneList.at(layout.headerLanes.at(folder)).viewport.contains(area), context);
+        QVERIFY2(layout.headerAt(area.center()) == folder && layout.tabAt(area.center()) < 0, context);
+        for (const auto& other : visible) QVERIFY2(!other.intersects(area), context);
+        const auto& f = input.folders.at(folder);
+        for (int index = f.first; index < f.first + f.count; ++index) if (layout.lanes.at(index) == layout.headerLanes.at(folder)) {
+            const auto tab = layout.tabs.at(index), header = layout.headers.at(folder);
+            QVERIFY2(vertical ? tab.top() > header.top() : (tab.top() > header.top() || tab.left() > header.left()), context);
+            if (vertical) QCOMPARE(tab.left(), header.left() + std::min(input.folderIndent, header.width() - 1));
+            break;
+        }
+        visible.append(area);
+    }
+    // End controls are never covered by a visible tab.
+    if (!layout.end.isNull()) for (const auto& area : visible) QVERIFY2(!area.intersects(layout.end), context);
     // Collapsing hides whole rows; nothing else disappears.
-    QCOMPARE(shown + layout.hidden + (input.removed >= 0 && input.removed < count ? 1 : 0), count);
+    int carriedCount = 0;
+    for (int index = 0; index < count; ++index) carriedCount += carried(index) ? 1 : 0;
+    QCOMPARE(shown + folded + layout.hidden + carriedCount, count);
     if (!(input.collapsed && input.multiline && !vertical)) QCOMPARE(layout.hidden, 0);
-    else if (input.current >= 0 && input.current < count && input.current != input.removed)
+    else if (input.current >= 0 && input.current < count && !carried(input.current))
         QVERIFY2(layout.lanes.at(input.current) >= 0, context);
     // Order within each lane and row follows the tab order.
     for (int index = 0; index + 1 < count; ++index) {
@@ -118,6 +176,9 @@ void TabLayoutTest::verify(const TabLayoutInput& input)
         QCOMPARE(layout.gap.size(), input.block.size());
         for (int cell = 0; cell < layout.gap.size(); ++cell) {
             QVERIFY2(!layout.gap.at(cell).isNull(), context);
+            // An oversized block stays one row and no wider than the strip.
+            if (input.multiline && !vertical)
+                QVERIFY2(layout.gap.at(cell).height() == input.rowHeight && layout.gap.at(cell).width() <= input.width, context);
             for (int index = 0; index < count; ++index)
                 if (layout.lanes.at(index) == layout.gapLane && !(layout.laneList.at(layout.gapLane).frozen && (index < input.stickyCount) != input.insertionSticky))
                     QVERIFY2(!layout.tabs.at(index).intersects(layout.gap.at(cell)), context);
@@ -125,18 +186,32 @@ void TabLayoutTest::verify(const TabLayoutInput& input)
     }
     // Every insertion decision is a valid position, stable across the gap it opens.
     if (count > 0) {
-        const int remaining = count - (input.removed >= 0 && input.removed < count ? 1 : 0);
+        const int remaining = count - carriedCount;
         auto probing = input; probing.insertion = -1; probing.block.clear(); probing.collapsed = false;
         for (const QPoint probe : {QPoint(1, 1), QPoint(input.width / 2, 15), QPoint(input.width - 2, 40), QPoint(input.width / 3, 200)}) {
             const auto decision = tabInsertionAt(probing, probe, 20);
             QVERIFY2(decision.index >= 0 && decision.index <= remaining, context);
             int stickyRemaining = 0;
-            for (int index = 0; index < std::min(input.stickyCount, count); ++index) stickyRemaining += index == input.removed ? 0 : 1;
-            if (decision.sticky) QVERIFY2(decision.index <= stickyRemaining, context);
+            for (int index = 0; index < std::min(input.stickyCount, count); ++index) stickyRemaining += carried(index) ? 0 : 1;
+            if (decision.sticky) QVERIFY2(decision.index <= stickyRemaining && input.removedFolder < 0 && input.carried != TabLayoutInput::Carried::Folder, context);
             else QVERIFY2(decision.index >= stickyRemaining || input.stickyCount == 0, context);
-            auto opened = probing; opened.insertion = decision.index; opened.insertionSticky = decision.sticky; opened.block = {80};
+            // A joined folder is a shown one, never sticky, and the index lies
+            // within its tabs; a carried folder joins none.
+            if (decision.folder >= 0) {
+                QVERIFY2(!decision.sticky && decision.folder < input.folders.size() && input.removedFolder < 0 && input.carried == TabLayoutInput::Carried::Tab, context);
+                const auto& f = input.folders.at(decision.folder);
+                int first = 0, last = 0;
+                for (int index = 0; index < count; ++index) if (!carried(index)) { first += index < f.first ? 1 : 0; last += index < f.first + f.count ? 1 : 0; }
+                QVERIFY2(decision.index >= first && decision.index <= last, context);
+            }
+            auto opened = probing; opened.insertion = decision.index; opened.insertionSticky = decision.sticky;
+            opened.insertionFolder = decision.folder; opened.block = {80};
             const auto again = tabInsertionAt(opened, probe, 20);
-            QCOMPARE(again.index, decision.index); QCOMPARE(again.sticky, decision.sticky);
+            QCOMPARE(again.index, decision.index); QCOMPARE(again.sticky, decision.sticky); QCOMPARE(again.folder, decision.folder);
+            // The gap of a joined block lies within the folder's span.
+            const auto gapped = layoutTabs(opened);
+            if (decision.folder >= 0 && !gapped.gap.isEmpty() && vertical)
+                QVERIFY2(gapped.gap.first().left() > gapped.headers.at(decision.folder).left() || input.folderIndent == 0, context);
         }
     }
 }
@@ -153,6 +228,7 @@ void TabLayoutTest::everyStateKeepsTheInvariants()
     for (const int count : {0, 1, 5, 24})
     for (const int width : {90, 420, 2400})
     for (const int drag : {0, 1, 2, 3, 4})
+    for (const int folders : {0, 1, 2, 3})
     for (const int offset : {0, 100000}) {
         const bool vertical = orientation == Orientation::Vertical;
         if (vertical && (multiline || collapsed || frozen)) continue; // Not settings of a column.
@@ -161,13 +237,15 @@ void TabLayoutTest::everyStateKeepsTheInvariants()
         TabLayoutInput input = horizontal(widths(count, count * 7 + width), width, sticky);
         input.orientation = orientation; input.multiline = multiline; input.separateStickyRow = separate;
         input.freezeSticky = frozen && !multiline; input.collapsed = collapsed; input.stickyTiles = vertical && separate;
-        input.trailingExtent = vertical ? 0 : 66; input.height = vertical ? 600 : (multiline ? 96 : 0);
+        input.trailingExtent = vertical ? 0 : 38; input.endExtent = vertical ? 0 : 28; input.height = vertical ? 600 : (multiline ? 96 : 0);
         input.current = count ? count / 2 : -1;
         input.stickyOffset = offset; input.regularOffset = offset;
         if (count && drag == 1) input.removed = count - 1;
         if (count && drag == 2) { input.removed = 0; input.insertion = count / 2; input.insertionSticky = sticky > 1 && count / 2 < sticky; input.block = {input.extents.at(0)}; }
         if (drag == 3) { input.insertion = 0; input.insertionSticky = sticky > 0; input.block = {70, 400, 3000}; }
         if (drag == 4) { input.insertion = count; input.insertionSticky = false; input.block = {120, 90}; }
+        addFolders(input, folders);
+        if (folders == 3 && input.removed >= 0 && folderOfTab(input, input.removed) == input.removedFolder) continue;
         verify(input);
         if (QTest::currentTestFailed()) return;
         ++states;
@@ -194,6 +272,7 @@ void TabLayoutTest::randomStatesKeepTheInvariants()
         input.stickyTiles = vertical && random.bounded(2);
         input.height = vertical ? 30 + int(random.bounded(900)) : input.multiline ? int(random.bounded(200)) : 0;
         input.trailingExtent = vertical ? 0 : int(random.bounded(120));
+        input.endExtent = vertical ? 0 : int(random.bounded(90));
         input.current = count ? int(random.bounded(count)) : -1;
         input.collapsedStickyRow = int(random.bounded(5)); input.collapsedRegularRow = int(random.bounded(5));
         input.stickyOffset = int(random.bounded(5000)); input.regularOffset = int(random.bounded(5000));
@@ -204,6 +283,19 @@ void TabLayoutTest::randomStatesKeepTheInvariants()
             input.insertionSticky = input.stickyCount > 0 && input.insertion <= remainingSticky && random.bounded(2);
             for (int cell = 0, cells = 1 + int(random.bounded(5)); cell < cells; ++cell) input.block.append(30 + int(random.bounded(400)));
         }
+        // Up to three folders over random runs of regular tabs.
+        for (int start = input.stickyCount; start < count && input.folders.size() < 3; ) {
+            start += int(random.bounded(4));
+            if (start >= count) break;
+            const int size = 1 + int(random.bounded(std::min(6, count - start)));
+            input.folders.append({start, size, 20 + int(random.bounded(80)), bool(random.bounded(2))});
+            start += size;
+        }
+        input.folderIndent = int(random.bounded(16));
+        if (!input.folders.isEmpty() && random.bounded(4) == 0 && input.removed < 0) input.removedFolder = int(random.bounded(input.folders.size()));
+        input.carried = TabLayoutInput::Carried(random.bounded(3));
+        if (input.insertion >= 0 && input.removedFolder < 0 && !input.insertionSticky && !input.folders.isEmpty() && random.bounded(2))
+            input.insertionFolder = int(random.bounded(input.folders.size()));
         verify(input);
         if (QTest::currentTestFailed()) return;
     }
@@ -302,12 +394,13 @@ void TabLayoutTest::columnKeepsStickyTabsWithinAThird()
 
 void TabLayoutTest::stickyTilesWrapInTheColumn()
 {
-    TabLayoutInput input; input.orientation = Orientation::Vertical; input.width = 124; input.height = 600;
+    TabLayoutInput input; input.orientation = Orientation::Vertical; input.width = 160; input.height = 600;
     input.extents = QVector<int>(8, 0); input.stickyCount = 5; input.stickyTiles = true;
     const auto layout = layoutTabs(input);
-    // 112 px of row: three 36 px tiles with 2 px between them fit.
-    QCOMPARE(layout.tabs.at(0), QRect(6, 0, 36, 32)); QCOMPARE(layout.tabs.at(2), QRect(82, 0, 36, 32));
-    QCOMPARE(layout.tabs.at(3), QRect(6, 34, 36, 32));
+    // 148 px of row: three tiles of at least 44 with 2 px between them fit;
+    // they share the row, (148 - 4) / 3 = 48 each.
+    QCOMPARE(layout.tabs.at(0), QRect(6, 0, 48, 32)); QCOMPARE(layout.tabs.at(2), QRect(106, 0, 48, 32));
+    QCOMPARE(layout.tabs.at(3), QRect(6, 34, 48, 32));
 }
 
 void TabLayoutTest::gapTakesTheBlockAsItWillBeShown()
@@ -368,6 +461,91 @@ void TabLayoutTest::blockIntoAnEmptyRegularSectionGetsItsOwnRow()
     input.insertion = 2; input.insertionSticky = false; input.block = {90};
     const auto layout = layoutTabs(input);
     QCOMPARE(layout.laneList.size(), 2); QCOMPARE(layout.gap.first(), QRect(0, 32, 90, 30));
+}
+
+void TabLayoutTest::endControlsStayAtTheFirstRowsEnd()
+{
+    // One row: the tabs scroll only up to the controls.
+    auto input = horizontal({200, 200, 200}, 400); input.endExtent = 60; input.trailingExtent = 30; input.regularOffset = 1000;
+    auto layout = layoutTabs(input);
+    QCOMPARE(layout.end, QRect(340, 0, 60, 30));
+    QCOMPARE(layout.laneList.first().viewport.width(), 340);
+    QCOMPARE(layout.trailing.right(), 339);
+    // Rows: only the first row leaves room for them.
+    input.multiline = true; input.regularOffset = 0; input.width = 420;
+    layout = layoutTabs(input);
+    QCOMPARE(layout.end, QRect(360, 0, 60, 30));
+    QCOMPARE(layout.tabs.at(1).top(), 30 + input.rowGap); // 200 + 200 > 360 on the first row
+    QCOMPARE(layout.tabs.at(2).top(), 30 + input.rowGap); // 400 fits the second row's full 420
+}
+
+
+void TabLayoutTest::foldersJoinBetweenTheirHeaderMiddleAndLastTabEnd_data()
+{
+    // a 0-100, header 100-140, b 140-240, c 240-340, d 340-440.
+    QTest::addColumn<int>("x"); QTest::addColumn<int>("index"); QTest::addColumn<int>("folder");
+    QTest::newRow("before the header's middle") << 110 << 1 << -1;
+    QTest::newRow("past the header's middle") << 130 << 1 << 0;
+    QTest::newRow("between its tabs") << 200 << 2 << 0;
+    QTest::newRow("on the last tab's second half") << 330 << 3 << 0;
+    QTest::newRow("past the last tab") << 350 << 3 << -1;
+}
+void TabLayoutTest::foldersJoinBetweenTheirHeaderMiddleAndLastTabEnd()
+{
+    QFETCH(int, x); QFETCH(int, index); QFETCH(int, folder);
+    auto input = horizontal({100, 100, 100, 100}, 600);
+    input.folders = {{1, 2, 40, false}};
+    const auto layout = layoutTabs(input);
+    QCOMPARE(layout.headers.at(0), QRect(100, 0, 40, 30));
+    QCOMPARE(layout.tabs.at(1).left(), 140);
+    const auto decision = tabInsertionAt(input, QPoint(x, 15));
+    QCOMPARE(decision.index, index); QCOMPARE(decision.folder, folder);
+    // The gap opens inside the folder exactly when the block joins it.
+    input.insertion = decision.index; input.insertionFolder = decision.folder; input.block = {80};
+    const auto opened = layoutTabs(input);
+    QCOMPARE(opened.gap.first().left() > opened.headers.at(0).left(), decision.folder >= 0 || decision.index > 1);
+    if (decision.folder < 0 && decision.index == 1) QCOMPARE(opened.gap.first().right() + 1, opened.headers.at(0).left());
+}
+void TabLayoutTest::collapsedFoldersShowTheCurrentTabAndTakeDropsAtTheirEnd()
+{
+    auto input = horizontal({100, 100, 100, 100}, 600);
+    input.folders = {{1, 2, 40, true}};
+    input.current = 0;
+    auto layout = layoutTabs(input);
+    QCOMPARE(layout.lanes.at(1), -1); QCOMPARE(layout.lanes.at(2), -1);
+    QCOMPARE(layout.tabs.at(3).left(), 140);
+    // The current tab stays visible after the header.
+    input.current = 2;
+    layout = layoutTabs(input);
+    QCOMPARE(layout.lanes.at(1), -1); QCOMPARE(layout.tabs.at(2).left(), 140);
+    input.current = 0;
+    const auto onHeader = tabInsertionAt(input, QPoint(105, 15));
+    QCOMPARE(onHeader.index, 3); QCOMPARE(onHeader.folder, 0);
+    const auto after = tabInsertionAt(input, QPoint(150, 15));
+    QCOMPARE(after.index, 3); QCOMPARE(after.folder, -1);
+}
+void TabLayoutTest::carriedFoldersLandBesideOtherFolders()
+{
+    // a, [b c], [d] carried away, e.
+    auto input = horizontal({100, 100, 100, 100, 100}, 800);
+    input.folders = {{1, 2, 40, false}, {3, 1, 40, false}};
+    input.removedFolder = 1;
+    const auto layout = layoutTabs(input);
+    QCOMPARE(layout.headerLanes.at(1), -1); QCOMPARE(layout.lanes.at(3), -1);
+    QCOMPARE(tabInsertionAt(input, QPoint(150, 15)).index, 1);  // nearer the folder's start
+    QCOMPARE(tabInsertionAt(input, QPoint(300, 15)).index, 3);  // nearer its end
+    QCOMPARE(tabInsertionAt(input, QPoint(300, 15)).folder, -1);
+}
+void TabLayoutTest::verticalFolderRowsAreIndented()
+{
+    TabLayoutInput input;
+    input.orientation = Orientation::Vertical; input.width = 200; input.height = 400; input.inset = 6;
+    input.extents = {0, 0, 0, 0}; input.folders = {{1, 2, 0, false}}; input.folderIndent = 12;
+    const auto layout = layoutTabs(input);
+    const int pitch = input.rowHeight + input.rowGap;
+    QCOMPARE(layout.headers.at(0), QRect(6, pitch, 188, input.rowHeight));
+    QCOMPARE(layout.tabs.at(1), QRect(18, 2 * pitch, 176, input.rowHeight));
+    QCOMPARE(layout.tabs.at(3), QRect(6, 4 * pitch, 188, input.rowHeight));
 }
 
 QTEST_MAIN(TabLayoutTest)

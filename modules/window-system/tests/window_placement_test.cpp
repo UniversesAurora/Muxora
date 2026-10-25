@@ -11,7 +11,7 @@
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
 #include <memory>
 
 using namespace window_system;
@@ -375,7 +375,7 @@ void WindowPlacementTest::closeAllCancelsDragBeforeApprovalAndSaving()
     window->setGeometry(visibleFixtureGeometry(qApp->primaryScreen()));
     manager.showWindow(root); QVERIFY(QTest::qWaitForWindowExposed(window));
     const auto before = manager.saveLayout();
-    auto* bar = window->findChild<QTabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
+    auto* bar = window->findChild<TabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
     const auto local = bar->tabRect(0).center(); const auto global = bar->mapToGlobal(local);
     QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(bar, &press);
@@ -408,7 +408,7 @@ void WindowPlacementTest::closeAllSurvivesManagerDeletionWhileCancellingDrag()
     auto* window = manager->windowWidget(root);
     window->setGeometry(visibleFixtureGeometry(qApp->primaryScreen()));
     manager->showWindow(root); QVERIFY(QTest::qWaitForWindowExposed(window));
-    auto* bar = window->findChild<QTabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
+    auto* bar = window->findChild<TabBar*>(); QVERIFY(bar); QVERIFY(bar->isVisible());
     const auto local = bar->tabRect(0).center(); const auto global = bar->mapToGlobal(local);
     QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(bar, &press);

@@ -468,6 +468,22 @@
         <translation>所在侧边栏的全部标签</translation>
     </message>
     <message>
+        <source>Reorder this tab folder in its bar</source>
+        <translation>在标签栏内调整这个标签夹的位置</translation>
+    </message>
+    <message>
+        <source>Move this tab folder</source>
+        <translation>移动这个标签夹</translation>
+    </message>
+    <message>
+        <source>Merge into another tab folder</source>
+        <translation>并入其他标签夹</translation>
+    </message>
+    <message>
+        <source>Convert this tab folder to a tab group</source>
+        <translation>把这个标签夹转为标签组</translation>
+    </message>
+    <message>
         <source>Window type</source>
         <translation>窗口形态</translation>
     </message>
@@ -534,6 +550,10 @@
     <message>
         <source>This tab&apos;s sidebar placement</source>
         <translation>此标签的侧边栏收纳</translation>
+    </message>
+    <message>
+        <source>Current tab folder</source>
+        <translation>当前标签夹</translation>
     </message>
     <message>
         <source>Current pane</source>
@@ -610,6 +630,10 @@
     <message>
         <source>The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API</source>
         <translation>标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整</translation>
+    </message>
+    <message>
+        <source>The row collapse command requires a mode; choose it from the tab bar context menu or settings</source>
+        <translation>收起标签行命令需要指定方式；请在标签栏右键菜单或设置中选择</translation>
     </message>
     <message>
         <source>Available in the Window menu family list and window switcher</source>
@@ -710,6 +734,14 @@
     <message>
         <source>Visited: most recent first</source>
         <translation>访问时间：最近优先</translation>
+    </message>
+    <message>
+        <source>Rename tab group…</source>
+        <translation>重命名标签组…</translation>
+    </message>
+    <message>
+        <source>Tab group name (empty for none)</source>
+        <translation>标签组名称（留空表示不命名）</translation>
     </message>
     <message numerus="yes">
         <source>(%n tabs)</source>
@@ -1102,6 +1134,22 @@
         <translation>普通标签栏位置</translation>
     </message>
     <message>
+        <source>Collapse tab rows</source>
+        <translation>收起标签行</translation>
+    </message>
+    <message>
+        <source>Show all rows</source>
+        <translation>显示所有行</translation>
+    </message>
+    <message>
+        <source>Collapse; expanded rows push the content down</source>
+        <translation>收起；展开时把内容往下推</translation>
+    </message>
+    <message>
+        <source>Collapse; expanded rows overlay the content</source>
+        <translation>收起；展开时盖在内容上</translation>
+    </message>
+    <message>
         <source>Tab bar position</source>
         <translation>标签栏位置</translation>
     </message>
@@ -1285,6 +1333,14 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>所有标签</translation>
     </message>
     <message>
+        <source>Show tab titles</source>
+        <translation>显示标签标题</translation>
+    </message>
+    <message>
+        <source>Show only tab icons</source>
+        <translation>只显示标签图标</translation>
+    </message>
+    <message>
         <source>Unpin all sidebar tabs</source>
         <translation>取消固定这一侧全部标签</translation>
     </message>
@@ -1363,8 +1419,16 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>标签外观设置必须是对象</translation>
     </message>
     <message>
-        <source>Tab bars support only top or bottom placement</source>
-        <translation>标签栏仅支持顶部或底部</translation>
+        <source>Tab bars can be placed only top, bottom, left or right</source>
+        <translation>标签栏只能放在上、下、左或右</translation>
+    </message>
+    <message>
+        <source>Collapsing tab rows must be off, push or overlay</source>
+        <translation>收起标签行只能是 off、push 或 overlay</translation>
+    </message>
+    <message>
+        <source>The vertical tab bar width must be an integer from 140 to 480 logical pixels</source>
+        <translation>竖向标签栏宽度必须是 140 到 480 之间的整数逻辑像素</translation>
     </message>
     <message>
         <source>Invalid tab visibility setting type</source>
@@ -1709,16 +1773,28 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>单独设置固定侧栏面板的标签位置。</translation>
     </message>
     <message>
-        <source>Place central tab bars above or below the content.</source>
-        <translation>普通标签栏可放在内容顶部或底部。</translation>
-    </message>
-    <message>
         <source>Wrap tabs to additional rows instead of using a horizontal scrollbar.</source>
         <translation>标签排满一行后换行，不使用横向滚动条。</translation>
     </message>
     <message>
-        <source>In multiline mode, scroll down to show all rows and up to show only the active tab&apos;s row.</source>
-        <translation>多行模式下向下滚动展开全部行，向上滚动只显示当前标签所在行。</translation>
+        <source>Place central tab bars above, below or beside the content. Left and right show the tabs as a vertical list.</source>
+        <translation>中央标签栏放在内容上方、下方或旁边。放在左右时，标签竖着排成列表。</translation>
+    </message>
+    <message>
+        <source>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</source>
+        <translation>多行时只显示活动标签所在的行，行末的数字表示隐藏了几个标签，点击可展开。</translation>
+    </message>
+    <message>
+        <source>With collapsed rows, scroll down to expand them and up to collapse them again.</source>
+        <translation>标签行收起时，向下滚动滚轮展开，向上滚动收起。</translation>
+    </message>
+    <message>
+        <source>Vertical tab bar width</source>
+        <translation>竖向标签栏宽度</translation>
+    </message>
+    <message>
+        <source>The width of new vertical tab bars. Drag a vertical tab bar&apos;s edge to resize it on its own.</source>
+        <translation>新竖向标签栏的宽度。拖动某个竖向标签栏的边缘可以单独调整它的宽度。</translation>
     </message>
     <message>
         <source>Applies to central tab bars independently of sidebars. Per-tab icon visibility set by the host still applies.</source>
@@ -1731,6 +1807,14 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>Show central tab numbers before the icon, starting at 1 in each tab bar.</source>
         <translation>普通中央标签栏的编号显示在图标左侧，按本栏顺序从 1 开始。</translation>
+    </message>
+    <message>
+        <source>Show tab group names</source>
+        <translation>显示标签组名称</translation>
+    </message>
+    <message>
+        <source>Show a named group&apos;s name at the end of its tab bar.</source>
+        <translation>在已命名标签组的标签栏末尾显示组名。</translation>
     </message>
     <message>
         <source>Show icons in pinned and auto-hide sidebar bars independently. Hidden by default; per-tab icon visibility still applies.</source>
@@ -1857,6 +1941,50 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>窗格不属于该标签。</translation>
     </message>
     <message>
+        <source>Unknown tab group.</source>
+        <translation>标签组不存在。</translation>
+    </message>
+    <message>
+        <source>A tab folder needs new identity and at least one tab.</source>
+        <translation>标签夹需要新的 ID 和至少一个标签。</translation>
+    </message>
+    <message>
+        <source>Auto-hide rails hold no tab folders.</source>
+        <translation>收纳条中不能有标签夹。</translation>
+    </message>
+    <message>
+        <source>A tab folder&apos;s tabs must be tabs of one tab group that are not sticky.</source>
+        <translation>标签夹中的标签必须属于同一个标签组，且不是钉住标签。</translation>
+    </message>
+    <message>
+        <source>A tab folder lists each tab once.</source>
+        <translation>标签夹中每个标签只能出现一次。</translation>
+    </message>
+    <message>
+        <source>The tab and the tab folder must share one tab group, and the tab must not be sticky.</source>
+        <translation>标签和标签夹必须在同一个标签组，且标签不能是钉住标签。</translation>
+    </message>
+    <message>
+        <source>Unknown tab folder.</source>
+        <translation>标签夹不存在。</translation>
+    </message>
+    <message>
+        <source>A tab folder name has at most 256 characters.</source>
+        <translation>标签夹名称最多 256 个字符。</translation>
+    </message>
+    <message>
+        <source>Unknown tab folder or target group.</source>
+        <translation>标签夹或目标标签组不存在。</translation>
+    </message>
+    <message>
+        <source>A tab group becomes a tab folder of another tab group.</source>
+        <translation>标签组只能转为另一个标签组中的标签夹。</translation>
+    </message>
+    <message>
+        <source>A tab group name has at most 256 characters.</source>
+        <translation>标签组名称最多 256 个字符。</translation>
+    </message>
+    <message>
         <source>Tabs in an auto-hide rail cannot be sticky.</source>
         <translation>非固定收纳条中的标签不能钉住。</translation>
     </message>
@@ -1939,6 +2067,10 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>Reassignment needs a floating window and a workbench.</source>
         <translation>更改所属窗口需要一个浮动窗口和一个完整窗口。</translation>
+    </message>
+    <message>
+        <source>Tabs gathered into a tab folder need a new folder in one group.</source>
+        <translation>收进标签夹的标签需要一个新标签夹，且在同一个标签组。</translation>
     </message>
     <message>
         <source>Whole-window movement requires a different target window.</source>
@@ -2047,6 +2179,18 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>An edge extent is invalid.</source>
         <translation>侧边分区尺寸无效。</translation>
+    </message>
+    <message>
+        <source>A tab folder is invalid.</source>
+        <translation>标签夹无效。</translation>
+    </message>
+    <message>
+        <source>A tab folder&apos;s tabs must be adjacent tabs of its group.</source>
+        <translation>标签夹中的标签必须在所属标签组中相邻。</translation>
+    </message>
+    <message>
+        <source>A tab folder has no tabs.</source>
+        <translation>标签夹中没有标签。</translation>
     </message>
     <message>
         <source>Tab identities are invalid.</source>
@@ -2197,6 +2341,26 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>侧边分区尺寸必须是有效范围内的整数。</translation>
     </message>
     <message>
+        <source>A vertical tab bar width must be 0 or an integer from 140 to 480.</source>
+        <translation>竖向标签栏宽度必须是 0 或 140 到 480 之间的整数。</translation>
+    </message>
+    <message>
+        <source>A tab group name must be text of at most 256 characters.</source>
+        <translation>标签组名称必须是不超过 256 个字符的文本。</translation>
+    </message>
+    <message>
+        <source>A group&apos;s tab folders must be a list.</source>
+        <translation>标签组的标签夹必须是列表。</translation>
+    </message>
+    <message>
+        <source>A tab folder needs an ID, a name, a color and a collapsed flag.</source>
+        <translation>标签夹需要 ID、名称、颜色和收起标记。</translation>
+    </message>
+    <message>
+        <source>A vertical tab bar&apos;s icon mode must be a boolean.</source>
+        <translation>竖向标签栏的图标模式必须是布尔值。</translation>
+    </message>
+    <message>
         <source>Duplicate group identity.</source>
         <translation>标签组 ID 重复。</translation>
     </message>
@@ -2289,8 +2453,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>全屏模式无效</translation>
     </message>
     <message>
-        <source>Tab position must be top or bottom</source>
-        <translation>标签位置必须是 top 或 bottom</translation>
+        <source>Tab position must be top, bottom, left or right</source>
+        <translation>标签位置只能是 top、bottom、left 或 right</translation>
     </message>
     <message>
         <source>Unknown tab appearance field</source>
@@ -2543,6 +2707,10 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>Unknown tab sort order</source>
         <translation>未知的标签排序方式</translation>
+    </message>
+    <message>
+        <source>Tab folder does not exist</source>
+        <translation>标签夹不存在</translation>
     </message>
     <message>
         <source>Resize auto-hide panel</source>
@@ -2963,6 +3131,188 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>Default</source>
         <translation>默认</translation>
+    </message>
+    <message>
+        <source>Add tab to new tab folder</source>
+        <translation>把标签加入新标签夹</translation>
+    </message>
+    <message>
+        <source>Add tab to a tab folder…</source>
+        <translation>把标签加入标签夹…</translation>
+    </message>
+    <message>
+        <source>Remove tab from its tab folder</source>
+        <translation>把标签移出所在标签夹</translation>
+    </message>
+    <message>
+        <source>Rename tab folder…</source>
+        <translation>重命名标签夹…</translation>
+    </message>
+    <message>
+        <source>Tab folder name (empty for none)</source>
+        <translation>标签夹名称（留空表示不命名）</translation>
+    </message>
+    <message>
+        <source>Set tab folder color…</source>
+        <translation>设置标签夹颜色…</translation>
+    </message>
+    <message>
+        <source>Automatic color</source>
+        <translation>自动颜色</translation>
+    </message>
+    <message>
+        <source>Collapse or expand tab folder</source>
+        <translation>收起或展开标签夹</translation>
+    </message>
+    <message>
+        <source>Collapse all tab folders in this tab group</source>
+        <translation>收起此标签组的所有标签夹</translation>
+    </message>
+    <message>
+        <source>Expand all tab folders in this tab group</source>
+        <translation>展开此标签组的所有标签夹</translation>
+    </message>
+    <message>
+        <source>New tab in this tab folder</source>
+        <translation>在此标签夹中新建标签</translation>
+    </message>
+    <message>
+        <source>Ungroup tab folder</source>
+        <translation>解散标签夹</translation>
+    </message>
+    <message>
+        <source>Close tab folder</source>
+        <translation>关闭标签夹</translation>
+    </message>
+    <message>
+        <source>Move tab folder forward</source>
+        <translation>标签夹后移</translation>
+    </message>
+    <message>
+        <source>Move tab folder backward</source>
+        <translation>标签夹前移</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group to the left</source>
+        <translation>标签夹移到左侧标签组</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group on the left</source>
+        <translation>标签夹转为左侧的标签组</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group to the right</source>
+        <translation>标签夹移到右侧标签组</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group on the right</source>
+        <translation>标签夹转为右侧的标签组</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group above</source>
+        <translation>标签夹移到上方标签组</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group above</source>
+        <translation>标签夹转为上方的标签组</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group below</source>
+        <translation>标签夹移到下方标签组</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group below</source>
+        <translation>标签夹转为下方的标签组</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group to the left</source>
+        <translation>标签组转为左侧标签组中的标签夹</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group to the right</source>
+        <translation>标签组转为右侧标签组中的标签夹</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group above</source>
+        <translation>标签组转为上方标签组中的标签夹</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group below</source>
+        <translation>标签组转为下方标签组中的标签夹</translation>
+    </message>
+    <message>
+        <source>Move tab folder to next window</source>
+        <translation>标签夹移到下一个窗口</translation>
+    </message>
+    <message>
+        <source>Move tab folder to previous window</source>
+        <translation>标签夹移到上一个窗口</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a selected window…</source>
+        <translation>标签夹移到指定窗口…</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a new floating window</source>
+        <translation>标签夹移到新轻量浮窗</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a new workbench window</source>
+        <translation>标签夹移到新完整窗口</translation>
+    </message>
+    <message>
+        <source>Merge into the next tab folder</source>
+        <translation>并入下一个标签夹</translation>
+    </message>
+    <message>
+        <source>Merge into the previous tab folder</source>
+        <translation>并入上一个标签夹</translation>
+    </message>
+    <message>
+        <source>Merge into a selected tab folder…</source>
+        <translation>并入指定标签夹…</translation>
+    </message>
+    <message>
+        <source>Focus next tab folder</source>
+        <translation>聚焦下一个标签夹</translation>
+    </message>
+    <message>
+        <source>Focus previous tab folder</source>
+        <translation>聚焦上一个标签夹</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of a selected group…</source>
+        <translation>标签组转为指定标签组中的标签夹…</translation>
+    </message>
+    <message numerus="yes">
+        <source>Tab folder: %1 (%n tabs)</source>
+        <translation>
+            <numerusform>标签夹：%1（%n 个标签）</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n tab(s)</source>
+        <translation>
+            <numerusform>%n 个标签</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Tab folder, %1</source>
+        <translation>标签夹，%1</translation>
+    </message>
+    <message>
+        <source>Tab folder %1, %2</source>
+        <translation>标签夹 %1，%2</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n more tab(s) in other rows; click to expand</source>
+        <translation>
+            <numerusform>其他行还有 %n 个标签，点击展开</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Collapse other rows</source>
+        <translation>收起其他行</translation>
     </message>
 </context>
 </TS>

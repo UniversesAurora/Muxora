@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include "tab_strip.hpp"
+#include "style/tab_painter.hpp"
 #include "commands/popup_menu.hpp"
 #include "style/compact_tool_button.hpp"
 #include "style/tab_appearance_p.hpp"
@@ -15,10 +16,6 @@
 #include <QMouseEvent>
 #include <QMoveEvent>
 #include <QPainter>
-#include <QStyleOptionTab>
-#include <QStylePainter>
-#include <QScrollArea>
-#include <QScrollBar>
 #include <QScopedValueRollback>
 #include <QStackedWidget>
 #include <QStyle>
@@ -29,6 +26,9 @@
 #include <QWidgetAction>
 #include <QVariantMap>
 #include <QPixmap>
+#include <QPainterPath>
+#include <QVariantAnimation>
+#include <QEasingCurve>
 #include <algorithm>
 #include <limits>
 #include <tuple>
@@ -38,6 +38,12 @@ namespace {
 constexpr int listButtonWidth = 12;
 constexpr int newTabButtonWidth = 26;
 constexpr int createButtonGap = 1;
+
+// Sets a button's theme icon and remembers its name for theme changes.
+void setThemedIcon(QAbstractButton* button, const QString& name, const Theme& theme)
+{
+    button->setProperty("themeIcon", name); button->setIcon(iconFor(name, theme));
+}
 
 class TabPagePlaceholder final : public QWidget {
 public:
@@ -49,6 +55,112 @@ public:
     }
 };
 
+// A group's content is a card with rounded corners. Drawn above the pages,
+// this layer fills the corners outside the card with the background and
+// draws the outline and the focus glow, so any content (a white page, a
+// dark terminal) gets smooth corners. The outline opens under the active
+// tab, which flares into the card.
+class CardOverlay final : public QWidget {
+public:
+    CardOverlay(const Theme& theme, QWidget* parent) : QWidget(parent), theme_(theme)
+    {
+        setObjectName("TabGroupCard");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        focus_.setDuration(150); focus_.setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(&focus_, &QVariantAnimation::valueChanged, this, [this] { update(); });
+    }
+    void setTheme(const Theme& theme) { theme_ = theme; update(); }
+    // The card inside this layer, the active tab's span along the open edge
+    // (empty when none joins it) and which edge that is.
+    void setCard(QRect card, QPair<int, int> join, Qt::Edge edge)
+    {
+        card_ = card; join_ = join; edge_ = edge; update();
+    }
+    void setFocused(bool focused)
+    {
+        if (focused_ == focused) return;
+        focused_ = focused;
+        const qreal now = focus_.state() == QAbstractAnimation::Running ? focus_.currentValue().toReal() : (focused ? 0.0 : 1.0);
+        focus_.stop(); focus_.setStartValue(now); focus_.setEndValue(focused ? 1.0 : 0.0);
+        if (TabBar::animationsAllowed()) focus_.start(); else update();
+    }
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        if (card_.isEmpty()) return;
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal radius = 8;
+        const QRectF card(card_);
+        QPainterPath rounded; rounded.addRoundedRect(card, radius, radius);
+        // Background in the corners outside the rounded card.
+        QPainterPath corners; corners.addRect(card);
+        painter.fillPath(corners.subtracted(rounded), theme_.headerBackground);
+        const qreal progress = focus_.state() == QAbstractAnimation::Running ? focus_.currentValue().toReal() : (focused_ ? 1.0 : 0.0);
+        // The focused card glows softly outside its outline.
+        if (progress > 0) for (int ring = 3; ring >= 1; --ring) {
+            auto glow = theme_.accent; glow.setAlphaF(0.07 * progress * (4 - ring) / 3.0);
+            painter.setPen(QPen(glow, ring * 1.5)); painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(card.adjusted(-ring * 0.5, -ring * 0.5, ring * 0.5, ring * 0.5), radius + ring * 0.5, radius + ring * 0.5);
+        }
+        auto line = theme_.border; line.setAlphaF(0.6);
+        if (progress > 0) {
+            auto accent = theme_.accent; accent.setAlphaF(0.6);
+            line = QColor::fromRgbF(line.redF() + (accent.redF() - line.redF()) * progress, line.greenF() + (accent.greenF() - line.greenF()) * progress,
+                                    line.blueF() + (accent.blueF() - line.blueF()) * progress, line.alphaF() + (accent.alphaF() - line.alphaF()) * progress);
+        }
+        painter.setPen(QPen(line, 1)); painter.setBrush(Qt::NoBrush);
+        painter.save();
+        if (join_.second > join_.first) {
+            // Leave the outline open where the active tab joins the card.
+            QPainterPath visible; visible.addRect(QRectF(rect()));
+            QRectF gap;
+            if (edge_ == Qt::TopEdge) gap = QRectF(join_.first, card.top() - 2, join_.second - join_.first, 4);
+            else if (edge_ == Qt::BottomEdge) gap = QRectF(join_.first, card.bottom() - 2, join_.second - join_.first, 4);
+            QPainterPath hole; hole.addRect(gap);
+            painter.setClipPath(visible.subtracted(hole));
+        }
+        painter.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+        painter.restore();
+    }
+private:
+    Theme theme_;
+    QRect card_;
+    QPair<int, int> join_;
+    Qt::Edge edge_ = Qt::TopEdge;
+    bool focused_ = false;
+    QVariantAnimation focus_;
+};
+
+// The picture of dragged content over a group's pages: top left aligned at
+// its own size, the rest in the content's background.
+class ContentPreview final : public QWidget {
+public:
+    explicit ContentPreview(QWidget* parent) : QWidget(parent)
+    {
+        setObjectName("TabContentPreview");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        hide();
+    }
+    void setPicture(const QPixmap& picture)
+    {
+        picture_ = picture;
+        const auto image = picture.toImage();
+        fill_ = image.isNull() ? palette().color(QPalette::Base) : image.pixelColor(image.width() - 1, image.height() - 1);
+        update();
+    }
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.fillRect(rect(), fill_);
+        painter.drawPixmap(0, 0, picture_);
+    }
+private:
+    QPixmap picture_;
+    QColor fill_;
+};
+
 class TabCreateButtons final : public QWidget {
 public:
     TabCreateButtons(const Theme& theme, QWidget* parent) : QWidget(parent) {
@@ -56,10 +168,10 @@ public:
         auto* row = new QHBoxLayout(this);
         row->setContentsMargins(0, 0, 0, 0); row->setSpacing(createButtonGap);
         add = new CompactToolButton(this, QSize(newTabButtonWidth, theme.metrics.tabHeight));
-        add->setObjectName("NewTabButton"); add->setIcon(iconFor("add", theme));
+        add->setObjectName("NewTabButton"); setThemedIcon(add, "add", theme);
         add->setToolTip(QCoreApplication::translate("WindowSystem", "New tab")); add->setAccessibleName(add->toolTip());
         types = new CompactToolButton(this, QSize(listButtonWidth, theme.metrics.tabHeight));
-        types->setObjectName("NewTabTypeButton"); types->setIcon(iconFor("chevron-down", theme));
+        types->setObjectName("NewTabTypeButton"); setThemedIcon(types, "chevron-down", theme);
         types->setToolTip(QCoreApplication::translate("WindowSystem", "Choose new tab type")); types->setAccessibleName(types->toolTip());
         row->addWidget(add); row->addWidget(types);
         add->installEventFilter(this); types->installEventFilter(this);
@@ -217,666 +329,276 @@ private:
 };
 } // namespace
 
-DragTabBar::DragTabBar(QWidget* parent) : QTabBar(parent)
-{
-    setObjectName("TabBar"); setExpanding(false); setElideMode(Qt::ElideNone);
-    setUsesScrollButtons(false); setMouseTracking(true); setDocumentMode(true);
-    QObject::connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
-        titleLayouts_.clear(); updateGeometry(); update();
-    });
-}
-void DragTabBar::setAppearance(const TabAppearance& appearance)
-{
-    appearance_ = appearance;
-    updateInsertionSticky(); refreshSizeHints();
-}
-void DragTabBar::refreshSizeHints()
-{
-    // QTabBar caches native size hints. Appearance changes can remove icon
-    // space or add a number even when the text/icon identities are unchanged.
-    QEvent styleChange(QEvent::StyleChange); QApplication::sendEvent(this,&styleChange);
-    updateGeometry(); update();
-}
-void DragTabBar::setTabMetadata(int index, const TabRecord& tab)
-{
-    decorations_[index] = {tab.colorId};
-}
-const TabColorPreset* DragTabBar::tabPreset(int index) const
-{
-    const auto id = decorations_.value(index).colorId;
-    for (const auto& preset : appearance_.colors) if (preset.id == id) return &preset;
-    return nullptr;
-}
-int DragTabBar::displayedTabAt(QPoint local) const
-{
-    for (int i = 0; i < count(); ++i) if (displayTabRect(i).contains(local)) return i;
-    return -1;
-}
-QSize DragTabBar::displayedSize() const { return displayedSize_; }
-QPoint DragTabBar::creationPosition() const { return creationPosition_; }
-int DragTabBar::rowCount() const { return rowCount_; }
-void DragTabBar::layoutTabs(int availableWidth, bool expanded, int trailingActionsWidth, bool trailingControls)
-{
-    customLayout_ = appearance_.multiline || stickyFloats();
-    displayedRects_.clear(); previewRect_ = {};
-    const int lineHeight = std::max(24, count() ? tabSizeHint(0).height() : 28);
-    lineHeight_ = lineHeight;
-    // Expanded rows use the full bar width. Only the final row reserves the
-    // list/pinning controls; a collapsed one-row view reserves them normally.
-    const int limit = std::max(1, availableWidth - (appearance_.multiline && !expanded ? trailingActionsWidth : 0));
-    if (!expanded) trailingActionsWidth = 0;
-    // Sticky tabs on rows of their own wrap there even in a single-row strip;
-    // the other tabs start on the next row.
-    const bool rows = separateRow();
-    bool stickyPhase = rows;
-    int x = 0, y = 0, ordinal = 0, stickyWidth = 0;
-    const auto wraps = [&] { return appearance_.multiline || stickyPhase; };
-    auto append = [&](int width) {
-        width = wraps() ? std::min(width, limit) : width;
-        if (wraps() && x && x + width > limit) { x = 0; y += lineHeight; }
-        const QRect area(x, y, width, lineHeight); x += width;
-        if (stickyPhase) stickyWidth = std::max(stickyWidth, x);
-        return area;
-    };
-    // A preview among compact sticky tabs takes their width, and among shrunk
-    // ones at most the width of a tab whose title fills the shrunk limit.
-    const int previewExtent = !insertionSticky_ || appearance_.stickySizing == StickyTabSizing::Normal ? insertionExtent_
-        : appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth
-        : std::min(insertionExtent_, tabBarTabWidth({appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(insertionIndex_ + 1)) : 0,
-              appearance_.showIcons ? iconSize().width() : 0, appearance_.shrinkStickyTitleWidth}));
-    // The sticky run ends before the first other tab or a preview for one.
-    std::optional<int> runEnd;
-    stickyRowsHeight_ = 0;
-    const auto endRun = [&](bool otherRow = true) {
-        if (runEnd) return;
-        runEnd = x;
-        if (stickyPhase) {
-            stickyPhase = false; stickyRowsHeight_ = y + lineHeight;
-            if (otherRow) { y += lineHeight; x = 0; }
-        }
-    };
-    for (int i = 0; i < count(); ++i) {
-        if (isDragged(i)) continue;
-        if (insertionIndex_ == ordinal && insertionExtent_) {
-            if (!insertionSticky_) endRun();
-            // Keep the insertion on the row of the label it precedes. A short
-            // carried label must not fill the previous row's leftover space
-            // and change the hit target when only the active row is displayed.
-            // A sticky preview before the first other tab stays on its row.
-            const int followingWidth = std::min(tabSizeHint(i).width(), limit);
-            const bool sameSegment = !rows || (i < stickyCount_) == insertionSticky_;
-            if (sameSegment && wraps() && x && x + followingWidth > limit) { x = 0; y += lineHeight; }
-            previewRect_ = append(previewExtent);
-        }
-        if (i >= stickyCount_) endRun();
-        ++ordinal;
-        displayedRects_[i] = append(tabSizeHint(i).width());
-    }
-    if (insertionIndex_ == ordinal && insertionExtent_) {
-        if (!insertionSticky_) endRun();
-        previewRect_ = append(previewExtent);
-    }
-    // A compact carrier hides every trailing control. With only sticky tabs
-    // there is no other row to reserve between their labels and the content.
-    endRun(trailingControls); stickyRunEnd_ = *runEnd;
-    creationPosition_ = {x,y};
-    const int creationWidth = trailingControls && appearance_.showNewTabButton ? newTabButtonWidth + listButtonWidth + createButtonGap : 0;
-    if (appearance_.multiline && x && x + creationWidth + trailingActionsWidth > limit) {
-        creationPosition_ = {0, y + lineHeight}; y += lineHeight;
-    }
-    rowCount_ = y / lineHeight + 1;
-    // Sticky rows are always shown; the active row is one of the others.
-    const int firstOtherRow = stickyRowsHeight_ / lineHeight;
-    if (appearance_.multiline) {
-        const auto active = displayedRects_.value(currentIndex());
-        // A dragged current label temporarily has no displayed rectangle.
-        // Keep its logical row until the insertion gap takes over the anchor.
-        // Rebased, active-only rectangles cannot supply this logical index.
-        if (!previewRect_.isEmpty() && previewRect_.top() >= stickyRowsHeight_) activeLogicalRow_ = previewRect_.top() / lineHeight;
-        else if (!active.isEmpty() && active.top() >= stickyRowsHeight_) activeLogicalRow_ = active.top() / lineHeight;
-        activeLogicalRow_ = std::clamp(activeLogicalRow_, firstOtherRow, std::max(firstOtherRow, rowCount_ - 1));
-    }
-    if (appearance_.multiline && !expanded && rowCount_ > firstOtherRow) {
-        const int activeY = activeLogicalRow_ * lineHeight, shown = stickyRowsHeight_;
-        const auto collapse = [&](const QRect& rect) {
-            return rect.isEmpty() || rect.top() < shown ? rect : rect.top() == activeY ? rect.translated(0, shown - activeY) : QRect{};
-        };
-        for (auto it = displayedRects_.begin(); it != displayedRects_.end(); ++it) it.value() = collapse(it.value());
-        previewRect_ = collapse(previewRect_);
-        creationPosition_.ry() -= activeY - shown;
-        if (creationPosition_.y() != shown) creationPosition_.setY(-lineHeight * 2);
-        y = shown;
-    }
-    displayedSize_ = {appearance_.multiline ? limit : std::max(x, stickyWidth), y + lineHeight};
-}void DragTabBar::setCloseIcon(QIcon icon) { closeIcon_ = std::move(icon); update(); }
-void DragTabBar::setStickyIcon(QIcon icon) { stickyIcon_ = std::move(icon); update(); }
-void DragTabBar::setStickyCount(int count)
-{
-    if (stickyCount_ == count) return;
-    stickyCount_ = count; updateInsertionSticky();
-    // Sized sticky tabs change width with the count.
-    if (appearance_.stickySizing != StickyTabSizing::Normal) refreshSizeHints(); else update();
-}
-void DragTabBar::setStickyOffset(int offset)
-{
-    if (stickyOffset_ == offset) return;
-    stickyOffset_ = offset;
-    if (stickyFloats()) update();
-}
-bool DragTabBar::separateRow() const { return appearance_.stickyTabsOnSeparateRow && stickyCount_ > 0; }
-bool DragTabBar::stickyFloats() const
-{
-    return !appearance_.multiline && (separateRow()
-        || (appearance_.stickySizing != StickyTabSizing::Normal && (stickyCount_ || insertionSticky_)));
-}
-int DragTabBar::stickyShift() const { return stickyFloats() ? std::max(0, stickyOffset_) : 0; }
-// Sticky tabs on their own row cover none of the other tabs' row.
-int DragTabBar::stickyRunExtent() const { return stickyFloats() && !separateRow() ? stickyRunEnd_ : 0; }
-std::optional<bool> DragTabBar::insertionRowAt(QPoint local) const
-{
-    if (!separateRow()) return {};
-    return local.y() < stickyRowsHeight_;
-}
-bool DragTabBar::isCompactSticky(int index) const
-{
-    return index >= 0 && index < stickyCount_ && appearance_.stickySizing == StickyTabSizing::Compact;
-}
-int DragTabBar::naturalTabWidth(int index) const { return tabBarTabWidth(labelParts(index, false)); }
-void DragTabBar::updateInsertionSticky()
-{
-    // The model's rule: a drop inside the sticky run, or right after it for a
-    // tab that was sticky, makes the tab sticky.
-    const int run = stickyCount_ - (draggedIndex_ >= 0 && draggedIndex_ < stickyCount_ ? 1 : 0);
-    insertionSticky_ = insertionIndex_ >= 0 && (insertionIndex_ < run || (insertionIndex_ == run && carriedSticky_));
-    // With their own row, right after the sticky tabs is either the end of
-    // that row or the start of the next one; the pointer's row decides.
-    if (insertionIndex_ == run && stickyRow_ && separateRow()) insertionSticky_ = *stickyRow_;
-}
-void DragTabBar::setDraggedTab(TabId tab)
-{
-    draggedIndex_ = -1;
-    for (int i = 0; i < count(); ++i) if (!tab.isNull() && tabData(i).toUuid() == tab) draggedIndex_ = i;
-    updateInsertionSticky();
-    update();
-}
-bool DragTabBar::isDragged(int index) const { return index == draggedIndex_; }
-int DragTabBar::draggedExtent() const
-{
-    return draggedIndex_ < 0 ? 0 : tabRect(draggedIndex_).width();
-}
-void DragTabBar::setInsertionPreview(int index, int extent, QColor color, bool carriedSticky, std::optional<bool> stickyRow)
-{
-    int moved = 0; for(int i=0;i<count();++i) if(isDragged(i)) ++moved;
-    insertionIndex_ = index < 0 ? -1 : qBound(0, index, count() - moved);
-    insertionExtent_ = insertionIndex_ < 0 ? 0 : qMax(1, extent);
-    insertionColor_ = color;
-    carriedSticky_ = insertionIndex_ >= 0 && carriedSticky;
-    stickyRow_ = insertionIndex_ >= 0 ? stickyRow : std::nullopt;
-    updateInsertionSticky();
-    setProperty("insertionIndex", insertionIndex_);
-    update();
-}
-QRect DragTabBar::insertionPreviewRect() const
-{
-    if (insertionIndex_ < 0) return {};
-    if (customLayout_) return insertionSticky_ ? previewRect_.translated(stickyShift(), 0) : previewRect_;
-    int x = 0, visible = 0;
-    for (int i = 0; i < count() && visible < insertionIndex_; ++i)
-        if (i != draggedIndex_) { x += tabRect(i).width(); ++visible; }
-    return {x, 0, insertionExtent_, height()};
-}
-QRect DragTabBar::displayTabRect(int index) const
-{
-    if (customLayout_) {
-        const auto rect = displayedRects_.value(index);
-        return index < stickyCount_ && !rect.isEmpty() ? rect.translated(stickyShift(), 0) : rect;
-    }
-    auto result = tabRect(index);
-    if (index == draggedIndex_) return {};
-    const int visibleIndex = index - (draggedIndex_ >= 0 && index > draggedIndex_ ? 1 : 0);
-    if (draggedIndex_ >= 0 && index > draggedIndex_) result.translate(-draggedExtent(), 0);
-    if (insertionIndex_ >= 0 && visibleIndex >= insertionIndex_) result.translate(insertionExtent_, 0);
-    return result;
-}
-int DragTabBar::insertionIndexAt(QPoint local) const
-{
-    if (customLayout_ && stickyFloats() && !separateRow()) {
-        if (insertionPreviewRect().contains(local)) return insertionIndex_;
-        // Over the sticky tabs only they count; elsewhere only the other
-        // tabs do, including those partly scrolled under the sticky ones.
-        const bool overRun = local.x() < stickyShift() + stickyRunEnd_;
-        int ordinal = 0;
-        for (int i = 0; i < count(); ++i) if (!isDragged(i)) {
-            const bool sticky = i < stickyCount_;
-            if (overRun && !sticky) return ordinal;
-            if (sticky == overRun && local.x() < displayTabRect(i).center().x()) return ordinal;
-            ++ordinal;
-        }
-        return ordinal;
-    }
-    if (customLayout_) {
-        if (insertionPreviewRect().contains(local)) return insertionIndex_;
-        // Sticky tabs on rows of their own and the other tabs are separate
-        // targets; right after the sticky tabs belongs to both.
-        const auto stickyRow = insertionRowAt(local);
-        const auto inRegion = [&](int i) { return !stickyRow || (i < stickyCount_) == *stickyRow; };
-        int run = 0;
-        for (int i = 0; i < std::min(stickyCount_, count()); ++i) if (!isDragged(i)) ++run;
-        // The preview counts as a member of its row. A tab dragged off a row
-        // of its own leaves only the preview there; without it, the pointer
-        // on that row would aim at the row above, moving the preview up and
-        // back again on every move.
-        const auto gap = insertionPreviewRect();
-        const bool gapCounts = !gap.isEmpty() && (!stickyRow || insertionSticky_ == *stickyRow);
-        int nearestRow = -1, distance = std::numeric_limits<int>::max();
-        const auto consider = [&](const QRect& rect) {
-            const int dy = local.y() < rect.top() ? rect.top() - local.y()
-                : local.y() > rect.bottom() ? local.y() - rect.bottom() : 0;
-            if(dy < distance) { nearestRow=rect.top(); distance=dy; }
-        };
-        if (gapCounts) consider(gap);
-        for (int i = 0; i < count(); ++i) if (!isDragged(i) && inRegion(i)) {
-            const auto rect = displayTabRect(i);
-            if (!rect.isEmpty()) consider(rect);
-        }
-        int ordinal = 0, after = stickyRow && !*stickyRow ? run : 0;
-        const auto gapAt = [&](int position) {
-            return gapCounts && position == insertionIndex_ && gap.top() == nearestRow;
-        };
-        for (int i = 0; i < count(); ++i) if (!isDragged(i)) {
-            if (gapAt(ordinal)) {
-                if (local.x() < gap.center().x()) return insertionIndex_;
-                after = insertionIndex_;
-            }
-            const auto rect = displayTabRect(i);
-            if (inRegion(i) && !rect.isEmpty() && rect.top() == nearestRow) {
-                if(local.x() < rect.center().x()) return ordinal;
-                after=ordinal+1;
-            }
-            ++ordinal;
-        }
-        if (gapAt(ordinal)) after = insertionIndex_;
-        if (nearestRow < 0) return stickyRow ? run : insertionIndex_ >= 0 ? insertionIndex_ : 0;
-        return after;
-    }
-    const auto gap = insertionPreviewRect();
-    if (gap.contains(local)) return insertionIndex_;
-    int x = local.x();
-    if (!gap.isEmpty() && x > gap.right()) x -= gap.width();
-    int visible = 0, left = 0;
-    for (int index = 0; index < count(); ++index) if (index != draggedIndex_) {
-        const int width = tabRect(index).width();
-        if (x < left + width / 2) return visible;
-        left += width; ++visible;
-    }
-    return visible;
-}
-TabLabelParts DragTabBar::labelParts(int index, bool sized) const {
-    auto& title = titleLayouts_[index];
-    title.prepare(tabText(index), font(), layoutDirection(), true, this);
-    const int natural = title.naturalWidth();
-    // A shrunk sticky tab has its own title limit; the regular clipping does
-    // not apply to it.
-    const bool shrunk = sized && index < stickyCount_ && appearance_.stickySizing == StickyTabSizing::Shrink;
-    return {appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) : 0,
-            appearance_.showIcons && !tabIcon(index).isNull() ? iconSize().width() : 0,
-            shrunk ? std::min(natural, appearance_.shrinkStickyTitleWidth)
-                : appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural};
-}
-QSize DragTabBar::tabSizeHint(int index) const {
-    auto size = QTabBar::tabSizeHint(index);
-    size.setWidth(isCompactSticky(index) ? compactStickyTabWidth : tabBarTabWidth(labelParts(index)));
-    return size;
-}
-QRect DragTabBar::closeRect(int index) const {
-    if (isCompactSticky(index)) return {};
-    return tabBarCloseRect(displayTabRect(index), layoutDirection());
-}
-bool DragTabBar::event(QEvent* event) {
-    // Painting, button input and help must agree on the displayed tab, even
-    // when custom rows no longer match QTabBar's own single-row layout.
-    if (event->type() == QEvent::ToolTip) {
-        auto* help = static_cast<QHelpEvent*>(event);
-        const auto index = displayedTabAt(help->pos());
-        QString text; QRect area;
-        if (index >= 0) {
-            area = displayTabRect(index);
-            const auto button = closeRect(index);
-            if (button.contains(help->pos())) {
-                area = button;
-                text = index < stickyCount_ ? QCoreApplication::translate("WindowSystem", "Unstick tab")
-                    : QCoreApplication::translate("WindowSystem", "Close tab");
-            } else {
-                text = tabToolTip(index);
-                // Leaving the title for its action must dismiss the title's
-                // already visible tip, although both belong to one widget.
-                if (!button.isEmpty()) {
-                    if (help->pos().x() < button.left()) area.setRight(button.left() - 1);
-                    else if (help->pos().x() > button.right()) area.setLeft(button.right() + 1);
-                    else if (help->pos().y() < button.top()) area.setBottom(button.top() - 1);
-                    else area.setTop(button.bottom() + 1);
-                }
-            }
-        }
-        if (!text.isEmpty()) QToolTip::showText(help->globalPos(), text, this, area);
-        else { QToolTip::hideText(); event->ignore(); }
-        return true;
-    }
-    return QTabBar::event(event);
-}
-void DragTabBar::mousePressEvent(QMouseEvent* event) {
-    if (event->button() == Qt::RightButton) { pressed_ = -1; closePressed_ = -1; event->accept(); return; }
-    // A middle click closes the tab it was pressed and released on, like
-    // VS Code and browsers; it never selects or drags.
-    if (event->button() == Qt::MiddleButton) { middlePressed_ = displayedTabAt(event->position().toPoint()); event->accept(); return; }
-    start_ = event->position().toPoint(); pressed_ = displayedTabAt(start_);
-    if (event->button() == Qt::LeftButton && pressed_ >= 0 && closeRect(pressed_).contains(start_)) {
-        closePressed_ = pressed_; pressed_ = -1; update(closeRect(closePressed_).adjusted(-2, -2, 2, 2)); event->accept(); return;
-    }
-    if (customLayout_) { if (event->button() == Qt::LeftButton && pressed_ >= 0) setCurrentIndex(pressed_); event->accept(); }
-    else QTabBar::mousePressEvent(event);
-}
-void DragTabBar::mouseMoveEvent(QMouseEvent* event) {
-    const auto hover = displayedTabAt(event->position().toPoint());
-    const bool overClose = hover >= 0 && closeRect(hover).contains(event->position().toPoint());
-    if (hover != hovered_ || overClose != closeHovered_) { hovered_ = hover; closeHovered_ = overClose; update(); }
-    if (event->buttons().testFlag(Qt::LeftButton) && pressed_ >= 0 &&
-        (event->position().toPoint() - start_).manhattanLength() >= QApplication::startDragDistance()) {
-        const auto index = pressed_; pressed_ = -1;
-        const auto callback = drag; // Detachment may rebuild and destroy this view.
-        if (callback) callback(index, event->globalPosition().toPoint());
-        return;
-    }
-    QTabBar::mouseMoveEvent(event);
-}
-void DragTabBar::mouseReleaseEvent(QMouseEvent* event) {
-    if (event->button() == Qt::MiddleButton) {
-        const auto index = middlePressed_; middlePressed_ = -1; event->accept();
-        const bool kept = index < stickyCount_ && guardsMiddleClick(appearance_.preventStickyClose);
-        if (index >= 0 && !kept && displayedTabAt(event->position().toPoint()) == index) {
-            const auto callback = close; if (callback) callback(index);
-        }
-        return;
-    }
-    pressed_ = -1;
-    if (closePressed_ >= 0) {
-        const auto index = closePressed_; closePressed_ = -1;
-        update(closeRect(index).adjusted(-2, -2, 2, 2));
-        if (event->button() == Qt::LeftButton && closeRect(index).contains(event->position().toPoint())) {
-            const auto callback = index < stickyCount_ ? unstick : close; if (callback) callback(index);
-        }
-        return;
-    }
-    if(customLayout_) event->accept(); else QTabBar::mouseReleaseEvent(event);
-}
-void DragTabBar::leaveEvent(QEvent* event) { hovered_ = -1; closeHovered_ = false; update(); QTabBar::leaveEvent(event); }
-void DragTabBar::paintEvent(QPaintEvent* event) {
-    QStylePainter painter(this);
-    painter.setLayoutDirection(layoutDirection());
-    int firstVisible = -1, lastVisible = -1;
-    for (int index = 0; index < count(); ++index) if (isTabVisible(index)) {
-        if (firstVisible < 0) firstVisible = index;
-        lastVisible = index;
-    }
-    const auto draw = [&](int index) {
-        if (!isTabVisible(index) || isDragged(index)) return;
-        // Only the shape is delegated to QStyle. QTabBar::initStyleOption
-        // elides and measures the complete title even with ElideNone, which
-        // would undo the visible-glyph cache on every repaint.
-        QStyleOptionTab option; option.initFrom(this);
-        option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);
-        if (index == currentIndex()) {
-            option.state |= QStyle::State_Selected;
-            if (hasFocus()) option.state |= QStyle::State_HasFocus;
-        }
-        if (!isTabEnabled(index)) option.state &= ~QStyle::State_Enabled;
-        if (index == pressed_) option.state |= QStyle::State_Sunken;
-        if (index == hovered_) option.state |= QStyle::State_MouseOver;
-        option.shape = shape(); option.documentMode = documentMode(); option.tabIndex = index;
-        option.icon = tabIcon(index); option.iconSize = iconSize();
-        option.text = tabText(index);
-        if (const auto color = tabTextColor(index); color.isValid()) option.palette.setColor(foregroundRole(), color);
-        if (const auto* button = tabButton(index, QTabBar::LeftSide)) option.leftButtonSize = button->size();
-        if (const auto* button = tabButton(index, QTabBar::RightSide)) option.rightButtonSize = button->size();
-        option.selectedPosition = index > 0 && index - 1 == currentIndex() ? QStyleOptionTab::PreviousIsSelected
-            : index + 1 < count() && index + 1 == currentIndex() ? QStyleOptionTab::NextIsSelected : QStyleOptionTab::NotAdjacent;
-        option.position = index == firstVisible ? (index == lastVisible ? QStyleOptionTab::OnlyOneTab : QStyleOptionTab::Beginning)
-            : index == lastVisible ? QStyleOptionTab::End : QStyleOptionTab::Middle;
-        option.rect = displayTabRect(index);
-        if (!option.rect.intersects(event->rect())) return;
-        const auto* preset = tabPreset(index);
-        const auto* colors = preset ? (index == currentIndex() ? &preset->groupActive : &preset->groupInactive) : nullptr;
-        if (colors) {
-            painter.fillRect(option.rect, colors->background);
-            painter.fillRect(QRect(option.rect.left(), option.rect.bottom() - 1, option.rect.width(), 2), colors->line);
-        } else painter.drawControl(QStyle::CE_TabBarTabShape, option);
-        if (isCompactSticky(index)) {
-            // Only the icon, or the title's first letter without one, centered.
-            if (appearance_.showIcons && !option.icon.isNull()) {
-                const QRect iconArea(QPoint(), iconSize());
-                const auto target = iconArea.translated(option.rect.center() - iconArea.center());
-                if (colors) {
-                    auto pixmap = option.icon.pixmap(iconSize());
-                    QPainter iconPainter(&pixmap); iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                    iconPainter.fillRect(pixmap.rect(), colors->icon); iconPainter.end(); painter.drawPixmap(target, pixmap);
-                } else option.icon.paint(&painter, target, Qt::AlignCenter,
-                                         isTabEnabled(index) ? QIcon::Normal : QIcon::Disabled,
-                                         index == currentIndex() ? QIcon::On : QIcon::Off);
-            } else {
-                auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText, colors->text);
-                painter.drawItemText(option.rect, Qt::AlignCenter | Qt::TextSingleLine, textPalette, isTabEnabled(index),
-                                     tabText(index).left(1).toUpper(), QPalette::WindowText);
-            }
-            return;
-        }
-        const auto label = layoutTabLabel(tabBarLabelArea(option.rect, layoutDirection()), labelParts(index), layoutDirection());
-        if (!label.number.isEmpty()) {
-            painter.setPen(colors ? colors->text : palette().color(QPalette::WindowText));
-            painter.drawText(label.number, Qt::AlignLeading | Qt::AlignVCenter, QString::number(index + 1));
-        }
-        if (!label.icon.isEmpty()) {
-            const QRect iconArea(label.icon.topLeft(), iconSize());
-            painter.save(); painter.setClipRect(label.icon, Qt::IntersectClip);
-            if (colors) {
-                auto pixmap = option.icon.pixmap(iconArea.size());
-                QPainter iconPainter(&pixmap); iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                iconPainter.fillRect(pixmap.rect(), colors->icon); iconPainter.end(); painter.drawPixmap(iconArea,pixmap);
-            } else option.icon.paint(&painter, iconArea, Qt::AlignCenter,
-                              isTabEnabled(index) ? QIcon::Normal : QIcon::Disabled,
-                              index == currentIndex() ? QIcon::On : QIcon::Off);
-            painter.restore();
-        }
-        const auto textArea = label.title;
-        auto textPalette = palette(); if (colors) textPalette.setColor(QPalette::WindowText,colors->text);
-        if (isTabEnabled(index)) {
-            auto& title = titleLayouts_[index];
-            title.prepare(tabText(index), font(), layoutDirection(), true, this);
-            painter.setPen(textPalette.color(QPalette::WindowText));
-            title.draw(painter, textArea);
-        } else {
-            // Preserve style-specific disabled text effects.
-            painter.save(); painter.setClipRect(textArea, Qt::IntersectClip);
-            painter.drawItemText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextShowMnemonic | Qt::TextSingleLine,
-                                 textPalette, false, tabText(index), QPalette::WindowText);
-            painter.restore();
-        }
-    };
-    // The current tab is drawn last, over its neighbours. Sticky tabs kept in
-    // view are drawn over the tabs scrolling under them.
-    const bool floating = stickyFloats();
-    const auto drawRange = [&](int first, int last) {
-        for (int index = first; index < last; ++index) if (index != currentIndex()) draw(index);
-        if (currentIndex() >= first && currentIndex() < last) draw(currentIndex());
-    };
-    if (floating) {
-        drawRange(stickyCount_, count()); drawRange(0, std::min(stickyCount_, count()));
-        // A border after the last one separates them from the tabs scrolling
-        // under them, as VS Code's tab.lastPinnedBorder.
-        if (stickyRunExtent() > 0)
-            painter.fillRect(QRect(stickyShift() + stickyRunEnd_ - 1, 0, 1, height()), stickyBorder_);
-    } else drawRange(0, count());
-    const auto gap = insertionPreviewRect();
-    if (!gap.isEmpty()) {
-        painter.save();
-        if (stickyRunExtent() && !insertionSticky_) painter.setClipRect(QRect(stickyShift() + stickyRunEnd_, 0, width(), height()));
-        painter.fillRect(gap.adjusted(1, 1, -1, -1), insertionColor_);
-        painter.setPen(QPen(insertionColor_.darker(125), 1, Qt::DashLine));
-        painter.drawRect(gap.adjusted(1, 1, -2, -2));
-        painter.restore();
-    }
-    // A sticky tab always shows its pin; other tabs show close on hover.
-    for (int index = 0; index < std::min(stickyCount_, count()); ++index)
-        if (index != hovered_ && index != draggedIndex_ && isTabVisible(index) && !isCompactSticky(index))
-            stickyIcon_.paint(&painter, closeRect(index));
-    if (hovered_ >= 0 && hovered_ != draggedIndex_ && !isCompactSticky(hovered_)) {
-        const auto target = closeRect(hovered_);
-        if (closeHovered_ || closePressed_ == hovered_) {
-            // A translucent wash of the tab's own text color reads on every
-            // theme and color preset, like VS Code's tab action hover.
-            const auto* preset = tabPreset(hovered_);
-            auto wash = preset ? (hovered_ == currentIndex() ? preset->groupActive.text : preset->groupInactive.text)
-                               : palette().color(QPalette::WindowText);
-            wash.setAlphaF(closePressed_ == hovered_ && closeHovered_ ? 0.28 : 0.16);
-            painter.save(); painter.setRenderHint(QPainter::Antialiasing); painter.setPen(Qt::NoPen);
-            painter.setBrush(wash); painter.drawRoundedRect(QRectF(target).adjusted(-1, -1, 1, 1), 3, 3);
-            painter.restore();
-        }
-        (hovered_ < stickyCount_ ? stickyIcon_ : closeIcon_).paint(&painter, target);
-    }
-}
-void DragTabBar::tabRemoved(int index)
-{
-    // Decorations follow their tabs; later indices move down by one.
-    QHash<int, Decoration> shifted;
-    for (auto it = decorations_.cbegin(); it != decorations_.cend(); ++it)
-        if (it.key() != index) shifted.insert(it.key() > index ? it.key() - 1 : it.key(), it.value());
-    decorations_ = std::move(shifted);
-    // QTabBar can request the new indices' hints before this callback.
-    // Rebuild lazily instead of shifting a mixture of old and new entries.
-    titleLayouts_.clear();
-    QTabBar::tabRemoved(index);
-}
-void DragTabBar::contextMenuEvent(QContextMenuEvent* event) {
-    const auto callback = menu; if (callback) callback(displayedTabAt(event->pos()), event->globalPos());
-}
-
 GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), theme_(theme)
 {
     setObjectName("TabGroup");
     viewportWindow_ = window(); viewportWindow_->installEventFilter(this);
-    auto* layout = new QVBoxLayout(this); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
-    auto* header = new QWidget(this); header_ = header; header->setObjectName("TabGroupHeader");
-    header->installEventFilter(this); header->setMouseTracking(true);
-    auto* row = new QHBoxLayout(header); row->setContentsMargins(0, 0, 0, 0); row->setSpacing(0);
-    auto* strip = new QWidget(header);
-    auto* stripLayout = new QVBoxLayout(strip); stripLayout->setContentsMargins(0, 0, 0, 0); stripLayout->setSpacing(0);
-    scroll_ = new QScrollArea(strip); scroll_->setObjectName("TabScrollViewport");
-    scroll_->setFrameShape(QFrame::NoFrame); scroll_->setWidgetResizable(false);
-    scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll_->viewport()->installEventFilter(this); scroll_->viewport()->setMouseTracking(true);
-    canvas_ = new QWidget; canvas_->setObjectName("TabStripCanvas"); canvas_->installEventFilter(this);
-    bar_ = new DragTabBar(canvas_); bar_->setCloseIcon(iconFor("close", theme)); bar_->setStickyIcon(iconFor("pin", theme));
-    bar_->setStickyBorderColor(theme.border);
-    bar_->setIconSize(QSize(theme.metrics.iconSize, theme.metrics.iconSize));
-    bar_->installEventFilter(this); scroll_->setWidget(canvas_);
-    auto* create = new TabCreateButtons(theme, canvas_); createButtons_ = create;
-    create->show();
+    stack_ = new QStackedWidget(this);
+    bar_ = new TabBar(theme, this);
+    bar_->installEventFilter(this);
+    const int row = bar_->metrics().rowHeight;
+    // Right after the last tab: new tab. At the first row's end, from the
+    // right: the complete list, then sidebar actions (tab strip design 2.1).
+    trailing_ = new QWidget(this); trailing_->setObjectName("TabCreateActions");
+    auto* actions = new QHBoxLayout(trailing_); actions->setContentsMargins(0, 0, 0, 0); actions->setSpacing(0);
+    auto* create = new TabCreateButtons(theme, trailing_); createButtons_ = create;
+    create->setHeight(row);
+    actions->addWidget(create);
+    trailing_->installEventFilter(this);
+    bar_->setTrailingWidget(trailing_);
+    end_ = new QWidget(this); end_->setObjectName("TabHeaderActions");
+    auto* ending = new QHBoxLayout(end_); ending->setContentsMargins(0, 0, 4, 0); ending->setSpacing(bar_->metrics().controlGap);
+    list_ = new CompactToolButton(end_, QSize(bar_->metrics().listWidth, row)); list_->setObjectName("TabListButton");
+    list_->setMouseTracking(true);
+    setThemedIcon(list_, "tab-list", theme); list_->setToolTip(QCoreApplication::translate("WindowSystem", "All tabs"));
+    list_->setAccessibleName(list_->toolTip());
+    // A named group shows its name before the end controls, quietly.
+    name_ = new QLabel(end_); name_->setObjectName("TabGroupName"); name_->hide();
+    auto nameFont = name_->font(); nameFont.setPointSizeF(std::max(7.0, nameFont.pointSizeF() - 1)); nameFont.setWeight(QFont::DemiBold);
+    name_->setFont(nameFont); name_->setContentsMargins(6, 0, 6, 0);
+    ending->addWidget(name_);
+    ending->addWidget(list_);
+    title_ = new QLabel(this); title_->setObjectName("TabGroupTitle"); title_->setFont(nameFont); title_->hide();
+    end_->installEventFilter(this);
+    bar_->setEndWidget(end_);
+    // A vertical strip's footer: new tab, sidebar actions, icon mode.
+    footer_ = new QWidget(this); footer_->setObjectName("TabStripFooter"); footer_->hide();
+    auto* footer = new QBoxLayout(QBoxLayout::LeftToRight, footer_);
+    footer->setContentsMargins(bar_->metrics().verticalInset, 2, bar_->metrics().verticalInset, 2); footer->setSpacing(2);
+    iconModeButton_ = new CompactToolButton(footer_, QSize(26, row)); iconModeButton_->setObjectName("TabStripIconModeButton");
+    footer_->installEventFilter(this);
+    QObject::connect(iconModeButton_, &QToolButton::clicked, this, [this] {
+        iconMode_ = !iconMode_;
+        bar_->setIconMode(iconMode_);
+        layoutChildren();
+        if (const auto callback = iconModeChanged) callback(iconMode_);
+    });
+    resizeHandle_ = new QWidget(this); resizeHandle_->setObjectName("TabStripResizeHandle");
+    resizeHandle_->setCursor(Qt::SizeHorCursor); resizeHandle_->hide(); resizeHandle_->installEventFilter(this);
+    autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
+    QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
+        cancelViewportReflow();
+        if (scrollDirection_.isNull() || !bar_->scrollAt(dragProbe_, -scrollDirection_ * 12)) { autoScroll_->stop(); return; }
+        if (autoScroll_->interval() != 35) autoScroll_->setInterval(35);
+    });
     QObject::connect(create->add, &QToolButton::clicked, this, [this] {
         const auto callback = newTabRequested; if (callback) callback();
     });
     QObject::connect(create->types, &QToolButton::clicked, this, [this] { showNewTabMenu(); });
     create->menuRequested = [this] { showNewTabMenu(); };
-    // The thin scrollbar overlays the tabs' bottom pixels. Showing it must
-    // not reserve a second row or move the content below the tab header.
-    scrollbar_ = new QScrollBar(Qt::Horizontal, scroll_->viewport()); scrollbar_->setObjectName("TabScrollBar");
-    scrollbar_->setFixedHeight(4); scrollbar_->setSingleStep(28);
-    scrollbar_->installEventFilter(this);
-    scrollbar_->setStyleSheet(overlayScrollbarStyle(theme));
-    scrollbar_->hide();
-    stripLayout->addWidget(scroll_, 1);
-    headerActions_ = new QWidget(header); headerActions_->setObjectName("TabHeaderActions");
-    auto* actions = new QHBoxLayout(headerActions_); actions->setContentsMargins(0, 0, 0, 0); actions->setSpacing(0);
-    list_ = new CompactToolButton(headerActions_, QSize(listButtonWidth, theme.metrics.tabHeight)); list_->setObjectName("TabListButton");
-    list_->installEventFilter(this); list_->setMouseTracking(true);
-    list_->setIcon(iconFor("chevron-down", theme)); list_->setToolTip(QCoreApplication::translate("WindowSystem", "All tabs"));
-    list_->setAccessibleName(list_->toolTip());
-    actions->addWidget(list_);
-    row->addWidget(strip, 1); row->addWidget(headerActions_,0,Qt::AlignBottom);
-    layout->addWidget(header);
-    stack_ = new QStackedWidget(this); layout->addWidget(stack_, 1);
-    autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
-    QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
-        cancelViewportReflow();
-        auto* scroll = scroll_->horizontalScrollBar(); const int previous = scroll->value();
-        scroll->setValue(previous + scrollDirection_ * 12);
-        if (scroll->value() == previous) { autoScroll_->stop(); return; }
-        if (autoScroll_->interval() != 35) autoScroll_->setInterval(35);
-    });
-    QObject::connect(bar_, &QTabBar::currentChanged, this, [this](int index) {
+    QObject::connect(bar_, &TabBar::currentChanged, this, [this](int index) {
         const QPointer<GroupTabs> self(this);
         stack_->setCurrentIndex(index);
-        if(!self) return;
+        if (!self) return;
         if (index >= 0) resolvePage(bar_->tabData(index).toUuid());
         if (!self) return;
-        if(appearance_.multiline) updateBarGeometry();
+        layoutChildren();
         const auto callback = currentChanged; if (callback) callback(index);
+    });
+    QObject::connect(bar_, &TabBar::viewChanged, this, [this] {
+        if (!applyingViewportState_ && !pendingViewportState_ && !pendingScrollOffset_) settledViewport_ = currentViewportState();
+        updateCardJoin();
+        const auto callback = hoverGeometryChanged; if (callback) callback();
     });
     bar_->close = [this](int index) { const auto callback = closeRequested; if (callback) callback(index); };
     bar_->unstick = [this](int index) { const auto callback = unstickRequested; if (callback) callback(index); };
+    bar_->reservedSizeChanged = [this] { layoutChildren(); };
     QObject::connect(list_, &QToolButton::clicked, this, [this] { showTabList(); });
-    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::rangeChanged, scrollbar_, [this](int low, int high) {
-        scrollbar_->setRange(low, high); scrollbar_->setPageStep(scroll_->viewport()->width());
-        applyPendingScrollOffset();
-        updateScrollBarVisibility();
-    });
-    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, scrollbar_, &QScrollBar::setValue);
-    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, bar_, [this](int value) { bar_->setStickyOffset(value); });
-    QObject::connect(scroll_->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this] {
-        if (!applyingViewportState_ && !pendingViewportState_ && !pendingScrollOffset_) {
-            settledViewport_ = currentViewportState();
-        }
-        const auto callback = hoverGeometryChanged;
-        if (callback) callback();
-    });
-    QObject::connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { cancelViewportReflow(); });
-    QObject::connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { cancelViewportReflow(); });
-    QObject::connect(scrollbar_, &QScrollBar::valueChanged, scroll_->horizontalScrollBar(), &QScrollBar::setValue);
+    QObject::connect(qApp, &QApplication::focusChanged, this, [this] { refreshFocus(); });
 }
-DragTabBar* GroupTabs::tabBar() const { return bar_; }
+TabBar* GroupTabs::tabBar() const { return bar_; }
+void GroupTabs::updateCardJoin()
+{
+    if (!card_ || vertical() || !barVisible_) return;
+    // The outline opens under the active tab, flares included.
+    const int current = bar_->currentIndex();
+    const auto active = current >= 0 ? bar_->tabRect(current) : QRect{};
+    const int flare = bar_->metrics().controlRadius;
+    const auto content = stack_->geometry();
+    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    const QPair<int, int> join = active.isEmpty() ? QPair<int, int>{}
+        : QPair<int, int>{bar_->x() + active.left() - flare - content.left() + margin, bar_->x() + active.right() + 1 + flare - content.left() + margin};
+    static_cast<CardOverlay*>(card_)->setCard(QRect(QPoint(margin, margin), content.size()), join,
+                                              bar_->placement() == TabBarPlacement::Bottom ? Qt::BottomEdge : Qt::TopEdge);
+}
+void GroupTabs::refreshFocus()
+{
+    const auto callback = isActiveGroup;
+    const bool focused = window()->isActiveWindow() && callback && callback();
+    bar_->setGroupFocused(focused);
+    if (card_) static_cast<CardOverlay*>(card_)->setFocused(focused);
+}
 GroupTabs::~GroupTabs()
 {
     autoScroll_->stop();
+    // Focus changes while the window goes away must not reach the destroyed strip.
+    disconnect(qApp, nullptr, this, nullptr);
     if (viewportWindow_) viewportWindow_->removeEventFilter(this);
     for (auto* child : findChildren<QObject*>()) {
         child->removeEventFilter(this);
         disconnect(child, nullptr, this, nullptr);
     }
 }
+bool GroupTabs::vertical() const { return bar_->vertical(); }
+int GroupTabs::columnWidth() const
+{
+    return std::clamp(verticalWidth_ > 0 ? verticalWidth_ : appearance_.verticalTabWidth, minimumVerticalTabWidth, maximumVerticalTabWidth);
+}
+void GroupTabs::placeControls()
+{
+    auto* create = static_cast<TabCreateButtons*>(createButtons_);
+    auto* footer = static_cast<QBoxLayout*>(footer_->layout());
+    auto* trailing = static_cast<QHBoxLayout*>(trailing_->layout());
+    auto* ending = static_cast<QHBoxLayout*>(end_->layout());
+    QList<QToolButton*> sidebar;
+    for (const auto name : {"UnpinCurrentButton", "UnpinAllButton"})
+        if (auto* button = findChild<QToolButton*>(QString::fromLatin1(name))) sidebar.append(button);
+    const int row = bar_->metrics().rowHeight;
+    if (vertical()) {
+        if (create->parentWidget() != footer_) {
+            // The trailing controls move into the footer.
+            bar_->setTrailingWidget(nullptr); trailing_->setParent(this); trailing_->hide();
+            bar_->setEndWidget(nullptr); end_->setParent(this); end_->hide();
+            while (auto* item = footer->takeAt(0)) delete item;
+            create->setParent(footer_); footer->addWidget(create);
+            footer->addStretch(1);
+            for (auto* button : sidebar) { button->setParent(footer_); footer->addWidget(button); }
+            footer->addWidget(iconModeButton_);
+        }
+        footer->setDirection(iconMode_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+        // A labeled new-tab button, or only its icon in a narrow column.
+        create->add->setText(QCoreApplication::translate("WindowSystem", "New tab"));
+        create->add->setToolButtonStyle(iconMode_ ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+        const int label = iconMode_ ? bar_->metrics().newTabWidth
+            : bar_->metrics().newTabWidth + fontMetrics().horizontalAdvance(create->add->text()) + 8;
+        create->add->setTargetSize(QSize(label, row));
+        create->types->setVisible(!iconMode_);
+        create->setFixedSize((iconMode_ ? 0 : bar_->metrics().typeWidth + bar_->metrics().controlGap) + label, row);
+        for (auto* button : sidebar) button->setVisible(!iconMode_ && !compactPresentation_);
+        const bool left = bar_->placement() == TabBarPlacement::Left;
+        setThemedIcon(iconModeButton_, iconMode_ == left ? QStringLiteral("chevron-right") : QStringLiteral("chevron-left"), theme_);
+        iconModeButton_->setToolTip(iconMode_ ? QCoreApplication::translate("WindowSystem", "Show tab titles")
+                                              : QCoreApplication::translate("WindowSystem", "Show only tab icons"));
+        iconModeButton_->setAccessibleName(iconModeButton_->toolTip());
+    } else if (create->parentWidget() != trailing_) {
+        while (auto* item = footer->takeAt(0)) delete item;
+        create->setParent(trailing_); trailing->insertWidget(0, create);
+        for (int index = 0; index < sidebar.size(); ++index) {
+            sidebar.at(index)->setParent(end_); ending->insertWidget(index, sidebar.at(index));
+        }
+        end_->show();
+        bar_->setEndWidget(end_);
+        iconModeButton_->setParent(footer_);
+        create->add->setText({}); create->add->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        create->types->show();
+        create->setHeight(row);
+        trailing_->show();
+        bar_->setTrailingWidget(trailing_);
+    }
+    if (!vertical()) for (auto* button : sidebar) button->setVisible(!compactPresentation_);
+    create->setVisible(!compactPresentation_ && appearance_.showNewTabButton);
+    // Without its buttons the trailing area takes no room after the last tab.
+    if (!vertical()) trailing_->setVisible(!create->isHidden());
+    list_->setVisible(!compactPresentation_);
+}
+void GroupTabs::layoutChildren()
+{
+    if (layingOut_) return;
+    QScopedValueRollback guard(layingOut_, true);
+    placeControls();
+    // The group keeps a margin around its card; a drag carrier shows only
+    // its tabs and needs none.
+    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    const auto area = rect().adjusted(margin, margin, -margin, -margin);
+    if (!card_) card_ = new CardOverlay(theme_, this);
+    auto* card = static_cast<CardOverlay*>(card_);
+    const auto placeCard = [&](QRect content, QPair<int, int> join, Qt::Edge edge) {
+        stack_->setGeometry(content);
+        card->setGeometry(content.adjusted(-margin, -margin, margin, margin));
+        card->setCard(QRect(QPoint(margin, margin), content.size()), {join.first - content.left() + margin, join.second - content.left() + margin}, edge);
+        card->setVisible(!compactPresentation_);
+        card->raise();
+    };
+    if (!barVisible_) {
+        bar_->hide(); footer_->hide(); resizeHandle_->hide(); title_->hide();
+        placeCard(area, {}, Qt::TopEdge);
+        return;
+    }
+    bar_->show();
+    if (vertical()) {
+        const int footerHeight = iconMode_ ? 2 * bar_->metrics().rowHeight + 6 : bar_->metrics().rowHeight + 4;
+        const bool titled = !groupName_.isEmpty() && appearance_.showGroupNames && !iconMode_ && !compactPresentation_;
+        const int titleHeight = titled ? bar_->metrics().rowHeight : 0;
+        const QSize available(columnWidth(), std::max(0, area.height() - footerHeight - titleHeight));
+        bar_->setAvailableSize(available);
+        const auto reserved = bar_->reservedSize(available), shown = bar_->displaySize(available);
+        const bool left = bar_->placement() == TabBarPlacement::Left;
+        const int x = area.left() + (left ? 0 : area.width() - shown.width());
+        if (titled) {
+            const int inset = bar_->metrics().verticalInset + 4;
+            title_->setGeometry(x + inset, area.top(), std::max(0, shown.width() - 2 * inset), titleHeight);
+            title_->setText(title_->fontMetrics().elidedText(groupName_, Qt::ElideRight, title_->width()));
+        }
+        title_->setVisible(titled);
+        bar_->setGeometry(x, area.top() + titleHeight, shown.width(), available.height());
+        footer_->setGeometry(x, area.top() + titleHeight + available.height(), shown.width(), footerHeight); footer_->setVisible(!compactPresentation_);
+        // The column sits on the background beside the card, with a gap.
+        const int gap = margin * 2;
+        placeCard(left ? QRect(area.left() + reserved.width() + gap, area.top(), area.width() - reserved.width() - gap, area.height())
+                       : QRect(area.left(), area.top(), area.width() - reserved.width() - gap, area.height()), {}, Qt::TopEdge);
+        const int edge = area.left() + (left ? reserved.width() + margin : area.width() - reserved.width() - margin);
+        resizeHandle_->setGeometry(edge - bar_->metrics().resizeBand / 2, area.top(), bar_->metrics().resizeBand, area.height());
+        resizeHandle_->setVisible(!iconMode_ && !compactPresentation_);
+        resizeHandle_->raise();
+        if (shown.width() > reserved.width()) { bar_->raise(); footer_->raise(); }
+    } else {
+        footer_->hide(); resizeHandle_->hide(); title_->hide();
+        // The first tab keeps clear of the card's rounded corner.
+        const int inset = compactPresentation_ ? 0 : bar_->metrics().stripInset;
+        const QSize strip(std::max(1, area.width() - 2 * inset), area.height());
+        bar_->setAvailableSize(strip);
+        const auto reserved = bar_->reservedSize(strip), shown = bar_->displaySize(strip);
+        const bool top = bar_->placement() != TabBarPlacement::Bottom;
+        bar_->setGeometry(area.left() + inset, top ? area.top() : area.bottom() + 1 - shown.height(), strip.width(), shown.height());
+        const QRect content(area.left(), top ? area.top() + reserved.height() : area.top(), area.width(), std::max(0, area.height() - reserved.height()));
+        placeCard(content, {}, top ? Qt::TopEdge : Qt::BottomEdge);
+        bar_->raise();
+        updateCardJoin();
+    }
+    if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); }
+    footer_->raise();
+    updateGeometry();
+    const auto callback = hoverGeometryChanged; if (callback) callback();
+}
+QSize GroupTabs::sizeHint() const
+{
+    // The card keeps a margin all round; a vertical column a gap beside it.
+    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    auto size = stack_->sizeHint() + QSize(2 * margin, 2 * margin);
+    if (!barVisible_) return size;
+    if (vertical()) size.rwidth() += columnWidth() + 2 * margin;
+    else size.rheight() += bar_->metrics().rowHeight + bar_->metrics().outerMargin;
+    return size;
+}
+QSize GroupTabs::minimumSizeHint() const
+{
+    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    auto size = stack_->minimumSizeHint().expandedTo(stack_->minimumSize()) + QSize(2 * margin, 2 * margin);
+    if (!barVisible_) return size;
+    if (vertical()) size.rwidth() += (iconMode_ ? bar_->metrics().verticalIconWidth : columnWidth()) + 2 * margin;
+    else size.rheight() += bar_->reservedSize(QSize(std::max(width(), 1), height())).height();
+    return size;
+}
 void GroupTabs::setTabBarVisible(bool visible)
 {
-    if (header_->isHidden() == !visible) return;
-    header_->setVisible(visible);
+    if (barVisible_ == visible) return;
+    barVisible_ = visible;
     if (!visible) {
-        hoveredSurfaces_.clear(); autoScroll_->stop(); scrollDirection_ = 0;
+        autoScroll_->stop(); scrollDirection_ = {};
         if (tabListMenu_) tabListMenu_->close();
         if (newTabMenu_) newTabMenu_->close();
-        scrollbar_->hide();
-    } else updateScrollBarVisibility();
-    layout()->activate();
-}
-void GroupTabs::updateScrollBarVisibility()
-{
-    scrollbar_->setVisible(!appearance_.multiline && !header_->isHidden() && scrollbar_->maximum() > 0
-                           && (dragHovered_ || !hoveredSurfaces_.isEmpty() || header_->underMouse()));
-    if (scrollbar_->isVisible()) scrollbar_->raise();
-}
-void GroupTabs::updateScrollBarGeometry()
-{
-    if (!scrollbar_) return;
-    const auto area = scroll_->viewport()->rect();
-    scrollbar_->setGeometry(0, std::max(0, area.height() - 4), area.width(), 4);
-    scrollbar_->raise();
+    }
+    layoutChildren();
 }
 void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
     const bool first = bar_->count() == 0;
@@ -895,52 +617,44 @@ void GroupTabs::addTab(QWidget* widget, QIcon icon, QString title, TabId id) {
     }
     pages_.insert(id, page);
     if (first) stack_->setCurrentIndex(0);
-    updateBarGeometry();
+    layoutChildren();
 }
 QWidget* GroupTabs::takePage(TabId id)
 {
     const QPointer<QWidget> page = pages_.take(id);
     const bool placeholder = placeholders_.remove(id);
-    for (int index = 0; index < bar_->count(); ++index) {
-        if (bar_->tabData(index).toUuid() != id) continue;
+    if (const int index = bar_->indexOf(id); index >= 0) {
         const QSignalBlocker quiet(bar_);
         bar_->removeTab(index);
-        break;
     }
     const bool stacked = page && stack_->indexOf(page) >= 0;
     if (stacked) stack_->removeWidget(page);
     if (stacked && placeholder) page->deleteLater();
     if (bar_->currentIndex() >= 0) stack_->setCurrentIndex(bar_->currentIndex());
-    updateBarGeometry();
+    layoutChildren();
     return stacked && !placeholder ? page.data() : nullptr;
 }
 void GroupTabs::setCurrentIndex(int index, bool reveal) {
     bar_->setCurrentIndex(index);
     if (index >= 0 && index < bar_->count()) resolvePage(bar_->tabData(index).toUuid());
     stack_->setCurrentIndex(index);
-    if (appearance_.multiline) { updateBarGeometry(); return; }
-    if (reveal && index >= 0) {
-        cancelViewportReflow();
-        const auto area = bar_->displayTabRect(index); auto* scroll = scroll_->horizontalScrollBar();
-        const int inset = stickyInset(index);
-        if (area.left() < scroll->value() + inset) scroll->setValue(area.left() - inset);
-        else if (area.right() >= scroll->value() + scroll_->viewport()->width())
-            scroll->setValue(area.right() - scroll_->viewport()->width() + 1);
-    }
+    if (reveal && index >= 0) { cancelViewportReflow(); bar_->ensureVisible(index); }
 }
-int GroupTabs::scrollOffset() const { return pendingScrollOffset_.value_or(scroll_->horizontalScrollBar()->value()); }
+int GroupTabs::scrollOffset() const { return pendingScrollOffset_.value_or(bar_->scrollOffset()); }
 TabViewportState GroupTabs::currentViewportState() const
 {
     TabViewportState state;
     state.offset = scrollOffset();
-    state.rowsExpanded = rowsExpanded_;
+    state.rowsExpanded = bar_->expanded();
     state.windowClientBounds = window()->geometry();
-    if (isVisible() && !header_->isHidden())
-        state.bounds = {scroll_->viewport()->mapTo(window(), QPoint()), scroll_->viewport()->size()};
+    if (isVisible() && barVisible_ && bar_->scrollsHorizontally()) {
+        const auto viewport = bar_->scrollViewport();
+        state.bounds = {bar_->mapTo(window(), viewport.topLeft()), viewport.size()};
+    }
     const auto current = bar_->currentIndex();
     if (current >= 0) {
         state.activeTab = bar_->tabData(current).toUuid();
-        const auto area = bar_->displayTabRect(current);
+        const auto area = bar_->contentTabRect(current);
         state.activeFullyVisible = !area.isEmpty() && !state.bounds.isEmpty()
             && area.left() >= state.offset + stickyInset(current) && area.right() < state.offset + state.bounds.width();
     }
@@ -948,21 +662,19 @@ TabViewportState GroupTabs::currentViewportState() const
 }
 int GroupTabs::stickyInset(int index) const
 {
-    return index >= bar_->stickyCount() ? bar_->stickyRunExtent() : 0;
+    return index >= bar_->stickyCount() ? bar_->frozenExtent() : 0;
 }
 TabViewportState GroupTabs::captureViewportState() const
 {
     // Consecutive API mutations before the next layout turn retain the same
     // origin instead of capturing an intermediate, incompletely sized strip.
-    auto state=pendingViewportState_.value_or(currentViewportState());
-    state.rowsExpanded=rowsExpanded_;
+    auto state = pendingViewportState_.value_or(currentViewportState());
+    state.rowsExpanded = bar_->expanded();
     return state;
 }
 void GroupTabs::restoreViewportState(TabViewportState state)
 {
-    if(appearance_.multiline && appearance_.wheelExpandRows && state.rowsExpanded) {
-        rowsExpanded_=*state.rowsExpanded; updateBarGeometry();
-    }
+    if (bar_->collapsible() && state.rowsExpanded) bar_->setExpanded(*state.rowsExpanded);
     pendingScrollOffset_.reset();
     pendingViewportState_ = std::move(state);
     applyPendingViewportState();
@@ -989,6 +701,8 @@ void GroupTabs::queueViewportReflow()
 bool GroupTabs::applyPendingViewportState()
 {
     if (!pendingViewportState_) return true;
+    // Only a single horizontal row keeps shown tabs in place this way.
+    if (!bar_->scrollsHorizontally()) return true;
     QScopedValueRollback applying(applyingViewportState_, true);
     const auto old = *pendingViewportState_;
     const auto current = currentViewportState();
@@ -997,8 +711,7 @@ bool GroupTabs::applyPendingViewportState()
         // A newly constructed hidden strip has no displayed anchor. Its
         // provisional focus scroll must clamp to the first real viewport,
         // rather than manufacture trailing space before the window is shown.
-        updateCanvasGeometry();
-        scroll_->horizontalScrollBar()->setValue(old.offset);
+        bar_->setScrollOffset(old.offset);
         return true;
     }
     int offset = old.offset;
@@ -1008,7 +721,7 @@ bool GroupTabs::applyPendingViewportState()
         ? current.windowClientBounds.left() - old.windowClientBounds.left() : 0;
     offset += current.bounds.left() - old.bounds.left() + windowLeftShift;
     if (old.activeFullyVisible && old.activeTab == current.activeTab) {
-        const auto area = bar_->displayTabRect(bar_->currentIndex());
+        const auto area = bar_->contentTabRect(bar_->currentIndex());
         if (!area.isEmpty()) {
             const int inset = stickyInset(bar_->currentIndex());
             const int rightLimit = area.right() - current.bounds.width() + 1;
@@ -1019,13 +732,12 @@ bool GroupTabs::applyPendingViewportState()
                 ? qBound(rightLimit, offset, area.left() - inset) : area.left() - inset;
         }
     }
-    updateCanvasGeometry();
-    scroll_->horizontalScrollBar()->setValue(offset);
+    bar_->setScrollOffset(offset);
     return true;
 }
 void GroupTabs::applyPendingScrollOffset()
 {
-    if (pendingScrollOffset_) scroll_->horizontalScrollBar()->setValue(*pendingScrollOffset_);
+    if (pendingScrollOffset_) bar_->setScrollOffset(*pendingScrollOffset_);
 }
 void GroupTabs::restoreScrollOffset(int offset)
 {
@@ -1041,17 +753,17 @@ void GroupTabs::restoreScrollOffset(int offset)
 }
 void GroupTabs::scrollByWheel(QPoint delta)
 {
-    if (appearance_.multiline) {
-        if (appearance_.wheelExpandRows && !delta.isNull()) {
-            cancelViewportReflow();
-            rowsExpanded_ = (delta.y() ? delta.y() : delta.x()) < 0; updateBarGeometry();
-            settledViewport_=currentViewportState();
-        }
-        return;
-    }
     cancelViewportReflow();
-    auto* scroll = scroll_->horizontalScrollBar();
-    scroll->setValue(scroll->value() - (delta.x() ? delta.x() : delta.y()));
+    const auto viewport = bar_->scrollViewport();
+    bar_->scrollAt(viewport.isEmpty() ? bar_->rect().center() : viewport.center(), delta);
+}
+bool GroupTabs::scrollStripAt(QPoint global, QPoint delta)
+{
+    if (!barVisible_ || !QRect(bar_->mapToGlobal(QPoint()), bar_->size()).contains(global)) return false;
+    cancelViewportReflow();
+    // The scroll may destroy this group; touch nothing after it.
+    bar_->scrollAt(bar_->mapFromGlobal(global), delta);
+    return true;
 }
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
 int GroupTabs::count() const { return bar_->count(); }
@@ -1062,9 +774,7 @@ void GroupTabs::resolvePage(TabId tab)
     if (!placeholders_.contains(tab) || !pageRequested) return;
     const QPointer<GroupTabs> retained(this);
     const QPointer<QWidget> placeholder = pages_.value(tab);
-    int index = -1;
-    for (int candidate = 0; candidate < bar_->count(); ++candidate)
-        if (bar_->tabData(candidate).toUuid() == tab) { index = candidate; break; }
+    const int index = bar_->indexOf(tab);
     if (index < 0 || !placeholder || stack_->widget(index) != placeholder) return;
     const QPointer<QWidget> page(pageRequested(tab));
     if (!retained || !page || pages_.value(tab) != placeholder
@@ -1076,64 +786,19 @@ void GroupTabs::resolvePage(TabId tab)
     stack_->removeWidget(placeholder);
     placeholder->deleteLater();
     stack_->setCurrentIndex(bar_->currentIndex());
-    updateBarGeometry();
 }
-void GroupTabs::updateBarGeometry() {
-    if (updatingBarGeometry_) return;
-    QScopedValueRollback updating(updatingBarGeometry_, true);
-    auto* headerLayout = static_cast<QHBoxLayout*>(header_->layout());
-    const int actionsWidth = compactPresentation_ ? 0 : headerActions_->sizeHint().width();
-    const bool inLayout = headerLayout->indexOf(headerActions_) >= 0;
-    if (appearance_.multiline && inLayout) headerLayout->removeWidget(headerActions_);
-    else if (!appearance_.multiline && !inLayout) headerLayout->addWidget(headerActions_, 0, Qt::AlignBottom);
-    headerLayout->activate();
-    bar_->layoutTabs(scroll_->viewport()->width(), rowsExpanded_, appearance_.multiline ? actionsWidth : 0, !compactPresentation_);
-    const auto hint = bar_->displayedSize();
-    bar_->setFixedSize(qMax(1, hint.width()), qMax(24, hint.height()));
-    // Sticky tabs on a row of their own make even a single-row strip taller.
-    const int lineHeight = bar_->lineHeight();
-    auto* create = static_cast<TabCreateButtons*>(createButtons_);
-    create->setHeight(lineHeight); create->move(bar_->creationPosition());
-    updateCanvasGeometry();
-    static_cast<CompactToolButton*>(list_)->setTargetSize(QSize(listButtonWidth, lineHeight));
-    scroll_->setFixedHeight(bar_->height());
-    headerActions_->setFixedHeight(lineHeight);
-    if (appearance_.multiline) {
-        headerActions_->setGeometry(std::max(0, header_->width() - actionsWidth),
-            std::max(0, bar_->height() - lineHeight), actionsWidth, lineHeight);
-        headerActions_->raise();
-    }
-    updateScrollBarGeometry();
-    // In particular, a bottom header changes its origin when rows expand.
-    // Publish that position together with the rectangles used for hit testing,
-    // rather than leaving the new height at the previous row's origin.
-    for (auto* section = scroll_->parentWidget(); section; section = section->parentWidget()) {
-        if (section->layout()) {
-            section->layout()->invalidate();
-            section->layout()->activate();
-        }
-        section->updateGeometry();
-        if (section == this) break;
-    }
-    // Changing the row count from a viewport Resize callback can resize the
-    // scroll area while QAbstractScrollArea is already laying it out. Qt skips
-    // that nested Resize, leaving the viewport at the previous row count.
-    // Both native scrollbars are AlwaysOff, so an owned layout request safely
-    // recomputes the viewport after our final height, without pumping input.
-    QEvent request(QEvent::LayoutRequest);
-    QCoreApplication::sendEvent(scroll_, &request);
-    updateScrollBarGeometry();
-}
-void GroupTabs::updateCanvasGeometry()
+void GroupTabs::setTheme(const Theme& theme)
 {
-    if (!canvas_ || !createButtons_) return;
-    // A single row extends to the new-tab buttons after its last tab. With
-    // sticky tabs on rows of their own, those rows can be wider than the row
-    // holding the buttons, which then need no space beyond them.
-    const int buttonsEnd = appearance_.multiline || createButtons_->isHidden() ? 0
-        : bar_->creationPosition().x() + createButtons_->width();
-    canvas_->setFixedSize(std::max(bar_->width(), buttonsEnd), bar_->height());
+    theme_ = theme;
+    bar_->setTheme(theme);
+    if (card_) static_cast<CardOverlay*>(card_)->setTheme(theme);
+    for (auto* button : findChildren<QAbstractButton*>()) {
+        const auto name = button->property("themeIcon").toString();
+        if (!name.isEmpty()) button->setIcon(iconFor(name, theme));
+    }
+    updateGeometry();
 }
+
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
 {
     // Label widths may change, which moves every tab after the first. Keep a
@@ -1148,162 +813,230 @@ void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
     if (pendingViewportState_ && !pendingScrollOffset_ && applyPendingViewportState()) {
         pendingViewportState_.reset(); settledViewport_ = currentViewportState();
     }
-    if (isVisible() && !header_->isHidden() && !appearance_.multiline && !appearance.multiline
-        && !pendingViewportState_ && !pendingScrollOffset_ && bar_->count()) {
+    auto next = appearance;
+    if (pinned) { next.showIcons = appearance.showSidebarIcons; next.showNumbers = appearance.showSidebarNumbers; }
+    const auto placement = pinned ? next.pinnedPlacement : next.centralPlacement;
+    const bool sameRow = bar_->scrollsHorizontally() && !next.multiline
+        && (placement == TabBarPlacement::Top || placement == TabBarPlacement::Bottom);
+    if (isVisible() && barVisible_ && sameRow && !pendingViewportState_ && !pendingScrollOffset_ && bar_->count()) {
         const int offset = scrollOffset();
-        const int width = scroll_->viewport()->width();
+        const int width = bar_->scrollViewport().width();
         const int current = bar_->currentIndex();
-        const auto active = current >= 0 ? bar_->displayTabRect(current) : QRect{};
+        const auto active = current >= 0 ? bar_->contentTabRect(current) : QRect{};
         if (!active.isEmpty() && active.left() >= offset + stickyInset(current) && active.right() < offset + width) {
             anchor = Anchor{current, active.left() - offset, true};
         } else {
             // Sticky tabs kept in view cannot anchor the scrolled ones.
-            const int inset = bar_->stickyRunExtent();
+            const int inset = bar_->frozenExtent();
             int leading = inset ? std::min(bar_->stickyCount(), bar_->count() - 1) : 0;
-            while (leading + 1 < bar_->count() && bar_->displayTabRect(leading).right() < offset + inset) ++leading;
-            anchor = Anchor{leading, bar_->displayTabRect(leading).left() - offset - inset, false};
+            while (leading + 1 < bar_->count() && bar_->contentTabRect(leading).right() < offset + inset) ++leading;
+            anchor = Anchor{leading, bar_->contentTabRect(leading).left() - offset - inset, false};
         }
     }
-    appearance_ = appearance; pinned_ = pinned;
-    if (pinned_) {
-        appearance_.showIcons = appearance.showSidebarIcons;
-        appearance_.showNumbers = appearance.showSidebarNumbers;
-    }
-    // Wheel expansion keeps its value with a single row, where it does nothing.
-    rowsExpanded_ = !(appearance_.multiline && appearance_.wheelExpandRows);
-    bar_->setAppearance(appearance_);
-    createButtons_->setVisible(!compactPresentation_ && appearance_.showNewTabButton);
-    auto* box = qobject_cast<QVBoxLayout*>(layout());
-    const auto placement = pinned ? appearance_.pinnedPlacement : appearance_.centralPlacement;
-    box->removeWidget(header_);
-    box->insertWidget(placement == TabBarPlacement::Top ? 0 : box->count(),header_);
-    updateBarGeometry();
+    appearance_ = next; pinned_ = pinned;
+    bar_->setAppearance(appearance_, placement);
+    layoutChildren();
     if (!anchor || anchor->tab >= bar_->count()) return;
-    updateCanvasGeometry();
-    const auto area = bar_->displayTabRect(anchor->tab);
+    const auto area = bar_->contentTabRect(anchor->tab);
     const int inset = stickyInset(anchor->tab);
     int offset = area.left() - anchor->shift;
     if (anchor->active) {
-        const int width = scroll_->viewport()->width();
+        const int width = bar_->scrollViewport().width();
         offset = width - inset >= area.width() ? qBound(area.right() - width + 1, offset, area.left() - inset) : area.left() - inset;
     } else {
         // A partly scrolled-off leading tab keeps its hidden part, within its new width.
         offset = area.left() - inset - std::max(anchor->shift, -std::max(0, area.width() - 1));
     }
-    // The scroll bar limits the offset to the real content range. A reflow
+    // The strip limits the offset to the real content range. A reflow
     // queued by the resize above still holds the old widths; this replaces it.
-    scroll_->horizontalScrollBar()->setValue(offset);
+    bar_->setScrollOffset(offset);
     pendingViewportState_.reset();
     settledViewport_ = currentViewportState();
 }
 void GroupTabs::setStickyCount(int count)
 {
     if (bar_->stickyCount() == count) return;
-    bar_->setStickyCount(count); updateBarGeometry();
+    bar_->setStickyCount(count); layoutChildren();
 }
-void GroupTabs::setTabMetadata(int index,const TabRecord& tab)
+void GroupTabs::setTabMetadata(int index, const TabRecord& tab) { bar_->setTabMetadata(index, tab); }
+void GroupTabs::setGroupFocused(bool focused) { bar_->setGroupFocused(focused); }
+void GroupTabs::setGroupName(const QString& name)
 {
-    bar_->setTabMetadata(index,tab); updateBarGeometry();
+    // At the end of a horizontal strip; above a vertical one, as its title
+    // (tab strip design 13).
+    const bool shown = !name.isEmpty() && appearance_.showGroupNames && !vertical();
+    if (groupName_ == name && name_->isVisible() == shown) return;
+    groupName_ = name;
+    name_->setText(name); name_->setToolTip(name); name_->setVisible(shown);
+    title_->setToolTip(name);
+    bar_->refreshTrailing();
+    layoutChildren();
+}
+void GroupTabs::setVerticalState(int width, bool iconMode)
+{
+    if (verticalWidth_ == width && iconMode_ == iconMode && bar_->iconMode() == iconMode) return;
+    verticalWidth_ = width; iconMode_ = iconMode;
+    bar_->setIconMode(iconMode);
+    layoutChildren();
 }
 QRect GroupTabs::viewportRectGlobal() const {
-    if (header_->isHidden()) return {};
-    return QRect(scroll_->viewport()->mapToGlobal(QPoint()), scroll_->viewport()->size());
+    if (!barVisible_ || bar_->isHidden()) return {};
+    return QRect(bar_->mapToGlobal(QPoint()), bar_->size());
 }
-int GroupTabs::insertionIndex(QPoint global) const {
-    return bar_->insertionIndexAt(bar_->mapFromGlobal(global));
+int GroupTabs::insertionIndex(QPoint global, TabLayoutInput::Carried carried) const {
+    dragProbe_ = bar_->mapFromGlobal(global);
+    if (lifting_) if (const auto lifted = bar_->liftedRect(); !lifted.isEmpty()) {
+        // A lifted folder decides by its header, which leads it.
+        dragProbe_ = lifted.center();
+        if (bar_->draggedFolder() >= 0) dragProbe_ = bar_->vertical() ? QPoint(lifted.center().x(), lifted.top() + bar_->metrics().rowHeight / 2)
+                                                                      : QPoint(lifted.left() + bar_->metrics().rowHeight / 2, lifted.center().y());
+    }
+    return bar_->insertionAt(dragProbe_, 0, carried).index;
 }
-void GroupTabs::setInsertionPreview(int index, int extent, bool carriedSticky, std::optional<bool> stickyRow)
+void GroupTabs::setLiftedTab(QPoint global, QPoint grab)
 {
-    if (bar_->property("insertionIndex").toInt() == index && bar_->insertionExtent() == (index < 0 ? 0 : extent)
-        && bar_->insertionCarriesSticky() == (index >= 0 && carriedSticky) && stickyRow_ == stickyRow) return;
-    stickyRow_ = stickyRow;
-    bar_->setInsertionPreview(index, extent, theme_.accentSoft, carriedSticky, stickyRow);
-    updateBarGeometry();
+    lifting_ = true;
+    bar_->setLifted(bar_->mapFromGlobal(global), grab);
 }
-bool GroupTabs::insertionSticky() const { return bar_->insertionSticky(); }
-std::optional<bool> GroupTabs::insertionRow(QPoint global) const { return bar_->insertionRowAt(bar_->mapFromGlobal(global)); }
-void GroupTabs::setDraggedTab(TabId tab)
+void GroupTabs::clearLiftedTab()
 {
-    bar_->setDraggedTab(tab); updateBarGeometry();
+    lifting_ = false;
+    bar_->setLifted({});
 }
+void GroupTabs::setContentPreview(const QPixmap& picture)
+{
+    if (picture.isNull()) { if (contentPreview_) contentPreview_->hide(); return; }
+    if (!contentPreview_) contentPreview_ = new ContentPreview(this);
+    static_cast<ContentPreview*>(contentPreview_)->setPicture(picture);
+    contentPreview_->setGeometry(stack_->geometry());
+    contentPreview_->show(); contentPreview_->raise();
+    bar_->raise();
+}
+void GroupTabs::setInsertionPreview(int index, const QVector<CarriedLabel>& carried, bool carriedSticky, TabLayoutInput::Carried kind)
+{
+    if (index < 0 || carried.isEmpty()) { bar_->setDropPreview(-1, false, {}); return; }
+    // The drop position decides stickiness (tab strip design 5); a block that
+    // was sticky stays so a little past the sticky tabs. It also decides the
+    // tab folder a single tab joins (tab strip design 12).
+    const int first = bar_->carriedExtent(carried.first(), carriedSticky);
+    const auto decision = bar_->insertionAt(dragProbe_, carriedSticky ? first / 2 : 0, kind);
+    QVector<int> block;
+    for (const auto& label : carried) block.append(bar_->carriedExtent(label, decision.sticky));
+    bar_->setDropPreview(decision.index, decision.sticky, block, decision.folder);
+}
+bool GroupTabs::insertionSticky() const { return bar_->dropSticky(); }
+QUuid GroupTabs::insertionFolder() const
+{
+    const int folder = bar_->dropFolder();
+    return folder >= 0 && folder < bar_->folders().size() ? bar_->folders().at(folder).id : QUuid{};
+}
+void GroupTabs::setDraggedFolder(QUuid folder) { bar_->setDraggedFolder(folder); }
+QPoint GroupTabs::folderGrabOffset(QUuid folder, QPoint global) const
+{
+    for (int index = 0; index < bar_->folders().size(); ++index)
+        if (bar_->folders().at(index).id == folder) return bar_->mapFromGlobal(global) - bar_->folderHeaderRect(index).topLeft();
+    return {};
+}
+std::optional<bool> GroupTabs::insertionRow(QPoint) const { return std::nullopt; }
+void GroupTabs::setDraggedTab(TabId tab) { bar_->setDraggedTab(tab); }
 QRect GroupTabs::insertionPreviewRectGlobal() const
 {
-    const auto area = bar_->insertionPreviewRect();
+    const auto area = bar_->dropPreviewRect();
     return area.isEmpty() ? QRect{} : QRect(bar_->mapToGlobal(area.topLeft()), area.size()).intersected(viewportRectGlobal());
 }
 void GroupTabs::setDragPresentation(bool compact, bool edge)
 {
     compactPresentation_ = compact;
-    list_->setVisible(!compact);
-    createButtons_->setVisible(!compact && appearance_.showNewTabButton);
-    for (const auto name : {"UnpinCurrentButton", "UnpinAllButton"})
-        if (auto* button = header_->findChild<QToolButton*>(name)) button->setVisible(!compact);
     if (compact) setTabBarVisible(!edge);
-    updateBarGeometry();
+    bar_->refreshTrailing();
+    layoutChildren();
 }
 void GroupTabs::setDragHover(QPoint global) {
     const auto area = viewportRectGlobal();
     dragHovered_ = area.contains(global);
-    // Sticky tabs kept in view move the start zone past them.
-    const int direction = appearance_.multiline || !area.contains(global) ? 0
-        : global.x() >= area.left() + bar_->stickyRunExtent() && global.x() < area.left() + bar_->stickyRunExtent() + 24 ? -1
-        : global.x() > area.right() - 24 ? 1 : 0;
+    dragProbe_ = bar_->mapFromGlobal(global);
+    // Dragging over collapsed rows shows them all (tab strip design 3.4).
+    bar_->setDragExpanded(dragHovered_);
+    QPoint direction;
+    if (dragHovered_) {
+        const auto lane = bar_->scrollViewport();
+        if (bar_->scrollsHorizontally()) {
+            const int start = lane.left() + bar_->frozenExtent();
+            if (dragProbe_.x() >= start && dragProbe_.x() < start + 24) direction = {-1, 0};
+            else if (dragProbe_.x() > lane.right() - 24) direction = {1, 0};
+        } else if (!lane.isEmpty()) {
+            if (dragProbe_.y() < lane.top() + 24) direction = {0, -1};
+            else if (dragProbe_.y() > lane.bottom() - 24) direction = {0, 1};
+        }
+    }
     if (direction != scrollDirection_) autoScroll_->stop();
     scrollDirection_ = direction;
-    const auto* scroll = scroll_->horizontalScrollBar();
-    const bool canScroll = direction < 0 ? scroll->value() > scroll->minimum() : direction > 0 && scroll->value() < scroll->maximum();
-    if (canScroll && !autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
-    else if (!canScroll) autoScroll_->stop();
-    updateScrollBarVisibility();
+    if (!direction.isNull() && bar_->isOverflowing() && !autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
+    else if (direction.isNull()) autoScroll_->stop();
 }
 void GroupTabs::setPinnedActions(std::function<void()> current, std::function<void()> all) {
-    auto* row = qobject_cast<QHBoxLayout*>(list_->parentWidget()->layout());
+    QWidget* owner = vertical() ? footer_ : end_;
     for (auto item : {std::tuple{std::move(current), QCoreApplication::translate("WindowSystem", "Unpin current tab"), QStringLiteral("unpin")},
                       std::tuple{std::move(all), QCoreApplication::translate("WindowSystem", "Unpin all sidebar tabs"), QStringLiteral("unpin-all")}}) {
-        auto* button = new CompactToolButton(list_->parentWidget()); button->setIcon(iconFor(std::get<2>(item), theme_));
+        auto* button = new CompactToolButton(owner, QSize(20, bar_->metrics().rowHeight)); setThemedIcon(button, std::get<2>(item), theme_);
         button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
         button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
-        row->insertWidget(row->count() - 1, button, 0, Qt::AlignBottom);
+        if (vertical()) static_cast<QBoxLayout*>(footer_->layout())->insertWidget(footer_->layout()->count() - 1, button);
+        else { auto* row = static_cast<QHBoxLayout*>(end_->layout()); row->insertWidget(row->count() - 1, button); }
         QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
     }
-    updateBarGeometry();
+    bar_->refreshTrailing();
+    layoutChildren();
+}
+bool GroupTabs::event(QEvent* event) {
+    // The children are placed by hand, not by a layout: pass a page's new
+    // size limits on to the parent layout.
+    if (event->type() == QEvent::LayoutRequest) { updateGeometry(); layoutChildren(); }
+    return QFrame::event(event);
 }
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
-    if(event->type()==QEvent::ContextMenu && (watched==header_ || watched==canvas_ || (scroll_ && watched==scroll_->viewport()))) {
-        const auto callback=groupMenuRequested;
-        const auto pos=static_cast<QContextMenuEvent*>(event)->globalPos();
-        if(callback) callback(pos);
+    if (event->type() == QEvent::ContextMenu && (watched == footer_ || watched == trailing_ || watched == end_)) {
+        const auto callback = groupMenuRequested;
+        if (callback) callback(static_cast<QContextMenuEvent*>(event)->globalPos());
         return true;
     }
-    if (event->type() == QEvent::Show && (watched == viewportWindow_ || watched == header_ || watched == scroll_->viewport()))
-        queueViewportReflow();
-    if (!scroll_ || !bar_ || !scrollbar_ || !list_) return QFrame::eventFilter(watched, event);
+    if (event->type() == QEvent::Show && (watched == viewportWindow_ || watched == bar_)) queueViewportReflow();
     if (watched == viewportWindow_ && (event->type() == QEvent::Move || event->type() == QEvent::Resize))
         queueViewportReflow();
-    if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {
-        updateBarGeometry(); updateScrollBarGeometry(); queueViewportReflow();
-    }
-    if (watched == header_ || watched == list_ || watched == bar_ || watched == scroll_->viewport() || watched == scrollbar_) {
-        if (event->type() == QEvent::Wheel) {
-            auto* wheel = static_cast<QWheelEvent*>(event);
-            const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
-            scrollByWheel(delta);
-            wheel->accept(); return true;
+    if (watched == viewportWindow_ && (event->type() == QEvent::WindowActivate || event->type() == QEvent::WindowDeactivate))
+        refreshFocus();
+    if (watched == resizeHandle_) {
+        // Dragging the vertical strip's inner edge resizes it; a double
+        // click returns it to the default width.
+        const bool left = bar_->placement() == TabBarPlacement::Left;
+        if (event->type() == QEvent::MouseButtonPress) {
+            resizeOrigin_ = static_cast<QMouseEvent*>(event)->globalPosition().toPoint().x();
+            resizeStartWidth_ = columnWidth();
+            return true;
         }
-        if (event->type() == QEvent::Enter) {
-            hoveredSurfaces_.insert(watched); updateScrollBarVisibility();
+        if (event->type() == QEvent::MouseMove && resizeOrigin_) {
+            const int moved = static_cast<QMouseEvent*>(event)->globalPosition().toPoint().x() - *resizeOrigin_;
+            verticalWidth_ = std::clamp(resizeStartWidth_ + (left ? moved : -moved), minimumVerticalTabWidth, maximumVerticalTabWidth);
+            layoutChildren();
+            return true;
         }
-        if (event->type() == QEvent::Leave) {
-            hoveredSurfaces_.remove(watched);
-            // Leave is delivered before Enter when moving from the tabs onto
-            // their scrollbar. Keep the handle available through that handoff.
-            QTimer::singleShot(0, this, [this] { updateScrollBarVisibility(); });
+        if (event->type() == QEvent::MouseButtonRelease && resizeOrigin_) {
+            resizeOrigin_.reset();
+            if (const auto callback = verticalWidthChanged) callback(verticalWidth_);
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            resizeOrigin_.reset(); verticalWidth_ = 0; layoutChildren();
+            if (const auto callback = verticalWidthChanged) callback(0);
+            return true;
         }
     }
     return QFrame::eventFilter(watched, event);
 }
 void GroupTabs::resizeEvent(QResizeEvent* event) {
-    QFrame::resizeEvent(event); updateBarGeometry(); queueViewportReflow();
+    // Capture the settled viewport before the strip takes the new size, which
+    // would otherwise replace it with the resized one.
+    QFrame::resizeEvent(event); queueViewportReflow(); layoutChildren();
 }
 void GroupTabs::moveEvent(QMoveEvent* event) { QFrame::moveEvent(event); queueViewportReflow(); }
 void GroupTabs::showTabList() {
@@ -1319,18 +1052,18 @@ void GroupTabs::showTabList() {
         const auto* preset = bar_->tabPreset(index);
         auto* row = new TabListRow(bar_->tabText(index), appearance_.showIcons ? bar_->tabIcon(index) : QIcon{},
             preset ? preset->groupInactive.line : QColor{}, index == bar_->currentIndex(),
-            index < bar_->stickyCount() ? iconFor("pin", theme_) : QIcon{}, menu);
+            index < bar_->stickyCount() ? iconFor("sticky", theme_) : QIcon{}, menu);
         row->setProperty("tabId", bar_->tabData(index));
         row->closeButton->setIcon(iconFor("close", theme_)); row->closeButton->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab"));
         row->closeButton->setAccessibleName(row->closeButton->toolTip());
         const QPointer<GroupTabs> self(this); const QPointer<QMenu> popup(menu);
         // Closing a popup can run host callbacks that reorder the tabs. Each
         // action resolves its stable tab ID afterwards, not the listed index.
-        const auto act = [self, popup, id = bar_->tabData(index)](auto action) {
+        const auto act = [self, popup, id = bar_->tabData(index).toUuid()](auto action) {
             return [self, popup, id, action] {
                 if (popup) popup->close();
                 if (!self) return;
-                for (int i = 0; i < self->bar_->count(); ++i) if (self->bar_->tabData(i) == id) { action(self.data(), i); return; }
+                if (const int at = self->bar_->indexOf(id); at >= 0) action(self.data(), at);
             };
         };
         row->activate = act([](GroupTabs* tabs, int i) { tabs->setCurrentIndex(i); });
@@ -1341,8 +1074,9 @@ void GroupTabs::showTabList() {
                 act([](GroupTabs* tabs, int i) { const auto callback = tabs->unstickRequested; if (callback) callback(i); }));
         action->setDefaultWidget(row); menu->addAction(action);
     }
-    setPopupAnchor(menu,QRect(list_->mapToGlobal(QPoint()),list_->size()));
-    menu->popup(list_->mapToGlobal(QPoint(0, list_->height())));
+    auto* anchor = list_->isVisible() ? static_cast<QWidget*>(list_) : static_cast<QWidget*>(bar_);
+    setPopupAnchor(menu, QRect(anchor->mapToGlobal(QPoint()), anchor->size()));
+    menu->popup(anchor->mapToGlobal(QPoint(0, anchor->height())));
 }
 
 void GroupTabs::showNewTabMenu()

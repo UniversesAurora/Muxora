@@ -10,7 +10,7 @@
 #include <QLineEdit>
 #include <QPointer>
 #include <QSplitter>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
 #include <QTest>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -726,7 +726,7 @@ void ViewReuseTest::reusedStripFollowsMetadataAndTheme()
     settle();
     const auto labelOf = [&](GroupId group, int index) {
         auto* strip = stripOf(manager, layout.window, group);
-        auto* bar = strip ? strip->findChild<QTabBar*>() : nullptr;
+        auto* bar = strip ? strip->findChild<TabBar*>() : nullptr;
         return bar ? bar->tabText(index) : QString();
     };
     QPointer<QWidget> strip = stripOf(manager, layout.window, layout.second);
@@ -746,7 +746,7 @@ void ViewReuseTest::reusedStripFollowsMetadataAndTheme()
     QVERIFY(manager.closeTab(layout.secondTabs[1]));
     settle();
     QVERIFY(stripOf(manager, layout.window, layout.first) != strip.data());
-    auto* bar = stripOf(manager, layout.window, layout.first)->findChild<QTabBar*>();
+    auto* bar = stripOf(manager, layout.window, layout.first)->findChild<TabBar*>();
     QCOMPARE(bar->iconSize(), QSize(theme.metrics.iconSize, theme.metrics.iconSize));
 }
 

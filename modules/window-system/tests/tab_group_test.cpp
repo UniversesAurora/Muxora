@@ -6,7 +6,7 @@
 #include <QDynamicPropertyChangeEvent>
 #include <QLabel>
 #include <QMenu>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
 #include <QMouseEvent>
 #include <QPointer>
 #include <QSignalSpy>
@@ -623,13 +623,12 @@ private slots:
         QVERIFY(restored.isTabSticky(tabs[2])); QVERIFY(!restored.isTabSticky(restoredTab));
         // The strip's pin unsticks the tab.
         auto* host = manager.windowWidget(window); host->show(); QVERIFY(QTest::qWaitForWindowExposed(host));
-        QTabBar* bar = nullptr;
-        for (auto* candidate : host->findChildren<QTabBar*>())
+        TabBar* bar = nullptr;
+        for (auto* candidate : host->findChildren<TabBar*>())
             if (candidate->isVisible() && candidate->count() == 2) bar = candidate;
         QVERIFY(bar);
         QCOMPARE(bar->tabData(0).toUuid(), tabs[2]);
-        const auto tab = bar->tabRect(0);
-        const QPoint pin(tab.right() - 7 - 8 + 1, tab.center().y());
+        const QPoint pin = bar->actionRect(0).center();
         for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
             QMouseEvent event(type, pin, bar->mapToGlobal(pin), Qt::LeftButton,
                 type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);

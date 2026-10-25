@@ -15,7 +15,7 @@ class QMenuBar;
 namespace window_system {
 class WindowManager;
 
-enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window, Group };
+enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window, Group, TabFolder };
 
 // Built-in menu taxonomy, also used to audit complete command coverage.
 [[nodiscard]] QStringList declaredMenuCommands(CommandMenuSurface surface);

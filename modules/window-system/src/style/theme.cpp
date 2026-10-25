@@ -49,7 +49,8 @@ bool supportedIcon(const QString& name)
         QStringLiteral("split-vertical"), QStringLiteral("detach"), QStringLiteral("window"),
         QStringLiteral("return"), QStringLiteral("save"), QStringLiteral("command"),
         QStringLiteral("help"), QStringLiteral("chevron-left"), QStringLiteral("chevron-right"),
-        QStringLiteral("chevron-up"), QStringLiteral("chevron-down")
+        QStringLiteral("chevron-up"), QStringLiteral("chevron-down"), QStringLiteral("sticky"),
+        QStringLiteral("sticky-vertical"), QStringLiteral("tab-list")
     };
     return names.contains(name);
 }
@@ -121,6 +122,21 @@ public:
             painter->drawRect(QRectF(3.5, 5.5, 7, 7));
             painter->drawLine(QPointF(5.5, 3.5), QPointF(12.5, 3.5));
             painter->drawLine(QPointF(12.5, 3.5), QPointF(12.5, 10.5));
+        } else if (name_ == QStringLiteral("tab-list")) {
+            // All tabs: a short list, distinct from the dropdown arrows.
+            for (const qreal y : {4.5, 8.0, 11.5}) {
+                painter->drawLine(QPointF(3, y), QPointF(4, y));
+                painter->drawLine(QPointF(6, y), QPointF(13, y));
+            }
+        } else if (name_ == QStringLiteral("sticky") || name_ == QStringLiteral("sticky-vertical")) {
+            // Kept at the front: a bar with an arrow pointing to it. It is
+            // not the pin of pinned sidebars (tab strip design 5).
+            painter->save();
+            if (name_ == QStringLiteral("sticky-vertical")) { painter->translate(8, 8); painter->rotate(90); painter->translate(-8, -8); }
+            painter->drawLine(QPointF(3.5, 3), QPointF(3.5, 13));
+            painter->drawLine(QPointF(13, 8), QPointF(6.5, 8));
+            painter->drawPolyline(QPolygonF{{9.5, 5}, {6.5, 8}, {9.5, 11}});
+            painter->restore();
         } else if (name_ == QStringLiteral("add")) {
             painter->drawLine(QPointF(3, 8), QPointF(13, 8));
             painter->drawLine(QPointF(8, 3), QPointF(8, 13));
@@ -239,6 +255,7 @@ QWidget#WindowHeader QLabel { color: @headerText; }
 QWidget#TabGroup, QWidget#TabGroupHeader, QWidget#TabStripCanvas, QWidget#TabCreateButtons { background: @header; }
 QScrollArea#TabScrollViewport { background: @header; }
 QWidget#TabPage, QWidget#PaneHost { background: @surface; }
+QLabel#TabGroupName, QLabel#TabGroupTitle { color: @muted; background: transparent; }
 QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }
 QWidget#DockSurfaceRoot, QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
@@ -337,6 +354,10 @@ QSplitter::handle:horizontal { width: @splitterpx; }
 QSplitter::handle:vertical { height: @splitterpx; }
 QSplitter[windowSystemGroupSplitter="true"]::handle:horizontal { width: @groupSplitterpx; }
 QSplitter[windowSystemGroupSplitter="true"]::handle:vertical { height: @groupSplitterpx; }
+QSplitter[windowSystemGroupSplitter="true"]::handle { background: @header; }
+QSplitter[windowSystemGroupSplitter="true"]::handle:hover { background: @soft; }
+QSplitter#PaneSplitter::handle { background: @border; }
+QWidget#PaneHost QAbstractItemView, QWidget#PaneHost QPlainTextEdit, QWidget#PaneHost QTextEdit { border: none; }
 QStatusBar, QWidget#StatusBar { background: @status; color: @statusText; border: none; padding: 1px 6px; }
 QStatusBar QLabel, QWidget#StatusBar QLabel { color: @statusText; }
 QStatusBar::item { border: none; }

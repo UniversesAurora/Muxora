@@ -36,6 +36,7 @@ private:
                        const QHash<PaneId, QPointer<QWidget>>& contents);
     void parkBuiltWidgets();
     void updateBars();
+    void updatePaneVeils();
     void replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool top);
     void placePaneBars(const QHash<PaneId, QPointer<QWidget>>& bars,
                        PaneBarSharing sharing, QWidget* shared, bool top);

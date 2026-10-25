@@ -30,6 +30,22 @@
 
 namespace window_system {
 namespace {
+// A group's tab folders as its strip shows them, in strip order.
+QVector<TabStripFolder> stripFolders(const LayoutModel& model, const GroupRecord& group)
+{
+    QVector<TabStripFolder> result;
+    for (int index = 0; index < group.tabs.size(); ++index) {
+        const auto* tab = model.tab(group.tabs.at(index));
+        if (!tab || tab->folder.isNull()) continue;
+        if (!result.isEmpty() && result.last().id == tab->folder) { ++result.last().count; continue; }
+        const auto* folder = model.folder(tab->folder);
+        if (!folder) continue;
+        result.append({folder->id, folder->name, folder->colorId, folder->collapsed, index, 1});
+    }
+    return result;
+}
+}
+namespace {
 class PeekHeader final : public QWidget {
 public:
     explicit PeekHeader(QWidget* parent) : QWidget(parent) { updatePeekHeaderHeight(this); }
@@ -64,9 +80,14 @@ protected:
         return QSplitterHandle::event(event);
     }
 };
+QSize grownBy(QSize size, QMargins margins) { return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom()); }
 class GroupSplitter final : public QSplitter {
 public:
     using QSplitter::QSplitter;
+    // QSplitter places its children in the contents rectangle but leaves the
+    // margins out of its size hints.
+    QSize sizeHint() const override { return grownBy(QSplitter::sizeHint(), contentsMargins()); }
+    QSize minimumSizeHint() const override { return grownBy(QSplitter::minimumSizeHint(), contentsMargins()); }
 protected:
     bool event(QEvent* event) override
     {
@@ -172,6 +193,8 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     auto* vertical = new GroupSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
     configureGroupSplitter(vertical, manager_->theme());
+    // With each group's own margin, cards stay 6 from the window's edges.
+    vertical->setContentsMargins(4, 4, 4, 4);
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
     auto* horizontal = new GroupSplitter(Qt::Horizontal, vertical);
     horizontal_ = horizontal;
@@ -381,8 +404,13 @@ bool DockSurface::updateInPlace(const QHash<TabId, QPointer<TabContent>>& conten
     }
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
         const auto* record = manager_->model().group(it.key());
-        if (it.value() && record) it.value()->setTabBarVisible(record->location != GroupLocation::Central
-            || centralTabBarVisible(manager_->tabBarsVisible(window_)));
+        if (it.value() && record) {
+            it.value()->setTabBarVisible(record->location != GroupLocation::Central
+                || centralTabBarVisible(manager_->tabBarsVisible(window_)));
+            it.value()->setVerticalState(record->tabStripWidth, record->tabStripIconsOnly);
+            it.value()->setGroupName(record->name);
+            it.value()->tabBar()->setFolders(stripFolders(manager_->model(), *record));
+        }
     }
     // A page that no group adopted belongs to an auto-hide tab; never leave a
     // live view inside a discarded strip.
@@ -444,13 +472,15 @@ void DockSurface::restoreStripScrollOffsets()
         }
     edgeAppearance_ = manager_->tabAppearance();
 }
+void DockSurface::refreshGroupFocus()
+{
+    for (const auto& group : groups_) if (group) group->refreshFocus();
+}
 bool DockSurface::scrollStripAt(QPoint global, QPoint delta)
 {
     const auto* hit = childAt(mapFromGlobal(global));
     for (const auto& group : groups_) if (group && group->isVisible() && hit && group->isAncestorOf(hit)
-        && group->viewportRectGlobal().contains(global)) {
-        group->scrollByWheel(delta); return true;
-    }
+        && group->scrollStripAt(global, delta)) return true;
     for (const auto& widget : edgeBars_)
         if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data()); strip && strip->isVisible() && hit && strip->isAncestorOf(hit)
             && strip->viewportRectGlobal().contains(global)) {
@@ -515,6 +545,24 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == group->activeTab) tabs->setCurrentIndex(i, !groupViewportStates_.contains(id));
     tabs->setStickyCount(group->stickyTabs);
+    bar->setFolders(stripFolders(manager_->model(), *group));
+    // Folder headers: collapse, menu, a new tab inside, and carrying it.
+    const auto folderId = [bar](int folder) { return folder >= 0 && folder < bar->folders().size() ? bar->folders().at(folder).id : QUuid{}; };
+    bar->toggleFolder = [manager = QPointer<WindowManager>(manager_), folderId](int folder) {
+        const auto* record = manager ? manager->model().folder(folderId(folder)) : nullptr;
+        if (!record) return;
+        auto changed = *record; changed.collapsed = !changed.collapsed;
+        manager->updateTabFolder(changed);
+    };
+    bar->folderMenu = [manager = QPointer<WindowManager>(manager_), folderId](int folder, QPoint point) {
+        if (manager) manager->showTabFolderMenu(folderId(folder), point);
+    };
+    bar->newTabInFolder = [manager = QPointer<WindowManager>(manager_), window = window_, id, folderId](int folder) {
+        if (manager) manager->requestNewTab(window, id, {}, folderId(folder));
+    };
+    bar->folderDrag = [manager = QPointer<WindowManager>(manager_), folderId](int folder, QPoint point) {
+        if (manager) manager->beginTabFolderDrag(folderId(folder), point);
+    };
     tabs->unstickRequested = [this, bar](int index) {
         if (manager_ && index >= 0 && index < bar->count()) manager_->setTabSticky(bar->tabData(index).toUuid(), false);
     };
@@ -526,7 +574,25 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     tabs->newTabMenuRequested = [manager = QPointer<WindowManager>(manager_), window = window_, id](QWidget* parent) {
         return manager ? manager->createTabCreationMenu(window, id, parent) : nullptr;
     };
-    tabs->hoverGeometryChanged = [this] { if (manager_) manager_->d->drag->refreshHover(); };
+    // A strip can outlive this surface until its deferred deletion; its
+    // callbacks then do nothing.
+    const QPointer<DockSurface> surface(this);
+    tabs->hoverGeometryChanged = [surface] { if (surface && surface->manager_) surface->manager_->d->drag->refreshHover(); };
+    tabs->isActiveGroup = [this, surface, id] {
+        const auto* window = surface && manager_ ? manager_->model().window(window_) : nullptr;
+        return window && window->activeGroup == id;
+    };
+    tabs->refreshFocus();
+    tabs->setVerticalState(group->tabStripWidth, group->tabStripIconsOnly);
+    tabs->setGroupName(group->name);
+    tabs->verticalWidthChanged = [manager = QPointer<WindowManager>(manager_), id](int width) {
+        const auto* record = manager ? manager->model().group(id) : nullptr;
+        if (record) manager->setGroupTabStrip(id, width, record->tabStripIconsOnly);
+    };
+    tabs->iconModeChanged = [manager = QPointer<WindowManager>(manager_), id](bool iconsOnly) {
+        const auto* record = manager ? manager->model().group(id) : nullptr;
+        if (record) manager->setGroupTabStrip(id, record->tabStripWidth, iconsOnly);
+    };
     if (group->location == GroupLocation::Pinned) {
         tabs->setPinnedActions([this, id] {
             if (!manager_) return;
@@ -544,8 +610,8 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         if (manager_ && index >= 0) manager_->showTabMenu(bar->tabData(index).toUuid(), point);
         else if(manager_) manager_->showGroupMenu(id,point);
     };
-    tabs->currentChanged = [this, tabs, bar, id](int index) {
-        if (!manager_) return;
+    tabs->currentChanged = [this, surface, tabs, bar, id](int index) {
+        if (!surface || !manager_) return;
         const QPointer<GroupTabs> retained(tabs);
         if (index >= 0) manager_->updateActive(window_, id, bar->tabData(index).toUuid());
         if (retained) retained->update();
@@ -788,9 +854,9 @@ GroupId DockSurface::tabBarAt(QPoint point) const
     for (auto it = rects.cbegin(); it != rects.cend(); ++it) if (it.value().contains(point)) return it.key();
     return {};
 }
-int DockSurface::tabInsertionIndex(GroupId group, QPoint point) const
+int DockSurface::tabInsertionIndex(GroupId group, QPoint point, TabLayoutInput::Carried carried) const
 {
-    const auto widget = groups_.value(group); return widget ? widget->insertionIndex(point) : -1;
+    const auto widget = groups_.value(group); return widget ? widget->insertionIndex(point, carried) : -1;
 }
 std::optional<bool> DockSurface::tabInsertionRow(GroupId group, QPoint point) const
 {
@@ -825,7 +891,7 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
             // A sized sticky tab carries its natural width; the target strip
             // sizes a preview among its own sticky tabs.
             const int width = i < bar->stickyCount() && manager_->tabAppearance().stickySizing != StickyTabSizing::Normal
-                ? bar->naturalTabWidth(i) : bar->tabRect(i).width();
+                ? bar->naturalTabWidth(i) : bar->tabExtent(i, i < bar->stickyCount());
             if (manager_->tabAppearance().multiline) {
                 const int viewportWidth = group->viewportRectGlobal().width();
                 // Single-tab floating windows can hide their strip. A hidden
@@ -866,6 +932,36 @@ QPixmap DockSurface::dragLabelPixmap(TabId tab) const
             if (button->property("tabId").toUuid() == tab) return button->grab();
     return {};
 }
+void DockSurface::setLiftedTab(GroupId group, QPoint global, QPoint grab)
+{
+    if (const auto widget = groups_.value(group)) widget->setLiftedTab(global, grab);
+}
+void DockSurface::setContentPreview(GroupId group, const QPixmap& picture)
+{
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value()) it.value()->setContentPreview(it.key() == group ? picture : QPixmap{});
+}
+QPixmap DockSurface::activeContentPicture() const
+{
+    const auto* window = manager_->model().window(window_);
+    const auto group = window ? groups_.value(window->activeGroup) : QPointer<GroupTabs>{};
+    auto* page = group ? group->page(group->currentIndex()) : nullptr;
+    // Content that another process draws cannot be grabbed; then no preview.
+    return page && page->isVisible() ? page->grab() : QPixmap{};
+}
+void DockSurface::clearLiftedTabs()
+{
+    for (const auto& group : groups_) if (group) group->clearLiftedTab();
+}
+QPoint DockSurface::tabGrabOffset(TabId tab, QPoint global) const
+{
+    if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
+        auto* bar = group->tabBar();
+        const int index = bar->indexOf(tab);
+        if (index >= 0) return bar->mapFromGlobal(global) - bar->tabRect(index).topLeft();
+    }
+    return {};
+}
 void DockSurface::setDraggedTab(TabId tab)
 {
     for (const auto& group : groups_) if (group) group->setDraggedTab(tab);
@@ -887,23 +983,37 @@ void DockSurface::setDragHover(QPoint point)
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(point);
 }
-void DockSurface::setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky, std::optional<bool> stickyRow)
+void DockSurface::setInsertionPreview(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky,
+                                      TabLayoutInput::Carried kind)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
-        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, extent, it.key() == group && carriedSticky,
-                                                        it.key() == group ? stickyRow : std::nullopt);
+        if (it.value()) it.value()->setInsertionPreview(it.key() == group ? index : -1, carried, it.key() == group && carriedSticky, kind);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
 }
 void DockSurface::setEdgeInsertionPreview(Edge edge, int index, int extent)
 {
-    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, 0);
+    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, {});
     for (auto it = edgeBars_.cbegin(); it != edgeBars_.cend(); ++it)
         if (auto* strip = dynamic_cast<EdgeStrip*>(it.value().data())) strip->setInsertionPreview(it.key() == edge ? index : -1, extent);
 }
 void DockSurface::clearInsertionPreviews()
 {
-    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, 0);
+    for (const auto& widget : groups_) if (widget) widget->setInsertionPreview(-1, {});
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setInsertionPreview(-1, 0);
+}
+FolderId DockSurface::insertionFolder(GroupId group) const
+{
+    const auto widget = groups_.value(group);
+    return widget ? widget->insertionFolder() : FolderId{};
+}
+void DockSurface::setDraggedFolder(FolderId folder)
+{
+    for (const auto& group : groups_) if (group) group->setDraggedFolder(folder);
+}
+QPoint DockSurface::folderGrabOffset(FolderId folder, QPoint global) const
+{
+    const auto widget = groups_.value(manager_->model().groupForFolder(folder));
+    return widget ? widget->folderGrabOffset(folder, global) : QPoint{};
 }
 bool DockSurface::insertionSticky(GroupId group) const
 {

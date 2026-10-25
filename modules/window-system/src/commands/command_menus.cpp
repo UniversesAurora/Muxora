@@ -99,12 +99,33 @@ Items groupOperations()
         group("tab.group.move", "moveGroup", QT_TRANSLATE_NOOP("WindowSystem", "Move this tab group"), groupMovement()),
         group("tab.group.swap", "swapGroup", QT_TRANSLATE_NOOP("WindowSystem", "Swap with another tab group"), groupExchange()),
         group("tab.group.merge", "mergeGroup", QT_TRANSLATE_NOOP("WindowSystem", "Merge this group's tabs into another group"), groupMerge()),
-        group("group.convert", "convertGroup", QT_TRANSLATE_NOOP("WindowSystem", "Convert this group's contents"), {command("group.convertToTab"), command("group.moveIntoTab")}),
+        group("group.convert", "convertGroup", QT_TRANSLATE_NOOP("WindowSystem", "Convert this group's contents"), {command("group.convertToTab"), command("group.moveIntoTab"), separator(),
+            command("group.convertToFolder.left"), command("group.convertToFolder.right"), command("group.convertToFolder.up"), command("group.convertToFolder.down"),
+            command("group.convertToFolder")}),
+        command("tabFolder.collapseAll"), command("tabFolder.expandAll"),
         separator(), group("group.sort", "sortGroup", QT_TRANSLATE_NOOP("WindowSystem", "Sort tabs in this group"), sorting()),
         group("edge.group", "groupSidebar", QT_TRANSLATE_NOOP("WindowSystem", "Dock this group in sidebar"), {command("workspace.pinGroup"), command("workspace.unpinGroup"),
             command("workspace.restoreGroupToCenter"), separator(),
             group("edge.all", "sidebarTabs", QT_TRANSLATE_NOOP("WindowSystem", "All tabs in this sidebar"), {command("workspace.pinEdge"), command("workspace.unpinEdge")})}),
-        separator(), command("group.close")};
+        separator(), command("group.rename"), command("group.close")};
+}
+Items folderOperations()
+{
+    return {command("tabFolder.rename"), command("tabFolder.setColor"), command("tabFolder.toggleCollapsed"), command("tabFolder.newTab"), separator(),
+        group("tabFolder.order", "reorderFolder", QT_TRANSLATE_NOOP("WindowSystem", "Reorder this tab folder in its bar"), {command("tabFolder.moveBackward"), command("tabFolder.moveForward")}),
+        group("tabFolder.move", "moveFolder", QT_TRANSLATE_NOOP("WindowSystem", "Move this tab folder"), {
+            group("tabFolder.move.group", "moveToAdjacentGroup", QT_TRANSLATE_NOOP("WindowSystem", "Move into adjacent tab group"), directions("tabFolder.move.")),
+            group("tabFolder.move.window", "moveToOtherWindow", QT_TRANSLATE_NOOP("WindowSystem", "Move to another window"), {command("tabFolder.moveWindow.previous"),
+                command("tabFolder.moveWindow.next"), separator(), command("tabFolder.moveWindow")}),
+            group("tabFolder.move.newWindow", "moveToNewWindow", QT_TRANSLATE_NOOP("WindowSystem", "Move to a new window"), {command("tabFolder.detachFloating"), command("tabFolder.detachWorkbench")})}),
+        group("tabFolder.mergeMenu", "mergeFolder", QT_TRANSLATE_NOOP("WindowSystem", "Merge into another tab folder"), {command("tabFolder.merge.previous"), command("tabFolder.merge.next"),
+            separator(), command("tabFolder.merge")}),
+        group("tabFolder.convert", "convertFolder", QT_TRANSLATE_NOOP("WindowSystem", "Convert this tab folder to a tab group"), directions("tabFolder.convertToGroup.")),
+        separator(), command("tabFolder.ungroup"), command("tabFolder.close")};
+}
+Items tabFolderMembership()
+{
+    return {command("tabFolder.new"), command("tabFolder.addTab"), command("tabFolder.removeTab")};
 }
 Items windowOperations()
 {
@@ -148,6 +169,10 @@ const Items& layout(CommandMenuSurface surface)
                 group("tab.move", "moveTab", QT_TRANSLATE_NOOP("WindowSystem", "Move this tab"), tabMovement()),
                 group("tab.convert", "convertTab", QT_TRANSLATE_NOOP("WindowSystem", "Convert this tab's contents"), {command("tab.convertToGroup"), command("tab.moveIntoTab")}),
                 group("tab.edge", "tabSidebar", QT_TRANSLATE_NOOP("WindowSystem", "This tab's sidebar placement"), tabEdgeOperations())}),
+            group("layout.folder", "currentFolder", QT_TRANSLATE_NOOP("WindowSystem", "Current tab folder"), [] {
+                auto items = tabFolderMembership(); items += separator(); items += folderOperations();
+                items += {separator(), command("tabFolder.focus.previous"), command("tabFolder.focus.next")}; return items;
+            }()),
             group("layout.panes", "currentPane", QT_TRANSLATE_NOOP("WindowSystem", "Current pane"), {
                 group("pane.split", "splitPane", QT_TRANSLATE_NOOP("WindowSystem", "Split this pane"), directions("pane.split.")),
                 group("pane.resize", "resizePane", QT_TRANSLATE_NOOP("WindowSystem", "Resize this pane"), directions("pane.resize.")), separator(),
@@ -166,7 +191,7 @@ const Items& layout(CommandMenuSurface surface)
         group("help", "help", QT_TRANSLATE_NOOP("WindowSystem", "&Help"), {}, 60)};
     static const Items floating = floatingItems(application);
     static const Items tab = {command("workspace.closeTab"), command("tab.rename"), command("tab.stick"), command("tab.unstick"),
-        command("workspace.pinTab"), command("workspace.unpinTab"),
+        command("workspace.pinTab"), command("workspace.unpinTab"), separator(), tabFolderMembership()[0], tabFolderMembership()[1], tabFolderMembership()[2],
         group("tab.closeRange", "closeTabs", QT_TRANSLATE_NOOP("WindowSystem", "Close multiple tabs"), {command("workspace.closeTabs.left"), command("workspace.closeTabs.right"),
             command("workspace.closeTabs.others"), command("workspace.closeTabs.all")}), separator(),
         group("tab.order", "reorderTab", QT_TRANSLATE_NOOP("WindowSystem", "Reorder this tab in its bar"), {command("workspace.reorderTab.previous"), command("workspace.reorderTab.next")}),
@@ -175,6 +200,7 @@ const Items& layout(CommandMenuSurface surface)
         group("tab.edge", "tabSidebar", QT_TRANSLATE_NOOP("WindowSystem", "This tab's sidebar placement"), tabEdgeOperations(false)), separator(), command("tab.color.set"),
         group("tab.group", "containingGroup", QT_TRANSLATE_NOOP("WindowSystem", "Containing tab group"), groupOperations())};
     static const Items tabGroup = groupOperations();
+    static const Items tabFolder = folderOperations();
     static const Items pane = {command("pane.close"), separator(),
         group("pane.split", "splitPane", QT_TRANSLATE_NOOP("WindowSystem", "Split this pane"), directions("pane.split.")),
         group("pane.move", "movePane", QT_TRANSLATE_NOOP("WindowSystem", "Move this pane"), paneMovement()),
@@ -188,6 +214,7 @@ const Items& layout(CommandMenuSurface surface)
     case CommandMenuSurface::FloatingApplication: return floating;
     case CommandMenuSurface::Tab: return tab;
     case CommandMenuSurface::Group: return tabGroup;
+    case CommandMenuSurface::TabFolder: return tabFolder;
     case CommandMenuSurface::Pane: return pane;
     case CommandMenuSurface::Window: return window;
     }
@@ -304,6 +331,8 @@ QString applicationMenuExclusion(const QString& id)
     if (id == "runCommands") return QCoreApplication::translate("WindowSystem", "Parameterized composite; configured in the keyboard shortcuts editor");
     if (id == "presentation.setCentralPlacement" || id == "presentation.setPinnedPlacement")
         return QCoreApplication::translate("WindowSystem", "The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API");
+    if (id == "presentation.setRowCollapse")
+        return QCoreApplication::translate("WindowSystem", "The row collapse command requires a mode; choose it from the tab bar context menu or settings");
     if (id == "window.activate") return QCoreApplication::translate("WindowSystem", "Available in the Window menu family list and window switcher");
     if (id == "window.setTitle") return QCoreApplication::translate("WindowSystem", "The host, a script, or command arguments supply the window title");
     if (id == "window.statusItem.setVisible") return QCoreApplication::translate("WindowSystem", "Show or hide individual items from the status bar context menu");

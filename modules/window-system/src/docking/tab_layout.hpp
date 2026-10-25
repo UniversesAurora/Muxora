@@ -38,8 +38,13 @@ struct TabLayoutInput {
     QSize tile{36, 32};
     // Vertical rows and tiles keep this distance from both sides.
     int inset = 6;
-    // Horizontal: the controls after the last tab (count, new tab, list).
+    // Horizontal: the controls right after the last tab (new tab), and the
+    // controls aligned to the end of the first row (count, list, sidebar
+    // actions), which tabs never cover or scroll under.
     int trailingExtent = 0;
+    int endExtent = 0;
+    // Vertical: sticky tiles are at least this wide and share each row.
+    int minimumTileWidth = 44;
     // Multi-row: show one row of each section.
     bool collapsed = false;
     int current = -1;
@@ -57,6 +62,28 @@ struct TabLayoutInput {
     int insertion = -1;
     bool insertionSticky = false;
     QVector<int> block;
+
+    // Tab folders (tab strip design 12): runs of adjacent regular tabs, each
+    // led by a header. A collapsed folder shows only its header, and the
+    // current tab when it is one of its tabs. Vertical folder rows are
+    // indented by `folderIndent`.
+    struct Folder {
+        int first = 0;
+        int count = 0;
+        int headerExtent = 0;
+        bool collapsed = false;
+    };
+    QVector<Folder> folders;
+    int folderIndent = 0;
+    // A carried folder leaves with its header and tabs; a gap inside a folder
+    // (`insertionFolder`) is part of it.
+    int removedFolder = -1;
+    int insertionFolder = -1;
+    // What a drag carries: one tab may join a folder; several tabs (a
+    // window's) land beside folders; a folder also never lands among the
+    // sticky tabs. A removed folder carries a folder.
+    enum class Carried { Tab, Tabs, Folder };
+    Carried carried = Carried::Tab;
 };
 
 struct TabLayoutLane {
@@ -81,6 +108,7 @@ struct TabLayout {
     QVector<TabLayoutLane> laneList;
     QRect trailing;
     int trailingLane = -1;
+    QRect end;
     // Tabs a collapsed strip hides, and the rows it shows.
     int hidden = 0;
     int stickyRow = 0;
@@ -93,10 +121,15 @@ struct TabLayout {
     // rows of their own.
     int sticky = 0;
     int stickyRows = 0;
+    // Per input folder: its header (null when carried away) and lane.
+    QVector<QRect> headers;
+    QVector<int> headerLanes;
 
     // The part of a tab its lane shows; empty when it is scrolled away.
     [[nodiscard]] QRect visibleRect(int index) const;
     [[nodiscard]] int tabAt(QPoint point) const;
+    [[nodiscard]] QRect visibleHeaderRect(int folder) const;
+    [[nodiscard]] int headerAt(QPoint point) const;
 };
 
 [[nodiscard]] TabLayout layoutTabs(const TabLayoutInput& input);
@@ -104,12 +137,17 @@ struct TabLayout {
 struct TabInsertion {
     int index = -1;
     bool sticky = false;
+    // The folder the block joins; -1 for none.
+    int folder = -1;
 };
 // Where a carried block lands when the center of its grabbed label is at
 // `probe`. Decided on the strip without any gap, so the gap that opens never
 // moves the decision. Right after the sticky tabs a block stays sticky up to
 // `stickyReach` past their end; callers pass half the width of a block that
-// was sticky.
+// was sticky. A block joins a folder past the middle of its header and before
+// the end of its last tab, or over the header of a collapsed one (then at
+// its end). Several tabs or a folder never land inside a folder, and a
+// folder never among the sticky tabs.
 [[nodiscard]] TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach = 0);
 
 } // namespace window_system

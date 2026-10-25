@@ -72,7 +72,9 @@ EdgeDragPresentation::EdgeDragPresentation(QString title, Edge edge, const Theme
 }
 QRegion EdgeDragPresentation::visibleRegion() const
 {
-    return QRegion(label_->geometry()).united(QRegion(panel_->geometry()));
+    // Over a rail only the label shows under the pointer; the rail has no
+    // expanded content to preview (tab strip design 6.7).
+    return QRegion(label_->geometry());
 }
 void EdgeDragPresentation::configureLabel(std::optional<TabColorPreset> preset,QIcon icon,int number,
                                           const TabAppearance& appearance)

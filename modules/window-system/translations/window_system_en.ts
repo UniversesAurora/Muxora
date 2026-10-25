@@ -470,6 +470,22 @@
         <translation>All tabs in this sidebar</translation>
     </message>
     <message>
+        <source>Reorder this tab folder in its bar</source>
+        <translation>Reorder this tab folder in its bar</translation>
+    </message>
+    <message>
+        <source>Move this tab folder</source>
+        <translation>Move this tab folder</translation>
+    </message>
+    <message>
+        <source>Merge into another tab folder</source>
+        <translation>Merge into another tab folder</translation>
+    </message>
+    <message>
+        <source>Convert this tab folder to a tab group</source>
+        <translation>Convert this tab folder to a tab group</translation>
+    </message>
+    <message>
         <source>Window type</source>
         <translation>Window type</translation>
     </message>
@@ -536,6 +552,10 @@
     <message>
         <source>This tab&apos;s sidebar placement</source>
         <translation>This tab&apos;s sidebar placement</translation>
+    </message>
+    <message>
+        <source>Current tab folder</source>
+        <translation>Current tab folder</translation>
     </message>
     <message>
         <source>Current pane</source>
@@ -612,6 +632,10 @@
     <message>
         <source>The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API</source>
         <translation>The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API</translation>
+    </message>
+    <message>
+        <source>The row collapse command requires a mode; choose it from the tab bar context menu or settings</source>
+        <translation>The row collapse command requires a mode; choose it from the tab bar context menu or settings</translation>
     </message>
     <message>
         <source>Available in the Window menu family list and window switcher</source>
@@ -712,6 +736,14 @@
     <message>
         <source>Visited: most recent first</source>
         <translation>Visited: most recent first</translation>
+    </message>
+    <message>
+        <source>Rename tab group…</source>
+        <translation>Rename tab group…</translation>
+    </message>
+    <message>
+        <source>Tab group name (empty for none)</source>
+        <translation>Tab group name (empty for none)</translation>
     </message>
     <message numerus="yes">
         <source>(%n tabs)</source>
@@ -1105,6 +1137,22 @@
         <translation>Central tab bar position</translation>
     </message>
     <message>
+        <source>Collapse tab rows</source>
+        <translation>Collapse tab rows</translation>
+    </message>
+    <message>
+        <source>Show all rows</source>
+        <translation>Show all rows</translation>
+    </message>
+    <message>
+        <source>Collapse; expanded rows push the content down</source>
+        <translation>Collapse; expanded rows push the content down</translation>
+    </message>
+    <message>
+        <source>Collapse; expanded rows overlay the content</source>
+        <translation>Collapse; expanded rows overlay the content</translation>
+    </message>
+    <message>
         <source>Tab bar position</source>
         <translation>Tab bar position</translation>
     </message>
@@ -1288,6 +1336,14 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>All tabs</translation>
     </message>
     <message>
+        <source>Show tab titles</source>
+        <translation>Show tab titles</translation>
+    </message>
+    <message>
+        <source>Show only tab icons</source>
+        <translation>Show only tab icons</translation>
+    </message>
+    <message>
         <source>Unpin all sidebar tabs</source>
         <translation>Unpin all sidebar tabs</translation>
     </message>
@@ -1369,8 +1425,16 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Tab appearance settings must be an object</translation>
     </message>
     <message>
-        <source>Tab bars support only top or bottom placement</source>
-        <translation>Tab bars support only top or bottom placement</translation>
+        <source>Tab bars can be placed only top, bottom, left or right</source>
+        <translation>Tab bars can be placed only top, bottom, left or right</translation>
+    </message>
+    <message>
+        <source>Collapsing tab rows must be off, push or overlay</source>
+        <translation>Collapsing tab rows must be off, push or overlay</translation>
+    </message>
+    <message>
+        <source>The vertical tab bar width must be an integer from 140 to 480 logical pixels</source>
+        <translation>The vertical tab bar width must be an integer from 140 to 480 logical pixels</translation>
     </message>
     <message>
         <source>Invalid tab visibility setting type</source>
@@ -1716,16 +1780,28 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Choose the tab position for pinned sidebar panels independently.</translation>
     </message>
     <message>
-        <source>Place central tab bars above or below the content.</source>
-        <translation>Place central tab bars above or below the content.</translation>
-    </message>
-    <message>
         <source>Wrap tabs to additional rows instead of using a horizontal scrollbar.</source>
         <translation>Wrap tabs to additional rows instead of using a horizontal scrollbar.</translation>
     </message>
     <message>
-        <source>In multiline mode, scroll down to show all rows and up to show only the active tab&apos;s row.</source>
-        <translation>In multiline mode, scroll down to show all rows and up to show only the active tab&apos;s row.</translation>
+        <source>Place central tab bars above, below or beside the content. Left and right show the tabs as a vertical list.</source>
+        <translation>Place central tab bars above, below or beside the content. Left and right show the tabs as a vertical list.</translation>
+    </message>
+    <message>
+        <source>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</source>
+        <translation>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</translation>
+    </message>
+    <message>
+        <source>With collapsed rows, scroll down to expand them and up to collapse them again.</source>
+        <translation>With collapsed rows, scroll down to expand them and up to collapse them again.</translation>
+    </message>
+    <message>
+        <source>Vertical tab bar width</source>
+        <translation>Vertical tab bar width</translation>
+    </message>
+    <message>
+        <source>The width of new vertical tab bars. Drag a vertical tab bar&apos;s edge to resize it on its own.</source>
+        <translation>The width of new vertical tab bars. Drag a vertical tab bar&apos;s edge to resize it on its own.</translation>
     </message>
     <message>
         <source>Applies to central tab bars independently of sidebars. Per-tab icon visibility set by the host still applies.</source>
@@ -1738,6 +1814,14 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>Show central tab numbers before the icon, starting at 1 in each tab bar.</source>
         <translation>Show central tab numbers before the icon, starting at 1 in each tab bar.</translation>
+    </message>
+    <message>
+        <source>Show tab group names</source>
+        <translation>Show tab group names</translation>
+    </message>
+    <message>
+        <source>Show a named group&apos;s name at the end of its tab bar.</source>
+        <translation>Show a named group&apos;s name at the end of its tab bar.</translation>
     </message>
     <message>
         <source>Show icons in pinned and auto-hide sidebar bars independently. Hidden by default; per-tab icon visibility still applies.</source>
@@ -1864,6 +1948,50 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>The pane does not belong to the tab.</translation>
     </message>
     <message>
+        <source>Unknown tab group.</source>
+        <translation>Unknown tab group.</translation>
+    </message>
+    <message>
+        <source>A tab folder needs new identity and at least one tab.</source>
+        <translation>A tab folder needs new identity and at least one tab.</translation>
+    </message>
+    <message>
+        <source>Auto-hide rails hold no tab folders.</source>
+        <translation>Auto-hide rails hold no tab folders.</translation>
+    </message>
+    <message>
+        <source>A tab folder&apos;s tabs must be tabs of one tab group that are not sticky.</source>
+        <translation>A tab folder&apos;s tabs must be tabs of one tab group that are not sticky.</translation>
+    </message>
+    <message>
+        <source>A tab folder lists each tab once.</source>
+        <translation>A tab folder lists each tab once.</translation>
+    </message>
+    <message>
+        <source>The tab and the tab folder must share one tab group, and the tab must not be sticky.</source>
+        <translation>The tab and the tab folder must share one tab group, and the tab must not be sticky.</translation>
+    </message>
+    <message>
+        <source>Unknown tab folder.</source>
+        <translation>Unknown tab folder.</translation>
+    </message>
+    <message>
+        <source>A tab folder name has at most 256 characters.</source>
+        <translation>A tab folder name has at most 256 characters.</translation>
+    </message>
+    <message>
+        <source>Unknown tab folder or target group.</source>
+        <translation>Unknown tab folder or target group.</translation>
+    </message>
+    <message>
+        <source>A tab group becomes a tab folder of another tab group.</source>
+        <translation>A tab group becomes a tab folder of another tab group.</translation>
+    </message>
+    <message>
+        <source>A tab group name has at most 256 characters.</source>
+        <translation>A tab group name has at most 256 characters.</translation>
+    </message>
+    <message>
         <source>Tabs in an auto-hide rail cannot be sticky.</source>
         <translation>Tabs in an auto-hide rail cannot be sticky.</translation>
     </message>
@@ -1946,6 +2074,10 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>Reassignment needs a floating window and a workbench.</source>
         <translation>Reassignment needs a floating window and a workbench.</translation>
+    </message>
+    <message>
+        <source>Tabs gathered into a tab folder need a new folder in one group.</source>
+        <translation>Tabs gathered into a tab folder need a new folder in one group.</translation>
     </message>
     <message>
         <source>Whole-window movement requires a different target window.</source>
@@ -2054,6 +2186,18 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>An edge extent is invalid.</source>
         <translation>An edge extent is invalid.</translation>
+    </message>
+    <message>
+        <source>A tab folder is invalid.</source>
+        <translation>A tab folder is invalid.</translation>
+    </message>
+    <message>
+        <source>A tab folder&apos;s tabs must be adjacent tabs of its group.</source>
+        <translation>A tab folder&apos;s tabs must be adjacent tabs of its group.</translation>
+    </message>
+    <message>
+        <source>A tab folder has no tabs.</source>
+        <translation>A tab folder has no tabs.</translation>
     </message>
     <message>
         <source>Tab identities are invalid.</source>
@@ -2204,6 +2348,26 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>An edge extent must be a bounded integer.</translation>
     </message>
     <message>
+        <source>A vertical tab bar width must be 0 or an integer from 140 to 480.</source>
+        <translation>A vertical tab bar width must be 0 or an integer from 140 to 480.</translation>
+    </message>
+    <message>
+        <source>A tab group name must be text of at most 256 characters.</source>
+        <translation>A tab group name must be text of at most 256 characters.</translation>
+    </message>
+    <message>
+        <source>A group&apos;s tab folders must be a list.</source>
+        <translation>A group&apos;s tab folders must be a list.</translation>
+    </message>
+    <message>
+        <source>A tab folder needs an ID, a name, a color and a collapsed flag.</source>
+        <translation>A tab folder needs an ID, a name, a color and a collapsed flag.</translation>
+    </message>
+    <message>
+        <source>A vertical tab bar&apos;s icon mode must be a boolean.</source>
+        <translation>A vertical tab bar&apos;s icon mode must be a boolean.</translation>
+    </message>
+    <message>
         <source>Duplicate group identity.</source>
         <translation>Duplicate group identity.</translation>
     </message>
@@ -2296,8 +2460,8 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Invalid fullscreen mode</translation>
     </message>
     <message>
-        <source>Tab position must be top or bottom</source>
-        <translation>Tab position must be top or bottom</translation>
+        <source>Tab position must be top, bottom, left or right</source>
+        <translation>Tab position must be top, bottom, left or right</translation>
     </message>
     <message>
         <source>Unknown tab appearance field</source>
@@ -2550,6 +2714,10 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>Unknown tab sort order</source>
         <translation>Unknown tab sort order</translation>
+    </message>
+    <message>
+        <source>Tab folder does not exist</source>
+        <translation>Tab folder does not exist</translation>
     </message>
     <message>
         <source>Resize auto-hide panel</source>
@@ -2970,6 +3138,191 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>Default</source>
         <translation>Default</translation>
+    </message>
+    <message>
+        <source>Add tab to new tab folder</source>
+        <translation>Add tab to new tab folder</translation>
+    </message>
+    <message>
+        <source>Add tab to a tab folder…</source>
+        <translation>Add tab to a tab folder…</translation>
+    </message>
+    <message>
+        <source>Remove tab from its tab folder</source>
+        <translation>Remove tab from its tab folder</translation>
+    </message>
+    <message>
+        <source>Rename tab folder…</source>
+        <translation>Rename tab folder…</translation>
+    </message>
+    <message>
+        <source>Tab folder name (empty for none)</source>
+        <translation>Tab folder name (empty for none)</translation>
+    </message>
+    <message>
+        <source>Set tab folder color…</source>
+        <translation>Set tab folder color…</translation>
+    </message>
+    <message>
+        <source>Automatic color</source>
+        <translation>Automatic color</translation>
+    </message>
+    <message>
+        <source>Collapse or expand tab folder</source>
+        <translation>Collapse or expand tab folder</translation>
+    </message>
+    <message>
+        <source>Collapse all tab folders in this tab group</source>
+        <translation>Collapse all tab folders in this tab group</translation>
+    </message>
+    <message>
+        <source>Expand all tab folders in this tab group</source>
+        <translation>Expand all tab folders in this tab group</translation>
+    </message>
+    <message>
+        <source>New tab in this tab folder</source>
+        <translation>New tab in this tab folder</translation>
+    </message>
+    <message>
+        <source>Ungroup tab folder</source>
+        <translation>Ungroup tab folder</translation>
+    </message>
+    <message>
+        <source>Close tab folder</source>
+        <translation>Close tab folder</translation>
+    </message>
+    <message>
+        <source>Move tab folder forward</source>
+        <translation>Move tab folder forward</translation>
+    </message>
+    <message>
+        <source>Move tab folder backward</source>
+        <translation>Move tab folder backward</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group to the left</source>
+        <translation>Move tab folder into the tab group to the left</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group on the left</source>
+        <translation>Convert tab folder to a tab group on the left</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group to the right</source>
+        <translation>Move tab folder into the tab group to the right</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group on the right</source>
+        <translation>Convert tab folder to a tab group on the right</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group above</source>
+        <translation>Move tab folder into the tab group above</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group above</source>
+        <translation>Convert tab folder to a tab group above</translation>
+    </message>
+    <message>
+        <source>Move tab folder into the tab group below</source>
+        <translation>Move tab folder into the tab group below</translation>
+    </message>
+    <message>
+        <source>Convert tab folder to a tab group below</source>
+        <translation>Convert tab folder to a tab group below</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group to the left</source>
+        <translation>Convert tab group to a tab folder of the group to the left</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group to the right</source>
+        <translation>Convert tab group to a tab folder of the group to the right</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group above</source>
+        <translation>Convert tab group to a tab folder of the group above</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of the group below</source>
+        <translation>Convert tab group to a tab folder of the group below</translation>
+    </message>
+    <message>
+        <source>Move tab folder to next window</source>
+        <translation>Move tab folder to next window</translation>
+    </message>
+    <message>
+        <source>Move tab folder to previous window</source>
+        <translation>Move tab folder to previous window</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a selected window…</source>
+        <translation>Move tab folder to a selected window…</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a new floating window</source>
+        <translation>Move tab folder to a new floating window</translation>
+    </message>
+    <message>
+        <source>Move tab folder to a new workbench window</source>
+        <translation>Move tab folder to a new workbench window</translation>
+    </message>
+    <message>
+        <source>Merge into the next tab folder</source>
+        <translation>Merge into the next tab folder</translation>
+    </message>
+    <message>
+        <source>Merge into the previous tab folder</source>
+        <translation>Merge into the previous tab folder</translation>
+    </message>
+    <message>
+        <source>Merge into a selected tab folder…</source>
+        <translation>Merge into a selected tab folder…</translation>
+    </message>
+    <message>
+        <source>Focus next tab folder</source>
+        <translation>Focus next tab folder</translation>
+    </message>
+    <message>
+        <source>Focus previous tab folder</source>
+        <translation>Focus previous tab folder</translation>
+    </message>
+    <message>
+        <source>Convert tab group to a tab folder of a selected group…</source>
+        <translation>Convert tab group to a tab folder of a selected group…</translation>
+    </message>
+    <message numerus="yes">
+        <source>Tab folder: %1 (%n tabs)</source>
+        <translation>
+            <numerusform>Tab folder: %1 (%n tab)</numerusform>
+            <numerusform>Tab folder: %1 (%n tabs)</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n tab(s)</source>
+        <translation>
+            <numerusform>%n tab</numerusform>
+            <numerusform>%n tabs</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Tab folder, %1</source>
+        <translation>Tab folder, %1</translation>
+    </message>
+    <message>
+        <source>Tab folder %1, %2</source>
+        <translation>Tab folder %1, %2</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n more tab(s) in other rows; click to expand</source>
+        <translation>
+            <numerusform>%n more tab in other rows; click to expand</numerusform>
+            <numerusform>%n more tabs in other rows; click to expand</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Collapse other rows</source>
+        <translation>Collapse other rows</translation>
     </message>
 </context>
 </TS>

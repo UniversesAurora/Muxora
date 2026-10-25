@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "docking/edge_strip.hpp"
+#include "docking/edge_tab_button.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAbstractButton>
@@ -20,6 +21,26 @@
 using namespace window_system;
 
 namespace {
+// The first and last pixels along one axis that show `color` within the
+// band [from, to) across it.
+std::pair<int, int> colorSpan(const QImage& image, QColor color, bool alongY, int from, int to)
+{
+    int first = -1, last = -1;
+    const int length = alongY ? image.height() : image.width();
+    for (int major = 0; major < length; ++major)
+        for (int minor = from; minor < to; ++minor) {
+            const auto pixel = alongY ? image.pixelColor(minor, major) : image.pixelColor(major, minor);
+            if (pixel.rgb() != color.rgb()) continue;
+            if (first < 0) first = major;
+            last = major; break;
+        }
+    return {first, last};
+}
+QImage renderButton(QWidget* widget)
+{
+    QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+    QPainter painter(&image); widget->render(&painter); painter.end(); return image;
+}
 
 bool isVertical(Edge edge) { return edge == Edge::Left || edge == Edge::Right; }
 int axis(Edge edge, QPoint point) { return isVertical(edge) ? point.y() : point.x(); }
@@ -108,6 +129,8 @@ private slots:
     void exactFitAndOnePixelOverflowFollowResize();
     void removingGapAndLabelsReclaimsTheScrollRange_data() { addEdges(); }
     void removingGapAndLabelsReclaimsTheScrollRange();
+    void zeroTitleRailLabelKeepsEqualEndPadding_data();
+    void zeroTitleRailLabelKeepsEqualEndPadding();
     void allPinActionStaysVisibleOutsideTheScrollableTrack_data() { addEdges(); }
     void allPinActionStaysVisibleOutsideTheScrollableTrack();
 };
@@ -278,9 +301,10 @@ void EdgeStripTest::insertionGapMovesRealButtonsAndCapturesItsIndex()
         QCOMPARE(fixture.strip->insertionIndex(point), 2);
     }
     const auto marker = fixture.strip->insertionMarkerRect(2); QVERIFY(marker.isValid()); QCOMPARE(extent(edge, marker), 4);
+    // The gap is empty rail: no placeholder block (tab strip design 6.1).
     const auto image = fixture.strip->grab().toImage(); const auto point = fixture.strip->mapFromGlobal(gap.center());
     QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())).rgb(),
-        defaultTheme().inactiveTab.rgb());
+        defaultTheme().headerBackground.rgb());
     fixture.strip->setInsertionPreview(-1, 0);
     QVERIFY(fixture.strip->insertionPreviewRect().isEmpty());
     for (int index = 0; index < fixture.buttons.size(); ++index) QCOMPARE(fixture.buttons[index]->geometry(), before[index]);
@@ -371,6 +395,34 @@ void EdgeStripTest::previewDoesNotCreateModelTabsOrReplaceContent()
     strip->setInsertionPreview(-1, 0);
     QVERIFY(strip->insertionPreviewRect().isEmpty()); QCOMPARE(manager.model().toJson(), model);
     QCOMPARE(manager.paneWidget(firstPane), firstContent); QVERIFY(manager.model().validate().ok);
+}
+
+void EdgeStripTest::zeroTitleRailLabelKeepsEqualEndPadding_data()
+{
+    QTest::addColumn<bool>("vertical");
+    QTest::newRow("horizontal") << false;
+    QTest::newRow("vertical") << true;
+}
+void EdgeStripTest::zeroTitleRailLabelKeepsEqualEndPadding()
+{
+    QFETCH(bool, vertical);
+    QWidget root; applyTheme(&root); root.resize(200, 200);
+    const int thickness = defaultTheme().metrics.edgeThickness;
+    EdgeTabButton button(QString(30, QLatin1Char('W')), vertical, thickness, &root);
+    QPixmap icon(16, 16); icon.fill(Qt::white);
+    auto preset = defaultTabColorPresets().front(); preset.id = "zero-title-rail";
+    preset.groupActive = preset.groupInactive = preset.autoHideActive = preset.autoHideInactive
+        = {Qt::white, Qt::black, QColor("#123456"), QColor("#2468ac")};
+    button.setPreset(preset); button.setPresentation(QIcon(icon), 0);
+    for (const int limit : {0, 1, 40}) {
+        button.setTitleClipping(true, limit); button.resize(button.sizeHint());
+        const int extent = vertical ? button.height() : button.width();
+        // 8 px at each end; a title only adds itself and one gap.
+        QCOMPARE(extent, 8 + 16 + (limit ? 4 + limit : 0) + 8);
+        const auto span = colorSpan(renderButton(&button), preset.autoHideInactive.icon, vertical, 2, thickness - 3);
+        QCOMPARE(span.first, 8); QCOMPARE(span.second, 8 + 16 - 1);
+        if (!limit) QCOMPARE(extent - 1 - span.second, 8);
+    }
 }
 
 QTEST_MAIN(EdgeStripTest)

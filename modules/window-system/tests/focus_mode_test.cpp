@@ -54,6 +54,13 @@ QRect globalBounds(QWidget* widget)
     return {widget->mapToGlobal(QPoint()), widget->size()};
 }
 
+// `inner` lies inside `outer`, the same few pixels (the workspace margin
+// around group cards) from each side.
+bool insetEqually(QRect inner, QRect outer)
+{
+    const int margin = inner.left() - outer.left();
+    return margin >= 0 && margin <= 8 && inner == outer.adjusted(margin, margin, -margin, -margin);
+}
 QRect contentBounds(DockSurface* surface)
 {
     auto available = globalBounds(surface);
@@ -150,7 +157,7 @@ void FocusModeTest::groupScopeProjectsTheSameWidgets()
     QVERIFY(manager.setViewMode(id, ViewMode::GroupFullscreen)); settle();
     auto* surface = workspace(manager, id)->surface();
     QCOMPARE(surface->groupRects().size(), 1);
-    QCOMPARE(surface->groupRects().value(group), contentBounds(surface));
+    QVERIFY(insetEqually(surface->groupRects().value(group), contentBounds(surface)));
     const auto focusedRailEdges = surface->edgeBarRects().keys();
     QCOMPARE(QSet<Edge>(focusedRailEdges.cbegin(), focusedRailEdges.cend()),
         QSet<Edge>(railEdges.cbegin(), railEdges.cend()));
@@ -161,10 +168,10 @@ void FocusModeTest::groupScopeProjectsTheSameWidgets()
     QCOMPARE(manager.model().toJson(), model);
     QVERIFY(manager.setSideBarsVisible(id, false)); settle();
     QVERIFY(surface->edgeBarRects().isEmpty());
-    QCOMPARE(surface->groupRects().value(group), globalBounds(surface));
+    QVERIFY(insetEqually(surface->groupRects().value(group), globalBounds(surface)));
     QCOMPARE(manager.viewMode(id), ViewMode::GroupFullscreen);
     QVERIFY(manager.setSideBarsVisible(id, true)); settle();
-    QCOMPARE(surface->groupRects().value(group), contentBounds(surface));
+    QVERIFY(insetEqually(surface->groupRects().value(group), contentBounds(surface)));
     QVERIFY(manager.setTabBarsVisible(id, false)); settle();
     QCOMPARE(surface->tabBarRects().size(), GroupLocation(location) == GroupLocation::Central ? 0 : 1);
     QVERIFY(target->isVisible());

@@ -49,6 +49,21 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-10-25 · Claude：标签栏重做（8.20–8.26），测试未全绿
+
+- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。之前本地的 5 个 WIP 检查点已合成一个提交。
+- **本轮完成**：8.21–8.26 的实现（自绘标签栏与纯布局模块 `docking/tab_layout`、Chrome 式拖动、竖向标签栏、标签夹及全部命令和 Lua 接口、标签组卡片与焦点、标签组命名），各步骤状态和剩余项写在 [阶段 8](../roadmap/implementation/phase-8-ui-quality.md)；8.20 的测试重写完成了 `tab-layout`、`tab-folder-model`、`tab-strip-layout` 及受影响套件的移植。翻译已由 lupdate 更新并补齐中英文。
+  - 修正的缺陷：停靠引导的头部容差、收窄时视口记录顺序、换主题不刷新标签栏（改为 `GroupTabs::setTheme`，不重建视图）、关闭新建按钮后容器仍占位、置顶单独一行时提起的标签不换行、滚轮回调销毁管理器后访问自身、`DockSurface` 回调在表面销毁后访问 `this`（崩溃）、`GroupTabs` 尺寸提示缺卡片边距、外层 `GroupSplitter` 的尺寸提示漏算内容边距（窗口最小尺寸少 8 像素）。
+- **进行中**：测试没有全绿，交给下一位修：
+  - 最近一次全量 Release（本轮早些时候，修正前）18/72 失败；之后逐个移植，单独复跑时 compact-ui、focus-mode、native-frame、tab-appearance、presentation、popup-menu、pane-settings、view-commands、window-placement、view-reuse、input-method-native、widgets、movement 已通过（Release 构建，`quiet-desktop.ps1 -Elevate` 逐套件运行）；之后又改了 `GroupSplitter` 和 `GroupTabs`，这些套件也要随全量重跑。
+  - 未复核：`pane-minimum`（已修 `GroupSplitter` 尺寸提示和 `GroupTabs` 转发 `LayoutRequest`，修后没跑）、`menu-structure`（剩“当前标签夹”译文一项，译文已补，修后没跑）、`translations.coverage`／`translations.checker`（lupdate 后没跑）、`chrome-interaction`（上次失败疑似环境，没复查）。
+  - 验证日志这一节没写，草稿要点：重写测试时发现的缺陷各由哪个用例抓到、退役用例与替代用例对照、按新设计改的预期。下一位跑完全量后写进 [验证日志](verification-log/2026-10.md)，退役对照按 [测试要求 §2](testing-design.md#退役与重写)。
+- **下一步**：构建后跑全量 `pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test`，修剩余失败（只改测试预期时须符合新设计，不放宽）；写验证日志；`python tools/check-docs.py`；部署 Release 预览让用户试用。然后把界面上的“钉住标签”改名为“置顶标签”（8.21 计划里列的，用户 2026-10-25 交给下一位做）：改翻译和文档里的说法，新文字目前也是“钉住”。之后提醒用户 8.27（菜单与毛玻璃）需要用户先细化要求。
+- **待用户决定**：无。
+- **请下一位回答**：无。
+- **本轮新决定**：都写在 [标签栏设计](../design/tab-strip-design.md) 和 [窗口交互细则 · 标签组卡片与焦点](../design/window-interaction-design.md#标签组卡片与焦点)。
+- **环境与注意事项**：没有运行中的预览。各源文件换行符混用（git 会规范成 LF），不必手工改。
+
 ## 2026-10-25 · Codex：8.1 排查、拖拽预览与钉住操作已修复
 
 - **最后提交**：交出时 `main` 包含本轮全部修复与交接记录，已推送并与 `origin/main` 一致；工作区干净。产品代码截至 `fbed8f2`，最新提交以 `git log` 为准。
@@ -88,17 +103,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **环境与注意事项**：没有跑 Debug 全量、完整 `verify.ps1`、便携包、混合 DPI、多屏；下拉框新外观只有自动化检查，没有截图审查和真实试用。既有交互偶发首报仍保留。
 
 ---
-
-## 2026-10-24 · Codex：1.7 非活动标签按需创建视图
-
-- **最后提交**：交出时 `main` 已包含本轮全部提交并推送到远端；工作区干净。
-- **本轮完成**：
-  - `window-system/views: Create tab views on demand`：未显示标签只保留轻量占位，活动、临时侧栏、全屏及显示过的标签才创建或保留 `TabContent`；未交付上下栏、布局恢复和层级转换有独立处理。新增安装时快照、事件循环合并和跨窗口改挂前同步隐藏的内容可见性通知。设计、模块 API 和外部宿主契约同步更新，见 [1.7 记录](verification-log/2026-10.md#17-非活动标签按需创建视图2026-10-24)。
-  - `window-system/benchmarks: Measure inactive restored tabs`：新增 `restore` 场景和 `bench.ps1 -Scenario`，避免把逐个添加并激活的 `create` 误当成按需视图收益。
-  - Release 相关批次 16/16、安装后外部宿主 1/1、Release 全量 69/69 通过；全量统计 2800 行通过、零失败、零跳过。1000 标签完整恢复三次中位数从 4687.85 ms 降到 1744.71 ms，每标签私有提交从 94658.56 B 降到 71479.30 B，控件从 3.92 个降到 2.96 个。
-- **进行中**：无。
-- **下一步**：按实现计划做 [1.11 结构变化与同步批量关闭的成本](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)，先测量再决定是否改实现；之后做 [1.12 窗格分割器布局期间的重入](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。真实输入法的实际编辑效果仍由用户试用。
-- **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表列入计划，见 [交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md)。
-- **请下一位回答**：无。
-- **本轮新决定**：无。
-- **环境与注意事项**：没有运行 Debug 全量、完整 `verify.ps1`、便携包、混合 DPI、多屏或三主题截图审查；固定预览部署目录没有在本步刷新。既有交互偶发首报继续保留，不能因本轮 Release 全量通过而视为已修复。

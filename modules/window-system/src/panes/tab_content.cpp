@@ -4,6 +4,7 @@
 #include <QSplitter>
 #include <QStyle>
 #include <QScopeGuard>
+#include <QPainter>
 #include <QVBoxLayout>
 #include <algorithm>
 
@@ -97,6 +98,7 @@ void TabContent::rebuild(const TabRecord& record,
     // A view that stays mounted is visible while it rebuilds. Layout insertion
     // would defer the new tree's show to the next event-loop turn.
     if (tree_ && isVisible()) tree_->show();
+    updatePaneVeils();
     updateBars();
     setFocusedPane(focusedPane_);
 }
@@ -246,6 +248,45 @@ void TabContent::setBarSharing(PaneBarSharing top, PaneBarSharing bottom)
     updateBars();
 }
 
+namespace {
+// With several panes in a tab, the panes without focus are veiled a little
+// (window interaction design: cards and focus); there is no focus frame.
+class PaneVeil final : public QWidget {
+public:
+    explicit PaneVeil(QWidget* pane, QColor color) : QWidget(pane), color_(color)
+    {
+        setObjectName("PaneVeil");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        pane->installEventFilter(this);
+        setGeometry(pane->rect());
+    }
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == parent() && (event->type() == QEvent::Resize || event->type() == QEvent::ChildAdded)) {
+            setGeometry(parentWidget()->rect()); raise();
+        }
+        return false;
+    }
+    void paintEvent(QPaintEvent*) override { QPainter(this).fillRect(rect(), color_); }
+private:
+    QColor color_;
+};
+} // namespace
+
+void TabContent::updatePaneVeils()
+{
+    const bool several = frames_.size() > 1;
+    auto veil = manager_->theme().text; veil.setAlphaF(0.05);
+    for (auto* frame : std::as_const(frames_)) {
+        if (!frame) continue;
+        auto* existing = frame->findChild<QWidget*>("PaneVeil", Qt::FindDirectChildrenOnly);
+        const bool veiled = several && frame->property("paneId").toUuid() != activePane_;
+        if (veiled && !existing) existing = new PaneVeil(frame, veil);
+        if (existing) { existing->setVisible(veiled); if (veiled) existing->raise(); }
+    }
+}
+
 void TabContent::setActivePane(PaneId pane)
 {
     if (activePane_ == pane) return;
@@ -267,6 +308,7 @@ void TabContent::setActivePane(PaneId pane)
         if (frame) frame->update();
     }
     updateBars();
+    updatePaneVeils();
 }
 
 void TabContent::replaceVisibleBar(QPointer<QWidget>& slot, QWidget* next, bool top)

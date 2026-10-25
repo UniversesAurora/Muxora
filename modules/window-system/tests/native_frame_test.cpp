@@ -1202,11 +1202,17 @@ void NativeFrameTest::nativePaintMessagesCannotReplaceTheCustomClient()
         // the actual client content, with an independently specified RGB value.
         for (const auto point : {QPoint(8, 8), content->rect().center(), content->rect().bottomRight() - QPoint(8, 8)})
             samples.append(content->mapTo(window, point));
-    } else for (const int y : {2, window->height() - 3})
-        for (const int x : {3, window->width() / 4, window->width() / 2, window->width() - 4}) {
-            const QPoint point(x, y);
-            if (mask.isEmpty() || mask.contains(point)) samples.append(point);
-        }
+    } else {
+        // A drag presentation may mask the window down to the lifted label:
+        // sample along the top and bottom of what is still shown.
+        const QRegion shown = mask.isEmpty() ? QRegion(window->rect()) : mask;
+        const auto bounds = shown.boundingRect();
+        for (const int y : {bounds.top() + 2, bounds.bottom() - 2})
+            for (const int x : {bounds.left() + 3, bounds.left() + bounds.width() / 4, bounds.center().x(), bounds.right() - 3}) {
+                const QPoint point(x, y);
+                if (shown.contains(point)) samples.append(point);
+            }
+    }
     QCOMPARE(samples.size() >= (compact ? 4 : 3), true);
     QVector<COLORREF> beforePixels, afterPixels;
     // A screen-pixel oracle includes the OS cursor and any pointer highlight.

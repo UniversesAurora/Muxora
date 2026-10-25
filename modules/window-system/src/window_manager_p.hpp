@@ -39,6 +39,8 @@ struct WindowManager::Private {
     WindowBehavior behavior;
     InputMethodScopes inputMethods;
     QString defaultTabCommand;
+    // The tab folder a tab opened by requestNewTab joins, while it runs.
+    QUuid newTabFolder;
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();
     // Incremented by setTheme(); views built for an older theme are rebuilt.

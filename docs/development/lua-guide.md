@@ -91,6 +91,7 @@ muxora.keymap.set({ 'ctrl+alt+k ctrl+alt+j', 'ctrl+alt+f8' },
 | `commands` | 列出、注册、注销和执行命令，复用菜单、快捷键与命令面板路径。 |
 | `windows` | 查询、新建、关闭、激活、最小化／最大化／还原、升降级、窗口族、几何、标题、栏显隐、全屏和禅模式。 |
 | `tabs` / `groups` / `panes` | 查询、创建、分割、重命名、移动、合并、交换、组／标签／窗格转换、拆出、关闭、颜色、图标及附加栏。 |
+| `folders` | 标签夹的查询、建立、加入和移出、命名、颜色、折叠、解散、关闭、移动、合并，以及与标签组互相转换。 |
 | `sidebar` | 收纳、固定、整侧固定及独立记忆的临时展开宽高。 |
 | `toolbars` / `status` | 注册命令工具条和状态项，调整位置、宽度、弹性、按钮、文本和显隐。 |
 | `layout` | `snapshot()` / `restore(snapshot)`，保持宿主内容工厂与布局校验。 |
@@ -117,6 +118,16 @@ assert(muxora.settings.update({ clip_tab_titles = false }))
 ```
 
 非法类型、非整数或越界长度会报告错误，不部分应用其他修改；关闭开关保留设置值。`layout.snapshot()`／`layout.restore()` 同样保存和恢复此策略。
+
+## 标签栏排列
+
+`tab_position`／`pinned_tab_position` 取 `'top'`、`'bottom'`、`'left'` 或 `'right'`，左右是竖向标签栏，宽度默认取整数字段 `vertical_tab_width`（140–480）。横向时布尔字段 `multiline` 开启多行，`collapse_rows` 取 `'off'`、`'push'` 或 `'overlay'`，决定多行是否收起、展开时推开内容还是盖在内容上；`wheel_expand_rows` 在收起时让滚轮展开和收起。规则见 [标签栏设计](../design/tab-strip-design.md)，取值和默认值见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。
+
+```lua
+assert(muxora.tabs.set_appearance({ multiline = true, collapse_rows = 'overlay' }))
+```
+
+`groups.rename(group_id, name)` 给标签组命名，空字符串去掉名字，`group_id` 为 `nil` 时使用当前组；`groups.list()` 的每一项有 `name`。布尔字段 `show_group_names` 决定标签栏是否显示名字。
 
 ## 输入法记忆
 
@@ -149,6 +160,26 @@ muxora.ui.command_palette(nil, {
 布局快照只面向当前格式，不导入或转换旧配置；缺失必需结构时整次恢复失败。临时展开尺寸继续按左右／上下两套独立策略读写，必须指定方向。
 
 全屏和禅模式是本次运行的临时状态，`layout.snapshot()` 不保存它们，恢复布局或重启不会重新进入全屏。正常几何、最大化状态、栏显隐和启动禅模式的默认范围继续保存。
+
+## 标签夹
+
+标签夹把一条标签栏里相邻的标签归成一类（[标签栏设计 §12](../design/tab-strip-design.md#12-标签夹)）。`folders.list(group_id)` 返回组里的标签夹，每项有 `id`、`group`、`name`、`color`、`collapsed` 和按顺序排列的 `tabs`；`tabs.list()` 的每个标签有 `folder`（不在标签夹里时为空字符串），`groups.list()` 的每个组有 `folders`。
+
+| 操作 | 说明 |
+| --- | --- |
+| `folders.new(tab_or_tabs, { name, color })` | 把一个或一组标签放进新标签夹，返回它的 ID；标签收拢到第一个标签的位置。置顶标签和收纳条里的标签不能放进标签夹。 |
+| `folders.add_tab(folder_id, tab_id)` ／ `folders.remove_tab(tab_id)` | 加入已有标签夹（排到末尾），或移出到标签夹后面。 |
+| `folders.rename(folder_id, name)` ／ `folders.color(folder_id, color)` ／ `folders.collapse(folder_id, collapsed)` | 名字、颜色预设 ID（空字符串为自动取色）和折叠状态。 |
+| `folders.ungroup(folder_id)` ／ `folders.close(folder_id)` | 解散（标签留下），或经关闭许可关闭里面的全部标签。 |
+| `folders.move(folder_id, steps)` | 在本栏里越过若干个标签或标签夹，循环。 |
+| `folders.to_group(folder_id, group_id, index)` ／ `folders.to_window(folder_id, window_id)` ／ `folders.detach(folder_id, kind)` | 整夹移到别的组、窗口或新窗口，名字、颜色和折叠状态不变。 |
+| `folders.merge(source_id, target_id)` | 并入另一个标签夹。 |
+| `folders.to_new_group(folder_id, side)` ／ `folders.from_group(group_id, target_group_id)` | 标签夹成为旁边的新标签组；或把一个组的全部标签作为新标签夹并入另一个组。 |
+
+```lua
+local folder = muxora.folders.new(muxora.context().tab, { name = 'Servers', color = 'blue' })
+assert(muxora.folders.collapse(folder, true))
+```
 
 ## 钉住标签
 

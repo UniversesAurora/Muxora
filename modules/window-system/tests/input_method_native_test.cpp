@@ -5,7 +5,7 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QScopeGuard>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
 #include <QTest>
 #include <iterator>
 #ifdef Q_OS_WIN
@@ -192,7 +192,7 @@ private slots:
         const auto native = testedConversion | DWORD(IME_CMODE_NATIVE);
         QVERIFY(ImmSetConversionStatus(context, alpha, testedSentence));
 
-        auto* tabs = manager.windowWidget(window)->findChild<QTabBar*>("TabBar");
+        auto* tabs = manager.windowWidget(window)->findChild<TabBar*>("TabBar");
         QVERIFY(tabs);
         const auto clickTab = [tabs](TabId id) {
             for (int index = 0; index < tabs->count(); ++index) {

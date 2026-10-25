@@ -64,6 +64,17 @@ struct WindowRecord {
     GroupId activeGroup;
 };
 
+// Tab folders (tab strip design 12) gather adjacent tabs of one strip: a
+// name, a color from the tab color presets, and whether it is collapsed.
+using FolderId = QUuid;
+struct TabFolderRecord {
+    FolderId id;
+    QString name;
+    QString colorId;
+    bool collapsed = false;
+    bool operator==(const TabFolderRecord&) const = default;
+};
+
 struct GroupRecord {
     GroupId id;
     WindowId windowId;
@@ -75,6 +86,15 @@ struct GroupRecord {
     int stickyTabs = 0;
     TabId activeTab;
     int edgeExtent = 250;
+    // A vertical tab strip's own width (0: the appearance default) and
+    // whether it shows only icons.
+    int tabStripWidth = 0;
+    bool tabStripIconsOnly = false;
+    // A name the user gave the group; empty when it has none.
+    QString name;
+    // The folders of this group's strip. Each one's tabs are adjacent, after
+    // the sticky tabs; a folder without tabs does not exist.
+    QVector<TabFolderRecord> folders;
 };
 
 struct TabRecord {
@@ -98,6 +118,8 @@ struct TabRecord {
     std::optional<PeekSizePolicy> verticalPeekSize;
     std::optional<PeekSizePolicy> horizontalPeekSize;
     QString colorId;
+    // The tab folder holding this tab in its group; null when none.
+    FolderId folder;
     quint64 openedOrder = 0;
     quint64 visitedOrder = 0;
 };
@@ -150,7 +172,9 @@ public:
     // Failed identifier-returning operations return a null UUID without changes.
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           WindowId ownerWorkbench = {});
-    TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1);
+    // A new tab joins `folder` when given; it must be next to that folder's
+    // tabs in the target group.
+    TabId addTab(WindowId windowId, QString title, GroupId targetGroup = {}, int insertionIndex = -1, FolderId folder = {});
     // Create the tab directly in an adjacent central or pinned group in one revision.
     // The existing group's active tab, order and visit history stay intact.
     TabId addTabToNewGroup(WindowId windowId, QString title, GroupId targetGroup, Placement placement);
@@ -160,6 +184,31 @@ public:
     // Sticks a tab to the end of its group's sticky run, or unsticks it to
     // the first position after that run. Auto-hide groups cannot stick tabs.
     OperationResult setTabSticky(TabId tabId, bool sticky);
+    OperationResult setGroupTabStrip(GroupId groupId, int width, bool iconsOnly);
+    OperationResult renameGroup(GroupId groupId, QString name);
+    // Tab folders. Creating one moves the tabs together at the first one's
+    // place; any other change keeps the folder's tabs adjacent.
+    [[nodiscard]] const TabFolderRecord* folder(FolderId folderId) const;
+    [[nodiscard]] GroupId groupForFolder(FolderId folderId) const;
+    [[nodiscard]] QVector<TabId> folderTabs(FolderId folderId) const;
+    OperationResult createFolder(QVector<TabId> tabs, FolderId folderId, QString name = {}, QString colorId = {});
+    OperationResult addTabToFolder(TabId tabId, FolderId folderId);
+    OperationResult removeTabFromFolder(TabId tabId);
+    OperationResult updateFolder(const TabFolderRecord& folder);
+    OperationResult ungroupFolder(FolderId folderId);
+    // Moves a whole folder among its strip's items (a tab or a folder) by
+    // `steps`, cycling at the ends.
+    OperationResult moveFolderWithinGroup(FolderId folderId, int steps);
+    // Moves a whole folder into another group at `index` (-1 appends),
+    // keeping its name, color and collapsed state.
+    OperationResult moveFolderToGroup(FolderId folderId, GroupId target, int index = -1);
+    OperationResult mergeFolder(FolderId source, FolderId target);
+    // A folder moved to a new window keeps its name, color and state.
+    WindowId detachFolder(FolderId folderId, WindowKind kind = WindowKind::Floating);
+    // The folder's tabs become a new tab group beside the folder's group.
+    GroupId convertFolderToGroup(FolderId folderId, Placement placement);
+    // Every tab of `source` joins a new folder at the end of `target`.
+    OperationResult convertGroupToFolder(GroupId source, GroupId target, FolderId folderId);
     [[nodiscard]] bool isTabSticky(TabId tabId) const;
     // Exchange complete visible-group slots (tree position or pinned edge),
     // preserving both group identities, contents and each slot's extent.
@@ -178,9 +227,16 @@ public:
     // changes. Adding state to activation means updating that fast path too.
     OperationResult activateTab(TabId tabId);
     OperationResult activatePane(TabId tabId, PaneId paneId);
+    // At the end of a sticky run, `sticky` decides whether a dropped tab
+    // joins it; without it the tab keeps its state. Elsewhere the position
+    // decides (tab strip design 5). `folder` likewise decides the tab folder
+    // at a folder's edge (a null ID for none); without it a tab placed
+    // between two tabs of one folder joins it, and one that leaves its
+    // folder's tabs leaves the folder (tab strip design 12).
     OperationResult moveTab(TabId tabId, GroupId targetGroup,
                             Placement placement = Placement::Center,
-                            int insertionIndex = -1);
+                            int insertionIndex = -1, std::optional<bool> sticky = {},
+                            std::optional<FolderId> folder = {});
     OperationResult moveTabToWindow(TabId tabId, WindowId targetWindow,
                                     Placement placement = Placement::Center);
     OperationResult moveGroupToEdge(GroupId groupId, Edge edge, bool pinned = false);
@@ -206,8 +262,11 @@ public:
     OperationResult promoteWindow(WindowId windowId);
     OperationResult demoteWindow(WindowId windowId, WindowId targetWorkbench);
     OperationResult reassignFamily(WindowId floatingWindow, WindowId targetWorkbench);
+    // Tab folders come along. A non-null `asFolder` instead gathers every
+    // tab into a new folder of that identity (tab strip design 12).
     OperationResult moveAllTabs(WindowId sourceWindow, GroupId targetGroup,
-                                Placement placement = Placement::Center, int insertionIndex = -1);
+                                Placement placement = Placement::Center, int insertionIndex = -1,
+                                std::optional<bool> sticky = {}, FolderId asFolder = {});
     OperationResult moveAllTabsToWindow(WindowId sourceWindow, WindowId targetWindow,
                                         Placement placement = Placement::Center);
     OperationResult moveAllTabsToEdge(WindowId sourceWindow, WindowId targetWindow,
@@ -265,15 +324,24 @@ private:
     // tab that was sticky.
     static bool detachTabUnchecked(GroupRecord& group, qsizetype index);
     static qsizetype attachTabUnchecked(GroupRecord& group, TabId tab, qsizetype index, bool sticky);
+    // Keeps every folder adjacent, outside the sticky run and in one group;
+    // drops folders left without tabs.
+    void normalizeFoldersUnchecked();
+    [[nodiscard]] FolderId folderOfTab(TabId id) const;
+    // Tabs that moved into `target` together keep their folders there:
+    // `folders` holds each tab's folder before the move.
+    void carryFoldersUnchecked(const QHash<TabId, FolderId>& folders, const QVector<TabFolderRecord>& records, GroupId target);
     OperationResult moveTabUnchecked(TabId tabId, GroupId targetGroup,
-                                     Placement placement, int insertionIndex);
+                                     Placement placement, int insertionIndex, std::optional<bool> sticky = {},
+                                     std::optional<FolderId> folder = {});
     OperationResult setTabPinnedUnchecked(TabId tabId, bool pinned);
     void placePinnedGroupOutermostUnchecked(GroupId groupId);
     void rememberPinnedPositionsUnchecked(WindowId windowId, Edge edge);
     OperationResult moveTabToEdgeBarUnchecked(TabId tabId, WindowId targetWindow,
                                               Edge edge, int insertionIndex);
     OperationResult moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup,
-                                         Placement placement, int insertionIndex = -1);
+                                         Placement placement, int insertionIndex = -1,
+                                         std::optional<bool> sticky = {}, FolderId asFolder = {});
     LayoutTree takeWindowTreeUnchecked(WindowId sourceWindow, WindowId targetWindow);
 
     QHash<WindowId, WindowRecord> windows_;

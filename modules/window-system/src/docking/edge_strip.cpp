@@ -46,8 +46,8 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     trackLayout_->setSizeConstraint(QLayout::SetNoConstraint); trackLayout_->addStretch();
     gap_->setObjectName("EdgeInsertionPreview");
     gap_->setAttribute(Qt::WA_TransparentForMouseEvents); gap_->setFocusPolicy(Qt::NoFocus);
-    gap_->setStyleSheet(QStringLiteral("QWidget#EdgeInsertionPreview { background: %1; border: none; }")
-        .arg(theme_.inactiveTab.name()));
+    // An empty gap, as in tab strips: no placeholder block (tab strip design 6.1).
+    gap_->setStyleSheet(QStringLiteral("QWidget#EdgeInsertionPreview { background: transparent; border: none; }"));
     gap_->hide();
     scroll_->setWidget(track_); column->addWidget(scroll_, 1);
 

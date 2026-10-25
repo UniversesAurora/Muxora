@@ -274,14 +274,9 @@ void WorkspaceWindow::updateDragMask()
         visible = host->visibleRegion().translated(host->pos());
     } else {
         for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget); group && group->isVisible()) {
-            const auto origin = group->mapTo(this, QPoint());
+            // Over a tab strip the window shrinks to its tabs under the
+            // pointer; the target shows the content (tab strip design 6.2).
             const auto strip = group->viewportRectGlobal();
-            // The header can be below the content and can span several rows.
-            // Use its actual position and the same label rectangles as paint.
-            QRegion body(QRect(origin, group->size()));
-            if (!strip.isEmpty())
-                body -= QRect(origin.x(), mapFromGlobal(strip.topLeft()).y(), group->width(), strip.height());
-            visible += body;
             const auto* bar = group->tabBar();
             for (int i = 0; i < bar->count(); ++i) {
                 const auto label = bar->displayTabRect(i);

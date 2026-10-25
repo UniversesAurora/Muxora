@@ -18,7 +18,8 @@
 #include <QPointer>
 #include <QProcess>
 #include <QScreen>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
+#include <QStackedWidget>
 #include <QTest>
 #include <QTemporaryDir>
 
@@ -33,20 +34,20 @@ void mouse(QWidget* widget, QEvent::Type type, QPoint global,
     QCoreApplication::sendEvent(widget, &event);
     QCoreApplication::processEvents();
 }
-QTabBar* tabBar(QWidget* window, TabId tab)
+TabBar* tabBar(QWidget* window, TabId tab)
 {
-    for (auto* bar : window->findChildren<QTabBar*>()) if (bar->isVisible())
+    for (auto* bar : window->findChildren<TabBar*>()) if (bar->isVisible())
         for (int i = 0; i < bar->count(); ++i)
             if (bar->tabData(i).toUuid() == tab) return bar;
     return nullptr;
 }
-QPoint tabPoint(QTabBar* bar, TabId tab)
+QPoint tabPoint(TabBar* bar, TabId tab)
 {
     for (int i = 0; i < bar->count(); ++i)
         if (bar->tabData(i).toUuid() == tab) return bar->mapToGlobal(bar->tabRect(i).center());
     return {};
 }
-void startTabDrag(QWidget* window, QTabBar* bar, TabId tab)
+void startTabDrag(QWidget* window, TabBar* bar, TabId tab)
 {
     const auto point = tabPoint(bar, tab);
     mouse(bar, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
@@ -66,10 +67,14 @@ void startEdgeTabDrag(QAbstractButton* button)
     mouse(button, QEvent::MouseButtonPress, position, Qt::LeftButton, Qt::LeftButton);
     mouse(button, QEvent::MouseMove, position + QPoint(20, 20), Qt::NoButton, Qt::LeftButton);
 }
+// The center of a group's content, below its strip, where its drop guides
+// are centered.
 QPoint contentCenter(QWidget* window)
 {
     for (auto* frame : window->findChildren<QWidget*>())
-        if (frame->objectName() == "TabGroup" && frame->isVisible()) return frame->mapToGlobal(frame->rect().center());
+        if (frame->objectName() == "TabGroup" && frame->isVisible())
+            if (auto* stack = frame->findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly))
+                return stack->mapToGlobal(stack->rect().center());
     return window->mapToGlobal(window->rect().center());
 }
 QRect groupRect(QWidget* window, GroupId group)
@@ -308,7 +313,14 @@ void DragInteractionTest::narrowGroupRecognizesDirectionalGuides()
     const auto area = groupRect(second, destination); QVERIFY(area.width() < 340 && area.width() >= 120);
     auto* bar = tabBar(first, a); QVERIFY(bar); startTabDrag(first, bar, a);
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
-    const auto point = area.center() + QPoint(right ? 32 : -32, 0);
+    // The group's own side arm, as the drag shows it.
+    auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
+    const auto guides = dockGuides(QRect(surface->mapToGlobal(QPoint()), surface->size()), area, true,
+                                   surface->tabBarRects().values(), surface->edgeBarRects());
+    QPoint point;
+    for (const auto& guide : guides) if (!guide.toEdge && guide.placement == (right ? Placement::Right : Placement::Left))
+        point = guide.rect.center();
+    QVERIFY(!point.isNull());
     mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
     mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
     QCOMPARE(manager.model().centralGroups(target).size(), 3);

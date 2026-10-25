@@ -126,6 +126,10 @@ inline void separateGroupGuides(QVector<DockGuide>& guides, int groupCount, QRec
     for (int index = 0; index < groupCount; ++index) guides[index].rect.translate(delta);
 }
 
+// A strip this close to the top of a group or window is its header: tab
+// group cards keep a small margin around their strip.
+inline constexpr int dockHeaderSlack = 12;
+
 inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup = true,
                                     const QList<QRect>& strips = {}, const QHash<Edge, QRect>& edgeStrips = {})
 {
@@ -133,7 +137,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
     // Keep group controls below its real header, including narrow/short groups.
     // Rendering and hit testing consume the same resulting rectangles.
     for (const auto& strip : strips)
-        if (strip.intersects(group) && strip.top() <= group.top() + 1)
+        if (strip.intersects(group) && strip.top() <= group.top() + dockHeaderSlack)
             group.setTop(std::max(group.top(), strip.bottom() + 1));
     if (!group.isEmpty()) {
         const int cell = std::clamp((std::min(group.width(), group.height()) - 8) / 3, 12, 28);
@@ -165,7 +169,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
     const int originalTop = available.top();
     int contentTop = originalTop;
     for (const auto& strip : strips)
-        if (strip.intersects(available) && strip.top() <= originalTop + 1) contentTop = std::max(contentTop, strip.bottom() + 1);
+        if (strip.intersects(available) && strip.top() <= originalTop + dockHeaderSlack) contentTop = std::max(contentTop, strip.bottom() + 1);
     available.setTop(contentTop);
     if (available.isEmpty()) return guides;
     const auto obstacles = strips + edgeStrips.values();

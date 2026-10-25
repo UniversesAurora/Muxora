@@ -22,10 +22,21 @@ GroupTabs* groupView(WindowManager& manager, WindowId window, GroupId id)
             group && group->isVisible() && group->property("groupId").toUuid() == id) return group;
     return nullptr;
 }
-QScrollBar* axisScroll(GroupTabs* tabs)
+// The strip's scrolling axis: its regular lane's offset range.
+struct Axis {
+    GroupTabs* tabs;
+    [[nodiscard]] int minimum() const { return 0; }
+    [[nodiscard]] int maximum() const { return tabs->tabBar()->maximumScrollOffset(); }
+    void setValue(int value) const { tabs->tabBar()->setScrollOffset(value); }
+};
+Axis axis(GroupTabs* tabs) { return {tabs}; }
+// The lane's content: its tabs and the new-tab controls after them.
+int contentWidth(GroupTabs* tabs)
 {
-    return tabs->findChild<QScrollArea*>("TabScrollViewport")->horizontalScrollBar();
+    for (const auto& lane : tabs->tabBar()->tabLayout().laneList) if (!lane.sticky) return lane.extent;
+    return 0;
 }
+int viewportWidth(GroupTabs* tabs) { return tabs->tabBar()->scrollViewport().width(); }
 void populate(GroupTabs& tabs, int count = 22)
 {
     for (int index = 0; index < count; ++index)
@@ -79,13 +90,10 @@ void TabViewportTest::initialWindowWithShortTabsDoesNotRetainPrelayoutOffsets()
     QVERIFY(manager.activateTab(ids.last()));
     manager.showWindow(window); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); settle();
     auto* group = groupView(manager, window, manager.model().groupForTab(ids.first())); QVERIFY(group);
-    auto* scroll = group->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    QCOMPARE(group->scrollOffset(), 0); QCOMPARE(axisScroll(group)->minimum(), 0); QCOMPARE(axisScroll(group)->maximum(), 0);
-    QCOMPARE(scroll->widget()->width(), group->tabBar()->width() + 39);
-    QVERIFY(scroll->widget()->width() < scroll->viewport()->width());
-    const auto origin = group->tabBar()->mapTo(scroll->viewport(), QPoint());
+    QCOMPARE(group->scrollOffset(), 0); QCOMPARE(axis(group).minimum(), 0); QCOMPARE(axis(group).maximum(), 0);
+    QVERIFY(contentWidth(group) < viewportWidth(group));
     for (int index = 0; index < group->count(); ++index)
-        QVERIFY(scroll->viewport()->rect().contains(group->tabBar()->displayTabRect(index).translated(origin)));
+        QVERIFY(group->tabBar()->scrollViewport().contains(group->tabBar()->displayTabRect(index)));
     QVERIFY(manager.model().validate());
 }
 
@@ -98,12 +106,10 @@ void TabViewportTest::restoringAnUnshownViewportClampsToNaturalContent()
     root.resize(920, 600); tabs.setGeometry(0, 0, 920, 600);
     tabs.restoreViewportState(unshown); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
-    auto* scroll = tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    QCOMPARE(tabs.scrollOffset(), 0); QCOMPARE(axisScroll(&tabs)->maximum(), 0);
-    QCOMPARE(scroll->widget()->width(), tabs.tabBar()->width() + 39);
-    const auto origin = tabs.tabBar()->mapTo(scroll->viewport(), QPoint());
+    QCOMPARE(tabs.scrollOffset(), 0); QCOMPARE(axis(&tabs).maximum(), 0);
+    QVERIFY(contentWidth(&tabs) <= viewportWidth(&tabs));
     for (int index = 0; index < tabs.count(); ++index)
-        QVERIFY(scroll->viewport()->rect().contains(tabs.tabBar()->displayTabRect(index).translated(origin)));
+        QVERIFY(tabs.tabBar()->scrollViewport().contains(tabs.tabBar()->displayTabRect(index)));
 }
 
 void TabViewportTest::localResizePreservesTheVisibleAnchor_data()
@@ -119,11 +125,11 @@ void TabViewportTest::localResizePreservesTheVisibleAnchor()
     root.resize(760, 380); tabs.setGeometry(20, 20, 680, 300); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
     const int active = visible ? 8 : 0; tabs.setCurrentIndex(active, false);
-    const auto area = tabs.tabBar()->tabRect(active);
+    const auto area = tabs.tabBar()->contentTabRect(active);
     const int viewportWidth = tabs.captureViewportState().bounds.width();
     const int offset = !visible ? 500 : direction == 1
         ? area.right() - viewportWidth + 21 : area.left() - 20;
-    axisScroll(&tabs)->setValue(offset); settle();
+    axis(&tabs).setValue(offset); settle();
     const auto old = tabs.captureViewportState(); QCOMPARE(old.activeFullyVisible, visible);
     if (direction == 0) tabs.setGeometry(361, 20, 339, 300);       // new group on the left
     else if (direction == 1) tabs.setGeometry(20, 20, 339, 300);  // new group on the right
@@ -160,7 +166,7 @@ void TabViewportTest::reconstructedGroupsPreserveTheirAnchor()
     QVERIFY(manager.activateTab(ids.first())); manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); settle();
     const auto id = manager.model().groupForTab(ids.first()); auto* oldView = groupView(manager, window, id); QVERIFY(oldView);
-    axisScroll(oldView)->setValue(500); settle();
+    axis(oldView).setValue(500); settle();
     const auto old = oldView->captureViewportState(); QVERIFY(!old.activeFullyVisible);
     auto* content = manager.paneWidget(manager.model().tab(ids.first())->activePane);
     QVERIFY(manager.moveTab(ids.last(), id, Placement(placement))); settle();
@@ -218,8 +224,8 @@ void TabViewportTest::splittingKeepsTheOriginalGroupsVisibleActiveTab()
     QVERIFY2(state.activeFullyVisible,
         qPrintable(QString("active=%1 offset=%2 viewport=%3 tab=[%4,%5]")
             .arg(active).arg(state.offset).arg(state.bounds.width())
-            .arg(view->tabBar()->displayTabRect(view->currentIndex()).left())
-            .arg(view->tabBar()->displayTabRect(view->currentIndex()).right())));
+            .arg(view->tabBar()->contentTabRect(view->currentIndex()).left())
+            .arg(view->tabBar()->contentTabRect(view->currentIndex()).right())));
     QCOMPARE(manager.paneWidget(manager.model().tab(ids[active])->activePane), content);
     QVERIFY(manager.model().validate());
 }
@@ -241,7 +247,7 @@ void TabViewportTest::pinnedEdgesPreserveTheCentralAnchor()
     QVERIFY(manager.activateTab(ids.first())); manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window))); settle();
     const auto group = manager.model().groupForTab(ids.first()); auto* view = groupView(manager, window, group); QVERIFY(view);
-    axisScroll(view)->setValue(500); settle(); const auto old = view->captureViewportState();
+    axis(view).setValue(500); settle(); const auto old = view->captureViewportState();
     QVERIFY(manager.moveTabToEdge(ids.last(), Edge(edge), true)); settle();
     view = groupView(manager, window, group); QVERIFY(view); const auto current = view->captureViewportState();
     QCOMPARE(current.bounds.left() - current.offset, old.bounds.left() - old.offset);
@@ -261,18 +267,18 @@ void TabViewportTest::lastActiveTabNeverManufacturesTrailingSpace()
     root.resize(700, 320); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
     tabs.setCurrentIndex(11); settle(); const auto old = tabs.captureViewportState(); QVERIFY(old.activeFullyVisible);
-    const auto active=tabs.tabBar()->tabRect(11); const int naturalWidth = tabs.tabBar()->width() + 39;
+    const auto active=tabs.tabBar()->contentTabRect(11); const int naturalWidth = contentWidth(&tabs);
     root.resize(340, 320); settle();
-    auto* scroll = tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    QCOMPARE(tabs.scrollOffset(),active.right()-scroll->viewport()->width()+1);
-    QCOMPARE(scroll->widget()->width(),naturalWidth);
+    // The active tab ends where the viewport ends, controls after it scrolled away.
+    QCOMPARE(tabs.scrollOffset(),active.right()-viewportWidth(&tabs)+1);
+    QCOMPARE(contentWidth(&tabs),naturalWidth);
     for (int width : {540, 380, 620, 340}) {
         root.resize(width, 320); settle();
         QVERIFY(tabs.captureViewportState().activeFullyVisible);
-        QCOMPARE(scroll->widget()->width(),naturalWidth);
-        QCOMPARE(axisScroll(&tabs)->maximum(),std::max(0,naturalWidth-scroll->viewport()->width()));
-        QVERIFY(tabs.scrollOffset()<=axisScroll(&tabs)->maximum());
-        QCOMPARE(tabs.count(), 12); QCOMPARE(tabs.tabBar()->width(), naturalWidth - 39);
+        QCOMPARE(contentWidth(&tabs),naturalWidth);
+        QCOMPARE(axis(&tabs).maximum(),std::max(0,naturalWidth-viewportWidth(&tabs)));
+        QVERIFY(tabs.scrollOffset()<=axis(&tabs).maximum());
+        QCOMPARE(tabs.count(), 12);
     }
     const int before=tabs.scrollOffset();
     tabs.scrollByWheel(QPoint(0, 300)); settle(); QCOMPARE(tabs.scrollOffset(),std::max(0,before-300));
@@ -287,11 +293,9 @@ void TabViewportTest::underfilledStripTracksBothDirectionsWithoutOverscroll()
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
     for(const QRect area:{QRect(300,20,610,300),QRect(500,20,410,300),QRect(350,20,560,300),QRect(550,20,360,300)}) {
         tabs.setGeometry(area); settle();
-        auto* scroll=tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-        QCOMPARE(axisScroll(&tabs)->maximum(),0); QCOMPARE(tabs.scrollOffset(),0);
-        QCOMPARE(tabs.tabBar()->mapTo(scroll->viewport(),QPoint()).x(),0);
-        for(int i=0;i<tabs.count();++i) QVERIFY(scroll->viewport()->rect().contains(tabs.tabBar()->displayTabRect(i)));
-        axisScroll(&tabs)->setValue(999999); QCOMPARE(tabs.scrollOffset(),0);
+        QCOMPARE(axis(&tabs).maximum(),0); QCOMPARE(tabs.scrollOffset(),0);
+        for(int i=0;i<tabs.count();++i) QVERIFY(tabs.tabBar()->scrollViewport().contains(tabs.tabBar()->displayTabRect(i)));
+        axis(&tabs).setValue(999999); QCOMPARE(tabs.scrollOffset(),0);
     }
 }
 void TabViewportTest::activeTabMovesOnlyAfterTheShrinkingEdgeReachesIt()
@@ -299,18 +303,16 @@ void TabViewportTest::activeTabMovesOnlyAfterTheShrinkingEdgeReachesIt()
     QWidget root; GroupTabs tabs(defaultTheme(),&root); populate(tabs,18);
     root.resize(940,400); tabs.setGeometry(20,20,780,300); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle(); tabs.setCurrentIndex(5,false);
-    const auto active=tabs.tabBar()->displayTabRect(5);
+    const auto active=tabs.tabBar()->contentTabRect(5);
     constexpr int clearance=40;
-    auto* scroll=tabs.findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    axisScroll(&tabs)->setValue(active.right()-scroll->viewport()->width()+clearance+1); settle();
+    axis(&tabs).setValue(active.right()-viewportWidth(&tabs)+clearance+1); settle();
     const auto initial=tabs.captureViewportState(); QVERIFY(initial.activeFullyVisible);
     const int startWidth=tabs.width();
     for(int shrink:{10,25,40,45,60,90}) {
         tabs.resize(startWidth-shrink,300); settle();
         QCOMPARE(tabs.scrollOffset(),initial.offset+std::max(0,shrink-clearance));
         QVERIFY(tabs.captureViewportState().activeFullyVisible);
-        QCOMPARE(scroll->widget()->width(),tabs.tabBar()->width()+39);
-        QCOMPARE(axisScroll(&tabs)->maximum(),std::max(0,scroll->widget()->width()-scroll->viewport()->width()));
+        QCOMPARE(axis(&tabs).maximum(),std::max(0,contentWidth(&tabs)-viewportWidth(&tabs)));
     }
 }
 void TabViewportTest::explicitScrollingCancelsQueuedFocusProtection()
@@ -332,7 +334,7 @@ void TabViewportTest::movingAWindowOrVerticallyResizingNeverScrollsItsStrip()
     QWidget root; auto* row = new QVBoxLayout(&root); GroupTabs tabs(defaultTheme(), &root); row->addWidget(&tabs); populate(tabs);
     root.resize(760, 380); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
-    axisScroll(&tabs)->setValue(500); settle();
+    axis(&tabs).setValue(500); settle();
     const auto old = tabs.captureViewportState(); root.move(root.pos() + QPoint(70, 30)); settle();
     QCOMPARE(tabs.scrollOffset(), old.offset);
     root.resize(root.width(), 280); settle(); QCOMPARE(tabs.scrollOffset(), old.offset);
@@ -358,8 +360,8 @@ void TabViewportTest::realWindowResizePreservesTheUnchangedSide()
     const int active = visible ? 8 : 0; QVERIFY(manager.activateTab(ids[active])); manager.showWindow(id);
     auto* window = manager.windowWidget(id); QVERIFY(QTest::qWaitForWindowExposed(window)); settle();
     const auto groupId = manager.model().groupForTab(ids[active]); auto* group = groupView(manager, id, groupId); QVERIFY(group);
-    const auto area = group->tabBar()->tabRect(active); const int viewportWidth = group->captureViewportState().bounds.width();
-    axisScroll(group)->setValue(!visible ? 500 : left ? area.left() - 20 : area.right() - viewportWidth + 21);
+    const auto area = group->tabBar()->contentTabRect(active); const int viewportWidth = group->captureViewportState().bounds.width();
+    axis(group).setValue(!visible ? 500 : left ? area.left() - 20 : area.right() - viewportWidth + 21);
     settle(); const auto old = group->captureViewportState(); QCOMPARE(old.activeFullyVisible, visible);
     const auto oldGeometry = window->geometry(); constexpr int shrink = 330;
     window->setGeometry(oldGeometry.x() + (left ? shrink : 0), oldGeometry.y(),
@@ -383,7 +385,7 @@ void TabViewportTest::realWindowResizePreservesTheUnchangedSide()
     // A later right-edge shrink must not count the previous independent move
     // as a left resize. Current off-screen focus cannot trigger protection.
     QVERIFY(manager.activateTab(ids.first())); group = groupView(manager, id, groupId); QVERIFY(group);
-    axisScroll(group)->setValue(500); settle();
+    axis(group).setValue(500); settle();
     window->resize(window->width() - 120, window->height());
     group->scrollByWheel(QPoint(0, -60)); const int newerOffset = group->scrollOffset(); settle();
     QCOMPARE(group->scrollOffset(), newerOffset); QCOMPARE(newerOffset, 560);

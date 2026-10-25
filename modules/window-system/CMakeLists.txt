@@ -40,7 +40,9 @@ add_library(WindowSystemWidgets STATIC
     src/commands/command_menus.cpp
     src/commands/popup_menu.cpp
     src/commands/tab_group_commands.cpp
+    src/commands/tab_folder_commands.cpp
     src/tab_group_api.cpp
+    src/tab_folder_api.cpp
     src/hierarchy_api.cpp
     src/commands/hierarchy_commands.cpp
     src/commands/window_commands.cpp
@@ -51,6 +53,8 @@ add_library(WindowSystemWidgets STATIC
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
     src/docking/tab_layout.cpp
+    src/docking/tab_bar.cpp
+    src/style/tab_painter.cpp
     src/docking/edge_strip.cpp
     src/docking/drag_presentation.cpp
     src/docking/edge_tab_button.cpp

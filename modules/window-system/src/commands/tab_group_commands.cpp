@@ -6,6 +6,7 @@
 #include "commands/tab_presentation_commands.hpp"
 #include "style/tab_appearance_p.hpp"
 #include <QCursor>
+#include <QInputDialog>
 #include <QMenu>
 #include <QPointer>
 #include <cmath>
@@ -27,6 +28,15 @@ std::optional<int> integerArgument(const QVariant& value, int minimum, int maxim
         return std::nullopt;
     return int(number);
 }
+}
+std::optional<QString> pickTabColor(WindowManager* manager, const QString& reset)
+{
+    DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabColorPicker")); applyTheme(&menu, manager->theme());
+    menu.addAction(reset)->setData(QString());
+    for (const auto& preset : manager->tabAppearance().colors) menu.addAction(tabColorDisplayName(preset))->setData(preset.id);
+    const QPointer<WindowManager> self(manager);
+    const auto* selected = menu.exec(QCursor::pos());
+    return self && selected ? std::optional<QString>(selected->data().toString()) : std::nullopt;
 }
 void WindowManager::registerTabGroupCommands()
 {
@@ -52,12 +62,7 @@ void WindowManager::registerTabGroupCommands()
     };
     const auto chooseColor = [this](const CommandContext& c) -> std::optional<QString> {
         if (c.args.contains("color")) return c.args.value("color").toString();
-        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabColorPicker")); applyTheme(&menu, theme());
-        auto* reset = menu.addAction(QCoreApplication::translate("WindowSystem", "Default color")); reset->setData(QString());
-        for (const auto& preset : tabAppearance().colors) { auto* action = menu.addAction(tabColorDisplayName(preset)); action->setData(preset.id); }
-        const QPointer<WindowManager> self(this);
-        const auto* selected = menu.exec(QCursor::pos());
-        return self && selected ? std::optional<QString>(selected->data().toString()) : std::nullopt;
+        return pickTabColor(this, QCoreApplication::translate("WindowSystem", "Default color"));
     };
     add("tab.color.set", QCoreApplication::translate("WindowSystem", "Set tab color…"), {"layout", "tabAppearance"}, [this, chooseColor](const CommandContext& c) {
         const QPointer<WindowManager> self(this); const auto color = chooseColor(c);
@@ -70,6 +75,19 @@ void WindowManager::registerTabGroupCommands()
     for (int i = 0; i < 6; ++i)
         add(QStringLiteral("group.sort.") + sortIds[i], QCoreApplication::translate("WindowSystem", sortTitles[i]), {"layout", "sortTabs"},
             [this, i](const CommandContext& c) { return sortTabs(c.group, TabSortOrder(i)); }, sortable);
+    add("group.rename", QCoreApplication::translate("WindowSystem", "Rename tab group…"), {"layout", "tabGroup"}, [this](const CommandContext& c) {
+        if (!d->model.group(c.group)) return false;
+        if (c.args.contains("name")) {
+            if (c.args.value("name").metaType().id() != QMetaType::QString) return false;
+            return renameGroup(c.group, c.args.value("name").toString());
+        }
+        const QPointer<WindowManager> self(this);
+        bool accepted = false;
+        const auto name = QInputDialog::getText(windowWidget(c.window), QCoreApplication::translate("WindowSystem", "Rename tab group…"),
+            QCoreApplication::translate("WindowSystem", "Tab group name (empty for none)"), QLineEdit::Normal, d->model.group(c.group)->name, &accepted);
+        if (!self) return false;
+        return !accepted || renameGroup(c.group, name);
+    }, [this](const CommandContext& c) { return d->model.group(c.group); });
     add("group.close", QCoreApplication::translate("WindowSystem", "Close this tab group"), {"layout", "tabGroup"}, [this](const CommandContext& c) { return closeGroup(c.group); },
         [this](const CommandContext& c) { return d->model.group(c.group); });
     // The picker captures stable IDs, never widget pointers. Closing the menu
@@ -96,8 +114,7 @@ void WindowManager::registerTabGroupCommands()
             for (const auto id : order) {
                 const auto* group = d->model.group(id);
                 if (!group || id == c.group || group->location == GroupLocation::AutoHide) continue;
-                const auto* active = d->model.tab(group->activeTab);
-                const QString label = (active ? active->title : QCoreApplication::translate("WindowSystem", "Tab group"))
+                const QString label = groupDisplayName(id)
                     + QCoreApplication::translate("WindowSystem", "(%n tabs)", nullptr, int(group->tabs.size()));
                 if (!choosePlacement) {
                     auto* action = windowMenu->addAction(label); action->setData(id);

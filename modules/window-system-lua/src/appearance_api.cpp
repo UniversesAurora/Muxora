@@ -23,7 +23,8 @@ constexpr std::array appearanceBooleans{std::pair{"multiline", &TabAppearance::m
                                         std::pair{"clip_tab_titles", &TabAppearance::clipTitles},
                                         std::pair{"clip_sidebar_titles", &TabAppearance::clipSidebarTitles},
                                         std::pair{"show_new_tab_button", &TabAppearance::showNewTabButton},
-                                        std::pair{"sticky_tabs_on_separate_row", &TabAppearance::stickyTabsOnSeparateRow}};
+                                        std::pair{"sticky_tabs_on_separate_row", &TabAppearance::stickyTabsOnSeparateRow},
+                                        std::pair{"show_group_names", &TabAppearance::showGroupNames}};
 constexpr std::array themeColors{std::pair{"background", &Theme::background},
                                  std::pair{"surface", &Theme::surface},
                                  std::pair{"raisedSurface", &Theme::raisedSurface},
@@ -97,13 +98,14 @@ ViewMode fullscreen(const QString &name) {
         return ViewMode::PaneFullscreen;
     throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Invalid fullscreen mode").toUtf8().constData());
 }
+// Indexed by TabBarPlacement and TabRowCollapse.
+const QStringList tabPlacements{"top", "bottom", "left", "right"};
+const QStringList rowCollapses{"off", "push", "overlay"};
 TabBarPlacement tabPlacement(const QVariant &value) {
-    const auto name = text({value}, 0);
-    if (name == "top")
-        return TabBarPlacement::Top;
-    if (name == "bottom")
-        return TabBarPlacement::Bottom;
-    throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Tab position must be top or bottom").toUtf8().constData());
+    const auto index = tabPlacements.indexOf(text({value}, 0));
+    if (index < 0)
+        throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Tab position must be top, bottom, left or right").toUtf8().constData());
+    return TabBarPlacement(index);
 }
 // Indexed by StickyTabSizing and StickyTabCloseGuard.
 const QStringList stickySizings{"normal", "compact", "shrink"};
@@ -112,8 +114,10 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     QVariantMap map;
     for (const auto &[name, field] : appearanceBooleans)
         map[name] = value.*field;
-    map["tab_position"] = value.centralPlacement == TabBarPlacement::Top ? "top" : "bottom";
-    map["pinned_tab_position"] = value.pinnedPlacement == TabBarPlacement::Top ? "top" : "bottom";
+    map["tab_position"] = tabPlacements.value(int(value.centralPlacement));
+    map["pinned_tab_position"] = tabPlacements.value(int(value.pinnedPlacement));
+    map["collapse_rows"] = rowCollapses.value(int(value.collapseRows));
+    map["vertical_tab_width"] = value.verticalTabWidth;
     map["maximum_tab_title_width"] = value.maximumTitleWidth;
     map["maximum_sidebar_title_width"] = value.maximumSidebarTitleWidth;
     map["sticky_tab_sizing"] = stickySizings.value(int(value.stickySizing));
@@ -134,7 +138,8 @@ QVariantMap appearanceValue(const TabAppearance &value) {
     return map;
 }
 void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKnown = true) {
-    QSet<QString> known{"tab_position", "pinned_tab_position", "maximum_tab_title_width", "maximum_sidebar_title_width",
+    QSet<QString> known{"tab_position", "pinned_tab_position", "collapse_rows", "vertical_tab_width",
+                        "maximum_tab_title_width", "maximum_sidebar_title_width",
                         "sticky_tab_sizing", "shrink_sticky_title_width", "prevent_sticky_close", "colors"};
     for (const auto &[name, field] : appearanceBooleans) {
         known.insert(name);
@@ -149,6 +154,15 @@ void readAppearance(const QVariantMap &map, TabAppearance &value, bool requireKn
         value.centralPlacement = tabPlacement(map["tab_position"]);
     if (map.contains("pinned_tab_position"))
         value.pinnedPlacement = tabPlacement(map["pinned_tab_position"]);
+    if (map.contains("collapse_rows")) {
+        const auto index = rowCollapses.indexOf(text({map["collapse_rows"]}, 0));
+        if (index < 0)
+            throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Collapsing tab rows must be off, push or overlay").toUtf8().constData());
+        value.collapseRows = TabRowCollapse(index);
+    }
+    if (map.contains("vertical_tab_width"))
+        value.verticalTabWidth = number(map["vertical_tab_width"], value.verticalTabWidth,
+            minimumVerticalTabWidth, maximumVerticalTabWidth);
     if (map.contains("maximum_tab_title_width"))
         value.maximumTitleWidth = number(map["maximum_tab_title_width"], value.maximumTitleWidth,
             minimumTabTitleWidth, maximumTabTitleWidth);

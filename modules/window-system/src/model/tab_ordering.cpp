@@ -108,7 +108,18 @@ OperationResult LayoutModel::sortTabs(GroupId groupId, TabSortOrder sorting)
             return descending ? comparison > 0 : comparison < 0;
         };
         std::stable_sort(tabs.begin(), tabs.begin() + group.stickyTabs, order);
-        std::stable_sort(tabs.begin() + group.stickyTabs, tabs.end(), order);
+        // A tab folder sorts inside, then moves as one item, ranked by its
+        // first tab (tab strip design 12).
+        QVector<QVector<TabId>> items;
+        for (auto index = group.stickyTabs; index < tabs.size(); ++index) {
+            const auto folder = model.tabs_[tabs.at(index)].folder;
+            if (!folder.isNull() && !items.isEmpty() && model.tabs_[items.last().first()].folder == folder) items.last().append(tabs.at(index));
+            else items.append({tabs.at(index)});
+        }
+        for (auto& item : items) std::stable_sort(item.begin(), item.end(), order);
+        std::stable_sort(items.begin(), items.end(), [&](const QVector<TabId>& a, const QVector<TabId>& b) { return order(a.first(), b.first()); });
+        tabs.resize(group.stickyTabs);
+        for (const auto& item : items) tabs += item;
         return good();
     });
 }

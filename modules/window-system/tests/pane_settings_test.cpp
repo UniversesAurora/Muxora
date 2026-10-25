@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
+#include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
 #include "chrome/workspace_window.hpp"
 #include "docking/dock_surface.hpp"
@@ -102,7 +103,7 @@ QSet<QString> allSettingKeys()
     return {"window.inputMethodScope", "window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.wheelExpandRows", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.collapseRows", "tabs.wheelExpandRows", "tabs.verticalTabWidth", "tabs.showGroupNames", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -855,11 +856,12 @@ void PaneSettingsTest::titleWidthUpdatesKeepScrollPositions()
     for (auto* current = page->parentWidget(); current && !strip; current = current->parentWidget())
         if (current->objectName() == QStringLiteral("TabGroup")) strip = current;
     QVERIFY(strip);
-    auto* tabs = strip->findChild<QTabBar*>(); auto* viewport = strip->findChild<QScrollArea*>(QStringLiteral("TabScrollViewport"));
-    QVERIFY(tabs && viewport);
+    auto* tabs = strip->findChild<TabBar*>(); QVERIFY(tabs);
+    // The settings tab stays fully shown in its strip's lane.
     const auto settingsShown = [&] {
-        const auto area = tabs->tabRect(tabs->currentIndex()).translated(-viewport->horizontalScrollBar()->value(), 0);
-        return area.left() >= 0 && area.right() < viewport->viewport()->width();
+        const auto lane = tabs->scrollViewport();
+        const auto shown = tabs->displayTabRect(tabs->currentIndex());
+        return !shown.isEmpty() && shown.width() == tabs->contentTabRect(tabs->currentIndex()).width() && lane.contains(shown);
     };
     QTRY_VERIFY(settingsShown());
     const auto unchanged = [&](const char* step) {
@@ -1149,8 +1151,9 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     else if (control == "HideToolbarOptionsWhenLocked") QVERIFY(settings.value("hideToolbarOptionsWhenLocked").toBool());
     else if (control == "CaptionButtonOrder") QCOMPARE(settings.value("captionButtonOrder").toString(), QStringLiteral("macos"));
     const auto appearance = saved.value("tabAppearance").toObject();
-    if (control == "CentralTabPlacement") QCOMPARE(appearance.value("centralPlacement").toString(), QStringLiteral("bottom"));
-    else if (control == "PinnedTabPlacement") QCOMPARE(appearance.value("pinnedPlacement").toString(), QStringLiteral("bottom"));
+    // The last placement choice is the right side (tab strip design 4).
+    if (control == "CentralTabPlacement") QCOMPARE(appearance.value("centralPlacement").toString(), QStringLiteral("right"));
+    else if (control == "PinnedTabPlacement") QCOMPARE(appearance.value("pinnedPlacement").toString(), QStringLiteral("right"));
     else if (control == "MultilineTabs") QVERIFY(appearance.value("multiline").toBool());
     else if (control == "WheelExpandTabRows") QVERIFY(appearance.value("multiline").toBool() && appearance.value("wheelExpandRows").toBool());
     else if (control == "ShowTabIcons") QVERIFY(!appearance.value("showIcons").toBool(true));

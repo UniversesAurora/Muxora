@@ -2,6 +2,7 @@
 #include <window_system/window_manager.hpp>
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
+#include "style/tab_label_geometry.hpp"
 #include "docking/edge_tab_button.hpp"
 #include "docking/drag_presentation.hpp"
 #include "chrome/workspace_window.hpp"
@@ -33,6 +34,12 @@
 using namespace window_system;
 
 namespace {
+// `inner` lies inside `outer`, the same few pixels from each side.
+bool insetEqually(QRect inner, QRect outer)
+{
+    const int margin = inner.left() - outer.left();
+    return margin >= 0 && margin <= 8 && inner == outer.adjusted(margin, margin, -margin, -margin);
+}
 QAbstractButton* edgeButton(QWidget* window, TabId id) {
     for (auto* button : window->findChildren<QAbstractButton*>())
         if (button->isVisible() && button->objectName() == "EdgeButton" && button->property("tabId").toUuid() == id) return button;
@@ -69,6 +76,12 @@ void sendDragMouse(QWidget* receiver, QEvent::Type type, QPoint global,
     test::authoredMouseInput().takePriority();
     QApplication::processEvents();
 }
+// A strip tab's width with a title of `title` pixels (tab strip design 2.1).
+int stripTabWidth(const TabBar* bar, int index, int title)
+{
+    const int icon = bar->appearance().showIcons && !bar->tabIcon(index).isNull() ? bar->iconSize().width() : 0;
+    return tabBarTabWidth({0, icon, title});
+}
 QWidget* dragLabelPreview()
 {
     for (auto* widget : QApplication::topLevelWidgets())
@@ -98,7 +111,6 @@ private slots:
     void dragHoverScrollsAtViewportEdges();
     void tabIconVisibilityUsesTheHostApi();
     void pinnedExtentSurvivesRefreshAndUnpinRepin();
-    void scrollbarRemainsVisibleWhenMovingFromTabsOntoTheHandle();
     void sideBarInsertionUsesTheAppropriateAxis_data();
     void sideBarInsertionUsesTheAppropriateAxis();
     void sideBarReorderCommandsKeepLiveContent();
@@ -174,7 +186,7 @@ void EdgeTabInteractionTest::peekShowsOnlyTheChosenTabAndPinsOnlyThatTab()
     QTRY_VERIFY(aContent->isVisible());
     QVERIFY(aContent->width() > 120); QVERIFY(aContent->height() > 80);
     QVERIFY(!bContent->isVisible());
-    QCOMPARE(peek->findChildren<QTabBar*>().size(), 0);
+    QCOMPARE(peek->findChildren<TabBar*>().size(), 0);
     for (auto* label : peek->findChildren<QLabel*>()) QVERIFY(label->text() != QStringLiteral("临时展开"));
     auto* pin = peek->findChild<QToolButton*>("PinPeekTabButton"); QVERIFY(pin);
     pin->click();
@@ -283,7 +295,8 @@ void EdgeTabInteractionTest::edgeBarCornerOwnership()
     if (bars.contains(Edge::Right)) expectedContent.setRight(bars.value(Edge::Right).left() - 1);
     if (bars.contains(Edge::Top)) expectedContent.setTop(bars.value(Edge::Top).bottom() + 1);
     if (bars.contains(Edge::Bottom)) expectedContent.setBottom(bars.value(Edge::Bottom).top() - 1);
-    QCOMPARE(surface->centralRectGlobal(), expectedContent);
+    // Group cards keep the same small margin from the rails on every side.
+    QVERIFY(insetEqually(surface->centralRectGlobal(), expectedContent));
     // Junctions expose the same light background as the space between rail
     // labels. They are empty layout space, not another painted border.
     QList<QRect> junctions;
@@ -313,10 +326,10 @@ void EdgeTabInteractionTest::edgeBarCornerOwnership()
     verifyGapPixels(changedTheme.headerBackground);
     QVERIFY(manager.setSideBarsVisible(windowId, false));
     QTRY_VERIFY(surface->edgeBarRects().isEmpty());
-    QTRY_COMPARE(surface->centralRectGlobal(), area);
+    QTRY_VERIFY(insetEqually(surface->centralRectGlobal(), area));
     QVERIFY(manager.setSideBarsVisible(windowId, true));
     QTRY_COMPARE(surface->edgeBarRects(), bars);
-    QTRY_COMPARE(surface->centralRectGlobal(), expectedContent);
+    QTRY_VERIFY(insetEqually(surface->centralRectGlobal(), expectedContent));
     verifyGapPixels(changedTheme.headerBackground);
 }
 void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs()
@@ -381,13 +394,13 @@ void EdgeTabInteractionTest::tabWheelScrollsWithoutChangingSelection()
     GroupTabs tabs(Theme{}, nullptr); tabs.resize(420, 240);
     for (int i = 0; i < 18; ++i) tabs.addTab(content(QString::number(i)), {}, QStringLiteral("Session number %1").arg(i), QUuid::createUuid());
     showTestWindow(&tabs); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar); QTRY_VERIFY(scrollbar->maximum() > 0);
+    QTRY_VERIFY(tabs.tabBar()->isOverflowing());
     const auto active = tabs.currentIndex();
-    QWheelEvent wheel(QPointF(20, 12), tabs.tabBar()->mapToGlobal(QPoint(20, 12)), {}, QPoint(0, -120),
+    const auto point = tabs.tabBar()->displayTabRect(0).center();
+    QWheelEvent wheel(QPointF(point), tabs.tabBar()->mapToGlobal(QPointF(point)), {}, QPoint(0, -120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(tabs.tabBar(), &wheel);
-    QVERIFY(scrollbar->value() > 0); QCOMPARE(tabs.currentIndex(), active);
-    for (auto* button : tabs.tabBar()->findChildren<QToolButton*>()) QVERIFY(!button->isVisible());
+    QVERIFY(tabs.scrollOffset() > 0); QCOMPARE(tabs.currentIndex(), active);
 }
 void EdgeTabInteractionTest::tabListUsesHoverCloseAndIncludesEveryTab()
 {
@@ -415,8 +428,9 @@ void EdgeTabInteractionTest::insertionIndexAccountsForTheScrolledViewport()
     GroupTabs tabs(Theme{}, nullptr); tabs.resize(400, 240);
     for (int i = 0; i < 18; ++i) tabs.addTab(content(QString::number(i)), {}, QStringLiteral("Session number %1").arg(i), QUuid::createUuid());
     showTestWindow(&tabs); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar); QTRY_VERIFY(scrollbar->maximum() > 0);
-    const auto ninth = tabs.tabBar()->tabRect(9); scrollbar->setValue(ninth.left());
+    QTRY_VERIFY(tabs.tabBar()->isOverflowing());
+    tabs.tabBar()->setScrollOffset(tabs.tabBar()->contentTabRect(9).left());
+    const auto ninth = tabs.tabBar()->displayTabRect(9); QVERIFY(!ninth.isEmpty());
     const auto ninthPosition = tabs.tabBar()->mapToGlobal(ninth.center() - QPoint(8, 0));
     QVERIFY(tabs.viewportRectGlobal().contains(ninthPosition)); QCOMPARE(tabs.insertionIndex(ninthPosition), 9);
     QCOMPARE(tabs.insertionIndex(tabs.tabBar()->mapToGlobal(ninth.center() + QPoint(8, 0))), 10);
@@ -426,10 +440,10 @@ void EdgeTabInteractionTest::dragHoverScrollsAtViewportEdges()
     GroupTabs tabs(Theme{}, nullptr); tabs.resize(400, 240);
     for (int i = 0; i < 18; ++i) tabs.addTab(content(QString::number(i)), {}, QStringLiteral("Session number %1").arg(i), QUuid::createUuid());
     showTestWindow(&tabs); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar); QTRY_VERIFY(scrollbar->maximum() > 0);
+    QTRY_VERIFY(tabs.tabBar()->isOverflowing());
     const auto viewport = tabs.viewportRectGlobal(); tabs.setDragHover(QPoint(viewport.right() - 2, viewport.center().y()));
-    QTRY_VERIFY(scrollbar->value() > 0);
-    tabs.setDragHover({}); const auto position = scrollbar->value(); QTest::qWait(100); QCOMPARE(scrollbar->value(), position);
+    QTRY_VERIFY(tabs.scrollOffset() > 0);
+    tabs.setDragHover({}); const auto position = tabs.scrollOffset(); QTest::qWait(100); QCOMPARE(tabs.scrollOffset(), position);
 }
 void EdgeTabInteractionTest::tabIconVisibilityUsesTheHostApi()
 {
@@ -437,8 +451,8 @@ void EdgeTabInteractionTest::tabIconVisibilityUsesTheHostApi()
     const auto window = manager.createWindow();
     const auto tab = manager.addTab(window, content("Content"), options("Tab"));
     showTestWindow(manager.windowWidget(window)); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
-    const auto barForTab = [&]() -> QTabBar* {
-        for (auto* bar : manager.windowWidget(window)->findChildren<QTabBar*>())
+    const auto barForTab = [&]() -> TabBar* {
+        for (auto* bar : manager.windowWidget(window)->findChildren<TabBar*>())
             for (int i = 0; i < bar->count(); ++i) if (bar->isVisible() && bar->tabData(i).toUuid() == tab) return bar;
         return nullptr;
     };
@@ -476,23 +490,6 @@ void EdgeTabInteractionTest::pinnedExtentSurvivesRefreshAndUnpinRepin()
     QTRY_VERIFY(groupWidget()); QTRY_COMPARE(groupWidget()->width(), 347);
     QCOMPARE(manager.model().group(group)->edgeExtent, 347);
 }
-void EdgeTabInteractionTest::scrollbarRemainsVisibleWhenMovingFromTabsOntoTheHandle()
-{
-    GroupTabs tabs(Theme{}, nullptr); tabs.resize(420, 240);
-    for (int i = 0; i < 18; ++i) tabs.addTab(content(QString::number(i)), {}, QStringLiteral("Session number %1").arg(i), QUuid::createUuid());
-    showTestWindow(&tabs); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar); QTRY_VERIFY(scrollbar->maximum() > 0);
-    QEnterEvent barEnter(QPointF(8, 8), QPointF(8, 8), tabs.tabBar()->mapToGlobal(QPoint(8, 8)));
-    QApplication::sendEvent(tabs.tabBar(), &barEnter); QVERIFY(scrollbar->isVisible());
-    QEvent barLeave(QEvent::Leave); QApplication::sendEvent(tabs.tabBar(), &barLeave);
-    QEvent viewportLeave(QEvent::Leave); QApplication::sendEvent(tabs.tabBar()->parentWidget(), &viewportLeave);
-    QEnterEvent handleEnter(QPointF(8, 2), QPointF(8, 2), scrollbar->mapToGlobal(QPoint(8, 2)));
-    QApplication::sendEvent(scrollbar, &handleEnter); QApplication::processEvents();
-    QVERIFY(scrollbar->isVisible());
-    QEvent handleLeave(QEvent::Leave); QApplication::sendEvent(scrollbar, &handleLeave);
-    QTRY_VERIFY(scrollbar->isHidden());
-}
-
 void EdgeTabInteractionTest::sideBarInsertionUsesTheAppropriateAxis_data()
 {
     QTest::addColumn<int>("edge");
@@ -960,7 +957,7 @@ void EdgeTabInteractionTest::regularPinnedAndAutoHideTitlesUseIndependentLimits(
         auto* bar = group->tabBar();
         const int natural = bar->fontMetrics().size(Qt::TextShowMnemonic | Qt::TextSingleLine, title).width();
         QVERIFY(natural > appearance.maximumTitleWidth);
-        QCOMPARE(bar->tabRect(0).width(), (clipTabs ? appearance.maximumTitleWidth : natural) + 34);
+        QCOMPARE(bar->contentTabRect(0).width(), stripTabWidth(bar, 0, clipTabs ? appearance.maximumTitleWidth : natural));
         QCOMPARE(bar->tabText(0), title);
     }
     auto* button = edgeButton(host, sidebar); QVERIFY(button);
@@ -1029,9 +1026,16 @@ void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations
         sendDragMouse(receiver, QEvent::MouseButtonPress, sourceLabel.center(), Qt::LeftButton);
         sendDragMouse(receiver, QEvent::MouseMove, threshold);
         QCOMPARE(QWidget::mouseGrabber(), host);
-        auto* labelOnly = dragLabelPreview(); QVERIFY(labelOnly && labelOnly->isVisible());
-        const int sourceExtent = sidebarSource ? appearance.maximumSidebarTitleWidth + 16 : appearance.maximumTitleWidth + 34;
-        QCOMPARE(sidebarSource ? labelOnly->height() : labelOnly->width(), sourceExtent + 12);
+        // A rail shows a label window; a strip lifts its own tab.
+        int sourceExtent = appearance.maximumSidebarTitleWidth + 16;
+        if (sidebarSource) {
+            auto* labelOnly = dragLabelPreview(); QVERIFY(labelOnly && labelOnly->isVisible());
+            QCOMPARE(labelOnly->height(), sourceExtent + 12);
+        } else {
+            auto* bar = groupView(host, sourceGroup)->tabBar();
+            sourceExtent = stripTabWidth(bar, manager.model().group(sourceGroup)->tabs.indexOf(moving), appearance.maximumTitleWidth);
+            QCOMPARE(bar->liftedRect().width(), sourceExtent);
+        }
         const auto sourceGap = sidebarSource ? host->surface()->edgeInsertionPreviewRect(Edge::Left)
             : host->surface()->insertionPreviewRect(sourceGroup);
         QCOMPARE(sidebarSource ? sourceGap.height() : sourceGap.width(), sourceExtent);
@@ -1050,9 +1054,10 @@ void EdgeTabInteractionTest::independentTitleLimitsFollowActualDragPresentations
             sendDragMouse(carrier, QEvent::MouseMove, tabPoint);
             QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
             auto* carriedGroup = groupView(carrier, manager.model().groupForTab(moving)); QVERIFY(carriedGroup);
-            QCOMPARE(carriedGroup->tabBar()->tabRect(0).width(), appearance.maximumTitleWidth + 34);
-            QCOMPARE(targetGroup->insertionPreviewRectGlobal().width(), appearance.maximumTitleWidth + 34);
-            QCOMPARE(carrier->surface()->dragLabelExtent(moving, false), appearance.maximumTitleWidth + 34);
+            const int carried = stripTabWidth(carriedGroup->tabBar(), 0, appearance.maximumTitleWidth);
+            QCOMPARE(carriedGroup->tabBar()->tabRect(0).width(), carried);
+            QCOMPARE(targetGroup->insertionPreviewRectGlobal().width(), carried);
+            QCOMPARE(carrier->surface()->dragLabelExtent(moving, false), carried);
 
             const bool vertical = edge == Edge::Left || edge == Edge::Right;
             const auto area = host->surface()->edgeBarRects().value(edge); QVERIFY(!area.isEmpty());

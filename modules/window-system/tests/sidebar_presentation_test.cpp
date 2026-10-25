@@ -3,6 +3,7 @@
 #include "chrome/command_strip.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
+#include "style/tab_label_geometry.hpp"
 #include <window_system/window_manager.hpp>
 #include <QAction>
 #include <QApplication>
@@ -212,7 +213,7 @@ void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences()
     const auto group = manager.model().groupForTab(side); const auto centralGroup = manager.model().groupForTab(ordinary);
     const auto pane = manager.model().tab(side)->activePane; QPointer<QWidget> content(manager.paneWidget(pane));
     manager.showWindow(id); auto* host = manager.windowWidget(id); QVERIFY(QTest::qWaitForWindowExposed(host));
-    const auto barFor = [host](GroupId target) -> DragTabBar* {
+    const auto barFor = [host](GroupId target) -> TabBar* {
         for (auto* frame : host->findChildren<QFrame*>("TabGroup")) {
             if (!frame->isVisible() || frame->property("groupId").toUuid() != target) continue;
             return static_cast<GroupTabs*>(frame)->tabBar();
@@ -223,21 +224,23 @@ void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences()
         auto* bar = barFor(target); return bar ? bar->displayTabRect(0).width() : 0;
     };
     QVERIFY(barFor(group));
-    const int sidePlain = barFor(group)->fontMetrics().size(Qt::TextShowMnemonic, manager.model().tab(side)->title).width() + 34;
-    QTRY_COMPARE(width(group), sidePlain);
+    // Each shown part adds its size and one part gap (tab strip design 2.1).
+    QTRY_VERIFY(width(group) > 0);
+    const int sidePlain = width(group);
+    const int icon = manager.theme().metrics.iconSize + tabPartGap;
     QVERIFY(!manager.tabAppearance().showSidebarIcons); QVERIFY(!manager.tabAppearance().showSidebarNumbers);
     auto appearance = manager.tabAppearance(); appearance.showIcons = false; appearance.showNumbers = true;
     QVERIFY(manager.setTabAppearance(appearance)); QTRY_COMPARE(width(group), sidePlain);
     const int ordinaryWidth = width(centralGroup); QVERIFY(ordinaryWidth > 0);
     appearance.showSidebarIcons = true; QVERIFY(manager.setTabAppearance(appearance));
-    QTRY_COMPARE(width(group), sidePlain + manager.theme().metrics.iconSize + 4);
+    QTRY_COMPARE(width(group), sidePlain + icon);
     QCOMPARE(width(centralGroup), ordinaryWidth);
     appearance.showSidebarNumbers = true; QVERIFY(manager.setTabAppearance(appearance));
-    const int numberWidth = barFor(group)->fontMetrics().horizontalAdvance("1") + 4;
-    QTRY_COMPARE(width(group), sidePlain + manager.theme().metrics.iconSize + 4 + numberWidth);
+    const int numberWidth = barFor(group)->fontMetrics().horizontalAdvance("1") + tabPartGap;
+    QTRY_COMPARE(width(group), sidePlain + icon + numberWidth);
     QCOMPARE(width(centralGroup), ordinaryWidth);
     QVERIFY(manager.setTabIconVisible(side, false)); QTRY_COMPARE(width(group), sidePlain + numberWidth);
-    QVERIFY(manager.setTabIconVisible(side, true)); QTRY_COMPARE(width(group), sidePlain + manager.theme().metrics.iconSize + 4 + numberWidth);
+    QVERIFY(manager.setTabIconVisible(side, true)); QTRY_COMPARE(width(group), sidePlain + icon + numberWidth);
     appearance.showSidebarIcons = false; appearance.showSidebarNumbers = false;
     QVERIFY(manager.setTabAppearance(appearance)); QTRY_COMPARE(width(group), sidePlain);
     QCOMPARE(width(centralGroup), ordinaryWidth); QCOMPARE(manager.model().groupForTab(side), group);

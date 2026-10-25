@@ -4,10 +4,15 @@
 #include <QColor>
 #include <QString>
 #include <QVector>
+#include <window_system/tab_strip_limits.hpp>
 
 namespace window_system {
 
-enum class TabBarPlacement { Top, Bottom };
+// Left and right make a vertical tab strip beside the content.
+enum class TabBarPlacement { Top, Bottom, Left, Right };
+// Whether multiple rows collapse to one row of each section, and how the
+// expanded rows show: pushing the content down or as an overlay over it.
+enum class TabRowCollapse { Off, Push, Overlay };
 // How sticky tabs are sized, as VS Code's workbench.editor.pinnedTabSizing:
 // their natural width, only an icon or initial, or the start of the title.
 enum class StickyTabSizing { Normal, Compact, Shrink };
@@ -52,10 +57,15 @@ struct TabAppearance {
     TabBarPlacement centralPlacement = TabBarPlacement::Top;
     TabBarPlacement pinnedPlacement = TabBarPlacement::Top;
     bool multiline = false;
+    TabRowCollapse collapseRows = TabRowCollapse::Off;
+    // With collapsing rows, the wheel expands (down) and collapses (up).
     bool wheelExpandRows = false;
+    int verticalTabWidth = defaultVerticalTabWidth;
     bool showIcons = true;
     bool showNewTabButton = true;
     bool showNumbers = false;
+    // Show named groups' names in their strips (tab strip design 13).
+    bool showGroupNames = true;
     bool showSidebarIcons = false;
     bool showSidebarNumbers = false;
     // Limit only the displayed text in Qt logical pixels, never the stored

@@ -10,8 +10,10 @@
 #include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/drag_controller.hpp"
+#include "docking/tab_strip.hpp"
 #include "panes/tab_content.hpp"
 #include <QApplication>
+#include <QFrame>
 #include <QEvent>
 #include <QFocusEvent>
 #include <QCursor>
@@ -125,9 +127,19 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
         || (options.bottomBarSharing != PaneBarSharing::Shared && options.bottomBarSharing != PaneBarSharing::PerPane)) return {};
     const auto* owner = d->model.window(window);
     if (!owner || insertionIndex < -1) return {};
-    const auto target = group.isNull() ? owner->activeGroup : group;
+    auto target = group.isNull() ? owner->activeGroup : group;
+    FolderId folder = options.folder.isNull() ? std::exchange(d->newTabFolder, {}) : options.folder;
+    if (!folder.isNull() && d->model.groupForFolder(folder).isNull()) folder = {};
+    if (!folder.isNull()) {
+        target = d->model.groupForFolder(folder);
+        const auto* in = d->model.group(target);
+        if (!in || in->windowId != window) return {};
+        insertionIndex = int(in->tabs.indexOf(d->model.folderTabs(folder).last())) + 1;
+    }
     const auto* record = d->model.group(target);
     if (insertionIndex < 0) {
+        if (record && (d->behavior.newTabPosition == NewTabPosition::AfterActive || d->behavior.newTabPosition == NewTabPosition::BeforeActive))
+            if (const auto* active = d->model.tab(record->activeTab)) folder = active->folder;
         const int count = record ? int(record->tabs.size()) : 0;
         const int active = record ? int(record->tabs.indexOf(record->activeTab)) : -1;
         switch (d->behavior.newTabPosition) {
@@ -137,7 +149,7 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
         case NewTabPosition::End: insertionIndex = count; break;
         }
     }
-    const auto id = d->model.addTab(window, options.title, group, insertionIndex);
+    const auto id = d->model.addTab(window, options.title, target == owner->activeGroup && group.isNull() ? GroupId{} : target, insertionIndex, folder);
     if (id.isNull()) return {};
     const auto pane = d->model.tab(id)->activePane;
     content->setProperty("windowSystemManaged", true); content->setProperty("paneId", pane);
@@ -270,10 +282,11 @@ bool WindowManager::setTabCreationCommands(QString defaultCommand, QStringList c
     d->tabCreationCommands = std::move(choices);
     return true;
 }
-bool WindowManager::requestNewTab(WindowId window, GroupId group, QString command)
+bool WindowManager::requestNewTab(WindowId window, GroupId group, QString command, QUuid folder)
 {
     if (!d->model.window(window)) return false;
     auto ctx = context(window);
+    if (!folder.isNull()) group = d->model.groupForFolder(folder);
     if (group.isNull()) group = ctx.group;
     const auto* target = d->model.group(group);
     if (!group.isNull() && (!target || target->windowId != window)) return false;
@@ -282,7 +295,11 @@ bool WindowManager::requestNewTab(WindowId window, GroupId group, QString comman
     ctx.group = group; ctx.tab = target ? target->activeTab : TabId{};
     const auto* tab = d->model.tab(ctx.tab);
     ctx.pane = tab ? tab->activePane : PaneId{};
-    return executeResolved(command, std::move(ctx), true);
+    const auto previous = std::exchange(d->newTabFolder, folder);
+    const QPointer<WindowManager> self(this);
+    const bool result = executeResolved(command, std::move(ctx), true);
+    if (self) d->newTabFolder = previous;
+    return result;
 }
 QMenu* WindowManager::createTabCreationMenu(WindowId window, GroupId group, QWidget* parent)
 {
@@ -569,17 +586,34 @@ bool WindowManager::approveClose(const QVector<TabId>& tabs)
         if (it.value() != d->panes.value(it.key())) return false;
     return true;
 }
-bool WindowManager::moveTab(TabId tab, GroupId group, Placement placement, int index)
-{ return applyResult(d->model.moveTab(tab, group, placement, index)); }
+bool WindowManager::moveTab(TabId tab, GroupId group, Placement placement, int index, std::optional<bool> sticky,
+                            std::optional<FolderId> folder)
+{ return applyResult(d->model.moveTab(tab, group, placement, index, sticky, folder)); }
 WindowId WindowManager::detachTab(TabId tab, WindowKind kind)
 {
     return detachTabImpl(tab, kind, {});
 }
 WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag)
 {
+    const auto* group = d->model.group(d->model.groupForTab(tab));
+    const auto source = group ? group->windowId : WindowId{};
+    return adoptDetachedWindow(d->model.detachTab(tab, kind), source, kind, tab, beforeShow, preserveDrag);
+}
+WindowId WindowManager::detachFolderImpl(FolderId folder, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag)
+{
+    const auto* group = d->model.group(d->model.groupForFolder(folder));
+    const auto tabs = d->model.folderTabs(folder);
+    if (!group || tabs.isEmpty()) return {};
+    const auto source = group->windowId;
+    const auto active = tabs.contains(group->activeTab) ? group->activeTab : tabs.first();
+    return adoptDetachedWindow(d->model.detachFolder(folder, kind), source, kind, active, beforeShow, preserveDrag);
+}
+WindowId WindowManager::adoptDetachedWindow(WindowId id, WindowId sourceWindow, WindowKind kind, TabId tab,
+                                            const std::function<void(QWidget*)>& beforeShow, bool preserveDrag)
+{
+    if (id.isNull()) return {};
     const QPointer<WindowManager> self(this);
-    const auto source = context(d->model.group(d->model.groupForTab(tab)) ? d->model.group(d->model.groupForTab(tab))->windowId : WindowId{});
-    const auto id = d->model.detachTab(tab, kind); if (id.isNull()) return {};
+    const auto source = context(sourceWindow);
     auto options = d->options.value(source.window); options.size = QSize(880, 560);
     const auto bars = d->visibilityProfiles.value(kind);
     options.toolbarsVisible = bars.toolbars; options.statusBarVisible = bars.statusBar;
@@ -594,8 +628,8 @@ WindowId WindowManager::detachTabImpl(TabId tab, WindowKind kind, const std::fun
     activateTab(tab);
     return self ? id : WindowId{};
 }
-bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement, int insertionIndex)
-{ return applyResult(d->model.moveAllTabs(source, target, placement, insertionIndex)); }
+bool WindowManager::moveAllTabs(WindowId source, GroupId target, Placement placement, int insertionIndex, FolderId asFolder)
+{ return applyResult(d->model.moveAllTabs(source, target, placement, insertionIndex, {}, asFolder)); }
 bool WindowManager::moveTabToEdge(TabId tab, Edge edge, bool pinned)
 {
     return applyResult(d->model.moveTabToEdge(tab, edge, pinned));
@@ -823,7 +857,13 @@ void WindowManager::setTheme(const Theme& theme)
 {
     d->theme = theme;
     ++d->themeRevision;
-    for (auto widget : d->windows) if (widget) applyTheme(widget, theme);
+    // Tab strips paint from the theme itself, not only the style sheet.
+    for (auto widget : d->windows) {
+        if (!widget) continue;
+        applyTheme(widget, theme);
+        for (auto* frame : widget->findChildren<QFrame*>("TabGroup"))
+            if (auto* tabs = dynamic_cast<GroupTabs*>(frame)) tabs->setTheme(theme);
+    }
 }
 Theme WindowManager::theme() const { return d->theme; }
 CommandRegistry& WindowManager::commands() { return d->commands; }
@@ -1083,7 +1123,7 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
     const QPointer<WindowManager> self(this);
     if (!ensureTabView(tab) || !self) return;
     d->activeWindow = window; d->model.activateTab(tab);
-    if (auto widget = d->windows.value(window)) widget->updateCaption();
+    if (auto widget = d->windows.value(window)) { widget->updateCaption(); widget->surface()->refreshGroupFocus(); }
     // The drag transaction publishes after its focus/placement restoration.
     // A host may destroy the manager in that notification, which must happen
     // after Qt has returned from setFocus on the content being restored.
@@ -1092,6 +1132,7 @@ void WindowManager::updateActive(WindowId window, GroupId group, TabId tab)
     if (self) scheduleContentVisibilityNotification();
 }
 void WindowManager::beginTabDrag(TabId tab, QPoint global) { cancelPendingShortcut(); d->drag->beginTab(tab, global); }
+void WindowManager::beginTabFolderDrag(FolderId folder, QPoint global) { cancelPendingShortcut(); d->drag->beginFolder(folder, global); }
 void WindowManager::beginWindowDrag(WindowId window, QPoint global) { cancelPendingShortcut(); d->drag->beginWindow(window, global); }
 
 bool WindowManager::focusGroup(GroupId group)

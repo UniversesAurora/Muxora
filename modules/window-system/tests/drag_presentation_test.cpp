@@ -4,6 +4,7 @@
 #include "docking/edge_strip.hpp"
 #include "docking/dock_guides.hpp"
 #include "docking/tab_strip.hpp"
+#include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 #include <QApplication>
@@ -16,6 +17,7 @@
 #include <QScreen>
 #include <QStackedWidget>
 #include <QTest>
+#include <QDebug>
 
 using namespace window_system;
 namespace {
@@ -104,18 +106,25 @@ void DragPresentationTest::gapDisplacesOnlyTheVisualTabs()
     tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     const auto first = tabs.tabBar()->tabRect(0); const auto second = tabs.tabBar()->tabRect(1);
     const int current = tabs.currentIndex();
-    tabs.setInsertionPreview(1, 96);
+    // A carried tab opens a gap as wide as it will be here.
+    const CarriedLabel carried{QStringLiteral("Carried tab"), false};
+    const int width = tabs.tabBar()->carriedExtent(carried, false);
+    const auto probe = tabs.tabBar()->mapToGlobal(QPoint(second.left() + 2, second.center().y()));
+    QCOMPARE(tabs.insertionIndex(probe), 1);
+    tabs.setInsertionPreview(1, {carried});
     QCOMPARE(tabs.tabBar()->displayTabRect(0), first);
-    QCOMPARE(tabs.tabBar()->displayTabRect(1), second.translated(96, 0));
+    QCOMPARE(tabs.tabBar()->displayTabRect(1), second.translated(width, 0));
     QCOMPARE(tabs.count(), 3); QCOMPARE(tabs.currentIndex(), current);
     for (int i = 0; i < ids.size(); ++i) QCOMPARE(tabs.tabBar()->tabData(i).toUuid(), ids[i]);
-    const auto gap = tabs.insertionPreviewRectGlobal(); QVERIFY(!gap.isEmpty()); QCOMPARE(gap.width(), 96);
-    QCOMPARE(tabs.insertionIndex(gap.center()), 1);
-    QCOMPARE(tabs.insertionIndex(gap.center()), 1);
+    const auto gap = tabs.insertionPreviewRectGlobal(); QVERIFY(!gap.isEmpty()); QCOMPARE(gap.width(), width);
+    // The decision does not move with the gap it opened.
+    QCOMPARE(tabs.insertionIndex(probe), 1);
+    // The gap is empty strip: no placeholder block is drawn (tab strip design 6.1).
     const auto pixel = tabs.tabBar()->grab().toImage();
-    const auto point = tabs.tabBar()->insertionPreviewRect().center();
-    QCOMPARE(pixel.pixelColor(qRound(point.x() * pixel.devicePixelRatio()), qRound(point.y() * pixel.devicePixelRatio())), defaultTheme().accentSoft);
-    tabs.setInsertionPreview(-1, 0);
+    const auto point = tabs.tabBar()->dropPreviewRect().center();
+    QCOMPARE(pixel.pixelColor(qRound(point.x() * pixel.devicePixelRatio()), qRound(point.y() * pixel.devicePixelRatio())).rgb(),
+             defaultTheme().headerBackground.rgb());
+    tabs.setInsertionPreview(-1, {});
     QVERIFY(tabs.insertionPreviewRectGlobal().isEmpty()); QCOMPARE(tabs.tabBar()->displayTabRect(1), second);
 }
 void DragPresentationTest::guidesAvoidVisibleStripsAndShortGroupHeaders_data()
@@ -549,7 +558,7 @@ void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent()
     QVERIFY(observed && observed->isVisible()); QCOMPARE(manager.paneWidget(pane), content);
     QCOMPARE(manager.model().toJson(), modelDuringDrag); QCOMPARE(group->count(), 2);
     QCOMPARE(manager.saveLayout(), committedLayout);
-    QCOMPARE(group->tabBar()->displayTabRect(1).left(), second.left() + group->tabBar()->insertionExtent());
+    QCOMPARE(group->tabBar()->displayTabRect(1).left(), second.left() + group->tabBar()->dropPreviewRect().width());
     QVERIFY(!group->insertionPreviewRectGlobal().isEmpty());
     QCOMPARE(group->insertionPreviewRectGlobal().width(), carrier->surface()->dragLabelExtent(tab, false));
     saveRequestedScreenshot(carrier, QString("drag-tab-carrier-%1.png").arg(floating));
@@ -624,10 +633,12 @@ void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent()
         auto* stack = preview->findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly); QVERIFY(stack);
         const QRect label(bar->mapTo(carrier, bar->displayTabRect(0).topLeft()), bar->displayTabRect(0).size());
         const QRect body(stack->mapTo(carrier, QPoint()), stack->size());
-        QCOMPARE(bar->height(), bar->lineHeight());
-        if (bottom) QCOMPARE(label.top(), body.bottom() + 1);
-        else QCOMPARE(body.top(), label.bottom() + 1);
-        QCOMPARE(carrier->mask(), QRegion(body) + label);
+        // Over a strip the carrier is its tab alone; the target shows the
+        // content (tab strip design 6.2).
+        QVERIFY(label.height() == bar->metrics().rowHeight);
+        if (bottom) QVERIFY(label.top() >= body.bottom());
+        else QVERIFY(body.top() >= label.bottom());
+        QCOMPARE(carrier->mask(), QRegion(label));
         QCOMPARE(carrier->dragLabelAnchor(), label.center());
         QCOMPARE(carrier->winId(), hwnd); QCOMPARE(QWidget::mouseGrabber(), carrier.data());
         QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
@@ -635,7 +646,6 @@ void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent()
         moveMouse(carrier, outside);
         QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Window);
         QVERIFY(carrier->mask().isEmpty());
-        QCOMPARE(preview->tabBar()->height(), 2 * preview->tabBar()->lineHeight());
     }
     QTest::keyClick(carrier, Qt::Key_Escape); QApplication::processEvents();
     QVERIFY(!QWidget::mouseGrabber()); QCOMPARE(manager.saveLayout(), committed);
@@ -654,7 +664,8 @@ void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
     WindowManager manager;
     auto appearance = manager.tabAppearance();
     appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
-    appearance.multiline = true; appearance.wheelExpandRows = collapsed; appearance.stickyTabsOnSeparateRow = true;
+    appearance.multiline = true; appearance.stickyTabsOnSeparateRow = true;
+    appearance.collapseRows = collapsed ? TabRowCollapse::Push : TabRowCollapse::Off;
     QVERIFY(manager.setTabAppearance(appearance));
     const auto window = manager.createWindow(WindowKind::Workbench, {"Rows", {400, 350}});
     QVector<TabId> tabs;
@@ -670,9 +681,9 @@ void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
     const auto normalHeight = bar->height();
     const auto hwnd = carrier->winId();
     carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Tab);
-    auto* stack = group->findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly); QVERIFY(stack);
-    const QRect body(stack->mapTo(carrier, QPoint()), stack->size());
-    QRegion expected(body); QRect first;
+    // Over a strip only the tabs remain; the target shows the content
+    // (tab strip design 6.2).
+    QRegion expected; QRect first;
     const auto viewport = group->viewportRectGlobal();
     for (int i = 0; i < bar->count(); ++i) {
         const auto shown = bar->displayTabRect(i);
@@ -881,21 +892,29 @@ void DragPresentationTest::stationaryDragScrollsAndStops()
     auto* targetWindow = static_cast<WorkspaceWindow*>(manager.windowWidget(target));
     showFixture(sourceWindow, {20, 20}); showFixture(targetWindow, {70, 70}); QVERIFY(QTest::qWaitForWindowExposed(targetWindow));
     QVERIFY(manager.activateTab(first));
-    auto currentScrollBar = [&]() -> QScrollBar* {
+    // The strip's axis: a rail's scroll bar or the tab strip's lane.
+    struct Axis {
+        QPointer<QScrollBar> scroll; QPointer<TabBar> bar;
+        explicit operator bool() const { return scroll || bar; }
+        const Axis* operator->() const { return this; }
+        [[nodiscard]] int value() const { return scroll ? scroll->value() : bar->scrollOffset(); }
+        [[nodiscard]] int maximum() const { return scroll ? scroll->maximum() : bar->maximumScrollOffset(); }
+        void setValue(int value) const { if (scroll) scroll->setValue(value); else bar->setScrollOffset(value); }
+    };
+    auto currentScrollBar = [&]() -> Axis {
         if (!edge) {
-            const auto* group = groupView(targetWindow, manager.model().groupForTab(first));
-            return group ? group->findChild<QScrollBar*>("TabScrollBar") : nullptr;
+            auto* group = groupView(targetWindow, manager.model().groupForTab(first));
+            return {nullptr, group ? group->tabBar() : nullptr};
         }
         for (auto* widget : targetWindow->surface()->findChildren<QWidget*>())
             if (auto* strip = dynamic_cast<EdgeStrip*>(widget); strip && strip->isVisible() && strip->property("edge").toInt() == int(Edge::Top))
-                return strip->findChild<QScrollBar*>("EdgeScrollBar");
-        return nullptr;
+                return {strip->findChild<QScrollBar*>("EdgeScrollBar"), nullptr};
+        return {};
     };
-    QPointer<QScrollBar> scrolling = currentScrollBar(); QVERIFY(scrolling);
+    auto scrolling = currentScrollBar(); QVERIFY(scrolling);
     QTRY_VERIFY(scrolling->maximum() > 0); scrolling->setValue(0);
     QPointer<WorkspaceWindow> carrier = beginDrag(manager, source, tab); QVERIFY(carrier);
-    const auto oldScrollBar = scrolling;
-    scrolling = currentScrollBar(); QVERIFY(scrolling); QVERIFY(scrolling != oldScrollBar);
+    scrolling = currentScrollBar(); QVERIFY(scrolling);
     QTRY_VERIFY(scrolling->maximum() > 0); scrolling->setValue(0);
     QRect area;
     if (edge) {

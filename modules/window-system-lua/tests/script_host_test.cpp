@@ -50,6 +50,7 @@ TabId addEditor(WindowManager &manager, WindowId window, QString name = "Editor"
 class ScriptHostTest final : public QObject {
     Q_OBJECT
   private slots:
+    void foldersApiFollowsTheModel();
     void stateAndLiveQueriesUseValuesOnly();
     void luaCommandsSupportMultipleChordBindings();
     void sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload_data();
@@ -99,6 +100,38 @@ class ScriptHostTest final : public QObject {
     void windowDisplayStateUsesSharedCommands();
     void panelPoliciesCanBeConfiguredWithoutNestedExecution();
 };
+void ScriptHostTest::foldersApiFollowsTheModel() {
+    // Tab folders (tab strip design 12) through the Lua adapter.
+    WindowManager manager; const auto window = manager.createWindow();
+    const auto a = addEditor(manager, window, "A"), b = addEditor(manager, window, "B"), c = addEditor(manager, window, "C");
+    const auto group = manager.model().groupForTab(a);
+    const auto id = [](QUuid value) { return value.toString(QUuid::WithoutBraces); };
+    ScriptHost host(&manager); QVERIFY(initialize(host));
+    auto reply = run(host, QString("return muxora.folders.new({'%1','%2'}, {name='Work', color='blue'})").arg(id(a), id(c)));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    const QUuid folder(reply.values[0].toString()); QVERIFY(manager.model().folder(folder));
+    QCOMPARE(manager.model().folderTabs(folder), (QVector<TabId>{a, c}));
+    reply = run(host, QString("local list = muxora.folders.list('%1'); return #list, list[1].name, list[1].color, #list[1].tabs").arg(id(group)));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QCOMPARE(reply.values[0].toInt(), 1); QCOMPARE(reply.values[1].toString(), QStringLiteral("Work"));
+    QCOMPARE(reply.values[2].toString(), QStringLiteral("blue")); QCOMPARE(reply.values[3].toInt(), 2);
+    reply = run(host, QString("return muxora.folders.rename('%1','Logs'), muxora.folders.collapse('%1', true), muxora.folders.add_tab('%1','%2')")
+        .arg(id(folder), id(b)));
+    QVERIFY2(reply.ok, qPrintable(reply.error));
+    QVERIFY(reply.values[0].toBool() && reply.values[1].toBool() && reply.values[2].toBool());
+    QCOMPARE(manager.model().folder(folder)->name, QStringLiteral("Logs")); QVERIFY(manager.model().folder(folder)->collapsed);
+    QCOMPARE(manager.model().folderTabs(folder).size(), 3);
+    reply = run(host, QString("return muxora.tabs.list('%1')[1].folder").arg(id(group)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QCOMPARE(reply.values[0].toString(), id(folder));
+    // Unknown colors and folders are refused; nothing changes.
+    reply = run(host, QString("return muxora.folders.color('%1','no-such-color')").arg(id(folder)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(!reply.values[0].toBool());
+    reply = run(host, QString("return muxora.folders.rename('%1','x')").arg(id(QUuid::createUuid())));
+    QVERIFY(!reply.ok);
+    reply = run(host, QString("return muxora.folders.ungroup('%1')").arg(id(folder)));
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool()); QVERIFY(!manager.model().folder(folder));
+    QVERIFY(manager.model().validate());
+}
 void ScriptHostTest::hierarchyConversionsKeepTheSamePaneObjects() {
     WindowManager manager; const auto window = manager.createWindow();
     const auto first = addEditor(manager, window, "First");

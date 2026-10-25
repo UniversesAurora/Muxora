@@ -48,19 +48,28 @@ bool validColors(const TabVisualColors& colors)
     return colors.background.isValid() && colors.text.isValid() && colors.line.isValid() && colors.icon.isValid();
 }
 
-QString placementName(TabBarPlacement placement)
+constexpr std::array placementNames{std::pair{TabBarPlacement::Top, "top"}, std::pair{TabBarPlacement::Bottom, "bottom"},
+    std::pair{TabBarPlacement::Left, "left"}, std::pair{TabBarPlacement::Right, "right"}};
+constexpr std::array collapseNames{std::pair{TabRowCollapse::Off, "off"}, std::pair{TabRowCollapse::Push, "push"},
+    std::pair{TabRowCollapse::Overlay, "overlay"}};
+
+template <typename Value, std::size_t Size>
+QString enumName(const std::array<std::pair<Value, const char*>, Size>& names, Value value)
 {
-    return placement == TabBarPlacement::Top ? QStringLiteral("top") : QStringLiteral("bottom");
+    for (const auto& [candidate, name] : names) if (candidate == value) return QString::fromLatin1(name);
+    return {};
 }
 
-bool parsePlacement(const QJsonValue& value, TabBarPlacement& placement)
+template <typename Value, std::size_t Size>
+bool parseEnum(const std::array<std::pair<Value, const char*>, Size>& names, const QJsonValue& value, Value& result)
 {
     if (value.isUndefined()) return true;
-    if (value == "top") placement = TabBarPlacement::Top;
-    else if (value == "bottom") placement = TabBarPlacement::Bottom;
-    else return false;
-    return true;
+    for (const auto& [candidate, name] : names) if (value == QLatin1StringView(name)) { result = candidate; return true; }
+    return false;
 }
+
+QString placementName(TabBarPlacement placement) { return enumName(placementNames, placement); }
+bool parsePlacement(const QJsonValue& value, TabBarPlacement& placement) { return parseEnum(placementNames, value, placement); }
 
 constexpr std::array stickySizingNames{std::pair{StickyTabSizing::Normal, "normal"},
     std::pair{StickyTabSizing::Compact, "compact"}, std::pair{StickyTabSizing::Shrink, "shrink"}};
@@ -98,17 +107,24 @@ namespace {
 
 // The stored names are English sources; the display name is translated only
 // while a built-in preset still has its own ID and name.
-struct Seed { const char* id; const char* name; const char* accent; const char* soft; const char* vivid; };
+//
+// One tonal scale per hue (tab strip design 9): a pastel for a resting tab,
+// a near-white tint for the active tab (it still reads as joined to the
+// white content), a dark text of the same hue, and a vivid line color that
+// tab folders and auto-hide rails use. The pastels share one lightness, so
+// no color shouts over another, and differ in hue from the violet strip.
+struct Seed { const char* id; const char* name; const char* line; const char* resting; const char* active;
+              const char* text; const char* icon; };
 constexpr Seed paletteSeeds[] = {
-    {"gray", QT_TRANSLATE_NOOP("WindowSystem", "Gray"), "#5f6368", "#edf0f2", "#a9afb5"},
-    {"blue", QT_TRANSLATE_NOOP("WindowSystem", "Blue"), "#1967d2", "#e8f0fe", "#78a4eb"},
-    {"red", QT_TRANSLATE_NOOP("WindowSystem", "Red"), "#c5221f", "#fce8e6", "#eb817e"},
-    {"yellow", QT_TRANSLATE_NOOP("WindowSystem", "Gold"), "#8b6500", "#fff4ce", "#dfbc45"},
-    {"green", QT_TRANSLATE_NOOP("WindowSystem", "Green"), "#137333", "#e6f4ea", "#78be91"},
-    {"pink", QT_TRANSLATE_NOOP("WindowSystem", "Pink"), "#b3267d", "#fce7f3", "#dc8abd"},
-    {"purple", QT_TRANSLATE_NOOP("WindowSystem", "Purple"), "#7b2abf", "#f1e7fc", "#b18ade"},
-    {"cyan", QT_TRANSLATE_NOOP("WindowSystem", "Cyan"), "#007b83", "#e0f4f5", "#63bcc4"},
-    {"orange", QT_TRANSLATE_NOOP("WindowSystem", "Orange"), "#b05a00", "#fff0df", "#e6a65f"}};
+    {"gray", QT_TRANSLATE_NOOP("WindowSystem", "Gray"), "#6b7280", "#d9dce1", "#f3f4f6", "#1f2329", "#4b5260"},
+    {"blue", QT_TRANSLATE_NOOP("WindowSystem", "Blue"), "#2f6fde", "#c9dafa", "#edf3fe", "#0f2a5c", "#2559b8"},
+    {"red", QT_TRANSLATE_NOOP("WindowSystem", "Red"), "#d0393a", "#f6cdcc", "#fdeeee", "#5c1314", "#a92b2c"},
+    {"yellow", QT_TRANSLATE_NOOP("WindowSystem", "Gold"), "#b8860b", "#f3e0a8", "#fdf7e4", "#4a3600", "#8a6408"},
+    {"green", QT_TRANSLATE_NOOP("WindowSystem", "Green"), "#2e9a57", "#c8ead4", "#edf8f1", "#0f3d21", "#237544"},
+    {"pink", QT_TRANSLATE_NOOP("WindowSystem", "Pink"), "#cc3f8f", "#f5cde3", "#fdeef6", "#561339", "#a3306f"},
+    {"purple", QT_TRANSLATE_NOOP("WindowSystem", "Purple"), "#8a4fd1", "#d6c1f3", "#f6f0fd", "#351766", "#6d3bb0"},
+    {"cyan", QT_TRANSLATE_NOOP("WindowSystem", "Cyan"), "#1a9aa6", "#c4e9ec", "#ecf8f9", "#0b3c41", "#147880"},
+    {"orange", QT_TRANSLATE_NOOP("WindowSystem", "Orange"), "#db7419", "#f8d9bb", "#fef2e7", "#5a2c05", "#b05b10"}};
 
 } // namespace
 
@@ -117,14 +133,14 @@ QVector<TabColorPreset> defaultTabColorPresets()
     QVector<TabColorPreset> colors;
     colors.reserve(std::size(paletteSeeds));
     for (const auto& seed : paletteSeeds) {
-        const QColor accent(seed.accent), soft(seed.soft), vivid(seed.vivid);
-        // The persisted palette is an 8-bit #AARRGGBB contract. QColor's HSV
-        // transforms retain 16-bit channels, which would otherwise change on
-        // every save/restore comparison even though the displayed RGB matches.
-        const TabVisualColors active{soft, QColor("#202124"), accent, QColor(accent.darker(110).name(QColor::HexArgb))};
-        const TabVisualColors inactive{vivid, QColor("#202124"), accent, QColor(accent.darker(130).name(QColor::HexArgb))};
+        const QColor line(seed.line), text(seed.text), icon(seed.icon);
+        const TabVisualColors active{QColor(seed.active), text, line, icon};
+        const TabVisualColors resting{QColor(seed.resting), text, line, icon};
+        // Auto-hide rails stand on their own over the content edge: the
+        // vivid color with white text, and the pastel while expanded.
+        const TabVisualColors railResting{line, QColor("#ffffff"), line, QColor("#ffffff")};
         colors.append({QString::fromLatin1(seed.id), QString::fromLatin1(seed.name),
-            active, inactive, active, inactive});
+            active, resting, resting, railResting});
     }
     return colors;
 }
@@ -140,8 +156,10 @@ QString tabColorDisplayName(const TabColorPreset& preset)
 
 bool validTabAppearance(const TabAppearance& appearance)
 {
-    const auto validPlacement = [](TabBarPlacement value) { return value == TabBarPlacement::Top || value == TabBarPlacement::Bottom; };
+    const auto validPlacement = [](TabBarPlacement value) { return !placementName(value).isEmpty(); };
     if (!validPlacement(appearance.centralPlacement) || !validPlacement(appearance.pinnedPlacement)
+        || enumName(collapseNames, appearance.collapseRows).isEmpty()
+        || appearance.verticalTabWidth < minimumVerticalTabWidth || appearance.verticalTabWidth > maximumVerticalTabWidth
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
         || stickySizingName(appearance.stickySizing).isEmpty()
@@ -168,9 +186,12 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"autoHideInactive", colorsToJson(preset.autoHideInactive)}});
     return {{"centralPlacement", placementName(appearance.centralPlacement)},
         {"pinnedPlacement", placementName(appearance.pinnedPlacement)}, {"multiline", appearance.multiline},
-        {"wheelExpandRows", appearance.wheelExpandRows}, {"showIcons", appearance.showIcons},
+        {"collapseRows", enumName(collapseNames, appearance.collapseRows)},
+        {"wheelExpandRows", appearance.wheelExpandRows}, {"verticalTabWidth", appearance.verticalTabWidth},
+        {"showIcons", appearance.showIcons},
         {"showNewTabButton", appearance.showNewTabButton}, {"showNumbers", appearance.showNumbers},
         {"showSidebarIcons", appearance.showSidebarIcons}, {"showSidebarNumbers", appearance.showSidebarNumbers},
+        {"showGroupNames", appearance.showGroupNames},
         {"clipTitles", appearance.clipTitles}, {"maximumTitleWidth", appearance.maximumTitleWidth},
         {"clipSidebarTitles", appearance.clipSidebarTitles}, {"maximumSidebarTitleWidth", appearance.maximumSidebarTitleWidth},
         {"stickySizing", stickySizingName(appearance.stickySizing)},
@@ -187,11 +208,20 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
     const auto object = value.toObject();
     if (!parsePlacement(object.value("centralPlacement"), candidate.centralPlacement)
         || !parsePlacement(object.value("pinnedPlacement"), candidate.pinnedPlacement))
-        return {false, QCoreApplication::translate("WindowSystem", "Tab bars support only top or bottom placement")};
+        return {false, QCoreApplication::translate("WindowSystem", "Tab bars can be placed only top, bottom, left or right")};
+    if (!parseEnum(collapseNames, object.value("collapseRows"), candidate.collapseRows))
+        return {false, QCoreApplication::translate("WindowSystem", "Collapsing tab rows must be off, push or overlay")};
+    if (const auto width = object.value("verticalTabWidth"); !width.isUndefined()) {
+        const double value = width.toDouble();
+        if (!width.isDouble() || std::trunc(value) != value || value < minimumVerticalTabWidth || value > maximumVerticalTabWidth)
+            return {false, QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 140 to 480 logical pixels")};
+        candidate.verticalTabWidth = int(value);
+    }
     for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
         std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
         std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}, std::pair{"clipTitles", &candidate.clipTitles},
+        std::pair{"showGroupNames", &candidate.showGroupNames},
         std::pair{"clipSidebarTitles", &candidate.clipSidebarTitles},
         std::pair{"stickyTabsOnSeparateRow", &candidate.stickyTabsOnSeparateRow}}) {
         const auto field = object.value(entry.first);

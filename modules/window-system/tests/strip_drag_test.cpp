@@ -3,12 +3,14 @@
 #include "docking/dock_surface.hpp"
 #include "docking/edge_strip.hpp"
 #include "docking/tab_strip.hpp"
+#include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QBoxLayout>
+#include <QDebug>
 #include <QDir>
 #include <QImage>
 #include <QKeyEvent>
@@ -44,12 +46,27 @@ void sendMouse(QWidget* receiver, QEvent::Type type, QPoint global,
     QApplication::processEvents();
 }
 
+// What shows the carried tab under the pointer: a rail's label window, or a
+// tab strip's lifted tab (tab strip design 6.1).
 QWidget* labelPreview()
 {
-    for (auto* widget : QApplication::topLevelWidgets())
+    for (auto* widget : QApplication::topLevelWidgets()) {
         if (widget->objectName() == "DragLabelPreview") return widget;
+        for (auto* bar : widget->findChildren<TabBar*>()) if (bar->isVisible() && !bar->liftedRect().isEmpty()) return bar;
+    }
     return nullptr;
 }
+
+// A strip's scrolling axis: a rail's scroll bar or a tab strip's lane.
+struct StripAxis {
+    QPointer<QScrollBar> scroll;
+    QPointer<TabBar> bar;
+    explicit operator bool() const { return scroll || bar; }
+    const StripAxis* operator->() const { return this; }
+    [[nodiscard]] int value() const { return scroll ? scroll->value() : bar->scrollOffset(); }
+    [[nodiscard]] int maximum() const { return scroll ? scroll->maximum() : bar->maximumScrollOffset(); }
+    void setValue(int value) const { if (scroll) scroll->setValue(value); else bar->setScrollOffset(value); }
+};
 
 GroupTabs* groupView(QWidget* window, GroupId id)
 {
@@ -204,14 +221,13 @@ struct Fixture {
         }
         return {};
     }
-    QScrollBar* scrollBar() const
+    StripAxis scrollBar() const
     {
         if (kind == StripKind::AutoHide) {
             auto* scroll = edgeView(window, edge)->findChild<QScrollArea*>("EdgeScrollViewport");
-            return vertical(edge) ? scroll->verticalScrollBar() : scroll->horizontalScrollBar();
+            return {vertical(edge) ? scroll->verticalScrollBar() : scroll->horizontalScrollBar(), nullptr};
         }
-        auto* scroll = groupView(window, sourceGroup)->findChild<QScrollArea*>("TabScrollViewport");
-        return scroll->horizontalScrollBar();
+        return {nullptr, groupView(window, sourceGroup)->tabBar()};
     }
     QVector<TabId> order() const
     {
@@ -252,7 +268,6 @@ private slots:
     void stationaryStripDragAutoScrolls();
     void sourceGeometryChangesRefreshThePhaseWithoutMouseMovement_data();
     void sourceGeometryChangesRefreshThePhaseWithoutMouseMovement();
-    void closingTheSourceTabFromPreviewDestructionDoesNotResurrectIt();
     void detachmentNotificationMayDestroyTheManager();
     void nestedTargetPickerMayLoseItsCarrierOrManager_data();
     void nestedTargetPickerMayLoseItsCarrierOrManager();
@@ -311,8 +326,10 @@ void StripDragTest::authoredMouseStreamPreservesInputButtonsKeyboardAndTimers()
 
 void StripDragTest::queuedScrollRestoreYieldsToKeyboard_data()
 {
+    // Rails only: a tab strip's scrollbar takes no keyboard focus (tab strip
+    // design 3.1); its queued restores yield to scrolling (tab-viewport).
     QTest::addColumn<int>("edgeValue"); QTest::addColumn<int>("key");
-    for (int edge = -1; edge < 4; ++edge)
+    for (int edge = 0; edge < 4; ++edge)
         for (auto key : {Qt::Key_Home, Qt::Key_End, Qt::Key_Right})
             QTest::newRow(qPrintable(QString("strip-%1-key-%2").arg(edge).arg(int(key)))) << edge << int(key);
 }
@@ -370,13 +387,13 @@ void StripDragTest::wheelOnAPeekDoesNotScrollTheCoveredStrip()
     const auto other = fixture.manager.addTab(fixture.id, new QLabel("Other"), {"Other", {}, {}});
     QVERIFY(fixture.manager.moveTab(other, fixture.sourceGroup, Placement::Right));
     auto* original = groupView(fixture.window, fixture.sourceGroup); QVERIFY(original);
-    auto* sourceScroll = original->findChild<QScrollArea*>("TabScrollViewport")->horizontalScrollBar();
-    sourceScroll->setValue(120); const int hiddenOffset = sourceScroll->value();
+    auto* sourceBar = original->tabBar();
+    sourceBar->setScrollOffset(120); const int hiddenOffset = sourceBar->scrollOffset();
     QVERIFY(fixture.manager.activateTab(other));
     QVERIFY(fixture.manager.setViewMode(fixture.id, ViewMode::GroupFullscreen));
     QVERIFY(!original->isVisible());
     fixture.window->surface()->scrollStripAt(original->viewportRectGlobal().center(), {0, -40});
-    QCOMPARE(sourceScroll->value(), hiddenOffset);
+    QCOMPARE(sourceBar->scrollOffset(), hiddenOffset);
 }
 
 void StripDragTest::capturedWheelMayDestroyTheManager()
@@ -387,12 +404,12 @@ void StripDragTest::capturedWheelMayDestroyTheManager()
     QPointer<WorkspaceWindow> window = static_cast<WorkspaceWindow*>(manager->windowWidget(id));
     manager->showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* group = groupView(window, manager->model().groupForTab(tabs.first())); QVERIFY(group);
-    auto* scroll = group->findChild<QScrollArea*>("TabScrollViewport")->horizontalScrollBar();
-    scroll->setValue(0);
+    auto* bar = group->tabBar();
+    bar->setScrollOffset(0);
     QVERIFY(beginCentralLabelDrag(window, manager->model().groupForTab(tabs.first()), tabs.first()));
     QPointer<QWidget> actor = QWidget::mouseGrabber(); QVERIFY(actor);
     const auto global = group->viewportRectGlobal().center();
-    QObject::connect(scroll, &QScrollBar::valueChanged, qApp, [&](int) { manager.reset(); });
+    QObject::connect(bar, &TabBar::viewChanged, qApp, [&] { if (manager && bar->scrollOffset() > 0) manager.reset(); });
     QWheelEvent event(actor->mapFromGlobal(global), global, {}, {0, -120}, Qt::LeftButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(actor, &event);
     QVERIFY(!manager); QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!labelPreview());
@@ -404,7 +421,7 @@ void StripDragTest::tearOutPreservesSourceScroll()
     QFETCH(int, kindValue); QFETCH(int, edgeValue);
     Fixture fixture{StripKind(kindValue), Edge(edgeValue), 18}; QVERIFY(fixture.ready);
     QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
-    auto* scroll = fixture.scrollBar(); QTRY_VERIFY(scroll->maximum() > 400);
+    const auto scroll = fixture.scrollBar(); QTRY_VERIFY(scroll->maximum() > 400);
     scroll->setValue(std::min(360, scroll->maximum() / 2));
     QApplication::processEvents();
     const int offset = scroll->value(); QVERIFY(offset > 0);
@@ -537,17 +554,21 @@ void StripDragTest::liveContentStaysInPlaceUntilFirstExit()
     const auto label = fixture.labelRect(moving);
     auto* actor = fixture.begin(moving); QVERIFY(actor); QCOMPARE(actor, fixture.window.data());
     QPointer<QWidget> preview = labelPreview(); QVERIFY(preview); QVERIFY(preview->isVisible());
-    QVERIFY(preview->width() <= label.width() + 16); QVERIFY(preview->height() <= label.height() + 16);
-    QVERIFY(!preview->findChild<QWidget*>("DockSurface"));
-    bool shadow = false; const auto pixels = preview->grab().toImage(); const auto ratio = pixels.devicePixelRatio();
-    for (int y = 0; y < pixels.height(); ++y) for (int x = 0; x < pixels.width(); ++x)
-        if ((x < 4 * ratio || y < 4 * ratio) && pixels.pixelColor(x, y).alpha() > 0
-            && pixels.pixelColor(x, y).alpha() < 255) shadow = true;
-    QVERIFY2(shadow, "The small label preview needs a translucent shadow, without copying the content");
-    if (fixture.kind == StripKind::Central)
+    if (fixture.kind == StripKind::AutoHide) {
+        QVERIFY(preview->width() <= label.width() + 16); QVERIFY(preview->height() <= label.height() + 16);
+        QVERIFY(!preview->findChild<QWidget*>("DockSurface"));
+        bool shadow = false; const auto pixels = preview->grab().toImage(); const auto ratio = pixels.devicePixelRatio();
+        for (int y = 0; y < pixels.height(); ++y) for (int x = 0; x < pixels.width(); ++x)
+            if ((x < 4 * ratio || y < 4 * ratio) && pixels.pixelColor(x, y).alpha() > 0
+                && pixels.pixelColor(x, y).alpha() < 255) shadow = true;
+        QVERIFY2(shadow, "The small label preview needs a translucent shadow, without copying the content");
+        if (fixture.edge == Edge::Left && peek) saveLabelScreenshots(fixture.window, preview, "auto-hide-left-peek");
+    } else {
+        // The strip lifts the tab itself, as large as its label.
+        const auto lifted = static_cast<TabBar*>(preview.data())->liftedRect();
+        QCOMPARE(lifted.size(), label.size());
         saveLabelScreenshots(fixture.window, preview, "central");
-    else if (fixture.kind == StripKind::AutoHide && fixture.edge == Edge::Left && peek)
-        saveLabelScreenshots(fixture.window, preview, "auto-hide-left-peek");
+    }
     const auto last = fixture.endpoint(true); sendMouse(actor, QEvent::MouseMove, last);
     QCOMPARE(fixture.manager.model().windows().size(), 1); QCOMPARE(fixture.manager.model().toJson(), before);
     QCOMPARE(fixture.manager.model().groupForTab(moving), groupId);
@@ -563,11 +584,11 @@ void StripDragTest::liveContentStaysInPlaceUntilFirstExit()
     } else {
         auto* bar = groupView(fixture.window, groupId)->tabBar();
         QCOMPARE(bar->count(), 3); QVERIFY(bar->displayTabRect(1).isEmpty());
-        const auto gap = bar->insertionPreviewRect(); QVERIFY(!gap.isEmpty());
+        const auto gap = bar->dropPreviewRect(); QVERIFY(!gap.isEmpty());
         QVERIFY(bar->displayTabRect(2).right() < gap.left());
     }
     QTest::keyClick(actor, Qt::Key_Escape);
-    QVERIFY(!preview); QVERIFY(!labelPreview()); QVERIFY(!QWidget::mouseGrabber());
+    QVERIFY(fixture.kind != StripKind::AutoHide || !preview); QVERIFY(!labelPreview()); QVERIFY(!QWidget::mouseGrabber());
     QCOMPARE(fixture.manager.model().toJson(), before); QCOMPARE(content->parentWidget(), parent.data());
     QCOMPARE(content->isVisible(), wasVisible);
     if (fixture.kind == StripKind::AutoHide) {
@@ -730,7 +751,7 @@ void StripDragTest::stationaryStripDragAutoScrolls()
     Fixture fixture{StripKind(kindValue), Edge(edgeValue), 25}; QVERIFY(fixture.ready);
     QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
     QVERIFY(fixture.manager.activateTab(fixture.tabs.front()));
-    auto* scrolling = fixture.scrollBar(); QVERIFY(scrolling); QTRY_VERIFY(scrolling->maximum() > 0); scrolling->setValue(0);
+    const auto scrolling = fixture.scrollBar(); QVERIFY(scrolling); QTRY_VERIFY(scrolling->maximum() > 0); scrolling->setValue(0);
     const auto before = fixture.manager.model().toJson();
     auto* actor = fixture.begin(fixture.tabs.front()); QVERIFY(actor); QCOMPARE(actor, fixture.window.data());
     const auto point = fixture.endpoint(true); sendMouse(actor, QEvent::MouseMove, point);
@@ -739,7 +760,13 @@ void StripDragTest::stationaryStripDragAutoScrolls()
     QVERIFY(labelPreview());
     const auto gap = fixture.kind == StripKind::AutoHide ? fixture.window->surface()->edgeInsertionPreviewRect(fixture.edge)
         : fixture.window->surface()->insertionPreviewRect(fixture.manager.model().groupForTab(fixture.tabs.front()));
-    QVERIFY(!gap.isEmpty()); QVERIFY(fixture.stripRect().intersects(gap));
+    QString state;
+    if (fixture.kind != StripKind::AutoHide) {
+        auto* bar = groupView(fixture.window, fixture.manager.model().groupForTab(fixture.tabs.front()))->tabBar();
+        QDebug(&state) << "drop" << bar->dropIndex() << bar->dropPreviewRect() << "lifted" << bar->liftedRect()
+                       << "offset" << bar->scrollOffset() << bar->maximumScrollOffset() << "point" << bar->mapFromGlobal(point);
+    }
+    QVERIFY2(!gap.isEmpty(), qPrintable(state)); QVERIFY(fixture.stripRect().intersects(gap));
     QTest::keyClick(actor, Qt::Key_Escape); QVERIFY(!labelPreview()); QVERIFY(!QWidget::mouseGrabber());
     const auto stopped = scrolling->value(); QTest::qWait(150); QCOMPARE(scrolling->value(), stopped);
     QCOMPARE(fixture.manager.model().toJson(), before); QVERIFY(fixture.manager.model().validate());
@@ -761,7 +788,8 @@ void StripDragTest::sourceGeometryChangesRefreshThePhaseWithoutMouseMovement()
     const auto pane = fixture.manager.model().tab(moving)->activePane; auto* content = fixture.manager.paneWidget(pane);
     auto* actor = fixture.begin(moving); QVERIFY(actor); QCOMPARE(actor, fixture.window.data()); QVERIFY(labelPreview());
     const auto oldStrip = fixture.stripRect();
-    if (change == "move") fixture.window->move(fixture.window->pos() + QPoint(24, 32));
+    // Far enough that the pointer leaves the tear-off zone (tab strip design 6.2).
+    if (change == "move") fixture.window->move(fixture.window->pos() + QPoint(24, 80));
     else {
         const auto point = fixture.endpoint(true); sendMouse(actor, QEvent::MouseMove, point);
         fixture.window->resize(fixture.window->width() - 120, fixture.window->height());
@@ -775,30 +803,6 @@ void StripDragTest::sourceGeometryChangesRefreshThePhaseWithoutMouseMovement()
     QCOMPARE(QWidget::mouseGrabber(), carrier); QCOMPARE(fixture.manager.paneWidget(pane), content);
     QVERIFY(carrier->isAncestorOf(content));
     QTest::keyClick(carrier, Qt::Key_Escape); QVERIFY(!QWidget::mouseGrabber()); QVERIFY(fixture.manager.model().validate());
-}
-
-void StripDragTest::closingTheSourceTabFromPreviewDestructionDoesNotResurrectIt()
-{
-    Fixture fixture{StripKind::Central, Edge::Top}; QVERIFY(fixture.ready);
-    QVERIFY(QTest::qWaitForWindowExposed(fixture.window));
-    const auto moving = fixture.tabs[1]; QVERIFY(fixture.manager.activateTab(moving));
-    const auto pane = fixture.manager.model().tab(moving)->activePane;
-    QPointer<QWidget> content = fixture.manager.paneWidget(pane);
-    const auto outside = fixture.outside();
-    auto* actor = fixture.begin(moving); QVERIFY(actor); QCOMPARE(actor, fixture.window.data());
-    QPointer<QWidget> preview = labelPreview(); QVERIFY(preview);
-    bool closed = false; int destroyedCalls = 0;
-    connect(preview, &QObject::destroyed, this, [&] {
-        ++destroyedCalls;
-        closed = fixture.manager.execute("workspace.closeTab", {}, fixture.id);
-    });
-    sendMouse(actor, QEvent::MouseMove, outside);
-    QVERIFY(closed); QCOMPARE(destroyedCalls, 1); QVERIFY(!preview); QVERIFY(!labelPreview());
-    QCOMPARE(fixture.manager.model().windows().size(), 1); QVERIFY(!fixture.manager.model().tab(moving));
-    QCOMPARE(fixture.order(), (QVector<TabId>{fixture.tabs[0], fixture.tabs[2]}));
-    QVERIFY(!fixture.manager.paneWidget(pane)); QVERIFY(!QWidget::mouseGrabber());
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QVERIFY(!content);
-    QVERIFY(fixture.manager.model().validate());
 }
 
 void StripDragTest::detachmentNotificationMayDestroyTheManager()

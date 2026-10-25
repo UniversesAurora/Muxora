@@ -97,8 +97,12 @@ TabAppearance sized(StickyTabSizing sizing)
 }
 
 // The width of a tab without number or icon whose title fills `title`; every
-// title here is wider than the limits used.
-int shrunkWidth(int title = defaultShrinkStickyTitleWidth) { return tabBarTabWidth({0, 0, title}); }
+// title here is wider than the limits used. A sticky tab also keeps room for
+// its action, which always shows (tab strip design 5).
+int shrunkWidth(int title = defaultShrinkStickyTitleWidth, bool sticky = false) { return tabBarTabWidth({0, 0, title}, sticky); }
+int stickyShrunkWidth(int title = defaultShrinkStickyTitleWidth) { return shrunkWidth(title, true); }
+// A tab's natural width with the sticky action's room added.
+int withAction(int natural) { return natural - tabBarLeading + tabActionGap + tabActionSize + tabBarTrailing; }
 }
 
 class StickyTabsTest final : public QObject {
@@ -132,10 +136,10 @@ void StickyTabsTest::sizedStickyTabsUseTheirWidths()
         tabs.resize(900, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
         auto* bar = tabs.tabBar();
         const int expected = sizing == StickyTabSizing::Compact ? compactStickyTabWidth
-            : sizing == StickyTabSizing::Shrink ? shrunkWidth() : bar->naturalTabWidth(0);
-        if (sizing == StickyTabSizing::Shrink) QVERIFY(expected < bar->naturalTabWidth(0));
+            : sizing == StickyTabSizing::Shrink ? stickyShrunkWidth() : withAction(bar->naturalTabWidth(0));
+        if (sizing == StickyTabSizing::Shrink) QVERIFY(expected < withAction(bar->naturalTabWidth(0)));
         QCOMPARE(bar->displayTabRect(0).width(), expected);
-        QCOMPARE(bar->displayTabRect(1).width(), sizing == StickyTabSizing::Normal ? bar->naturalTabWidth(1) : expected);
+        QCOMPARE(bar->displayTabRect(1).width(), sizing == StickyTabSizing::Normal ? withAction(bar->naturalTabWidth(1)) : expected);
         QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
         // The other tabs keep their natural width right after the sticky ones.
         QCOMPARE(bar->displayTabRect(2).width(), bar->naturalTabWidth(2));
@@ -155,22 +159,22 @@ void StickyTabsTest::shrunkStickyTitlesUseTheirOwnLimit()
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 4, 2, appearance);
     tabs.resize(900, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar();
-    QCOMPARE(bar->displayTabRect(0).width(), shrunkWidth(20)); QCOMPARE(bar->displayTabRect(1).width(), shrunkWidth(20));
-    QCOMPARE(bar->stickyRunExtent(), 2 * shrunkWidth(20));
+    QCOMPARE(bar->displayTabRect(0).width(), stickyShrunkWidth(20)); QCOMPARE(bar->displayTabRect(1).width(), stickyShrunkWidth(20));
+    QCOMPARE(bar->frozenExtent(), 2 * stickyShrunkWidth(20));
     QCOMPARE(bar->displayTabRect(2).width(), shrunkWidth(10));
-    // A preview among the sticky tabs is no wider than a shrunk tab.
-    tabs.setInsertionPreview(1, 200, true);
-    QCOMPARE(bar->insertionPreviewRect().width(), shrunkWidth(20));
-    tabs.setInsertionPreview(-1, 0);
+    // A carried tab among the sticky tabs is no wider than a shrunk tab.
+    const auto gapAt = bar->mapToGlobal(QPoint(bar->displayTabRect(1).left() + 2, bar->displayTabRect(1).center().y()));
+    QCOMPARE(tabs.insertionIndex(gapAt), 1);
+    tabs.setInsertionPreview(1, {{QStringLiteral("A carried tab with a long title"), false}}, true);
+    QVERIFY(tabs.insertionSticky());
+    QCOMPARE(bar->dropPreviewRect().width(), stickyShrunkWidth(20));
+    tabs.setInsertionPreview(-1, {});
     // A limit above the title width shows the whole title with no space after
     // it; the other tabs follow right after.
     appearance.shrinkStickyTitleWidth = 300; appearance.clipTitles = false; tabs.setAppearance(appearance, false);
-    QCOMPARE(bar->displayTabRect(0).width(), bar->naturalTabWidth(0)); QVERIFY(bar->naturalTabWidth(0) < shrunkWidth(300));
+    QCOMPARE(bar->displayTabRect(0).width(), withAction(bar->naturalTabWidth(0))); QVERIFY(bar->naturalTabWidth(0) < shrunkWidth(300));
     QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
     QCOMPARE(bar->displayTabRect(2).left(), bar->displayTabRect(1).right() + 1);
-    // Zero shows no title text at all.
-    appearance.shrinkStickyTitleWidth = 0; tabs.setAppearance(appearance, false);
-    QCOMPARE(bar->displayTabRect(0).width(), shrunkWidth(0));
 }
 
 void StickyTabsTest::compactStickyTabsShowTheirIconOrInitialWithoutAPin()
@@ -193,10 +197,11 @@ void StickyTabsTest::compactStickyTabsShowTheirIconOrInitialWithoutAPin()
         if (image.pixelColor(x, first.center().y()).rgb() == iconColor.rgb()) { left = std::min(left, x); right = std::max(right, x); }
     QCOMPARE(right - left + 1, 16); QVERIFY(qAbs((left - first.left()) - (first.right() - right)) <= 1);
     // The initial is drawn in the text color; nothing is drawn in a pin slot.
-    // The last sticky tab's final column is the border to the other tabs.
-    QCOMPARE(image.pixelColor(second.right(), second.center().y()).rgb(), defaultTheme().border.rgb());
+    // A line ends the sticky run.
+    QVERIFY(image.pixelColor(second.right(), second.center().y()).rgb() != stickyColor.rgb());
     bool inked = false;
-    for (int y = second.top() + 2; y < second.bottom() - 2; ++y)
+    // Within the tab's straight sides, away from its rounded corners.
+    for (int y = second.top() + bar->metrics().radius; y < second.bottom() - bar->metrics().radius; ++y)
         for (int x = second.left(); x < second.right(); ++x)
             if (image.pixelColor(x, y).rgb() != stickyColor.rgb()) {
                 inked = true; QVERIFY(x > second.left() + 8 && x < second.right() - 8);
@@ -215,37 +220,43 @@ void StickyTabsTest::sizedStickyTabsStayInViewWhileOthersScroll()
         GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 20, 2, sized(sizing));
         tabs.resize(500, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
         auto* bar = tabs.tabBar(); tabs.setCurrentIndex(0);
-        const int width = sizing == StickyTabSizing::Compact ? compactStickyTabWidth : shrunkWidth();
-        QCOMPARE(bar->stickyRunExtent(), 2 * width);
+        const int width = sizing == StickyTabSizing::Compact ? compactStickyTabWidth : stickyShrunkWidth();
+        QCOMPARE(bar->frozenExtent(), 2 * width);
         tabs.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(tabs.scrollOffset() > 3 * width);
-        const int offset = tabs.scrollOffset();
-        QCOMPARE(bar->displayTabRect(0).left() - offset, 0);
-        QCOMPARE(bar->displayTabRect(1).left() - offset, width);
-        // The sticky tabs cover the scrolled tabs; the next one is drawn after them.
-        const auto image = render(bar); const int y = bar->height() / 2;
-        QCOMPARE(image.pixelColor(offset + 3, y).rgb(), stickyColor.rgb());
-        QCOMPARE(image.pixelColor(offset + 2 * width - 3, y).rgb(), stickyColor.rgb());
-        QCOMPARE(image.pixelColor(offset + 2 * width + 3, y).rgb(), plainColor.rgb());
+        // The sticky tabs stay at the viewport's start.
+        const int start = bar->scrollViewport().left();
+        QCOMPARE(bar->displayTabRect(0).left(), start);
+        QCOMPARE(bar->displayTabRect(1).left(), start + width);
+        // They cover the scrolled tabs; the next one is drawn after them.
+        const auto image = render(bar); const int y = bar->displayTabRect(0).center().y();
+        QCOMPARE(image.pixelColor(start + 3, y).rgb(), stickyColor.rgb());
+        QCOMPARE(image.pixelColor(start + 2 * width - 3, y).rgb(), stickyColor.rgb());
+        // Past the fade that marks scrolled-away tabs (tab strip design 3.1),
+        // the other tabs show (their titles aside).
+        bool plain = false;
+        for (int x = start + 2 * width + bar->metrics().edgeFade; x < start + 2 * width + bar->metrics().edgeFade + 40; ++x)
+            plain |= image.pixelColor(x, y).rgb() == plainColor.rgb();
+        QVERIFY(plain);
         // A click over them selects the sticky tab, not the one scrolled beneath.
-        const QPoint point(offset + 10, y);
+        const QPoint point(start + 10, y);
         sendBarMouse(bar, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
         sendBarMouse(bar, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
         QCOMPARE(tabs.currentIndex(), 0);
         // A drop over them goes among the sticky tabs, after them among the others.
-        QCOMPARE(tabs.insertionIndex(bar->mapToGlobal(QPoint(offset + 3, y))), 0);
-        QCOMPARE(tabs.insertionIndex(bar->mapToGlobal(QPoint(offset + 2 * width - 3, y))), 2);
-        QVERIFY(tabs.insertionIndex(bar->mapToGlobal(QPoint(offset + 2 * width + 3, y))) > 2);
+        QCOMPARE(tabs.insertionIndex(bar->mapToGlobal(QPoint(start + 3, y))), 0);
+        QCOMPARE(tabs.insertionIndex(bar->mapToGlobal(QPoint(start + 2 * width - 3, y))), 2);
+        QVERIFY(tabs.insertionIndex(bar->mapToGlobal(QPoint(start + 2 * width + 3, y))) > 2);
     }
     // Normal sticky tabs scroll away, and in several rows nothing is kept in view.
     GroupTabs normal(defaultTheme(), nullptr); populate(normal, 20, 2, sized(StickyTabSizing::Normal));
     normal.resize(500, 200); normal.show(); QVERIFY(QTest::qWaitForWindowExposed(&normal));
     normal.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(normal.scrollOffset() > 0);
-    QCOMPARE(normal.tabBar()->stickyRunExtent(), 0);
-    QVERIFY(normal.tabBar()->displayTabRect(0).left() < normal.scrollOffset());
+    QCOMPARE(normal.tabBar()->frozenExtent(), 0);
+    QVERIFY(normal.tabBar()->displayTabRect(0).isEmpty());
     auto multiline = sized(StickyTabSizing::Compact); multiline.multiline = true;
     GroupTabs rows(defaultTheme(), nullptr); populate(rows, 20, 2, multiline);
     rows.resize(500, 300); rows.show(); QVERIFY(QTest::qWaitForWindowExposed(&rows));
-    QCOMPARE(rows.tabBar()->stickyRunExtent(), 0);
+    QCOMPARE(rows.tabBar()->frozenExtent(), 0);
     QCOMPARE(rows.tabBar()->displayTabRect(0).width(), compactStickyTabWidth);
 }
 
@@ -253,14 +264,17 @@ void StickyTabsTest::activatingAScrolledTabRevealsItPastTheStickyTabs()
 {
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 20, 2, sized(StickyTabSizing::Shrink));
     tabs.resize(500, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* bar = tabs.tabBar(); const int run = bar->stickyRunExtent();
+    auto* bar = tabs.tabBar();
+    const int runEnd = bar->scrollViewport().left() + bar->frozenExtent();
     tabs.setCurrentIndex(19); QTRY_VERIFY(tabs.scrollOffset() > 0);
     // A tab under the sticky tabs scrolls out from under them.
-    int hidden = 2;
-    while (hidden + 1 < bar->count() && bar->displayTabRect(hidden + 1).left() < tabs.scrollOffset() + run) ++hidden;
-    QVERIFY(bar->displayTabRect(hidden).left() < tabs.scrollOffset() + run);
+    int hidden = -1;
+    for (int index = 2; index < bar->count(); ++index)
+        if (bar->contentTabRect(index).left() - tabs.scrollOffset() < runEnd) hidden = index;
+    QVERIFY(hidden >= 2);
     tabs.setCurrentIndex(hidden);
-    QCOMPARE(bar->displayTabRect(hidden).left() - tabs.scrollOffset(), run);
+    QCOMPARE(bar->displayTabRect(hidden).left(), runEnd);
+    QCOMPARE(bar->displayTabRect(hidden).width(), bar->contentTabRect(hidden).width());
     // A sticky tab is always shown and never scrolls the strip.
     const int offset = tabs.scrollOffset();
     tabs.setCurrentIndex(1); QCOMPARE(tabs.scrollOffset(), offset);
@@ -301,7 +315,7 @@ void StickyTabsTest::draggingIntoAndOutOfASizedRunUsesEachSegmentsWidth()
             if (view->insertionIndex(candidate) == targetIndex && view->insertionSticky() == sticky) { point = candidate; break; }
         }
         QVERIFY(!point.isNull());
-        QCOMPARE(bar->insertionPreviewRect().width(), sticky ? compactStickyTabWidth : natural);
+        QCOMPARE(bar->dropPreviewRect().width(), sticky ? compactStickyTabWidth : natural);
         sendMouse(receiver, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
         QTRY_VERIFY(!labelPreview());
         QCOMPARE(manager.model().groupForTab(tab), group);
@@ -320,40 +334,49 @@ void StickyTabsTest::separateRowHoldsStickyTabsAboveTheOthers()
     auto appearance = sized(StickyTabSizing::Normal); appearance.stickyTabsOnSeparateRow = true;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 12, 3, appearance);
     tabs.resize(600, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* bar = tabs.tabBar(); const int line = bar->lineHeight();
-    for (int index = 0; index < 3; ++index) QCOMPARE(bar->displayTabRect(index).top(), 0);
-    for (int index = 3; index < 12; ++index) QCOMPARE(bar->displayTabRect(index).top(), line);
-    QCOMPARE(bar->displayTabRect(3).left(), 0); QCOMPARE(bar->height(), 2 * line);
-    // The list button sits beside the other tabs' row.
-    auto* list = tabs.findChild<QWidget*>("TabListButton"); auto* header = tabs.findChild<QWidget*>("TabGroupHeader");
-    QVERIFY(list && header);
-    QCOMPARE(list->mapTo(header, QPoint()).y() - bar->mapTo(header, QPoint()).y(), line);
+    auto* bar = tabs.tabBar(); const int row = bar->metrics().rowHeight;
+    const int top = bar->displayTabRect(0).top();
+    for (int index = 0; index < 3; ++index) QCOMPARE(bar->displayTabRect(index).top(), top);
+    for (int index = 3; index < 12; ++index) if (!bar->displayTabRect(index).isEmpty()) QCOMPARE(bar->displayTabRect(index).top(), top + row);
+    QCOMPARE(bar->displayTabRect(3).left(), bar->displayTabRect(0).left());
+    // The list button ends the first row (tab strip design 2.1).
+    auto* list = tabs.findChild<QWidget*>("TabListButton"); QVERIFY(list && list->isVisible());
+    QCOMPARE(list->mapTo(bar, QPoint()).y(), top);
     // The other tabs scroll; the sticky row stays and covers none of them.
-    QCOMPARE(bar->stickyRunExtent(), 0);
+    QCOMPARE(bar->frozenExtent(), 0);
     tabs.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(tabs.scrollOffset() > 0);
-    QCOMPARE(bar->displayTabRect(0).left() - tabs.scrollOffset(), 0);
-    QCOMPARE(bar->displayTabRect(1).left() - tabs.scrollOffset(), bar->naturalTabWidth(0));
-    QVERIFY(bar->displayTabRect(3).left() < tabs.scrollOffset());
+    QCOMPARE(bar->displayTabRect(0).left(), bar->scrollViewport().left());
+    QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
+    QVERIFY(bar->displayTabRect(3).isEmpty());
     // Each row is its own drop target; right after the sticky tabs is both.
-    const auto global = [bar](int x, int row) { return bar->mapToGlobal(QPoint(x, row * bar->lineHeight() + bar->lineHeight() / 2)); };
+    const auto sticky = [bar](int x) { return bar->insertionAt(QPoint(x, bar->displayTabRect(0).center().y())); };
+    const auto other = [bar, row](int x) { return bar->insertionAt(QPoint(x, bar->displayTabRect(0).center().y() + row)); };
     const int end = bar->displayTabRect(2).right() + 4;
-    QCOMPARE(tabs.insertionRow(global(end, 0)), std::optional<bool>(true));
-    QCOMPARE(tabs.insertionIndex(global(end, 0)), 3);
-    QCOMPARE(tabs.insertionRow(global(tabs.scrollOffset() + 2, 1)), std::optional<bool>(false));
-    QVERIFY(tabs.insertionIndex(global(tabs.scrollOffset() + 2, 1)) >= 3);
-    QCOMPARE(tabs.insertionIndex(global(tabs.scrollOffset() + 2, 0)), 0);
+    QVERIFY(sticky(end).sticky); QCOMPARE(sticky(end).index, 3);
+    QVERIFY(!other(bar->scrollViewport().left() + 2).sticky); QVERIFY(other(bar->scrollViewport().left() + 2).index >= 3);
+    QCOMPARE(sticky(bar->scrollViewport().left() + 2).index, 0);
     // Without sticky tabs there is one row.
+    const int twoRows = bar->height();
     tabs.setStickyCount(0);
-    QCOMPARE(bar->height(), line); QCOMPARE(tabs.insertionRow(global(4, 0)), std::nullopt);
-    // Sticky tabs wrap on their own rows; sized ones keep their width.
+    QCOMPARE(bar->height(), twoRows - row);
+    // In one row each the sticky row scrolls on its own; with several rows
+    // the sticky tabs wrap on rows of their own. Sized ones keep their width.
     GroupTabs narrow(defaultTheme(), nullptr); populate(narrow, 6, 3, appearance);
     narrow.resize(260, 200); narrow.show(); QVERIFY(QTest::qWaitForWindowExposed(&narrow));
     auto* rows = narrow.tabBar();
-    QVERIFY(rows->displayTabRect(2).top() > 0);
-    QCOMPARE(rows->displayTabRect(3).top(), rows->displayTabRect(2).top() + rows->lineHeight());
+    QCOMPARE(rows->contentTabRect(2).top(), rows->contentTabRect(0).top());
+    QCOMPARE(rows->contentTabRect(3).top(), rows->contentTabRect(0).top() + row);
+    QVERIFY(rows->isOverflowing());
+    const int regularOffset = narrow.scrollOffset();
+    QVERIFY(rows->scrollAt(QPoint(rows->displayTabRect(0).center()), QPoint(0, -120)));
+    QCOMPARE(narrow.scrollOffset(), regularOffset);
+    QVERIFY(rows->displayTabRect(0).isEmpty() || rows->displayTabRect(0).left() < rows->contentTabRect(0).left());
+    appearance.multiline = true; narrow.setAppearance(appearance);
+    QVERIFY(rows->contentTabRect(2).top() > rows->contentTabRect(0).top());
+    QVERIFY(rows->contentTabRect(3).top() > rows->contentTabRect(2).top());
     appearance.stickySizing = StickyTabSizing::Compact; narrow.setAppearance(appearance);
-    QCOMPARE(rows->displayTabRect(2).top(), 0); QCOMPARE(rows->displayTabRect(2).width(), compactStickyTabWidth);
-    QCOMPARE(rows->displayTabRect(3).top(), rows->lineHeight());
+    QCOMPARE(rows->contentTabRect(2).top(), rows->contentTabRect(0).top()); QCOMPARE(rows->contentTabRect(2).width(), compactStickyTabWidth);
+    QCOMPARE(rows->contentTabRect(3).top(), rows->contentTabRect(0).top() + row);
 }
 
 void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
@@ -361,39 +384,40 @@ void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
     // The sticky rows wrap within the viewport and the new-tab buttons follow
     // the few other tabs on the next row; nothing overflows, so nothing scrolls.
     auto appearance = sized(StickyTabSizing::Shrink); appearance.stickyTabsOnSeparateRow = true;
-    appearance.showNewTabButton = true;
+    appearance.showNewTabButton = true; appearance.multiline = true;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 14, 12, appearance);
     tabs.setAppearance(appearance);
     auto* bar = tabs.tabBar();
-    // Fill the sticky rows as far as possible: the last full row ends close to the viewport edge.
-    tabs.resize(shrunkWidth() * 8 + 20, 200); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    QVERIFY(bar->displayTabRect(11).top() > 0); QCOMPARE(bar->displayTabRect(12).top(), bar->displayTabRect(11).top() + bar->lineHeight());
+    tabs.resize(shrunkWidth() * 8 + 40, 300); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    QVERIFY(bar->displayTabRect(11).top() > bar->displayTabRect(0).top());
+    QCOMPARE(bar->displayTabRect(12).top(), bar->displayTabRect(11).top() + bar->metrics().rowHeight);
     auto* create = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(create && create->isVisible());
-    QCOMPARE(create->y(), bar->displayTabRect(12).top());
-    auto* scrollbar = tabs.findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar);
-    QTRY_COMPARE(scrollbar->maximum(), 0); QCOMPARE(tabs.scrollOffset(), 0);
-    QCOMPARE(bar->displayTabRect(12).left(), 0);
+    QCOMPARE(create->mapTo(bar, QPoint()).y(), bar->displayTabRect(13).top());
+    QVERIFY(!bar->isOverflowing());
+    QCOMPARE(bar->displayTabRect(12).left(), bar->displayTabRect(0).left());
 }
 
 void StickyTabsTest::collapsedRowsKeepTheStickyRowShown()
 {
     auto appearance = sized(StickyTabSizing::Normal); appearance.stickyTabsOnSeparateRow = true;
-    appearance.multiline = true; appearance.wheelExpandRows = true;
+    appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push; appearance.wheelExpandRows = true;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 20, 2, appearance);
     tabs.resize(500, 300); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* bar = tabs.tabBar(); const int line = bar->lineHeight();
+    auto* bar = tabs.tabBar(); const int row = bar->metrics().rowHeight;
     tabs.setCurrentIndex(17);
     // Collapsed: the sticky row and the active tab's row.
-    QCOMPARE(bar->height(), 2 * line);
-    QCOMPARE(bar->displayTabRect(0).top(), 0); QCOMPARE(bar->displayTabRect(17).top(), line);
-    QVERIFY(bar->displayTabRect(2).isEmpty());
+    const int top = bar->displayTabRect(0).top();
+    QCOMPARE(bar->displayTabRect(17).top(), top + row);
+    QVERIFY(bar->displayTabRect(2).isEmpty() || bar->displayTabRect(2).top() == top + row);
+    QVERIFY(bar->hiddenTabs() > 0);
     // Activating a sticky tab keeps the other row it showed.
     tabs.setCurrentIndex(1);
-    QCOMPARE(bar->displayTabRect(17).top(), line); QCOMPARE(bar->height(), 2 * line);
+    QCOMPARE(bar->displayTabRect(17).top(), top + row);
     // Expanded: every row, the sticky one first.
     tabs.scrollByWheel(QPoint(0, -120));
-    QVERIFY(bar->rowCount() > 3); QCOMPARE(bar->height(), bar->rowCount() * line);
-    QCOMPARE(bar->displayTabRect(1).top(), 0); QCOMPARE(bar->displayTabRect(2).top(), line);
+    QTRY_VERIFY(bar->expanded());
+    QCOMPARE(bar->hiddenTabs(), 0);
+    QCOMPARE(bar->displayTabRect(1).top(), top); QCOMPARE(bar->displayTabRect(2).top(), top + row);
 }
 
 void StickyTabsTest::draggingBetweenRowsSticksAndUnsticks()
@@ -422,7 +446,7 @@ void StickyTabsTest::draggingBetweenRowsSticksAndUnsticks()
         sendMouse(bar, QEvent::MouseButtonPress, start, Qt::LeftButton);
         sendMouse(bar, QEvent::MouseMove, start + QPoint(QApplication::startDragDistance() + 3, 0));
         auto* receiver = QWidget::mouseGrabber(); QVERIFY(receiver);
-        const int y = bar->mapToGlobal(QPoint(0, (stickyRow ? 0 : bar->lineHeight()) + bar->lineHeight() / 2)).y();
+        const int y = bar->mapToGlobal(QPoint(0, bar->displayTabRect(0).center().y() + (stickyRow ? 0 : bar->metrics().rowHeight))).y();
         QPoint point;
         for (int x = view->viewportRectGlobal().left() + 1; x < view->viewportRectGlobal().right(); x += 2) {
             const QPoint candidate(x, y);

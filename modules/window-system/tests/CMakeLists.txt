@@ -85,6 +85,13 @@ add_test(NAME window-system.tab-ordering-model COMMAND window-system-tab-orderin
     -o ${CMAKE_CURRENT_BINARY_DIR}/tab-ordering-model-results.txt,txt)
 set_tests_properties(window-system.tab-ordering-model PROPERTIES LABELS model)
 
+qt_add_executable(window-system-tab-folder-model-test tab_folder_model_test.cpp)
+target_link_libraries(window-system-tab-folder-model-test PRIVATE WindowSystem::Model Qt6::Test)
+set_target_properties(window-system-tab-folder-model-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-folder-model COMMAND window-system-tab-folder-model-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-folder-model-results.txt,txt)
+set_tests_properties(window-system.tab-folder-model PROPERTIES LABELS model)
+
 qt_add_executable(window-system-movement-model-test movement_model_test.cpp)
 target_link_libraries(window-system-movement-model-test PRIVATE WindowSystem::Model Qt6::Test)
 set_target_properties(window-system-movement-model-test PROPERTIES AUTOMOC ON)

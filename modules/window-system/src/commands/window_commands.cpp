@@ -134,6 +134,7 @@ void WindowManager::registerWindowCommands()
     registerToolbarMoveCommand(this);
     registerPeekSizeCommands(this);
     registerTabGroupCommands();
+    registerTabFolderCommands();
     registerHierarchyCommands();
     registerCustomChromeCommands();
     add("window.toolbar.setSizing", QCoreApplication::translate("WindowSystem", "Change toolbar flexible space…"), "layout", {},
@@ -317,7 +318,12 @@ void WindowManager::registerWindowCommands()
             if (target.isNull()) return false;
             const auto group = c.args.value("group").toUuid();
             const auto place = static_cast<Placement>(c.args.value("placement", int(Placement::Center)).toInt());
-            const auto result = group.isNull() ? d->model.moveAllTabsToWindow(source, target, place) : d->model.moveAllTabs(source, group, place, c.args.value("index", -1).toInt());
+            // A drop passes whether the tabs land among the sticky tabs.
+            const auto sticky = c.args.contains("sticky") ? std::optional<bool>(c.args.value("sticky").toBool()) : std::nullopt;
+            // "asFolder" gathers the tabs into a new tab folder of the group.
+            const auto asFolder = c.args.value("asFolder").toBool() && !group.isNull() ? QUuid::createUuid() : QUuid{};
+            const auto result = group.isNull() ? d->model.moveAllTabsToWindow(source, target, place)
+                : d->model.moveAllTabs(source, group, place, c.args.value("index", -1).toInt(), sticky, asFolder);
             if (!applyResult(result)) return false;
             showWindow(target);
             return true;

@@ -38,6 +38,9 @@ struct TabOptions {
     bool showIcon = true;
     PaneBarSharing topBarSharing = PaneBarSharing::Shared;
     PaneBarSharing bottomBarSharing = PaneBarSharing::Shared;
+    // Opens the tab at the end of this tab folder. Without one, a tab opened
+    // beside the active tab joins the active tab's folder (tab strip design 12).
+    QUuid folder;
 };
 
 struct ContentVisibilityChange {
@@ -102,7 +105,8 @@ public:
     // Host command IDs define available content types. Creation always uses
     // the same command handlers as menus, keyboard and the command palette.
     bool setTabCreationCommands(QString defaultCommand, QStringList choices);
-    bool requestNewTab(WindowId window, GroupId group = {}, QString command = {});
+    // With `folder`, the tab the command opens joins that tab folder.
+    bool requestNewTab(WindowId window, GroupId group = {}, QString command = {}, QUuid folder = {});
     void setContentFactory(ContentFactory factory);
     void setCloseGuard(CloseGuard guard);
     // The current visibility of every live pane is reported when the handler
@@ -142,6 +146,34 @@ public:
     // closing other tabs. Auto-hide rails cannot hold sticky tabs.
     bool setTabSticky(TabId tab, bool sticky);
     [[nodiscard]] bool isTabSticky(TabId tab) const;
+    // A vertical tab strip's width (0: the appearance default) and icon mode.
+    bool setGroupTabStrip(GroupId group, int width, bool iconsOnly);
+    // A name for a tab group (tab strip design 13); empty removes it.
+    bool renameGroup(GroupId group, QString name);
+    // The group's name, or "Tab group: <its active tab>" without one.
+    [[nodiscard]] QString groupDisplayName(GroupId group) const;
+    // Tab folders (tab strip design 12). A folder's tabs are adjacent in one
+    // tab strip; an empty color ID picks a color automatically.
+    FolderId createTabFolder(const QVector<TabId>& tabs, QString name = {}, QString colorId = {});
+    bool addTabToFolder(TabId tab, FolderId folder);
+    bool removeTabFromFolder(TabId tab);
+    bool updateTabFolder(const TabFolderRecord& folder);
+    bool ungroupTabFolder(FolderId folder);
+    // Closes every tab of the folder, with the usual close approval.
+    bool closeTabFolder(FolderId folder);
+    // Moves the folder past `steps` items (tabs or folders) of its strip.
+    bool moveTabFolder(FolderId folder, int steps);
+    bool moveTabFolderToGroup(FolderId folder, GroupId group, int insertionIndex = -1);
+    bool moveTabFolderToWindow(FolderId folder, WindowId window);
+    WindowId detachTabFolder(FolderId folder, WindowKind kind = WindowKind::Floating);
+    bool mergeTabFolders(FolderId source, FolderId target);
+    GroupId convertTabFolderToGroup(FolderId folder, Placement placement = Placement::Right);
+    // Every tab of `group` joins a new folder at the end of `target`.
+    FolderId convertGroupToFolder(GroupId group, GroupId target);
+    // The next or previous folder of the same strip, cycling; null alone.
+    [[nodiscard]] FolderId adjacentTabFolder(FolderId folder, bool forward) const;
+    // The folder's name, or "Tab folder: <its first tab> (N tabs)" without one.
+    [[nodiscard]] QString tabFolderDisplayName(FolderId folder) const;
     bool swapGroups(GroupId first, GroupId second);
     bool swapGroupDirection(GroupId group, Placement direction);
     bool mergeGroups(GroupId source, GroupId target, int insertionIndex = -1);
@@ -160,6 +192,7 @@ public:
     GroupId convertTabToGroup(TabId tab, Placement placement = Placement::Right);
     TabId extractPaneToTab(TabId tab, PaneId pane);
     void showGroupMenu(GroupId group, QPoint globalPosition);
+    void showTabFolderMenu(FolderId folder, QPoint globalPosition);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
     bool closeTab(TabId tab);
@@ -171,7 +204,7 @@ public:
     // final-save notification observes every original window and content ID.
     bool requestCloseAllWindows();
     bool moveTab(TabId tab, GroupId group, Placement placement = Placement::Center,
-                 int insertionIndex = -1);
+                 int insertionIndex = -1, std::optional<bool> sticky = {}, std::optional<FolderId> folder = {});
     bool moveTabToWindow(TabId tab, WindowId target,
                          Placement placement = Placement::Center);
     bool reorderTab(TabId tab, bool forward);
@@ -188,7 +221,7 @@ public:
     bool swapPaneDirection(TabId tab, PaneId pane, Placement direction);
     WindowId detachTab(TabId tab, WindowKind kind = WindowKind::Floating);
     bool moveAllTabs(WindowId source, GroupId group,
-                     Placement placement = Placement::Center, int insertionIndex = -1);
+                     Placement placement = Placement::Center, int insertionIndex = -1, FolderId asFolder = {});
     bool moveTabToEdge(TabId tab, Edge edge, bool pinned = false);
     bool moveTabToEdgeBar(TabId tab, WindowId target, Edge edge, int insertionIndex = -1);
     bool moveAllTabsToEdgeBar(WindowId source, WindowId target, Edge edge, int insertionIndex = -1);
@@ -290,6 +323,7 @@ private:
     QJsonObject saveViewLayout() const;
     void registerWindowCommands();
     void registerTabGroupCommands();
+    void registerTabFolderCommands();
     void registerHierarchyCommands();
     bool prepareHierarchyBars(const QVector<QPair<TabId, PaneId>>& tabs);
     void usePerPaneBars(TabId tab);
@@ -313,7 +347,12 @@ private:
     void focusWindowCycle(bool forward, const QString& scope);
     void cancelPendingShortcut();
     void beginTabDrag(TabId tab, QPoint globalPosition);
+    void beginTabFolderDrag(FolderId folder, QPoint globalPosition);
     WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag = false);
+    WindowId detachFolderImpl(FolderId folder, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag = false);
+    // Gives a window just made from `source`'s tabs its options, then shows it.
+    WindowId adoptDetachedWindow(WindowId created, WindowId source, WindowKind kind, TabId activate,
+                                 const std::function<void(QWidget*)>& beforeShow, bool preserveDrag);
     void beginWindowDrag(WindowId window, QPoint globalPosition);
     void showTabMenu(TabId tab, QPoint globalPosition);
     void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);

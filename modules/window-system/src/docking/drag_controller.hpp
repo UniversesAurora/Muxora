@@ -1,6 +1,7 @@
 #pragma once
 #include <window_system/window_manager.hpp>
 #include "dock_guides.hpp"
+#include "tab_bar.hpp"
 #include <QObject>
 #include <QPointer>
 #include <QRect>
@@ -10,6 +11,7 @@
 namespace window_system {
 class DockOverlay;
 class DragLabelPreview;
+class NativeMoveWatcher;
 struct DropTarget {
     WindowId window;
     GroupId group;
@@ -28,6 +30,8 @@ struct DropTarget {
     bool insertionSticky = false;
     // Whether the pointer is over the strip's own row of sticky tabs.
     std::optional<bool> insertionRow;
+    // The tab folder a dropped tab joins; null for none.
+    FolderId insertionFolder;
     QVector<DockGuide> guides;
 };
 class DragController final : public QObject {
@@ -35,6 +39,8 @@ public:
     explicit DragController(WindowManager* manager);
     ~DragController() override;
     void beginTab(TabId tab, QPoint global);
+    // A tab folder carried whole by its header (tab strip design 12).
+    void beginFolder(FolderId folder, QPoint global);
     void beginWindow(WindowId window, QPoint global);
     void cancel();
     void releaseForMutation();
@@ -55,12 +61,26 @@ private:
     void completeLayoutTransaction();
     [[nodiscard]] bool belongsToDropWindow(QObject* object) const;
     DropTarget hit(QPoint global);
+    [[nodiscard]] QVector<CarriedLabel> carriedLabels() const;
+    [[nodiscard]] TabLayoutInput::Carried carriedKind() const;
     WindowId candidateAt(QPoint global) const;
+    // A floating window dragged with the real mouse moves in the system's
+    // move loop, like any window's caption drag, so it follows the pointer
+    // at the system's pace; drop targets are computed as it reports moves
+    // (tab strip design 6.2). Over a tab strip the drag takes the mouse back.
+    void enterNativeMove();
+    void leaveNativeMove();
+    void nativeMoved();
+    void nativeMoveEnded();
+    [[nodiscard]] bool nativeMoveAvailable() const;
     WindowManager* manager_;
     QPointer<DockOverlay> overlay_;
     QPointer<QWidget> capture_;
     QPointer<DragLabelPreview> labelPreview_;
     TabId tab_;
+    // The carried folder; `tab_` is then its first tab until it tears off,
+    // after which its window is carried whole.
+    FolderId folder_;
     WindowId wholeWindow_;
     WindowId sourceWindow_;
     WindowId movingWindow_;
@@ -85,6 +105,11 @@ private:
     QPoint windowOffset_;
     QPoint normalOffset_;
     QPoint lastPosition_;
+    QPoint liftGrab_;
+    // The dragged content's picture, taken as it reaches a tab strip.
+    QPixmap contentPicture_;
+    GroupId previewGroup_;
+    WindowId previewWindow_;
     DropTarget target_;
     WindowId revealCandidate_;
     WindowId revealedWindow_;
@@ -96,5 +121,11 @@ private:
     bool choosing_ = false;
     bool hoverUpdateQueued_ = false;
     quint64 hoverGeneration_ = 0;
+    // Set when a drag starts with the real left button held.
+    bool nativeInput_ = false;
+    bool nativeMoving_ = false;
+    bool leavingNativeMove_ = false;
+    NativeMoveWatcher* nativeWatcher_ = nullptr;
+    friend class NativeMoveWatcher;
 };
 } // namespace window_system

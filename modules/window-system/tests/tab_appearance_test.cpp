@@ -60,7 +60,7 @@ void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
         QVERIFY(manager.tabColorPreset(preset.id).has_value());
         QCOMPARE(*manager.tabColorPreset(preset.id), preset);
         QVERIFY(preset.autoHideInactive.background != preset.autoHideActive.background);
-        QCOMPARE(preset.autoHideInactive, preset.groupInactive);
+        QCOMPARE(preset.autoHideActive, preset.groupInactive);
     }
     QVERIFY(!manager.tabColorPreset("missing")); QVERIFY(!manager.tabColorPreset({}));
 }
@@ -112,7 +112,10 @@ void TabAppearanceTest::defaultPaletteKeepsColorIdentityAndReadableForegrounds()
         const auto& inactive = preset.groupInactive;
         QVERIFY2(inactive.background.saturationF() > active.background.saturationF(), qPrintable(preset.id));
         QVERIFY(luminance(active.background) > luminance(inactive.background));
-        QCOMPARE(preset.autoHideActive, active); QCOMPARE(preset.autoHideInactive, inactive);
+        // A rail rests on the vivid line color with white text and shows the
+        // pastel while expanded (tab strip design 9).
+        QCOMPARE(preset.autoHideActive, inactive);
+        QCOMPARE(preset.autoHideInactive.background, inactive.line); QCOMPARE(preset.autoHideInactive.text, QColor("#ffffff"));
         for (const auto& colors : {active, inactive}) {
             QVERIFY(colors.background != colors.line); QVERIFY(colors.background != colors.icon);
             QVERIFY(colors.text != colors.icon); QVERIFY(colors.line != colors.icon);
@@ -211,7 +214,7 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
     auto candidate = manager.tabAppearance();
     switch (fault) {
     case 0: candidate.centralPlacement = static_cast<TabBarPlacement>(-1); break;
-    case 1: candidate.pinnedPlacement = static_cast<TabBarPlacement>(2); break;
+    case 1: candidate.pinnedPlacement = static_cast<TabBarPlacement>(9); break;
     case 2: candidate.stickySizing = static_cast<StickyTabSizing>(9); break;
     case 3: candidate.colors.append(candidate.colors.front()); break;
     case 4: candidate.colors[0].autoHideInactive.icon = QColor{}; break;
@@ -238,7 +241,7 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
 {
     QTest::addColumn<QString>("field"); QTest::addColumn<QJsonValue>("value");
     QTest::newRow("nonobject") << QString() << QJsonValue(3);
-    QTest::newRow("wrongPlacement") << QString("centralPlacement") << QJsonValue("left");
+    QTest::newRow("wrongPlacement") << QString("centralPlacement") << QJsonValue("middle");
     QTest::newRow("wrongPinnedPlacement") << QString("pinnedPlacement") << QJsonValue(false);
     QTest::newRow("wrongFlag") << QString("showIcons") << QJsonValue("false");
     QTest::newRow("wrongClippingFlag") << QString("clipTitles") << QJsonValue("true");
@@ -318,6 +321,9 @@ void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
     }
     QVERIFY(!manager.execute("presentation.toggleWheelExpandRows"));
     QVERIFY(manager.execute("presentation.toggleMultiline"));
+    // Wheel expansion needs collapsed rows as well.
+    QVERIFY(!manager.execute("presentation.toggleWheelExpandRows"));
+    { auto next = manager.tabAppearance(); next.collapseRows = TabRowCollapse::Push; QVERIFY(manager.setTabAppearance(next)); }
     QVERIFY(manager.execute("presentation.toggleWheelExpandRows")); QVERIFY(manager.tabAppearance().wheelExpandRows);
     // Turning several rows off keeps wheel expansion for when they return.
     QVERIFY(manager.execute("presentation.toggleMultiline")); QVERIFY(manager.tabAppearance().wheelExpandRows);
@@ -329,7 +335,7 @@ void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
     QVERIFY(manager.execute("presentation.setCentralPlacement", {{"position", "bottom"}}));
     QCOMPARE(manager.tabAppearance().centralPlacement, TabBarPlacement::Bottom);
     QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Top);
-    QVERIFY(!manager.execute("presentation.setPinnedPlacement", {{"position", "left"}}));
+    QVERIFY(!manager.execute("presentation.setPinnedPlacement", {{"position", "middle"}}));
 }
 
 void TabAppearanceTest::settingsExposeEachFlagAndOnlyEnableWheelExpansionInMultiline()
@@ -344,7 +350,9 @@ void TabAppearanceTest::settingsExposeEachFlagAndOnlyEnableWheelExpansionInMulti
     central->setCurrentIndex(1); QCOMPARE(manager.tabAppearance().centralPlacement, TabBarPlacement::Bottom);
     QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Top);
     pinned->setCurrentIndex(1); QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Bottom);
-    multiline->setChecked(true); QVERIFY(wheel->isEnabled());
+    multiline->setChecked(true); QVERIFY(!wheel->isEnabled());
+    auto* collapse = page.findChild<QComboBox*>("CollapseTabRows"); QVERIFY(collapse);
+    collapse->setCurrentIndex(collapse->findData(int(TabRowCollapse::Push))); QVERIFY(wheel->isEnabled());
     wheel->setChecked(true); QVERIFY(manager.tabAppearance().wheelExpandRows);
     // Off with a single row, but kept and restored with several.
     multiline->setChecked(false); QVERIFY(!wheel->isEnabled()); QVERIFY(wheel->isChecked());

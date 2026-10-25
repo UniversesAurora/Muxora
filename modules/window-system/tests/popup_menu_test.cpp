@@ -346,10 +346,18 @@ void PopupMenuTest::tabBarContextExposesMultilineAndItsOwnPlacement()
     auto* numbers = menu->findChild<QAction*>(numberCommand);
     QVERIFY(icons && numbers); QCOMPARE(icons->isChecked(), !pinned); QVERIFY(!numbers->isChecked());
     QVERIFY(!menu->findChild<QAction*>(pinned ? QStringLiteral("presentation.toggleIcons") : QStringLiteral("presentation.toggleSidebarIcons")));
+    // Row options appear with multiple rows; the wheel needs collapsing rows
+    // (tab strip design 3.4).
     auto* multiline = menu->findChild<QAction*>("presentation.toggleMultiline");
-    auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
-    QVERIFY(multiline && wheel); QVERIFY(!multiline->isChecked()); QVERIFY(!wheel->isEnabled());
+    QVERIFY(multiline); QVERIFY(!multiline->isChecked());
+    QVERIFY(!menu->findChild<QAction*>("presentation.toggleWheelExpandRows"));
     multiline->trigger(); QTRY_VERIFY(manager.tabAppearance().multiline); menu->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    menu = open(); QVERIFY(menu && menu->isVisible());
+    auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
+    auto* push = menu->findChild<QAction*>("presentation.setRowCollapse.push");
+    QVERIFY(wheel && push); QVERIFY(!wheel->isEnabled());
+    push->trigger(); QTRY_COMPARE(manager.tabAppearance().collapseRows, TabRowCollapse::Push); menu->close();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     menu = open(); QVERIFY(menu && menu->isVisible());
     wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");

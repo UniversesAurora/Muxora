@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include <window_system/layout_model.hpp>
+#include <window_system/tab_strip_limits.hpp>
 
 #include <QJsonArray>
 #include <QJsonValue>
@@ -408,6 +409,7 @@ OperationResult LayoutModel::transact(const std::function<OperationResult(Layout
     // turned the group into one.
     for (auto& group : candidate.groups_)
         if (group.location == GroupLocation::AutoHide) group.stickyTabs = 0;
+    candidate.normalizeFoldersUnchecked();
     candidate.synchronizePinnedLayouts();
     candidate.reconcilePinnedRestoreLayouts();
     candidate.rebuildIndex();
@@ -459,7 +461,7 @@ GroupId LayoutModel::createGroupUnchecked(WindowId windowId)
     record.activeGroup = id;
     return id;
 }
-TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup, int insertionIndex)
+TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup, int insertionIndex, FolderId folder)
 {
     TabId created;
     const auto result = transact([&](LayoutModel& model) {
@@ -479,6 +481,7 @@ TabId LayoutModel::addTab(WindowId windowId, QString title, GroupId targetGroup,
         tabRecord.id = created; tabRecord.title = std::move(title);
         tabRecord.panes = leaf(paneId); tabRecord.activePane = paneId;
         tabRecord.openedOrder = tabRecord.visitedOrder = model.nextTabOrder();
+        tabRecord.folder = folder;
         model.tabs_.insert(created, std::move(tabRecord));
         auto& record = model.groups_[target];
         if (insertionIndex < -1 || insertionIndex > record.tabs.size()) return failure(QCoreApplication::translate("WindowSystem", "The insertion index is invalid."));
@@ -639,6 +642,325 @@ bool LayoutModel::isTabSticky(TabId tabId) const
     const auto* record = group(groupForTab(tabId));
     return record && record->tabs.indexOf(tabId) < record->stickyTabs;
 }
+OperationResult LayoutModel::setGroupTabStrip(GroupId groupId, int width, bool iconsOnly)
+{
+    const auto* record = group(groupId);
+    if (!record) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab group."));
+    if (width != 0 && (width < minimumVerticalTabWidth || width > maximumVerticalTabWidth))
+        return failure(QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 140 to 480 logical pixels"));
+    if (record->tabStripWidth == width && record->tabStripIconsOnly == iconsOnly) return success();
+    return transact([&](LayoutModel& model) {
+        auto& target = model.groups_[groupId];
+        target.tabStripWidth = width; target.tabStripIconsOnly = iconsOnly;
+        return success();
+    });
+}
+FolderId LayoutModel::folderOfTab(TabId id) const
+{
+    const auto found = tabs_.constFind(id);
+    return found == tabs_.cend() ? FolderId{} : found->folder;
+}
+void LayoutModel::normalizeFoldersUnchecked()
+{
+    for (auto& group : groups_) {
+        QSet<FolderId> known;
+        for (const auto& record : group.folders) known.insert(record.id);
+        // Rails and sticky tabs hold no folders. A folder split into runs
+        // keeps its longest (the first among equals); the others leave it.
+        for (int index = 0; index < group.tabs.size(); ++index) {
+            auto& tab = tabs_[group.tabs.at(index)];
+            if (group.location == GroupLocation::AutoHide || index < group.stickyTabs || !known.contains(tab.folder)) tab.folder = {};
+        }
+        QHash<FolderId, QPair<int, int>> kept; // start, length
+        for (int index = 0; index < group.tabs.size();) {
+            const auto id = folderOfTab(group.tabs.at(index));
+            int end = index + 1;
+            while (end < group.tabs.size() && folderOfTab(group.tabs.at(end)) == id) ++end;
+            if (!id.isNull() && (!kept.contains(id) || kept.value(id).second < end - index)) kept.insert(id, {index, end - index});
+            index = end;
+        }
+        QSet<FolderId> seen;
+        for (int index = 0; index < group.tabs.size(); ++index) {
+            auto& tab = tabs_[group.tabs.at(index)];
+            if (tab.folder.isNull()) continue;
+            const auto run = kept.value(tab.folder);
+            if (index < run.first || index >= run.first + run.second) tab.folder = {};
+            else seen.insert(tab.folder);
+        }
+        group.folders.erase(std::remove_if(group.folders.begin(), group.folders.end(),
+            [&](const TabFolderRecord& record) { return !seen.contains(record.id); }), group.folders.end());
+    }
+}
+void LayoutModel::carryFoldersUnchecked(const QHash<TabId, FolderId>& folders, const QVector<TabFolderRecord>& records, GroupId target)
+{
+    auto& group = groups_[target];
+    if (group.location == GroupLocation::AutoHide) return;
+    for (auto it = folders.cbegin(); it != folders.cend(); ++it) if (tabs_.contains(it.key())) tabs_[it.key()].folder = it.value();
+    for (const auto& record : records) {
+        if (std::any_of(group.folders.cbegin(), group.folders.cend(), [&](const TabFolderRecord& r) { return r.id == record.id; })) continue;
+        // The records leave where they were, so an identity is never shared.
+        for (auto& other : groups_) other.folders.erase(std::remove_if(other.folders.begin(), other.folders.end(),
+            [&](const TabFolderRecord& r) { return r.id == record.id; }), other.folders.end());
+        group.folders.append(record);
+    }
+}
+const TabFolderRecord* LayoutModel::folder(FolderId folderId) const
+{
+    for (const auto& group : groups_) for (const auto& record : group.folders) if (record.id == folderId) return &record;
+    return nullptr;
+}
+GroupId LayoutModel::groupForFolder(FolderId folderId) const
+{
+    for (const auto& group : groups_) for (const auto& record : group.folders) if (record.id == folderId) return group.id;
+    return {};
+}
+QVector<TabId> LayoutModel::folderTabs(FolderId folderId) const
+{
+    QVector<TabId> result;
+    const auto* group = this->group(groupForFolder(folderId));
+    if (!group) return result;
+    for (const auto id : group->tabs) if (folderOfTab(id) == folderId) result.append(id);
+    return result;
+}
+OperationResult LayoutModel::createFolder(QVector<TabId> tabs, FolderId folderId, QString name, QString colorId)
+{
+    if (tabs.isEmpty() || folderId.isNull() || folder(folderId))
+        return failure(QCoreApplication::translate("WindowSystem", "A tab folder needs new identity and at least one tab."));
+    const auto groupId = groupForTab(tabs.first());
+    return transact([&](LayoutModel& model) {
+        auto& group = model.groups_[groupId];
+        if (group.location == GroupLocation::AutoHide)
+            return failure(QCoreApplication::translate("WindowSystem", "Auto-hide rails hold no tab folders."));
+        // In strip order, gathered after the first one's place.
+        std::sort(tabs.begin(), tabs.end(), [&](TabId a, TabId b) { return group.tabs.indexOf(a) < group.tabs.indexOf(b); });
+        for (const auto tab : tabs) if (model.groupForTab(tab) != groupId || group.tabs.indexOf(tab) < group.stickyTabs)
+            return failure(QCoreApplication::translate("WindowSystem", "A tab folder's tabs must be tabs of one tab group that are not sticky."));
+        if (QSet<TabId>(tabs.cbegin(), tabs.cend()).size() != tabs.size())
+            return failure(QCoreApplication::translate("WindowSystem", "A tab folder lists each tab once."));
+        int position = int(group.tabs.indexOf(tabs.first()));
+        for (const auto tab : tabs) {
+            const int index = int(group.tabs.indexOf(tab));
+            group.tabs.removeAt(index);
+            if (index < position) --position;
+        }
+        position = std::clamp(position, int(group.stickyTabs), int(group.tabs.size()));
+        for (int index = 0; index < tabs.size(); ++index) {
+            group.tabs.insert(position + index, tabs.at(index));
+            model.tabs_[tabs.at(index)].folder = folderId;
+        }
+        group.folders.append({folderId, name.trimmed().left(256), colorId, false});
+        return success();
+    });
+}
+OperationResult LayoutModel::addTabToFolder(TabId tabId, FolderId folderId)
+{
+    const auto groupId = groupForFolder(folderId);
+    if (groupId.isNull() || groupForTab(tabId) != groupId || isTabSticky(tabId))
+        return failure(QCoreApplication::translate("WindowSystem", "The tab and the tab folder must share one tab group, and the tab must not be sticky."));
+    return transact([&](LayoutModel& model) {
+        auto& group = model.groups_[groupId];
+        group.tabs.removeAll(tabId);
+        int end = -1;
+        for (int index = 0; index < group.tabs.size(); ++index) if (model.tabs_[group.tabs.at(index)].folder == folderId) end = index;
+        group.tabs.insert(end + 1, tabId);
+        model.tabs_[tabId].folder = folderId;
+        return success();
+    });
+}
+OperationResult LayoutModel::removeTabFromFolder(TabId tabId)
+{
+    const auto* record = tab(tabId);
+    if (!record || record->folder.isNull()) return success();
+    const auto folderId = record->folder;
+    return transact([&](LayoutModel& model) {
+        auto& group = model.groups_[model.groupForTab(tabId)];
+        // It leaves to just after the folder.
+        group.tabs.removeAll(tabId);
+        int end = -1;
+        for (int index = 0; index < group.tabs.size(); ++index) if (model.tabs_[group.tabs.at(index)].folder == folderId) end = index;
+        group.tabs.insert(end < 0 ? group.tabs.size() : end + 1, tabId);
+        model.tabs_[tabId].folder = {};
+        return success();
+    });
+}
+OperationResult LayoutModel::updateFolder(const TabFolderRecord& changed)
+{
+    const auto groupId = groupForFolder(changed.id);
+    if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab folder."));
+    if (changed.name.size() > 256) return failure(QCoreApplication::translate("WindowSystem", "A tab folder name has at most 256 characters."));
+    if (*folder(changed.id) == changed) return success();
+    return transact([&](LayoutModel& model) {
+        for (auto& record : model.groups_[groupId].folders) if (record.id == changed.id) record = changed;
+        return success();
+    });
+}
+OperationResult LayoutModel::ungroupFolder(FolderId folderId)
+{
+    const auto groupId = groupForFolder(folderId);
+    if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab folder."));
+    return transact([&](LayoutModel& model) {
+        for (const auto id : model.groups_[groupId].tabs) if (model.tabs_[id].folder == folderId) model.tabs_[id].folder = {};
+        return success();
+    });
+}
+OperationResult LayoutModel::moveFolderWithinGroup(FolderId folderId, int steps)
+{
+    const auto groupId = groupForFolder(folderId);
+    if (groupId.isNull()) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab folder."));
+    return transact([&](LayoutModel& model) {
+        auto& group = model.groups_[groupId];
+        // The strip's items after the sticky tabs: single tabs and folders.
+        QVector<QVector<TabId>> items;
+        for (int index = group.stickyTabs; index < group.tabs.size(); ++index) {
+            const auto id = group.tabs.at(index);
+            const auto in = model.tabs_[id].folder;
+            if (!in.isNull() && !items.isEmpty() && model.tabs_[items.last().first()].folder == in) items.last().append(id);
+            else items.append({id});
+        }
+        int at = -1;
+        for (int index = 0; index < items.size(); ++index) if (model.tabs_[items.at(index).first()].folder == folderId) at = index;
+        if (at < 0 || items.size() < 2) return success();
+        const int count = int(items.size());
+        const int target = ((at + steps) % count + count) % count;
+        const auto moving = items.takeAt(at);
+        items.insert(target, moving);
+        QVector<TabId> ordered = group.tabs.mid(0, group.stickyTabs);
+        for (const auto& item : items) ordered += item;
+        group.tabs = ordered;
+        return success();
+    });
+}
+OperationResult LayoutModel::moveFolderToGroup(FolderId folderId, GroupId targetGroup, int index)
+{
+    const auto sourceId = groupForFolder(folderId);
+    const auto* target = group(targetGroup);
+    if (sourceId.isNull() || !target) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab folder or target group."));
+    if (target->location == GroupLocation::AutoHide)
+        return failure(QCoreApplication::translate("WindowSystem", "Auto-hide rails hold no tab folders."));
+    const auto tabs = folderTabs(folderId);
+    const auto record = *folder(folderId);
+    return transact([&](LayoutModel& model) {
+        if (sourceId == targetGroup) {
+            // In its own group the index addresses the strip's other tabs.
+            auto& group = model.groups_[sourceId];
+            for (const auto tab : tabs) group.tabs.removeAll(tab);
+            int at = index < 0 ? int(group.tabs.size()) : std::clamp(index, int(group.stickyTabs), int(group.tabs.size()));
+            for (const auto tab : tabs) group.tabs.insert(at++, tab);
+            group.activeTab = tabs.contains(group.activeTab) ? group.activeTab : tabs.first();
+            return success();
+        }
+        int at = index < 0 ? -1 : std::max<int>(index, model.groups_[targetGroup].stickyTabs);
+        for (const auto tab : tabs) {
+            auto moved = model.moveTabUnchecked(tab, targetGroup, Placement::Center, at, false);
+            if (!moved) return moved;
+            model.tabs_[tab].folder = folderId;
+            if (at >= 0) at = int(model.groups_[targetGroup].tabs.indexOf(tab)) + 1;
+        }
+        // The record leaves its old group, if that still exists.
+        if (auto source = model.groups_.find(sourceId); source != model.groups_.end())
+            source->folders.erase(std::remove_if(source->folders.begin(), source->folders.end(),
+                [&](const TabFolderRecord& r) { return r.id == folderId; }), source->folders.end());
+        model.groups_[targetGroup].folders.append(record);
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+}
+OperationResult LayoutModel::mergeFolder(FolderId source, FolderId target)
+{
+    if (source == target || groupForFolder(source).isNull() || groupForFolder(target).isNull())
+        return failure(QCoreApplication::translate("WindowSystem", "Unknown tab folder."));
+    const auto targetGroup = groupForFolder(target);
+    const auto tabs = folderTabs(source);
+    return transact([&](LayoutModel& model) {
+        for (const auto tab : tabs) {
+            if (model.groupForTab(tab) != targetGroup) {
+                auto moved = model.moveTabUnchecked(tab, targetGroup, Placement::Center, -1, false);
+                if (!moved) return moved;
+            }
+            auto& group = model.groups_[targetGroup];
+            group.tabs.removeAll(tab);
+            int end = -1;
+            for (int index = 0; index < group.tabs.size(); ++index) if (model.tabs_[group.tabs.at(index)].folder == target) end = index;
+            group.tabs.insert(end + 1, tab);
+            model.tabs_[tab].folder = target;
+        }
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+}
+WindowId LayoutModel::detachFolder(FolderId folderId, WindowKind kind)
+{
+    WindowId created;
+    const auto sourceId = groupForFolder(folderId);
+    if (sourceId.isNull()) return {};
+    const auto tabs = folderTabs(folderId);
+    const auto record = *folder(folderId);
+    const auto result = transact([&](LayoutModel& model) {
+        const auto family = model.windows_[model.groups_[sourceId].windowId].familyId;
+        created = model.createWindowUnchecked(kind, model.familyRoot(family));
+        const auto target = model.createGroupUnchecked(created);
+        QHash<TabId, FolderId> folders;
+        for (const auto tab : tabs) {
+            auto moved = model.moveTabUnchecked(tab, target, Placement::Center, -1);
+            if (!moved) return moved;
+            folders.insert(tab, folderId);
+        }
+        model.carryFoldersUnchecked(folders, {record}, target);
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+    return result ? created : WindowId{};
+}
+GroupId LayoutModel::convertFolderToGroup(FolderId folderId, Placement placement)
+{
+    GroupId created;
+    const auto sourceId = groupForFolder(folderId);
+    if (sourceId.isNull() || placement < Placement::Left || placement > Placement::Bottom) return {};
+    const auto tabs = folderTabs(folderId);
+    const auto result = transact([&](LayoutModel& model) {
+        auto moved = model.moveTabUnchecked(tabs.first(), sourceId, placement, -1, false, FolderId{});
+        if (!moved) return moved;
+        created = model.groupForTab(tabs.first());
+        for (int index = 1; index < tabs.size(); ++index) {
+            moved = model.moveTabUnchecked(tabs.at(index), created, Placement::Center, -1, false, FolderId{});
+            if (!moved) return moved;
+        }
+        model.groups_[created].activeTab = tabs.first();
+        return success();
+    });
+    return result ? created : GroupId{};
+}
+OperationResult LayoutModel::convertGroupToFolder(GroupId sourceId, GroupId targetId, FolderId folderId)
+{
+    const auto* source = group(sourceId);
+    const auto* target = group(targetId);
+    if (!source || !target || sourceId == targetId || folderId.isNull() || folder(folderId))
+        return failure(QCoreApplication::translate("WindowSystem", "A tab group becomes a tab folder of another tab group."));
+    if (target->location == GroupLocation::AutoHide)
+        return failure(QCoreApplication::translate("WindowSystem", "Auto-hide rails hold no tab folders."));
+    const auto tabs = source->tabs;
+    const auto name = source->name;
+    return transact([&](LayoutModel& model) {
+        QHash<TabId, FolderId> folders;
+        for (const auto tab : tabs) {
+            auto moved = model.moveTabUnchecked(tab, targetId, Placement::Center, -1, false);
+            if (!moved) return moved;
+            folders.insert(tab, folderId);
+        }
+        // A named group's name becomes the folder's.
+        model.carryFoldersUnchecked(folders, {{folderId, name, {}, false}}, targetId);
+        model.eraseEmptyFloatingWindows();
+        return success();
+    });
+}
+OperationResult LayoutModel::renameGroup(GroupId groupId, QString name)
+{
+    if (!group(groupId)) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab group."));
+    name = name.trimmed();
+    if (name.size() > 256) return failure(QCoreApplication::translate("WindowSystem", "A tab group name has at most 256 characters."));
+    if (groups_.value(groupId).name == name) return success();
+    return transact([&](LayoutModel& model) { model.groups_[groupId].name = name; return success(); });
+}
 OperationResult LayoutModel::setTabSticky(TabId tabId, bool sticky)
 {
     // Asking for the current state is not an edit and keeps the revision.
@@ -657,7 +979,8 @@ OperationResult LayoutModel::setTabSticky(TabId tabId, bool sticky)
     });
 }
 OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
-                                               Placement placement, int insertionIndex)
+                                               Placement placement, int insertionIndex, std::optional<bool> stickyDrop,
+                                               std::optional<FolderId> folderDrop)
 {
     const auto sourceId = groupForTab(tabId);
     if (sourceId.isNull() || !groups_.contains(targetGroup)
@@ -691,16 +1014,27 @@ OperationResult LayoutModel::moveTabUnchecked(TabId tabId, GroupId targetGroup,
     if (source.activeTab == tabId)
         source.activeTab = source.tabs.isEmpty() ? TabId{} : source.tabs[std::min(oldIndex, source.tabs.size() - 1)];
     auto& target = groups_[destinationId];
-    attachTabUnchecked(target, tabId, insertionIndex, sticky);
+    const auto at = attachTabUnchecked(target, tabId, insertionIndex, stickyDrop.value_or(sticky));
+    auto& folder = tabs_[tabId].folder;
+    if (folderDrop) folder = *folderDrop;
+    else {
+        // Between two tabs of one folder it joins that folder; otherwise it
+        // keeps its folder only beside another of the folder's tabs.
+        const auto before = at > target.stickyTabs ? folderOfTab(target.tabs.at(at - 1)) : FolderId{};
+        const auto after = at + 1 < target.tabs.size() ? folderOfTab(target.tabs.at(at + 1)) : FolderId{};
+        if (!before.isNull() && before == after) folder = before;
+        else if (folder != before && folder != after) folder = {};
+    }
     target.activeTab = tabId;
     windows_[targetWindow].activeGroup = destinationId;
     eraseEmptyGroup(sourceId);
     return success();
 }
-OperationResult LayoutModel::moveTab(TabId tabId, GroupId targetGroup, Placement placement, int insertionIndex)
+OperationResult LayoutModel::moveTab(TabId tabId, GroupId targetGroup, Placement placement, int insertionIndex,
+                                     std::optional<bool> sticky, std::optional<FolderId> folder)
 {
     return transact([&](LayoutModel& model) {
-        auto result = model.moveTabUnchecked(tabId, targetGroup, placement, insertionIndex);
+        auto result = model.moveTabUnchecked(tabId, targetGroup, placement, insertionIndex, sticky, folder);
         if (result) model.eraseEmptyFloatingWindows();
         return result;
     });
@@ -1044,11 +1378,16 @@ OperationResult LayoutModel::moveGroupToCenter(GroupId groupId, GroupId targetGr
             if (!central.isEmpty()) target = central.first();
         }
         if (!target.isNull() && placement == Placement::Center) {
+            // Merging two groups keeps the source group's folders.
             const auto copiedTabs = model.groups_[groupId].tabs;
+            const auto records = model.groups_[groupId].folders;
+            QHash<TabId, FolderId> folders;
+            for (auto tabId : copiedTabs) folders.insert(tabId, model.folderOfTab(tabId));
             for (auto tabId : copiedTabs) {
                 auto result = model.moveTabUnchecked(tabId, target, Placement::Center, -1);
                 if (!result) return result;
             }
+            model.carryFoldersUnchecked(folders, records, target);
             model.eraseEmptyFloatingWindows();
             return success();
         }
@@ -1119,10 +1458,13 @@ OperationResult LayoutModel::reassignFamily(WindowId windowId, WindowId targetWo
     });
 }
 
-OperationResult LayoutModel::moveAllTabs(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex)
+OperationResult LayoutModel::moveAllTabs(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex,
+                                         std::optional<bool> sticky, FolderId asFolder)
 {
+    if (!asFolder.isNull() && (folder(asFolder) || placement != Placement::Center))
+        return failure(QCoreApplication::translate("WindowSystem", "Tabs gathered into a tab folder need a new folder in one group."));
     return transact([&](LayoutModel& model) {
-        return model.moveAllTabsUnchecked(sourceWindow, targetGroup, placement, insertionIndex);
+        return model.moveAllTabsUnchecked(sourceWindow, targetGroup, placement, insertionIndex, sticky, asFolder);
     });
 }
 
@@ -1163,7 +1505,8 @@ LayoutTree LayoutModel::takeWindowTreeUnchecked(WindowId sourceWindow, WindowId 
     return carried;
 }
 
-OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex)
+OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId targetGroup, Placement placement, int insertionIndex,
+                                                   std::optional<bool> sticky, FolderId asFolder)
 {
     const auto* source = window(sourceWindow);
     const auto* target = group(targetGroup);
@@ -1176,12 +1519,24 @@ OperationResult LayoutModel::moveAllTabsUnchecked(WindowId sourceWindow, GroupId
     const auto activeGroup = source->activeGroup;
     const auto activeTab = group(activeGroup) ? groups_[activeGroup].activeTab : ordered.first();
     if (placement == Placement::Center) {
+        if (!asFolder.isNull() && destination.location == GroupLocation::AutoHide)
+            return failure(QCoreApplication::translate("WindowSystem", "Auto-hide rails hold no tab folders."));
+        QHash<TabId, FolderId> folders;
+        QVector<TabFolderRecord> records;
+        for (auto tabId : ordered) folders.insert(tabId, asFolder.isNull() ? folderOfTab(tabId) : asFolder);
+        if (asFolder.isNull()) {
+            for (const auto& group : groups_) if (group.windowId == sourceWindow) records += group.folders;
+        } else records.append({asFolder, {}, {}, false});
         auto index = insertionIndex;
         for (auto tabId : ordered) {
-            auto moved = moveTabUnchecked(tabId, targetGroup, Placement::Center, index);
+            // A drop decides every carried tab's stickiness, as one block;
+            // a folder's tabs are never sticky.
+            const auto blockSticky = asFolder.isNull() ? sticky : std::optional<bool>(false);
+            auto moved = moveTabUnchecked(tabId, targetGroup, Placement::Center, index, index >= 0 || !asFolder.isNull() ? blockSticky : std::nullopt);
             if (!moved) return moved;
             if (index >= 0) index = groups_[targetGroup].tabs.indexOf(tabId) + 1;
         }
+        carryFoldersUnchecked(folders, records, targetGroup);
         groups_[targetGroup].activeTab = activeTab;
         windows_[targetWindow].activeGroup = targetGroup;
     } else {
@@ -1478,6 +1833,24 @@ OperationResult LayoutModel::validate() const
             || (record.location == GroupLocation::AutoHide && record.stickyTabs))
             return failure(QCoreApplication::translate("WindowSystem", "A group's sticky tab count is invalid."));
         if (record.edgeExtent < 32 || record.edgeExtent > 32768) return failure(QCoreApplication::translate("WindowSystem", "An edge extent is invalid."));
+        // Tab folders: known to the group, adjacent, outside the sticky run,
+        // never empty and never on a rail.
+        QSet<FolderId> folders, used, finished;
+        for (const auto& folder : record.folders) {
+            if (!registerId(folder.id) || folder.name.size() > 256 || folder.colorId.size() > 128 || record.location == GroupLocation::AutoHide)
+                return failure(QCoreApplication::translate("WindowSystem", "A tab folder is invalid."));
+            folders.insert(folder.id);
+        }
+        FolderId previous;
+        for (int index = 0; index < record.tabs.size(); ++index) {
+            const auto folder = folderOfTab(record.tabs.at(index));
+            if (folder != previous && !previous.isNull()) finished.insert(previous);
+            if (!folder.isNull() && (!folders.contains(folder) || finished.contains(folder) || index < record.stickyTabs))
+                return failure(QCoreApplication::translate("WindowSystem", "A tab folder's tabs must be adjacent tabs of its group."));
+            if (!folder.isNull()) used.insert(folder);
+            previous = folder;
+        }
+        if (used.size() != folders.size()) return failure(QCoreApplication::translate("WindowSystem", "A tab folder has no tabs."));
     }
     for (auto iterator = tabs_.cbegin(); iterator != tabs_.cend(); ++iterator) {
         if (iterator.key() != iterator->id || !registerId(iterator->id)) return failure(QCoreApplication::translate("WindowSystem", "Tab identities are invalid."));
@@ -1657,12 +2030,21 @@ QJsonObject LayoutModel::toJson() const
             groups.append(QJsonObject{{"id", uuidText(groupRecord.id)}, {"windowId", uuidText(groupRecord.windowId)},
                 {"location", locationText(groupRecord.location)}, {"edge", edgeText(groupRecord.edge)},
                 {"tabs", idArray(groupRecord.tabs)}, {"stickyTabs", groupRecord.stickyTabs},
-                {"activeTab", uuidText(groupRecord.activeTab)}, {"edgeExtent", groupRecord.edgeExtent}});
+                {"activeTab", uuidText(groupRecord.activeTab)}, {"edgeExtent", groupRecord.edgeExtent},
+                {"tabStripWidth", groupRecord.tabStripWidth}, {"tabStripIconsOnly", groupRecord.tabStripIconsOnly},
+                {"name", groupRecord.name}, {"folders", [&] {
+                    QJsonArray folders;
+                    for (const auto& folder : groupRecord.folders)
+                        folders.append(QJsonObject{{"id", uuidText(folder.id)}, {"name", folder.name}, {"colorId", folder.colorId},
+                                                   {"collapsed", folder.collapsed}});
+                    return folders;
+                }()}});
             for (auto tabId : groupRecord.tabs) {
                 const auto& tabRecord = tabs_[tabId];
                 QJsonObject tabObject{{"id", uuidText(tabRecord.id)}, {"title", tabRecord.title},
                     {"panes", treeJson(tabRecord.panes)}, {"activePane", uuidText(tabRecord.activePane)}};
                 tabObject.insert("colorId", tabRecord.colorId);
+                if (!tabRecord.folder.isNull()) tabObject.insert("folder", uuidText(tabRecord.folder));
                 tabObject.insert("openedOrder", double(tabRecord.openedOrder));
                 tabObject.insert("visitedOrder", double(tabRecord.visitedOrder));
                 if (const auto& size = tabRecord.verticalPeekSize)
@@ -1750,6 +2132,40 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
                 || std::floor(extent.toDouble()) != extent.toDouble()) return failure(QCoreApplication::translate("WindowSystem", "An edge extent must be a bounded integer."));
             record.edgeExtent = extent.toInt();
         } else if (record.edge == Edge::Top || record.edge == Edge::Bottom) record.edgeExtent = 170;
+        if (object.contains("tabStripWidth")) {
+            const auto width = object.value("tabStripWidth");
+            const double value = width.toDouble();
+            if (!width.isDouble() || std::floor(value) != value
+                || (value != 0 && (value < minimumVerticalTabWidth || value > maximumVerticalTabWidth)))
+                return failure(QCoreApplication::translate("WindowSystem", "A vertical tab bar width must be 0 or an integer from 140 to 480."));
+            record.tabStripWidth = int(value);
+        }
+        if (object.contains("name")) {
+            const auto name = object.value("name");
+            if (!name.isString() || name.toString().size() > 256)
+                return failure(QCoreApplication::translate("WindowSystem", "A tab group name must be text of at most 256 characters."));
+            record.name = name.toString();
+        }
+        if (object.contains("folders")) {
+            if (!object.value("folders").isArray())
+                return failure(QCoreApplication::translate("WindowSystem", "A group's tab folders must be a list."));
+            for (const auto& value : object.value("folders").toArray()) {
+                const auto entry = value.toObject();
+                TabFolderRecord folder;
+                folder.id = reader.id(entry, "id");
+                if (!value.isObject() || !entry.value("name").isString() || !entry.value("colorId").isString()
+                    || !entry.value("collapsed").isBool() || entry.value("name").toString().size() > 256)
+                    return failure(QCoreApplication::translate("WindowSystem", "A tab folder needs an ID, a name, a color and a collapsed flag."));
+                folder.name = entry.value("name").toString(); folder.colorId = entry.value("colorId").toString();
+                folder.collapsed = entry.value("collapsed").toBool();
+                record.folders.append(folder);
+            }
+        }
+        if (object.contains("tabStripIconsOnly")) {
+            if (!object.value("tabStripIconsOnly").isBool())
+                return failure(QCoreApplication::translate("WindowSystem", "A vertical tab bar's icon mode must be a boolean."));
+            record.tabStripIconsOnly = object.value("tabStripIconsOnly").toBool();
+        }
         if (candidate.groups_.contains(record.id)) reader.fail(QCoreApplication::translate("WindowSystem", "Duplicate group identity."));
         candidate.groups_.insert(record.id, record);
     }
@@ -1765,6 +2181,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
         if (object.contains("colorId") && (!object.value("colorId").isString() || object.value("colorId").toString().size() > 128))
             return failure(QCoreApplication::translate("WindowSystem", "Invalid tab color identity."));
         record.colorId = object.value("colorId").toString();
+        if (object.contains("folder")) record.folder = reader.id(object, "folder");
         for (auto key : {"openedOrder", "visitedOrder"}) {
             const auto order = object.value(key);
             if (!order.isDouble() || order.toDouble() < 0 || order.toDouble() > double(maximumTabOrder)

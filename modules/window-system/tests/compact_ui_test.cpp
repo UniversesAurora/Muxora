@@ -140,6 +140,8 @@ void CompactUiTest::protectedSizingDoesNotAppearInEitherMenu()
 void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent_data() { addSystemPalettes(); }
 void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
 {
+    // The strip's scrollbar is drawn over its tabs: showing it or scrolling
+    // never moves the content, under light and dark system palettes.
     QFETCH(bool, dark);
     ApplicationPaletteGuard palette(dark);
     QWidget root;
@@ -152,79 +154,34 @@ void CompactUiTest::scrollbarOverlaysTheTabsWithoutMovingTheContent()
     }
     applyTheme(&root); root.resize(380, 240); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root));
-    auto* header = tabs->findChild<QWidget*>("TabGroupHeader"); QVERIFY(header);
-    auto* scroll = tabs->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    auto* scrollbar = tabs->findChild<QScrollBar*>("TabScrollBar"); QVERIFY(scrollbar);
-    auto* stack = tabs->findChild<QStackedWidget*>(); QVERIFY(stack);
-    QTRY_VERIFY(scrollbar->maximum() > 0);
-    // The native cursor may still rest where an earlier row hovered the
-    // strip. A QPA move leaves it there and native hover shows the bar again,
-    // so move the real cursor away, as the hover step below does.
-    QCursor::setPos(root.mapToGlobal(QPoint(root.width() - 1, root.height() - 1)));
-    QTRY_VERIFY(scrollbar->isHidden());
-    const auto headerBefore = boundsIn(header, tabs);
-    const auto contentBefore = boundsIn(stack, tabs);
-    QCOMPARE(headerBefore.height(), tabs->tabBar()->height());
-    QCOMPARE(contentBefore.top(), headerBefore.bottom() + 1);
-    QCOMPARE(boundsIn(scroll->viewport(), tabs).bottom(), headerBefore.bottom());
-    const auto unoccluded = tabs->grab().toImage();
-    sendEnter(scroll->viewport());
-    QVERIFY(scrollbar->isVisible());
-    QCOMPARE(scrollbar->parentWidget(), scroll->viewport());
-    QCOMPARE(scrollbar->height(), 4);
-    QCOMPARE(scrollbar->geometry().bottom(), scroll->viewport()->rect().bottom());
-    QCOMPARE(scrollbar->width(), scroll->viewport()->width());
-    QCOMPARE(boundsIn(header, tabs), headerBefore); QCOMPARE(boundsIn(stack, tabs), contentBefore);
-    QVERIFY(boundsIn(tabs->tabBar(), tabs).contains(boundsIn(scrollbar, tabs).topLeft()));
-
-    QStyleOptionSlider option; option.initFrom(scrollbar); option.orientation = Qt::Horizontal;
-    option.minimum = scrollbar->minimum(); option.maximum = scrollbar->maximum();
-    option.pageStep = scrollbar->pageStep(); option.sliderPosition = scrollbar->value();
-    const auto handle = scrollbar->style()->subControlRect(QStyle::CC_ScrollBar, &option,
-        QStyle::SC_ScrollBarSlider, scrollbar);
-    QVERIFY(!handle.isEmpty());
-    const auto image = tabs->grab().toImage();
-    const auto point = scrollbar->mapTo(tabs, QPoint(handle.center().x(), scrollbar->height() - 1));
-    const auto ratio = image.devicePixelRatio();
-    const auto under = unoccluded.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    const auto composite = [&](QColor handleColor, int alpha) {
-        QImage pixel(1, 1, QImage::Format_ARGB32_Premultiplied); pixel.fill(under);
-        QPainter painter(&pixel); handleColor.setAlpha(alpha); painter.fillRect(pixel.rect(), handleColor); painter.end();
-        return pixel.pixelColor(0, 0);
-    };
-    const auto normal = image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    const int grayValue = qGray(defaultTheme().border.rgb());
-    const QColor gray(grayValue, grayValue, grayValue);
-    QCOMPARE(normal, composite(gray, 144));
-    QVERIFY(normal != gray); QVERIFY(normal != under);
-    // Moving the native cursor queues Enter on Windows. Wait for that input
-    // precondition before checking pixels; a QPA move alone does not establish
-    // the widget's native underMouse state.
-    QCursor::setPos(scrollbar->mapToGlobal(handle.center()));
-    QTRY_VERIFY(scrollbar->underMouse());
-    const auto hovered = tabs->grab().toImage().pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    QCOMPARE(hovered, composite(gray, 192));
-    QVERIFY(hovered != gray); QVERIFY(hovered != normal);
+    auto* bar = tabs->tabBar(); auto* stack = tabs->findChild<QStackedWidget*>(); QVERIFY(stack);
+    QTRY_VERIFY(bar->isOverflowing());
+    const auto barBefore = boundsIn(bar, tabs), contentBefore = boundsIn(stack, tabs);
+    QVERIFY(contentBefore.top() > barBefore.bottom());
+    const QPoint inside = bar->displayTabRect(1).center();
+    QMouseEvent move(QEvent::MouseMove, QPointF(inside), bar->mapToGlobal(QPointF(inside)), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &move);
+    QCOMPARE(boundsIn(bar, tabs), barBefore); QCOMPARE(boundsIn(stack, tabs), contentBefore);
     const auto selected = tabs->currentIndex();
-    scrollbar->setValue(scrollbar->maximum() / 2);
-    QCOMPARE(scroll->horizontalScrollBar()->value(), scrollbar->value()); QCOMPARE(tabs->currentIndex(), selected);
+    bar->setScrollOffset(bar->maximumScrollOffset() / 2);
+    QVERIFY(tabs->scrollOffset() > 0); QCOMPARE(tabs->currentIndex(), selected);
     QCOMPARE(boundsIn(stack, tabs), contentBefore);
     for (int width : {520, 280}) {
         root.resize(width, root.height());
         QCoreApplication::processEvents();
-        QCOMPARE(scrollbar->geometry().bottom(), scroll->viewport()->rect().bottom());
-        QCOMPARE(scrollbar->width(), scroll->viewport()->width());
-        QCOMPARE(boundsIn(stack, tabs).top(), boundsIn(header, tabs).bottom() + 1);
+        QVERIFY(boundsIn(stack, tabs).top() > boundsIn(bar, tabs).bottom());
     }
     tabs->setTabBarVisible(false);
-    QVERIFY(scrollbar->isHidden()); QCOMPARE(stack->geometry().top(), 0);
+    QVERIFY(stack->geometry().top() <= bar->metrics().cardMargin);
     tabs->setTabBarVisible(true);
-    QCOMPARE(boundsIn(stack, tabs).top(), boundsIn(header, tabs).bottom() + 1);
+    QVERIFY(boundsIn(stack, tabs).top() > boundsIn(bar, tabs).bottom());
 }
 
 void CompactUiTest::groupButtonsStaySmallerThanTheTabs_data() { addSystemPalettes(); }
 void CompactUiTest::groupButtonsStaySmallerThanTheTabs()
 {
+    // The end controls are flat buttons as tall as a tab row, narrower than
+    // tabs, side by side at the row's end (tab strip design 2.1, 3.5).
     QFETCH(bool, dark);
     ApplicationPaletteGuard palette(dark);
     GroupTabs tabs(defaultTheme(), nullptr);
@@ -233,15 +190,13 @@ void CompactUiTest::groupButtonsStaySmallerThanTheTabs()
     tabs.setPinnedActions([&] { ++current; }, [&] { ++all; });
     applyTheme(&tabs); tabs.resize(380, 240); tabs.show();
     QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* header = tabs.findChild<QWidget*>("TabGroupHeader"); QVERIFY(header);
+    auto* end = tabs.findChild<QWidget*>("TabHeaderActions"); QVERIFY(end);
+    const int row = tabs.tabBar()->metrics().rowHeight;
     for (const auto& name : {"TabListButton", "UnpinCurrentButton", "UnpinAllButton"}) {
         auto* button = tabs.findChild<QToolButton*>(name); QVERIFY(button);
-        const bool list = button->objectName() == "TabListButton";
-        QCOMPARE(button->size(), list ? QSize(12, tabs.tabBar()->height()) : QSize(20, 20));
-        QCOMPARE(button->iconSize(), list ? QSize(10, 14) : QSize(14, 14));
-        if (list) QCOMPARE(button->height(), tabs.tabBar()->height());
-        else QVERIFY(button->height() < tabs.tabBar()->height());
-        QVERIFY(header->rect().contains(button->geometry()));
+        QCOMPARE(button->height(), row);
+        QVERIFY(button->width() < tabs.tabBar()->displayTabRect(0).width());
+        QVERIFY(end->rect().contains(button->geometry()));
         QVERIFY(!button->icon().isNull()); QVERIFY(!button->accessibleName().isEmpty());
         QCOMPARE(button->grab().devicePixelRatio(), tabs.devicePixelRatioF());
     }
@@ -368,9 +323,8 @@ void CompactUiTest::compactPeekAndEdgeBarsKeepRealContent()
     QCOMPARE(pinned->tabBar()->height(), originalTabHeight);
     for (const auto& name : {"UnpinCurrentButton", "UnpinAllButton", "TabListButton"}) {
         auto* button = pinned->findChild<QToolButton*>(name); QVERIFY(button);
-        const bool list = button->objectName() == "TabListButton";
-        QCOMPARE(button->size(), list ? QSize(12, pinned->tabBar()->height()) : QSize(20, 20));
-        QCOMPARE(button->iconSize(), list ? QSize(10, 14) : QSize(14, 14));
+        QCOMPARE(button->height(), pinned->tabBar()->metrics().rowHeight);
+        QVERIFY(!button->icon().isNull());
     }
 }
 

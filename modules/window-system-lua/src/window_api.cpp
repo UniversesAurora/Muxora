@@ -28,6 +28,13 @@ QVariantMap groupValue(const GroupRecord &g) {
             {"tabs", tabs},
             {"active_tab", idText(g.activeTab)},
             {"sticky_tabs", g.stickyTabs},
+            {"name", g.name},
+            {"folders", [&] {
+                 QVariantList folders;
+                 for (const auto &f : g.folders)
+                     folders.append(idText(f.id));
+                 return folders;
+             }()},
             {"location", g.location == GroupLocation::Central  ? "central"
                          : g.location == GroupLocation::Pinned ? "pinned"
                                                                : "auto_hide"},
@@ -37,7 +44,8 @@ QVariantMap tabValue(const TabRecord &t) {
     return {{"id", idText(t.id)},
             {"title", t.title},
             {"active_pane", idText(t.activePane)},
-            {"color", t.colorId}};
+            {"color", t.colorId},
+            {"folder", idText(t.folder)}};
 }
 QVariantMap visibilityValue(BarVisibility v) {
     return {{"tabs", v.tabBars}, {"sidebar", v.sideBars}, {"toolbars", v.toolbars}, {"status", v.statusBar}};
@@ -334,6 +342,81 @@ void ScriptHost::Private::installWindowApi() {
         if (pos == "bottom")
             return result(manager->setTabBottomBarSharing(id, sharing));
         throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar must be top or bottom").toUtf8().constData());
+    };
+    handlers["groups.rename"] = [this](const Args &a, const Context &c) {
+        return result(manager->renameGroup(target(a, 0, c, Target::Group), text(a, 1)));
+    };
+    // Tab folders (tab strip design 12): IDs as text, as for groups and tabs.
+    handlers["folders.list"] = [this](const Args &a, const Context &c) {
+        QVariantList list;
+        if (const auto *group = manager->model().group(target(a, 0, c, Target::Group)))
+            for (const auto &f : group->folders) {
+                QVariantList tabs;
+                for (const auto id : manager->model().folderTabs(f.id))
+                    tabs.append(idText(id));
+                list.append(QVariantMap{{"id", idText(f.id)}, {"group", idText(group->id)}, {"name", f.name},
+                                        {"color", f.colorId}, {"collapsed", f.collapsed}, {"tabs", tabs}});
+            }
+        return result(list);
+    };
+    handlers["folders.new"] = [this](const Args &a, const Context &c) {
+        QVector<TabId> tabs;
+        if (a.value(0).metaType().id() == QMetaType::QVariantList)
+            for (const auto &value : a.value(0).toList())
+                tabs.append(identifier({value}, 0));
+        else
+            tabs.append(target(a, 0, c, Target::Tab));
+        const auto spec = a.size() > 1 ? object(a, 1) : QVariantMap{};
+        return result(idText(manager->createTabFolder(tabs, spec.value("name").toString(), spec.value("color").toString())));
+    };
+    const auto folderChange = [this](const Args &a, const std::function<void(TabFolderRecord &)> &change) {
+        const auto *record = manager->model().folder(identifier(a, 0));
+        if (!record)
+            return failure(QCoreApplication::translate("WindowSystem", "Tab folder does not exist"));
+        auto changed = *record;
+        change(changed);
+        return result(manager->updateTabFolder(changed));
+    };
+    handlers["folders.add_tab"] = [this](const Args &a, const Context &c) {
+        return result(manager->addTabToFolder(target(a, 1, c, Target::Tab), identifier(a, 0)));
+    };
+    handlers["folders.remove_tab"] = [this](const Args &a, const Context &c) {
+        return result(manager->removeTabFromFolder(target(a, 0, c, Target::Tab)));
+    };
+    handlers["folders.rename"] = [folderChange](const Args &a, const Context &) {
+        const auto name = text(a, 1);
+        return folderChange(a, [&](TabFolderRecord &f) { f.name = name; });
+    };
+    handlers["folders.color"] = [folderChange](const Args &a, const Context &) {
+        const auto color = text(a, 1, QString());
+        return folderChange(a, [&](TabFolderRecord &f) { f.colorId = color; });
+    };
+    handlers["folders.collapse"] = [folderChange](const Args &a, const Context &) {
+        const auto collapsed = boolean(a, 1, true);
+        return folderChange(a, [&](TabFolderRecord &f) { f.collapsed = collapsed; });
+    };
+    handlers["folders.ungroup"] = [this](const Args &a, const Context &) { return result(manager->ungroupTabFolder(identifier(a, 0))); };
+    handlers["folders.close"] = [this](const Args &a, const Context &) { return result(manager->closeTabFolder(identifier(a, 0))); };
+    handlers["folders.move"] = [this](const Args &a, const Context &) {
+        return result(manager->moveTabFolder(identifier(a, 0), number(a.value(1), 1, -100000, 100000)));
+    };
+    handlers["folders.to_group"] = [this](const Args &a, const Context &) {
+        return result(manager->moveTabFolderToGroup(identifier(a, 0), identifier(a, 1), number(a.value(2), -1, -1, 100000)));
+    };
+    handlers["folders.to_window"] = [this](const Args &a, const Context &) {
+        return result(manager->moveTabFolderToWindow(identifier(a, 0), identifier(a, 1)));
+    };
+    handlers["folders.detach"] = [this](const Args &a, const Context &) {
+        return result(idText(manager->detachTabFolder(identifier(a, 0), windowKind(text(a, 1, "floating")))));
+    };
+    handlers["folders.merge"] = [this](const Args &a, const Context &) {
+        return result(manager->mergeTabFolders(identifier(a, 0), identifier(a, 1)));
+    };
+    handlers["folders.to_new_group"] = [this](const Args &a, const Context &) {
+        return result(idText(manager->convertTabFolderToGroup(identifier(a, 0), placement(text(a, 1, "right"), false))));
+    };
+    handlers["folders.from_group"] = [this](const Args &a, const Context &c) {
+        return result(idText(manager->convertGroupToFolder(target(a, 0, c, Target::Group), identifier(a, 1))));
     };
     handlers["groups.close"] = [this](const Args &a, const Context &c) {
         return result(manager->closeGroup(target(a, 0, c, Target::Group)));

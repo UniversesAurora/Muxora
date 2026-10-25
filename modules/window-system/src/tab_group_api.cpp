@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <QCoreApplication>
 #include "window_manager_p.hpp"
 #include <QPointer>
 
@@ -15,6 +16,22 @@ bool WindowManager::setTabSticky(TabId tab, bool sticky)
     return applyResult(d->model.setTabSticky(tab, sticky));
 }
 bool WindowManager::isTabSticky(TabId tab) const { return d->model.isTabSticky(tab); }
+bool WindowManager::renameGroup(GroupId group, QString name)
+{
+    return applyResult(d->model.renameGroup(group, std::move(name)));
+}
+QString WindowManager::groupDisplayName(GroupId group) const
+{
+    const auto* record = d->model.group(group);
+    if (!record) return {};
+    if (!record->name.isEmpty()) return record->name;
+    const auto* active = d->model.tab(record->activeTab);
+    return QCoreApplication::translate("WindowSystem", "Tab group: %1").arg(active ? active->title : QString());
+}
+bool WindowManager::setGroupTabStrip(GroupId group, int width, bool iconsOnly)
+{
+    return applyResult(d->model.setGroupTabStrip(group, width, iconsOnly));
+}
 bool WindowManager::swapGroups(GroupId first, GroupId second)
 {
     const QPointer<WindowManager> self(this);

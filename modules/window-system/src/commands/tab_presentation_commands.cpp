@@ -10,6 +10,12 @@
 #include <QTimer>
 
 namespace window_system {
+namespace {
+// Indexed by TabBarPlacement and TabRowCollapse, as in the settings file.
+const QStringList placementNames{QStringLiteral("top"), QStringLiteral("bottom"), QStringLiteral("left"), QStringLiteral("right")};
+const QStringList collapseNames{QStringLiteral("off"), QStringLiteral("push"), QStringLiteral("overlay")};
+bool vertical(TabBarPlacement placement) { return placement == TabBarPlacement::Left || placement == TabBarPlacement::Right; }
+} // namespace
 
 void registerTabPresentationCommands(WindowManager* manager)
 {
@@ -17,7 +23,9 @@ void registerTabPresentationCommands(WindowManager* manager)
     const auto registerFlag = [manager, retained](const char* id, const QString& title, bool TabAppearance::*field) {
         manager->commands().add({QString::fromLatin1(id), title, QStringLiteral("view"), {},
             [retained, field](const CommandContext&) {
-                return retained && (field != &TabAppearance::wheelExpandRows || retained->tabAppearance().multiline);
+                if (!retained || field != &TabAppearance::wheelExpandRows) return bool(retained);
+                const auto appearance = retained->tabAppearance();
+                return appearance.multiline && appearance.collapseRows != TabRowCollapse::Off;
             }, [retained, field](const CommandContext& context) {
                 if (!retained) return false;
                 auto next = retained->tabAppearance();
@@ -42,10 +50,19 @@ void registerTabPresentationCommands(WindowManager* manager)
         pinned ? QCoreApplication::translate("WindowSystem", "Pinned sidebar tab position") : QCoreApplication::translate("WindowSystem", "Central tab bar position"), QStringLiteral("view"), {}, {},
         [retained, pinned](const CommandContext& context) {
             if (!retained || context.args.value("position").metaType().id() != QMetaType::QString) return false;
-            const auto position = context.args.value("position").toString();
-            if (position != "top" && position != "bottom") return false;
+            const auto position = placementNames.indexOf(context.args.value("position").toString());
+            if (position < 0) return false;
             auto next = retained->tabAppearance();
-            (pinned ? next.pinnedPlacement : next.centralPlacement) = position == "top" ? TabBarPlacement::Top : TabBarPlacement::Bottom;
+            (pinned ? next.pinnedPlacement : next.centralPlacement) = TabBarPlacement(position);
+            return retained->setTabAppearance(next);
+        }});
+    manager->commands().add({QStringLiteral("presentation.setRowCollapse"), QCoreApplication::translate("WindowSystem", "Collapse tab rows"),
+        QStringLiteral("view"), {}, [retained](const CommandContext&) { return retained && retained->tabAppearance().multiline; },
+        [retained](const CommandContext& context) {
+            if (!retained || context.args.value("mode").metaType().id() != QMetaType::QString) return false;
+            const auto mode = collapseNames.indexOf(context.args.value("mode").toString());
+            if (mode < 0) return false;
+            auto next = retained->tabAppearance(); next.collapseRows = TabRowCollapse(mode);
             return retained->setTabAppearance(next);
         }});
 }
@@ -80,24 +97,44 @@ void appendTabPresentationActions(QMenu* menu, WindowManager* manager, const Com
     addFlag("presentation.toggleNewTabButton");
     addFlag(pinned ? "presentation.toggleSidebarNumbers" : "presentation.toggleNumbers");
     addFlag("presentation.toggleTitleClipping");
-    menu->addSeparator(); addFlag("presentation.toggleMultiline"); addFlag("presentation.toggleWheelExpandRows");
     const auto id = pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement");
     const auto appearance = manager->tabAppearance();
     const auto current = pinned ? appearance.pinnedPlacement : appearance.centralPlacement;
-    auto* placements = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "Tab bar position"), menu);
-    placements->setObjectName(QStringLiteral("TabBarPlacementMenu"));
-    menu->addMenu(placements);
-    for (const auto placement : {TabBarPlacement::Top, TabBarPlacement::Bottom}) {
-        const auto position = placement == TabBarPlacement::Top ? QStringLiteral("top") : QStringLiteral("bottom");
-        auto* action = placements->addAction(placement == TabBarPlacement::Top ? QCoreApplication::translate("WindowSystem", "Top") : QCoreApplication::translate("WindowSystem", "Bottom"));
-        action->setObjectName(id + "." + position); action->setData(id); action->setCheckable(true);
-        action->setChecked(current == placement); action->setProperty("windowSystemHandledAction", true);
-        QObject::connect(action, &QAction::triggered, menu, [owner = QPointer<WindowManager>(manager), captured, id, position] {
-            if (!owner) return;
-            auto context = captured; context.args.insert("position", position);
-            QTimer::singleShot(0, owner, [owner, id, context] { if (owner) owner->executeInContext(id, context); });
-        });
+    // A choice submenu whose actions run `command` with one string argument.
+    const auto addChoices = [menu, manager, captured](const QString& title, const char* name, const QString& command,
+                                                      const QString& argument, const QStringList& values,
+                                                      const QStringList& labels, int checked) {
+        auto* choices = new DismissOnlyMenu(title, menu);
+        choices->setObjectName(QString::fromLatin1(name));
+        menu->addMenu(choices);
+        for (int index = 0; index < values.size(); ++index) {
+            const auto value = values.at(index);
+            auto* action = choices->addAction(labels.at(index));
+            action->setObjectName(command + "." + value); action->setData(command); action->setCheckable(true);
+            action->setChecked(index == checked); action->setProperty("windowSystemHandledAction", true);
+            QObject::connect(action, &QAction::triggered, menu, [owner = QPointer<WindowManager>(manager), captured, command, argument, value] {
+                if (!owner) return;
+                auto context = captured; context.args.insert(argument, value);
+                QTimer::singleShot(0, owner, [owner, command, context] { if (owner) owner->executeInContext(command, context); });
+            });
+        }
+    };
+    menu->addSeparator();
+    if (!vertical(current)) {
+        addFlag("presentation.toggleMultiline");
+        if (appearance.multiline) {
+            addChoices(QCoreApplication::translate("WindowSystem", "Collapse tab rows"), "TabRowCollapseMenu",
+                QStringLiteral("presentation.setRowCollapse"), QStringLiteral("mode"), collapseNames,
+                {QCoreApplication::translate("WindowSystem", "Show all rows"),
+                 QCoreApplication::translate("WindowSystem", "Collapse; expanded rows push the content down"),
+                 QCoreApplication::translate("WindowSystem", "Collapse; expanded rows overlay the content")}, int(appearance.collapseRows));
+            addFlag("presentation.toggleWheelExpandRows");
+        }
     }
+    addChoices(QCoreApplication::translate("WindowSystem", "Tab bar position"), "TabBarPlacementMenu", id, QStringLiteral("position"),
+        placementNames, {QCoreApplication::translate("WindowSystem", "Top"), QCoreApplication::translate("WindowSystem", "Bottom"),
+                         QCoreApplication::translate("WindowSystem", "Left"), QCoreApplication::translate("WindowSystem", "Right")},
+        int(current));
     menu->addSeparator();
 }
 

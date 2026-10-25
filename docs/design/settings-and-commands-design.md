@@ -124,6 +124,7 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.wheelExpandRows` | 默认 `false`，只在多行且 `tabs.collapseRows` 不是 `off` 时起作用：滚轮向下展开，向上收起。不起作用时保留这个值（用户 2026-10-24 决定），设置页和菜单里显示为不可用。 |
 | `tabs.showIcons` | 默认 `true`；仅控制中央标签栏，开启时仍尊重单标签的宿主设置。 |
 | `tabs.showNewTabButton` | 默认 `true`，同时控制末尾加号与类型下拉，隐藏不移除新建命令。 |
+| `tabs.showGroupNames` | 默认 `true`；在标签栏右端显示有名字的标签组的名称，见 [标签栏设计 §13](tab-strip-design.md#13-标签组名称)。 |
 | `tabs.showNumbers` | 默认 `false`；编号位于图标左侧，使用本栏当前顺序，从 1 开始。 |
 | `tabs.showSidebarIcons` | 默认 `false`；固定和非固定侧栏的独立图标开关，仍尊重宿主逐标签设置。 |
 | `tabs.showSidebarNumbers` | 默认 `false`；固定栏按本组编号，非固定条按整侧连续编号。 |

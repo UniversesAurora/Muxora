@@ -68,8 +68,7 @@ void WindowManager::registerHierarchyCommands() {
                 const auto *group = d->model.group(id);
                 if (!group || (wholeGroup && id == context.group))
                     continue;
-                auto *groupMenu = windows->addMenu(QCoreApplication::translate("WindowSystem", "Tab group: %1")
-                                                       .arg(d->model.tab(group->activeTab)->title));
+                auto *groupMenu = windows->addMenu(groupDisplayName(id));
                 for (const auto tab : group->tabs) {
                     if (tab == context.tab && !wholeGroup)
                         continue;

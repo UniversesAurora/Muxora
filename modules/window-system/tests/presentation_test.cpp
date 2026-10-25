@@ -255,12 +255,13 @@ void PresentationTest::tabScrollCanvasUsesTheThemeAfterWindowCreation()
     auto* window = manager.windowWidget(target); QVERIFY(window);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* tabs = static_cast<GroupTabs*>(window->findChild<QWidget*>("TabGroup")); QVERIFY(tabs);
-    auto* scroll = tabs->findChild<QScrollArea*>("TabScrollViewport"); QVERIFY(scroll);
-    const int firstEmptyPixel = scroll->widget()->width() + 12;
-    const QRect emptyArea(firstEmptyPixel, 4, scroll->viewport()->width() - firstEmptyPixel - 12,
-                          scroll->viewport()->height() - 8);
+    // The strip past its last control, before the end controls.
+    auto* bar = tabs->tabBar();
+    const auto lane = bar->scrollViewport();
+    const int content = bar->tabLayout().laneList.first().extent;
+    const QRect emptyArea(lane.left() + content + 12, lane.top() + 4, lane.width() - content - 24, lane.height() - 8);
     QVERIFY(emptyArea.width() > 20); QVERIFY(emptyArea.height() > 4);
-    const auto image = logicalImage(scroll->viewport());
+    const auto image = logicalImage(bar);
     QCOMPARE(matchingPixels(image, emptyArea, defaultTheme().headerBackground),
              emptyArea.width() * emptyArea.height());
 }

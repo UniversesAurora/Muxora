@@ -28,10 +28,12 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         control->setObjectName(QString::fromLatin1(name));
         control->addItem(QCoreApplication::translate("WindowSystem", "Top"), int(TabBarPlacement::Top));
         control->addItem(QCoreApplication::translate("WindowSystem", "Bottom"), int(TabBarPlacement::Bottom));
+        control->addItem(QCoreApplication::translate("WindowSystem", "Left"), int(TabBarPlacement::Left));
+        control->addItem(QCoreApplication::translate("WindowSystem", "Right"), int(TabBarPlacement::Right));
         const TabAppearance defaults;
         control->setDefaultData(int(pinned ? defaults.pinnedPlacement : defaults.centralPlacement));
         rows->addWidget(addRow(parent, "window/tabs", title, QString::fromLatin1(key),
-            pinned ? QCoreApplication::translate("WindowSystem", "Choose the tab position for pinned sidebar panels independently.") : QCoreApplication::translate("WindowSystem", "Place central tab bars above or below the content."), control));
+            pinned ? QCoreApplication::translate("WindowSystem", "Choose the tab position for pinned sidebar panels independently.") : QCoreApplication::translate("WindowSystem", "Place central tab bars above, below or beside the content. Left and right show the tabs as a vertical list."), control));
         connect(control, &QComboBox::currentIndexChanged, this, [this, control, pinned] {
             if (!manager_) return;
             auto next = manager_->tabAppearance();
@@ -55,14 +57,38 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     };
     multiline_ = flagControl("MultilineTabs", "tabs.multiline", QCoreApplication::translate("WindowSystem", "Show tabs in multiple rows"),
         QCoreApplication::translate("WindowSystem", "Wrap tabs to additional rows instead of using a horizontal scrollbar."), &TabAppearance::multiline);
+    collapseRows_ = new ThemedComboBox(parent); collapseRows_->setObjectName("CollapseTabRows");
+    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Show all rows"), int(TabRowCollapse::Off));
+    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Collapse; expanded rows push the content down"), int(TabRowCollapse::Push));
+    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Collapse; expanded rows overlay the content"), int(TabRowCollapse::Overlay));
+    collapseRows_->setDefaultData(int(TabAppearance{}.collapseRows));
+    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Collapse tab rows"), "tabs.collapseRows",
+        QCoreApplication::translate("WindowSystem", "With multiple rows, show only the active tab's row. A count after it shows how many tabs are hidden; click it to expand."), collapseRows_));
+    connect(collapseRows_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.collapseRows = TabRowCollapse(collapseRows_->currentData().toInt());
+        manager_->setTabAppearance(next);
+    });
     wheelExpandRows_ = flagControl("WheelExpandTabRows", "tabs.wheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"),
-        QCoreApplication::translate("WindowSystem", "In multiline mode, scroll down to show all rows and up to show only the active tab's row."), &TabAppearance::wheelExpandRows);
+        QCoreApplication::translate("WindowSystem", "With collapsed rows, scroll down to expand them and up to collapse them again."), &TabAppearance::wheelExpandRows);
+    verticalTabWidth_ = new UnitSpinBox(parent); verticalTabWidth_->setObjectName("VerticalTabWidth");
+    verticalTabWidth_->setRange(minimumVerticalTabWidth, maximumVerticalTabWidth); verticalTabWidth_->setSuffix(QStringLiteral(" px"));
+    verticalTabWidth_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Vertical tab bar width"));
+    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Vertical tab bar width"), "tabs.verticalTabWidth",
+        QCoreApplication::translate("WindowSystem", "The width of new vertical tab bars. Drag a vertical tab bar's edge to resize it on its own."), verticalTabWidth_));
+    connect(verticalTabWidth_, &QSpinBox::valueChanged, this, [this](int width) {
+        if (!manager_) return;
+        auto next = manager_->tabAppearance(); next.verticalTabWidth = width;
+        manager_->setTabAppearance(next);
+    });
     showIcons_ = flagControl("ShowTabIcons", "tabs.showIcons", QCoreApplication::translate("WindowSystem", "Show tab icons"),
         QCoreApplication::translate("WindowSystem", "Applies to central tab bars independently of sidebars. Per-tab icon visibility set by the host still applies."), &TabAppearance::showIcons);
     showNewTabButton_ = flagControl("ShowNewTabButton", "tabs.showNewTabButton", QCoreApplication::translate("WindowSystem", "Show new tab button"),
         QCoreApplication::translate("WindowSystem", "Show the plus button and type menu after the last tab. When hidden, menus, commands, and shortcuts can still create tabs."), &TabAppearance::showNewTabButton);
     showNumbers_ = flagControl("ShowTabNumbers", "tabs.showNumbers", QCoreApplication::translate("WindowSystem", "Show tab numbers"),
         QCoreApplication::translate("WindowSystem", "Show central tab numbers before the icon, starting at 1 in each tab bar."), &TabAppearance::showNumbers);
+    showGroupNames_ = flagControl("ShowTabGroupNames", "tabs.showGroupNames", QCoreApplication::translate("WindowSystem", "Show tab group names"),
+        QCoreApplication::translate("WindowSystem", "Show a named group's name at the end of its tab bar."), &TabAppearance::showGroupNames);
     showSidebarIcons_ = flagControl("ShowSidebarTabIcons", "tabs.showSidebarIcons", QCoreApplication::translate("WindowSystem", "Show sidebar tab icons"),
         QCoreApplication::translate("WindowSystem", "Show icons in pinned and auto-hide sidebar bars independently. Hidden by default; per-tab icon visibility still applies."), &TabAppearance::showSidebarIcons);
     showSidebarNumbers_ = flagControl("ShowSidebarTabNumbers", "tabs.showSidebarNumbers", QCoreApplication::translate("WindowSystem", "Show sidebar tab numbers"),
@@ -197,12 +223,19 @@ void SettingsPage::syncTabAppearanceOptions()
     pinnedPlacement_->setCurrentIndex(pinnedPlacement_->findData(int(appearance.pinnedPlacement)));
     for (const auto& value : {std::pair{multiline_, appearance.multiline}, std::pair{wheelExpandRows_, appearance.wheelExpandRows},
         std::pair{showIcons_, appearance.showIcons}, std::pair{showNewTabButton_, appearance.showNewTabButton},
-        std::pair{showNumbers_, appearance.showNumbers}, std::pair{showSidebarIcons_, appearance.showSidebarIcons},
+        std::pair{showNumbers_, appearance.showNumbers}, std::pair{showGroupNames_, appearance.showGroupNames},
+        std::pair{showSidebarIcons_, appearance.showSidebarIcons},
         std::pair{showSidebarNumbers_, appearance.showSidebarNumbers}, std::pair{clipTitles_, appearance.clipTitles},
         std::pair{clipSidebarTitles_, appearance.clipSidebarTitles}}) {
         const QSignalBlocker block(value.first); value.first->setChecked(value.second);
     }
-    wheelExpandRows_->setEnabled(appearance.multiline);
+    {
+        const QSignalBlocker collapse(collapseRows_), width(verticalTabWidth_);
+        collapseRows_->setCurrentIndex(collapseRows_->findData(int(appearance.collapseRows)));
+        collapseRows_->setEnabled(appearance.multiline);
+        verticalTabWidth_->setValue(appearance.verticalTabWidth);
+    }
+    wheelExpandRows_->setEnabled(appearance.multiline && appearance.collapseRows != TabRowCollapse::Off);
     const QSignalBlocker titleWidth(maximumTitleWidth_);
     maximumTitleWidth_->setValue(appearance.maximumTitleWidth);
     maximumTitleWidth_->setEnabled(appearance.clipTitles);

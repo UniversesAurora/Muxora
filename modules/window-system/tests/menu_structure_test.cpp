@@ -14,7 +14,7 @@
 #include <QSet>
 #include <QSignalSpy>
 #include <QStyle>
-#include <QTabBar>
+#include "docking/tab_bar.hpp"
 #include <QTest>
 #include <QTimer>
 #include <memory>
@@ -158,8 +158,8 @@ void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
     for (auto* action : layout->actions()) if (auto* child = action->menu()) {
         objectNames.append(child->objectName()); objectTitles.append(child->title());
     }
-    QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.panes"}));
-    QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前窗格"}));
+    QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.folder", "layout.panes"}));
+    QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前标签夹", "当前窗格"}));
     QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "convertGroup"}), false),
         (QStringList{"group.convertToTab", "group.moveIntoTab"}));
     QCOMPARE(ids(menuAt(bar, {"layout", "currentTab", "convertTab"}), false),
@@ -358,7 +358,7 @@ void MenuStructureTest::nestedContextCommandsOperateOnTheClickedContent()
     navigation.start(); watchdog.start(2000);
     QWidget* receiver = clickedContent; QPoint point = clickedContent->rect().center();
     if (!paneMenu) {
-        auto* tabs = manager.windowWidget(sourceWindow)->findChild<QTabBar*>("TabBar"); QVERIFY(tabs);
+        auto* tabs = manager.windowWidget(sourceWindow)->findChild<TabBar*>("TabBar"); QVERIFY(tabs);
         int clickedIndex = -1;
         for (int index = 0; index < tabs->count(); ++index) if (tabs->tabData(index).toUuid() == clickedTab) clickedIndex = index;
         QVERIFY(clickedIndex >= 0); receiver = tabs; point = tabs->tabRect(clickedIndex).center();
@@ -599,7 +599,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
     QFETCH(bool, floating); QFETCH(QString, id);
     WindowManager manager;
     if (id == "presentation.toggleWheelExpandRows") {
-        auto appearance = manager.tabAppearance(); appearance.multiline = true;
+        auto appearance = manager.tabAppearance(); appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push;
         QVERIFY(manager.setTabAppearance(appearance));
     }
     const auto owner = manager.createWindow();
@@ -671,14 +671,18 @@ void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
     QVERIFY(!manager.executeInContext("presentation.toggleWheelExpandRows", manager.context(window)));
     QCOMPARE(changes.count(), 0); QVERIFY(!manager.tabAppearance().multiline && !manager.tabAppearance().wheelExpandRows);
     multiline->trigger(); QTRY_VERIFY(manager.tabAppearance().multiline);
-    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(multiline->isChecked()); QVERIFY(wheel->isEnabled());
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(multiline->isChecked());
+    // The wheel needs collapsing rows too (tab strip design 3.4).
+    QVERIFY(!wheel->isEnabled());
+    QVERIFY(manager.executeInContext("presentation.setRowCollapse", [&] { auto c = manager.context(window); c.args.insert("mode", "push"); return c; }()));
+    QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isEnabled());
     wheel->trigger(); QTRY_VERIFY(manager.tabAppearance().wheelExpandRows);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isChecked());
     multiline->trigger(); QTRY_VERIFY(!manager.tabAppearance().multiline);
     QMetaObject::invokeMethod(menu, "aboutToShow");
     // Wheel expansion is kept, shown checked but unavailable with one row.
     QVERIFY(manager.tabAppearance().wheelExpandRows && wheel->isChecked()); QVERIFY(wheel->isVisible() && !wheel->isEnabled());
-    QCoreApplication::processEvents(); QCOMPARE(changes.count(), 3);
+    QCoreApplication::processEvents(); QCOMPARE(changes.count(), 4);
     QVERIFY(manager.model().tab(tab)); QVERIFY(manager.model().validate().ok);
 }
 

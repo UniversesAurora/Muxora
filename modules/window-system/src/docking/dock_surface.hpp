@@ -4,6 +4,7 @@
 #include <window_system/tab_appearance.hpp>
 #include "panes/focus_projection.hpp"
 #include "edge_strip.hpp"
+#include "tab_layout.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/tab_title_layout.hpp"
 #include <array>
@@ -14,6 +15,7 @@
 
 class QSplitter;
 namespace window_system {
+struct CarriedLabel;
 class EdgeTabButton;
 class GroupTabs;
 class DockSurface final : public QFrame {
@@ -27,20 +29,38 @@ public:
     // the caller then refreshes.
     bool updateTabAppearance();
     bool scrollStripAt(QPoint global, QPoint delta);
+    // Shows the focus accent on the strip of each window's active group.
+    void refreshGroupFocus();
     [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
     [[nodiscard]] GroupId groupAt(QPoint global) const;
     [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const;
     [[nodiscard]] GroupId tabBarAt(QPoint global) const;
-    [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global) const;
+    [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     [[nodiscard]] int dragLabelExtent(TabId tab, bool edge) const;
     [[nodiscard]] QPixmap dragLabelPixmap(TabId tab) const;
     void setDraggedTab(TabId tab);
+    // The dragged tab of a strip, drawn lifted under the pointer while the
+    // drag stays in that strip; a null tab ends it everywhere.
+    void setLiftedTab(GroupId group, QPoint global, QPoint grab);
+    void clearLiftedTabs();
+    // A picture of dragged content over one group's pages; a null group
+    // removes every picture.
+    void setContentPreview(GroupId group, const QPixmap& picture);
+    // The active page of this surface's active group, painted now.
+    [[nodiscard]] QPixmap activeContentPicture() const;
+    // Where in its tab a drag took hold of it.
+    [[nodiscard]] QPoint tabGrabOffset(TabId tab, QPoint global) const;
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
-    void setInsertionPreview(GroupId group, int index, int extent, bool carriedSticky = false,
-                             std::optional<bool> stickyRow = {});
+    void setInsertionPreview(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky = false,
+                             TabLayoutInput::Carried kind = TabLayoutInput::Carried::Tab);
+    // The tab folder a drop at the group's insertion preview joins; null for none.
+    [[nodiscard]] FolderId insertionFolder(GroupId group) const;
+    // A tab folder carried within its own strip; null ends it everywhere.
+    void setDraggedFolder(FolderId folder);
+    [[nodiscard]] QPoint folderGrabOffset(FolderId folder, QPoint global) const;
     // Whether a point is over the group's row of sticky tabs; empty without one.
     [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint point) const;
     // Whether a drop at the group's insertion preview makes the tab sticky.
