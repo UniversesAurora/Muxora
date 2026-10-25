@@ -55,6 +55,8 @@ add_library(WindowSystemWidgets STATIC
     src/docking/tab_layout.cpp
     src/docking/tab_bar.cpp
     src/style/tab_painter.cpp
+    src/style/elevation.cpp
+    src/docking/surface_geometry.cpp
     src/docking/edge_strip.cpp
     src/docking/drag_presentation.cpp
     src/docking/edge_tab_button.cpp

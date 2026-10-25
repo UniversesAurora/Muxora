@@ -70,6 +70,15 @@ foreach(label model widget desktop)
         window_system_add_suite(${suite} ${label})
     endforeach()
 endforeach()
+# The surface geometry and renderer have no dependency on window management.
+qt_add_executable(window-system-surface-elevation-test surface_elevation_test.cpp
+    ../src/style/elevation.cpp ../src/docking/surface_geometry.cpp)
+target_link_libraries(window-system-surface-elevation-test PRIVATE Qt6::Widgets Qt6::Test)
+target_include_directories(window-system-surface-elevation-test PRIVATE ../src)
+set_target_properties(window-system-surface-elevation-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.surface-elevation COMMAND window-system-surface-elevation-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/surface-elevation-results.txt,txt)
+set_tests_properties(window-system.surface-elevation PROPERTIES LABELS widget TIMEOUT 60)
 # Screen-edge pixels at a second, fractional scale: QT_SCALE_FACTOR=0.75 turns
 # a 200 % monitor into 1.5 (the last physical column maps to x.33 instead of
 # x.5), as on a 150 % laptop panel.

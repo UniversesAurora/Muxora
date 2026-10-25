@@ -662,4 +662,4 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 **完成标准**：设计 §8 的截图组合逐项检查无误并写进验证日志；全量测试通过；焦点切换一帧的底板重绘耗时有记录。
 
-**状态**：设计完成，未开始。
+**状态**：几何与阴影基础模块已实现并通过相关纯计算检查，见 [基础记录](../../development/verification-log/2026-10.md#828-表面几何与阴影基础2026-10-26)。底板、标签接合与动画接入进行中；桌面、截图、实际帧耗时和全量验收尚未执行。

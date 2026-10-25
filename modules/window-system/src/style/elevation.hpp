@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include "../docking/surface_geometry.hpp"
+#include <QColor>
+#include <QMarginsF>
+#include <memory>
+
+class QPainter;
+
+namespace window_system {
+
+enum class ElevationLevel { Flat, AnchorRest, AnchorRaised, BodyRest, BodyRaised, Lifted, RowsOverlay, ColumnOverlay };
+
+struct ElevationLayer {
+    qreal offset = 0;
+    qreal blur = 0;
+    qreal opacity = 0;
+};
+
+struct ElevationProfile {
+    ElevationLayer key;
+    ElevationLayer ambient;
+    qreal edgeOpacity = 1;
+};
+
+struct ElevationStyle {
+    QColor shadow = Qt::black;
+    // This includes the neutral edge opacity (normally 7%).
+    QColor edge = QColor::fromRgbF(0, 0, 0, 0.07f);
+    qreal shadowMultiplier = 1;
+    bool highContrast = false;
+    bool focused = false;
+    QColor contrastBorder;
+    QColor focusBorder;
+};
+
+struct ElevationCacheStats {
+    int entries = 0;
+    qsizetype bytes = 0;
+    quint64 generatedImages = 0;
+    qsizetype largestImageBytes = 0;
+};
+
+[[nodiscard]] ElevationProfile elevationProfile(ElevationLevel level);
+[[nodiscard]] int elevationStep(qreal progress);
+[[nodiscard]] qreal quantizedElevation(qreal progress);
+[[nodiscard]] ElevationProfile interpolateElevation(const ElevationProfile& from,
+                                                    const ElevationProfile& to, qreal progress);
+[[nodiscard]] QMarginsF elevationMargins(const ElevationProfile& profile);
+
+// Small rounded-rectangle sprites are stretched as nine patches. Joined
+// anchors use a bounded local image, never a body-sized intermediate.
+class ElevationRenderer final {
+public:
+    ElevationRenderer();
+    ~ElevationRenderer();
+    ElevationRenderer(const ElevationRenderer&) = delete;
+    ElevationRenderer& operator=(const ElevationRenderer&) = delete;
+
+    void paintBody(QPainter& painter, const QRectF& body, qreal radius,
+                   const ElevationProfile& elevation, const ElevationStyle& style,
+                   const QRectF& excluded = {});
+    // When incremental, source-over contributes only the opacity missing
+    // above an already painted body shadow, rather than adding two shadows.
+    void paintAnchor(QPainter& painter, const SurfaceGeometry& geometry,
+                     const ElevationProfile& bodyElevation,
+                     const ElevationProfile& anchorElevation,
+                     const ElevationStyle& style, bool incremental = false);
+    void paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
+                       const ElevationStyle& style, qreal progress = 1);
+    void clear();
+    [[nodiscard]] ElevationCacheStats cacheStats() const;
+
+private:
+    struct Cache;
+    std::shared_ptr<Cache> cache_;
+};
+
+} // namespace window_system
