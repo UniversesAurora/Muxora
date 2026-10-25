@@ -4,6 +4,7 @@
 #include "../docking/surface_geometry.hpp"
 #include <QColor>
 #include <QMarginsF>
+#include <QVector>
 #include <memory>
 
 class QPainter;
@@ -42,6 +43,11 @@ struct ElevationCacheStats {
     qsizetype largestImageBytes = 0;
 };
 
+struct ElevatedAnchor {
+    SurfaceGeometry geometry;
+    ElevationProfile elevation;
+};
+
 [[nodiscard]] ElevationProfile elevationProfile(ElevationLevel level);
 [[nodiscard]] int elevationStep(qreal progress);
 [[nodiscard]] qreal quantizedElevation(qreal progress);
@@ -67,6 +73,8 @@ public:
                      const ElevationProfile& bodyElevation,
                      const ElevationProfile& anchorElevation,
                      const ElevationStyle& style, bool incremental = false);
+    void paintAnchors(QPainter& painter, const QVector<ElevatedAnchor>& anchors,
+                      const ElevationProfile& bodyElevation, const ElevationStyle& style);
     void paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
                        const ElevationStyle& style, qreal progress = 1);
     void clear();

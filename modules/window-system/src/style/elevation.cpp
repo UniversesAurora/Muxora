@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QPainterPathStroker>
+#include <QRegion>
 #include <QString>
 #include <algorithm>
 #include <array>
@@ -389,6 +390,52 @@ void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& ge
     }
     painter.drawImage(bounds, patch->image);
     painter.restore();
+}
+
+void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAnchor>& anchors,
+                                      const ElevationProfile& bodyElevation, const ElevationStyle& style)
+{
+    if (anchors.isEmpty()) return;
+    if (anchors.size() == 1) {
+        paintAnchor(painter, anchors.front().geometry, bodyElevation, anchors.front().elevation, style);
+        return;
+    }
+    // A selection transition can leave two nearby anchors casting shadows.
+    // Their local patches both contain the same body shadow: source-over
+    // would darken it twice. Merge only their disjoint local regions by max.
+    QRegion regions;
+    QVector<QRect> bounds;
+    const auto bodyMargins = elevationMargins(bodyElevation);
+    for (const auto& anchor : anchors) {
+        const auto margins = elevationMargins(anchor.elevation);
+        const qreal extent = qCeil(std::max({margins.left(), margins.top(), margins.bottom(),
+            bodyMargins.left(), bodyMargins.top(), bodyMargins.bottom()})) + 1;
+        const QRect area = surfaceShadowClip(anchor.geometry, extent).toAlignedRect();
+        bounds.append(area); regions |= area;
+    }
+    const qreal ratio = painter.device()->devicePixelRatioF();
+    for (const QRect& band : regions) {
+        const QSize pixels(qCeil(band.width() * ratio), qCeil(band.height() * ratio));
+        QImage merged(pixels, QImage::Format_ARGB32_Premultiplied);
+        merged.fill(Qt::transparent); merged.setDevicePixelRatio(ratio);
+        QImage layer(pixels, QImage::Format_ARGB32_Premultiplied);
+        layer.setDevicePixelRatio(ratio);
+        for (int index = 0; index < anchors.size(); ++index) {
+            if (!bounds.at(index).intersects(band)) continue;
+            layer.fill(Qt::transparent);
+            QPainter local(&layer); local.translate(-band.topLeft());
+            paintAnchor(local, anchors.at(index).geometry, bodyElevation, anchors.at(index).elevation, style);
+            local.end();
+            for (int y = 0; y < pixels.height(); ++y) {
+                auto* output = reinterpret_cast<QRgb*>(merged.scanLine(y));
+                const auto* input = reinterpret_cast<const QRgb*>(layer.constScanLine(y));
+                for (int x = 0; x < pixels.width(); ++x)
+                    if (qAlpha(input[x]) > qAlpha(output[x])) output[x] = input[x];
+            }
+        }
+        painter.save(); painter.setClipRect(band, Qt::IntersectClip);
+        painter.drawImage(band.topLeft(), merged); painter.restore();
+    }
 }
 
 void ElevationRenderer::paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,

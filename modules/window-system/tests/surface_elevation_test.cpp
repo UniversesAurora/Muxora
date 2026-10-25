@@ -198,6 +198,23 @@ private slots:
         QVERIFY(!covered.anchorPath.contains(QPointF(100.1, 52.1)));
     }
 
+    void overlappingCopiesDoNotAccumulateOpacity()
+    {
+        const auto geometry = surfaceGeometry(topGeometry());
+        const auto body = elevationProfile(ElevationLevel::BodyRaised);
+        const auto anchor = elevationProfile(ElevationLevel::AnchorRaised);
+        ElevationRenderer renderer;
+        QImage once(420, 180, QImage::Format_ARGB32_Premultiplied);
+        QImage repeated(once.size(), once.format());
+        once.fill(Qt::transparent); repeated.fill(Qt::transparent);
+        QPainter first(&once), second(&repeated);
+        renderer.paintAnchors(first, {{geometry, anchor}}, body, {});
+        renderer.paintAnchors(second, {{geometry, anchor}, {geometry, anchor}}, body, {});
+        first.end(); second.end();
+        // Idempotence is a composition contract, independent of styling.
+        QVERIFY(once == repeated);
+    }
+
     void cachedShadowsDoNotGrowWithTheBodyOrPointerMoves()
     {
         QImage target(800, 500, QImage::Format_ARGB32_Premultiplied);
