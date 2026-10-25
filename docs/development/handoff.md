@@ -55,6 +55,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **本轮完成**：8.21–8.26 的实现（自绘标签栏与纯布局模块 `docking/tab_layout`、Chrome 式拖动、竖向标签栏、标签夹及全部命令和 Lua 接口、标签组卡片与焦点、标签组命名），各步骤状态和剩余项写在 [阶段 8](../roadmap/implementation/phase-8-ui-quality.md)；8.20 的测试重写完成了 `tab-layout`、`tab-folder-model`、`tab-strip-layout` 及受影响套件的移植。翻译已由 lupdate 更新并补齐中英文。
   - 修正的缺陷：停靠引导的头部容差、收窄时视口记录顺序、换主题不刷新标签栏（改为 `GroupTabs::setTheme`，不重建视图）、关闭新建按钮后容器仍占位、置顶单独一行时提起的标签不换行、滚轮回调销毁管理器后访问自身、`DockSurface` 回调在表面销毁后访问 `this`（崩溃）、`GroupTabs` 尺寸提示缺卡片边距、外层 `GroupSplitter` 的尺寸提示漏算内容边距（窗口最小尺寸少 8 像素）。
 - **进行中**：测试没有全绿，交给下一位修：
+  - Codex 接手复核（基于 `3c37934`）：Release 构建成功，全量有三项失败；两项翻译检查的内部字符串清单已修正，菜单结构的旧预期正在单独迁移。逐次结果见 [接手验证](verification-log/2026-10.md#标签栏重构接手复核与翻译清单2026-10-25)。
   - 最近一次全量 Release（本轮早些时候，修正前）18/72 失败；之后逐个移植，单独复跑时 compact-ui、focus-mode、native-frame、tab-appearance、presentation、popup-menu、pane-settings、view-commands、window-placement、view-reuse、input-method-native、widgets、movement 已通过（Release 构建，`quiet-desktop.ps1 -Elevate` 逐套件运行）；之后又改了 `GroupSplitter` 和 `GroupTabs`，这些套件也要随全量重跑。
   - 未复核：`pane-minimum`（已修 `GroupSplitter` 尺寸提示和 `GroupTabs` 转发 `LayoutRequest`，修后没跑）、`menu-structure`（剩“当前标签夹”译文一项，译文已补，修后没跑）、`translations.coverage`／`translations.checker`（lupdate 后没跑）、`chrome-interaction`（上次失败疑似环境，没复查）。
   - 验证日志这一节没写，草稿要点：重写测试时发现的缺陷各由哪个用例抓到、退役用例与替代用例对照、按新设计改的预期。下一位跑完全量后写进 [验证日志](verification-log/2026-10.md)，退役对照按 [测试要求 §2](testing-design.md#退役与重写)。
