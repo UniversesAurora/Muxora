@@ -58,7 +58,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - 最近一次全量 Release（本轮早些时候，修正前）18/72 失败；之后逐个移植，单独复跑时 compact-ui、focus-mode、native-frame、tab-appearance、presentation、popup-menu、pane-settings、view-commands、window-placement、view-reuse、input-method-native、widgets、movement 已通过（Release 构建，`quiet-desktop.ps1 -Elevate` 逐套件运行）；之后又改了 `GroupSplitter` 和 `GroupTabs`，这些套件也要随全量重跑。
   - 未复核：`pane-minimum`（已修 `GroupSplitter` 尺寸提示和 `GroupTabs` 转发 `LayoutRequest`，修后没跑）、`menu-structure`（剩“当前标签夹”译文一项，译文已补，修后没跑）、`translations.coverage`／`translations.checker`（lupdate 后没跑）、`chrome-interaction`（上次失败疑似环境，没复查）。
   - 验证日志这一节没写，草稿要点：重写测试时发现的缺陷各由哪个用例抓到、退役用例与替代用例对照、按新设计改的预期。下一位跑完全量后写进 [验证日志](verification-log/2026-10.md)，退役对照按 [测试要求 §2](testing-design.md#退役与重写)。
-- **下一步**：构建后跑全量 `pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test`，修剩余失败（只改测试预期时须符合新设计，不放宽）；写验证日志；`python tools/check-docs.py`；部署 Release 预览让用户试用。然后把界面上的“钉住标签”改名为“置顶标签”（8.21 计划里列的，用户 2026-10-25 交给下一位做）：改翻译和文档里的说法，新文字目前也是“钉住”。之后提醒用户 8.27（菜单与毛玻璃）需要用户先细化要求。
+- **下一步**：构建后跑全量 `pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/build.ps1 -Configuration Release -Test`，修剩余失败（只改测试预期时须符合新设计，不放宽）；写验证日志；`python tools/check-docs.py`；重新部署 Release 预览（本轮交出时已按提交 2e6d8b2 部署一次，测试未全绿）。然后把界面上的“钉住标签”改名为“置顶标签”（8.21 计划里列的，用户 2026-10-25 交给下一位做）：改翻译和文档里的说法，新文字目前也是“钉住”。之后提醒用户 8.27（菜单与毛玻璃）需要用户先细化要求。
 - **待用户决定**：无。
 - **请下一位回答**：无。
 - **本轮新决定**：都写在 [标签栏设计](../design/tab-strip-design.md) 和 [窗口交互细则 · 标签组卡片与焦点](../design/window-interaction-design.md#标签组卡片与焦点)。
