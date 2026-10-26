@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+标签临近内容圆角时使用连续桥接曲线，外观仍在试用；旧圆角断言的待处理范围见 [记录](verification-log/2026-10.md#临近圆角的连接过渡2026-10-26)。
+
 单窗格全屏使用临时贴边布局，退出后恢复普通卡片，见 [记录](verification-log/2026-10.md#单窗格全屏贴边2026-10-26)。
 
 拖动标签不可见的坐标转换已修正，见 [记录](verification-log/2026-10.md#拖动标签层坐标修正2026-10-26)。

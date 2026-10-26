@@ -88,6 +88,33 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     const qreal inward = input.anchorRadius * (1 - result.joinProgress) * (1 - result.coveredProgress);
     QPainterPath outline = anchorOutline(anchor, input.anchorRadius, inward, leftShoulder,
                                          rightShoulder, clippedLeft, clippedRight);
+    QPainterPath cornerBridges;
+    if (result.joined) {
+        // Near a body's corner, turn the label's side into the body's side
+        // with one tangent-continuous curve, rather than leaving a thin
+        // background wedge between the two surfaces.
+        const auto bridgeCorner = [&](bool left) {
+            const qreal labelEdge = left ? visible.left() : visible.right();
+            const qreal bodyEdge = left ? body.left() : body.right();
+            const qreal distance = left ? labelEdge - bodyEdge : bodyEdge - labelEdge;
+            if (distance <= 0.01 || distance >= result.bodyRadius) return;
+            const qreal progress = result.joinProgress;
+            const qreal bend = std::min(input.anchorRadius, visible.height() / 2) * progress;
+            const qreal endX = labelEdge + (bodyEdge - labelEdge) * progress;
+            const qreal endY = visible.bottom() + (body.top() + result.bodyRadius - visible.bottom()) * progress;
+            const qreal middle = (visible.bottom() - bend + endY) / 2;
+            const qreal inner = left ? body.left() + result.bodyRadius : body.right() - result.bodyRadius;
+            QPainterPath bridge;
+            bridge.moveTo(labelEdge, visible.bottom() - bend);
+            bridge.cubicTo(labelEdge, middle, endX, middle, endX, endY);
+            bridge.lineTo(inner, endY);
+            bridge.lineTo(inner, visible.bottom() - bend);
+            bridge.closeSubpath();
+            cornerBridges = cornerBridges.united(bridge);
+        };
+        if (!clippedLeft) bridgeCorner(true);
+        if (!clippedRight) bridgeCorner(false);
+    }
     if (result.joined && anchor.bottom() > visible.bottom()
         && (start > visible.left() || end < visible.right())) {
         // Approach a body's straight edge smoothly when its rounded corner
@@ -124,7 +151,7 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
         extension.closeSubpath();
         outline = outline.intersected(allowed.united(extension));
     }
-    result.anchorPath = inverse.map(outline);
+    result.anchorPath = inverse.map(outline.united(cornerBridges));
     if (result.joined) {
         QPainterPath bodyRectangle;
         bodyRectangle.addRect(input.body);
@@ -134,7 +161,7 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
         QPainterPath flushCorners;
         if (flushLeft) flushCorners.addRect(QRectF(body.left(), body.top(), result.bodyRadius, result.bodyRadius));
         if (flushRight) flushCorners.addRect(QRectF(body.right() - result.bodyRadius, body.top(), result.bodyRadius, result.bodyRadius));
-        protectedCorners = protectedCorners.subtracted(inverse.map(flushCorners));
+        protectedCorners = protectedCorners.subtracted(inverse.map(flushCorners.united(cornerBridges)));
         result.anchorPath = result.anchorPath.subtracted(protectedCorners);
     }
     result.anchor = inverse.mapRect(anchor);
