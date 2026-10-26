@@ -26,8 +26,8 @@ enum class Motion { Relocate, Reveal, Presence, Hover, SurfaceLift, SurfaceLower
 [[nodiscard]] constexpr int motionDuration(Motion motion)
 {
     return motion == Motion::Hover ? 100 : motion == Motion::Relocate ? 150
-        : motion == Motion::Reveal || motion == Motion::SurfaceLift ? 200
-        : motion == Motion::SurfaceLower || motion == Motion::SurfaceChangeLift || motion == Motion::SurfaceChangeLower ? 160 : 180;
+        : motion == Motion::SurfaceLift ? 240 : motion == Motion::Reveal ? 200
+        : motion == Motion::SurfaceLower || motion == Motion::SurfaceChangeLift || motion == Motion::SurfaceChangeLower ? 200 : 180;
 }
 
 [[nodiscard]] inline bool isSurfaceMotion(Motion motion)

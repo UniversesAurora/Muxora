@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+标签高度过渡已放慢，旧活动标签仍立即平放，见 [记录](verification-log/2026-10.md#延长标签高度过渡2026-10-26)。
+
 从最大化退出全屏的恢复路径已调整，见 [记录](verification-log/2026-10.md#全屏直接恢复最大化2026-10-26)。
 
 栏末控件按内容边缘对齐，最近一批修改的交付范围见 [记录](verification-log/2026-10.md#栏末控件对齐与本批交付2026-10-26)。
