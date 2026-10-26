@@ -15,7 +15,7 @@ namespace window_system {
 class SplitToolButton : public QWidget {
 public:
     SplitToolButton(QWidget* parent, QSize primarySize, QSize menuSize, int gap)
-        : QWidget(parent), gap_(std::max(0, gap))
+        : QWidget(parent), gap_(std::max(0, gap)), authoredGap_(gap_ / interfaceScale())
     {
         setProperty("windowSystemSplitButton", true);
         auto* row = new QHBoxLayout(this);
@@ -34,6 +34,8 @@ public:
 
     void setButtonSizes(QSize primarySize, QSize menuSize)
     {
+        gap_ = qRound(authoredGap_ * interfaceScale());
+        layout()->setSpacing(gap_);
         primary->setTargetSize(primarySize); menu->setTargetSize(menuSize);
         setFixedSize(primarySize.width() + gap_ + menuSize.width(), std::max(primarySize.height(), menuSize.height()));
     }
@@ -83,6 +85,7 @@ private:
         }
     }
     int gap_;
+    double authoredGap_;
     bool reversed_ = false;
     bool emphasized_ = false;
     bool popupOpen_ = false;

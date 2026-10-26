@@ -500,6 +500,10 @@
         <translation>视图(&amp;V)</translation>
     </message>
     <message>
+        <source>Interface</source>
+        <translation>界面</translation>
+    </message>
+    <message>
         <source>Visibility</source>
         <translation>显示</translation>
     </message>
@@ -3333,6 +3337,54 @@ Ctrl+Shift+P 打开命令面板</translation>
     <message>
         <source>Collapse other rows</source>
         <translation>收起其他行</translation>
+    </message>
+    <message>
+        <source>Zoom in</source>
+        <translation>放大界面</translation>
+    </message>
+    <message>
+        <source>Zoom out</source>
+        <translation>缩小界面</translation>
+    </message>
+    <message>
+        <source>Reset zoom</source>
+        <translation>重置界面缩放</translation>
+    </message>
+    <message>
+        <source>Increase interface font size</source>
+        <translation>增大界面字号</translation>
+    </message>
+    <message>
+        <source>Decrease interface font size</source>
+        <translation>减小界面字号</translation>
+    </message>
+    <message>
+        <source>Reset interface font size</source>
+        <translation>重置界面字号</translation>
+    </message>
+    <message>
+        <source>Interface font</source>
+        <translation>界面字体</translation>
+    </message>
+    <message>
+        <source>Font names, separated by commas. Missing characters use the next font in the list. Leave empty to use the default fonts.</source>
+        <translation>按顺序填写字体名称，用逗号分隔。缺少的字符由后面的字体补齐；留空使用默认字体。</translation>
+    </message>
+    <message>
+        <source>Interface font size</source>
+        <translation>界面字号</translation>
+    </message>
+    <message>
+        <source>Text size before interface scaling. Terminal and editor fonts have their own settings.</source>
+        <translation>界面缩放前的字号。终端和编辑器使用各自的字体设置。</translation>
+    </message>
+    <message>
+        <source>Interface scale</source>
+        <translation>界面缩放</translation>
+    </message>
+    <message>
+        <source>Resize text, icons and controls in all windows. Changes take effect immediately.</source>
+        <translation>调整所有窗口中的文字、图标和控件大小，修改后立即生效。</translation>
     </message>
 </context>
 </TS>

@@ -443,6 +443,10 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
         <translation>settings.json 必须是 JSON 对象。</translation>
     </message>
     <message>
+        <source>Invalid interface font or zoom setting.</source>
+        <translation>界面字体或缩放设置无效。</translation>
+    </message>
+    <message>
         <source>workbench.language supports only system, zh_CN, or en.</source>
         <translation>workbench.language 只支持 system、zh_CN 或 en。</translation>
     </message>

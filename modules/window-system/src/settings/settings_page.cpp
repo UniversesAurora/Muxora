@@ -1,3 +1,4 @@
+#include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include "settings_page.hpp"
 #include "../style/themed_controls.hpp"
@@ -54,13 +55,11 @@ QLabel* descriptionLabel(const QString& text, QWidget* parent)
 QVBoxLayout* pageLayout(QWidget* page, const QString& heading, const QString& description)
 {
     auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 16, 24, 16);
-    layout->setSpacing(12);
+    uiMargins(layout, 24, 16, 24, 16);
+    uiSpacing(layout, 12);
     auto* title = new QLabel(heading, page);
     title->setProperty("role", QStringLiteral("heading"));
-    QFont font = title->font();
-    font.setPointSizeF(font.pointSizeF() + 4);
-    title->setFont(font);
+    uiFontDelta(title, 4 * 96.0 / 72.0);
     layout->addWidget(title);
     layout->addWidget(descriptionLabel(description, page));
     return layout;
@@ -88,7 +87,7 @@ public:
     explicit CategoryNavigation(WindowManager* manager, QWidget* parent)
         : QTreeWidget(parent), manager_(manager)
     {
-        setIndentation(32);
+        bindUiMetrics(this, [this] { setIndentation(uiPixels(32)); });
         setMouseTracking(true);
         viewport()->setMouseTracking(true);
         QObject::connect(selectionModel(), &QItemSelectionModel::currentChanged, this,
@@ -101,11 +100,11 @@ protected:
         // QTreeView paints the selected row's branch plate before this hook.
         // Clear it for both parent and leaf rows; the location marker is drawn
         // after the tree, separately from the disclosure glyph.
-        painter->fillRect(rect, manager_ ? manager_->theme().surface : palette().color(QPalette::Base));
+        painter->fillRect(rect, manager_ ? manager_->interfaceTheme().surface : palette().color(QPalette::Base));
         if (!hasVisibleChildren(index)) return;
         const auto glyph = arrowRect(index);
         const bool hovered = hoveredBranch_ == index;
-        const QColor color = manager_ ? (hovered ? manager_->theme().text : manager_->theme().mutedText) :
+        const QColor color = manager_ ? (hovered ? manager_->interfaceTheme().text : manager_->interfaceTheme().mutedText) :
                                        palette().color(hovered ? QPalette::Text : QPalette::PlaceholderText);
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
@@ -126,7 +125,7 @@ protected:
         const auto row = visualRect(currentIndex());
         if (!currentIndex().isValid() || row.isEmpty()) return;
         QPainter painter(viewport());
-        const QColor accent = manager_ ? manager_->theme().accent : palette().color(QPalette::Highlight);
+        const QColor accent = manager_ ? manager_->interfaceTheme().accent : palette().color(QPalette::Highlight);
         painter.fillRect(QRect(2, row.top() + 4, 2, std::max(0, row.height() - 8)), accent);
     }
 
@@ -188,7 +187,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     search_->setClearButtonEnabled(true);
     layout->addWidget(search_);
     auto* body = new QHBoxLayout;
-    body->setSpacing(12);
+    uiSpacing(body, 12);
     categories_ = new CategoryNavigation(manager, this);
     categories_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
@@ -200,12 +199,12 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     categories_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     categories_->setUniformRowHeights(true);
     categories_->setItemDelegate(new CategoryDelegate(categories_));
-    categories_->setMaximumWidth(180);
-    categories_->setMinimumWidth(90);
+    uiMaximumWidth(categories_, 180);
+    uiMinimumWidth(categories_, 90);
     body->addWidget(categories_);
     auto* divider = new QFrame(this);
     divider->setObjectName(QStringLiteral("SettingsCategoryDivider"));
-    divider->setFixedWidth(1);
+    uiFixedWidth(divider, 1);
     divider->setAttribute(Qt::WA_StyledBackground);
     body->addWidget(divider);
     auto* right = new QVBoxLayout;
@@ -223,8 +222,8 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     contents->setObjectName(QStringLiteral("SettingsRows"));
     contents->setAttribute(Qt::WA_StyledBackground);
     auto* rows = new QVBoxLayout(contents);
-    rows->setContentsMargins(0, 0, 12, 0);
-    rows->setSpacing(18);
+    uiMargins(rows, 0, 0, 12, 0);
+    uiSpacing(rows, 18);
 
     if (auto* translations = TranslationManager::applicationInstance()) {
         addCategory(contents, rows, QStringLiteral("application"), QCoreApplication::translate("WindowSystem", "Application"));
@@ -245,6 +244,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
         QObject::connect(translations, &TranslationManager::requestedLanguageChanged, this, [this] { syncControls(); });
         QObject::connect(translations, &QObject::destroyed, language_, [this] { language_->setEnabled(false); });
     }
+    addInterfaceOptions(contents, rows);
     addCategory(contents, rows, QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window"));
     const WindowBehavior defaults;
     inputMethodScope_ = new ThemedComboBox(contents);
@@ -361,8 +361,8 @@ QWidget* SettingsPage::addRow(QWidget* parent, const QString& category,
     row->setObjectName(QStringLiteral("SettingRow"));
     row->setProperty("settingId", key);
     auto* column = new QVBoxLayout(row);
-    column->setContentsMargins(8, 4, 8, 8);
-    column->setSpacing(6);
+    uiMargins(column, 8, 4, 8, 8);
+    uiSpacing(column, 6);
     auto* titleLabel = new QLabel(title, row);
     titleLabel->setProperty("role", QStringLiteral("heading"));
     titleLabel->setBuddy(control);
@@ -402,9 +402,9 @@ void SettingsPage::addCategory(QWidget* parent, QVBoxLayout* rows,
     heading->setProperty("categoryId", id);
     heading->setProperty("role", QStringLiteral("heading"));
     QFont font = heading->font();
-    font.setPointSizeF(font.pointSizeF() + 2);
     font.setBold(true);
     heading->setFont(font);
+    uiFontDelta(heading, 2 * 96.0 / 72.0);
     rows->addWidget(heading);
     sections_.push_back({id, heading, item});
 }
@@ -472,6 +472,7 @@ void SettingsPage::syncControls()
     delay_->setValue(behavior.revealDelayMs);
     delay_->setEnabled(behavior.revealDuringDrag);
     syncViewOptions();
+    syncInterfaceOptions();
     syncTabAppearanceOptions();
 }
 

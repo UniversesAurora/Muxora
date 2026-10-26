@@ -189,6 +189,14 @@
 
 命令目录新增／移除通过 `setCatalogChangedHandler` 通知，绑定修改通过 `setBindingsChangedHandler` 通知。WindowManager 将目录的界面刷新合并到下一事件循环；注册过程中不提前调用命令的 `enabled`，批量注册也不会递归刷新菜单。需要观察界面贡献的宿主应等待该提交，命令本身注册后即可查询和执行。
 
+## 界面字体与缩放
+
+宿主可在创建 `WindowManager` 之前持有一个 `InterfaceAppearanceController`，在所有管理器销毁后再销毁它。它使用应用级 Qt 样式与字体，仅维护运行时值，不读写宿主文件。`appearance()` / `setAppearance()` 读写 `InterfaceAppearance`；校验失败保留原值，成功后发出 `appearanceChanged()`。
+
+设置含义、单位、范围、字体列表语法与命令见 [设置设计 §3.3](../../docs/design/settings-and-commands-design.md#33-界面字体与缩放)。宿主用 `uiPixels()` / `uiPixelsF()` 把自有界面尺寸转换成当前逻辑坐标，收到通知后重排；屏幕 DPR 仍交给 Qt。业务内容可继续设置自己的字体，缩放变化时按自身渲染接口处理，不把界面字体覆盖到终端字体上。
+
+一个进程只创建一个控制器，它同时服务多个管理器和窗口。未创建控制器的独立宿主维持原应用字体与默认倍率，相关命令不可用。`WindowManager::theme()` 始终返回宿主给定的基础主题，`interfaceTheme()` 返回当前倍率下的绘制尺寸；颜色相同，尺寸分别用于设置与绘制。
+
 ## 组件滚动策略
 
 包含 `<window_system/scrolling.hpp>` 后，可调用 `setSmoothScrollingEnabled(widget, false)` 关闭该组件及其子控件的平滑滚动，例如交给终端自身处理滚动；传 `true` 恢复该组件的默认策略，祖先关闭时仍保持关闭。`isSmoothScrollingEnabled(widget)` 查询有效策略。这是运行期行为，不随布局保存。

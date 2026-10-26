@@ -502,6 +502,10 @@
         <translation>&amp;View</translation>
     </message>
     <message>
+        <source>Interface</source>
+        <translation>Interface</translation>
+    </message>
+    <message>
         <source>Visibility</source>
         <translation>Visibility</translation>
     </message>
@@ -3343,6 +3347,54 @@ Ctrl+Shift+P opens the command palette</translation>
     <message>
         <source>Collapse other rows</source>
         <translation>Collapse other rows</translation>
+    </message>
+    <message>
+        <source>Zoom in</source>
+        <translation>Zoom in</translation>
+    </message>
+    <message>
+        <source>Zoom out</source>
+        <translation>Zoom out</translation>
+    </message>
+    <message>
+        <source>Reset zoom</source>
+        <translation>Reset zoom</translation>
+    </message>
+    <message>
+        <source>Increase interface font size</source>
+        <translation>Increase interface font size</translation>
+    </message>
+    <message>
+        <source>Decrease interface font size</source>
+        <translation>Decrease interface font size</translation>
+    </message>
+    <message>
+        <source>Reset interface font size</source>
+        <translation>Reset interface font size</translation>
+    </message>
+    <message>
+        <source>Interface font</source>
+        <translation>Interface font</translation>
+    </message>
+    <message>
+        <source>Font names, separated by commas. Missing characters use the next font in the list. Leave empty to use the default fonts.</source>
+        <translation>Font names, separated by commas. Missing characters use the next font in the list. Leave empty to use the default fonts.</translation>
+    </message>
+    <message>
+        <source>Interface font size</source>
+        <translation>Interface font size</translation>
+    </message>
+    <message>
+        <source>Text size before interface scaling. Terminal and editor fonts have their own settings.</source>
+        <translation>Text size before interface scaling. Terminal and editor fonts have their own settings.</translation>
+    </message>
+    <message>
+        <source>Interface scale</source>
+        <translation>Interface scale</translation>
+    </message>
+    <message>
+        <source>Resize text, icons and controls in all windows. Changes take effect immediately.</source>
+        <translation>Resize text, icons and controls in all windows. Changes take effect immediately.</translation>
     </message>
 </context>
 </TS>

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <window_system/layout_model.hpp>
+#include <window_system/ui_scale.hpp>
 #include <QHash>
 #include <QRect>
 #include <QVector>
@@ -103,7 +104,7 @@ inline void separateGroupGuides(QVector<DockGuide>& guides, int groupCount, QRec
         if (!cross.intersects(iterator.value())) continue;
         overlaps = true;
         auto candidate = cross;
-        constexpr int gap = 2;
+        const int gap = uiPixels(2);
         const auto pair = iterator.value();
         // The pair and cross read as one control. Keep their perpendicular
         // centers aligned, even when the pair moved to avoid a tab header.
@@ -175,8 +176,8 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
     // Rendering and hit testing consume the same resulting rectangles.
     if (area == DockGuideArea::Group) group = dockContentBounds(group, strips);
     if (!group.isEmpty()) {
-        const int cell = std::clamp((std::min(group.width(), group.height()) - 8) / 3, 12, 28);
-        const int step = cell + 4;
+        const int cell = std::clamp((std::min(group.width(), group.height()) - uiPixels(8)) / 3, uiPixels(12), uiPixels(28));
+        const int step = cell + uiPixels(4);
         for (const auto placement : {Placement::Center, Placement::Left, Placement::Right, Placement::Top, Placement::Bottom}) {
             if (!splitGroup && placement != Placement::Center) continue;
             QPoint offset;
@@ -205,7 +206,7 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
     if (available.isEmpty()) return guides;
     auto obstacles = edgeStrips.values();
     for (const auto& strip : strips) obstacles.append(strip.rect);
-    constexpr int cell = 28;
+    const int cell = uiPixels(28);
     for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
         QPoint outer, inward;
         switch (edge) {

@@ -1,3 +1,4 @@
+#include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include "settings_page.hpp"
 
@@ -134,13 +135,13 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     setObjectName(QStringLiteral("ShortcutsPage"));
     setProperty("windowSystemSettingsKind", QStringLiteral("window_system.shortcuts"));
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 16, 24, 16);
-    layout->setSpacing(10);
+    uiMargins(layout, 24, 16, 24, 16);
+    uiSpacing(layout, 10);
     auto* heading = new QLabel(QCoreApplication::translate("WindowSystem", "Keyboard shortcuts"), this);
     heading->setProperty("role", QStringLiteral("heading"));
     auto font = heading->font();
-    font.setPointSizeF(font.pointSizeF() + 4);
     heading->setFont(font);
+    uiFontDelta(heading, 4 * 96.0 / 72.0);
     layout->addWidget(heading);
     auto* description = new QLabel(QCoreApplication::translate("WindowSystem",
         "Each command can have multiple bindings. A sequence may start with a combination and continue with letters, numbers, or other keys."), this);
@@ -208,7 +209,7 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     arguments_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Shortcut arguments JSON"));
     arguments_->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Arguments (JSON object, optional)"));
     arguments_->setMaximumHeight(100);
-    arguments_->setMinimumHeight(54);
+    uiMinimumHeight(arguments_, 54);
     layout->addWidget(arguments_);
     diagnostic_ = new QLabel(this);
     diagnostic_->setWordWrap(true);

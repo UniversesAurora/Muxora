@@ -2,6 +2,7 @@
 #include "window_manager_p.hpp"
 #include "style/tab_appearance_p.hpp"
 #include "tab_presentation_commands.hpp"
+#include "interface_appearance_commands.hpp"
 #include <window_system/window_manager.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
@@ -40,6 +41,7 @@ using StripSizing = CommandStripHost::StripSizing;
 void WindowManager::registerWindowCommands()
 {
     registerTabPresentationCommands(this);
+    registerInterfaceAppearanceCommands(this);
     auto add = [this](QString id, QString title, QString category, QKeySequence shortcut,
                       std::function<bool(const CommandContext&)> handler,
                       std::function<bool(const CommandContext&)> enabled = {}) {
@@ -55,7 +57,7 @@ void WindowManager::registerWindowCommands()
         QPointer<QWidget> owner(windowWidget(c.window));
         DismissOnlyMenu picker;
         picker.setObjectName(QStringLiteral("ContentWindowPicker"));
-        applyTheme(&picker, theme());
+        applyTheme(&picker, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != source) {
             auto* action = picker.addAction(windowWidget(id)->windowTitle());
             action->setData(id);
@@ -149,7 +151,7 @@ void WindowManager::registerWindowCommands()
                 QPointer<WorkspaceWindow> observed(window);
                 DismissOnlyMenu picker;
                 picker.setObjectName(QStringLiteral("ToolbarSizingPicker"));
-                applyTheme(&picker, theme());
+                applyTheme(&picker, interfaceTheme());
                 for (const auto& stripId : strips->stripIds()) if (strips->isStripSizingEditable(stripId)) {
                     auto* action = picker.addAction(strips->stripTitle(stripId));
                     action->setData(stripId);
@@ -184,7 +186,7 @@ void WindowManager::registerWindowCommands()
             // window may close while the menu's event loop is running.
             DismissOnlyMenu picker;
             picker.setObjectName(QStringLiteral("ToolbarResetPicker"));
-            applyTheme(&picker, theme());
+            applyTheme(&picker, interfaceTheme());
             for (const auto& id : window->strips()->stripIds()) {
                 auto* action = picker.addAction(window->strips()->stripTitle(id));
                 action->setData(id);
@@ -268,7 +270,7 @@ void WindowManager::registerWindowCommands()
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Floating; });
     auto chooseWorkbench = [this](const CommandContext& c) -> WindowId {
         if (const auto target = c.args.value("targetWindow").toUuid(); !target.isNull()) return target;
-        DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
+        DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) {
             if (id == c.window || d->model.window(id)->kind != WindowKind::Workbench) continue;
             auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id);
@@ -311,7 +313,7 @@ void WindowManager::registerWindowCommands()
             const auto source = c.args.value("source", c.window).toUuid();
             auto target = c.args.value("targetWindow").toUuid();
             if (target.isNull()) {
-                DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, theme());
+                DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, interfaceTheme());
                 for (const auto id : d->model.windowOrder()) if (id != source) { auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id); }
                 if (auto* action = menu.exec(QCursor::pos())) target = action->data().toUuid();
             }
@@ -357,7 +359,7 @@ void WindowManager::registerWindowCommands()
                 QPointer<QWidget> owner(windowWidget(c.window));
                 DismissOnlyMenu picker;
                 picker.setObjectName(QStringLiteral("PaneTabPicker"));
-                applyTheme(&picker, theme());
+                applyTheme(&picker, interfaceTheme());
                 for (const auto window : d->model.windowOrder())
                     for (const auto tab : d->model.orderedTabs(window)) if (tab != sourceTab) {
                         auto* action = picker.addAction(QStringLiteral("%1 — %2").arg(d->model.tab(tab)->title, windowWidget(window)->windowTitle()));
@@ -610,7 +612,7 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
     // the content the user is currently reading (including an open peek).
     captured.group = group; captured.tab = tab; captured.pane = d->model.tab(tab)->activePane;
     const QPointer<WindowManager> self(this);
-    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
+    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, interfaceTheme());
     appendTabPresentationActions(&menu, this, captured);
     populateContextMenu(&menu, CommandMenuSurface::Tab, this, captured);
     menu.exec(global);
@@ -619,7 +621,7 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
     const auto* record = d->model.window(window); if (!record) return;
     const auto captured = context(window);
-    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, theme());
+    DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, interfaceTheme());
     populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
     menu.exec(global);
 }
@@ -637,7 +639,7 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
         if (editor->property("paneId").toUuid() == pane) break;
     }
     if (!menu) menu = new DismissOnlyMenu(windowWidget(window));
-    QPointer<QMenu> retained(menu); applyTheme(menu, theme());
+    QPointer<QMenu> retained(menu); applyTheme(menu, interfaceTheme());
     populateContextMenu(menu, CommandMenuSurface::Pane, this, captured);
     menu->exec(global);
     delete retained.data();

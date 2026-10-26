@@ -1,3 +1,4 @@
+#include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "command_dialogs.hpp"
@@ -63,8 +64,8 @@ FloatingPanel* createDialog(WindowManager* manager, QWidget* parent,
     dialog->setWindowTitle(title);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->resize(size);
-    dialog->setMinimumSize(420, 240);
-    applyTheme(dialog, manager->theme());
+    uiMinimumSize(dialog, 420, 240);
+    applyTheme(dialog, manager->interfaceTheme());
     QObject::connect(manager, &QObject::destroyed, dialog, &QDialog::reject);
     return dialog;
 }
@@ -180,8 +181,8 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
     auto* dialog = createDialog(manager, parent, QStringLiteral("CommandPalette"),
                                 QCoreApplication::translate("WindowSystem", "Command palette"), QSize(780, 450), options);
     auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(8);
+    uiMargins(layout, 12, 12, 12, 12);
+    uiSpacing(layout, 8);
     auto* search = new QLineEdit(dialog);
     search->setObjectName(QStringLiteral("CommandPaletteSearch"));
     search->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Type a command name, category, or ID…"));
@@ -285,7 +286,7 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
     auto* dialog = createDialog(manager, parent, QStringLiteral("WindowSelector"),
                                 QCoreApplication::translate("WindowSystem", "Switch window"), QSize(780, 410), options);
     auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(12, 12, 12, 12);
+    uiMargins(layout, 12, 12, 12, 12);
     auto* search = new QLineEdit(dialog);
     search->setObjectName(QStringLiteral("WindowSelectorSearch"));
     search->setPlaceholderText(QCoreApplication::translate("WindowSystem", "Search windows, owners, or window types…"));
@@ -319,7 +320,7 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
             auto* item = new QTreeWidgetItem(tree, {title, kind, owner, QString::number(model.orderedTabs(id).size())});
             item->setData(0, Qt::UserRole, id);
             item->setToolTip(0, id.toString(QUuid::WithoutBraces));
-            item->setIcon(0, iconFor(record->kind == WindowKind::Workbench ? QStringLiteral("window") : QStringLiteral("detach"), alive->theme()));
+            item->setIcon(0, iconFor(record->kind == WindowKind::Workbench ? QStringLiteral("window") : QStringLiteral("detach"), alive->interfaceTheme()));
             if (id == previous) tree->setCurrentItem(item);
         }
         if (!tree->currentItem()) selectFirstEnabled(tree);

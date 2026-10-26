@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "tab_painter.hpp"
+#include <window_system/interface_appearance.hpp>
 
 #include <QFontMetrics>
 #include <QLinearGradient>
@@ -56,10 +57,21 @@ void paintIcon(QPainter& painter, const QIcon& icon, const QRect& area, const QC
 TabMetrics TabMetrics::forTheme(const Theme& theme, const QFont& font)
 {
     TabMetrics metrics;
+    for (auto* value : {&metrics.rowHeight, &metrics.rowGap, &metrics.outerMargin, &metrics.radius,
+         &metrics.controlRadius, &metrics.accentLine, &metrics.separator, &metrics.edgeFade,
+         &metrics.titleFade, &metrics.scrollbar, &metrics.newTabWidth, &metrics.typeWidth,
+         &metrics.listWidth, &metrics.controlGap, &metrics.countMinimumWidth, &metrics.verticalInset,
+         &metrics.columnGap, &metrics.columnOverlayOutset, &metrics.verticalAccent,
+         &metrics.verticalAccentLength, &metrics.verticalIconWidth, &metrics.resizeBand,
+         &metrics.iconCollapseTravel, &metrics.cardMargin, &metrics.cardRadius,
+         &metrics.folderChipInset, &metrics.folderChipPadding, &metrics.folderChipMargin,
+         &metrics.folderDot, &metrics.folderLine, &metrics.folderIndent, &metrics.folderButton})
+        *value = uiPixels(*value);
+    metrics.folderOutline = uiPixelsF(metrics.folderOutline);
     metrics.iconSize = theme.metrics.iconSize;
-    metrics.tile = QSize(std::max(26, metrics.iconSize + 10), std::max(26, metrics.iconSize + 10));
-    metrics.rowHeight = std::max(metrics.rowHeight, QFontMetrics(font).height() + 10);
-    metrics.rowHeight = std::max(metrics.rowHeight, metrics.iconSize + 10);
+    metrics.tile = QSize(std::max(uiPixels(26), metrics.iconSize + uiPixels(10)), std::max(uiPixels(26), metrics.iconSize + uiPixels(10)));
+    metrics.rowHeight = std::max(metrics.rowHeight, QFontMetrics(font).height() + uiPixels(10));
+    metrics.rowHeight = std::max(metrics.rowHeight, metrics.iconSize + uiPixels(10));
     return metrics;
 }
 
@@ -118,7 +130,7 @@ TabParts TabPainter::parts(const QRect& tab, TabShape shape, TabLabelParts label
     const QRect content = tab;
     if (action) result.action = tabBarCloseRect(content, direction);
     const auto area = tabBarLabelArea(content, direction, action && reserveAction);
-    auto rects = layoutTabLabel(area, label, direction, tabPartGap);
+    auto rects = layoutTabLabel(area, label, direction, uiPixels(tabPartGap));
     result.number = rects.number; result.icon = rects.icon; result.title = rects.title;
     // A title slot keeps the label area's full extent when it is the last
     // part, so the fade lands at the label's real end.
@@ -227,7 +239,7 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
         } else if (state.titleLayout) {
             const bool cut = state.titleLayout->naturalWidth() > parts.title.width();
             const int fadeLength = state.shape == TabShape::Row
-                ? std::min(metrics_.titleFade, std::max(0, parts.title.width() - (metrics_.rowHeight - 10))) : metrics_.titleFade;
+                ? std::min(metrics_.titleFade, std::max(0, parts.title.width() - (metrics_.rowHeight - uiPixels(10)))) : metrics_.titleFade;
             const bool covering = state.actionShown && !state.actionReserved && !parts.action.isEmpty()
                 && state.actionOpacity > 0;
             if ((cut && fadeLength > 0) || covering) {
@@ -269,7 +281,7 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
             painter.setBrush(withAlpha(text, state.actionPressed && state.actionHovered ? 0.24 : 0.14));
             painter.drawRoundedRect(QRectF(parts.action), metrics_.controlRadius, metrics_.controlRadius);
         }
-        const QRect glyph(QPoint(), QSize(16, 16));
+        const QRect glyph(QPoint(), QSize(uiPixels(16), uiPixels(16)));
         paintIcon(painter, state.actionIcon, glyph.translated(parts.action.center() - glyph.center()),
                   colors ? colors->icon : QColor{}, state.enabled, false);
         painter.restore();
@@ -384,7 +396,7 @@ void TabPainter::paintFolderHeader(QPainter& painter, const QRect& area, bool ve
             painter.setPen(Qt::NoPen); painter.setBrush(withAlpha(state.washText, 0.14));
             painter.drawRoundedRect(QRectF(add), metrics_.controlRadius, metrics_.controlRadius);
         }
-        const QRect glyph(QPoint(), QSize(16, 16));
+        const QRect glyph(QPoint(), QSize(uiPixels(16), uiPixels(16)));
         paintIcon(painter, state.addIcon, glyph.translated(add.center() - glyph.center()), state.washText, true, false);
     }
     // The chevron points down while open, to the side when collapsed.

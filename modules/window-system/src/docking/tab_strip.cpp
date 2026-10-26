@@ -1,3 +1,4 @@
+#include <window_system/interface_appearance.hpp>
 #include <QCoreApplication>
 #include "tab_strip.hpp"
 #include "dock_surface.hpp"
@@ -7,6 +8,7 @@
 #include "style/split_tool_button.hpp"
 #include "style/tab_appearance_p.hpp"
 #include "style/themed_controls.hpp"
+#include "style/ui_metrics.hpp"
 
 #include <QApplication>
 #include <QBoxLayout>
@@ -74,7 +76,7 @@ public:
         body_ = body; content_ = body.adjusted(0, verticalOutset, 0, -verticalOutset); overlay_ = overlay;
         // The resting panel must not intercept its neighbor's content or
         // resize handle through the padding reserved for an overlay shadow.
-        if (changed) { if (overlay > 0) clearMask(); else setMask(QRegion(body.adjusted(-TabMetrics{}.columnGap, 0, TabMetrics{}.columnGap, 0))); }
+        if (changed) { if (overlay > 0) clearMask(); else setMask(QRegion(body.adjusted(-uiPixels(TabMetrics{}.columnGap), 0, uiPixels(TabMetrics{}.columnGap), 0))); }
         update();
     }
     [[nodiscard]] QRect bodyRect() const { return body_; }
@@ -84,13 +86,13 @@ public:
         if (overlay_ <= 0) return;
         paint.save(); paint.translate(offset); paint.setRenderHint(QPainter::Antialiasing);
         const QRectF body(body_);
-        QPainterPath outline; outline.addRoundedRect(body, 8, 8);
+        QPainterPath outline; outline.addRoundedRect(body, uiPixelsF(8), uiPixelsF(8));
         QPainterPath outside; outside.addRect(rect());
         paint.save(); paint.setClipPath(outside.subtracted(outline), Qt::IntersectClip);
-        paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, 8, true); paint.restore();
+        paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, uiPixelsF(8), true); paint.restore();
         paint.setBrush(theme_.headerBackground);
         auto line = painter_.palette().tileBorder.resolve(window()->isActiveWindow()); line.setAlphaF(line.alphaF() * overlay_);
-        paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+        paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), uiPixelsF(8), uiPixelsF(8));
         paint.restore();
     }
 protected:
@@ -104,9 +106,9 @@ protected:
         QPainter paint(this); paintShell(paint);
     }
 private:
-    static TabMetrics panelMetrics()
+    TabMetrics panelMetrics() const
     {
-        return TabMetrics{};
+        return TabMetrics::forTheme(theme_, font());
     }
     Theme theme_;
     TabPainter painter_;
@@ -137,7 +139,7 @@ protected:
     {
         if (card_.isEmpty()) return;
         QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
-        const qreal radius = TabMetrics{}.cardRadius;
+        const qreal radius = uiPixels(TabMetrics{}.cardRadius);
         QPainterPath rounded; rounded.addRoundedRect(QRectF(card_), radius, radius);
         QPainterPath square; square.addRect(QRectF(card_));
         painter.setClipPath(square.subtracted(rounded), Qt::IntersectClip);
@@ -152,7 +154,7 @@ protected:
 private:
     [[nodiscard]] QRegion corners() const
     {
-        const int radius = TabMetrics{}.cardRadius + 1;
+        const int radius = uiPixels(TabMetrics{}.cardRadius) + 1;
         QRegion result;
         for (const auto point : {card_.topLeft(), card_.topRight() - QPoint(radius - 1, 0),
                                 card_.bottomLeft() - QPoint(0, radius - 1), card_.bottomRight() - QPoint(radius - 1, radius - 1)})
@@ -195,8 +197,8 @@ private:
 class TabCreateButtons final : public SplitToolButton {
 public:
     TabCreateButtons(const Theme& theme, QWidget* parent)
-        : SplitToolButton(parent, QSize(newTabButtonWidth, theme.metrics.tabHeight),
-                          QSize(listButtonWidth, theme.metrics.tabHeight), createButtonGap)
+        : SplitToolButton(parent, QSize(uiPixels(newTabButtonWidth), theme.metrics.tabHeight),
+                          QSize(uiPixels(listButtonWidth), theme.metrics.tabHeight), uiPixels(createButtonGap))
     {
         setObjectName("TabCreateButtons"); add = primary; types = menu;
         add->setObjectName("NewTabButton"); setThemedIcon(add, "add", theme);
@@ -207,7 +209,7 @@ public:
     CompactToolButton* add = nullptr;
     CompactToolButton* types = nullptr;
     void setHeight(int height) {
-        setButtonSizes(QSize(newTabButtonWidth, std::max(1, height - 4)), QSize(listButtonWidth, std::max(1, height - 4)));
+        setButtonSizes(QSize(uiPixels(newTabButtonWidth), std::max(1, height - uiPixels(4))), QSize(uiPixels(listButtonWidth), std::max(1, height - uiPixels(4))));
         setFixedHeight(height);
     }
 };
@@ -363,16 +365,18 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     name_ = new QLabel(end_); name_->setObjectName("TabGroupName"); name_->hide();
     auto nameFont = name_->font(); nameFont.setPointSizeF(std::max(7.0, nameFont.pointSizeF() - 1)); nameFont.setWeight(QFont::DemiBold);
     name_->setFont(nameFont); name_->setContentsMargins(6, 0, 6, 0);
+    uiFontDelta(name_, -96.0 / 72.0);
     ending->addWidget(name_);
     ending->addWidget(list_);
     title_ = new QLabel(this); title_->setObjectName("TabGroupTitle"); title_->setFont(nameFont); title_->hide();
+    uiFontDelta(title_, -96.0 / 72.0);
     end_->installEventFilter(this);
     bar_->setEndWidget(end_);
     // A vertical strip's footer: new tab, sidebar actions, icon mode.
     footer_ = new QWidget(this); footer_->setObjectName("TabStripFooter"); footer_->hide();
     auto* footer = new QBoxLayout(QBoxLayout::LeftToRight, footer_);
     footer->setContentsMargins(bar_->metrics().verticalInset, 0, bar_->metrics().verticalInset, 0); footer->setSpacing(2);
-    iconModeButton_ = new CompactToolButton(footer_, QSize(26, row)); iconModeButton_->setObjectName("TabStripIconModeButton");
+    iconModeButton_ = new CompactToolButton(footer_, QSize(uiPixels(26), row)); iconModeButton_->setObjectName("TabStripIconModeButton");
     footer_->installEventFilter(this);
     QObject::connect(iconModeButton_, &QToolButton::clicked, this, [this] {
         iconMode_ = !iconMode_;
@@ -510,8 +514,8 @@ GroupTabs::~GroupTabs()
 bool GroupTabs::vertical() const { return bar_->vertical(); }
 int GroupTabs::columnWidth() const
 {
-    return std::clamp(verticalWidth_ > 0 ? verticalWidth_ : appearance_.verticalTabWidth,
-        bar_->minimumColumnWidth(), compactPresentation_ ? maximumVerticalTabWidth : maximumColumnWidth());
+    return std::clamp(uiPixels(verticalWidth_ > 0 ? verticalWidth_ : appearance_.verticalTabWidth),
+        bar_->minimumColumnWidth(), compactPresentation_ ? uiPixels(maximumVerticalTabWidth) : maximumColumnWidth());
 }
 int GroupTabs::maximumColumnWidth() const
 {
@@ -529,7 +533,7 @@ void GroupTabs::placeControls()
     auto* ending = static_cast<QHBoxLayout*>(end_->layout());
     const auto& sidebar = sidebarButtons_;
     const int row = bar_->metrics().rowHeight;
-    create->types->setTargetSize(QSize(listButtonWidth, std::max(1, row - 4)));
+    create->types->setTargetSize(QSize(uiPixels(listButtonWidth), std::max(1, row - 4)));
     if (vertical()) {
         const bool icons = iconMode_ && !bar_->peeking();
         const bool left = bar_->placement() == TabBarPlacement::Left;
@@ -555,7 +559,7 @@ void GroupTabs::placeControls()
         iconModeButton_->setVisible(showToggle);
         const int toggle = showToggle ? iconModeButton_->sizeHint().width() : 0;
         const int types = metrics.typeWidth + metrics.controlGap;
-        const int actions = int(sidebar.size()) * (tabActionSize + 2);
+        const int actions = int(sidebar.size()) * (uiPixels(tabActionSize) + 2);
         const bool showActions = !icons && !compactPresentation_
             && room >= metrics.newTabWidth + types + toggle + actions + 2;
         const int remaining = room - toggle - (showActions ? actions : 0) - 2;
@@ -944,6 +948,7 @@ void GroupTabs::setTheme(const Theme& theme)
     }
     updateGeometry();
     updateCardJoin();
+    layoutChildren();
 }
 
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
@@ -1171,7 +1176,7 @@ bool GroupTabs::setDragTabStyle(const TabBar& target, bool sticky)
         && bar_->carriedTileColumns() == columns && bar_->verticalPresentation() == presentation) return false;
     if (!normalDragStyle_) normalDragStyle_ = DragStyle{appearance_, bar_->placement(), verticalWidth_, iconMode_, bar_->stickyCount()};
     appearance_ = target.appearance(); dragTabArea_ = area;
-    verticalWidth_ = dragTabArea_.width(); iconMode_ = icons;
+    verticalWidth_ = qRound(dragTabArea_.width() / interfaceScale()); iconMode_ = icons;
     bar_->setAppearance(appearance_, target.placement());
     bar_->setIconMode(iconMode_); bar_->setStickyCount(count);
     bar_->setCarriedPresentation(presentation);
@@ -1221,7 +1226,7 @@ void GroupTabs::setPinnedActions(std::function<void()> current, std::function<vo
     QWidget* owner = vertical() ? footer_ : end_;
     for (auto item : {std::tuple{std::move(current), QCoreApplication::translate("WindowSystem", "Unpin current tab"), QStringLiteral("unpin")},
                       std::tuple{std::move(all), QCoreApplication::translate("WindowSystem", "Unpin all sidebar tabs"), QStringLiteral("unpin-all")}}) {
-        auto* button = new CompactToolButton(owner, QSize(20, bar_->metrics().rowHeight)); setThemedIcon(button, std::get<2>(item), theme_);
+        auto* button = new CompactToolButton(owner, QSize(uiPixels(20), bar_->metrics().rowHeight)); setThemedIcon(button, std::get<2>(item), theme_);
         button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
         button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
         sidebarButtons_.append(button);
@@ -1278,7 +1283,7 @@ bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
             // expanded width. Retain this gesture's initial width for peeking
             // and for a later explicit expansion; reversing the drag still
             // resumes direct sizing from its original pointer origin.
-            verticalWidth_ = icons ? resizeStartWidth_ : std::clamp(requested, minimum, maximumColumnWidth());
+            verticalWidth_ = qRound((icons ? resizeStartWidth_ : std::clamp(requested, minimum, maximumColumnWidth())) / interfaceScale());
             if (iconMode_ != icons) { iconMode_ = icons; bar_->setIconMode(icons); }
             layoutChildren();
             return true;

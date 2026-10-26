@@ -2,6 +2,7 @@
 #pragma once
 #include <QFontMetrics>
 #include <QWidget>
+#include <window_system/ui_scale.hpp>
 #include <algorithm>
 
 namespace window_system {
@@ -10,6 +11,6 @@ inline constexpr int peekHeaderHeight = 20;
 inline constexpr int peekButtonExtent = 18;
 inline void updatePeekHeaderHeight(QWidget* header)
 {
-    header->setFixedHeight(std::max(peekHeaderHeight, header->fontMetrics().height() + 2));
+    header->setFixedHeight(std::max(uiPixels(peekHeaderHeight), header->fontMetrics().height() + uiPixels(2)));
 }
 } // namespace window_system

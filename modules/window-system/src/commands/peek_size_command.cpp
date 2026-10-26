@@ -90,7 +90,7 @@ bool chooseSize(WindowManager* manager, const CommandContext& context, TabId tab
     QObject::connect(manager, &WindowManager::layoutChanged, &dialog, [&] {
         if (!owner || !isAutoHideTab(owner, tab)) dialog.reject();
     });
-    applyTheme(&dialog, manager->theme()); width->setFocus(); width->selectAll();
+    applyTheme(&dialog, manager->interfaceTheme()); width->setFocus(); width->selectAll();
     const auto accepted = dialog.exec() == QDialog::Accepted;
     if (!owner || !window || !isAutoHideTab(owner, tab)) return false;
     if (!accepted) return true;

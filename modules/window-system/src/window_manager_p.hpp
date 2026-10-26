@@ -43,6 +43,7 @@ struct WindowManager::Private {
     QUuid newTabFolder;
     QStringList tabCreationCommands;
     Theme theme = defaultTheme();
+    Theme authoredTheme = defaultTheme();
     // Incremented by setTheme(); views built for an older theme are rebuilt.
     quint64 themeRevision = 0;
     TabAppearance appearance;

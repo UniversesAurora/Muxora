@@ -1,3 +1,4 @@
+#include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "settings_page.hpp"
@@ -108,7 +109,7 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         editor->setAccessibleName(title);
         auto* control = new IntegerSlider(editor, minimumTabTitleWidth, 1000, parent);
         control->setObjectName(QString::fromLatin1(name) + QStringLiteral("Control"));
-        control->setMaximumWidth(440);
+        uiMaximumWidth(control, 440);
         control->slider()->setObjectName(QString::fromLatin1(name) + QStringLiteral("Slider"));
         control->slider()->setAccessibleName(title);
         return control;
@@ -133,7 +134,7 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     });
 
     auto* editor = new QWidget(parent);
-    auto* layout = new QVBoxLayout(editor); layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(4);
+    auto* layout = new QVBoxLayout(editor); uiMargins(layout, 0, 0, 0, 0); uiSpacing(layout, 4);
     tabColors_ = new QPlainTextEdit(editor); tabColors_->setObjectName("TabColorPresetsJson");
     tabColors_->setMinimumHeight(150); tabColors_->setMaximumHeight(240);
     tabColors_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Tab color definitions JSON"));

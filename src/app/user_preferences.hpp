@@ -2,6 +2,7 @@
 #pragma once
 
 #include <window_system/command_registry.hpp>
+#include <window_system/interface_appearance.hpp>
 #include <QByteArray>
 #include <QJsonArray>
 #include <QMap>
@@ -21,6 +22,8 @@ public:
     [[nodiscard]] QString diagnostic() const;
     [[nodiscard]] QString directory() const { return directory_; }
     bool saveLanguage(const QString& language);
+    [[nodiscard]] window_system::InterfaceAppearance interfaceAppearance() const { return interfaceAppearance_; }
+    bool saveInterfaceAppearance(const window_system::InterfaceAppearance& value);
     bool loadKeybindings(window_system::CommandRegistry& commands);
     // Script reloads restore the prior defaults before replacing script-owned
     // bindings, then capture the new generation before reapplying user rules.
@@ -36,6 +39,7 @@ public:
 private:
     QString directory_;
     QString language_ = QStringLiteral("system");
+    window_system::InterfaceAppearance interfaceAppearance_;
     QString settingsDiagnostic_;
     QString keybindingsDiagnostic_;
     QMap<QString, QVector<window_system::CommandBinding>> defaults_;

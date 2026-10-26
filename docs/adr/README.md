@@ -17,6 +17,7 @@
 | [0009](0009-msvc-toolchain.md) | Release 改用 MSVC 工具链 | 采用 |
 | [0010](0010-english-translation-source.md) | 界面翻译使用英文源文本 | 采用（迁移见阶段 8.12） |
 | [0011](0011-own-tab-strip.md) | 标签栏自绘，拖动时内容用画面预览 | 采用（实施见阶段 8.21、8.22） |
+| [0012](0012-live-interface-scaling.md) | 用统一尺寸倍率实现即时界面缩放 | 采用 |
 
 ## 写法
 

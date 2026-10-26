@@ -66,7 +66,7 @@ bool moveToolbar(WindowManager* manager, const CommandContext& context)
     const auto stillOwned = [&] { return owner && window && owner->windowWidget(context.window) == window.data(); };
     QString strip = context.args.value("strip").toString();
     if (!context.args.contains("strip")) {
-        strip = chooseStrip(window, manager->theme());
+        strip = chooseStrip(window, manager->interfaceTheme());
         if (!stillOwned()) return false;
         if (strip.isEmpty()) return true;
     }
@@ -75,7 +75,7 @@ bool moveToolbar(WindowManager* manager, const CommandContext& context)
     int row = 0, index = -1;
     if (!integerArgument(context.args, "row", 0, row) || !integerArgument(context.args, "index", -1, index)) return false;
     if (!context.args.contains("area")) {
-        const auto target = chooseDestination(window, manager->theme());
+        const auto target = chooseDestination(window, manager->interfaceTheme());
         if (!stillOwned()) return false;
         if (target.isEmpty()) return true;
         area = target.value("area").toString(); row = target.value("row").toInt();

@@ -60,6 +60,7 @@ Windows 用户配置目录建议为 `%APPDATA%\Muxora\User`，机器状态目录
 | 数据 | 文件 | 理由 |
 | --- | --- | --- |
 | 界面语言 `workbench.language` | `settings.json` | 用户偏好 |
+| 界面字体、字号与缩放（见 [§3.3](#33-界面字体与缩放)） | `settings.json` | 应用级偏好，完整窗口与浮窗共用，不随布局保存 |
 | 窗口行为 `window.*`：拖出方式、空窗口、拖动时唤起、新标签位置、单标签时隐藏标签栏、锁定时隐藏选项、窗口控制按钮顺序、禅模式全屏范围、输入法记忆范围 | `settings.json` | 用户偏好，对所有窗口生效 |
 | 各范围当前输入法和输入模式 | 不保存 | 只在本次运行中有效，见 [输入法状态](window-interaction-design.md#输入法状态) |
 | 标签外观 `tabs.*`：位置、多行、图标、编号、标题裁切、置顶标签、配色列表 | `settings.json` | 同上；配色列表是用户定义的数据，跟着用户走 |
@@ -182,6 +183,35 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 JSONC 支持 `//`、`/* ... */` 和尾逗号，不扩大为任意 JSON5 或可执行脚本。解析采用支持这些语法的成熟原生组件；Qt 严格 JSON 解析器不能单独承担此入口。Boost.JSON 的相应解析选项可作为候选，但其语义解析不自动解决注释保留编辑，必须分别验证。[Boost.JSON 解析选项](https://www.boost.org/doc/libs/latest/libs/json/doc/html/ref/parse_options.html)
 
 配置文本与有效值分开处理。图形设置编辑采用针对目标字段的源码范围修改，保留已有注释、无关字段、顺序和格式，不解析后全量序列化覆盖用户文件；不能用正则剥注释。JSON 编辑提供语法、类型、未知键、重复键和范围诊断，以及从 schema 生成的键／值提示，不要求嵌入完整代码编辑器。
+
+### 3.3 界面字体与缩放
+
+| 设置 | 类型与范围 | 默认 | 行为 |
+| --- | --- | --- | --- |
+| `workbench.fontFamily` | 逗号分隔的字符串；最多 32 个名称、总长不超过 4096 字符 | 空 | 按顺序选择字体并补齐缺字；名称可用单引号或双引号包裹，保留名称内部的逗号。未闭合引号拒绝应用。空值使用平台默认链。 |
+| `workbench.fontSize` | 整数，6–96，单位 px | 13 | 不含界面缩放倍率的基础字号，使用 Qt 逻辑像素。 |
+| `window.zoomLevel` | 有限数，−8–8，支持小数 | 0 | 倍率为 `1.2^zoomLevel`，与 VS Code 相同；设置页显示为百分比。 |
+
+Windows 的默认字体链为 `Segoe UI, Microsoft YaHei, sans-serif`，参照 [VS Code 的 Windows 简中界面字体](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/media/style.css)。其他平台从 Qt 系统界面字体开始回退。Qt 的字体匹配与整形处理缺字，不按字符手工选择字体，也不把系统没有安装的字体打包进应用。[QFont::setFamilies](https://doc.qt.io/qt-6/qfont.html#setFamilies)
+
+三项均立即作用于本进程全部完整窗口和浮窗，包括之后新建的窗口。字体、字号与缩放分别保存，不把放大后的字号写回基础值。终端和编辑器的字体设置独立；界面缩放仍影响它们的呈现尺寸。屏幕 DPI 由 Qt 继续处理，实际绘制按目标屏幕重新生成文字与矢量图标；实现选择见 [ADR 0012](../adr/0012-live-interface-scaling.md)。
+
+标题长度、竖栏宽度以及工具条 API 和布局中的保存宽度使用缩放前的逻辑长度；绘制与鼠标命中使用当前 Qt 坐标。恢复时按当前倍率求值，不能拿放大后的最小宽度拒绝未缩放的布局数据。
+
+设置页“界面”分类使用现有的输入框和数字控件。字体列表完成编辑后应用；数字输入完成后应用，步进按钮立即应用。改变设置不重建标签或内容，不重置设置页焦点；应用拥有唯一的设置写入者，多个窗口不各自保存过期副本。JSON 写入失败保留已有文件并报告错误。
+
+“视图 → 界面”及命令面板提供：
+
+| 命令 | 默认快捷键 | 作用 |
+| --- | --- | --- |
+| `workbench.action.zoomIn` | `Ctrl+=`、`Ctrl++` | 缩放级别加一 |
+| `workbench.action.zoomOut` | `Ctrl+-` | 缩放级别减一 |
+| `workbench.action.zoomReset` | `Ctrl+0` | 恢复默认缩放 |
+| `workbench.action.increaseInterfaceFontSize` | 无 | 基础字号加一 |
+| `workbench.action.decreaseInterfaceFontSize` | 无 | 基础字号减一 |
+| `workbench.action.resetInterfaceFontSize` | 无 | 恢复默认字号 |
+
+到达设置边界后保持边界值，命令、设置页和宿主 API 共用同一校验。字体回退的选择不改变系统 ClearType 设置；渲染约束见 [界面规范](ui-design-system.md#24-字体)。
 
 ## 4. 作用域、加载与写入
 

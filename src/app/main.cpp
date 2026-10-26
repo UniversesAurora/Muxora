@@ -46,6 +46,8 @@ int main(int argc, char* argv[])
     // Load the owned preferences after translation installation so any cached
     // configuration diagnostics use the selected display language as well.
     muxora::UserPreferences preferences(userDirectory);
+    window_system::InterfaceAppearanceController interfaceAppearance(&app);
+    interfaceAppearance.setAppearance(preferences.interfaceAppearance());
     QCommandLineParser parser; parser.setApplicationDescription(QCoreApplication::translate("Muxora", "Muxora window system preview")); parser.addHelpOption(); parser.addVersionOption();
     parser.addOption({"fresh", QCoreApplication::translate("Muxora", "Use the initial layout without loading saved state")});
     parser.addOption({"smoke", QCoreApplication::translate("Muxora", "Exit automatically after the startup check")});
@@ -53,6 +55,12 @@ int main(int argc, char* argv[])
     parser.addOption({"command", QCoreApplication::translate("Muxora", "Run a registered command after startup"), "id"});
     parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "Use a separate layout state directory"), "path"}); parser.process(app);
     window_system::WindowManager windows;
+    QObject::connect(&interfaceAppearance, &window_system::InterfaceAppearanceController::appearanceChanged, &app, [&] {
+        if (!preferences.saveInterfaceAppearance(interfaceAppearance.appearance())) {
+            qWarning().noquote() << preferences.diagnostic();
+            windows.setStatus(windows.context().window, preferences.diagnostic());
+        }
+    });
     windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
         return muxora::createPlaceholder(options, &windows);
     });

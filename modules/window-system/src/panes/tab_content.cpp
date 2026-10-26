@@ -1,4 +1,5 @@
 #include "tab_content.hpp"
+#include <window_system/ui_scale.hpp>
 #include "window_manager_p.hpp"
 #include <QApplication>
 #include <QSplitter>
@@ -26,8 +27,8 @@ public:
         const auto minimum = [](int explicitValue, int hint, int fallback) {
             return explicitValue > 0 ? explicitValue : hint > 0 ? hint : fallback;
         };
-        const QSize requested(minimum(explicitMinimum.width(), hintedMinimum.width(), 140),
-                              minimum(explicitMinimum.height(), hintedMinimum.height(), 85));
+        const QSize requested(minimum(explicitMinimum.width(), hintedMinimum.width(), uiPixels(140)),
+                              minimum(explicitMinimum.height(), hintedMinimum.height(), uiPixels(85)));
         // A pane's fallback applies only to an axis without a content request.
         // Leave the frame's explicit minimum unset: setting a hard minimum
         // would override a larger child-layout hint inside QSplitter.
@@ -109,7 +110,7 @@ QWidget* TabContent::buildNode(LayoutTree node, const TabRecord& record,
     if (!node->isLeaf()) {
         auto* splitter = new QSplitter(node->orientation, this);
         splitter->setObjectName("PaneSplitter");
-        splitter->setHandleWidth(qMax(1, manager_->theme().metrics.splitterWidth));
+        splitter->setHandleWidth(qMax(1, manager_->interfaceTheme().metrics.splitterWidth));
         splitter->setProperty("splitNodeId", node->id);
         splitters_.insert(node->id, splitter);
         splitter->setChildrenCollapsible(false);
@@ -277,7 +278,7 @@ private:
 void TabContent::updatePaneVeils()
 {
     const bool several = frames_.size() > 1;
-    auto veil = manager_->theme().text; veil.setAlphaF(0.05);
+    auto veil = manager_->interfaceTheme().text; veil.setAlphaF(0.05);
     for (auto* frame : std::as_const(frames_)) {
         if (!frame) continue;
         auto* existing = frame->findChild<QWidget*>("PaneVeil", Qt::FindDirectChildrenOnly);

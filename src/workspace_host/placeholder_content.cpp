@@ -8,6 +8,7 @@
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <window_system/interface_appearance.hpp>
 
 namespace muxora {
 using namespace window_system;
@@ -23,7 +24,13 @@ QWidget* createPlaceholder(const TabOptions& options, WindowManager* windows)
     if (options.contentType == "notes") {
         auto* editor = new QPlainTextEdit;
         editor->setObjectName("WorkspaceNotes");
-        QFont font("Cascadia Mono", 11); font.setStyleHint(QFont::Monospace); editor->setFont(font);
+        const auto resizeFont = [editor] {
+            QFont font; font.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Microsoft YaHei"), QStringLiteral("monospace")});
+            font.setStyleHint(QFont::Monospace); font.setPointSizeF(11 * interfaceScale()); editor->setFont(font);
+        };
+        resizeFont();
+        if (auto* controller = InterfaceAppearanceController::applicationInstance())
+            QObject::connect(controller, &InterfaceAppearanceController::appearanceChanged, editor, resizeFont);
         editor->setPlainText(QCoreApplication::translate("Muxora",
             "Muxora / Workspace notes\n\nThis is a local editor. Type here and check that content survives moving between windows.\nSSH and a real terminal will follow after the window system is ready.\n\nTry these operations:\n  · Drag a tab onto the center or direction guide of a target group\n  · Drag to the desktop to create a floating window, then drag its title bar to dock it again\n  · Right-click a tab to auto-hide it in any sidebar or split its panes\n\nCtrl+Shift+P     Command palette\nCtrl+Shift+E     Split pane right\nCtrl+Shift+O     Split pane down\nCtrl+Alt+Arrow   Navigate tab groups\nAlt+Arrow        Navigate panes\nCtrl+Shift+D     Move to floating window\n"));
         return editor;
@@ -62,6 +69,16 @@ QWidget* createPlaceholder(const TabOptions& options, WindowManager* windows)
     QFont font = title->font(); font.setPointSize(26); font.setBold(true); title->setFont(font); layout->addWidget(title);
     auto* subtitle = new QLabel(QCoreApplication::translate("Muxora", "Arrange remote workspaces your way"), page);
     font = subtitle->font(); font.setPointSize(13); subtitle->setFont(font); layout->addWidget(subtitle);
+    const auto resizeWelcome = [page, layout, title, subtitle] {
+        const auto* controller = InterfaceAppearanceController::applicationInstance();
+        const double factor = interfaceScale();
+        layout->setContentsMargins(uiPixels(30), uiPixels(28), uiPixels(30), uiPixels(28)); layout->setSpacing(uiPixels(14));
+        auto font = controller ? controller->font() : page->font(); font.setPointSizeF(26 * factor); font.setBold(true); title->setFont(font);
+        font.setPointSizeF(13 * factor); font.setBold(false); subtitle->setFont(font);
+    };
+    resizeWelcome();
+    if (auto* controller = InterfaceAppearanceController::applicationInstance())
+        QObject::connect(controller, &InterfaceAppearanceController::appearanceChanged, page, resizeWelcome);
     auto* description = new QLabel(QCoreApplication::translate("Muxora",
         "This is the first Muxora window system preview.\n\nDrag tabs, arrange tab groups, split panes, and auto-hide tabs in sidebars.\nDetach a floating window and dock it into another window.\n\nSessions, files, and transfers are layout placeholders. Remote operations will follow later."), page);
     description->setWordWrap(true); layout->addWidget(description);

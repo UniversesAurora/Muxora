@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <window_system/interface_appearance.hpp>
 #include "dock_surface.hpp"
 #include "edge_strip.hpp"
 #include "edge_tab_button.hpp"
@@ -49,6 +50,8 @@ QVector<TabStripFolder> stripFolders(const LayoutModel& model, const GroupRecord
     }
     return result;
 }
+
+
 }
 namespace {
 class PeekHeader final : public QWidget {
@@ -188,6 +191,21 @@ int pinnedExtent(LayoutTree tree, const LayoutModel& model, Qt::Orientation axis
 }
 } // namespace
 
+void DockSurface::refreshInterfaceMetrics()
+{
+    const auto theme = manager_->interfaceTheme();
+    for (const auto& edge : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(edge.data())) strip->setTheme(theme);
+    for (auto* split : findChildren<QSplitter*>()) {
+        if (split->property("windowSystemGroupSplitter").toBool()) configureGroupSplitter(split, theme);
+        else if (split->objectName() == QStringLiteral("PaneSplitter")) split->setHandleWidth(std::max(1, theme.metrics.splitterWidth));
+    }
+    updateRailLayout();
+    if (vertical_) vertical_->setContentsMargins(uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin));
+    builtThemeRevision_ = manager_->d->themeRevision;
+    for (auto& signature : builtGroups_) signature.themeRevision = builtThemeRevision_;
+    update(); updateGeometry();
+}
+
 DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* parent)
     : QFrame(parent), manager_(manager), window_(window)
 {
@@ -235,12 +253,12 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
         if (!animate) return;
         for (auto it = previousVisuals.begin(); it != previousVisuals.end(); ++it) {
             const auto view = groups_.value(it.key());
-            if (!view) { new RetiringLabels(std::move(it.value()), manager_->theme(), this); continue; }
+            if (!view) { new RetiringLabels(std::move(it.value()), manager_->interfaceTheme(), this); continue; }
             const QPointer<TabBar> bar(view->tabBar());
             auto departures = bar->takeSeparateDepartures(it.value());
             // A closing last row can already be outside the new bar's bounds.
             // Paint departures in the surface, independently of its new size.
-            if (!departures.isEmpty()) new RetiringLabels(std::move(departures), manager_->theme(), this);
+            if (!departures.isEmpty()) new RetiringLabels(std::move(departures), manager_->interfaceTheme(), this);
             const auto generation = rebuildGeneration_;
             QTimer::singleShot(0, bar, [self, bar, generation, state = std::move(it.value())]() mutable {
                 if (self && self->rebuildGeneration_ == generation && bar) bar->transitionFrom(std::move(state));
@@ -310,13 +328,13 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     updateRailLayout();
     auto* vertical = new GroupSplitter(Qt::Vertical, root_);
     vertical_ = vertical;
-    configureGroupSplitter(vertical, manager_->theme());
+    configureGroupSplitter(vertical, manager_->interfaceTheme());
     // With each group's own margin, cards stay 6 from the window's edges.
-    vertical->setContentsMargins(surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin);
+    vertical->setContentsMargins(uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin));
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
     auto* horizontal = new GroupSplitter(Qt::Horizontal, vertical);
     horizontal_ = horizontal;
-    configureGroupSplitter(horizontal, manager_->theme());
+    configureGroupSplitter(horizontal, manager_->interfaceTheme());
     if (auto* left = buildPinned(Edge::Left, contents)) horizontal->addWidget(left);
     const auto* window = manager_->model().window(window_);
     center_ = buildTree(window ? window->central : LayoutTree{}, contents);
@@ -387,7 +405,7 @@ void DockSurface::configureEdgeButton(EdgeTabButton& button, TabId tab, int ordi
     button.setPreset(manager_->tabColorPreset(record ? record->colorId : QString()));
     button.setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     button.setPresentation(appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon
-        ? iconFor("window", manager_->theme()) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
+        ? iconFor("window", manager_->interfaceTheme()) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
 }
 QVector<QPair<GroupId, TabId>> DockSurface::edgeTabs(Edge edge) const
 {
@@ -607,7 +625,7 @@ void DockSurface::paintBackplate(QPainter& painter, const QRect& exposed)
     painter.save();
     painter.setClipRect(exposed, Qt::IntersectClip);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(exposed, manager_->theme().headerBackground);
+    painter.fillRect(exposed, manager_->interfaceTheme().headerBackground);
     for (const auto& group : std::as_const(groups_))
         if (group && group->isVisibleTo(this))
             group->paintSurface(painter, elevation_, group->mapTo(this, QPoint()), exposed);
@@ -659,7 +677,7 @@ QWidget* DockSurface::buildTree(LayoutTree node, const QHash<TabId, QPointer<Tab
         return buildGroup(node->itemId, contents);
     }
     auto* split = new GroupSplitter(node->orientation, this);
-    split->setObjectName("GroupSplitter"); configureGroupSplitter(split, manager_->theme());
+    split->setObjectName("GroupSplitter"); configureGroupSplitter(split, manager_->interfaceTheme());
     split->addWidget(buildTree(node->first, contents));
     split->addWidget(buildTree(node->second, contents));
     split->setSizes({qRound(1000 * node->ratio), qRound(1000 * (1 - node->ratio))});
@@ -678,7 +696,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
 {
     const auto* group = manager_->model().group(id);
     if (!group) return nullptr;
-    auto* tabs = new GroupTabs(manager_->theme(), this);
+    auto* tabs = new GroupTabs(manager_->interfaceTheme(), this);
     tabs->setObjectName("TabGroup"); tabs->setProperty("groupId", id);
     tabs->setAppearance(manager_->tabAppearance(), group->location == GroupLocation::Pinned);
     tabs->setTabBarVisible(group->location != GroupLocation::Central || centralTabBarVisible(manager_->tabBarsVisible(window_)));
@@ -692,7 +710,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     auto* bar = tabs->tabBar();
     for (const auto tabId : group->tabs) {
         const auto* record = manager_->model().tab(tabId);
-        tabs->addTab(contents.value(tabId), manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->theme()) : QIcon{},
+        tabs->addTab(contents.value(tabId), manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->interfaceTheme()) : QIcon{},
                      record->title, tabId);
         tabs->setTabMetadata(tabs->tabBar()->count() - 1, *record);
     }
@@ -820,7 +838,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
     }
     if (ids.isEmpty()) return nullptr;
     const bool vertical = edge == Edge::Left || edge == Edge::Right;
-    auto* bar = new EdgeStrip(edge, manager_->theme(), this);
+    auto* bar = new EdgeStrip(edge, manager_->interfaceTheme(), this);
     bar->hoverGeometryChanged = [this] {
         const QPointer<DockSurface> self(this);
         placePeek();
@@ -834,7 +852,7 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
         for (const auto tabId : manager_->model().group(groupId)->tabs) {
             ++ordinal;
             auto* button = new EdgeTabButton(manager_->model().tab(tabId)->title, vertical,
-                manager_->theme().metrics.edgeThickness, bar);
+                manager_->interfaceTheme().metrics.edgeThickness, bar);
             configureEdgeButton(*button, tabId, ordinal, appearance);
             button->setCheckable(true);
             button->setChecked(manager_->context(window_).tab == tabId);
@@ -849,8 +867,9 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             bar->addButton(button);
         }
     }
-    auto* pinAll = new CompactToolButton(bar, manager_->theme().metrics.edgeThickness); pinAll->setObjectName("PinEdgeButton");
-    pinAll->setIcon(iconFor("pin-all", manager_->theme())); pinAll->setToolTip(QCoreApplication::translate("WindowSystem", "Pin all sidebar tabs"));
+    const int edgeSize = manager_->interfaceTheme().metrics.edgeThickness;
+    auto* pinAll = new CompactToolButton(bar, QSize(edgeSize, edgeSize)); pinAll->setObjectName("PinEdgeButton");
+    pinAll->setIcon(iconFor("pin-all", manager_->interfaceTheme())); pinAll->setToolTip(QCoreApplication::translate("WindowSystem", "Pin all sidebar tabs"));
     pinAll->setAccessibleName(pinAll->toolTip());
     QObject::connect(pinAll, &QToolButton::clicked, manager_, [this, edge] { manager_->pinEdge(window_, edge, true); });
     bar->setTailWidget(pinAll);
@@ -903,7 +922,7 @@ QWidget* DockSurface::buildPinned(Edge edge, const QHash<TabId, QPointer<TabCont
     }
     region->setObjectName("PinnedRegion");
     pinnedRegions_.insert(edge, region);
-    configureGroupSplitter(region, manager_->theme());
+    configureGroupSplitter(region, manager_->interfaceTheme());
     region->setProperty("preferredExtent", pinnedExtent(tree, manager_->model(), orientation, region->handleWidth()));
     QObject::connect(region, &QSplitter::splitterMoved, this, [this] { savePinnedExtents(); });
     return region;
@@ -1058,7 +1077,7 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
         auto& title = dragTitleLayouts_[tab][1];
         title.prepare(record->title, font(), layoutDirection(), false, this);
         return edgeTabExtent(fontMetrics(),title.naturalWidth(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
-            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, manager_->theme().metrics.edgeThickness,
+            appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, manager_->interfaceTheme().metrics.edgeThickness,
             appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     }
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
@@ -1084,8 +1103,8 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
     auto& layout = dragTitleLayouts_[tab][0];
     layout.prepare(record->title, font(), layoutDirection(), true, this);
     const int natural = layout.naturalWidth();
-    return tabBarTabWidth({0, appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->theme().metrics.iconSize : 0,
-                           appearance.clipTitles ? std::min(natural, appearance.maximumTitleWidth) : natural});
+    return tabBarTabWidth({0, appearance.showIcons && manager_->tabOptions(tab).showIcon ? manager_->interfaceTheme().metrics.iconSize : 0,
+                           appearance.clipTitles ? std::min(natural, uiPixels(appearance.maximumTitleWidth)) : natural});
 }
 QHash<Edge, QRect> DockSurface::edgeBarRects() const
 {
@@ -1380,9 +1399,9 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     row->setSpacing(2);
     auto* title = new QLabel(titleText, header);
     title->setAttribute(Qt::WA_TransparentForMouseEvents); row->addWidget(title); row->addStretch();
-    auto* pin = new CompactToolButton(header, peekButtonExtent); pin->setIcon(iconFor("pin", manager_->theme()));
+    auto* pin = new CompactToolButton(header, peekButtonExtent); pin->setIcon(iconFor("pin", manager_->interfaceTheme()));
     pin->setToolTip(QCoreApplication::translate("WindowSystem", "Pin and reserve layout space")); pin->setAccessibleName(pin->toolTip()); row->addWidget(pin);
-    auto* close = new CompactToolButton(header, peekButtonExtent); close->setIcon(iconFor("close", manager_->theme())); row->addWidget(close);
+    auto* close = new CompactToolButton(header, peekButtonExtent); close->setIcon(iconFor("close", manager_->interfaceTheme())); row->addWidget(close);
     close->setObjectName("ClosePeekTabButton");
     close->setToolTip(QCoreApplication::translate("WindowSystem", "Close tab")); close->setAccessibleName(close->toolTip());
     pin->setObjectName("PinPeekTabButton");
@@ -1506,7 +1525,7 @@ void DockSurface::refreshContentEdgeToEdge()
     }
     if (vertical_) {
         const QMargins margins = soleGroup.isNull()
-            ? QMargins(surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin) : QMargins();
+            ? QMargins(uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin), uiPixels(surfaceOuterMargin)) : QMargins();
         if (vertical_->contentsMargins() != margins) vertical_->setContentsMargins(margins);
     }
 }

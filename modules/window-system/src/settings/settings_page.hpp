@@ -7,6 +7,7 @@
 #include <QWidget>
 
 class QCheckBox;
+class QDoubleSpinBox;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
@@ -41,6 +42,8 @@ private:
         QTreeWidgetItem* item = nullptr; // Owned by categories_; never rebuilt.
     };
     void syncControls();
+    void addInterfaceOptions(QWidget* parent, QVBoxLayout* rows);
+    void syncInterfaceOptions();
     void addViewOptions(QWidget* parent, QVBoxLayout* rows);
     void syncViewOptions();
     void addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows);
@@ -61,6 +64,9 @@ private:
     QScrollArea* scroll_ = nullptr;
     QLabel* results_ = nullptr;
     ThemedComboBox* language_ = nullptr;
+    QLineEdit* interfaceFamilies_ = nullptr;
+    QSpinBox* interfaceFontSize_ = nullptr;
+    QDoubleSpinBox* interfaceZoom_ = nullptr;
     ThemedComboBox* detachKind_ = nullptr;
     ThemedComboBox* newTabPosition_ = nullptr;
     ThemedComboBox* inputMethodScope_ = nullptr;

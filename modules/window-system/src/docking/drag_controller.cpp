@@ -529,7 +529,7 @@ DropTarget DragController::hit(QPoint global)
     result.preview = result.groupRect;
     if (result.toEdge) {
         const auto bounds = result.windowRect;
-        const int extent = result.pinned ? 160 : manager_->theme().metrics.edgeThickness;
+        const int extent = result.pinned ? 160 : manager_->interfaceTheme().metrics.edgeThickness;
         switch (result.edge) {
         case Edge::Left: result.preview = QRect(bounds.topLeft(), QSize(extent, bounds.height())); break;
         case Edge::Right: result.preview = QRect(bounds.right() - extent + 1, bounds.top(), extent, bounds.height()); break;
@@ -951,7 +951,7 @@ void DragController::selectTarget()
     if (labelOnly_ && !detach(lastPosition_)) { if (self) cancel(); return; }
     if (!self || !active_) return;
     choosing_ = true;
-    QPointer<QMenu> menu = new DismissOnlyMenu(capture_); applyTheme(menu, manager_->theme());
+    QPointer<QMenu> menu = new DismissOnlyMenu(capture_); applyTheme(menu, manager_->interfaceTheme());
     for (const auto id : manager_->model().windowOrder()) {
         if (id == movingWindow_) continue;
         if (auto* window = manager_->windowWidget(id)) {

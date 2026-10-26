@@ -46,6 +46,7 @@ add_library(WindowSystemWidgets STATIC
     src/hierarchy_api.cpp
     src/commands/hierarchy_commands.cpp
     src/commands/window_commands.cpp
+    src/commands/interface_appearance_commands.cpp
     src/commands/tab_presentation_commands.cpp
     src/commands/toolbar_move_command.cpp
     src/commands/peek_size_command.cpp
@@ -63,6 +64,7 @@ add_library(WindowSystemWidgets STATIC
     src/docking/drag_controller.cpp
     src/panes/tab_content.cpp
     src/style/theme.cpp
+    src/style/interface_appearance.cpp
     src/style/tab_appearance.cpp
     src/style/tab_title_layout.cpp
     src/style/themed_controls.cpp
@@ -71,11 +73,13 @@ add_library(WindowSystemWidgets STATIC
     src/style/smooth_scroll.cpp
     src/style/tooltip_layout.cpp
     src/settings/settings_page.cpp
+    src/settings/settings_interface_appearance.cpp
     src/settings/shortcuts_page.cpp
     src/settings/settings_view_options.cpp
     src/settings/settings_tab_appearance.cpp
     include/window_system/window_manager.hpp
     include/window_system/localization.hpp
+    include/window_system/interface_appearance.hpp
     include/window_system/floating_panel.hpp)
 add_library(WindowSystem::Widgets ALIAS WindowSystemWidgets)
 set_target_properties(WindowSystemWidgets PROPERTIES EXPORT_NAME Widgets AUTOMOC ON)

@@ -1,3 +1,4 @@
+#include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "command_strip.hpp"
@@ -187,11 +188,11 @@ public:
 
     [[nodiscard]] int naturalWidth() const
     {
-        int width = handle->isHidden() ? 0 : handleWidth;
+        int width = handle->isHidden() ? 0 : uiPixels(handleWidth);
         if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
-        return std::max(chromeMinimumWidth(), width + (optionsEnabled && !hideEmptyOptions() ? tailWidth : 0));
+        return std::max(chromeMinimumWidth(), width + (optionsEnabled && !hideEmptyOptions() ? uiPixels(tailWidth) : 0));
     }
 
     [[nodiscard]] int minimumWidthForLayout() const
@@ -203,12 +204,12 @@ public:
     {
         // Keep the saved-width contract independent from this presentation
         // preference. A narrow strip must still have room to reveal overflow.
-        return (optionsEnabled ? tailWidth : 0) + (handle->isHidden() ? 0 : handleWidth) + constraints.minimumContentWidth;
+        return (optionsEnabled ? uiPixels(tailWidth) : 0) + (handle->isHidden() ? 0 : uiPixels(handleWidth)) + uiPixels(constraints.minimumContentWidth);
     }
 
     void layoutItems()
     {
-        const int handleSize = handle->isHidden() ? 0 : handleWidth;
+        const int handleSize = handle->isHidden() ? 0 : uiPixels(handleWidth);
         // Decide from the complete available content width, before reserving
         // the tail. Otherwise reserving the tail itself can invent overflow.
         int contentWidth = 0;
@@ -217,7 +218,7 @@ public:
             if (item.included && item.action && item.action->isVisible() && item.button)
                 contentWidth += item.button->sizeHint().width();
         const bool optionsVisible = optionsEnabled && (!hideEmptyOptions() || contentWidth > width() - handleSize);
-        const int optionsSize = optionsVisible ? tailWidth : 0;
+        const int optionsSize = optionsVisible ? uiPixels(tailWidth) : 0;
         handle->setGeometry(0, 0, handleSize, height());
         if (!optionsVisible && tail->menu() && tail->menu()->isVisible()) tail->menu()->close();
         tail->setVisible(optionsVisible);
@@ -295,6 +296,7 @@ struct CommandStripHost::Private {
     bool locked = true;
     bool hideOptionsWhenLocked = false;
     bool arranging = false;
+    double metricScale = interfaceScale();
     std::function<void(QMenu*)> contextMenuCustomizer;
     std::function<void()> layoutChanged;
     std::function<void(const QString&, StripSizing)> sizingChangeRequest;
@@ -575,7 +577,7 @@ bool CommandStripHost::setStripConstraints(const QString& id, StripConstraints c
 {
     auto* strip = d->strips.value(id);
     if (!strip || constraints.minimumContentWidth <= 0
-        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - handleWidth - tailWidth
+        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - uiPixels(handleWidth) - uiPixels(tailWidth)
         || (constraints.elasticRequired && !constraints.elasticAllowed)) return false;
     if (constraints.elasticRequired) for (int row = 0; row < d->rows.size(); ++row)
         if ((isDragging() ? d->originalRows.value(row) : d->rows[row]).contains(id)
@@ -655,7 +657,7 @@ void CommandStripHost::removeFromRows(const QString& id)
                 const int fillerWidth = isDragging() ? d->originalBounds.value(filler->id).width() : filler->width();
                 const int removedWidth = isDragging() ? d->originalBounds.value(id).width() : removed->width();
                 filler->requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
-                    qint64(fillerWidth) + removedWidth + stripSpacing));
+                    qint64(fillerWidth) + removedWidth + uiPixels(stripSpacing)));
             }
         }
         d->rows[row].removeAt(index);
@@ -736,7 +738,7 @@ CommandStripHost::Area CommandStripHost::stripArea(const QString& id) const
 }
 int CommandStripHost::rowExtent(int row) const
 {
-    int extent = std::max(compactRowHeight, fontMetrics().height() + 8);
+    int extent = std::max(uiPixels(compactRowHeight), fontMetrics().height() + 8);
     for (const auto& id : d->rows[row]) {
         const auto* strip = d->strips.value(id);
         if (strip->visible && strip->content && !strip->content->isHidden())
@@ -794,7 +796,7 @@ bool CommandStripHost::setStripWidth(const QString& id, int width)
     if (!strip || strip->constraints.fixedWidth || width < strip->minimumWidthForLayout()) return false;
     if (isDragging()) finishDrag(false);
     for (int row = 0; row < d->rows.size(); ++row) if (d->rows[row].contains(id)) clearWidthPriority(row);
-    strip->requestedWidth = width; arrange(); changed(); return true;
+    strip->requestedWidth = uiPixels(width); arrange(); changed(); return true;
 }
 
 bool CommandStripHost::resetStripWidth(const QString& id)
@@ -937,7 +939,7 @@ QSize CommandStripHost::areaSizeHint(Area area, bool minimum) const
     int height = 0;
     for (int row = 0; row < d->rows.size(); ++row) {
         if (d->rowAreas[row] != area) continue;
-        int rowWidth = rowMargin * 2;
+        int rowWidth = uiPixels(rowMargin) * 2;
         int count = 0;
         for (const auto& id : d->rows[row]) {
             const auto* strip = d->strips.value(id);
@@ -947,7 +949,7 @@ QSize CommandStripHost::areaSizeHint(Area area, bool minimum) const
         }
         if (count) {
             height += rowExtent(row);
-            width = std::max(width, rowWidth + (count - 1) * stripSpacing);
+            width = std::max(width, rowWidth + (count - 1) * uiPixels(stripSpacing));
         }
     }
     return {width, height};
@@ -1060,23 +1062,23 @@ void CommandStripHost::arrange()
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
-        const int available = std::max(0, host->width() - 2 * rowMargin
-            - std::max(0, int(visible.size()) - 1) * stripSpacing);
+        const int available = std::max(0, host->width() - 2 * uiPixels(rowMargin)
+            - std::max(0, int(visible.size()) - 1) * uiPixels(stripSpacing));
         const auto sizes = rowWidths(visible, available);
         const auto elasticId = std::find_if(visible.begin(), visible.end(), [this](const QString& id) {
             return d->strips.value(id)->sizing == StripSizing::Elastic;
         });
         const int elasticIndex = elasticId == visible.end() ? -1 : int(std::distance(visible.begin(), elasticId));
         QVector<int> positions(visible.size());
-        int x = rowMargin;
+        int x = uiPixels(rowMargin);
         for (int index = 0; index < visible.size(); ++index) {
             positions[index] = x;
-            x += sizes[index] + stripSpacing;
+            x += sizes[index] + uiPixels(stripSpacing);
         }
-        int right = host->width() - rowMargin;
+        int right = host->width() - uiPixels(rowMargin);
         for (int index = int(visible.size()) - 1; elasticIndex >= 0 && index > elasticIndex; --index) {
             positions[index] = right - sizes[index];
-            right = positions[index] - stripSpacing;
+            right = positions[index] - uiPixels(stripSpacing);
         }
         int index = 0;
         for (const auto& id : d->rows[row]) {
@@ -1101,6 +1103,7 @@ void CommandStripHost::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(ev
 
 int CommandStripHost::minimumSavedWidth(bool optionsEnabled, bool locked)
 {
+    // This validates serialized, unscaled widths, not current hit geometry.
     return (optionsEnabled ? tailWidth : 0) + (locked ? 0 : handleWidth) + 12;
 }
 QJsonObject CommandStripHost::saveLayout() const
@@ -1119,7 +1122,7 @@ QJsonObject CommandStripHost::saveLayout() const
             for (const auto& item : strip->items) if (!item.included) excluded.append(item.id);
             const int savedWidth = isDragging() ? d->originalWidths.value(id, -1) : strip->requestedWidth;
             const auto savedSizing = isDragging() ? d->originalSizing.value(id, strip->sizing) : strip->sizing;
-            QJsonObject entry{{"visible", strip->visible}, {"width", savedWidth},
+            QJsonObject entry{{"visible", strip->visible}, {"width", savedWidth < 0 ? -1 : qRound(savedWidth / interfaceScale())},
                 {"sizing", savedSizing == StripSizing::Elastic ? "elastic" : "content"},
                 {"excluded", excluded}, {"contentVisible", !strip->content || !strip->content->isHidden()}};
             const bool priority = isDragging() ? d->originalWidthPriorities.value(id, false) : strip->naturalWidthPriority;
@@ -1202,7 +1205,8 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
         if (!settings.contains(strip->id)) continue;
         const auto value = settings.value(strip->id).toObject();
         strip->visible = value.value("visible").toBool(true);
-        strip->requestedWidth = value.value("width").toInt(-1);
+        const int authoredWidth = value.value("width").toInt(-1);
+        strip->requestedWidth = authoredWidth < 0 ? -1 : uiPixels(authoredWidth);
         strip->naturalWidthPriority = value.value("naturalWidthPriority").toBool(false);
         if (value.contains("sizing")) strip->sizing = value.value("sizing") == "elastic" ? StripSizing::Elastic : StripSizing::Content;
         const auto excluded = value.value("excluded").toArray();
@@ -1218,6 +1222,11 @@ void CommandStripHost::restoreLayout(const QJsonObject& json)
 
 bool CommandStripHost::event(QEvent* event)
 {
+    if (d && !qFuzzyCompare(d->metricScale, interfaceScale())) {
+        const double factor = interfaceScale() / d->metricScale;
+        for (auto* strip : d->strips) if (strip->requestedWidth >= 0) strip->requestedWidth = qRound(strip->requestedWidth * factor);
+        d->metricScale = interfaceScale();
+    }
     if (event->type() == QEvent::UngrabMouse && isDragging()) finishDrag(false);
     if (event->type() == QEvent::FontChange && d->bottom) d->bottom->setFont(font());
     if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) arrange();
@@ -1335,14 +1344,14 @@ bool CommandStripHost::resizeDragBoundary(int row, int requestedLeft)
         return true;
     }
     const auto previousBounds = d->originalBounds.value(previous->id);
-    int left = std::max(requestedLeft, previousBounds.left() + previous->minimumWidthForLayout() + stripSpacing);
+    int left = std::max(requestedLeft, previousBounds.left() + previous->minimumWidthForLayout() + uiPixels(stripSpacing));
     int trailingMinimum = dragged->minimumWidthForLayout();
     for (int after = originalIndex + 1; after < d->rows[row].size(); ++after) {
         const auto* candidate = d->strips.value(d->rows[row][after]);
-        if (candidate->visible) trailingMinimum += candidate->minimumWidthForLayout() + stripSpacing;
+        if (candidate->visible) trailingMinimum += candidate->minimumWidthForLayout() + uiPixels(stripSpacing);
     }
-    left = std::min(left, areaWidget(d->rowAreas[row])->width() - rowMargin - trailingMinimum);
-    previous->requestedWidth = std::max(previous->minimumWidthForLayout(), left - previousBounds.left() - stripSpacing);
+    left = std::min(left, areaWidget(d->rowAreas[row])->width() - uiPixels(rowMargin) - trailingMinimum);
+    previous->requestedWidth = std::max(previous->minimumWidthForLayout(), left - previousBounds.left() - uiPixels(stripSpacing));
     return true;
 }
 
@@ -1377,10 +1386,10 @@ void CommandStripHost::insertDraggedStrip(int row, QPoint position)
     }
     if (rightOfElastic && dragged->sizing == StripSizing::Content) {
         if (!dragged->constraints.fixedWidth) {
-            int boundary = areaWidget(d->rowAreas[row])->width() - rowMargin;
+            int boundary = areaWidget(d->rowAreas[row])->width() - uiPixels(rowMargin);
             for (int after = index; after < d->rows[row].size(); ++after) {
                 const auto* strip = d->strips.value(d->rows[row][after]);
-                if (strip->visible) { boundary = strip->geometry().left() - stripSpacing; break; }
+                if (strip->visible) { boundary = strip->geometry().left() - uiPixels(stripSpacing); break; }
             }
             dragged->requestedWidth = std::max(dragged->minimumWidthForLayout(), boundary - handle);
         }
@@ -1389,7 +1398,7 @@ void CommandStripHost::insertDraggedStrip(int row, QPoint position)
             auto* strip = d->strips.value(d->rows[row][previous]);
             if (!strip->visible) continue;
             if (strip->sizing == StripSizing::Content && !strip->constraints.fixedWidth)
-                strip->requestedWidth = std::max(strip->minimumWidthForLayout(), handle - strip->geometry().left() - stripSpacing);
+                strip->requestedWidth = std::max(strip->minimumWidthForLayout(), handle - strip->geometry().left() - uiPixels(stripSpacing));
             break;
         }
     }
@@ -1435,8 +1444,8 @@ int CommandStripHost::dragRowAt(QPoint globalPosition)
         }
         // This target has no drawing or reserved layout height until the
         // pointer reaches it. It also makes an empty bottom dock discoverable.
-        const QRect newRowBand(0, area == Area::Top ? host->height() : -compactRowHeight,
-                              host->width(), compactRowHeight);
+        const QRect newRowBand(0, area == Area::Top ? host->height() : -uiPixels(compactRowHeight),
+                              host->width(), uiPixels(compactRowHeight));
         if (newRowBand.adjusted(-12, 0, 12, 0).contains(position))
             return ensureRow(area, lastOccupied + 1);
     }

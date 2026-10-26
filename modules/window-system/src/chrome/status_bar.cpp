@@ -1,3 +1,4 @@
+#include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "status_bar.hpp"
@@ -26,9 +27,9 @@ WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, 
     message_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Status message"));
     workspace_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Workspace information"));
     message_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    workspace_->setMaximumWidth(320);
+    uiMaximumWidth(workspace_, 320);
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(10, 3, 10, 3); row->setSpacing(10);
+    uiMargins(row, 10, 3, 10, 3); uiSpacing(row, 10);
     row->addWidget(message_, 1); row->addWidget(workspace_);
     updateHeight();
 }
@@ -36,8 +37,8 @@ WorkspaceStatusBar::WorkspaceStatusBar(WindowManager* manager, WindowId window, 
 void WorkspaceStatusBar::updateHeight()
 {
     // Matches VS Code's 22 px status bar; a larger font still expands it.
-    const int metric = manager_ ? manager_->theme().metrics.statusHeight : ThemeMetrics{}.statusHeight;
-    setFixedHeight(std::max(metric, fontMetrics().height() + 6));
+    const int metric = manager_ ? manager_->interfaceTheme().metrics.statusHeight : ThemeMetrics{}.statusHeight;
+    setFixedHeight(std::max(metric, fontMetrics().height() + uiPixels(6)));
 }
 
 void WorkspaceStatusBar::changeEvent(QEvent* event)
@@ -146,7 +147,7 @@ QMenu* WorkspaceStatusBar::createContextMenu(QWidget* parent) const
     auto* menu = new DismissOnlyMenu(parent);
     menu->setObjectName(QStringLiteral("StatusBarMenu"));
     if (!manager_) return menu;
-    applyTheme(menu, manager_->theme());
+    applyTheme(menu, manager_->interfaceTheme());
     QVector<QPair<QString, QString>> entries{{QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "Status message")},
         {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "Workspace information")}};
     for (const auto& item : customDefinitions_) {

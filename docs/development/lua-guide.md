@@ -58,6 +58,8 @@ local workspace = require('workspace')
 
 ## 快捷键与命令
 
+界面字体和缩放命令同样可经 `muxora.commands.execute()` 调用；完整 ID、快捷键和边界见 [设置设计 §3.3](../design/settings-and-commands-design.md#33-界面字体与缩放)。
+
 ```lua
 muxora.commands.register({
   id = 'user.prepare_workspace',

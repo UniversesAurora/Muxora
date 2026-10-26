@@ -466,7 +466,7 @@ void WorkspaceWindow::syncCustomChrome() {
         for (const auto &id : definition.commands) {
             const auto *command = manager_->commands().find(id);
             auto *action =
-                new QAction(iconFor("command", manager_->theme()), command ? command->title : id, strips_);
+                new QAction(iconFor("command", manager_->interfaceTheme()), command ? command->title : id, strips_);
             action->setObjectName(id);
             action->setData(id);
             action->setProperty("stripCommand", true);

@@ -256,6 +256,9 @@ public:
     void setBehavior(const WindowBehavior& behavior);
     void setTheme(const Theme& theme);
     [[nodiscard]] Theme theme() const;
+    // Resolved sizes for drawing at the application interface zoom. The
+    // authored theme above remains unchanged across zoom round trips.
+    [[nodiscard]] Theme interfaceTheme() const;
     [[nodiscard]] TabAppearance tabAppearance() const;
     bool setTabAppearance(const TabAppearance& appearance);
     [[nodiscard]] std::optional<TabColorPreset> tabColorPreset(const QString& id) const;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "elevation.hpp"
+#include <window_system/ui_scale.hpp>
 
 #include <QCache>
 #include <QImage>
@@ -216,6 +217,7 @@ void highContrast(QPainter& painter, const QPainterPath& path, const ElevationSt
 
 ElevationProfile elevationProfile(ElevationLevel level)
 {
+    auto profile = [level]() -> ElevationProfile {
     switch (level) {
     case ElevationLevel::Flat: return {{}, {}, 0};
     case ElevationLevel::AnchorRest: return {{1, 2, 0.10}, {1, 3, 0.06}, 1};
@@ -227,6 +229,9 @@ ElevationProfile elevationProfile(ElevationLevel level)
     case ElevationLevel::ColumnOverlay: return {{0, 2, 0.14}, {}, 0};
     }
     return {};
+    }();
+    for (auto* layer : {&profile.key, &profile.ambient}) { layer->offset = uiPixelsF(layer->offset); layer->blur = uiPixelsF(layer->blur); }
+    return profile;
 }
 
 int elevationStep(qreal progress) { return qRound(std::clamp(progress, qreal(0), qreal(1)) * (progressSteps - 1)); }

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QRect>
+#include <window_system/interface_appearance.hpp>
 #include <QStyle>
 #include <QWidget>
 #include <algorithm>
@@ -36,7 +37,7 @@ inline constexpr int tabBarMinimumWidth = 2 * (tabBarTrailing + tabActionSize);
 // Each end of an auto-hide rail tab.
 inline constexpr int edgeTabPadding = 8;
 
-[[nodiscard]] inline qint64 tabLabelWidth(TabLabelParts parts, int gap = tabLabelGap)
+[[nodiscard]] inline qint64 tabLabelWidth(TabLabelParts parts, int gap = uiPixels(tabLabelGap))
 {
     qint64 width = 0;
     int shown = 0;
@@ -53,31 +54,31 @@ inline constexpr int edgeTabPadding = 8;
 // The label between the end spaces, and the reserved action if any.
 [[nodiscard]] inline int tabBarTabWidth(TabLabelParts parts, bool reserveAction = false)
 {
-    const auto label = tabLabelWidth(parts, tabPartGap);
-    const qint64 end = reserveAction ? tabActionGap + tabActionSize + tabBarTrailing : tabBarLeading;
-    return clampedExtent(std::max<qint64>(tabBarMinimumWidth, tabBarLeading + label + end));
+    const auto label = tabLabelWidth(parts, uiPixels(tabPartGap));
+    const qint64 end = reserveAction ? uiPixels(tabActionGap) + uiPixels(tabActionSize) + uiPixels(tabBarTrailing) : uiPixels(tabBarLeading);
+    return clampedExtent(std::max<qint64>(uiPixels(tabBarMinimumWidth), uiPixels(tabBarLeading) + label + end));
 }
 
 // The label between the two end paddings; `minimum` keeps an empty label at
 // least as long as the rail is thick.
 [[nodiscard]] inline int edgeTabExtent(TabLabelParts parts, int minimum)
 {
-    return clampedExtent(std::max<qint64>(minimum, 2 * edgeTabPadding + tabLabelWidth(parts)));
+    return clampedExtent(std::max<qint64>(minimum, 2 * uiPixels(edgeTabPadding) + tabLabelWidth(parts)));
 }
 
 // The label area of a regular or pinned tab: up to its reserved action, or
 // up to the end space when the action only covers the title on hover.
 [[nodiscard]] inline QRect tabBarLabelArea(const QRect& tab, Qt::LayoutDirection direction, bool reserveAction = false)
 {
-    const int end = reserveAction ? tabActionGap + tabActionSize + tabBarTrailing : tabBarLeading;
-    const QRect logical(tab.left() + tabBarLeading, tab.top(), std::max(0, tab.width() - tabBarLeading - end), tab.height());
+    const int end = reserveAction ? uiPixels(tabActionGap) + uiPixels(tabActionSize) + uiPixels(tabBarTrailing) : uiPixels(tabBarLeading);
+    const QRect logical(tab.left() + uiPixels(tabBarLeading), tab.top(), std::max(0, tab.width() - uiPixels(tabBarLeading) - end), tab.height());
     return QStyle::visualRect(direction, tab, logical);
 }
 
 [[nodiscard]] inline QRect tabBarCloseRect(const QRect& tab, Qt::LayoutDirection direction)
 {
-    const QRect logical(tab.right() - tabBarTrailing - tabActionSize + 1,
-                        tab.top() + (tab.height() - tabActionSize) / 2, tabActionSize, tabActionSize);
+    const QRect logical(tab.right() - uiPixels(tabBarTrailing) - uiPixels(tabActionSize) + 1,
+                        tab.top() + (tab.height() - uiPixels(tabActionSize)) / 2, uiPixels(tabActionSize), uiPixels(tabActionSize));
     return QStyle::visualRect(direction, tab, logical);
 }
 
@@ -90,7 +91,7 @@ struct TabLabelRects {
 // Places the shown parts from the leading edge of `area`. A part that does not
 // fit is cut at the area's trailing edge; the title takes what remains.
 [[nodiscard]] inline TabLabelRects layoutTabLabel(const QRect& area, TabLabelParts parts,
-                                                  Qt::LayoutDirection direction, int gap = tabLabelGap)
+                                                  Qt::LayoutDirection direction, int gap = uiPixels(tabLabelGap))
 {
     TabLabelRects result;
     qint64 x = area.left();

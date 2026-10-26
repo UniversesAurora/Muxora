@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "window_system/theme.hpp"
+#include <window_system/interface_appearance.hpp>
 
 #include <QApplication>
 #include <QIconEngine>
@@ -8,6 +9,7 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QPolygonF>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QStringList>
 #include <QVariantMap>
@@ -238,6 +240,16 @@ Theme defaultTheme()
     return {};
 }
 
+Theme scaledInterfaceTheme(const Theme& theme)
+{
+    auto resolved = theme;
+    auto& m = resolved.metrics;
+    for (auto* value : {&m.controlHeight, &m.headerHeight, &m.tabHeight, &m.statusHeight,
+         &m.edgeThickness, &m.paneHeaderHeight, &m.splitterWidth, &m.cornerRadius,
+         &m.padding, &m.spacing, &m.iconSize, &m.groupSplitterWidth}) *value = uiPixels(*value);
+    return resolved;
+}
+
 QString styleSheet(const Theme& theme)
 {
     // A root stylesheet naturally follows newly added/reparented children. A
@@ -388,6 +400,16 @@ QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; pad
 QProgressBar { border: 1px solid @border; background: @raised; text-align: center; color: @text; }
 QProgressBar::chunk { background: @accent; }
 )qss");
+    // Only authored dimensions are transformed. Resolved metric tokens below
+    // already include interface zoom, and screen DPR is never applied here.
+    if (!qFuzzyCompare(interfaceScale(), 1.0)) {
+        static const QRegularExpression pixels(QStringLiteral("(-?\\d+(?:\\.\\d+)?)px\\b"));
+        auto matches = pixels.globalMatch(rules);
+        QVector<QRegularExpressionMatch> replacements;
+        while (matches.hasNext()) replacements.append(matches.next());
+        for (auto it = replacements.crbegin(); it != replacements.crend(); ++it)
+            rules.replace(it->capturedStart(), it->capturedLength(), QString::number(uiPixelsF(it->captured(1).toDouble())) + QStringLiteral("px"));
+    }
     const std::pair<const char*, QColor> colors[] = {
         {"@background", theme.background}, {"@surface", theme.surface},
         {"@raised", theme.raisedSurface}, {"@headerText", theme.headerText},

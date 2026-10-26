@@ -32,6 +32,7 @@ public:
     // buttons. Returns false when the built strips no longer match the model;
     // the caller then refreshes.
     bool updateTabAppearance();
+    void refreshInterfaceMetrics();
     bool scrollStripAt(QPoint global, QPoint delta, bool smooth = true);
     // Shows the focus accent on the strip of each window's active group.
     void refreshGroupFocus();

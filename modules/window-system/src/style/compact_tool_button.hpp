@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QEvent>
+#include <window_system/interface_appearance.hpp>
 #include <QToolButton>
 #include <QStyleOptionToolButton>
 #include <QStylePainter>
@@ -16,12 +17,12 @@ namespace window_system {
 class CompactToolButton final : public QToolButton {
 public:
     explicit CompactToolButton(QWidget* parent, int extent = 20)
-        : CompactToolButton(parent, QSize(std::max(1, extent), std::max(1, extent)))
+        : CompactToolButton(parent, QSize(std::max(1, uiPixels(extent)), std::max(1, uiPixels(extent))))
     {
     }
 
     CompactToolButton(QWidget* parent, QSize target)
-        : QToolButton(parent), target_(target.expandedTo(QSize(1, 1)))
+        : QToolButton(parent), target_(target.expandedTo(QSize(1, 1))), authoredTarget_(QSizeF(target_) / interfaceScale())
     {
         setAutoRaise(true); applyMetrics();
     }
@@ -29,6 +30,7 @@ public:
     void setTargetSize(QSize target)
     {
         target_ = target.expandedTo(QSize(1, 1));
+        authoredTarget_ = QSizeF(target_) / interfaceScale();
         applyMetrics();
     }
     // An expanding button can keep its icon under the pointer instead of
@@ -69,12 +71,14 @@ protected:
 private:
     void applyMetrics()
     {
+        target_ = (authoredTarget_ * interfaceScale()).toSize().expandedTo(QSize(1, 1));
         if (minimumSize() != target_ || maximumSize() != target_) setFixedSize(target_);
-        const QSize icon(std::min(14, std::max(1, target_.width() - 2)),
-                         std::min(14, std::max(1, target_.height() - 2)));
+        const QSize icon(std::min(uiPixels(14), std::max(1, target_.width() - uiPixels(2))),
+                         std::min(uiPixels(14), std::max(1, target_.height() - uiPixels(2))));
         if (iconSize() != icon) setIconSize(icon);
     }
     QSize target_;
+    QSizeF authoredTarget_;
     std::optional<int> iconRail_;
     Qt::Edge iconEdge_ = Qt::LeftEdge;
 };

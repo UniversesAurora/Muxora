@@ -1,6 +1,8 @@
+#include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
 #include "edge_strip.hpp"
 #include "style/themed_controls.hpp"
+#include "edge_tab_button.hpp"
 
 #include <QAbstractButton>
 #include <QBoxLayout>
@@ -23,6 +25,17 @@ constexpr int scrollbarThickness = 4;
 constexpr int hoverMargin = 24;
 }
 
+void EdgeStrip::setTheme(const Theme& theme)
+{
+    theme_ = theme;
+    const int thickness = std::max(1, theme_.metrics.edgeThickness);
+    if (vertical_) setFixedWidth(thickness); else setFixedHeight(thickness);
+    layout()->setSpacing(uiPixels(spacing)); trackLayout_->setSpacing(uiPixels(spacing));
+    for (const auto& button : buttons_) if (auto* tab = dynamic_cast<EdgeTabButton*>(button.data())) tab->setThickness(thickness);
+    scrollbar_->setStyleSheet(overlayScrollbarStyle(theme_));
+    layoutTrack(); updateScrollBarGeometry(); update();
+}
+
 EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     : QFrame(parent), vertical_(edge == Edge::Left || edge == Edge::Right), theme_(theme),
       scroll_(new QScrollArea(this)), track_(new QWidget),
@@ -34,14 +47,14 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     const int thickness = std::max(1, theme_.metrics.edgeThickness);
     if (vertical_) setFixedWidth(thickness); else setFixedHeight(thickness);
     auto* column = new QBoxLayout(vertical_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, this);
-    column->setContentsMargins(0, 0, 0, 0); column->setSpacing(spacing);
+    column->setContentsMargins(0, 0, 0, 0); column->setSpacing(uiPixels(spacing));
     scroll_->setObjectName("EdgeScrollViewport"); scroll_->setFrameShape(QFrame::NoFrame);
     scroll_->setProperty("windowSystemOwnWheelScrolling", true);
     scroll_->setWidgetResizable(false);
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     track_->setObjectName("EdgeTabTrack");
-    trackLayout_->setContentsMargins(0, 0, 0, 0); trackLayout_->setSpacing(spacing);
+    trackLayout_->setContentsMargins(0, 0, 0, 0); trackLayout_->setSpacing(uiPixels(spacing));
     trackLayout_->setSizeConstraint(QLayout::SetNoConstraint); trackLayout_->addStretch();
     gap_->setObjectName("EdgeInsertionPreview");
     gap_->setAttribute(Qt::WA_TransparentForMouseEvents); gap_->setFocusPolicy(Qt::NoFocus);
@@ -295,7 +308,7 @@ void EdgeStrip::layoutTrack()
         gap_->setFixedSize(vertical_ ? QSize(thickness, previewExtent_) : QSize(previewExtent_, thickness));
         total += previewExtent_; ++count;
     }
-    total += std::max(0, count - 1) * spacing;
+    total += std::max(0, count - 1) * uiPixels(spacing);
     const int available = vertical_ ? scroll_->viewport()->height() : scroll_->viewport()->width();
     const int extent = int(std::clamp<qint64>(std::max<qint64>(total, available), 1, QWIDGETSIZE_MAX));
     track_->resize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
@@ -306,8 +319,8 @@ void EdgeStrip::layoutTrack()
 void EdgeStrip::updateScrollBarGeometry()
 {
     const auto area = scroll_->viewport()->rect();
-    scrollbar_->setGeometry(vertical_ ? QRect(std::max(0, area.width() - scrollbarThickness), 0, scrollbarThickness, area.height())
-        : QRect(0, std::max(0, area.height() - scrollbarThickness), area.width(), scrollbarThickness));
+    scrollbar_->setGeometry(vertical_ ? QRect(std::max(0, area.width() - uiPixels(scrollbarThickness)), 0, uiPixels(scrollbarThickness), area.height())
+        : QRect(0, std::max(0, area.height() - uiPixels(scrollbarThickness)), area.width(), uiPixels(scrollbarThickness)));
     scrollbar_->raise();
 }
 void EdgeStrip::synchronizeScrollBar()
@@ -362,7 +375,7 @@ void EdgeStrip::setDragHover(QPoint global)
         const int position = axis(global);
         const int first = vertical_ ? viewport.top() : viewport.left();
         const int last = vertical_ ? viewport.bottom() : viewport.right();
-        nextDirection = position < first + hoverMargin ? -1 : position > last - hoverMargin ? 1 : 0;
+        nextDirection = position < first + uiPixels(hoverMargin) ? -1 : position > last - uiPixels(hoverMargin) ? 1 : 0;
         if ((nextDirection < 0 && bar->value() == bar->minimum()) ||
             (nextDirection > 0 && bar->value() == bar->maximum())) nextDirection = 0;
     }

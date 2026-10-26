@@ -5,6 +5,7 @@
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
+#include <window_system/interface_appearance.hpp>
 #include "chrome/workspace_window.hpp"
 #include "chrome/command_strip.hpp"
 #include "commands/command_dialogs.hpp"
@@ -82,6 +83,9 @@ WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_uni
         });
     });
     qApp->installEventFilter(this); registerWindowCommands();
+    d->theme = scaledInterfaceTheme(d->authoredTheme);
+    if (auto* appearance = InterfaceAppearanceController::applicationInstance())
+        connect(appearance, &InterfaceAppearanceController::appearanceChanged, this, [this] { setTheme(d->authoredTheme); });
     QObject::connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* next) {
         if (!d->destroying && !d->refreshing) d->inputMethods.focus(d->model, next);
     });
@@ -856,17 +860,20 @@ void WindowManager::setBehavior(const WindowBehavior& behavior)
 }
 void WindowManager::setTheme(const Theme& theme)
 {
-    d->theme = theme;
+    d->authoredTheme = theme;
+    d->theme = scaledInterfaceTheme(theme);
     ++d->themeRevision;
     // Tab strips paint from the theme itself, not only the style sheet.
     for (auto widget : d->windows) {
         if (!widget) continue;
-        applyTheme(widget, theme);
+        applyTheme(widget, d->theme);
+        widget->surface()->refreshInterfaceMetrics();
         for (auto* frame : widget->findChildren<QFrame*>("TabGroup"))
-            if (auto* tabs = dynamic_cast<GroupTabs*>(frame)) tabs->setTheme(theme);
+            if (auto* tabs = dynamic_cast<GroupTabs*>(frame)) tabs->setTheme(d->theme);
     }
 }
-Theme WindowManager::theme() const { return d->theme; }
+Theme WindowManager::theme() const { return d->authoredTheme; }
+Theme WindowManager::interfaceTheme() const { return d->theme; }
 CommandRegistry& WindowManager::commands() { return d->commands; }
 bool WindowManager::execute(const QString& command, const QVariantMap& args, WindowId window)
 {

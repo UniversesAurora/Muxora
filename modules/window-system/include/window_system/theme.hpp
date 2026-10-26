@@ -63,6 +63,8 @@ struct Theme {
 };
 
 [[nodiscard]] Theme defaultTheme();
+/// Resolves authored dimensions for the application interface zoom.
+[[nodiscard]] Theme scaledInterfaceTheme(const Theme& theme);
 [[nodiscard]] QString styleSheet(const Theme& theme = defaultTheme());
 
 /// Styles this root and its descendants without changing QApplication style.

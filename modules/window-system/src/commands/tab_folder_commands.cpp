@@ -42,7 +42,7 @@ void WindowManager::registerTabFolderCommands()
     const auto chooseFolder = [this](GroupId groupId, FolderId except) -> std::optional<FolderId> {
         const auto* group = d->model.group(groupId);
         if (!group) return std::nullopt;
-        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabFolderPicker")); applyTheme(&menu, theme());
+        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabFolderPicker")); applyTheme(&menu, interfaceTheme());
         for (const auto& folder : group->folders) if (folder.id != except)
             menu.addAction(tabFolderDisplayName(folder.id))->setData(folder.id);
         if (menu.isEmpty()) return std::nullopt;
@@ -169,7 +169,7 @@ void WindowManager::registerTabFolderCommands()
         if (c.args.contains("targetWindow")) return moveTabFolderToWindow(folderOf(c), c.args.value("targetWindow").toUuid());
         const auto* group = d->model.group(d->model.groupForFolder(folderOf(c)));
         if (!group) return false;
-        DismissOnlyMenu menu; applyTheme(&menu, theme());
+        DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != group->windowId) menu.addAction(windowWidget(id)->windowTitle())->setData(id);
         const QPointer<WindowManager> self(this); const auto* action = menu.exec(QCursor::pos());
         return self && action && moveTabFolderToWindow(folderOf(c), action->data().toUuid());
@@ -217,7 +217,7 @@ void WindowManager::registerTabFolderCommands()
     add("group.convertToFolder", QCoreApplication::translate("WindowSystem", "Convert tab group to a tab folder of a selected group…"), [this, groupOf](const CommandContext& c) {
         const auto source = groupOf(c);
         if (c.args.contains("targetGroup")) return !convertGroupToFolder(source, c.args.value("targetGroup").toUuid()).isNull();
-        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, theme());
+        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, interfaceTheme());
         for (const auto windowId : d->model.windowOrder())
             for (const auto id : d->model.centralGroups(windowId)) if (id != source) menu.addAction(groupDisplayName(id))->setData(id);
         const QPointer<WindowManager> self(this);
@@ -247,7 +247,7 @@ void WindowManager::showTabFolderMenu(FolderId folder, QPoint position)
     captured.tab = tabs.contains(record->activeTab) ? record->activeTab : tabs.first();
     captured.pane = d->model.tab(captured.tab)->activePane;
     auto* menu = new DismissOnlyMenu(windowWidget(record->windowId)); menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->setObjectName(QStringLiteral("TabFolderContextMenu")); applyTheme(menu, theme());
+    menu->setObjectName(QStringLiteral("TabFolderContextMenu")); applyTheme(menu, interfaceTheme());
     populateContextMenu(menu, CommandMenuSurface::TabFolder, this, captured); menu->popup(position);
 }
 } // namespace window_system

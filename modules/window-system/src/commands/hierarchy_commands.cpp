@@ -52,7 +52,7 @@ void WindowManager::registerHierarchyCommands() {
         auto *menu = new DismissOnlyMenu(windowWidget(context.window));
         menu->setObjectName("HierarchyTargetPicker");
         menu->setAttribute(Qt::WA_DeleteOnClose);
-        applyTheme(menu, theme());
+        applyTheme(menu, interfaceTheme());
         const QPointer<WindowManager> self(this);
         const QStringList directions{QCoreApplication::translate("WindowSystem", "Left of target pane"),
                                      QCoreApplication::translate("WindowSystem", "Right of target pane"),

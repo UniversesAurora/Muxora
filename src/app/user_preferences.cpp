@@ -114,6 +114,21 @@ UserPreferences::UserPreferences(QString directory) : directory_(std::move(direc
     if (!readDocument(QDir(directory_).filePath(QStringLiteral("settings.json")), document, settingsDiagnostic_)) return;
     if (document.isNull()) return;
     if (!document.isObject()) { settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json must contain a JSON object."); return; }
+    const auto settings = document.object();
+    auto appearance = interfaceAppearance_;
+    const auto family = settings.value(QStringLiteral("workbench.fontFamily"));
+    const auto size = settings.value(QStringLiteral("workbench.fontSize"));
+    const auto zoom = settings.value(QStringLiteral("window.zoomLevel"));
+    if ((!family.isUndefined() && !family.isString()) || (!size.isUndefined() && (!size.isDouble() || size.toDouble() != size.toInt()))
+        || (!zoom.isUndefined() && !zoom.isDouble())) {
+        settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "Invalid interface font or zoom setting.");
+    } else {
+        if (!family.isUndefined()) appearance.fontFamily = family.toString();
+        if (!size.isUndefined()) appearance.fontSize = size.toInt();
+        if (!zoom.isUndefined()) appearance.zoomLevel = zoom.toDouble();
+        if (window_system::validInterfaceAppearance(appearance)) interfaceAppearance_ = appearance;
+        else settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "Invalid interface font or zoom setting.");
+    }
     const auto value = document.object().value(QStringLiteral("workbench.language"));
     if (value.isUndefined()) return;
     if (!value.isString() || !supportedLanguage(value.toString())) {
@@ -123,6 +138,24 @@ UserPreferences::UserPreferences(QString directory) : directory_(std::move(direc
 }
 
 QString UserPreferences::language() const { return language_; }
+bool UserPreferences::saveInterfaceAppearance(const window_system::InterfaceAppearance& value)
+{
+    if (!window_system::validInterfaceAppearance(value)) return false;
+    const auto path = QDir(directory_).filePath(QStringLiteral("settings.json"));
+    QJsonDocument document;
+    settingsDiagnostic_.clear();
+    if (!readDocument(path, document, settingsDiagnostic_)) return false;
+    if (!document.isNull() && !document.isObject()) {
+        settingsDiagnostic_ = QCoreApplication::translate("WindowSystem", "settings.json must contain a JSON object."); return false;
+    }
+    auto settings = document.object();
+    settings.insert(QStringLiteral("workbench.fontFamily"), value.fontFamily);
+    settings.insert(QStringLiteral("workbench.fontSize"), value.fontSize);
+    settings.insert(QStringLiteral("window.zoomLevel"), value.zoomLevel);
+    if (!writeDocument(path, QJsonDocument(settings), settingsDiagnostic_)) return false;
+    interfaceAppearance_ = value;
+    return true;
+}
 QString UserPreferences::diagnostic() const
 {
     QStringList errors;

@@ -15,8 +15,8 @@ inline constexpr int edgeTabIconSize = 16;
 inline TabLabelParts edgeTabParts(const QFontMetrics& metrics, int natural, bool icon, int number,
                                   bool clipTitles = false, int maximumTitleWidth = defaultTabTitleWidth)
 {
-    return {number > 0 ? metrics.horizontalAdvance(QString::number(number)) : 0, icon ? edgeTabIconSize : 0,
-            clipTitles ? std::min(natural, maximumTitleWidth) : natural};
+    return {number > 0 ? metrics.horizontalAdvance(QString::number(number)) : 0, icon ? uiPixels(edgeTabIconSize) : 0,
+            clipTitles ? std::min(natural, uiPixels(maximumTitleWidth)) : natural};
 }
 inline int edgeTabExtent(const QFontMetrics& metrics, int natural, bool icon, int number, int thickness,
                          bool clipTitles = false, int maximumTitleWidth = defaultTabTitleWidth)
@@ -31,6 +31,7 @@ public:
     void setPreset(std::optional<TabColorPreset> preset);
     void setPresentation(QIcon icon, int number);
     void setTitleClipping(bool enabled, int maximumWidth);
+    void setThickness(int thickness) { thickness_ = thickness; updateGeometry(); update(); }
     std::function<void(QPoint)> drag;
     std::function<void(QPoint)> menu;
     // A middle click released on the button closes its tab.

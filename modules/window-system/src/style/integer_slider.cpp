@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "integer_slider.hpp"
+#include "ui_metrics.hpp"
 
 #include <QHBoxLayout>
 #include <QSignalBlocker>
@@ -16,12 +17,12 @@ IntegerSlider::IntegerSlider(QSpinBox* editor, int sliderMinimum, int sliderMaxi
     Q_ASSERT(sliderMinimum < sliderMaximum);
     auto* row = new QHBoxLayout(this);
     row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(8);
+    uiSpacing(row, 8);
     slider_->setProperty("windowSystemIntegerSlider", true);
     slider_->setRange(sliderMinimum, sliderMaximum);
     slider_->setSingleStep(editor_->singleStep());
     slider_->setPageStep(int(qMax<qint64>(editor_->singleStep(), (qint64(sliderMaximum) - sliderMinimum) / 20)));
-    slider_->setMinimumWidth(180);
+    uiMinimumWidth(slider_, 180);
     slider_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     editor_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     row->addWidget(slider_, 1);

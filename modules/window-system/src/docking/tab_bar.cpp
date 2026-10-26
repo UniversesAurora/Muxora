@@ -1,3 +1,4 @@
+#include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
 #include "tab_bar.hpp"
 #include "style/compact_tool_button.hpp"
@@ -655,7 +656,7 @@ int TabBar::folderHeaderExtent(const TabStripFolder& folder) const
     if (folder.name.isEmpty() && !folder.collapsed) return m.folderDot + 2 * m.folderChipMargin + 4;
     const auto label = folder.collapsed ? (folder.name.isEmpty() ? count : folder.name + QStringLiteral("  ") + count) : folder.name;
     // A pixel of slack: elision compares fractional advances.
-    const int text = std::min(fontMetrics().horizontalAdvance(label) + 2, appearance_.maximumTitleWidth);
+    const int text = std::min(fontMetrics().horizontalAdvance(label) + 2, uiPixels(appearance_.maximumTitleWidth));
     return text + 2 * m.folderChipPadding + 2 * m.folderChipMargin;
 }
 void TabBar::setGroupFocused(bool focused)
@@ -993,15 +994,15 @@ TabLabelParts TabBar::labelParts(int index, bool sticky) const
     parts.icon = appearance_.showIcons && !tab.icon.isNull() ? metrics_.iconSize : 0;
     const int natural = std::max(0, tab.titleWidth);
     if (vertical()) parts.title = natural;
-    else if (sticky && appearance_.stickySizing == StickyTabSizing::Shrink) parts.title = std::min(natural, appearance_.shrinkStickyTitleWidth);
-    else parts.title = appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural;
+    else if (sticky && appearance_.stickySizing == StickyTabSizing::Shrink) parts.title = std::min(natural, uiPixels(appearance_.shrinkStickyTitleWidth));
+    else parts.title = appearance_.clipTitles ? std::min(natural, uiPixels(appearance_.maximumTitleWidth)) : natural;
     return parts;
 }
 
 int TabBar::tabExtent(int index, bool sticky) const
 {
     if (index < 0 || index >= tabs_.size()) return 0;
-    if (sticky && appearance_.stickySizing == StickyTabSizing::Compact) return compactStickyTabWidth;
+    if (sticky && appearance_.stickySizing == StickyTabSizing::Compact) return uiPixels(compactStickyTabWidth);
     // A sticky tab's action always shows and keeps its room.
     return tabBarTabWidth(labelParts(index, sticky), sticky);
 }
@@ -1009,14 +1010,14 @@ int TabBar::tabExtent(int index, bool sticky) const
 int TabBar::carriedExtent(const CarriedLabel& label, bool sticky) const
 {
     if (label.folderHeader) return folderHeaderExtent({{}, label.title, {}, label.collapsed, 0, label.count});
-    if (sticky && appearance_.stickySizing == StickyTabSizing::Compact) return compactStickyTabWidth;
+    if (sticky && appearance_.stickySizing == StickyTabSizing::Compact) return uiPixels(compactStickyTabWidth);
     TabTitleLayout title;
     title.prepare(label.title, font(), layoutDirection(), true, this);
     TabLabelParts parts;
     parts.icon = appearance_.showIcons && label.icon ? metrics_.iconSize : 0;
     const int natural = title.naturalWidth();
-    if (sticky && appearance_.stickySizing == StickyTabSizing::Shrink) parts.title = std::min(natural, appearance_.shrinkStickyTitleWidth);
-    else parts.title = appearance_.clipTitles ? std::min(natural, appearance_.maximumTitleWidth) : natural;
+    if (sticky && appearance_.stickySizing == StickyTabSizing::Shrink) parts.title = std::min(natural, uiPixels(appearance_.shrinkStickyTitleWidth));
+    else parts.title = appearance_.clipTitles ? std::min(natural, uiPixels(appearance_.maximumTitleWidth)) : natural;
     // The number it gets is unknown until it lands; one digit approximates it.
     parts.number = appearance_.showNumbers ? fontMetrics().horizontalAdvance(QStringLiteral("0")) : 0;
     return tabBarTabWidth(parts, sticky);
@@ -1120,8 +1121,8 @@ int TabBar::minimumColumnWidth() const
 {
     // Keep the icon clear of the action even when no title fits. Ordinals
     // and titles can disappear before either of these hit targets does.
-    return std::max(minimumVerticalTabWidth, 2 * metrics_.verticalInset + tabBarLeading
-        + metrics_.iconSize + tabActionGap + tabActionSize + tabBarTrailing);
+    return std::max(uiPixels(minimumVerticalTabWidth), 2 * metrics_.verticalInset + uiPixels(tabBarLeading)
+        + metrics_.iconSize + uiPixels(tabActionGap) + uiPixels(tabActionSize) + uiPixels(tabBarTrailing));
 }
 
 int TabBar::rowShadowExtent() const
@@ -1224,7 +1225,7 @@ void TabBar::relayout(bool animate, bool measureChanged)
         if (!countButton_ || !countButton_->isVisible()) break;
         const bool collapsed = collapsedNow();
         countButton_->setText(collapsed ? QStringLiteral("+%1").arg(layout_.hidden) : QStringLiteral("\u2212"));
-        const int needed = std::max(metrics_.countMinimumWidth, fontMetrics().horizontalAdvance(countButton_->text()) + 14);
+        const int needed = std::max(metrics_.countMinimumWidth, fontMetrics().horizontalAdvance(countButton_->text()) + uiPixels(14));
         const int countWidth = countButton_->width();
         if (needed == countWidth || (needed < countWidth && !canShrinkCount)) break;
         canShrinkCount = false;
@@ -1363,12 +1364,12 @@ TabParts TabBar::partsOf(int index, const QRect& rect) const
             return parts;
         }
         if (action) parts.action = tabBarCloseRect(rect, direction);
-        const int gap = tabPartGap;
-        int begin = right ? rect.left() + tabBarTrailing : center + metrics_.iconSize / 2 + gap;
-        int end = right ? center - metrics_.iconSize / 2 - gap : rect.right() + 1 - tabBarTrailing;
+        const int gap = uiPixels(tabPartGap);
+        int begin = right ? rect.left() + uiPixels(tabBarTrailing) : center + metrics_.iconSize / 2 + gap;
+        int end = right ? center - metrics_.iconSize / 2 - gap : rect.right() + 1 - uiPixels(tabBarTrailing);
         if (action && sticky) {
-            if (right) begin = parts.action.right() + 1 + tabActionGap;
-            else end = parts.action.left() - tabActionGap;
+            if (right) begin = parts.action.right() + 1 + uiPixels(tabActionGap);
+            else end = parts.action.left() - uiPixels(tabActionGap);
         }
         // Numbering follows the icon; reserving it before the icon would
         // move that icon as soon as the title is revealed.
@@ -1849,7 +1850,7 @@ QRect TabBar::liftedRect() const
         const int y = std::clamp(liftedPointer_->y() - liftedGrab_.y(), origin.y(), std::max(origin.y(), height() - metrics_.rowHeight));
         return {metrics_.verticalInset, y, rowWidth, metrics_.rowHeight};
     }
-    const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : tabExtent(dragged_, sticky);
+    const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky);
     // Local and incoming labels use the same scrolled row grid, including
     // a partially visible final row and a bottom strip's shadow origin.
     const int y = horizontalDragRowTop(*liftedPointer_);
@@ -2453,7 +2454,7 @@ void TabBar::changeEvent(QEvent* event)
         update();
         if (liftedLayer_) liftedLayer_->update();
     }
-    if (event->type() == QEvent::FontChange || event->type() == QEvent::LayoutDirectionChange) {
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange || event->type() == QEvent::LayoutDirectionChange) {
         metrics_ = TabMetrics::forTheme(theme_, font());
         painter_ = TabPainter(metrics_, TabPalette::forTheme(theme_));
         updateTitleWidths();

@@ -31,7 +31,7 @@ std::optional<int> integerArgument(const QVariant& value, int minimum, int maxim
 }
 std::optional<QString> pickTabColor(WindowManager* manager, const QString& reset)
 {
-    DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabColorPicker")); applyTheme(&menu, manager->theme());
+    DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("TabColorPicker")); applyTheme(&menu, manager->interfaceTheme());
     menu.addAction(reset)->setData(QString());
     for (const auto& preset : manager->tabAppearance().colors) menu.addAction(tabColorDisplayName(preset))->setData(preset.id);
     const QPointer<WindowManager> self(manager);
@@ -103,7 +103,7 @@ void WindowManager::registerTabGroupCommands()
             const auto target = c.args.value("targetGroup").toUuid();
             return QPair{target, placement};
         }
-        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, theme());
+        DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, interfaceTheme());
         for (const auto windowId : d->model.windowOrder()) {
             const auto* window = d->model.window(windowId);
             if (!window) continue;
@@ -188,7 +188,7 @@ void WindowManager::registerTabGroupCommands()
             {"layout", "moveGroups"}, [this, forward](const CommandContext& c) { return moveGroupToWindowCycle(c.group, forward); }, hasWindow);
     add("group.moveWindow", QCoreApplication::translate("WindowSystem", "Move tab group to a selected window…"), {"layout", "moveGroups"}, [this](const CommandContext& c) {
         if (c.args.contains("targetWindow")) return moveGroupToWindow(c.group, c.args.value("targetWindow").toUuid());
-        DismissOnlyMenu menu; applyTheme(&menu, theme());
+        DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != c.window) {
             auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id);
         }
@@ -208,7 +208,7 @@ void WindowManager::showGroupMenu(GroupId group, QPoint position)
     const auto* active = d->model.tab(record->activeTab);
     captured.pane = active ? active->activePane : PaneId{};
     auto* menu = new DismissOnlyMenu(windowWidget(record->windowId)); menu->setAttribute(Qt::WA_DeleteOnClose);
-    menu->setObjectName(QStringLiteral("TabBarContextMenu")); applyTheme(menu, theme());
+    menu->setObjectName(QStringLiteral("TabBarContextMenu")); applyTheme(menu, interfaceTheme());
     appendTabPresentationActions(menu, this, captured);
     populateContextMenu(menu, CommandMenuSurface::Group, this, captured); menu->popup(position);
 }

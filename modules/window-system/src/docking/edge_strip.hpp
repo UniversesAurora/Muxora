@@ -27,6 +27,7 @@ class EdgeStrip final : public QFrame {
 public:
     EdgeStrip(Edge edge, const Theme& theme, QWidget* parent = nullptr);
     ~EdgeStrip() override;
+    void setTheme(const Theme& theme);
 
     void addButton(QAbstractButton* button);
     [[nodiscard]] QList<QAbstractButton*> buttons() const;

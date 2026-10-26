@@ -1,3 +1,4 @@
+#include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
 #include "edge_tab_button.hpp"
 #include <QApplication>
@@ -104,8 +105,8 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
                                     clipTitles_, maximumTitleWidth_);
     // The extent matches the label exactly; a longer button (an empty label
     // on a thick rail) centers it, and a shorter one cuts the title.
-    const int span = int(std::min<qint64>(std::max(0, area.width() - 2 * edgeTabPadding), tabLabelWidth(parts)));
-    const QRect label(std::max(edgeTabPadding, (area.width() - span) / 2), area.top(), span, area.height());
+    const int span = int(std::min<qint64>(std::max(0, area.width() - 2 * uiPixels(edgeTabPadding)), tabLabelWidth(parts)));
+    const QRect label(std::max(uiPixels(edgeTabPadding), (area.width() - span) / 2), area.top(), span, area.height());
     const auto rects = layoutTabLabel(label, parts, layoutDirection());
     if (!rects.number.isEmpty())
         painter.drawText(rects.number, Qt::AlignVCenter | Qt::AlignLeading, QString::number(number_));

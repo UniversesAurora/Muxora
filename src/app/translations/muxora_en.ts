@@ -444,6 +444,10 @@ Sessions, files, and transfers are layout placeholders. Remote operations will f
         <translation>settings.json must contain a JSON object.</translation>
     </message>
     <message>
+        <source>Invalid interface font or zoom setting.</source>
+        <translation>Invalid interface font or zoom setting.</translation>
+    </message>
+    <message>
         <source>workbench.language supports only system, zh_CN, or en.</source>
         <translation>workbench.language supports only system, zh_CN, or en.</translation>
     </message>

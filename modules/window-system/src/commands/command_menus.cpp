@@ -149,6 +149,9 @@ const Items& layout(CommandMenuSurface surface)
         group("file", "file", QT_TRANSLATE_NOOP("WindowSystem", "&File"), {command("window.new", 20), separator(30), separator(60),
             command("workspace.closeTab", 70), command("window.close", 80), separator(90)}, 10),
         group("view", "view", QT_TRANSLATE_NOOP("WindowSystem", "&View"), {command("workbench.showCommandPalette"), separator(),
+            group("view.interface", "interface", QT_TRANSLATE_NOOP("WindowSystem", "Interface"), {
+                command("workbench.action.zoomIn"), command("workbench.action.zoomOut"), command("workbench.action.zoomReset"), separator(),
+                command("workbench.action.increaseInterfaceFontSize"), command("workbench.action.decreaseInterfaceFontSize"), command("workbench.action.resetInterfaceFontSize")}),
             group("view.visibility", "visibility", QT_TRANSLATE_NOOP("WindowSystem", "Visibility"), {command("window.toolbars.toggle"), command("window.statusBar.toggle"),
                 command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
             group("view.tabAppearance", "tabBar", QT_TRANSLATE_NOOP("WindowSystem", "Tab bar"), {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
@@ -641,7 +644,7 @@ void ApplicationCommandMenus::refreshWindowList()
         }
         retained->setText(prefix + widget->windowTitle());
         retained->setToolTip(widget->windowTitle());
-        const auto theme = manager_->theme();
+        const auto theme = manager_->interfaceTheme();
         const QVariantList iconTokens{floating, theme.text, theme.mutedText, theme.selectionText, theme.accent};
         if (retained->property("windowListIconTokens").toList() != iconTokens) {
             retained->setIcon(iconFor(floating ? QStringLiteral("detach") : QStringLiteral("window"), theme));

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "themed_controls.hpp"
+#include <window_system/ui_scale.hpp>
 #include "commands/popup_menu.hpp"
 #include <window_system/theme.hpp>
 
@@ -37,8 +38,8 @@ QColor controlColor(const QWidget* widget, const char* token, QPalette::ColorRol
 void drawChevron(QPainter& painter, const QRect& rect, const QColor& color, bool up)
 {
     const auto center = QRectF(rect).center();
-    const qreal halfWidth = qMin(3.5, rect.width() / 4.0);
-    const qreal halfHeight = qMin(2.0, rect.height() / 4.0);
+    const qreal halfWidth = qMin(uiPixelsF(3.5), rect.width() / 4.0);
+    const qreal halfHeight = qMin(uiPixelsF(2.0), rect.height() / 4.0);
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
@@ -165,14 +166,14 @@ QString overlayScrollbarStyle(const Theme& theme)
     const QColor handle(gray, gray, gray);
     return QStringLiteral(
         "QScrollBar { background: transparent; border: none; margin: 0; }"
-        "QScrollBar:vertical { width: 4px; } QScrollBar:horizontal { height: 4px; }"
+        "QScrollBar:vertical { width: %3px; } QScrollBar:horizontal { height: %3px; }"
         "QScrollBar::handle { background: %1; border-radius: 0; margin: 0; }"
-        "QScrollBar::handle:vertical { min-height: 18px; }"
-        "QScrollBar::handle:horizontal { min-width: 18px; }"
+        "QScrollBar::handle:vertical { min-height: %4px; }"
+        "QScrollBar::handle:horizontal { min-width: %4px; }"
         "QScrollBar::handle:hover, QScrollBar::handle:pressed { background: %2; }"
         "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
         "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }")
-        .arg(rgba(handle, 144), rgba(handle, 192));
+        .arg(rgba(handle, 144), rgba(handle, 192)).arg(uiPixels(4)).arg(uiPixels(18));
 }
 
 void ThemedComboBox::showPopup()

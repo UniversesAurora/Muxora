@@ -4,6 +4,7 @@
 #include "command_strip.hpp"
 #include "window_title_label.hpp"
 #include "status_bar.hpp"
+#include "style/ui_metrics.hpp"
 #include "commands/command_menus.hpp"
 #include "commands/popup_menu.hpp"
 #include "docking/dock_surface.hpp"
@@ -174,7 +175,7 @@ WorkspaceWindow::WorkspaceWindow(WindowManager* manager, WindowId id, const Wind
     connect(manager_, &WindowManager::commandsChanged, this, &WorkspaceWindow::updateCommandStates);
     column_->setContentsMargins(1, 1, 1, 1); column_->setSpacing(0);
     column_->addWidget(surface_, 1); syncKind();
-    applyTheme(this, manager_->theme());
+    applyTheme(this, manager_->interfaceTheme());
     // Prepare the hidden HWND before its first ShowWindow, so the compositor
     // can use the same native transitions for full and detached windows.
 #ifdef Q_OS_WIN
@@ -221,18 +222,18 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
         const auto context = manager_->context(id_);
         const auto* tab = manager_->model().tab(context.tab);
         auto* host = new EdgeDragPresentation(tab ? tab->title : windowTitle(),
-            Edge(int(presentation) - int(DragPresentation::Left)), manager_->theme(), surface_, this);
+            Edge(int(presentation) - int(DragPresentation::Left)), manager_->interfaceTheme(), surface_, this);
         if(tab) {
             const auto appearance=manager_->tabAppearance();
             const auto* group=manager_->model().group(context.group);
             host->configureLabel(manager_->tabColorPreset(tab->colorId),
-                appearance.showSidebarIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->theme()) : QIcon{},
+                appearance.showSidebarIcons && manager_->tabOptions(context.tab).showIcon ? iconFor("window",manager_->interfaceTheme()) : QIcon{},
                 appearance.showSidebarNumbers && group ? group->tabs.indexOf(context.tab)+1 : 0, appearance);
         }
         dragPresentationHost_ = host;
         column_->addWidget(host, 1); host->show(); surface_->show();
     }
-    applyTheme(this, manager_->theme());
+    applyTheme(this, manager_->interfaceTheme());
 #ifdef Q_OS_WIN
     applyNativeFrame(this);
 #endif
@@ -467,7 +468,7 @@ void WorkspaceWindow::createChrome()
         for (const auto& item : buttons) {
             const auto* command = manager_->commands().find(item.first);
             if (!command) continue;
-            auto* action = new QAction(iconFor(item.second, manager_->theme()), command->title, strips_);
+            auto* action = new QAction(iconFor(item.second, manager_->interfaceTheme()), command->title, strips_);
             action->setObjectName(item.first); action->setData(item.first);
             action->setProperty("stripCommand", true);
             QStringList shortcuts;
@@ -493,14 +494,15 @@ void WorkspaceWindow::createChrome()
     strips_->setStripConstraints("title", {true, true, titleMinimumWidth, true});
     auto* controls = new QWidget(strips_);
     controls->setObjectName("CaptionControls");
-    controls->setMinimumHeight(32);
+    bindUiMetrics(controls, [controls] { controls->setMinimumHeight(uiPixels(32)); });
     controls->setProperty("windowDragArea", true);
     auto* controlRow = new QHBoxLayout(controls); controlRow->setContentsMargins(0, 0, 0, 0); controlRow->setSpacing(0);
     controlRow->addStretch();
     auto addCaption = [&](const QString& icon, const QString& title, auto callback) {
         auto* button = new QToolButton(controls); button->setObjectName("CaptionButton");
-        button->setProperty("role", icon); button->setIcon(iconFor(icon, manager_->theme()));
-        button->setFixedSize(captionButtonWidth, 32); button->setToolTip(title); button->setAccessibleName(title);
+        button->setProperty("role", icon); button->setIcon(iconFor(icon, manager_->interfaceTheme()));
+        bindUiMetrics(button, [button] { button->setFixedSize(uiPixels(captionButtonWidth), uiPixels(32)); button->setIconSize(uiSize(QSize(16, 16))); });
+        button->setToolTip(title); button->setAccessibleName(title);
         // The strip itself is one 32-pixel row. Let its layout fill that row;
         // AlignTop would make Qt use the styled size hint (21 pixels) after
         // stylesheet polishing instead of the caption's full hit rectangle.
@@ -538,7 +540,7 @@ void WorkspaceWindow::updateWindowControlState()
     const auto role = expanded ? QStringLiteral("restore") : QStringLiteral("maximize");
     const auto title = expanded ? QCoreApplication::translate("WindowSystem", "Restore") : QCoreApplication::translate("WindowSystem", "Maximize");
     maximizeButton_->setProperty("role", role);
-    maximizeButton_->setIcon(iconFor(role, manager_->theme()));
+    maximizeButton_->setIcon(iconFor(role, manager_->interfaceTheme()));
     maximizeButton_->setToolTip(title);
     maximizeButton_->setAccessibleName(title);
 }

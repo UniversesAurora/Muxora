@@ -33,6 +33,7 @@ class UserPreferencesTest final : public QObject {
     Q_OBJECT
 private slots:
     void languageIsIndependentAndPreservesOtherSettings();
+    void interfaceChoicesPersistIndependentlyOfLayouts();
     void malformedSettingsAreNotOverwritten();
     void portableAndExplicitStateKeepUserFilesIsolated();
     void bindingsAndCompositeArgumentsSurviveRestart();
@@ -61,6 +62,22 @@ void UserPreferencesTest::languageIsIndependentAndPreservesOtherSettings()
     const auto previous = read(path);
     QVERIFY(!preferences.saveLanguage("unknown"));
     QCOMPARE(read(path), previous);
+    QVERIFY(!QFileInfo::exists(root.filePath("window-layout.json")));
+}
+
+void UserPreferencesTest::interfaceChoicesPersistIndependentlyOfLayouts()
+{
+    QTemporaryDir root; QVERIFY(root.isValid());
+    const auto path = root.filePath("settings.json");
+    QVERIFY(write(path, R"({"unrelated":true,"workbench.language":"zh_CN"})"));
+    muxora::UserPreferences preferences(root.path());
+    InterfaceAppearance value{"'First Font', Second Font, sans-serif", 17, 0.75};
+    QVERIFY(preferences.saveInterfaceAppearance(value));
+    muxora::UserPreferences restarted(root.path());
+    QVERIFY(restarted.interfaceAppearance() == value); QCOMPARE(restarted.language(), "zh_CN");
+    QVERIFY(QJsonDocument::fromJson(read(path)).object().value("unrelated").toBool());
+    const auto original = read(path); value.zoomLevel = 9;
+    QVERIFY(!preferences.saveInterfaceAppearance(value)); QCOMPARE(read(path), original);
     QVERIFY(!QFileInfo::exists(root.filePath("window-layout.json")));
 }
 
