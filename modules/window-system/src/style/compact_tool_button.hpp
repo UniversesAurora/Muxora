@@ -3,7 +3,10 @@
 
 #include <QEvent>
 #include <QToolButton>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 #include <algorithm>
+#include <optional>
 
 namespace window_system {
 
@@ -28,8 +31,33 @@ public:
         target_ = target.expandedTo(QSize(1, 1));
         applyMetrics();
     }
+    // An expanding button can keep its icon under the pointer instead of
+    // recentering the icon/text pair whenever its label becomes visible.
+    void setIconRail(std::optional<int> inset = {}, Qt::Edge edge = Qt::LeftEdge)
+    {
+        if (iconRail_ == inset && iconEdge_ == edge) return;
+        iconRail_ = inset; iconEdge_ = edge; update();
+    }
 
 protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        if (!iconRail_) { QToolButton::paintEvent(event); return; }
+        QStyleOptionToolButton option; initStyleOption(&option);
+        const auto image = option.icon; const auto label = option.text;
+        option.icon = {}; option.text.clear();
+        QStylePainter painter(this); painter.drawComplexControl(QStyle::CC_ToolButton, option);
+        const bool right = iconEdge_ == Qt::RightEdge;
+        const int center = right ? width() - *iconRail_ : *iconRail_;
+        const QRect glyph(center - iconSize().width() / 2, (height() - iconSize().height()) / 2, iconSize().width(), iconSize().height());
+        image.paint(&painter, glyph, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled, isChecked() ? QIcon::On : QIcon::Off);
+        if (toolButtonStyle() != Qt::ToolButtonIconOnly) {
+            const QRect textArea = right ? QRect(2, 0, std::max(0, glyph.left() - 8), height())
+                : QRect(glyph.right() + 7, 0, std::max(0, width() - glyph.right() - 9), height());
+            painter.setPen(option.palette.color(isEnabled() ? QPalette::Active : QPalette::Disabled, QPalette::ButtonText));
+            painter.drawText(textArea, Qt::AlignVCenter | Qt::TextSingleLine | (right ? Qt::AlignRight : Qt::AlignLeft), label);
+        }
+    }
     bool event(QEvent* event) override
     {
         const bool handled = QToolButton::event(event);
@@ -47,6 +75,8 @@ private:
         if (iconSize() != icon) setIconSize(icon);
     }
     QSize target_;
+    std::optional<int> iconRail_;
+    Qt::Edge iconEdge_ = Qt::LeftEdge;
 };
 
 } // namespace window_system

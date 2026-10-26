@@ -36,6 +36,7 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     auto* column = new QBoxLayout(vertical_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight, this);
     column->setContentsMargins(0, 0, 0, 0); column->setSpacing(spacing);
     scroll_->setObjectName("EdgeScrollViewport"); scroll_->setFrameShape(QFrame::NoFrame);
+    scroll_->setProperty("windowSystemOwnWheelScrolling", true);
     scroll_->setWidgetResizable(false);
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -66,13 +67,24 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
         if (bar->value() == old) autoScroll_->stop();
         else autoScroll_->setInterval(35);
     });
-    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this] { applyPendingScrollOffset(); synchronizeScrollBar(); });
+    scrollMotion_.applyValue = [this](qreal value) {
+        if (!smoothScrollAnimationsAllowed(this)) { scrollMotion_.stopAt(axisScrollBar()->value()); return; }
+        const QPointer<EdgeStrip> self(this);
+        applyingScrollMotion_ = true;
+        axisScrollBar()->setValue(qRound(value));
+        if (self) applyingScrollMotion_ = false;
+    };
+    connect(axisScrollBar(), &QScrollBar::rangeChanged, this, [this] {
+        scrollMotion_.stopAt(axisScrollBar()->value()); applyPendingScrollOffset(); synchronizeScrollBar();
+    });
     connect(axisScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
+        if (!applyingScrollMotion_) scrollMotion_.stopAt(value);
         scrollbar_->setValue(value); queueHoverGeometryChanged();
     });
     connect(scrollbar_, &QScrollBar::valueChanged, axisScrollBar(), &QScrollBar::setValue);
-    connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { pendingScrollOffset_.reset(); });
-    connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { pendingScrollOffset_.reset(); });
+    connect(scrollbar_, &QScrollBar::sliderPressed, this, [this] { scrollMotion_.stopAt(axisScrollBar()->value()); });
+    connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { scrollMotion_.stopAt(axisScrollBar()->value()); pendingScrollOffset_.reset(); });
+    connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { scrollMotion_.stopAt(axisScrollBar()->value()); pendingScrollOffset_.reset(); });
     layoutTrack();
 }
 
@@ -139,6 +151,7 @@ void EdgeStrip::applyPendingScrollOffset()
 }
 void EdgeStrip::restoreScrollOffset(int offset)
 {
+    scrollMotion_.stopAt(axisScrollBar()->value());
     pendingScrollOffset_ = qMax(0, offset);
     applyPendingScrollOffset();
     QTimer::singleShot(0, this, [this] { applyPendingScrollOffset(); pendingScrollOffset_.reset(); });
@@ -180,11 +193,15 @@ void EdgeStrip::restoreScrollAnchor(const ScrollAnchor& anchor)
     }
     restoreScrollOffset(offset);
 }
-void EdgeStrip::scrollByWheel(QPoint delta)
+void EdgeStrip::scrollByWheel(QPoint delta, bool smooth)
 {
     pendingScrollOffset_.reset();
     const int distance = vertical_ ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
-    auto* bar = axisScrollBar(); bar->setValue(bar->value() - distance);
+    auto* bar = axisScrollBar();
+    if (!smooth || !smoothScrollAnimationsAllowed(this)) {
+        scrollMotion_.stopAt(bar->value()); bar->setValue(bar->value() - distance); return;
+    }
+    scrollMotion_.scrollBy(-distance, bar->value(), bar->minimum(), bar->maximum());
 }
 
 int EdgeStrip::insertionIndex(QPoint global) const
@@ -361,7 +378,7 @@ bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
     } else if (event->type() == QEvent::Wheel) {
         auto* wheel = static_cast<QWheelEvent*>(event);
         const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
-        scrollByWheel(delta);
+        scrollByWheel(delta, wheel->pixelDelta().isNull());
         wheel->accept(); return true;
     } else if (event->type() == QEvent::Enter) {
         hoveredSurfaces_.insert(watched); updateScrollBarVisibility();
@@ -374,6 +391,7 @@ bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
 void EdgeStrip::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(event); layoutTrack(); }
 void EdgeStrip::hideEvent(QHideEvent* event)
 {
+    scrollMotion_.stopAt(axisScrollBar()->value());
     autoScroll_->stop(); scrollDirection_ = 0; hoveredSurfaces_.clear(); scrollbar_->hide();
     QFrame::hideEvent(event);
 }

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "elevation.hpp"
 #include "tab_label_geometry.hpp"
 #include "tab_title_layout.hpp"
+#include "window_state_color.hpp"
 #include <window_system/tab_appearance.hpp>
 #include <window_system/theme.hpp>
 
 #include <QColor>
 #include <QIcon>
+#include <QPainterPath>
 #include <QRect>
 #include <QString>
 
@@ -29,21 +32,21 @@ struct TabMetrics {
     int separator = 1;
     int edgeFade = 16;
     int titleFade = 12;
-    int scrollbar = 3;
+    int scrollbar = 5;
     int newTabWidth = 26;
     int typeWidth = 12;
     int listWidth = 24;
     int controlGap = 1;
     int countMinimumWidth = 26;
-    int verticalInset = 6;
-    QSize tile{44, 32};
+    int verticalInset = 4;
+    int columnGap = 1;
+    QSize tile{26, 26};
     int verticalAccent = 3;
     int verticalAccentLength = 16;
     int verticalIconWidth = 44;
-    int resizeBand = 4;
-    int shadowBlur = 8;
-    int shadowOffset = 2;
-    qreal shadowOpacity = 0.3;
+    int resizeBand = 10;
+    int iconCollapseTravel = 12;
+    int shadowBlur = int(elevationProfile(ElevationLevel::RowsOverlay).key.blur);
     int iconSize = 16;
     // Tab group cards (window interaction design: cards and focus): the
     // space a group keeps around its card, the card's corner radius, and
@@ -81,8 +84,15 @@ struct TabPalette {
     QColor separator;
     QColor border;
     QColor shadow;
+    ElevationStyle elevation;
+    WindowStateColor tileBorder;
+    WindowStateColor tileHover;
+    WindowStateColor tilePressed;
+    WindowStateColor sectionSeparator;
     [[nodiscard]] static TabPalette forTheme(const Theme& theme);
 };
+
+[[nodiscard]] ElevationStyle elevationStyleForTheme(const Theme& theme);
 
 enum class TabShape {
     // A horizontal tab whose outer corners are rounded; `Top` means the strip
@@ -127,10 +137,18 @@ struct TabPaintState {
     bool hovered = false;
     bool pressed = false;
     bool groupFocused = false;
+    bool windowActive = true;
+    qreal titleOpacity = 1.0;
     bool sticky = false;
+    bool compactSticky = false;
     // Only the icon, or the title's initial without one, centered.
     bool iconOnly = false;
     bool lifted = false;
+    // These describe only this paint call. Retained label snapshots do not
+    // keep pointers into the current layout or surface animation.
+    const SurfaceGeometry* surface = nullptr;
+    const ElevationProfile* bodyElevation = nullptr;
+    bool elevationManaged = false;
     // 0..1 while a lifted tab's shadow fades in.
     qreal shadowOpacity = 1.0;
     // A row of a strip right of its content: the outer side is the right.
@@ -139,7 +157,7 @@ struct TabPaintState {
     bool actionShown = false;
     bool actionHovered = false;
     bool actionPressed = false;
-    // 0..1 while a covering action fades in.
+    // 0..1 while a covering action fades in or out.
     qreal actionOpacity = 1.0;
     // The action has room of its own and covers nothing.
     bool actionReserved = false;
@@ -163,13 +181,12 @@ public:
     [[nodiscard]] TabParts parts(const QRect& tab, TabShape shape, TabLabelParts label, bool iconOnly,
                                  bool action, bool reserveAction, Qt::LayoutDirection direction) const;
     void paintTab(QPainter& painter, const TabParts& parts, const TabPaintState& state) const;
+    [[nodiscard]] QPainterPath outline(const QRectF& tab, TabShape shape, bool selected, bool lifted = false) const;
     // The short line between two resting tabs.
-    void paintSeparator(QPainter& painter, const QRect& line) const;
-    // Edge fades toward the strip background where a lane hides more tabs.
-    void paintFade(QPainter& painter, const QRect& area, Qt::Edge edge) const;
+    void paintSeparator(QPainter& painter, const QRect& line, bool windowActive = true, bool section = false) const;
     void paintScrollbar(QPainter& painter, const QRect& thumb, bool emphasized) const;
     // A soft shadow under a lifted tab or an overlay panel.
-    void paintShadow(QPainter& painter, const QRectF& area, qreal radius) const;
+    void paintPanelShadow(QPainter& painter, const QRectF& area, qreal radius, bool column) const;
     // The background of a trailing control or chip in its state.
     void paintControl(QPainter& painter, const QRect& area, bool hovered, bool pressed) const;
     // Tab folders: a horizontal chip or a vertical header row; the line that
@@ -186,8 +203,10 @@ public:
 private:
     [[nodiscard]] QColor backgroundOf(const TabPaintState& state) const;
     [[nodiscard]] QColor textOf(const TabPaintState& state) const;
+    [[nodiscard]] ElevationRenderer& elevationRenderer() const;
     TabMetrics metrics_;
     TabPalette palette_;
+    mutable std::unique_ptr<ElevationRenderer> elevation_;
 };
 
 } // namespace window_system

@@ -18,7 +18,10 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QScopeGuard>
+#include <QScopedValueRollback>
 #include <QSplitter>
 #include <QSplitterHandle>
 #include <QTabBar>
@@ -74,11 +77,28 @@ class GroupSplitterHandle final : public QSplitterHandle {
 public:
     using QSplitterHandle::QSplitterHandle;
 protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        // Both Qt's tiny-handle margins and our wider margins synchronously
+        // dispatch Resize again. Let the outer pass finish the final mask.
+        if (updatingMargins_) return;
+        const QScopedValueRollback guard(updatingMargins_, true);
+        QSplitterHandle::resizeEvent(event);
+        // Use QSplitter's own overlap mechanism: margins receive the mouse,
+        // the contents rectangle is painted, and Qt still owns drag limits.
+        const int margin = std::max(0, (TabMetrics{}.resizeBand - splitter()->handleWidth() + 1) / 2);
+        setAttribute(Qt::WA_MouseNoMask, margin > 0);
+        if (orientation() == Qt::Horizontal) setContentsMargins(margin, 0, margin, 0);
+        else setContentsMargins(0, margin, 0, margin);
+        if (margin) setMask(QRegion(contentsRect())); else clearMask();
+    }
     bool event(QEvent* event) override
     {
         const SplitterLayoutPass pass;
         return QSplitterHandle::event(event);
     }
+private:
+    bool updatingMargins_ = false;
 };
 QSize grownBy(QSize size, QMargins margins) { return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom()); }
 class GroupSplitter final : public QSplitter {
@@ -94,9 +114,47 @@ protected:
         const SplitterLayoutPass pass;
         return QSplitter::event(event);
     }
-    QSplitterHandle* createHandle() override { return new GroupSplitterHandle(orientation(), this); }
+    QSplitterHandle* createHandle() override
+    {
+        auto* handle = new GroupSplitterHandle(orientation(), this);
+        handle->setAutoFillBackground(false);
+        return handle;
+    }
+};
+
+// A removed group has no new bar to finish its labels' departure. This layer
+// retains only visible label drawing data, never pages, panes or widgets.
+class RetiringLabels final : public QWidget {
+public:
+    RetiringLabels(TabBar::VisualState labels, const Theme& theme, QWidget* parent)
+        : QWidget(parent), labels_(std::move(labels)), painter_(TabMetrics::forTheme(theme, font()), TabPalette::forTheme(theme))
+    {
+        setObjectName("RetiringTabLabels"); setAttribute(Qt::WA_TransparentForMouseEvents);
+        QRect bounds;
+        for (auto it = labels_.begin(); it != labels_.end();)
+            if (!it->retired) it = labels_.erase(it); else { bounds |= it->global; ++it; }
+        const auto local = bounds.translated(-parent->mapToGlobal(QPoint())).intersected(parent->rect());
+        setGeometry(local); origin_ = parent->mapToGlobal(local.topLeft());
+        connect(&visibility_, &QVariantAnimation::valueChanged, this, [this] { update(); });
+        connect(&visibility_, &QVariantAnimation::finished, this, &QObject::deleteLater);
+        if (local.isEmpty()) { deleteLater(); return; }
+        show(); raise(); visibility_.animateTo(0, Motion::Presence, true);
+    }
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter paint(this);
+        for (const auto& label : std::as_const(labels_))
+            TabBar::paintRetiredLabel(paint, painter_, label, origin_, visibility_.value());
+    }
+private:
+    TabBar::VisualState labels_;
+    TabPainter painter_;
+    ProgressAnimation visibility_{1};
+    QPoint origin_;
 };
 void configureSplitter(QSplitter* splitter, int width) {
+    splitter->setAutoFillBackground(false);
     splitter->setChildrenCollapsible(false);
     splitter->setHandleWidth(qMax(1, width));
 }
@@ -132,18 +190,77 @@ DockSurface::DockSurface(WindowManager* manager, WindowId window, QWidget* paren
     : QFrame(parent), manager_(manager), window_(window)
 {
     setObjectName("DockSurface");
+    setAutoFillBackground(false);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
     qApp->installEventFilter(this);
     QObject::connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] { dragTitleLayouts_.clear(); });
 }
+DockSurface::~DockSurface()
+{
+    // QWidget deletes its children after this class's members are gone.
+    // A QPointer/context still exists during that base destructor; neither
+    // protects a callback which reads our already-destroyed group tables.
+    qApp->removeEventFilter(this);
+    for (auto* child : findChildren<QObject*>()) {
+        child->removeEventFilter(this);
+        QObject::disconnect(child, nullptr, this, nullptr);
+        if (auto* group = dynamic_cast<GroupTabs*>(child)) {
+            group->surfaceInvalidated = {};
+            group->hoverGeometryChanged = {};
+        }
+    }
+}
 void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
+    const QPointer<DockSurface> self(this);
+    const bool animate = root_ && isVisible() && !manager_->d->drag->hasStableLayout() && TabBar::animationsAllowed();
+    QHash<GroupId, TabBar::VisualState> previousVisuals;
+    QSet<GroupId> peekedGroups;
+    if (!manager_->d->drag->hasStableLayout()) for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value() && it.value()->tabBar()->peeking()) peekedGroups.insert(it.key());
+    QSet<GroupId> previousGroupsIds;
+    if (animate) for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+        previousGroupsIds.insert(it.key());
+        const auto* record = manager_->model().group(it.key());
+        const auto built = builtGroups_.constFind(it.key());
+        if (it.value() && (!record || built == builtGroups_.cend() || built->tabs != record->tabs || built->stickyTabs != record->stickyTabs))
+            previousVisuals.insert(it.key(), it.value()->tabBar()->captureVisualState());
+    }
+    const auto presentChanges = [&] {
+        if (!self) return;
+        for (const auto id : peekedGroups) if (const auto view = groups_.value(id)) view->restoreColumnPeek();
+        if (!animate) return;
+        for (auto it = previousVisuals.begin(); it != previousVisuals.end(); ++it) {
+            const auto view = groups_.value(it.key());
+            if (!view) { new RetiringLabels(std::move(it.value()), manager_->theme(), this); continue; }
+            const QPointer<TabBar> bar(view->tabBar());
+            TabBar::VisualState departures;
+            for (auto label = it.value().begin(); label != it.value().end(); ++label) {
+                const int index = bar->indexOf(label.key());
+                if (label->retired && (index < 0 || label->sticky != (index < bar->stickyCount()))) {
+                    departures.insert(label.key(), *label);
+                    label->retired.reset();
+                }
+            }
+            // A closing last row can already be outside the new bar's bounds.
+            // Paint departures in the surface, independently of its new size.
+            if (!departures.isEmpty()) new RetiringLabels(std::move(departures), manager_->theme(), this);
+            QTimer::singleShot(0, bar, [bar, state = std::move(it.value())]() mutable { if (bar) bar->transitionFrom(std::move(state)); });
+        }
+        for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value() && !previousGroupsIds.contains(it.key())) {
+            const QPointer<TabBar> bar(it.value()->tabBar());
+            QTimer::singleShot(0, bar, [bar] { if (bar) bar->transitionFrom({}); });
+        }
+    };
     ++rebuildGeneration_;
     dragTitleLayouts_.clear();
     restoreFocusScope();
     closePeek();
-    if (updateInPlace(contents)) return;
+    if (updateInPlace(contents)) { presentChanges(); return; }
+    QHash<GroupId, GroupTabs::SurfaceState> previousSurfaces;
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value()) previousSurfaces.insert(it.key(), it.value()->captureSurfaceState());
     const auto previousGroups = std::exchange(groups_, {});
     const auto previousSignatures = std::exchange(builtGroups_, {});
     edgeBars_.clear(); pinnedRegions_.clear(); splitters_.clear(); builtRatios_.clear(); contents_ = contents;
@@ -240,6 +357,10 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
             page->setParent(manager_->d->storage);
             if (page) page->hide();
         }
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value() && previousGroups.value(it.key()) != it.value())
+            if (const auto previous = previousSurfaces.constFind(it.key()); previous != previousSurfaces.cend())
+                it.value()->inheritSurface(*previous, isVisible() && TabBar::animationsAllowed());
     if (previousRoot) previousRoot->deleteLater();
     builtStructure_ = structureSignature();
     builtThemeRevision_ = manager_->d->themeRevision;
@@ -257,6 +378,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     QTimer::singleShot(0, this, [this] { restorePinnedExtents(); });
     applyFocusScope();
     restoreStripScrollOffsets();
+    presentChanges();
 }
 void DockSurface::configureEdgeButton(EdgeTabButton& button, TabId tab, int ordinal, const TabAppearance& appearance) const
 {
@@ -400,6 +522,7 @@ bool DockSurface::updateInPlace(const QHash<TabId, QPointer<TabContent>>& conten
             splitter->replaceWidget(index, fresh);
         }
         if (center_ == old) center_ = fresh;
+        fresh->tabBar()->inheritHover(*old->tabBar());
         old->deleteLater();
     }
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
@@ -472,19 +595,49 @@ void DockSurface::restoreStripScrollOffsets()
         }
     edgeAppearance_ = manager_->tabAppearance();
 }
+void DockSurface::paintEvent(QPaintEvent* event)
+{
+    QPainter painter(this);
+    paintBackplate(painter, event->rect());
+}
+void DockSurface::paintBackplate(QPainter& painter, const QRect& exposed)
+{
+    if (!manager_ || compactPresentation_) return;
+    painter.save();
+    painter.setClipRect(exposed, Qt::IntersectClip);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillRect(exposed, manager_->theme().headerBackground);
+    for (const auto& group : std::as_const(groups_))
+        if (group && group->isVisibleTo(this))
+            group->paintSurface(painter, elevation_, group->mapTo(this, QPoint()), exposed);
+    painter.restore();
+}
+void DockSurface::invalidateGroupSurface(GroupId id)
+{
+    const auto group = groups_.value(id);
+    const auto previous = surfaceBounds_.value(id);
+    const auto current = group && group->isVisibleTo(this)
+        ? group->surfacePaintRegion().translated(group->mapTo(this, QPoint())) : QRegion{};
+    if (group) surfaceBounds_.insert(id, current); else surfaceBounds_.remove(id);
+    const auto dirty = previous | current;
+    if (dirty.isEmpty()) return;
+    update(dirty);
+    for (const auto& item : std::as_const(groups_)) if (item && item->isVisibleTo(this))
+        item->invalidateSurfaceCorners(dirty.boundingRect().translated(-item->mapTo(this, QPoint())));
+}
 void DockSurface::refreshGroupFocus()
 {
     for (const auto& group : groups_) if (group) group->refreshFocus();
 }
-bool DockSurface::scrollStripAt(QPoint global, QPoint delta)
+bool DockSurface::scrollStripAt(QPoint global, QPoint delta, bool smooth)
 {
     const auto* hit = childAt(mapFromGlobal(global));
     for (const auto& group : groups_) if (group && group->isVisible() && hit && group->isAncestorOf(hit)
-        && group->scrollStripAt(global, delta)) return true;
+        && group->scrollStripAt(global, delta, smooth)) return true;
     for (const auto& widget : edgeBars_)
         if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data()); strip && strip->isVisible() && hit && strip->isAncestorOf(hit)
             && strip->viewportRectGlobal().contains(global)) {
-            strip->scrollByWheel(delta); return true;
+            strip->scrollByWheel(delta, smooth); return true;
         }
     return false;
 }
@@ -577,6 +730,11 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     // A strip can outlive this surface until its deferred deletion; its
     // callbacks then do nothing.
     const QPointer<DockSurface> surface(this);
+    tabs->surfaceInvalidated = [surface, id] { if (surface) surface->invalidateGroupSurface(id); };
+    QObject::connect(tabs, &QObject::destroyed, this, [surface, tabs, id] {
+        if (surface && (!surface->groups_.value(id) || surface->groups_.value(id).data() == tabs))
+            surface->invalidateGroupSurface(id);
+    });
     tabs->hoverGeometryChanged = [surface] { if (surface && surface->manager_) surface->manager_->d->drag->refreshHover(); };
     tabs->isActiveGroup = [this, surface, id] {
         const auto* window = surface && manager_ ? manager_->model().window(window_) : nullptr;
@@ -585,13 +743,8 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     tabs->refreshFocus();
     tabs->setVerticalState(group->tabStripWidth, group->tabStripIconsOnly);
     tabs->setGroupName(group->name);
-    tabs->verticalWidthChanged = [manager = QPointer<WindowManager>(manager_), id](int width) {
-        const auto* record = manager ? manager->model().group(id) : nullptr;
-        if (record) manager->setGroupTabStrip(id, width, record->tabStripIconsOnly);
-    };
-    tabs->iconModeChanged = [manager = QPointer<WindowManager>(manager_), id](bool iconsOnly) {
-        const auto* record = manager ? manager->model().group(id) : nullptr;
-        if (record) manager->setGroupTabStrip(id, record->tabStripWidth, iconsOnly);
+    tabs->verticalStateChanged = [manager = QPointer<WindowManager>(manager_), id](int width, bool iconsOnly) {
+        if (manager && manager->model().group(id)) manager->setGroupTabStrip(id, width, iconsOnly);
     };
     if (group->location == GroupLocation::Pinned) {
         tabs->setPinnedActions([this, id] {
@@ -840,12 +993,35 @@ GroupId DockSurface::groupAt(QPoint point) const
     for (auto it = rects.cbegin(); it != rects.cend(); ++it) if (it.value().contains(point)) return it.key();
     return {};
 }
+QRect DockSurface::groupContentRect(GroupId group) const
+{
+    const auto view = groups_.value(group);
+    return view ? view->contentRectGlobal() : QRect{};
+}
 QHash<GroupId, QRect> DockSurface::tabBarRects() const
 {
     QHash<GroupId, QRect> result;
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
         if (it.value() && it.value()->isVisible() && !it.value()->viewportRectGlobal().isEmpty())
             result.insert(it.key(), it.value()->viewportRectGlobal());
+    return result;
+}
+QVector<DockStrip> DockSurface::dockStrips() const
+{
+    QVector<DockStrip> result;
+    for (const auto& view : groups_) {
+        if (!view || !view->isVisible()) continue;
+        const auto rect = view->stripPanelRectGlobal();
+        if (rect.isEmpty()) continue;
+        Edge edge = Edge::Top;
+        switch (view->tabBar()->placement()) {
+        case TabBarPlacement::Top: edge = Edge::Top; break;
+        case TabBarPlacement::Bottom: edge = Edge::Bottom; break;
+        case TabBarPlacement::Left: edge = Edge::Left; break;
+        case TabBarPlacement::Right: edge = Edge::Right; break;
+        }
+        result.append({rect, edge});
+    }
     return result;
 }
 GroupId DockSurface::tabBarAt(QPoint point) const
@@ -1030,8 +1206,63 @@ QRect DockSurface::edgeInsertionPreviewRect(Edge edge) const
     const auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
     return strip ? strip->insertionPreviewRect() : QRect{};
 }
+TabDragVisual DockSurface::dragLabelVisual() const
+{
+    struct Piece { QPointer<TabBar> bar; QPoint offset; };
+    QVector<Piece> pieces;
+    QRect bounds;
+    QPoint anchor;
+    for (const auto& group : std::as_const(groups_)) if (group && group->isVisible()) {
+        auto* bar = group->tabBar();
+        const auto rect = bar->carrierBounds();
+        if (!bar->isVisible() || rect.isEmpty()) continue;
+        const auto offset = bar->mapTo(this, QPoint());
+        if (pieces.isEmpty()) anchor = offset + bar->carrierAnchor();
+        bounds |= rect.translated(offset);
+        pieces.append({bar, offset});
+    }
+    if (pieces.isEmpty()) return {};
+    for (auto& piece : pieces) piece.offset -= bounds.topLeft();
+    TabDragVisual visual;
+    visual.size = bounds.size(); visual.anchor = anchor - bounds.topLeft();
+    for (const auto& piece : pieces) if (piece.bar && piece.bar->currentIndex() >= 0) {
+        visual.active = piece.bar->tabRect(piece.bar->currentIndex()).translated(piece.offset);
+        visual.identity = piece.bar->tabData(piece.bar->currentIndex()).toUuid();
+        break;
+    }
+    visual.paint = [pieces](QPainter& painter) {
+        for (const auto& piece : pieces) if (piece.bar) {
+            painter.save(); painter.translate(piece.offset);
+            piece.bar->paintCarrier(painter); painter.restore();
+        }
+    };
+    visual.paintSurface = [pieces](QPainter& painter, const SurfaceGeometry& geometry) {
+        for (const auto& piece : pieces) if (piece.bar) {
+            const auto local = translatedSurfaceGeometry(geometry, -piece.offset);
+            painter.save(); painter.translate(piece.offset);
+            piece.bar->paintCarrier(painter, &local); painter.restore();
+        }
+    };
+    return visual;
+}
+void DockSurface::setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global)
+{
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value())
+        it.value()->setIncomingVisual(it.key() == group ? visual : TabDragVisual{}, global);
+}
+bool DockSurface::setDragTabStyle(const DockSurface& target, GroupId group, bool sticky)
+{
+    const auto* view = target.groups_.value(group).data();
+    if (!view) return false;
+    bool changed = false;
+    for (const auto& carried : std::as_const(groups_)) if (carried)
+        changed = carried->setDragTabStyle(*view->tabBar(), sticky) || changed;
+    return changed;
+}
 void DockSurface::setDragPresentation(bool compact, bool edge)
 {
+    compactPresentation_ = compact;
+    update();
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value()) {
         it.value()->setDragPresentation(compact, edge);
         if (!compact) {

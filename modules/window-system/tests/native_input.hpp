@@ -45,6 +45,26 @@ inline QByteArray describeWindow(HWND handle)
 }
 #endif
 
+// Hold or release the real left button for native drag loops. A release is
+// still allowed after an assertion failed, so cleanup cannot leave it held.
+inline void leftButton(QWidget* target, bool pressed)
+{
+    if (pressed && QTest::currentTestFailed()) return;
+#ifdef Q_OS_WIN
+    Q_UNUSED(target);
+    POINT point{}; QVERIFY(GetCursorPos(&point));
+    const HWND recipient = GetCapture() ? GetCapture() : GetAncestor(WindowFromPoint(point), GA_ROOT);
+    QVERIFY2(ownsWindow(recipient), (QByteArray("Refusing a button event outside the test process: ")
+        + describeWindow(recipient)).constData());
+    INPUT event{}; event.type = INPUT_MOUSE;
+    event.mi.dwFlags = pressed ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+    QCOMPARE(SendInput(1, &event, sizeof(INPUT)), UINT(1));
+#else
+    if (pressed) QTest::mousePress(target, Qt::LeftButton);
+    else QTest::mouseRelease(target, Qt::LeftButton);
+#endif
+}
+
 // Moves the real pointer to a point of the target and optionally clicks it.
 inline void mouse(QWidget* target, QPoint local, bool click = false)
 {

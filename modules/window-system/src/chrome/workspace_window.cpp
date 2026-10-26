@@ -252,18 +252,51 @@ void WorkspaceWindow::setDragPresentation(DragPresentation presentation)
 #endif
     if (focused && focused->isVisible()) focused->setFocus(Qt::OtherFocusReason);
 }
+void WorkspaceWindow::setDragTabStyle(const WorkspaceWindow& target, GroupId group, bool sticky)
+{
+    if (dragPresentation_ == DragPresentation::Tab && surface_->setDragTabStyle(*target.surface_, group, sticky))
+        updateDragMask();
+}
+void WorkspaceWindow::setDragLabelHidden(bool hidden)
+{
+    if (dragLabelHidden_ == hidden) return;
+    dragLabelHidden_ = hidden;
+    // Keep the HWND, content and capture alive. Only the target bar paints
+    // the label, with its ordinary antialiasing and shadow instead of HRGN.
+    if (hidden) {
+        dragLabelUpdatesEnabled_ = updatesEnabled();
+        dragLabelOpacity_ = windowOpacity();
+        setUpdatesEnabled(false);
+        setWindowOpacity(0.0);
+    } else {
+        const QPointer<WorkspaceWindow> retained(this);
+        setUpdatesEnabled(dragLabelUpdatesEnabled_);
+        if (dragLabelUpdatesEnabled_) repaint();
+        if (retained) setWindowOpacity(dragLabelOpacity_);
+    }
+}
 QPoint WorkspaceWindow::dragLabelAnchor() const
 {
     if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data()))
         return host->mapTo(this, host->labelAnchor());
     for (auto* widget : surface_->findChildren<QWidget*>()) if (auto* group = dynamic_cast<GroupTabs*>(widget)) {
         const auto* bar = group->tabBar();
-        if (bar->isVisible()) for (int i = 0; i < bar->count(); ++i) {
+        if (group->isVisible() && bar->isVisible()) for (int i = 0; i < bar->count(); ++i) {
             const auto label = bar->displayTabRect(i);
             if (!label.isEmpty()) return bar->mapTo(this, label.center());
         }
     }
     return {80, 13};
+}
+QPoint WorkspaceWindow::captionDragAnchor()
+{
+    column_->activate();
+    if (strips_ && strips_->layout()) strips_->layout()->activate();
+    // The title strip is movable; the menu and caption buttons may precede
+    // it. A fixed y or an old tab's x can land in content or over a control.
+    if (caption_ && !caption_->isHidden() && !caption_->geometry().isEmpty())
+        return caption_->mapTo(this, caption_->rect().center());
+    return {width() / 2, chrome_ ? chrome_->height() / 2 : 0};
 }
 void WorkspaceWindow::updateDragMask()
 {
@@ -281,8 +314,12 @@ void WorkspaceWindow::updateDragMask()
             for (int i = 0; i < bar->count(); ++i) {
                 const auto label = bar->displayTabRect(i);
                 if (label.isEmpty()) continue;
-                const auto shown = QRect(bar->mapToGlobal(label.topLeft()), label.size()).intersected(strip);
-                if (!shown.isEmpty()) visible += QRect(mapFromGlobal(shown.topLeft()), shown.size());
+                // A rectangular native region exposes the carrier's strip
+                // background outside rounded corners. Use its painted shape.
+                auto contour = bar->tabRegion(i);
+                contour.translate(bar->mapTo(this, QPoint()));
+                const QRect viewport(mapFromGlobal(strip.topLeft()), strip.size());
+                visible += contour.intersected(viewport);
             }
         }
     }

@@ -10,9 +10,8 @@ namespace window_system {
 
 // Left and right make a vertical tab strip beside the content.
 enum class TabBarPlacement { Top, Bottom, Left, Right };
-// Whether multiple rows collapse to one row of each section, and how the
-// expanded rows show: pushing the content down or as an overlay over it.
-enum class TabRowCollapse { Off, Push, Overlay };
+// Both sections share one expansion surface and one open/closed state.
+enum class TabRowExpansion { Push, Overlay };
 // How sticky tabs are sized, as VS Code's workbench.editor.pinnedTabSizing:
 // their natural width, only an icon or initial, or the start of the title.
 enum class StickyTabSizing { Normal, Compact, Shrink };
@@ -57,8 +56,11 @@ struct TabAppearance {
     TabBarPlacement centralPlacement = TabBarPlacement::Top;
     TabBarPlacement pinnedPlacement = TabBarPlacement::Top;
     bool multiline = false;
-    TabRowCollapse collapseRows = TabRowCollapse::Off;
-    // With collapsing rows, the wheel expands (down) and collapses (up).
+    bool showAllRows = true;
+    bool stickyMultiline = false;
+    bool stickyShowAllRows = true;
+    TabRowExpansion rowExpansion = TabRowExpansion::Overlay;
+    // The wheel follows the bar edge; horizontal lanes take precedence.
     bool wheelExpandRows = false;
     int verticalTabWidth = defaultVerticalTabWidth;
     bool showIcons = true;

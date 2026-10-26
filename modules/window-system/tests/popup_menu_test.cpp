@@ -355,9 +355,13 @@ void PopupMenuTest::tabBarContextExposesMultilineAndItsOwnPlacement()
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     menu = open(); QVERIFY(menu && menu->isVisible());
     auto* wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");
-    auto* push = menu->findChild<QAction*>("presentation.setRowCollapse.push");
+    auto* push = menu->findChild<QAction*>("presentation.setRowExpansion.push");
     QVERIFY(wheel && push); QVERIFY(!wheel->isEnabled());
-    push->trigger(); QTRY_COMPARE(manager.tabAppearance().collapseRows, TabRowCollapse::Push); menu->close();
+    push->trigger(); QTRY_COMPARE(manager.tabAppearance().rowExpansion, TabRowExpansion::Push); menu->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    menu = open(); QVERIFY(menu && menu->isVisible());
+    auto* allRows = menu->findChild<QAction*>("presentation.toggleAllRows"); QVERIFY(allRows && allRows->isChecked());
+    allRows->trigger(); QTRY_VERIFY(!manager.tabAppearance().showAllRows); menu->close();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     menu = open(); QVERIFY(menu && menu->isVisible());
     wheel = menu->findChild<QAction*>("presentation.toggleWheelExpandRows");

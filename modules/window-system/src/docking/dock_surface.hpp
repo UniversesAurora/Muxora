@@ -4,9 +4,11 @@
 #include <window_system/tab_appearance.hpp>
 #include "panes/focus_projection.hpp"
 #include "edge_strip.hpp"
+#include "dock_guides.hpp"
 #include "tab_layout.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/tab_title_layout.hpp"
+#include "style/elevation.hpp"
 #include <array>
 #include <QFrame>
 #include <QHash>
@@ -16,11 +18,13 @@
 class QSplitter;
 namespace window_system {
 struct CarriedLabel;
+struct TabDragVisual;
 class EdgeTabButton;
 class GroupTabs;
 class DockSurface final : public QFrame {
 public:
     DockSurface(WindowManager* manager, WindowId window, QWidget* parent);
+    ~DockSurface() override;
     void rebuild(const QHash<TabId, QPointer<TabContent>>& contents);
     void captureStripScrollOffsets();
     void restoreStripScrollOffsets();
@@ -28,12 +32,17 @@ public:
     // buttons. Returns false when the built strips no longer match the model;
     // the caller then refreshes.
     bool updateTabAppearance();
-    bool scrollStripAt(QPoint global, QPoint delta);
+    bool scrollStripAt(QPoint global, QPoint delta, bool smooth = true);
     // Shows the focus accent on the strip of each window's active group.
     void refreshGroupFocus();
+    // Uses surface coordinates, including when replayed beneath a card's
+    // rounded corner. Never renders QWidget contents or calls itself.
+    void paintBackplate(QPainter& painter, const QRect& exposed);
     [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
+    [[nodiscard]] QRect groupContentRect(GroupId group) const;
     [[nodiscard]] GroupId groupAt(QPoint global) const;
     [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const;
+    [[nodiscard]] QVector<DockStrip> dockStrips() const;
     [[nodiscard]] GroupId tabBarAt(QPoint global) const;
     [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     [[nodiscard]] int dragLabelExtent(TabId tab, bool edge) const;
@@ -70,6 +79,9 @@ public:
     [[nodiscard]] QRect insertionPreviewRect(GroupId group) const;
     [[nodiscard]] QRect edgeInsertionPreviewRect(Edge edge) const;
     void setDragPresentation(bool compact, bool edge);
+    bool setDragTabStyle(const DockSurface& target, GroupId group, bool sticky);
+    [[nodiscard]] TabDragVisual dragLabelVisual() const;
+    void setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global = {});
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
     void closePeek();
@@ -81,6 +93,7 @@ public:
     // The splitter built for a central or pinned tree split node, or null.
     [[nodiscard]] QSplitter* splitterFor(QUuid node) const;
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
@@ -114,6 +127,7 @@ private:
     GroupTabs* buildGroup(GroupId group, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildEdge(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
     QWidget* buildPinned(Edge edge, const QHash<TabId, QPointer<TabContent>>& contents);
+    void invalidateGroupSurface(GroupId group);
     void updateRailLayout();
     void placePeek();
     void updateEdgeTabSelection(TabId tab);
@@ -137,6 +151,9 @@ private:
     quint64 peekGeneration_ = 0;
     quint64 rebuildGeneration_ = 0;
     QHash<GroupId, QPointer<GroupTabs>> groups_;
+    QHash<GroupId, QRegion> surfaceBounds_;
+    ElevationRenderer elevation_;
+    bool compactPresentation_ = false;
     // Measurements only, kept separately for ordinary and sidebar formatting.
     // Rebuilds release removed tabs; no history of old drag views is retained.
     mutable QHash<TabId, std::array<TabTitleLayout, 2>> dragTitleLayouts_;

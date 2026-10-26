@@ -55,22 +55,27 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
         });
         return control;
     };
-    multiline_ = flagControl("MultilineTabs", "tabs.multiline", QCoreApplication::translate("WindowSystem", "Show tabs in multiple rows"),
+    multiline_ = flagControl("MultilineTabs", "tabs.multiline", QCoreApplication::translate("WindowSystem", "Show regular tabs in multiple rows"),
         QCoreApplication::translate("WindowSystem", "Wrap tabs to additional rows instead of using a horizontal scrollbar."), &TabAppearance::multiline);
-    collapseRows_ = new ThemedComboBox(parent); collapseRows_->setObjectName("CollapseTabRows");
-    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Show all rows"), int(TabRowCollapse::Off));
-    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Collapse; expanded rows push the content down"), int(TabRowCollapse::Push));
-    collapseRows_->addItem(QCoreApplication::translate("WindowSystem", "Collapse; expanded rows overlay the content"), int(TabRowCollapse::Overlay));
-    collapseRows_->setDefaultData(int(TabAppearance{}.collapseRows));
-    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Collapse tab rows"), "tabs.collapseRows",
-        QCoreApplication::translate("WindowSystem", "With multiple rows, show only the active tab's row. A count after it shows how many tabs are hidden; click it to expand."), collapseRows_));
-    connect(collapseRows_, &QComboBox::currentIndexChanged, this, [this] {
+    showAllRows_ = flagControl("ShowAllTabRows", "tabs.showAllRows", QCoreApplication::translate("WindowSystem", "Always show all regular tab rows"),
+        QCoreApplication::translate("WindowSystem", "When off, show the active row until the shared tab panel is expanded."), &TabAppearance::showAllRows);
+    stickyMultiline_ = flagControl("MultilineStickyTabs", "tabs.stickyMultiline", QCoreApplication::translate("WindowSystem", "Show sticky tabs in multiple rows"),
+        QCoreApplication::translate("WindowSystem", "Use a separate row layout for sticky tabs when they have their own section."), &TabAppearance::stickyMultiline);
+    stickyShowAllRows_ = flagControl("ShowAllStickyTabRows", "tabs.stickyShowAllRows", QCoreApplication::translate("WindowSystem", "Always show all sticky tab rows"),
+        QCoreApplication::translate("WindowSystem", "When off, sticky rows expand and collapse together with regular rows."), &TabAppearance::stickyShowAllRows);
+    rowExpansion_ = new ThemedComboBox(parent); rowExpansion_->setObjectName("TabRowExpansion");
+    rowExpansion_->addItem(QCoreApplication::translate("WindowSystem", "Push the content"), int(TabRowExpansion::Push));
+    rowExpansion_->addItem(QCoreApplication::translate("WindowSystem", "Overlay the content"), int(TabRowExpansion::Overlay));
+    rowExpansion_->setDefaultData(int(TabAppearance{}.rowExpansion));
+    rows->addWidget(addRow(parent, "window/tabs", QCoreApplication::translate("WindowSystem", "Expanded tab rows"), "tabs.rowExpansion",
+        QCoreApplication::translate("WindowSystem", "Sticky and regular tabs share one expanded panel and the same expansion behavior."), rowExpansion_));
+    connect(rowExpansion_, &QComboBox::currentIndexChanged, this, [this] {
         if (!manager_) return;
-        auto next = manager_->tabAppearance(); next.collapseRows = TabRowCollapse(collapseRows_->currentData().toInt());
+        auto next = manager_->tabAppearance(); next.rowExpansion = TabRowExpansion(rowExpansion_->currentData().toInt());
         manager_->setTabAppearance(next);
     });
     wheelExpandRows_ = flagControl("WheelExpandTabRows", "tabs.wheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"),
-        QCoreApplication::translate("WindowSystem", "With collapsed rows, scroll down to expand them and up to collapse them again."), &TabAppearance::wheelExpandRows);
+        QCoreApplication::translate("WindowSystem", "Expand toward the content and collapse away from it. Horizontal tab scrolling takes priority."), &TabAppearance::wheelExpandRows);
     verticalTabWidth_ = new UnitSpinBox(parent); verticalTabWidth_->setObjectName("VerticalTabWidth");
     verticalTabWidth_->setRange(minimumVerticalTabWidth, maximumVerticalTabWidth); verticalTabWidth_->setSuffix(QStringLiteral(" px"));
     verticalTabWidth_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Vertical tab bar width"));
@@ -221,7 +226,8 @@ void SettingsPage::syncTabAppearanceOptions()
     const QSignalBlocker central(centralPlacement_), pinned(pinnedPlacement_);
     centralPlacement_->setCurrentIndex(centralPlacement_->findData(int(appearance.centralPlacement)));
     pinnedPlacement_->setCurrentIndex(pinnedPlacement_->findData(int(appearance.pinnedPlacement)));
-    for (const auto& value : {std::pair{multiline_, appearance.multiline}, std::pair{wheelExpandRows_, appearance.wheelExpandRows},
+    for (const auto& value : {std::pair{multiline_, appearance.multiline}, std::pair{showAllRows_, appearance.showAllRows},
+        std::pair{stickyMultiline_, appearance.stickyMultiline}, std::pair{stickyShowAllRows_, appearance.stickyShowAllRows}, std::pair{wheelExpandRows_, appearance.wheelExpandRows},
         std::pair{showIcons_, appearance.showIcons}, std::pair{showNewTabButton_, appearance.showNewTabButton},
         std::pair{showNumbers_, appearance.showNumbers}, std::pair{showGroupNames_, appearance.showGroupNames},
         std::pair{showSidebarIcons_, appearance.showSidebarIcons},
@@ -230,12 +236,20 @@ void SettingsPage::syncTabAppearanceOptions()
         const QSignalBlocker block(value.first); value.first->setChecked(value.second);
     }
     {
-        const QSignalBlocker collapse(collapseRows_), width(verticalTabWidth_);
-        collapseRows_->setCurrentIndex(collapseRows_->findData(int(appearance.collapseRows)));
-        collapseRows_->setEnabled(appearance.multiline);
+        const QSignalBlocker expansion(rowExpansion_), width(verticalTabWidth_);
+        rowExpansion_->setCurrentIndex(rowExpansion_->findData(int(appearance.rowExpansion)));
         verticalTabWidth_->setValue(appearance.verticalTabWidth);
     }
-    wheelExpandRows_->setEnabled(appearance.multiline && appearance.collapseRows != TabRowCollapse::Off);
+    const auto horizontal = [](TabBarPlacement place) { return place == TabBarPlacement::Top || place == TabBarPlacement::Bottom; };
+    const bool rowsAvailable = horizontal(appearance.centralPlacement) || horizontal(appearance.pinnedPlacement);
+    rowExpansion_->setEnabled(rowsAvailable && (appearance.multiline
+        || (appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline)));
+    multiline_->setEnabled(rowsAvailable);
+    showAllRows_->setEnabled(rowsAvailable && appearance.multiline);
+    stickyMultiline_->setEnabled(rowsAvailable && appearance.stickyTabsOnSeparateRow);
+    stickyShowAllRows_->setEnabled(rowsAvailable && appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline);
+    wheelExpandRows_->setEnabled(rowsAvailable && ((appearance.multiline && !appearance.showAllRows)
+        || (appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline && !appearance.stickyShowAllRows)));
     const QSignalBlocker titleWidth(maximumTitleWidth_);
     maximumTitleWidth_->setValue(appearance.maximumTitleWidth);
     maximumTitleWidth_->setEnabled(appearance.clipTitles);

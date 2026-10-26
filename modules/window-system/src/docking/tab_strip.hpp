@@ -2,6 +2,7 @@
 
 #include "tab_bar.hpp"
 #include "tab_viewport_state.hpp"
+#include "style/elevation.hpp"
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
 #include <window_system/tab_appearance.hpp>
@@ -38,12 +39,18 @@ public:
     std::function<void(QPoint)> groupMenuRequested;
     // A vertical strip's width or icon mode changed by the user; 0 resets
     // the width to the default.
-    std::function<void(int)> verticalWidthChanged;
-    std::function<void(bool)> iconModeChanged;
+    std::function<void(int, bool)> verticalStateChanged;
     // Whether this is its window's active group; the strip shows its accent
     // only while it is and the window is active.
     std::function<bool()> isActiveGroup;
     void refreshFocus();
+    // Painting is delegated to the owning DockSurface, so shadows can cross
+    // splitter gaps without snapshots of the group's contents.
+    std::function<void()> surfaceInvalidated;
+    void paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRect& exposed) const;
+    [[nodiscard]] QRect surfaceBounds() const;
+    [[nodiscard]] QRegion surfacePaintRegion() const;
+    void invalidateSurfaceCorners(const QRect& area);
     TabBar* tabBar() const;
     void addTab(QWidget* widget, QIcon icon, QString title, TabId id);
     // Removes the tab and its page without deleting the page, which keeps
@@ -57,13 +64,16 @@ public:
     void restoreScrollOffset(int offset);
     void scrollByWheel(QPoint delta);
     // Scrolls the strip under a global point; returns whether it moved.
-    bool scrollStripAt(QPoint global, QPoint delta);
+    bool scrollStripAt(QPoint global, QPoint delta, bool smooth = true);
     int currentIndex() const;
     int count() const;
     // The page at a strip index, or null.
     [[nodiscard]] QWidget* page(int index) const;
     [[nodiscard]] bool pageIsPlaceholder(TabId tab) const;
     QRect viewportRectGlobal() const;
+    [[nodiscard]] QRect contentRectGlobal() const;
+    [[nodiscard]] QRect stripPanelRectGlobal() const;
+    void restoreColumnPeek();
     int insertionIndex(QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     void setDragHover(QPoint global);
     // The carried tabs open a gap at `index`, each as wide as it will be in
@@ -87,6 +97,8 @@ public:
     void setContentPreview(const QPixmap& picture);
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
     void setDragPresentation(bool compact, bool edge);
+    bool setDragTabStyle(const TabBar& target, bool sticky);
+    void setIncomingVisual(TabDragVisual visual, QPoint global = {});
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
     void setTabBarVisible(bool visible);
     // Repaints with a new theme without rebuilding the strip.
@@ -94,6 +106,9 @@ public:
     void setAppearance(const TabAppearance& appearance, bool pinned = false);
     void setTabMetadata(int index, const TabRecord& tab);
     void setGroupFocused(bool focused);
+    struct SurfaceState { qreal focus; bool focused; TabBar::SurfaceState tabs; };
+    [[nodiscard]] SurfaceState captureSurfaceState() const;
+    void inheritSurface(const SurfaceState& previous, bool animate);
     // A vertical strip's own width (0: the appearance default) and icon mode.
     void setVerticalState(int width, bool iconMode);
     // The group's name, shown at the end of its strip when not empty.
@@ -106,6 +121,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
 private:
+    void updateDragProbe(QPoint global) const;
     void layoutChildren();
     void updateCardJoin();
     void placeControls();
@@ -120,10 +136,17 @@ private:
     [[nodiscard]] int stickyInset(int index) const;
     [[nodiscard]] bool vertical() const;
     [[nodiscard]] int columnWidth() const;
+    [[nodiscard]] int maximumColumnWidth() const;
     TabBar* bar_ = nullptr;
     QWidget* trailing_ = nullptr;
     QWidget* end_ = nullptr;
     QWidget* footer_ = nullptr;
+    QWidget* columnPanel_ = nullptr;
+    QVector<QToolButton*> sidebarButtons_;
+    ProgressAnimation columnExpansion_{1};
+    ProgressAnimation peekExpansion_{0};
+    ProgressAnimation surfaceFocus_{0};
+    bool surfaceFocused_ = false;
     QWidget* resizeHandle_ = nullptr;
     QWidget* contentPreview_ = nullptr;
     QWidget* card_ = nullptr;
@@ -145,6 +168,8 @@ private:
     QPoint scrollDirection_;
     mutable QPoint dragProbe_;
     bool lifting_ = false;
+    QPoint liftedGlobal_;
+    QPoint liftedGrab_;
     bool dragHovered_ = false;
     std::optional<int> pendingScrollOffset_;
     std::optional<TabViewportState> settledViewport_;
@@ -155,6 +180,15 @@ private:
     TabAppearance appearance_;
     bool pinned_ = false;
     bool compactPresentation_ = false;
+    struct DragStyle {
+        TabAppearance appearance;
+        TabBarPlacement placement;
+        int width;
+        bool iconMode;
+        int stickyCount;
+    };
+    std::optional<DragStyle> normalDragStyle_;
+    QSize dragTabArea_;
     bool barVisible_ = true;
     int verticalWidth_ = 0;
     bool iconMode_ = false;

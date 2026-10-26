@@ -1121,8 +1121,20 @@
         <translation>Show sidebar tab numbers</translation>
     </message>
     <message>
-        <source>Show tabs in multiple rows</source>
-        <translation>Show tabs in multiple rows</translation>
+        <source>Show regular tabs in multiple rows</source>
+        <translation>Show regular tabs in multiple rows</translation>
+    </message>
+    <message>
+        <source>Always show all regular tab rows</source>
+        <translation>Always show all regular tab rows</translation>
+    </message>
+    <message>
+        <source>Show sticky tabs in multiple rows</source>
+        <translation>Show sticky tabs in multiple rows</translation>
+    </message>
+    <message>
+        <source>Always show all sticky tab rows</source>
+        <translation>Always show all sticky tab rows</translation>
     </message>
     <message>
         <source>Expand tab rows with mouse wheel</source>
@@ -1137,20 +1149,16 @@
         <translation>Central tab bar position</translation>
     </message>
     <message>
-        <source>Collapse tab rows</source>
-        <translation>Collapse tab rows</translation>
+        <source>Expanded tab rows</source>
+        <translation>Expanded tab rows</translation>
     </message>
     <message>
-        <source>Show all rows</source>
-        <translation>Show all rows</translation>
+        <source>Push the content</source>
+        <translation>Push the content</translation>
     </message>
     <message>
-        <source>Collapse; expanded rows push the content down</source>
-        <translation>Collapse; expanded rows push the content down</translation>
-    </message>
-    <message>
-        <source>Collapse; expanded rows overlay the content</source>
-        <translation>Collapse; expanded rows overlay the content</translation>
+        <source>Overlay the content</source>
+        <translation>Overlay the content</translation>
     </message>
     <message>
         <source>Tab bar position</source>
@@ -1429,12 +1437,12 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Tab bars can be placed only top, bottom, left or right</translation>
     </message>
     <message>
-        <source>Collapsing tab rows must be off, push or overlay</source>
-        <translation>Collapsing tab rows must be off, push or overlay</translation>
+        <source>Expanded tab rows must push or overlay the content</source>
+        <translation>Expanded tab rows must push or overlay the content</translation>
     </message>
     <message>
-        <source>The vertical tab bar width must be an integer from 140 to 480 logical pixels</source>
-        <translation>The vertical tab bar width must be an integer from 140 to 480 logical pixels</translation>
+        <source>The vertical tab bar width must be an integer from 67 to 480 logical pixels</source>
+        <translation>The vertical tab bar width must be an integer from 67 to 480 logical pixels</translation>
     </message>
     <message>
         <source>Invalid tab visibility setting type</source>
@@ -1788,12 +1796,24 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>Place central tab bars above, below or beside the content. Left and right show the tabs as a vertical list.</translation>
     </message>
     <message>
-        <source>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</source>
-        <translation>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</translation>
+        <source>When off, show the active row until the shared tab panel is expanded.</source>
+        <translation>When off, show the active row until the shared tab panel is expanded.</translation>
     </message>
     <message>
-        <source>With collapsed rows, scroll down to expand them and up to collapse them again.</source>
-        <translation>With collapsed rows, scroll down to expand them and up to collapse them again.</translation>
+        <source>Use a separate row layout for sticky tabs when they have their own section.</source>
+        <translation>Use a separate row layout for sticky tabs when they have their own section.</translation>
+    </message>
+    <message>
+        <source>When off, sticky rows expand and collapse together with regular rows.</source>
+        <translation>When off, sticky rows expand and collapse together with regular rows.</translation>
+    </message>
+    <message>
+        <source>Sticky and regular tabs share one expanded panel and the same expansion behavior.</source>
+        <translation>Sticky and regular tabs share one expanded panel and the same expansion behavior.</translation>
+    </message>
+    <message>
+        <source>Expand toward the content and collapse away from it. Horizontal tab scrolling takes priority.</source>
+        <translation>Expand toward the content and collapse away from it. Horizontal tab scrolling takes priority.</translation>
     </message>
     <message>
         <source>Vertical tab bar width</source>
@@ -2348,8 +2368,8 @@ Ctrl+Shift+P opens the command palette</translation>
         <translation>An edge extent must be a bounded integer.</translation>
     </message>
     <message>
-        <source>A vertical tab bar width must be 0 or an integer from 140 to 480.</source>
-        <translation>A vertical tab bar width must be 0 or an integer from 140 to 480.</translation>
+        <source>A vertical tab bar width must be 0 or an integer from 67 to 480.</source>
+        <translation>A vertical tab bar width must be 0 or an integer from 67 to 480.</translation>
     </message>
     <message>
         <source>A tab group name must be text of at most 256 characters.</source>

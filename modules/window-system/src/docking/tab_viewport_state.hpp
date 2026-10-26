@@ -13,6 +13,8 @@ struct TabViewportState {
     QRect bounds;
     QRect windowClientBounds;
     int offset = 0;
+    int stickyOffset = 0;
+    int rowsOffset = 0;
     TabId activeTab;
     bool activeFullyVisible = false;
     std::optional<bool> rowsExpanded;

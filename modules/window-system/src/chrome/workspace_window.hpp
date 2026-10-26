@@ -45,8 +45,11 @@ public:
     [[nodiscard]] bool placementMaximized() const;
     void restorePlacement(const QRect& geometry, bool maximized);
     void setDragPresentation(DragPresentation presentation);
+    void setDragTabStyle(const WorkspaceWindow& target, GroupId group, bool sticky);
+    void setDragLabelHidden(bool hidden);
     [[nodiscard]] DragPresentation dragPresentation() const { return dragPresentation_; }
     [[nodiscard]] QPoint dragLabelAnchor() const;
+    [[nodiscard]] QPoint captionDragAnchor();
     bool allowClose = false;
 protected:
     void changeEvent(QEvent* event) override;
@@ -102,6 +105,9 @@ private:
     QTimer* placementTimer_;
     DragPresentation dragPresentation_ = DragPresentation::Window;
     bool changingDragPresentation_ = false;
+    bool dragLabelHidden_ = false;
+    bool dragLabelUpdatesEnabled_ = true;
+    qreal dragLabelOpacity_ = 1.0;
     WindowViewState viewState_;
     QRect viewNormalPlacement_;
     bool viewNormalMaximized_ = false;

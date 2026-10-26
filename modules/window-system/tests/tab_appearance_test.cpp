@@ -158,7 +158,7 @@ void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
     auto appearance = manager.tabAppearance();
     appearance.centralPlacement = TabBarPlacement::Bottom;
     appearance.pinnedPlacement = TabBarPlacement::Top;
-    appearance.multiline = true; appearance.wheelExpandRows = true;
+    appearance.multiline = true; appearance.stickyMultiline = true; appearance.wheelExpandRows = true;
     appearance.showIcons = false; appearance.showNewTabButton = false; appearance.showNumbers = true;
     appearance.clipTitles = true; appearance.maximumTitleWidth = 173;
     appearance.clipSidebarTitles = false; appearance.maximumSidebarTitleWidth = 251;
@@ -323,7 +323,7 @@ void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
     QVERIFY(manager.execute("presentation.toggleMultiline"));
     // Wheel expansion needs collapsed rows as well.
     QVERIFY(!manager.execute("presentation.toggleWheelExpandRows"));
-    { auto next = manager.tabAppearance(); next.collapseRows = TabRowCollapse::Push; QVERIFY(manager.setTabAppearance(next)); }
+    { auto next = manager.tabAppearance(); next.showAllRows = false; next.stickyShowAllRows = false; next.rowExpansion = TabRowExpansion::Push; QVERIFY(manager.setTabAppearance(next)); }
     QVERIFY(manager.execute("presentation.toggleWheelExpandRows")); QVERIFY(manager.tabAppearance().wheelExpandRows);
     // Turning several rows off keeps wheel expansion for when they return.
     QVERIFY(manager.execute("presentation.toggleMultiline")); QVERIFY(manager.tabAppearance().wheelExpandRows);
@@ -351,8 +351,10 @@ void TabAppearanceTest::settingsExposeEachFlagAndOnlyEnableWheelExpansionInMulti
     QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Top);
     pinned->setCurrentIndex(1); QCOMPARE(manager.tabAppearance().pinnedPlacement, TabBarPlacement::Bottom);
     multiline->setChecked(true); QVERIFY(!wheel->isEnabled());
-    auto* collapse = page.findChild<QComboBox*>("CollapseTabRows"); QVERIFY(collapse);
-    collapse->setCurrentIndex(collapse->findData(int(TabRowCollapse::Push))); QVERIFY(wheel->isEnabled());
+    auto* collapse = page.findChild<QComboBox*>("TabRowExpansion"); QVERIFY(collapse);
+    collapse->setCurrentIndex(collapse->findData(int(TabRowExpansion::Push))); QVERIFY(!wheel->isEnabled());
+    auto* showAll = page.findChild<QCheckBox*>("ShowAllTabRows"); QVERIFY(showAll && showAll->isChecked());
+    showAll->setChecked(false); QVERIFY(wheel->isEnabled());
     wheel->setChecked(true); QVERIFY(manager.tabAppearance().wheelExpandRows);
     // Off with a single row, but kept and restored with several.
     multiline->setChecked(false); QVERIFY(!wheel->isEnabled()); QVERIFY(wheel->isChecked());

@@ -316,7 +316,7 @@ void DragInteractionTest::narrowGroupRecognizesDirectionalGuides()
     // The group's own side arm, as the drag shows it.
     auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
     const auto guides = dockGuides(QRect(surface->mapToGlobal(QPoint()), surface->size()), area, true,
-                                   surface->tabBarRects().values(), surface->edgeBarRects());
+                                   surface->dockStrips(), surface->edgeBarRects());
     QPoint point;
     for (const auto& guide : guides) if (!guide.toEdge && guide.placement == (right ? Placement::Right : Placement::Left))
         point = guide.rect.center();
@@ -349,7 +349,7 @@ void DragInteractionTest::edgeGuidesSeparateHiddenAndPinnedDrops()
     auto* surface = dynamic_cast<DockSurface*>(second->findChild<QWidget*>("DockSurface")); QVERIFY(surface);
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
     const auto strips = surface->tabBarRects().values() + surface->edgeBarRects().values();
-    const auto guides = dockGuides(bounds, surface->centralRectGlobal(), true, surface->tabBarRects().values(), surface->edgeBarRects());
+    const auto guides = dockGuides(bounds, surface->centralRectGlobal(), true, surface->dockStrips(), surface->edgeBarRects());
     QPoint point;
     for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(side) && guide.pinned == pinned) {
         for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip));
@@ -609,7 +609,7 @@ void DragInteractionTest::pinnedGroupAcceptsDirectionalDrops()
     auto* actor = QWidget::mouseGrabber(); QVERIFY(actor);
     mouse(actor, QEvent::MouseMove, area.center(), Qt::NoButton, Qt::LeftButton);
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
-    const auto guides = dockGuides(bounds, area, true, surface->tabBarRects().values(), surface->edgeBarRects());
+    const auto guides = dockGuides(bounds, area, true, surface->dockStrips(), surface->edgeBarRects());
     QPoint point; int directionalGuides = 0;
     for (const auto& guide : guides) if (!guide.toEdge && guide.placement != Placement::Center) {
         ++directionalGuides;

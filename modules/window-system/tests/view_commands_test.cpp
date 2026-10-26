@@ -418,7 +418,7 @@ void ViewCommandsTest::displaySettingsSearchKeepsExactRowsAndSectionHeadings()
         "window.captionButtonOrder",
         "window.visibility.toolbars", "window.visibility.statusBar", "window.visibility.tabBars", "window.visibility.sideBars",
         "window.hideSingleTabWorkbench", "window.hideSingleTabFloating", "tabs.centralPlacement", "tabs.pinnedPlacement",
-        "tabs.multiline", "tabs.collapseRows", "tabs.wheelExpandRows", "tabs.verticalTabWidth", "tabs.showGroupNames", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers",
+        "tabs.multiline", "tabs.showAllRows", "tabs.stickyMultiline", "tabs.stickyShowAllRows", "tabs.rowExpansion", "tabs.wheelExpandRows", "tabs.verticalTabWidth", "tabs.showGroupNames", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers",
         "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.colors", "tabs.clipTitles", "tabs.maximumTitleWidth",
         "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"}));
     search->setText("window.visibility.");

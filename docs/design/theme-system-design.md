@@ -198,6 +198,7 @@ Black 的内容区与最外层同为纯黑，层次只靠标题行、输入框�
 | `headerBackground` / `headerText` | `titleBar.activeBackground` / `titleBar.activeForeground` |
 | `text` / `mutedText` | `foreground` / `descriptionForeground` |
 | `border` | `widget.border` |
+| `widgetShadow` / `surfaceEdge` | `widget.shadow` / `muxora.surface.edge` |
 | `accent` / `accentHover` / `accentSoft` | `button.background` / `button.hoverBackground` / `muxora.accentSoft` |
 | `buttonHover` | `toolbar.hoverBackground` |
 | `activeTab` / `inactiveTab` | `tab.activeBackground` / `tab.inactiveBackground` |
@@ -208,7 +209,17 @@ Black 的内容区与最外层同为纯黑，层次只靠标题行、输入框�
 | `danger` | `errorForeground` |
 | `checkedIndicatorText` | `checkbox.foreground` |
 
+阴影倍率由 `surfaceShadowMultiplier` 提供，高对比绘制由 `highContrast` 明确指定，不按主题显示名称猜测。默认中性轮廓与倍率随表面深浅解析，宿主提供的自定义值保留；规则见 [表面与阴影设计](surface-elevation-design.md#21-不同主题)。
+
 `setTheme(const Theme&)` 继续可用：传入的字段转换为一组临时颜色覆盖。宿主若需要更多颜色，使用新的按 ID 查询接口。
+
+### 5.1 窗口激活状态
+
+窗口前后台是独立的颜色状态，不等于控件是否有键盘焦点、是否选中或所在标签组是否活动。需要跟随窗口变化的颜色分别提供前台值和后台值，组件取值时只看所属顶层窗口的激活状态；同一窗口内切换标签组不改变这组颜色。
+
+当前控件通过 `style/window_state_color.hpp` 的 `WindowStateColor` 保存这一对颜色，也可以直接提供两种不同的值。`neutralInactive()` 为需要淡出主题色的部位生成中性灰后台值，保留明度和透明度。颜色在主题更新时计算，绘制时只选择已有值；控件响应 Qt 的激活状态事件重绘，不新增轮询或每次重新解析主题。首先用于竖向紧凑置顶标签的描边、悬停及按下填充、段间分隔线；其他控件需要时复用这一方式，不因此统一修改所有控件。原始彩色图标和用户为标签指定的颜色不作全局去色。
+
+颜色注册表实施后，这些值改由组件对应的前后台颜色 ID 填入，保持状态与取值分离。
 
 ## 6. 保证配色协调的机制
 

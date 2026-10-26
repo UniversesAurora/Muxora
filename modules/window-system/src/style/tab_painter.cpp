@@ -7,6 +7,7 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <algorithm>
+#include <cmath>
 
 namespace window_system {
 namespace {
@@ -56,9 +57,28 @@ TabMetrics TabMetrics::forTheme(const Theme& theme, const QFont& font)
 {
     TabMetrics metrics;
     metrics.iconSize = theme.metrics.iconSize;
+    metrics.tile = QSize(std::max(26, metrics.iconSize + 10), std::max(26, metrics.iconSize + 10));
     metrics.rowHeight = std::max(metrics.rowHeight, QFontMetrics(font).height() + 10);
     metrics.rowHeight = std::max(metrics.rowHeight, metrics.iconSize + 10);
     return metrics;
+}
+
+ElevationStyle elevationStyleForTheme(const Theme& theme)
+{
+    ElevationStyle style;
+    style.shadow = theme.widgetShadow;
+    style.edge = theme.surfaceEdge;
+    style.shadowMultiplier = theme.surfaceShadowMultiplier;
+    const bool dark = theme.surface.lightnessF() < 0.5;
+    const Theme defaults;
+    // A host may replace either neutral token independently. The initial
+    // light-theme defaults follow the surface when it becomes dark.
+    if (dark && style.edge == defaults.surfaceEdge) style.edge = QColor::fromRgbF(1, 1, 1, 0.07f);
+    if (dark && style.shadowMultiplier == defaults.surfaceShadowMultiplier) style.shadowMultiplier = 2;
+    style.highContrast = theme.highContrast;
+    style.contrastBorder = theme.border;
+    style.focusBorder = theme.focus;
+    return style;
 }
 
 TabPalette TabPalette::forTheme(const Theme& theme)
@@ -74,7 +94,12 @@ TabPalette TabPalette::forTheme(const Theme& theme)
     palette.accent = theme.accent;
     palette.separator = withAlpha(theme.border, 0.8);
     palette.border = theme.border;
-    palette.shadow = QColor(0, 0, 0);
+    palette.elevation = elevationStyleForTheme(theme);
+    palette.shadow = palette.elevation.shadow;
+    palette.tileBorder = WindowStateColor::neutralInactive(withAlpha(theme.accent, 0.35));
+    palette.tileHover = WindowStateColor::neutralInactive(withAlpha(theme.accent, 0.12));
+    palette.tilePressed = WindowStateColor::neutralInactive(withAlpha(theme.accent, 0.20));
+    palette.sectionSeparator = palette.tileBorder;
     return palette;
 }
 
@@ -102,18 +127,15 @@ TabParts TabPainter::parts(const QRect& tab, TabShape shape, TabLabelParts label
 
 QColor TabPainter::backgroundOf(const TabPaintState& state) const
 {
+    if (state.surface && state.surface->joined && (state.selected || state.lifted)) return palette_.active;
     if (state.preset) return (state.selected || state.lifted ? state.preset->groupActive : state.preset->groupInactive).background;
-    // Outside the focused group the active tab is quieter, like Chrome's
-    // inactive window; the focused group needs no line of its own.
-    if (state.lifted || (state.selected && state.groupFocused)) return palette_.active;
-    const auto mix = [this](qreal toward) {
-        const auto& from = palette_.strip; const auto& to = palette_.active;
-        return QColor::fromRgbF(from.redF() + (to.redF() - from.redF()) * toward, from.greenF() + (to.greenF() - from.greenF()) * toward,
-                                from.blueF() + (to.blueF() - from.blueF()) * toward);
-    };
-    if (state.selected) return mix(2.0 / 3);
-    // Sticky tiles rest as small cards, half way to the content color.
-    if (state.shape == TabShape::Tile) return state.hovered ? mix(0.75) : mix(0.5);
+    if (state.shape == TabShape::Tile) {
+        if (state.selected || state.lifted) return palette_.active;
+        if (state.pressed) return palette_.tilePressed.resolve(state.windowActive);
+        if (state.hovered) return palette_.tileHover.resolve(state.windowActive);
+        return {};
+    }
+    if (state.lifted || state.selected) return palette_.active;
     if (state.pressed) return palette_.pressed;
     if (state.hovered) return palette_.hover;
     return {};
@@ -125,86 +147,117 @@ QColor TabPainter::textOf(const TabPaintState& state) const
     return state.selected || state.hovered || state.lifted ? palette_.text : palette_.mutedText;
 }
 
+QPainterPath TabPainter::outline(const QRectF& tab, TabShape shape, bool selected, bool lifted) const
+{
+    if (shape == TabShape::Top || shape == TabShape::Bottom)
+        return tabPath(tab, metrics_.radius, shape == TabShape::Top, selected && !lifted ? metrics_.controlRadius : 0);
+    QPainterPath path;
+    path.addRoundedRect(tab, metrics_.radius, metrics_.radius);
+    return path;
+}
+
 void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPaintState& state) const
 {
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
     const QRectF tab(parts.tab);
     const auto background = backgroundOf(state);
-    const bool horizontal = state.shape == TabShape::Top || state.shape == TabShape::Bottom;
-    if (state.lifted) {
+    const auto contour = state.surface ? state.surface->anchorPath : outline(tab, state.shape, state.selected, state.lifted);
+    if (!state.elevationManaged && (state.lifted || state.selected && state.shape != TabShape::Tile)) {
         painter.save();
-        painter.setOpacity(painter.opacity() * std::clamp(state.shadowOpacity, 0.0, 1.0));
-        paintShadow(painter, tab, metrics_.radius);
+        const bool focused = state.groupFocused && state.windowActive;
+        auto style = palette_.elevation; style.focused = focused;
+        const auto resting = elevationProfile(focused ? ElevationLevel::AnchorRaised : ElevationLevel::AnchorRest);
+        const auto elevation = state.lifted ? interpolateElevation(resting, elevationProfile(ElevationLevel::Lifted), state.shadowOpacity) : resting;
+        const auto body = state.bodyElevation ? *state.bodyElevation
+            : elevationProfile(focused ? ElevationLevel::BodyRaised : ElevationLevel::BodyRest);
+        SurfaceGeometry detached;
+        if (!state.surface) {
+            detached.anchor = tab;
+            detached.anchorPath = contour;
+            detached.mergedPath = contour;
+            detached.compact = state.shape == TabShape::Tile;
+        }
+        elevationRenderer().paintAnchor(painter, state.surface ? *state.surface : detached,
+            state.surface ? body : elevationProfile(ElevationLevel::Flat), elevation, style, state.surface && state.surface->joined);
         painter.restore();
     }
     if (background.isValid()) {
         painter.setPen(Qt::NoPen); painter.setBrush(background);
-        if (horizontal) {
-            const qreal flare = state.selected && !state.lifted ? metrics_.controlRadius : 0;
-            painter.drawPath(tabPath(tab, metrics_.radius, state.shape == TabShape::Top, flare));
-        } else {
-            if (state.shape == TabShape::Tile && !state.lifted) {
-                // A card: a fine outline and a one-pixel shadow under it.
-                painter.setBrush(QColor(0, 0, 0, 16));
-                painter.drawRoundedRect(tab.translated(0, 1), metrics_.radius, metrics_.radius);
-                painter.setBrush(background);
-                painter.setPen(QPen(withAlpha(palette_.border, 0.45), 1));
-                painter.drawRoundedRect(tab.adjusted(0.5, 0.5, -0.5, -0.5), metrics_.radius, metrics_.radius);
-                painter.setPen(Qt::NoPen);
-            } else painter.drawRoundedRect(tab, metrics_.radius, metrics_.radius);
-        }
+        painter.drawPath(contour);
     }
+    if (state.surface && (state.selected || state.lifted))
+        elevationRenderer().paintCoverage(painter, *state.surface, palette_.elevation);
+    if (state.shape == TabShape::Tile && !state.lifted) {
+        // Resting tiles have one outline and no elevation. Hover adds a
+        // wash inside the same contour instead of a second frame.
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(palette_.tileBorder.resolve(state.windowActive), 1));
+        painter.drawRoundedRect(tab.adjusted(0.5, 0.5, -0.5, -0.5), metrics_.radius, metrics_.radius);
+        painter.setPen(Qt::NoPen);
+    }
+    // Text and the covering action fade belong to the same rounded surface.
+    // In particular, the rectangular fade must not square off either end.
+    painter.setClipPath(contour, Qt::IntersectClip);
     // A tab's color is its background alone; lines belong to tab folders.
     const auto* colors = state.preset ? (state.selected ? &state.preset->groupActive : &state.preset->groupInactive) : nullptr;
     painter.setRenderHint(QPainter::Antialiasing, false);
     const QColor text = textOf(state);
     if (!parts.number.isEmpty()) {
+        painter.save(); painter.setOpacity(painter.opacity() * state.titleOpacity);
         painter.setPen(text);
         // Digits sit on the baseline up to the cap height; center that span.
         const QFontMetricsF metrics(painter.font());
         painter.drawText(QPointF(parts.number.left(), parts.number.top() + (parts.number.height() + metrics.capHeight()) / 2.0),
                          state.number);
+        painter.restore();
     }
-    paintIcon(painter, state.icon, parts.icon, colors ? colors->icon : QColor{}, state.enabled, state.selected);
+    paintIcon(painter, state.icon, parts.icon, colors ? colors->icon : QColor{}, state.enabled,
+        state.selected && (state.shape != TabShape::Tile || state.windowActive));
     if (!parts.title.isEmpty()) {
+        painter.save(); painter.setOpacity(painter.opacity() * state.titleOpacity);
         if (state.iconOnly || state.shape == TabShape::Tile) {
             painter.setPen(text);
             painter.drawText(parts.title, Qt::AlignCenter | Qt::TextSingleLine, state.title.left(1).toUpper());
         } else if (state.titleLayout) {
             const bool cut = state.titleLayout->naturalWidth() > parts.title.width();
-            if (cut && parts.title.width() > metrics_.titleFade) {
-                // The cut end fades out instead of ending in half a glyph.
-                QLinearGradient fade(parts.title.right() - metrics_.titleFade, 0, parts.title.right() + 1, 0);
-                fade.setColorAt(0, text); fade.setColorAt(1, withAlpha(text, 0));
+            const int fadeLength = state.shape == TabShape::Row
+                ? std::min(metrics_.titleFade, std::max(0, parts.title.width() - (metrics_.rowHeight - 10))) : metrics_.titleFade;
+            const bool covering = state.actionShown && !state.actionReserved && !parts.action.isEmpty()
+                && state.actionOpacity > 0;
+            if ((cut && fadeLength > 0) || covering) {
+                const qreal left = parts.title.left(), end = parts.title.right() + 1;
+                const bool reverse = parts.action.left() < parts.tab.center().x();
+                const qreal actionEnd = reverse ? parts.action.right() + 1 : parts.action.left();
+                const qreal actionFade = std::max(1, metrics_.edgeFade);
+                const auto opacityAt = [&](qreal x) {
+                    qreal opacity = cut && fadeLength > 0 ? std::clamp((end - x) / fadeLength, 0.0, 1.0) : 1.0;
+                    if (covering) {
+                        const qreal cover = reverse ? (actionEnd + actionFade - x) / actionFade
+                            : (x - actionEnd + actionFade) / actionFade;
+                        opacity *= 1 - std::clamp(state.actionOpacity, 0.0, 1.0) * std::clamp(cover, 0.0, 1.0);
+                    }
+                    return opacity;
+                };
+                QVector<qreal> stops{left, end};
+                if (cut) for (int step = 0; step <= fadeLength; ++step)
+                    stops.append(std::clamp(end - step, left, end));
+                if (covering) for (int step = 0; step <= metrics_.edgeFade; ++step)
+                    stops.append(std::clamp(actionEnd + (reverse ? step : -step), left, end));
+                std::sort(stops.begin(), stops.end());
+                stops.erase(std::unique(stops.begin(), stops.end()), stops.end());
+                QLinearGradient fade(left, 0, end, 0);
+                for (const auto x : stops) fade.setColorAt((x - left) / (end - left), withAlpha(text, opacityAt(x)));
                 painter.setPen(QPen(QBrush(fade), 1));
             } else painter.setPen(text);
             state.titleLayout->draw(painter, parts.title);
         }
+        painter.restore();
     }
     if (!parts.action.isEmpty() && state.actionShown) {
         painter.save();
         painter.setOpacity(painter.opacity() * std::clamp(state.actionOpacity, 0.0, 1.0));
-        if (!state.actionReserved) {
-            // The title fades out under a covering action: the tab's own
-            // color, as composited over the strip, slides in from the left.
-            auto under = background.isValid() ? background : palette_.strip;
-            if (under.alphaF() < 1.0) {
-                const qreal alpha = under.alphaF();
-                const auto base = palette_.strip;
-                under = QColor::fromRgbF(base.redF() + (under.redF() - base.redF()) * alpha,
-                                         base.greenF() + (under.greenF() - base.greenF()) * alpha,
-                                         base.blueF() + (under.blueF() - base.blueF()) * alpha);
-            }
-            const bool rightToLeft = parts.action.left() < parts.tab.center().x();
-            const int fade = metrics_.edgeFade;
-            const QRect cover = rightToLeft ? QRect(parts.tab.left(), parts.tab.top(), parts.action.right() + 1 + fade - parts.tab.left(), parts.tab.height())
-                                            : QRect(parts.action.left() - fade, parts.tab.top(), parts.tab.right() + 1 - (parts.action.left() - fade), parts.tab.height());
-            QLinearGradient gradient(rightToLeft ? cover.right() + 1 : cover.left(), 0, rightToLeft ? cover.right() + 1 - fade : cover.left() + fade, 0);
-            auto clear = under; clear.setAlphaF(0);
-            gradient.setColorAt(0, clear); gradient.setColorAt(1, under);
-            painter.fillRect(cover.intersected(parts.tab.adjusted(0, metrics_.accentLine, 0, 0)), gradient);
-        }
+
         if (state.actionHovered || state.actionPressed) {
             painter.setRenderHint(QPainter::Antialiasing);
             painter.setPen(Qt::NoPen);
@@ -219,22 +272,9 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
     painter.restore();
 }
 
-void TabPainter::paintSeparator(QPainter& painter, const QRect& line) const
+void TabPainter::paintSeparator(QPainter& painter, const QRect& line, bool windowActive, bool section) const
 {
-    painter.fillRect(line, palette_.separator);
-}
-
-void TabPainter::paintFade(QPainter& painter, const QRect& area, Qt::Edge edge) const
-{
-    if (area.isEmpty()) return;
-    const bool horizontal = edge == Qt::LeftEdge || edge == Qt::RightEdge;
-    QLinearGradient gradient(horizontal ? QPointF(area.left(), 0) : QPointF(0, area.top()),
-                             horizontal ? QPointF(area.right() + 1, 0) : QPointF(0, area.bottom() + 1));
-    const auto solid = palette_.strip, clear = withAlpha(palette_.strip, 0);
-    const bool fromStart = edge == Qt::LeftEdge || edge == Qt::TopEdge;
-    gradient.setColorAt(0, fromStart ? solid : clear);
-    gradient.setColorAt(1, fromStart ? clear : solid);
-    painter.fillRect(area, gradient);
+    painter.fillRect(line, section ? palette_.sectionSeparator.resolve(windowActive) : palette_.separator);
 }
 
 void TabPainter::paintScrollbar(QPainter& painter, const QRect& thumb, bool emphasized) const
@@ -249,22 +289,16 @@ void TabPainter::paintScrollbar(QPainter& painter, const QRect& thumb, bool emph
     painter.restore();
 }
 
-void TabPainter::paintShadow(QPainter& painter, const QRectF& area, qreal radius) const
+ElevationRenderer& TabPainter::elevationRenderer() const
 {
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(Qt::NoPen);
-    // A few widening, fading layers approximate a blurred drop shadow.
-    const int layers = std::max(1, metrics_.shadowBlur / 2);
-    for (int layer = layers; layer >= 1; --layer) {
-        const qreal spread = layer * 2.0 * metrics_.shadowBlur / (layers * 2.0);
-        auto color = palette_.shadow;
-        color.setAlphaF(metrics_.shadowOpacity / layers);
-        painter.setBrush(color);
-        painter.drawRoundedRect(area.translated(0, metrics_.shadowOffset).adjusted(-spread, -spread / 2, spread, spread),
-                                radius + spread, radius + spread);
-    }
-    painter.restore();
+    if (!elevation_) elevation_ = std::make_unique<ElevationRenderer>();
+    return *elevation_;
+}
+
+void TabPainter::paintPanelShadow(QPainter& painter, const QRectF& area, qreal radius, bool column) const
+{
+    elevationRenderer().paintBody(painter, area, radius,
+        elevationProfile(column ? ElevationLevel::ColumnOverlay : ElevationLevel::RowsOverlay), palette_.elevation);
 }
 
 QColor TabPainter::textOn(const QColor& background) const

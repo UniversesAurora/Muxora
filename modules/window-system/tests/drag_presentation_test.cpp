@@ -5,6 +5,7 @@
 #include "docking/dock_guides.hpp"
 #include "docking/tab_strip.hpp"
 #include "docking/tab_bar.hpp"
+#include "platform/windows/window_frame.hpp"
 #include "authored_mouse_input.hpp"
 #include <window_system/window_manager.hpp>
 #include <QApplication>
@@ -21,6 +22,34 @@
 
 using namespace window_system;
 namespace {
+class CarrierCommitObserver final : public QObject {
+public:
+    explicit CarrierCommitObserver(WorkspaceWindow* carrier) : carrier_(carrier)
+    {
+        carrier->installEventFilter(this);
+        chrome_ = carrier->findChild<QWidget*>("WindowHeader");
+        if (chrome_) chrome_->installEventFilter(this);
+    }
+    bool hidden = false;
+    bool compactAtHide = false;
+    bool chromeRevealed = false;
+    NativeTransitionConfiguration removal;
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == chrome_ && event->type() == QEvent::Show) chromeRevealed = true;
+        if (watched == carrier_ && event->type() == QEvent::Hide) {
+            hidden = true;
+            compactAtHide = carrier_->dragPresentation() == WorkspaceWindow::DragPresentation::Tab;
+            removal = nativeTransitionConfiguration(carrier_);
+        }
+        return false;
+    }
+private:
+    QPointer<WorkspaceWindow> carrier_;
+    QPointer<QWidget> chrome_;
+};
+
 void saveRequestedScreenshot(QWidget* widget, const QString& name)
 {
     const auto directory = qEnvironmentVariable("WINDOW_SYSTEM_SCREENSHOT_DIR");
@@ -136,7 +165,7 @@ void DragPresentationTest::guidesAvoidVisibleStripsAndShortGroupHeaders()
     QFETCH(int, height);
     const QRect bounds(0, 0, 740, 450); const QRect group(0, 0, 120, height);
     const QRect header(0, 0, 740, 27);
-    const auto guides = dockGuides(bounds, group, true, {header});
+    const auto guides = dockGuides(bounds, group, true, {{header, Edge::Top}});
     QCOMPARE(guides.size(), 13);
     for (const auto& guide : guides) {
         QVERIFY(!guide.rect.intersects(header));
@@ -163,13 +192,13 @@ void DragPresentationTest::narrowGroupCrossStaysBesideItsWindowEdgePair()
     case Edge::Top: group = QRect(bounds.left(), bounds.top(), bounds.width(), 100); break;
     case Edge::Bottom: group = QRect(bounds.left(), bounds.bottom() - 99, bounds.width(), 100); break;
     }
-    const QList<QRect> strips{QRect(bounds.left(), bounds.top(), bounds.width(), 27)};
+    const QVector<DockStrip> strips{{QRect(bounds.left(), bounds.top(), bounds.width(), 27), Edge::Top}};
     const auto guides = dockGuides(bounds, group, true, strips);
     QCOMPARE(guides.size(), 13);
     QRect cross, pair; QHash<Placement, QRect> cells;
     for (const auto& guide : guides) {
         QVERIFY(bounds.contains(guide.rect));
-        for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip));
+        for (const auto& strip : strips) QVERIFY(!guide.rect.intersects(strip.rect));
         if (!guide.toEdge) { cross = cross.united(guide.rect); cells.insert(guide.placement, guide.rect); }
         else if (guide.edge == direction) pair = pair.united(guide.rect);
     }
@@ -195,14 +224,14 @@ void DragPresentationTest::narrowGroupCrossStaysBesideItsWindowEdgePair()
         // A full-width neighbouring header leaves no edge-parallel route.
         // Keep all five targets and place the complete cross beyond it.
         const QRect blocker(bounds.left(), direction == Edge::Top ? group.bottom() + 3 : group.top(), bounds.width(), 27);
-        auto blockedStrips = strips; blockedStrips.append(blocker);
+        auto blockedStrips = strips; blockedStrips.append({blocker, Edge::Top});
         const auto shifted = dockGuides(bounds, group, true, blockedStrips);
         QCOMPARE(shifted.size(), 13);
         QRect shiftedCross; int targets = 0;
         for (const auto& guide : shifted) if (!guide.toEdge) {
             ++targets; shiftedCross = shiftedCross.united(guide.rect);
             QVERIFY(bounds.contains(guide.rect));
-            for (const auto& strip : blockedStrips) QVERIFY(!guide.rect.intersects(strip));
+            for (const auto& strip : blockedStrips) QVERIFY(!guide.rect.intersects(strip.rect));
             for (const auto& other : shifted) if (other.toEdge) QVERIFY(!guide.rect.intersects(other.rect));
         }
         QCOMPARE(targets, 5);
@@ -277,7 +306,7 @@ void DragPresentationTest::displacedCrossKeepsItsTargetAcrossNeighborAndGaps()
     const auto groupRect = surface->groupRects().value(pinnedGroup); QVERIFY(!groupRect.isEmpty());
     moveMouse(carrier, groupRect.center());
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
-    const auto guides = dockGuides(bounds, groupRect, true, surface->tabBarRects().values(), surface->edgeBarRects());
+    const auto guides = dockGuides(bounds, groupRect, true, surface->dockStrips(), surface->edgeBarRects());
     const auto placement = side == Edge::Left ? Placement::Right : side == Edge::Right ? Placement::Left
         : side == Edge::Top ? Placement::Bottom : Placement::Top;
     QRect center, arm, cross;
@@ -305,7 +334,7 @@ void DragPresentationTest::displacedCrossKeepsItsTargetAcrossNeighborAndGaps()
         const auto hover = centralRect.center(); QVERIFY(!cross.contains(hover));
         moveMouse(carrier, hover);
         const auto centralGuides = dockGuides(bounds, centralRect, true,
-            surface->tabBarRects().values(), surface->edgeBarRects());
+            surface->dockStrips(), surface->edgeBarRects());
         for (const auto& guide : centralGuides) if (!guide.toEdge && guide.placement == Placement::Center)
             destination = guide.rect.center();
         moveMouse(carrier, destination);
@@ -360,7 +389,7 @@ void DragPresentationTest::hiddenCrossDoesNotStealNeighboringContent()
         QVERIFY(!widget->isVisible());
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
     const auto guides = dockGuides(bounds, surface->groupRects().value(pinnedGroup), true,
-        surface->tabBarRects().values(), surface->edgeBarRects());
+        surface->dockStrips(), surface->edgeBarRects());
     const auto inward = side == Edge::Left ? Placement::Right : side == Edge::Right ? Placement::Left
         : side == Edge::Top ? Placement::Bottom : Placement::Top;
     QPoint staleArm;
@@ -368,7 +397,7 @@ void DragPresentationTest::hiddenCrossDoesNotStealNeighboringContent()
         staleArm = guide.rect.center();
     QVERIFY(!staleArm.isNull()); QCOMPARE(surface->groupAt(staleArm), centralGroup);
     const auto centralGuides = dockGuides(bounds, surface->groupRects().value(centralGroup), true,
-        surface->tabBarRects().values(), surface->edgeBarRects());
+        surface->dockStrips(), surface->edgeBarRects());
     for (const auto& guide : centralGuides) QVERIFY(!guide.rect.contains(staleArm));
     moveMouse(carrier, staleArm);
     QMouseEvent release(QEvent::MouseButtonRelease, carrier->mapFromGlobal(staleArm), staleArm,
@@ -403,13 +432,14 @@ void DragPresentationTest::edgeGuidesStayInTheirOwnSideBand()
         : QRect(bounds.right() - 21, bounds.top(), 22, bounds.height()));
     const auto middle = QRect(edge == int(Edge::Left) ? bounds.left() : bounds.center().x(),
         bounds.center().y() - 12, bounds.width() / 2 + 1, 27);
-    const QList<QRect> tabs{QRect(bounds.left(), bounds.top(), bounds.width(), 27), middle};
+    const QVector<DockStrip> tabs{{QRect(bounds.left(), bounds.top(), bounds.width(), 27), Edge::Top}, {middle, Edge::Top}};
     const auto guides = dockGuides(bounds, bounds, true, tabs, rails);
     QCOMPARE(guides.size(), 13);
     int count = 0;
     for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(edge)) {
         ++count; QVERIFY(bounds.contains(guide.rect));
-        for (const auto& strip : tabs + rails.values()) QVERIFY(!guide.rect.intersects(strip));
+        for (const auto& strip : tabs) QVERIFY(!guide.rect.intersects(strip.rect));
+        for (const auto& railRect : rails) QVERIFY(!guide.rect.intersects(railRect));
         const int offset = 6 + (rail ? 22 : 0) + (guide.pinned ? 28 : 0);
         if (edge == int(Edge::Left)) QCOMPARE(guide.rect.left(), bounds.left() + offset);
         else QCOMPARE(bounds.right() - guide.rect.right(), offset);
@@ -441,13 +471,13 @@ void DragPresentationTest::edgeGuidesAcceptDropsBesideStackedGroups()
     auto* surface = targetWindow->surface();
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
     const auto guides = dockGuides(bounds, surface->groupRects().value(manager.model().groupForTab(top)),
-        true, surface->tabBarRects().values(), surface->edgeBarRects());
+        true, surface->dockStrips(), surface->edgeBarRects());
     QPoint targetPoint;
     for (const auto& guide : guides) if (guide.toEdge && guide.edge == Edge(edge) && guide.pinned == pinned) {
         targetPoint = guide.rect.center();
         if (edge == int(Edge::Left)) QVERIFY(guide.rect.right() < bounds.left() + 70);
         else QVERIFY(guide.rect.left() > bounds.right() - 70);
-        for (const auto& strip : surface->tabBarRects()) QVERIFY(!guide.rect.intersects(strip));
+        for (const auto& strip : surface->dockStrips()) QVERIFY(!guide.rect.intersects(strip.rect));
     }
     QVERIFY(!targetPoint.isNull()); moveMouse(carrier, targetPoint);
     QMouseEvent release(QEvent::MouseButtonRelease, carrier->mapFromGlobal(targetPoint), targetPoint,
@@ -499,7 +529,7 @@ void DragPresentationTest::guidesTrackWindowGeometryWithoutMouseMovement()
     const QRect bounds(surface->mapToGlobal(QPoint()), surface->size());
     const auto group = surface->groupAt(hover);
     const auto guides = dockGuides(bounds, surface->groupRects().value(group, surface->centralRectGlobal()),
-        true, surface->tabBarRects().values(), surface->edgeBarRects());
+        true, surface->dockStrips(), surface->edgeBarRects());
     const auto image = overlay->grab().toImage();
     QPoint drop;
     for (const auto& guide : guides) if (guide.toEdge) {
@@ -554,6 +584,8 @@ void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent()
     moveMouse(carrier, point);
     QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
     QCOMPARE(carrier->winId(), hwnd); QCOMPARE(QWidget::mouseGrabber(), carrier.data());
+    QCOMPARE(carrier->windowOpacity(), qreal(0));
+    QVERIFY(!group->tabBar()->incomingRect().isEmpty());
     QVERIFY(carrier->findChild<QWidget*>("WindowHeader")->isHidden()); QVERIFY(!carrier->mask().isEmpty());
     QVERIFY(observed && observed->isVisible()); QCOMPARE(manager.paneWidget(pane), content);
     QCOMPARE(manager.model().toJson(), modelDuringDrag); QCOMPARE(group->count(), 2);
@@ -565,14 +597,22 @@ void DragPresentationTest::tabTargetKeepsCarrierAndLiveContent()
     saveRequestedScreenshot(targetWindow, QString("drag-tab-target-%1.png").arg(floating));
     moveMouse(carrier, targetWindow->mapToGlobal(QPoint(targetWindow->width() + 200, 100)));
     QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Window);
+    QCOMPARE(carrier->windowOpacity(), qreal(1));
+    QVERIFY(group->tabBar()->incomingRect().isEmpty());
     QVERIFY(carrier->mask().isEmpty()); QVERIFY(carrier->findChild<QWidget*>("WindowHeader")->isVisible());
     QVERIFY(group->insertionPreviewRectGlobal().isEmpty()); QCOMPARE(carrier->winId(), hwnd);
     moveMouse(carrier, point);
+    CarrierCommitObserver commit(carrier);
     QMouseEvent release(QEvent::MouseButtonRelease, carrier->mapFromGlobal(point), point, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(carrier, &release); QApplication::processEvents();
     QCOMPARE(manager.model().group(manager.model().groupForTab(a))->tabs, (QVector<TabId>{a, tab, b}));
     QCOMPARE(manager.paneWidget(pane), content); QVERIFY(!manager.model().window(carrierId));
+    QVERIFY(commit.hidden); QVERIFY(commit.compactAtHide); QVERIFY(!commit.chromeRevealed);
+#ifdef Q_OS_WIN
+    QVERIFY(commit.removal.attempted); QCOMPARE(commit.removal.result, qint32(0)); QVERIFY(commit.removal.forcedDisabled);
+#endif
     QVERIFY(groupView(targetWindow, manager.model().groupForTab(a))->insertionPreviewRectGlobal().isEmpty());
+    QVERIFY(groupView(targetWindow, manager.model().groupForTab(a))->tabBar()->incomingRect().isEmpty());
     QVERIFY(!QWidget::mouseGrabber()); QVERIFY(manager.model().validate()); Q_UNUSED(before)
 }
 void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent_data()
@@ -664,8 +704,8 @@ void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
     WindowManager manager;
     auto appearance = manager.tabAppearance();
     appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
-    appearance.multiline = true; appearance.stickyTabsOnSeparateRow = true;
-    appearance.collapseRows = collapsed ? TabRowCollapse::Push : TabRowCollapse::Off;
+    appearance.multiline = true; appearance.stickyMultiline = true; appearance.stickyTabsOnSeparateRow = true;
+    appearance.showAllRows = !collapsed; appearance.stickyShowAllRows = !collapsed; appearance.rowExpansion = TabRowExpansion::Push;
     QVERIFY(manager.setTabAppearance(appearance));
     const auto window = manager.createWindow(WindowKind::Workbench, {"Rows", {400, 350}});
     QVector<TabId> tabs;

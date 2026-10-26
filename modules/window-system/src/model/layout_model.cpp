@@ -647,7 +647,7 @@ OperationResult LayoutModel::setGroupTabStrip(GroupId groupId, int width, bool i
     const auto* record = group(groupId);
     if (!record) return failure(QCoreApplication::translate("WindowSystem", "Unknown tab group."));
     if (width != 0 && (width < minimumVerticalTabWidth || width > maximumVerticalTabWidth))
-        return failure(QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 140 to 480 logical pixels"));
+        return failure(QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 67 to 480 logical pixels"));
     if (record->tabStripWidth == width && record->tabStripIconsOnly == iconsOnly) return success();
     return transact([&](LayoutModel& model) {
         auto& target = model.groups_[groupId];
@@ -2137,7 +2137,7 @@ OperationResult LayoutModel::fromJson(const QJsonObject& json)
             const double value = width.toDouble();
             if (!width.isDouble() || std::floor(value) != value
                 || (value != 0 && (value < minimumVerticalTabWidth || value > maximumVerticalTabWidth)))
-                return failure(QCoreApplication::translate("WindowSystem", "A vertical tab bar width must be 0 or an integer from 140 to 480."));
+                return failure(QCoreApplication::translate("WindowSystem", "A vertical tab bar width must be 0 or an integer from 67 to 480."));
             record.tabStripWidth = int(value);
         }
         if (object.contains("name")) {

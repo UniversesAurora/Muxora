@@ -5,6 +5,7 @@
 #include <QRect>
 #include <QSize>
 #include <QVector>
+#include <optional>
 
 namespace window_system {
 
@@ -29,13 +30,14 @@ struct TabLayoutInput {
     QVector<int> extents;
     int stickyCount = 0;
     bool multiline = false;
+    bool stickyMultiline = false;
     bool separateStickyRow = false;
     // One row with sticky and other tabs together: the sticky tabs stay at
     // the lane's start while the others scroll under them.
     bool freezeSticky = false;
     // Vertical: sticky tabs as icon tiles instead of rows.
     bool stickyTiles = false;
-    QSize tile{36, 32};
+    QSize tile{26, 26};
     // Vertical rows and tiles keep this distance from both sides.
     int inset = 6;
     // Horizontal: the controls right after the last tab (new tab), and the
@@ -44,9 +46,13 @@ struct TabLayoutInput {
     int trailingExtent = 0;
     int endExtent = 0;
     // Vertical: sticky tiles are at least this wide and share each row.
-    int minimumTileWidth = 44;
+    int minimumTileWidth = 26;
+    // A carried preview borrows the destination grid rather than stretching
+    // its own smaller number of tabs to a different width. 0 selects normally.
+    int tileColumns = 0;
     // Multi-row: show one row of each section.
     bool collapsed = false;
+    bool stickyCollapsed = false;
     int current = -1;
     // The rows a collapsed strip shows for a section that does not hold the
     // current tab; clamped to the section's rows.
@@ -55,6 +61,7 @@ struct TabLayoutInput {
     // Scroll positions along each lane's axis; clamped in the result.
     int stickyOffset = 0;
     int regularOffset = 0;
+    int rowsOffset = 0;
     // Drag. `removed` is a tab of this strip that left its slot. A carried
     // block opens a gap of `block` cells at `insertion`, an index among the
     // remaining tabs, in the sticky or the regular section.
@@ -96,6 +103,12 @@ struct TabLayoutLane {
     // A frozen sticky run covers this much of the viewport's start.
     int frozen = 0;
     [[nodiscard]] int maximumOffset() const { return qMax(0, extent - (vertical ? viewport.height() : viewport.width())); }
+    [[nodiscard]] int fadeExtent(int requested) const {
+        return qBound(0, requested, qMax(0, (vertical ? viewport.height() : viewport.width() - frozen) / 2));
+    }
+    [[nodiscard]] int rowTopAt(int coordinate, int pitch) const;
+    [[nodiscard]] QRect readableViewport(int fade) const;
+    [[nodiscard]] int offsetToReveal(QRect tab, int fade) const;
 };
 
 struct TabLayout {
@@ -111,6 +124,8 @@ struct TabLayout {
     QRect end;
     // Tabs a collapsed strip hides, and the rows it shows.
     int hidden = 0;
+    int rowScrollLane = -1;
+    std::optional<int> sectionBoundary;
     int stickyRow = 0;
     int regularRow = 0;
     // The tab area's preferred size.
@@ -121,6 +136,7 @@ struct TabLayout {
     // rows of their own.
     int sticky = 0;
     int stickyRows = 0;
+    int tileColumns = 0;
     // Per input folder: its header (null when carried away) and lane.
     QVector<QRect> headers;
     QVector<int> headerLanes;
@@ -130,6 +146,9 @@ struct TabLayout {
     [[nodiscard]] int tabAt(QPoint point) const;
     [[nodiscard]] QRect visibleHeaderRect(int folder) const;
     [[nodiscard]] int headerAt(QPoint point) const;
+    // Translate an independent lane without measuring or packing its tabs.
+    // A nested mixed-row viewport needs its full clipping layout instead.
+    bool scrollLane(int lane, int offset);
 };
 
 [[nodiscard]] TabLayout layoutTabs(const TabLayoutInput& input);
@@ -148,6 +167,9 @@ struct TabInsertion {
 // the end of its last tab, or over the header of a collapsed one (then at
 // its end). Several tabs or a folder never land inside a folder, and a
 // folder never among the sticky tabs.
-[[nodiscard]] TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach = 0);
+// A visible section boundary can be supplied independently of the label
+// center, so removing the last tile of a row cannot move that boundary.
+[[nodiscard]] TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach = 0,
+                                         std::optional<bool> stickySection = {});
 
 } // namespace window_system

@@ -392,6 +392,9 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     else if (id == "presentation.toggleTitleClipping") appearanceChecked = manager->tabAppearance().clipTitles;
     else if (id == "presentation.toggleSidebarTitleClipping") appearanceChecked = manager->tabAppearance().clipSidebarTitles;
     else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;
+    else if (id == "presentation.toggleAllRows") appearanceChecked = manager->tabAppearance().showAllRows;
+    else if (id == "presentation.toggleStickyMultiline") appearanceChecked = manager->tabAppearance().stickyMultiline;
+    else if (id == "presentation.toggleStickyAllRows") appearanceChecked = manager->tabAppearance().stickyShowAllRows;
     else if (id == "presentation.toggleWheelExpandRows") appearanceChecked = manager->tabAppearance().wheelExpandRows;
     const bool checkedCommand = appearanceChecked.has_value() || id == "window.tabBars.toggle" || id == "window.sideBars.toggle"
         || id == "window.toolbars.toggle" || id == "window.statusBar.toggle" || id == "window.zen.toggle"

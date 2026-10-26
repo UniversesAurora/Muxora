@@ -18,6 +18,11 @@ struct DockGuide {
     bool pinned = false;
 };
 
+struct DockStrip {
+    QRect rect;
+    Edge edge = Edge::Top;
+};
+
 // Keep a side's normal coordinate fixed. Labels which cross its center only
 // move the pair along that edge, never across a whole label row into the body.
 inline QRect placeEdgeGuidePair(QRect pair, const QRect& available, const QList<QRect>& obstacles, bool vertical)
@@ -126,19 +131,49 @@ inline void separateGroupGuides(QVector<DockGuide>& guides, int groupCount, QRec
     for (int index = 0; index < groupCount; ++index) guides[index].rect.translate(delta);
 }
 
-// A strip this close to the top of a group or window is its header: tab
-// group cards keep a small margin around their strip.
+// Group cards keep a small margin around their strip. Orientation comes
+// from the strip itself: a full-height column is never a top header.
 inline constexpr int dockHeaderSlack = 12;
 
+enum class DockGuideArea { Group, Content };
+
+inline QRect dockContentBounds(const QRect& bounds, const QVector<DockStrip>& strips)
+{
+    auto content = bounds;
+    for (const auto& strip : strips) {
+        if (!strip.rect.intersects(bounds)) continue;
+        // Compare against the original bounds so intersecting strips do not
+        // make the result depend on their iteration order.
+        switch (strip.edge) {
+        case Edge::Left:
+            if (strip.rect.left() <= bounds.left() + dockHeaderSlack)
+                content.setLeft(std::max(content.left(), strip.rect.right() + 1));
+            break;
+        case Edge::Right:
+            if (strip.rect.right() >= bounds.right() - dockHeaderSlack)
+                content.setRight(std::min(content.right(), strip.rect.left() - 1));
+            break;
+        case Edge::Top:
+            if (strip.rect.top() <= bounds.top() + dockHeaderSlack)
+                content.setTop(std::max(content.top(), strip.rect.bottom() + 1));
+            break;
+        case Edge::Bottom:
+            if (strip.rect.bottom() >= bounds.bottom() - dockHeaderSlack)
+                content.setBottom(std::min(content.bottom(), strip.rect.top() - 1));
+            break;
+        }
+    }
+    return content;
+}
+
 inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup = true,
-                                    const QList<QRect>& strips = {}, const QHash<Edge, QRect>& edgeStrips = {})
+                                    const QVector<DockStrip>& strips = {}, const QHash<Edge, QRect>& edgeStrips = {},
+                                    DockGuideArea area = DockGuideArea::Group)
 {
     QVector<DockGuide> guides;
-    // Keep group controls below its real header, including narrow/short groups.
+    // Keep group controls inside its content, including vertical columns.
     // Rendering and hit testing consume the same resulting rectangles.
-    for (const auto& strip : strips)
-        if (strip.intersects(group) && strip.top() <= group.top() + dockHeaderSlack)
-            group.setTop(std::max(group.top(), strip.bottom() + 1));
+    if (area == DockGuideArea::Group) group = dockContentBounds(group, strips);
     if (!group.isEmpty()) {
         const int cell = std::clamp((std::min(group.width(), group.height()) - 8) / 3, 12, 28);
         const int step = cell + 4;
@@ -166,13 +201,10 @@ inline QVector<DockGuide> dockGuides(QRect bounds, QRect group, bool splitGroup 
         case Edge::Bottom: available.setBottom(std::min(available.bottom(), it.value().top() - 1)); break;
         }
     }
-    const int originalTop = available.top();
-    int contentTop = originalTop;
-    for (const auto& strip : strips)
-        if (strip.intersects(available) && strip.top() <= originalTop + dockHeaderSlack) contentTop = std::max(contentTop, strip.bottom() + 1);
-    available.setTop(contentTop);
+    available = dockContentBounds(available, strips);
     if (available.isEmpty()) return guides;
-    const auto obstacles = strips + edgeStrips.values();
+    auto obstacles = edgeStrips.values();
+    for (const auto& strip : strips) obstacles.append(strip.rect);
     constexpr int cell = 28;
     for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
         QPoint outer, inward;

@@ -1,8 +1,10 @@
 #include <QCoreApplication>
 #include "tab_strip.hpp"
+#include "dock_surface.hpp"
 #include "style/tab_painter.hpp"
 #include "commands/popup_menu.hpp"
 #include "style/compact_tool_button.hpp"
+#include "style/split_tool_button.hpp"
 #include "style/tab_appearance_p.hpp"
 #include "style/themed_controls.hpp"
 
@@ -30,6 +32,7 @@
 #include <QVariantAnimation>
 #include <QEasingCurve>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <tuple>
 
@@ -42,6 +45,7 @@ constexpr int createButtonGap = 1;
 // Sets a button's theme icon and remembers its name for theme changes.
 void setThemedIcon(QAbstractButton* button, const QString& name, const Theme& theme)
 {
+    if (button->property("themeIcon").toString() == name && !button->icon().isNull()) return;
     button->setProperty("themeIcon", name); button->setIcon(iconFor(name, theme));
 }
 
@@ -55,81 +59,102 @@ public:
     }
 };
 
-// A group's content is a card with rounded corners. Drawn above the pages,
-// this layer fills the corners outside the card with the background and
-// draws the outline and the focus glow, so any content (a white page, a
-// dark terminal) gets smooth corners. The outline opens under the active
-// tab, which flares into the card.
+// One surface for the whole column, including its footer. Its tiny cached
+// shadow patches are shared by every animation frame, never a full snapshot.
+class VerticalTabPanel final : public QWidget {
+public:
+    VerticalTabPanel(const Theme& theme, QWidget* parent) : QWidget(parent), theme_(theme), painter_(panelMetrics(), TabPalette::forTheme(theme))
+    {
+        setObjectName("VerticalTabPanel"); setMouseTracking(true);
+    }
+    void setTheme(const Theme& theme) { theme_ = theme; painter_ = TabPainter(panelMetrics(), TabPalette::forTheme(theme)); update(); }
+    void setSurface(QRect body, qreal overlay)
+    {
+        const bool changed = body_ != body || (overlay_ > 0) != (overlay > 0);
+        body_ = body; overlay_ = overlay;
+        // The resting panel must not intercept its neighbor's content or
+        // resize handle through the padding reserved for an overlay shadow.
+        if (changed) { if (overlay > 0) clearMask(); else setMask(QRegion(body.adjusted(-TabMetrics{}.columnGap, 0, TabMetrics{}.columnGap, 0))); }
+        update();
+    }
+    [[nodiscard]] QRect bodyRect() const { return body_; }
+protected:
+    void changeEvent(QEvent* event) override
+    {
+        if (event->type() == QEvent::ActivationChange) update();
+        QWidget::changeEvent(event);
+    }
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter paint(this); paint.setRenderHint(QPainter::Antialiasing);
+        const QRectF body(body_);
+        if (overlay_ > 0) {
+            QPainterPath outline; outline.addRoundedRect(body, 8, 8);
+            QPainterPath outside; outside.addRect(rect());
+            paint.save(); paint.setClipPath(outside.subtracted(outline));
+            paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, 8, true); paint.restore();
+            paint.setBrush(theme_.headerBackground);
+            auto line = painter_.palette().tileBorder.resolve(window()->isActiveWindow()); line.setAlphaF(line.alphaF() * overlay_);
+            paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+        }
+    }
+private:
+    static TabMetrics panelMetrics()
+    {
+        return TabMetrics{};
+    }
+    Theme theme_;
+    TabPainter painter_;
+    QRect body_;
+    qreal overlay_ = 0;
+};
+
+// Only the corners need masking above arbitrary page contents. Replay the
+// shared backplate there, preserving neighboring shadows instead of filling
+// the cut-outs with a flat color.
 class CardOverlay final : public QWidget {
 public:
     CardOverlay(const Theme& theme, QWidget* parent) : QWidget(parent), theme_(theme)
     {
         setObjectName("TabGroupCard");
         setAttribute(Qt::WA_TransparentForMouseEvents);
-        focus_.setDuration(150); focus_.setEasingCurve(QEasingCurve::OutCubic);
-        QObject::connect(&focus_, &QVariantAnimation::valueChanged, this, [this] { update(); });
     }
-    void setTheme(const Theme& theme) { theme_ = theme; update(); }
-    // The card inside this layer, the active tab's span along the open edge
-    // (empty when none joins it) and which edge that is.
-    void setCard(QRect card, QPair<int, int> join, Qt::Edge edge)
+    void setTheme(const Theme& theme) { theme_ = theme; update(corners()); }
+    void setCard(QRect card)
     {
-        card_ = card; join_ = join; edge_ = edge; update();
+        if (card_ == card) return;
+        const auto old = corners(); card_ = card; update(old | corners());
     }
-    void setFocused(bool focused)
-    {
-        if (focused_ == focused) return;
-        focused_ = focused;
-        const qreal now = focus_.state() == QAbstractAnimation::Running ? focus_.currentValue().toReal() : (focused ? 0.0 : 1.0);
-        focus_.stop(); focus_.setStartValue(now); focus_.setEndValue(focused ? 1.0 : 0.0);
-        if (TabBar::animationsAllowed()) focus_.start(); else update();
-    }
+    void invalidate(const QRect& area) { update(corners() & QRegion(area)); }
 protected:
     void paintEvent(QPaintEvent*) override
     {
         if (card_.isEmpty()) return;
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        const qreal radius = 8;
-        const QRectF card(card_);
-        QPainterPath rounded; rounded.addRoundedRect(card, radius, radius);
-        // Background in the corners outside the rounded card.
-        QPainterPath corners; corners.addRect(card);
-        painter.fillPath(corners.subtracted(rounded), theme_.headerBackground);
-        const qreal progress = focus_.state() == QAbstractAnimation::Running ? focus_.currentValue().toReal() : (focused_ ? 1.0 : 0.0);
-        // The focused card glows softly outside its outline.
-        if (progress > 0) for (int ring = 3; ring >= 1; --ring) {
-            auto glow = theme_.accent; glow.setAlphaF(0.07 * progress * (4 - ring) / 3.0);
-            painter.setPen(QPen(glow, ring * 1.5)); painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(card.adjusted(-ring * 0.5, -ring * 0.5, ring * 0.5, ring * 0.5), radius + ring * 0.5, radius + ring * 0.5);
-        }
-        auto line = theme_.border; line.setAlphaF(0.6);
-        if (progress > 0) {
-            auto accent = theme_.accent; accent.setAlphaF(0.6);
-            line = QColor::fromRgbF(line.redF() + (accent.redF() - line.redF()) * progress, line.greenF() + (accent.greenF() - line.greenF()) * progress,
-                                    line.blueF() + (accent.blueF() - line.blueF()) * progress, line.alphaF() + (accent.alphaF() - line.alphaF()) * progress);
-        }
-        painter.setPen(QPen(line, 1)); painter.setBrush(Qt::NoBrush);
-        painter.save();
-        if (join_.second > join_.first) {
-            // Leave the outline open where the active tab joins the card.
-            QPainterPath visible; visible.addRect(QRectF(rect()));
-            QRectF gap;
-            if (edge_ == Qt::TopEdge) gap = QRectF(join_.first, card.top() - 2, join_.second - join_.first, 4);
-            else if (edge_ == Qt::BottomEdge) gap = QRectF(join_.first, card.bottom() - 2, join_.second - join_.first, 4);
-            QPainterPath hole; hole.addRect(gap);
-            painter.setClipPath(visible.subtracted(hole));
-        }
-        painter.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
-        painter.restore();
+        QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
+        const qreal radius = TabMetrics{}.cardRadius;
+        QPainterPath rounded; rounded.addRoundedRect(QRectF(card_), radius, radius);
+        QPainterPath square; square.addRect(QRectF(card_));
+        painter.setClipPath(square.subtracted(rounded), Qt::IntersectClip);
+        DockSurface* surface = nullptr;
+        for (auto* ancestor = parentWidget(); ancestor; ancestor = ancestor->parentWidget())
+            if ((surface = dynamic_cast<DockSurface*>(ancestor))) break;
+        if (!surface) { painter.fillRect(card_, theme_.headerBackground); return; }
+        const auto origin = mapTo(surface, QPoint());
+        painter.translate(-origin);
+        surface->paintBackplate(painter, card_.translated(origin));
     }
 private:
+    [[nodiscard]] QRegion corners() const
+    {
+        const int radius = TabMetrics{}.cardRadius + 1;
+        QRegion result;
+        for (const auto point : {card_.topLeft(), card_.topRight() - QPoint(radius - 1, 0),
+                                card_.bottomLeft() - QPoint(0, radius - 1), card_.bottomRight() - QPoint(radius - 1, radius - 1)})
+            result |= QRect(point, QSize(radius, radius));
+        return result;
+    }
     Theme theme_;
     QRect card_;
-    QPair<int, int> join_;
-    Qt::Edge edge_ = Qt::TopEdge;
-    bool focused_ = false;
-    QVariantAnimation focus_;
 };
 
 // The picture of dragged content over a group's pages: top left aligned at
@@ -161,60 +186,24 @@ private:
     QColor fill_;
 };
 
-class TabCreateButtons final : public QWidget {
+class TabCreateButtons final : public SplitToolButton {
 public:
-    TabCreateButtons(const Theme& theme, QWidget* parent) : QWidget(parent) {
-        setObjectName("TabCreateButtons");
-        auto* row = new QHBoxLayout(this);
-        row->setContentsMargins(0, 0, 0, 0); row->setSpacing(createButtonGap);
-        add = new CompactToolButton(this, QSize(newTabButtonWidth, theme.metrics.tabHeight));
+    TabCreateButtons(const Theme& theme, QWidget* parent)
+        : SplitToolButton(parent, QSize(newTabButtonWidth, theme.metrics.tabHeight),
+                          QSize(listButtonWidth, theme.metrics.tabHeight), createButtonGap)
+    {
+        setObjectName("TabCreateButtons"); add = primary; types = menu;
         add->setObjectName("NewTabButton"); setThemedIcon(add, "add", theme);
         add->setToolTip(QCoreApplication::translate("WindowSystem", "New tab")); add->setAccessibleName(add->toolTip());
-        types = new CompactToolButton(this, QSize(listButtonWidth, theme.metrics.tabHeight));
         types->setObjectName("NewTabTypeButton"); setThemedIcon(types, "chevron-down", theme);
         types->setToolTip(QCoreApplication::translate("WindowSystem", "Choose new tab type")); types->setAccessibleName(types->toolTip());
-        row->addWidget(add); row->addWidget(types);
-        add->installEventFilter(this); types->installEventFilter(this);
     }
     CompactToolButton* add = nullptr;
     CompactToolButton* types = nullptr;
-    std::function<void()> menuRequested;
     void setHeight(int height) {
-        add->setTargetSize(QSize(newTabButtonWidth, height));
-        types->setTargetSize(QSize(listButtonWidth, height));
-        setFixedSize(newTabButtonWidth + createButtonGap + listButtonWidth, height);
+        setButtonSizes(QSize(newTabButtonWidth, std::max(1, height - 4)), QSize(listButtonWidth, std::max(1, height - 4)));
+        setFixedHeight(height);
     }
-    void setPopupOpen(bool open) {
-        setProperty("popupOpen", open);
-        types->setDown(open);
-        if (!open) {
-            // A popup may consume leave events. Recompute from the pointer
-            // instead of retaining the coupled highlight from before opening.
-            emphasized_ = rect().contains(mapFromGlobal(QCursor::pos()));
-        }
-        refreshStyle();
-    }
-protected:
-    bool eventFilter(QObject* watched, QEvent* event) override {
-        if (event->type() == QEvent::ContextMenu) {
-            const auto callback = menuRequested;
-            if (callback) callback();
-            return true;
-        }
-        if (event->type() == QEvent::Enter || event->type() == QEvent::Leave) {
-            emphasized_ = event->type() == QEvent::Enter;
-            refreshStyle();
-        }
-        return QWidget::eventFilter(watched, event);
-    }
-private:
-    void refreshStyle() {
-        setProperty("emphasized", emphasized_);
-        for (auto* button : {add, types}) {
-            button->style()->unpolish(button); button->style()->polish(button); button->update();
-        }
-    }
-    bool emphasized_ = false;
 };
 
 QColor tabListColor(const QWidget* widget, const char* token, QPalette::ColorRole fallback)
@@ -332,15 +321,27 @@ private:
 GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), theme_(theme)
 {
     setObjectName("TabGroup");
+    setAutoFillBackground(false);
     viewportWindow_ = window(); viewportWindow_->installEventFilter(this);
     stack_ = new QStackedWidget(this);
     bar_ = new TabBar(theme, this);
+    bar_->setColumnManaged(true);
+    columnPanel_ = new VerticalTabPanel(theme, this); columnPanel_->hide(); columnPanel_->installEventFilter(this);
+    for (auto* motion : {&columnExpansion_, &peekExpansion_})
+    {
+        QObject::connect(motion, &QVariantAnimation::valueChanged, this, [this] { layoutChildren(); });
+        QObject::connect(motion, &QVariantAnimation::finished, this, [this] { layoutChildren(); });
+    }
+    bar_->surfaceChanged = [this] {
+        const auto callback = surfaceInvalidated; if (callback) callback();
+    };
+    QObject::connect(&surfaceFocus_, &QVariantAnimation::valueChanged, this, [this] { updateCardJoin(); });
     bar_->installEventFilter(this);
     const int row = bar_->metrics().rowHeight;
     // Right after the last tab: new tab. At the first row's end, from the
     // right: the complete list, then sidebar actions (tab strip design 2.1).
     trailing_ = new QWidget(this); trailing_->setObjectName("TabCreateActions");
-    auto* actions = new QHBoxLayout(trailing_); actions->setContentsMargins(0, 0, 0, 0); actions->setSpacing(0);
+    auto* actions = new QHBoxLayout(trailing_); actions->setContentsMargins(4, 0, 0, 0); actions->setSpacing(0);
     auto* create = new TabCreateButtons(theme, trailing_); createButtons_ = create;
     create->setHeight(row);
     actions->addWidget(create);
@@ -371,21 +372,21 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         iconMode_ = !iconMode_;
         bar_->setIconMode(iconMode_);
         layoutChildren();
-        if (const auto callback = iconModeChanged) callback(iconMode_);
+        if (const auto callback = verticalStateChanged) callback(verticalWidth_, iconMode_);
     });
     resizeHandle_ = new QWidget(this); resizeHandle_->setObjectName("TabStripResizeHandle");
     resizeHandle_->setCursor(Qt::SizeHorCursor); resizeHandle_->hide(); resizeHandle_->installEventFilter(this);
     autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
     QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
         cancelViewportReflow();
-        if (scrollDirection_.isNull() || !bar_->scrollAt(dragProbe_, -scrollDirection_ * 12)) { autoScroll_->stop(); return; }
+        if (scrollDirection_.isNull() || !bar_->scrollAt(dragProbe_, -scrollDirection_ * 12, false)) { autoScroll_->stop(); return; }
         if (autoScroll_->interval() != 35) autoScroll_->setInterval(35);
     });
     QObject::connect(create->add, &QToolButton::clicked, this, [this] {
         const auto callback = newTabRequested; if (callback) callback();
     });
-    QObject::connect(create->types, &QToolButton::clicked, this, [this] { showNewTabMenu(); });
-    create->menuRequested = [this] { showNewTabMenu(); };
+    QObject::connect(create->types, &QToolButton::clicked, this, [this] { bar_->showColumnPopup([this] { showNewTabMenu(); }); });
+    create->menuRequested = [this] { bar_->showColumnPopup([this] { showNewTabMenu(); }); };
     QObject::connect(bar_, &TabBar::currentChanged, this, [this](int index) {
         const QPointer<GroupTabs> self(this);
         stack_->setCurrentIndex(index);
@@ -403,30 +404,77 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     bar_->close = [this](int index) { const auto callback = closeRequested; if (callback) callback(index); };
     bar_->unstick = [this](int index) { const auto callback = unstickRequested; if (callback) callback(index); };
     bar_->reservedSizeChanged = [this] { layoutChildren(); };
-    QObject::connect(list_, &QToolButton::clicked, this, [this] { showTabList(); });
+    QObject::connect(list_, &QToolButton::clicked, this, [this] { bar_->showColumnPopup([this] { showTabList(); }); });
     QObject::connect(qApp, &QApplication::focusChanged, this, [this] { refreshFocus(); });
 }
 TabBar* GroupTabs::tabBar() const { return bar_; }
 void GroupTabs::updateCardJoin()
 {
-    if (!card_ || vertical() || !barVisible_) return;
-    // The outline opens under the active tab, flares included.
-    const int current = bar_->currentIndex();
-    const auto active = current >= 0 ? bar_->tabRect(current) : QRect{};
-    const int flare = bar_->metrics().controlRadius;
-    const auto content = stack_->geometry();
-    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
-    const QPair<int, int> join = active.isEmpty() ? QPair<int, int>{}
-        : QPair<int, int>{bar_->x() + active.left() - flare - content.left() + margin, bar_->x() + active.right() + 1 + flare - content.left() + margin};
-    static_cast<CardOverlay*>(card_)->setCard(QRect(QPoint(margin, margin), content.size()), join,
-                                              bar_->placement() == TabBarPlacement::Bottom ? Qt::BottomEdge : Qt::TopEdge);
+    if (!stack_) return;
+    const auto barOrigin = bar_->mapTo(this, QPoint());
+    const QRectF body = compactPresentation_ ? QRectF{} : QRectF(stack_->geometry()).translated(-barOrigin);
+    bar_->setSurfaceContext(body, surfaceFocus_.value(), 1 - peekExpansion_.value());
+    const auto callback = surfaceInvalidated; if (callback) callback();
+}
+QRect GroupTabs::surfaceBounds() const
+{
+    if (compactPresentation_ || !stack_ || stack_->isHidden()) return {};
+    const auto profile = elevationProfile(ElevationLevel::BodyRaised);
+    const auto margins = elevationMargins(profile);
+    QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
+    if (barVisible_) for (const auto& anchor : bar_->surfaceAnchors(bar_->mapTo(this, QPoint())))
+        bounds |= anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation));
+    return bounds.toAlignedRect();
+}
+QRegion GroupTabs::surfacePaintRegion() const
+{
+    if (compactPresentation_ || !stack_ || stack_->isHidden()) return {};
+    // Elevation changes affect the perimeter, never the hosted content.
+    // Keep the corners and every anchor, including a lifted outer row.
+    const int inset = qCeil(bar_->metrics().cardRadius) + 1;
+    QRegion region(surfaceBounds());
+    region -= stack_->geometry().adjusted(inset, inset, -inset, -inset);
+    return region;
+}
+void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRect& exposed) const
+{
+    if (compactPresentation_ || !stack_ || stack_->isHidden() || !surfaceBounds().translated(offset).intersects(exposed)) return;
+    const QRectF body(stack_->geometry());
+    const auto profile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
+        elevationProfile(ElevationLevel::BodyRaised), surfaceFocus_.value());
+    auto style = elevationStyleForTheme(theme_);
+    style.focused = surfaceFocused_;
+    const auto anchors = barVisible_ ? bar_->surfaceAnchors(bar_->mapTo(this, QPoint())) : QVector<TabSurfaceAnchor>{};
+    painter.save(); painter.translate(offset);
+    painter.save();
+    QPainterPath bodyRegion; bodyRegion.addRect(surfaceBounds());
+    const auto bodyMargins = elevationMargins(profile);
+    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact) {
+        const auto margins = elevationMargins(anchor.elevation);
+        const qreal extent = std::ceil(std::max({margins.left(), margins.top(), margins.bottom(),
+            bodyMargins.left(), bodyMargins.top(), bodyMargins.bottom()})) + 1;
+        QPainterPath local; local.addRect(surfaceShadowClip(anchor.geometry, extent));
+        bodyRegion = bodyRegion.subtracted(local);
+    }
+    painter.setClipPath(bodyRegion, Qt::IntersectClip);
+    renderer.paintBody(painter, body, bar_->metrics().cardRadius, profile, style);
+    painter.restore();
+    QVector<ElevatedAnchor> shadows;
+    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact)
+        shadows.append({anchor.geometry, anchor.elevation});
+    renderer.paintAnchors(painter, shadows, profile, style);
+    bar_->paintSurfaceExtension(painter, bar_->mapTo(this, QPoint()));
+    painter.restore();
+}
+void GroupTabs::invalidateSurfaceCorners(const QRect& area)
+{
+    if (card_ && card_->isVisible())
+        static_cast<CardOverlay*>(card_)->invalidate(area.translated(-card_->pos()));
 }
 void GroupTabs::refreshFocus()
 {
     const auto callback = isActiveGroup;
-    const bool focused = window()->isActiveWindow() && callback && callback();
-    bar_->setGroupFocused(focused);
-    if (card_) static_cast<CardOverlay*>(card_)->setFocused(focused);
+    setGroupFocused(window()->isActiveWindow() && callback && callback());
 }
 GroupTabs::~GroupTabs()
 {
@@ -442,7 +490,16 @@ GroupTabs::~GroupTabs()
 bool GroupTabs::vertical() const { return bar_->vertical(); }
 int GroupTabs::columnWidth() const
 {
-    return std::clamp(verticalWidth_ > 0 ? verticalWidth_ : appearance_.verticalTabWidth, minimumVerticalTabWidth, maximumVerticalTabWidth);
+    return std::clamp(verticalWidth_ > 0 ? verticalWidth_ : appearance_.verticalTabWidth,
+        bar_->minimumColumnWidth(), compactPresentation_ ? maximumVerticalTabWidth : maximumColumnWidth());
+}
+int GroupTabs::maximumColumnWidth() const
+{
+    const int margin = bar_->metrics().cardMargin;
+    const int content = std::max(0, stack_->minimumSizeHint().expandedTo(stack_->minimumSize()).width());
+    // The strip borrows space only from its own content, never from the
+    // enclosing splitter. Keep the content's declared minimum intact.
+    return std::clamp(width() - content - 2 * margin - bar_->metrics().columnGap, bar_->minimumColumnWidth(), maximumVerticalTabWidth);
 }
 void GroupTabs::placeControls()
 {
@@ -450,11 +507,12 @@ void GroupTabs::placeControls()
     auto* footer = static_cast<QBoxLayout*>(footer_->layout());
     auto* trailing = static_cast<QHBoxLayout*>(trailing_->layout());
     auto* ending = static_cast<QHBoxLayout*>(end_->layout());
-    QList<QToolButton*> sidebar;
-    for (const auto name : {"UnpinCurrentButton", "UnpinAllButton"})
-        if (auto* button = findChild<QToolButton*>(QString::fromLatin1(name))) sidebar.append(button);
+    const auto& sidebar = sidebarButtons_;
     const int row = bar_->metrics().rowHeight;
+    create->types->setTargetSize(QSize(listButtonWidth, std::max(1, row - 4)));
     if (vertical()) {
+        const bool icons = iconMode_ && !bar_->peeking();
+        const bool left = bar_->placement() == TabBarPlacement::Left;
         if (create->parentWidget() != footer_) {
             // The trailing controls move into the footer.
             bar_->setTrailingWidget(nullptr); trailing_->setParent(this); trailing_->hide();
@@ -465,17 +523,32 @@ void GroupTabs::placeControls()
             for (auto* button : sidebar) { button->setParent(footer_); footer->addWidget(button); }
             footer->addWidget(iconModeButton_);
         }
-        footer->setDirection(iconMode_ ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+        footer->setDirection(left ? QBoxLayout::LeftToRight : QBoxLayout::RightToLeft);
+        create->setReversed(!left);
         // A labeled new-tab button, or only its icon in a narrow column.
         create->add->setText(QCoreApplication::translate("WindowSystem", "New tab"));
-        create->add->setToolButtonStyle(iconMode_ ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-        const int label = iconMode_ ? bar_->metrics().newTabWidth
-            : bar_->metrics().newTabWidth + fontMetrics().horizontalAdvance(create->add->text()) + 8;
-        create->add->setTargetSize(QSize(label, row));
-        create->types->setVisible(!iconMode_);
-        create->setFixedSize((iconMode_ ? 0 : bar_->metrics().typeWidth + bar_->metrics().controlGap) + label, row);
-        for (auto* button : sidebar) button->setVisible(!iconMode_ && !compactPresentation_);
-        const bool left = bar_->placement() == TabBarPlacement::Left;
+        const auto& metrics = bar_->metrics();
+        const int shownWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth)
+            * std::max(columnExpansion_.value(), peekExpansion_.value()));
+        const int room = shownWidth - 2 * metrics.verticalInset;
+        const bool showToggle = !icons && room >= metrics.newTabWidth + iconModeButton_->sizeHint().width() + 2;
+        iconModeButton_->setVisible(showToggle);
+        const int toggle = showToggle ? iconModeButton_->sizeHint().width() : 0;
+        const int types = metrics.typeWidth + metrics.controlGap;
+        const int actions = int(sidebar.size()) * (tabActionSize + 2);
+        const bool showActions = !icons && !compactPresentation_
+            && room >= metrics.newTabWidth + types + toggle + actions + 2;
+        const int remaining = room - toggle - (showActions ? actions : 0) - 2;
+        const bool showTypes = !icons && remaining >= metrics.newTabWidth + types;
+        const int fullLabel = metrics.newTabWidth + fontMetrics().horizontalAdvance(create->add->text()) + 8;
+        const bool showText = !icons && remaining >= fullLabel + (showTypes ? types : 0);
+        create->add->setToolButtonStyle(showText ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
+        const int label = showText ? fullLabel : metrics.newTabWidth;
+        create->add->setTargetSize(QSize(label, std::max(1, row - 4)));
+        create->add->setIconRail(metrics.verticalIconWidth / 2 - metrics.verticalInset, left ? Qt::LeftEdge : Qt::RightEdge);
+        create->types->setVisible(showTypes);
+        create->setFixedSize((showTypes ? types : 0) + label, row);
+        for (auto* button : sidebar) button->setVisible(showActions);
         setThemedIcon(iconModeButton_, iconMode_ == left ? QStringLiteral("chevron-right") : QStringLiteral("chevron-left"), theme_);
         iconModeButton_->setToolTip(iconMode_ ? QCoreApplication::translate("WindowSystem", "Show tab titles")
                                               : QCoreApplication::translate("WindowSystem", "Show only tab icons"));
@@ -490,6 +563,8 @@ void GroupTabs::placeControls()
         bar_->setEndWidget(end_);
         iconModeButton_->setParent(footer_);
         create->add->setText({}); create->add->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        create->add->setIconRail();
+        create->setReversed(false);
         create->types->show();
         create->setHeight(row);
         trailing_->show();
@@ -505,6 +580,20 @@ void GroupTabs::layoutChildren()
 {
     if (layingOut_) return;
     QScopedValueRollback guard(layingOut_, true);
+    if (vertical()) {
+        const bool animate = isVisible() && !compactPresentation_ && !resizeOrigin_;
+        const auto advance = [&](ProgressAnimation& motion, qreal target) {
+            if (!animate) motion.jump(target);
+            else if (motion.target() != target) motion.animateTo(target, Motion::Reveal, TabBar::animationsAllowed());
+        };
+        advance(columnExpansion_, iconMode_ ? 0.0 : 1.0);
+        advance(peekExpansion_, iconMode_ && bar_->peeking() ? 1.0 : 0.0);
+        if (bar_->parentWidget() != columnPanel_) {
+            bar_->setParent(columnPanel_); footer_->setParent(columnPanel_); title_->setParent(columnPanel_);
+        }
+    } else if (bar_->parentWidget() == columnPanel_) {
+        bar_->setParent(this); footer_->setParent(this); title_->setParent(this);
+    }
     placeControls();
     // The group keeps a margin around its card; a drag carrier shows only
     // its tabs and needs none.
@@ -512,62 +601,78 @@ void GroupTabs::layoutChildren()
     const auto area = rect().adjusted(margin, margin, -margin, -margin);
     if (!card_) card_ = new CardOverlay(theme_, this);
     auto* card = static_cast<CardOverlay*>(card_);
-    const auto placeCard = [&](QRect content, QPair<int, int> join, Qt::Edge edge) {
+    const auto placeCard = [&](QRect content) {
         stack_->setGeometry(content);
         card->setGeometry(content.adjusted(-margin, -margin, margin, margin));
-        card->setCard(QRect(QPoint(margin, margin), content.size()), {join.first - content.left() + margin, join.second - content.left() + margin}, edge);
+        card->setCard(QRect(QPoint(margin, margin), content.size()));
+        updateCardJoin();
         card->setVisible(!compactPresentation_);
         card->raise();
     };
     if (!barVisible_) {
-        bar_->hide(); footer_->hide(); resizeHandle_->hide(); title_->hide();
-        placeCard(area, {}, Qt::TopEdge);
+        bar_->hide(); footer_->hide(); resizeHandle_->hide(); title_->hide(); columnPanel_->hide();
+        placeCard(area);
         return;
     }
     bar_->show();
     if (vertical()) {
-        const int footerHeight = iconMode_ ? 2 * bar_->metrics().rowHeight + 6 : bar_->metrics().rowHeight + 4;
-        const bool titled = !groupName_.isEmpty() && appearance_.showGroupNames && !iconMode_ && !compactPresentation_;
+        const auto& metrics = bar_->metrics();
+        const qreal reveal = std::max(columnExpansion_.value(), peekExpansion_.value());
+        bar_->setColumnReveal(reveal, columnExpansion_.state() == QAbstractAnimation::Running);
+        const int footerHeight = metrics.rowHeight + 4;
+        const bool titled = !groupName_.isEmpty() && appearance_.showGroupNames && !compactPresentation_;
         const int titleHeight = titled ? bar_->metrics().rowHeight : 0;
         const QSize available(columnWidth(), std::max(0, area.height() - footerHeight - titleHeight));
         bar_->setAvailableSize(available);
-        const auto reserved = bar_->reservedSize(available), shown = bar_->displaySize(available);
+        const int reservedWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth) * columnExpansion_.value());
+        const int shownWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth) * reveal);
         const bool left = bar_->placement() == TabBarPlacement::Left;
-        const int x = area.left() + (left ? 0 : area.width() - shown.width());
+        const int x = area.left() + (left ? 0 : area.width() - shownWidth);
+        const int pad = 3;
+        columnPanel_->setGeometry(x - pad, area.top() - pad, shownWidth + 2 * pad, area.height() + 2 * pad);
+        static_cast<VerticalTabPanel*>(columnPanel_)->setSurface(QRect(pad, pad, shownWidth, area.height()), peekExpansion_.value());
+        columnPanel_->show();
         if (titled) {
             const int inset = bar_->metrics().verticalInset + 4;
-            title_->setGeometry(x + inset, area.top(), std::max(0, shown.width() - 2 * inset), titleHeight);
+            title_->setGeometry(pad + inset, pad, std::max(0, shownWidth - 2 * inset), titleHeight);
             title_->setText(title_->fontMetrics().elidedText(groupName_, Qt::ElideRight, title_->width()));
         }
-        title_->setVisible(titled);
-        bar_->setGeometry(x, area.top() + titleHeight, shown.width(), available.height());
-        footer_->setGeometry(x, area.top() + titleHeight + available.height(), shown.width(), footerHeight); footer_->setVisible(!compactPresentation_);
+        title_->setVisible(titled && reveal > 0);
+        bar_->setGeometry(pad, pad + titleHeight, shownWidth, available.height());
+        footer_->setGeometry(pad, pad + titleHeight + available.height(), shownWidth, footerHeight); footer_->setVisible(!compactPresentation_);
         // The column sits on the background beside the card, with a gap.
-        const int gap = margin * 2;
-        placeCard(left ? QRect(area.left() + reserved.width() + gap, area.top(), area.width() - reserved.width() - gap, area.height())
-                       : QRect(area.left(), area.top(), area.width() - reserved.width() - gap, area.height()), {}, Qt::TopEdge);
-        const int edge = area.left() + (left ? reserved.width() + margin : area.width() - reserved.width() - margin);
+        const int gap = compactPresentation_ ? 0 : metrics.columnGap;
+        placeCard(left ? QRect(area.left() + reservedWidth + gap, area.top(), area.width() - reservedWidth - gap, area.height())
+                       : QRect(area.left(), area.top(), area.width() - reservedWidth - gap, area.height()));
+        const int edge = area.left() + (left ? reservedWidth + gap - margin : area.width() - reservedWidth - gap + margin);
         resizeHandle_->setGeometry(edge - bar_->metrics().resizeBand / 2, area.top(), bar_->metrics().resizeBand, area.height());
-        resizeHandle_->setVisible(!iconMode_ && !compactPresentation_);
+        resizeHandle_->setVisible((!iconMode_ || resizeOrigin_) && !compactPresentation_);
         resizeHandle_->raise();
-        if (shown.width() > reserved.width()) { bar_->raise(); footer_->raise(); }
+        columnPanel_->raise();
+        resizeHandle_->raise();
     } else {
+        columnPanel_->hide();
         footer_->hide(); resizeHandle_->hide(); title_->hide();
         // The first tab keeps clear of the card's rounded corner.
         const int inset = compactPresentation_ ? 0 : bar_->metrics().stripInset;
-        const QSize strip(std::max(1, area.width() - 2 * inset), area.height());
+        const int availableWidth = compactPresentation_ && normalDragStyle_
+            ? std::min(area.width(), dragTabArea_.width()) : area.width() - 2 * inset;
+        const QSize strip(std::max(1, availableWidth), area.height());
         bar_->setAvailableSize(strip);
         const auto reserved = bar_->reservedSize(strip), shown = bar_->displaySize(strip);
         const bool top = bar_->placement() != TabBarPlacement::Bottom;
         bar_->setGeometry(area.left() + inset, top ? area.top() : area.bottom() + 1 - shown.height(), strip.width(), shown.height());
         const QRect content(area.left(), top ? area.top() + reserved.height() : area.top(), area.width(), std::max(0, area.height() - reserved.height()));
-        placeCard(content, {}, top ? Qt::TopEdge : Qt::BottomEdge);
+        placeCard(content);
         bar_->raise();
         updateCardJoin();
     }
-    if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); }
+    if (lifting_) bar_->setLifted(bar_->mapFromGlobal(liftedGlobal_), liftedGrab_);
+    if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); if (vertical()) columnPanel_->raise(); }
     footer_->raise();
-    updateGeometry();
+    bar_->refreshScrollInput();
+    if (columnExpansion_.state() != QAbstractAnimation::Running && peekExpansion_.state() != QAbstractAnimation::Running && !bar_->rowTransitionRunning())
+        updateGeometry();
     const auto callback = hoverGeometryChanged; if (callback) callback();
 }
 QSize GroupTabs::sizeHint() const
@@ -585,7 +690,10 @@ QSize GroupTabs::minimumSizeHint() const
     const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
     auto size = stack_->minimumSizeHint().expandedTo(stack_->minimumSize()) + QSize(2 * margin, 2 * margin);
     if (!barVisible_) return size;
-    if (vertical()) size.rwidth() += (iconMode_ ? bar_->metrics().verticalIconWidth : columnWidth()) + 2 * margin;
+    // A requested column width must not become a splitter minimum: resizing
+    // the column would otherwise resize this group and squeeze its neighbor.
+    if (vertical()) size.rwidth() += (iconMode_ ? bar_->metrics().verticalIconWidth : bar_->minimumColumnWidth())
+        + bar_->metrics().columnGap;
     else size.rheight() += bar_->reservedSize(QSize(std::max(width(), 1), height())).height();
     return size;
 }
@@ -645,18 +753,18 @@ TabViewportState GroupTabs::currentViewportState() const
 {
     TabViewportState state;
     state.offset = scrollOffset();
+    state.stickyOffset = bar_->stickyScrollOffset();
+    state.rowsOffset = bar_->rowScrollOffset();
     state.rowsExpanded = bar_->expanded();
     state.windowClientBounds = window()->geometry();
-    if (isVisible() && barVisible_ && bar_->scrollsHorizontally()) {
+    if (isVisible() && barVisible_) {
         const auto viewport = bar_->scrollViewport();
         state.bounds = {bar_->mapTo(window(), viewport.topLeft()), viewport.size()};
     }
     const auto current = bar_->currentIndex();
     if (current >= 0) {
         state.activeTab = bar_->tabData(current).toUuid();
-        const auto area = bar_->contentTabRect(current);
-        state.activeFullyVisible = !area.isEmpty() && !state.bounds.isEmpty()
-            && area.left() >= state.offset + stickyInset(current) && area.right() < state.offset + state.bounds.width();
+        state.activeFullyVisible = !state.bounds.isEmpty() && bar_->fullyVisible(current);
     }
     return state;
 }
@@ -674,7 +782,7 @@ TabViewportState GroupTabs::captureViewportState() const
 }
 void GroupTabs::restoreViewportState(TabViewportState state)
 {
-    if (bar_->collapsible() && state.rowsExpanded) bar_->setExpanded(*state.rowsExpanded);
+    if (bar_->collapsible() && state.rowsExpanded) bar_->setExpanded(*state.rowsExpanded, false, false);
     pendingScrollOffset_.reset();
     pendingViewportState_ = std::move(state);
     applyPendingViewportState();
@@ -701,17 +809,24 @@ void GroupTabs::queueViewportReflow()
 bool GroupTabs::applyPendingViewportState()
 {
     if (!pendingViewportState_) return true;
-    // Only a single horizontal row keeps shown tabs in place this way.
-    if (!bar_->scrollsHorizontally()) return true;
     QScopedValueRollback applying(applyingViewportState_, true);
     const auto old = *pendingViewportState_;
     const auto current = currentViewportState();
-    if (current.bounds.isEmpty()) return false;
+    if (current.bounds.isEmpty()) return !barVisible_;
+    const bool newActive = !old.activeTab.isNull() && current.activeTab != old.activeTab;
+    if (!bar_->scrollsHorizontally()) {
+        // Vertical sections and expanded multiline rows each own their
+        // scroll position. A replacement strip must restore all of them.
+        bar_->restoreScrollOffsets(old.offset, old.stickyOffset, old.rowsOffset);
+        if (newActive || old.activeFullyVisible) bar_->ensureVisible(bar_->currentIndex());
+        return true;
+    }
     if (old.bounds.isEmpty()) {
         // A newly constructed hidden strip has no displayed anchor. Its
         // provisional focus scroll must clamp to the first real viewport,
         // rather than manufacture trailing space before the window is shown.
-        bar_->setScrollOffset(old.offset);
+        bar_->restoreScrollOffsets(old.offset, old.stickyOffset, old.rowsOffset);
+        if (newActive) bar_->ensureVisible(bar_->currentIndex());
         return true;
     }
     int offset = old.offset;
@@ -732,7 +847,8 @@ bool GroupTabs::applyPendingViewportState()
                 ? qBound(rightLimit, offset, area.left() - inset) : area.left() - inset;
         }
     }
-    bar_->setScrollOffset(offset);
+    bar_->restoreScrollOffsets(offset, old.stickyOffset, old.rowsOffset);
+    if (newActive || old.activeFullyVisible) bar_->ensureVisible(bar_->currentIndex());
     return true;
 }
 void GroupTabs::applyPendingScrollOffset()
@@ -757,12 +873,12 @@ void GroupTabs::scrollByWheel(QPoint delta)
     const auto viewport = bar_->scrollViewport();
     bar_->scrollAt(viewport.isEmpty() ? bar_->rect().center() : viewport.center(), delta);
 }
-bool GroupTabs::scrollStripAt(QPoint global, QPoint delta)
+bool GroupTabs::scrollStripAt(QPoint global, QPoint delta, bool smooth)
 {
     if (!barVisible_ || !QRect(bar_->mapToGlobal(QPoint()), bar_->size()).contains(global)) return false;
     cancelViewportReflow();
     // The scroll may destroy this group; touch nothing after it.
-    bar_->scrollAt(bar_->mapFromGlobal(global), delta);
+    bar_->scrollAt(bar_->mapFromGlobal(global), delta, smooth);
     return true;
 }
 int GroupTabs::currentIndex() const { return bar_->currentIndex(); }
@@ -791,12 +907,14 @@ void GroupTabs::setTheme(const Theme& theme)
 {
     theme_ = theme;
     bar_->setTheme(theme);
+    static_cast<VerticalTabPanel*>(columnPanel_)->setTheme(theme);
     if (card_) static_cast<CardOverlay*>(card_)->setTheme(theme);
     for (auto* button : findChildren<QAbstractButton*>()) {
         const auto name = button->property("themeIcon").toString();
         if (!name.isEmpty()) button->setIcon(iconFor(name, theme));
     }
     updateGeometry();
+    updateCardJoin();
 }
 
 void GroupTabs::setAppearance(const TabAppearance& appearance, bool pinned)
@@ -859,7 +977,31 @@ void GroupTabs::setStickyCount(int count)
     bar_->setStickyCount(count); layoutChildren();
 }
 void GroupTabs::setTabMetadata(int index, const TabRecord& tab) { bar_->setTabMetadata(index, tab); }
-void GroupTabs::setGroupFocused(bool focused) { bar_->setGroupFocused(focused); }
+GroupTabs::SurfaceState GroupTabs::captureSurfaceState() const
+{
+    return {surfaceFocus_.value(), surfaceFocused_, bar_->captureSurfaceState()};
+}
+
+void GroupTabs::inheritSurface(const SurfaceState& previous, bool animate)
+{
+    surfaceFocused_ = previous.focused;
+    surfaceFocus_.jump(previous.focus);
+    surfaceFocus_.animateTo(surfaceFocused_ ? 1 : 0, surfaceFocused_ ? Motion::SurfaceLift : Motion::SurfaceLower, animate);
+    bar_->inheritSurface(previous.tabs, animate);
+    updateCardJoin();
+}
+
+void GroupTabs::setGroupFocused(bool focused)
+{
+    const QPointer<GroupTabs> retained(this);
+    bar_->setGroupFocused(focused);
+    if (!retained) return;
+    if (surfaceFocused_ == focused) return;
+    surfaceFocused_ = focused;
+    surfaceFocus_.animateTo(focused ? 1 : 0, focused ? Motion::SurfaceLift : Motion::SurfaceLower,
+                            isVisible() && TabBar::animationsAllowed());
+    updateCardJoin();
+}
 void GroupTabs::setGroupName(const QString& name)
 {
     // At the end of a horizontal strip; above a vertical one, as its title
@@ -883,20 +1025,48 @@ QRect GroupTabs::viewportRectGlobal() const {
     if (!barVisible_ || bar_->isHidden()) return {};
     return QRect(bar_->mapToGlobal(QPoint()), bar_->size());
 }
+QRect GroupTabs::contentRectGlobal() const
+{
+    return QRect(stack_->mapToGlobal(QPoint()), stack_->size());
+}
+QRect GroupTabs::stripPanelRectGlobal() const
+{
+    if (!barVisible_ || bar_->isHidden()) return {};
+    if (!vertical()) return viewportRectGlobal();
+    const auto body = static_cast<VerticalTabPanel*>(columnPanel_)->bodyRect();
+    return QRect(columnPanel_->mapToGlobal(body.topLeft()), body.size());
+}
+void GroupTabs::restoreColumnPeek()
+{
+    if (!vertical() || !iconMode_) return;
+    peekExpansion_.jump(1);
+    bar_->restoreColumnPeek(true);
+    layoutChildren();
+}
 int GroupTabs::insertionIndex(QPoint global, TabLayoutInput::Carried carried) const {
+    updateDragProbe(global);
+    return bar_->insertionAt(dragProbe_, 0, carried).index;
+}
+void GroupTabs::updateDragProbe(QPoint global) const {
     dragProbe_ = bar_->mapFromGlobal(global);
     if (lifting_) if (const auto lifted = bar_->liftedRect(); !lifted.isEmpty()) {
-        // A lifted folder decides by its header, which leads it.
-        dragProbe_ = lifted.center();
-        if (bar_->draggedFolder() >= 0) dragProbe_ = bar_->vertical() ? QPoint(lifted.center().x(), lifted.top() + bar_->metrics().rowHeight / 2)
-                                                                      : QPoint(lifted.left() + bar_->metrics().rowHeight / 2, lifted.center().y());
+        // The label's center chooses its slot along the strip, but the
+        // pointer chooses the row. The painted label may still be clipped
+        // at a row boundary while the next gap is being laid out.
+        if (bar_->vertical()) dragProbe_.setY(bar_->draggedFolder() >= 0
+            ? lifted.top() + bar_->metrics().rowHeight / 2 : lifted.center().y());
+        else dragProbe_.setX(bar_->draggedFolder() >= 0
+            ? lifted.left() + bar_->metrics().rowHeight / 2 : lifted.center().x());
     }
-    return bar_->insertionAt(dragProbe_, 0, carried).index;
 }
 void GroupTabs::setLiftedTab(QPoint global, QPoint grab)
 {
     lifting_ = true;
+    liftedGlobal_ = global; liftedGrab_ = grab;
     bar_->setLifted(bar_->mapFromGlobal(global), grab);
+    // beginTab opens the first gap before asking for an insertion index.
+    // Its probe must already belong to the row where the label was taken.
+    updateDragProbe(global);
 }
 void GroupTabs::clearLiftedTab()
 {
@@ -946,21 +1116,55 @@ QRect GroupTabs::insertionPreviewRectGlobal() const
 }
 void GroupTabs::setDragPresentation(bool compact, bool edge)
 {
+    if (normalDragStyle_ && (!compact || edge)) {
+        const auto saved = *normalDragStyle_;
+        normalDragStyle_.reset(); dragTabArea_ = {};
+        appearance_ = saved.appearance; verticalWidth_ = saved.width; iconMode_ = saved.iconMode;
+        bar_->setAppearance(appearance_, saved.placement);
+        bar_->setIconMode(iconMode_); bar_->setStickyCount(saved.stickyCount);
+    }
     compactPresentation_ = compact;
+    bar_->setCarriedDisplay(compact && !edge);
     if (compact) setTabBarVisible(!edge);
     bar_->refreshTrailing();
     layoutChildren();
 }
+bool GroupTabs::setDragTabStyle(const TabBar& target, bool sticky)
+{
+    if (!compactPresentation_) return false;
+    const int count = sticky ? bar_->count() : 0;
+    const QSize area(target.width(), target.availableSize().height());
+    const bool icons = target.iconsOnly();
+    const auto presentation = target.verticalPresentation();
+    const int columns = target.tabLayout().tileColumns;
+    if (normalDragStyle_ && appearance_ == target.appearance() && bar_->placement() == target.placement()
+        && dragTabArea_ == area && iconMode_ == icons && bar_->stickyCount() == count
+        && bar_->carriedTileColumns() == columns && bar_->verticalPresentation() == presentation) return false;
+    if (!normalDragStyle_) normalDragStyle_ = DragStyle{appearance_, bar_->placement(), verticalWidth_, iconMode_, bar_->stickyCount()};
+    appearance_ = target.appearance(); dragTabArea_ = area;
+    verticalWidth_ = dragTabArea_.width(); iconMode_ = icons;
+    bar_->setAppearance(appearance_, target.placement());
+    bar_->setIconMode(iconMode_); bar_->setStickyCount(count);
+    bar_->setCarriedPresentation(presentation);
+    bar_->setCarriedTileColumns(columns);
+    layoutChildren();
+    return true;
+}
+void GroupTabs::setIncomingVisual(TabDragVisual visual, QPoint global)
+{
+    bar_->setIncomingVisual(std::move(visual), bar_->mapFromGlobal(global));
+}
 void GroupTabs::setDragHover(QPoint global) {
     const auto area = viewportRectGlobal();
     dragHovered_ = area.contains(global);
+    if (vertical()) bar_->setColumnHovered(dragHovered_);
     dragProbe_ = bar_->mapFromGlobal(global);
     // Dragging over collapsed rows shows them all (tab strip design 3.4).
     bar_->setDragExpanded(dragHovered_);
     QPoint direction;
     if (dragHovered_) {
-        const auto lane = bar_->scrollViewport();
-        if (bar_->scrollsHorizontally()) {
+        const auto lane = bar_->scrollViewportAt(dragProbe_);
+        if (bar_->scrollsHorizontallyAt(dragProbe_)) {
             const int start = lane.left() + bar_->frozenExtent();
             if (dragProbe_.x() >= start && dragProbe_.x() < start + 24) direction = {-1, 0};
             else if (dragProbe_.x() > lane.right() - 24) direction = {1, 0};
@@ -981,6 +1185,7 @@ void GroupTabs::setPinnedActions(std::function<void()> current, std::function<vo
         auto* button = new CompactToolButton(owner, QSize(20, bar_->metrics().rowHeight)); setThemedIcon(button, std::get<2>(item), theme_);
         button->setObjectName(std::get<2>(item) == "unpin-all" ? "UnpinAllButton" : "UnpinCurrentButton");
         button->setToolTip(std::get<1>(item)); button->setAccessibleName(std::get<1>(item));
+        sidebarButtons_.append(button);
         if (vertical()) static_cast<QBoxLayout*>(footer_->layout())->insertWidget(footer_->layout()->count() - 1, button);
         else { auto* row = static_cast<QHBoxLayout*>(end_->layout()); row->insertWidget(row->count() - 1, button); }
         QObject::connect(button, &QToolButton::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
@@ -992,12 +1197,20 @@ bool GroupTabs::event(QEvent* event) {
     // The children are placed by hand, not by a layout: pass a page's new
     // size limits on to the parent layout.
     if (event->type() == QEvent::LayoutRequest) { updateGeometry(); layoutChildren(); }
+    if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {
+        const auto callback = surfaceInvalidated; if (callback) callback();
+    }
     return QFrame::event(event);
 }
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == columnPanel_) {
+        if (event->type() == QEvent::Enter) bar_->setColumnHovered(true);
+        if (event->type() == QEvent::Leave && !columnPanel_->rect().contains(columnPanel_->mapFromGlobal(QCursor::pos())))
+            bar_->setColumnHovered(false);
+    }
     if (event->type() == QEvent::ContextMenu && (watched == footer_ || watched == trailing_ || watched == end_)) {
         const auto callback = groupMenuRequested;
-        if (callback) callback(static_cast<QContextMenuEvent*>(event)->globalPos());
+        if (callback) bar_->showColumnPopup([callback, global = static_cast<QContextMenuEvent*>(event)->globalPos()] { callback(global); });
         return true;
     }
     if (event->type() == QEvent::Show && (watched == viewportWindow_ || watched == bar_)) queueViewportReflow();
@@ -1010,24 +1223,36 @@ bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
         // click returns it to the default width.
         const bool left = bar_->placement() == TabBarPlacement::Left;
         if (event->type() == QEvent::MouseButtonPress) {
+            if (static_cast<QMouseEvent*>(event)->button() != Qt::LeftButton) return false;
             resizeOrigin_ = static_cast<QMouseEvent*>(event)->globalPosition().toPoint().x();
             resizeStartWidth_ = columnWidth();
             return true;
         }
         if (event->type() == QEvent::MouseMove && resizeOrigin_) {
             const int moved = static_cast<QMouseEvent*>(event)->globalPosition().toPoint().x() - *resizeOrigin_;
-            verticalWidth_ = std::clamp(resizeStartWidth_ + (left ? moved : -moved), minimumVerticalTabWidth, maximumVerticalTabWidth);
+            const int requested = resizeStartWidth_ + (left ? moved : -moved);
+            const int minimum = bar_->minimumColumnWidth();
+            // Reaching the title-less row is not yet a collapse. A little
+            // extra travel makes the icon-only transition deliberate.
+            const bool icons = requested <= minimum - bar_->metrics().iconCollapseTravel;
+            // Crossing the collapse threshold is a mode switch, not a new
+            // expanded width. Retain this gesture's initial width for peeking
+            // and for a later explicit expansion; reversing the drag still
+            // resumes direct sizing from its original pointer origin.
+            verticalWidth_ = icons ? resizeStartWidth_ : std::clamp(requested, minimum, maximumColumnWidth());
+            if (iconMode_ != icons) { iconMode_ = icons; bar_->setIconMode(icons); }
             layoutChildren();
             return true;
         }
         if (event->type() == QEvent::MouseButtonRelease && resizeOrigin_) {
             resizeOrigin_.reset();
-            if (const auto callback = verticalWidthChanged) callback(verticalWidth_);
+            layoutChildren();
+            if (const auto callback = verticalStateChanged) callback(verticalWidth_, iconMode_);
             return true;
         }
         if (event->type() == QEvent::MouseButtonDblClick) {
             resizeOrigin_.reset(); verticalWidth_ = 0; layoutChildren();
-            if (const auto callback = verticalWidthChanged) callback(0);
+            if (const auto callback = verticalStateChanged) callback(0, iconMode_);
             return true;
         }
     }
@@ -1038,7 +1263,7 @@ void GroupTabs::resizeEvent(QResizeEvent* event) {
     // would otherwise replace it with the resized one.
     QFrame::resizeEvent(event); queueViewportReflow(); layoutChildren();
 }
-void GroupTabs::moveEvent(QMoveEvent* event) { QFrame::moveEvent(event); queueViewportReflow(); }
+void GroupTabs::moveEvent(QMoveEvent* event) { QFrame::moveEvent(event); queueViewportReflow(); updateCardJoin(); }
 void GroupTabs::showTabList() {
     if (tabListMenu_ && tabListMenu_->isVisible()) { tabListMenu_->close(); return; }
     auto* menu = new DismissOnlyMenu(this); menu->setAttribute(Qt::WA_DeleteOnClose);

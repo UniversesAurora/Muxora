@@ -2,6 +2,7 @@
 #include "tab_bar.hpp"
 #include "style/compact_tool_button.hpp"
 #include "style/tab_appearance_p.hpp"
+#include "style/edge_fade.hpp"
 
 #include <QAccessible>
 #include <QAccessibleWidget>
@@ -12,14 +13,12 @@
 #include <QHelpEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QToolButton>
 #include <QToolTip>
 #include <QWheelEvent>
 #include <algorithm>
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#endif
 
 namespace window_system {
 namespace {
@@ -200,12 +199,7 @@ void TabBar::setAnimationsEnabled(bool enabled) { animationsSwitch = enabled; }
 
 bool TabBar::animationsEnabled()
 {
-    if (!animationsSwitch || qEnvironmentVariable("WINDOW_SYSTEM_ANIMATIONS") == QLatin1StringView("0")) return false;
-#ifdef Q_OS_WIN
-    BOOL enabled = TRUE;
-    if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) && !enabled) return false;
-#endif
-    return true;
+    return animationsSwitch && motionAnimationsEnabled();
 }
 
 TabBar::TabBar(const Theme& theme, QWidget* parent)
@@ -215,6 +209,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     static const bool factory = [] { QAccessible::installFactory(accessibleFactory); return true; }();
     Q_UNUSED(factory);
     setObjectName("TabBar");
+    rowWheelClock_.start();
     setMouseTracking(true);
     setFocusPolicy(Qt::TabFocus);
     setAttribute(Qt::WA_Hover);
@@ -225,20 +220,67 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     connect(countButton_, &QToolButton::clicked, this, [this] { setExpanded(!expanded_); });
     collapseTimer_.setSingleShot(true); collapseTimer_.setInterval(400);
     connect(&collapseTimer_, &QTimer::timeout, this, [this] { if (expandedByWheel_) setExpanded(false); });
-    peekTimer_.setSingleShot(true); peekTimer_.setInterval(400);
+    peekTimer_.setSingleShot(true); peekTimer_.setInterval(120);
     connect(&peekTimer_, &QTimer::timeout, this, [this] {
         if (!iconMode_ || peeking_) return;
-        peeking_ = true;
+        peeking_ = true; relayout(true);
         if (const auto callback = reservedSizeChanged) callback();
     });
     slideTimer_.setInterval(15);
     connect(&slideTimer_, &QTimer::timeout, this, [this] {
         if (slideClock_.elapsed() >= slideDuration_) { slides_.clear(); slideTimer_.stop(); }
+        syncAttachment(); surfaceFrameChanged();
+    });
+    connect(&actionOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); });
+    connect(&actionOpacity_, &QVariantAnimation::finished, this, [this] {
+        if (actionOpacity_.value() == 0) fadingAction_ = -1;
+    });
+    connect(&presenceProgress_, &QVariantAnimation::valueChanged, this, [this] { update(); });
+    connect(&presenceProgress_, &QVariantAnimation::finished, this, [this] {
+        departing_.clear();
+        for (auto it = presence_.begin(); it != presence_.end();)
+            if (it->to == 1) it = presence_.erase(it); else ++it;
         update();
+    });
+    connect(&rowsReveal_, &QVariantAnimation::valueChanged, this, [this] {
+        if (const auto callback = reservedSizeChanged) callback();
+        relayoutTrailing(); refreshScrollInput();
+        update();
+    });
+    connect(&rowsReveal_, &QVariantAnimation::finished, this, [this] {
+        if (!dragExpanded_) temporaryRowsOverlay_ = false;
+        if (!expanded_ && !dragExpanded_) qApp->removeEventFilter(this);
+        if (const auto callback = reservedSizeChanged) callback();
+        update();
+    });
+    const auto surfaceFrame = [this] { surfaceFrameChanged(); };
+    connect(&attachment_, &QVariantAnimation::valueChanged, this, surfaceFrame);
+    connect(&selection_, &QVariantAnimation::valueChanged, this, surfaceFrame);
+    connect(&liftElevation_, &QVariantAnimation::valueChanged, this, surfaceFrame);
+    scrollbarHideTimer_.setSingleShot(true); scrollbarHideTimer_.setInterval(700);
+    scrollMotion_.applyValue = [this](qreal value) {
+        if (smoothLane_ < 0 || smoothLane_ >= layout_.laneList.size()) return;
+        const int lane = smoothLane_;
+        if (!isSmoothScrollingEnabled(this) || !animationsEnabled()) {
+            scrollMotion_.stopAt(layout_.laneList.at(lane).offset); return;
+        }
+        const QPointer<TabBar> self(this);
+        applyingScrollMotion_ = true;
+        setLaneOffset(lane, qRound(value));
+        if (!self) return;
+        applyingScrollMotion_ = false;
+        if (expanded_ && layout_.rowScrollLane == lane) {
+            const auto info = layout_.laneList.value(lane);
+            rowWheelGuard_.observe(info.offset == (placement_ == TabBarPlacement::Bottom ? info.maximumOffset() : 0), rowWheelClock_.elapsed());
+        }
+    };
+    connect(&scrollbarOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); refreshScrollInput(); });
+    connect(&scrollbarHideTimer_, &QTimer::timeout, this, [this] {
+        if (scrollDragLane_ < 0) scrollbarOpacity_.animateTo(0, Motion::Presence, animationsEnabled());
     });
 }
 
-TabBar::~TabBar() { qApp->removeEventFilter(this); }
+TabBar::~TabBar() { qApp->removeEventFilter(this); delete scrollInput_.data(); }
 
 int TabBar::addTab(const QIcon& icon, const QString& title)
 {
@@ -252,11 +294,14 @@ int TabBar::addTab(const QIcon& icon, const QString& title)
 void TabBar::removeTab(int index)
 {
     if (index < 0 || index >= tabs_.size()) return;
+    const auto id = tabs_.at(index).data.toUuid();
+    presence_.remove(id); departing_.remove(id);
     const bool wasCurrent = index == current_;
     tabs_.removeAt(index);
     if (index < stickyCount_) --stickyCount_;
     if (dragged_ == index) dragged_ = -1; else if (dragged_ > index) --dragged_;
     if (hovered_ >= index) hovered_ = -1;
+    if (fadingAction_ == index) fadingAction_ = -1; else if (fadingAction_ > index) --fadingAction_;
     pressed_ = actionPressed_ = middlePressed_ = -1;
     const int previous = current_;
     if (tabs_.isEmpty()) current_ = -1;
@@ -267,7 +312,7 @@ void TabBar::removeTab(int index)
 }
 
 QVariant TabBar::tabData(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).data : QVariant{}; }
-void TabBar::setTabData(int index, const QVariant& data) { if (index >= 0 && index < tabs_.size()) tabs_[index].data = data; }
+void TabBar::setTabData(int index, const QVariant& value) { if (index >= 0 && index < tabs_.size()) tabs_[index].data = value; }
 QString TabBar::tabText(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).title : QString{}; }
 void TabBar::setTabText(int index, const QString& text)
 {
@@ -304,9 +349,195 @@ void TabBar::setCurrentIndex(int index)
 {
     if (index < -1 || index >= tabs_.size() || index == current_) return;
     current_ = index;
+    selectionStart_ = 0;
+    selection_.jump(0);
+    selection_.animateTo(1, Motion::SurfaceChangeLift, isVisible() && animationsEnabled());
     // The current row may change while collapsed.
     relayout(false);
     emit currentChanged(index);
+}
+
+qreal TabBar::selectionWeight(int index) const
+{
+    if (index < 0 || index != current_ || index >= count() || incomingVisual_.paint) return 0;
+    return selectionStart_ + (1 - selectionStart_) * selection_.value();
+}
+
+std::pair<qreal, qreal> TabBar::attachmentValues() const
+{
+    const auto progress = attachment_.value();
+    return {attachmentFrom_.first + (attachmentTo_.first - attachmentFrom_.first) * progress,
+            attachmentFrom_.second + (attachmentTo_.second - attachmentFrom_.second) * progress};
+}
+
+SurfaceGeometry TabBar::anchorGeometry(QRectF anchor, QRectF visible, bool compact, bool lifted, bool transitioning) const
+{
+    if (visible.isEmpty()) return {};
+    const auto edge = vertical() ? (placement_ == TabBarPlacement::Left ? SurfaceEdge::Left : SurfaceEdge::Right)
+        : placement_ == TabBarPlacement::Top ? SurfaceEdge::Top : SurfaceEdge::Bottom;
+    const bool columnOverlay = vertical() && surfaceJoin_ < 1;
+    const bool rowOverlay = !vertical() && overlayActive() && !lifted;
+    const bool foreground = columnOverlay || rowOverlay;
+    auto body = surfaceBody_;
+    // A hovering column covers the card instead of narrowing the label back
+    // towards the card's original edge. Its small shoulder retracts with the
+    // column's own progress, then the whole label casts its own shadow.
+    if (columnOverlay) {
+        const int gap = metrics_.verticalInset + metrics_.columnGap;
+        if (placement_ == TabBarPlacement::Left) body.moveLeft(anchor.right() + gap);
+        else body.moveRight(anchor.left() - gap);
+    }
+    const bool adjacent = vertical() || (placement_ == TabBarPlacement::Top
+        ? std::abs(anchor.bottom() - body.top()) <= metrics_.outerMargin + 1
+        : std::abs(anchor.top() - body.bottom()) <= metrics_.outerMargin + 1);
+    const bool covered = !vertical() && !adjacent;
+    auto values = transitioning ? attachmentValues() : std::pair<qreal, qreal>{adjacent && !compact ? 1 : 0, covered ? 1 : 0};
+    const qreal panel = transitioning ? (columnOverlay ? surfaceJoin_ : rowOverlay ? 1 - rowsReveal_.value() : 1) : 1;
+    SurfaceGeometryInput input;
+    input.body = body; input.bodyRadius = metrics_.cardRadius;
+    input.anchor = anchor; input.visibleAnchor = visible;
+    input.edge = edge; input.anchorRadius = metrics_.radius; input.shoulderRadius = metrics_.controlRadius;
+    input.joinProgress = values.first * panel;
+    // A shoulder may change shape, but cannot stretch across another row.
+    input.adjacent = adjacent && input.joinProgress > 0;
+    input.covered = values.second * panel > 0; input.coveredProgress = values.second * panel;
+    input.compact = compact && input.joinProgress <= 0;
+    auto geometry = surfaceGeometry(input);
+    if (foreground && transitioning) {
+        geometry.body = {}; geometry.bodyPath = {}; geometry.mergedPath = geometry.anchorPath;
+        geometry.joined = false;
+    }
+    return geometry;
+}
+
+QRect TabBar::activeDragRect() const
+{
+    if (incomingVisual_.paint) {
+        const auto incoming = incomingRect();
+        return incomingVisual_.active.isEmpty() ? incoming : incomingVisual_.active.translated(incoming.topLeft());
+    }
+    const auto lifted = liftedRect();
+    if (draggedFolder_ < 0 || draggedFolder_ >= folders_.size()) return lifted;
+    const auto& folder = folders_.at(draggedFolder_);
+    if (current_ < folder.first || current_ >= folder.first + folder.count || folder.collapsed) return {};
+    if (vertical()) return QRect(lifted.left() + metrics_.folderIndent,
+        lifted.top() + (current_ - folder.first + 1) * (metrics_.rowHeight + metrics_.rowGap),
+        lifted.width() - metrics_.folderIndent, metrics_.rowHeight);
+    int left = lifted.left() + folderHeaderExtent(folder);
+    for (int index = folder.first; index < current_; ++index) left += tabExtent(index, false);
+    return QRect(left, lifted.top(), tabExtent(current_, false), metrics_.rowHeight);
+}
+
+void TabBar::syncAttachment()
+{
+    QRect anchor;
+    bool compact = false;
+    if (incomingVisual_.paint) {
+        anchor = activeDragRect();
+        compact = dropSticky_ && compactStickyTiles();
+    } else if (current_ >= 0 && current_ < layout_.tabs.size()) {
+        anchor = liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0) ? activeDragRect() : animatedRect(current_);
+        compact = shapeOf(current_) == TabShape::Tile;
+        if (liftedPointer_ && dragged_ == current_) compact = dropSticky_ && compactStickyTiles();
+    }
+    const auto geometry = anchorGeometry(anchor, anchor.intersected(rect()), compact,
+        bool(incomingVisual_.paint) || bool(liftedPointer_), false);
+    const std::pair<qreal, qreal> target{geometry.joinProgress, geometry.coveredProgress};
+    const auto owner = incomingVisual_.paint ? incomingVisual_.identity : tabData(current_).toUuid();
+    if (!attachmentInitialized_ || attachmentOwner_ != owner) {
+        attachmentInitialized_ = true; attachmentOwner_ = owner;
+        attachmentFrom_ = attachmentTo_ = target; attachment_.jump(1);
+        return;
+    }
+    if (attachmentTo_ == target) return;
+    attachmentFrom_ = attachmentValues(); attachmentTo_ = target;
+    const auto distance = std::max(std::abs(attachmentTo_.first - attachmentFrom_.first),
+                                   std::abs(attachmentTo_.second - attachmentFrom_.second));
+    attachment_.jump(0);
+    attachment_.animateTo(1, target.first > attachmentFrom_.first ? Motion::SurfaceChangeLift : Motion::SurfaceChangeLower,
+                          isVisible() && animationsEnabled(), distance);
+}
+
+void TabBar::surfaceFrameChanged()
+{
+    update(); updateLiftedLayer();
+    if (const auto callback = surfaceChanged) callback();
+}
+
+TabBar::SurfaceState TabBar::captureSurfaceState() const
+{
+    SurfaceState state{{}, tabData(current_).toUuid(), liftElevation_.value(), bool(incomingVisual_.paint)};
+    for (int index = 0; index < count(); ++index) {
+        const auto weight = selectionWeight(index);
+        if (weight > 0) state.selection.insert(tabData(index).toUuid(), weight);
+    }
+    return state;
+}
+
+void TabBar::inheritSurface(const SurfaceState& previous, bool animate)
+{
+    selectionStart_ = previous.incoming ? 1 : previous.selection.value(tabData(current_).toUuid());
+    selection_.jump(0);
+    selection_.animateTo(1, Motion::SurfaceChangeLift, animate, 1 - selectionStart_);
+    const bool sameTab = previous.current == tabData(current_).toUuid();
+    liftElevation_.jump(sameTab || previous.incoming ? previous.lift : 0);
+    liftElevation_.animateTo(0, Motion::SurfaceLower, animate);
+    surfaceFrameChanged();
+}
+
+void TabBar::setSurfaceContext(QRectF body, qreal focus, qreal join)
+{
+    if (surfaceBody_ == body && surfaceFocus_ == focus && surfaceJoin_ == join) return;
+    surfaceBody_ = body; surfaceFocus_ = focus; surfaceJoin_ = join;
+    syncAttachment(); surfaceFrameChanged();
+}
+
+QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
+{
+    QVector<TabSurfaceAnchor> anchors;
+    if (surfaceBody_.isEmpty()) return anchors;
+    const auto rest = interpolateElevation(elevationProfile(ElevationLevel::AnchorRest),
+                                           elevationProfile(ElevationLevel::AnchorRaised), surfaceFocus_);
+    if (incomingVisual_.paint || (liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0))) {
+        const auto anchor = activeDragRect();
+        const bool compact = (dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_) && compactStickyTiles();
+        const auto geometry = anchorGeometry(anchor, anchor.intersected(rect()), compact, true);
+        if (!geometry.anchorPath.isEmpty()) anchors.append({translatedSurfaceGeometry(geometry, offset),
+            interpolateElevation(incomingVisual_.paint ? rest : interpolateElevation(elevationProfile(ElevationLevel::Flat), rest, selectionWeight(current_)),
+                elevationProfile(ElevationLevel::Lifted), liftElevation_.value()), true,
+                overlayActive() || vertical() && surfaceJoin_ < 1});
+        return anchors;
+    }
+    const int index = current_;
+    if (index >= 0 && index < count()) {
+        const auto weight = selectionWeight(index);
+        if (weight <= 0 || layout_.lanes.value(index, -1) < 0) return anchors;
+        const auto area = animatedRect(index);
+        const auto visible = area.intersected(layout_.laneList.at(layout_.lanes.at(index)).viewport.translated(tabOrigin())).intersected(rect());
+        const bool compact = shapeOf(index) == TabShape::Tile;
+        const auto geometry = anchorGeometry(area, visible, compact, false, index == current_);
+        if (geometry.anchorPath.isEmpty() || compact) return anchors;
+        auto profile = interpolateElevation(elevationProfile(ElevationLevel::Flat), rest, weight);
+        if (index == current_ && liftElevation_.value() > 0)
+            profile = interpolateElevation(profile, elevationProfile(ElevationLevel::Lifted), liftElevation_.value());
+        anchors.append({translatedSurfaceGeometry(geometry, offset), profile, liftElevation_.value() > 0,
+            overlayActive() || vertical() && surfaceJoin_ < 1});
+    }
+    return anchors;
+}
+
+void TabBar::paintSurfaceExtension(QPainter& painter, QPointF offset) const
+{
+    if (surfaceBody_.isEmpty() || current_ < 0 || current_ >= count()) return;
+    const bool moving = incomingVisual_.paint || (liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0));
+    const QRect area = moving ? activeDragRect() : animatedRect(current_);
+    const bool compact = moving ? dropSticky_ && compactStickyTiles() : shapeOf(current_) == TabShape::Tile;
+    const auto geometry = translatedSurfaceGeometry(anchorGeometry(area, area.intersected(rect()), compact, moving), offset);
+    if (!geometry.joined) return;
+    QPainterPath widget; widget.addRect(QRectF(rect()).translated(offset));
+    painter.save(); painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillPath(geometry.anchorPath.subtracted(widget), theme_.surface);
+    painter.restore();
 }
 
 void TabBar::setTheme(const Theme& theme)
@@ -320,12 +551,14 @@ void TabBar::setTheme(const Theme& theme)
 
 void TabBar::setAppearance(const TabAppearance& appearance, TabBarPlacement placement)
 {
-    const bool arrangement = appearance_.multiline != appearance.multiline || appearance_.collapseRows != appearance.collapseRows
+    const bool arrangement = appearance_.multiline != appearance.multiline || appearance_.rowExpansion != appearance.rowExpansion
+        || appearance_.showAllRows != appearance.showAllRows || appearance_.stickyMultiline != appearance.stickyMultiline
+        || appearance_.stickyShowAllRows != appearance.stickyShowAllRows
         || placement_ != placement;
     appearance_ = appearance; placement_ = placement;
     if (arrangement) {
         // A new arrangement starts collapsed (when it collapses) and at its start.
-        expanded_ = false; expandedByWheel_ = false; rowsOffset_ = 0;
+        expanded_ = false; expandedByWheel_ = false; temporaryRowsOverlay_ = false; rowWheelGuard_.reset(); rowsReveal_.jump(0); rowsOffset_ = 0;
     }
     if (!vertical()) { iconMode_ = false; peeking_ = false; }
     updateTitleWidths();
@@ -409,8 +642,156 @@ void TabBar::setIconMode(bool iconMode)
     if (!vertical()) iconMode = false;
     if (iconMode_ == iconMode) return;
     iconMode_ = iconMode; peeking_ = false;
-    relayout(false);
+    relayout(true);
+    if (iconMode_) QTimer::singleShot(0, this, [this] { reconcileColumnHover(); });
     if (const auto callback = reservedSizeChanged) callback();
+}
+
+void TabBar::setColumnReveal(qreal reveal, bool modeTransition)
+{
+    if (columnReveal_ == reveal && columnModeTransition_ == modeTransition) return;
+    columnReveal_ = reveal; columnModeTransition_ = modeTransition; update();
+}
+
+void TabBar::setColumnHovered(bool hovered)
+{
+    if (hovered) {
+        if (iconMode_ && !peeking_ && !peekTimer_.isActive()) peekTimer_.start();
+        return;
+    }
+    peekTimer_.stop();
+    if (columnPopupOpen_ || scrollDragLane_ >= 0) return;
+    if (!peeking_) return;
+    peeking_ = false; relayout(true);
+    if (const auto callback = reservedSizeChanged) callback();
+}
+
+void TabBar::restoreColumnPeek(bool peeked)
+{
+    if (!iconMode_ || !peeked || peeking_) return;
+    peekTimer_.stop(); peeking_ = true; relayout(false);
+    if (const auto callback = reservedSizeChanged) callback();
+    QTimer::singleShot(0, this, [this] { trackColumnPopup(); });
+}
+
+void TabBar::showColumnPopup(std::function<void()> open)
+{
+    const QPointer<TabBar> self(this);
+    columnPopupOpen_ = true; peekTimer_.stop();
+    open();
+    if (self) QTimer::singleShot(0, this, [this] { trackColumnPopup(); });
+}
+
+void TabBar::trackColumnPopup()
+{
+    if (columnPopup_ && columnPopup_->isVisible()) return;
+    disconnect(popupHidden_); disconnect(popupDestroyed_);
+    auto* popup = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+    if (popup && popup->isVisible()) {
+        columnPopupOpen_ = true; columnPopup_ = popup;
+        const auto closed = [this] { QTimer::singleShot(0, this, [this] { trackColumnPopup(); }); };
+        popupHidden_ = connect(popup, &QMenu::aboutToHide, this, closed);
+        popupDestroyed_ = connect(popup, &QObject::destroyed, this, closed);
+        return;
+    }
+    columnPopup_.clear(); columnPopupOpen_ = false; reconcileColumnHover();
+}
+
+void TabBar::reconcileColumnHover()
+{
+    auto* owner = columnManaged_ ? parentWidget() : this;
+    setColumnHovered(isVisible() && owner && owner->isVisible() && owner->rect().contains(owner->mapFromGlobal(QCursor::pos())));
+}
+
+TabBar::VisualState TabBar::captureVisualState()
+{
+    VisualState result;
+    const auto globalOrigin = mapToGlobal(QPoint());
+    for (int index = 0; index < count(); ++index) {
+        const auto rect = animatedRect(index);
+        if (rect.isEmpty()) continue;
+        auto parts = partsOf(index, rect);
+        for (auto* part : {&parts.tab, &parts.icon, &parts.number, &parts.title, &parts.action}) part->translate(globalOrigin);
+        std::shared_ptr<RetiredLabel> retired;
+        if (isVisible() && !tabRect(index).isEmpty()) {
+            retired = std::make_shared<RetiredLabel>();
+            retired->state = paintState(index); retired->font = font();
+            if (retired->state.selected) {
+                auto geometry = anchorGeometry(rect, rect.intersected(this->rect()), shapeOf(index) == TabShape::Tile, false);
+                geometry.body = {}; geometry.bodyPath = {}; geometry.mergedPath = geometry.anchorPath;
+                geometry.joined = false;
+                retired->surface = translatedSurfaceGeometry(geometry, globalOrigin);
+            }
+            retired->titleLayout = tabs_.at(index).titleLayout;
+            if (retired->state.preset) retired->preset = *retired->state.preset;
+            retired->state.preset = nullptr; retired->state.titleLayout = nullptr;
+            const auto presence = presence_.constFind(tabData(index).toUuid());
+            if (presence != presence_.cend()) retired->visibility = presence->from + (presence->to - presence->from) * presenceProgress_.value();
+        }
+        result.insert(tabData(index).toUuid(), {rect.translated(globalOrigin), shapeOf(index),
+            index < stickyCount_, index == current_, iconsOnly() || shapeOf(index) == TabShape::Tile, parts, std::move(retired)});
+    }
+    return result;
+}
+
+void TabBar::paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
+                              QPoint globalOrigin, qreal visibility)
+{
+    if (!label.retired) return;
+    auto& retired = *label.retired;
+    auto state = retired.state;
+    state.titleLayout = &retired.titleLayout;
+    state.preset = retired.preset ? &*retired.preset : nullptr;
+    const auto geometry = retired.surface ? translatedSurfaceGeometry(*retired.surface, -globalOrigin) : SurfaceGeometry{};
+    state.surface = retired.surface ? &geometry : nullptr;
+    state.elevationManaged = false;
+    const auto flat = elevationProfile(ElevationLevel::Flat); state.bodyElevation = &flat;
+    auto parts = label.parts;
+    for (auto* part : {&parts.tab, &parts.icon, &parts.number, &parts.title, &parts.action}) part->translate(-globalOrigin);
+    painter.save(); painter.setFont(retired.font);
+    LabelPresenceEffect::paint(painter, parts.tab, visibility * retired.visibility, [&] { style.paintTab(painter, parts, state); });
+    painter.restore();
+}
+
+void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion)
+{
+    const qreal progress = presenceProgress_.value();
+    for (auto& value : presence_) value.from += (value.to - value.from) * progress;
+    for (const auto& id : ids) {
+        const qreal from = presence_.contains(id) ? presence_.value(id).from : (visible ? 0 : 1);
+        presence_.insert(id, {from, visible ? 1.0 : 0.0});
+    }
+    presenceProgress_.jump(0);
+    presenceProgress_.animateTo(1, motion, animationsEnabled());
+    if (!animationsEnabled()) { departing_.clear(); if (visible) for (const auto& id : ids) presence_.remove(id); }
+}
+
+void TabBar::transitionFrom(VisualState previous, Motion motion)
+{
+    if (!animationsEnabled() || !isVisible()) return;
+    slideDuration_ = motionDuration(motion);
+    QSet<QUuid> appeared;
+    QSet<QUuid> currentIds;
+    slides_.clear(); departing_.clear();
+    for (int index = 0; index < count(); ++index) {
+        const auto id = tabData(index).toUuid();
+        const auto old = previous.constFind(id);
+        if (layout_.visibleRect(index).isEmpty()) {
+            if (old != previous.cend() && old->retired) departing_.insert(id, *old);
+            continue;
+        }
+        currentIds.insert(id);
+        if (old == previous.cend()) { appeared.insert(id); continue; }
+        const QRect from(mapFromGlobal(old->global.topLeft()), old->global.size());
+        if (old->sticky != (index < stickyCount_)) {
+            departing_.insert(id, *old); appeared.insert(id);
+        } else if (!from.isEmpty() && from != layout_.tabs.at(index).translated(tabOrigin()))
+            slides_.insert(id, {from});
+    }
+    for (auto it = previous.cbegin(); it != previous.cend(); ++it)
+        if (it->retired && !currentIds.contains(it.key())) departing_.insert(it.key(), *it);
+    if (!slides_.isEmpty()) { slideClock_.start(); slideTimer_.start(); }
+    if (!appeared.isEmpty() || !departing_.isEmpty()) animatePresence(appeared, true, motion);
 }
 
 void TabBar::setTrailingWidget(QWidget* widget)
@@ -489,9 +870,16 @@ void TabBar::updateTitleWidths()
     }
 }
 
+bool TabBar::wrappedRows() const
+{
+    return !vertical() && (appearance_.multiline
+        || (appearance_.stickyTabsOnSeparateRow && stickyCount_ > 0 && appearance_.stickyMultiline));
+}
+
 bool TabBar::collapsible() const
 {
-    return !vertical() && appearance_.multiline && appearance_.collapseRows != TabRowCollapse::Off;
+    return !vertical() && ((appearance_.multiline && !appearance_.showAllRows)
+        || (appearance_.stickyTabsOnSeparateRow && stickyCount_ > 0 && appearance_.stickyMultiline && !appearance_.stickyShowAllRows));
 }
 
 bool TabBar::collapsedNow() const { return collapsible() && !expanded_ && !dragExpanded_; }
@@ -499,7 +887,8 @@ bool TabBar::collapsedNow() const { return collapsible() && !expanded_ && !dragE
 bool TabBar::overlayActive() const
 {
     if (vertical()) return iconMode_ && peeking_;
-    return collapsible() && (dragExpanded_ || (expanded_ && appearance_.collapseRows == TabRowCollapse::Overlay));
+    return collapsible() && ((temporaryRowsOverlay_ && (dragExpanded_ || rowsReveal_.value() > 0))
+        || ((expanded_ || rowsReveal_.value() > 0) && appearance_.rowExpansion == TabRowExpansion::Overlay));
 }
 
 TabLayoutInput TabBar::layoutInput(QSize area, bool collapsed) const
@@ -510,28 +899,32 @@ TabLayoutInput TabBar::layoutInput(QSize area, bool collapsed) const
     // Horizontal rows touch, so colored tabs join across rows.
     input.rowHeight = metrics_.rowHeight; input.rowGap = vertical() ? metrics_.rowGap : 0;
     input.inset = metrics_.verticalInset; input.tile = metrics_.tile; input.minimumTileWidth = metrics_.tile.width();
+    input.tileColumns = carriedTileColumns_;
     input.stickyCount = stickyCount_;
     input.extents.reserve(tabs_.size());
     for (int index = 0; index < tabs_.size(); ++index)
         input.extents.append(vertical() ? 0 : tabExtent(index, index < stickyCount_));
     if (vertical()) {
         input.height = area.height();
-        input.stickyTiles = !iconMode_ && !peeking_ && appearance_.stickySizing == StickyTabSizing::Compact;
+        input.stickyTiles = compactStickyTiles();
         input.stickyOffset = stickyOffset_; input.regularOffset = regularOffset_;
     } else {
         input.multiline = appearance_.multiline;
+        input.stickyMultiline = appearance_.stickyMultiline;
         input.separateStickyRow = appearance_.stickyTabsOnSeparateRow;
         input.freezeSticky = !input.multiline && !input.separateStickyRow && appearance_.stickySizing != StickyTabSizing::Normal;
-        input.collapsed = collapsed;
+        input.collapsed = collapsed && !appearance_.showAllRows;
+        input.stickyCollapsed = collapsed && !appearance_.stickyShowAllRows;
         // Rows take at most 40 % of the group, an overlay half of it.
         const int group = available_.height();
-        input.height = !input.multiline ? 0 : group <= 0 ? 0 : int(group * (overlayActive() ? 0.5 : 0.4));
+        input.height = !wrappedRows() ? 0 : group <= 0 ? 0 : int(group * (overlayActive() ? 0.5 : 0.4));
         input.trailingExtent = trailing_ && !trailing_->isHidden() ? trailing_->sizeHint().width() : 0;
         int end = end_ && !end_->isHidden() ? end_->sizeHint().width() : 0;
         if (countButton_ && !countButton_->isHidden()) end += countButton_->width();
         input.endExtent = end;
         input.stickyOffset = stickyOffset_;
-        input.regularOffset = input.multiline ? rowsOffset_ : regularOffset_;
+        input.regularOffset = regularOffset_;
+        input.rowsOffset = rowsOffset_;
         input.collapsedStickyRow = collapsedStickyRow_; input.collapsedRegularRow = collapsedRegularRow_;
     }
     input.current = current_;
@@ -550,40 +943,77 @@ QPoint TabBar::tabOrigin() const
 {
     if (vertical()) return {0, metrics_.outerMargin};
     // Below the content an overlay grows upward, its shadow on top.
-    if (placement_ == TabBarPlacement::Bottom) return {0, overlayActive() ? metrics_.shadowBlur : 0};
+    if (placement_ == TabBarPlacement::Bottom) return {0, rowShadowExtent()};
     return {0, metrics_.outerMargin};
 }
 
 QSize TabBar::tabArea(QSize size) const
 {
     // An overlay keeps room for its shadow below the rows.
-    const int shadow = overlayActive() && !vertical() ? metrics_.shadowBlur : 0;
+    const int shadow = !vertical() ? rowShadowExtent() : 0;
     return {size.width(), std::max(0, size.height() - metrics_.outerMargin - shadow)};
+}
+
+int TabBar::minimumColumnWidth() const
+{
+    // Keep the icon clear of the action even when no title fits. Ordinals
+    // and titles can disappear before either of these hit targets does.
+    return std::max(minimumVerticalTabWidth, 2 * metrics_.verticalInset + tabBarLeading
+        + metrics_.iconSize + tabActionGap + tabActionSize + tabBarTrailing);
+}
+
+int TabBar::rowShadowExtent() const
+{
+    return overlayActive() ? qRound(metrics_.shadowBlur * rowsReveal_.value()) : 0;
+}
+
+const TabBar::RowMeasure& TabBar::measureRows(QSize available) const
+{
+    if (rowMeasure_ && rowMeasure_->available == available) return *rowMeasure_;
+    auto input = layoutInput(QSize(available.width(), 0), true);
+    input.height = std::max(0, int(available.height() * 0.4));
+    input.block.clear(); input.insertion = -1; input.removed = -1; input.removedFolder = -1;
+    const int closed = std::max(metrics_.rowHeight, layoutTabs(input).size.height()) + metrics_.outerMargin;
+    int push = closed, overlay = closed;
+    if (collapsible()) {
+        input = layoutInput(QSize(available.width(), 0), false);
+        input.height = std::max(0, int(available.height() * 0.4));
+        input.block.clear(); input.insertion = -1; input.removed = -1; input.removedFolder = -1;
+        push = std::max(metrics_.rowHeight, layoutTabs(input).size.height()) + metrics_.outerMargin;
+        input = layoutInput(QSize(available.width(), 0), false);
+        input.height = std::max(0, int(available.height() * 0.5));
+        overlay = std::min(available.height(), layoutTabs(input).size.height() + metrics_.outerMargin + metrics_.shadowBlur);
+    }
+    rowMeasure_ = RowMeasure{available, closed, push, overlay};
+    return *rowMeasure_;
 }
 
 QSize TabBar::reservedSize(QSize available) const
 {
     if (vertical()) {
-        const int width = iconMode_ ? metrics_.verticalIconWidth : std::clamp(available.width(), minimumVerticalTabWidth, maximumVerticalTabWidth);
+        const int width = iconMode_ ? metrics_.verticalIconWidth : std::clamp(available.width(), minimumColumnWidth(), maximumVerticalTabWidth);
         // `available` is the column's width and the group's height.
         return {width, available.height()};
     }
-    // The strip keeps the collapsed height while an overlay shows more.
-    const bool collapsed = collapsible() && !(expanded_ && appearance_.collapseRows == TabRowCollapse::Push);
-    auto input = layoutInput(QSize(available.width(), 0), collapsed);
-    input.block.clear(); input.insertion = -1;
-    const auto layout = layoutTabs(input);
-    return {available.width(), std::max(metrics_.rowHeight, layout.size.height()) + metrics_.outerMargin};
+    const auto sizes = measureRows(available);
+    const qreal progress = collapsible() && appearance_.rowExpansion == TabRowExpansion::Push && !temporaryRowsOverlay_ ? rowsReveal_.value() : 0;
+    return {available.width(), qRound(sizes.closed + (sizes.push - sizes.closed) * progress)};
 }
 
 QSize TabBar::displaySize(QSize available) const
 {
-    if (!overlayActive()) return reservedSize(available);
-    if (vertical()) return {std::clamp(available.width(), minimumVerticalTabWidth, maximumVerticalTabWidth), available.height()};
-    auto input = layoutInput(QSize(available.width(), 0), false);
-    input.height = std::max(0, int(available.height() * 0.5));
-    const auto layout = layoutTabs(input);
-    return {available.width(), std::min(available.height(), layout.size.height() + metrics_.outerMargin + metrics_.shadowBlur)};
+    if (vertical()) return reservedSize(available);
+    auto base = reservedSize(available);
+    if (overlayActive()) {
+        const auto sizes = measureRows(available);
+        const qreal progress = rowsReveal_.value();
+        const int full = sizes.overlay;
+        base.setHeight(qRound(base.height() + (full - base.height()) * progress));
+    } else if (dropIndex_ >= 0) {
+        const auto preview = layoutTabs(layoutInput(QSize(available.width(), 0), collapsedNow()));
+        base.setHeight(std::max(base.height(), preview.size.height() + metrics_.outerMargin));
+    }
+    return base;
 }
 
 void TabBar::setAvailableSize(QSize available)
@@ -593,8 +1023,10 @@ void TabBar::setAvailableSize(QSize available)
     relayout(false);
 }
 
-void TabBar::relayout(bool animate)
+void TabBar::relayout(bool animate, bool measureChanged)
 {
+    if (measureChanged) { scrollMotion_.stop(); smoothLane_ = -1; }
+    if (measureChanged) rowMeasure_.reset();
     // Where each tab is drawn now, to slide from.
     QHash<QUuid, QRect> before;
     const bool sliding = animate && animationsEnabled() && isVisible();
@@ -615,24 +1047,36 @@ void TabBar::relayout(bool animate)
         countShown = layoutTabs(probe).hidden > 0;
     }
     if (countButton_) countButton_->setVisible(countShown && !dragExpanded_);
-    layout_ = layoutTabs(layoutInput(area, collapsedNow()));
-    if (countButton_ && countButton_->isVisible()) {
+    // Resolve the count width before exposing layout/hit geometry. A digit
+    // change can change wrapping again; shrink once, then only grow within
+    // this pass so proportional figures cannot make the calculation cycle.
+    bool canShrinkCount = true;
+    for (;;) {
+        layout_ = layoutTabs(layoutInput(area, collapsedNow()));
+        if (!countButton_ || !countButton_->isVisible()) break;
         const bool collapsed = collapsedNow();
-        countButton_->setText(collapsed ? QStringLiteral("+%1").arg(layout_.hidden) : QStringLiteral("−"));
-        static_cast<CompactToolButton*>(countButton_)->setTargetSize(QSize(
-            std::max(metrics_.countMinimumWidth, fontMetrics().horizontalAdvance(countButton_->text()) + 14), metrics_.rowHeight));
-        countButton_->setToolTip(collapsed
+        countButton_->setText(collapsed ? QStringLiteral("+%1").arg(layout_.hidden) : QStringLiteral("\u2212"));
+        const int needed = std::max(metrics_.countMinimumWidth, fontMetrics().horizontalAdvance(countButton_->text()) + 14);
+        const int countWidth = countButton_->width();
+        if (needed == countWidth || (needed < countWidth && !canShrinkCount)) break;
+        canShrinkCount = false;
+        static_cast<CompactToolButton*>(countButton_)->setTargetSize(QSize(needed, metrics_.rowHeight));
+    }
+    if (countButton_ && countButton_->isVisible()) {
+        countButton_->setToolTip(collapsedNow()
             ? QCoreApplication::translate("WindowSystem", "%n more tab(s) in other rows; click to expand", nullptr, layout_.hidden)
             : QCoreApplication::translate("WindowSystem", "Collapse other rows"));
         countButton_->setAccessibleName(countButton_->toolTip());
     }
     // Clamped offsets are the offsets.
     for (const auto& lane : std::as_const(layout_.laneList)) {
-        if (!vertical() && appearance_.multiline) { rowsOffset_ = lane.offset; continue; }
+        if (!vertical() && lane.vertical) { rowsOffset_ = lane.offset; continue; }
         (lane.sticky ? stickyOffset_ : regularOffset_) = lane.offset;
     }
     if (collapsedNow()) { collapsedStickyRow_ = layout_.stickyRow; collapsedRegularRow_ = layout_.regularRow; }
     relayoutTrailing();
+    carrierBounds_.reset();
+    updateLiftedLayer();
     if (sliding) {
         // Restart from wherever each tab is drawn now.
         slides_.clear();
@@ -644,8 +1088,10 @@ void TabBar::relayout(bool animate)
         }
         if (!slides_.isEmpty()) { slideClock_.start(); slideTimer_.start(); }
     }
-    update();
+    syncAttachment();
+    surfaceFrameChanged();
     emit viewChanged();
+    refreshScrollInput();
 }
 
 void TabBar::relayoutTrailing()
@@ -676,8 +1122,36 @@ void TabBar::relayoutTrailing()
 QRect TabBar::tabRect(int index) const
 {
     if (index < 0 || index >= layout_.tabs.size()) return {};
-    const auto visible = layout_.visibleRect(index);
+    const auto visible = layout_.visibleRect(index).intersected(rect().translated(-tabOrigin()));
     return visible.isEmpty() ? QRect{} : visible.translated(tabOrigin());
+}
+
+void TabBar::setCarriedDisplay(bool carried)
+{
+    if (carriedDisplay_ == carried) return;
+    carriedDisplay_ = carried;
+    if (!carried) { setCarriedTileColumns(0); setCarriedPresentation({}); }
+    update();
+}
+
+void TabBar::setCarriedPresentation(std::optional<VerticalPresentation> presentation)
+{
+    if (carriedPresentation_ == presentation) return;
+    carriedPresentation_ = presentation; relayout(false);
+}
+
+void TabBar::setCarriedTileColumns(int columns)
+{
+    if (carriedTileColumns_ == columns) return;
+    carriedTileColumns_ = columns;
+    relayout(false);
+}
+
+QRegion TabBar::tabRegion(int index) const
+{
+    if (index < 0 || index >= layout_.tabs.size() || layout_.lanes.at(index) < 0) return {};
+    const auto contour = painter_.outline(QRectF(layout_.tabs.at(index).translated(tabOrigin())), shapeOf(index), carriedDisplay_ || index == current_, carriedDisplay_);
+    return QRegion(contour.toFillPolygon().toPolygon()).intersected(tabRect(index));
 }
 
 int TabBar::tabAt(QPoint local) const { return layout_.tabAt(local - tabOrigin()); }
@@ -685,16 +1159,57 @@ int TabBar::tabAt(QPoint local) const { return layout_.tabAt(local - tabOrigin()
 TabShape TabBar::shapeOf(int index) const
 {
     if (!vertical()) return horizontalShape(placement_);
-    const bool tiles = !iconMode_ && !peeking_ && appearance_.stickySizing == StickyTabSizing::Compact;
+    const bool tiles = compactStickyTiles();
     return index < stickyCount_ && tiles ? TabShape::Tile : TabShape::Row;
+}
+
+bool TabBar::hasLabelAction(int index) const
+{
+    if (index < 0 || index >= tabs_.size()) return false;
+    if (!vertical()) return !isCompactSticky(index);
+    // Do not expose a destructive action until the expanded column has
+    // actually finished opening. Painting, hit testing and tips share this.
+    if (iconsOnly() || columnReveal_ < 1 || shapeOf(index) == TabShape::Tile) return false;
+    return index >= stickyCount_ || appearance_.stickySizing != StickyTabSizing::Compact;
 }
 
 TabParts TabBar::partsOf(int index, const QRect& rect) const
 {
     const bool sticky = index < stickyCount_;
-    const bool iconOnly = (vertical() && iconMode_ && !peeking_) || (!vertical() && isCompactSticky(index));
-    const bool action = !iconOnly && shapeOf(index) != TabShape::Tile;
-    return painter_.parts(rect, shapeOf(index), labelParts(index, sticky), iconOnly, action, sticky, layoutDirection());
+    const bool iconOnly = (vertical() && iconsOnly() && columnReveal_ <= 0) || (!vertical() && isCompactSticky(index));
+    const bool action = hasLabelAction(index);
+    auto label = labelParts(index, sticky);
+    if (vertical() && shapeOf(index) == TabShape::Row) {
+        // The icon follows an outer rail, not the width of the revealed
+        // title. Mirror the rail for a right-hand column.
+        TabParts parts; parts.tab = rect;
+        const bool right = placement_ == TabBarPlacement::Right;
+        const auto direction = right ? Qt::RightToLeft : Qt::LeftToRight;
+        const int center = right ? width() - metrics_.verticalIconWidth / 2 : metrics_.verticalIconWidth / 2;
+        if (label.icon) parts.icon = QRect(center - label.icon / 2, rect.center().y() - label.icon / 2, label.icon, label.icon);
+        if (iconOnly) {
+            if (!label.icon) parts.title = QRect(center - metrics_.iconSize / 2, rect.top(), metrics_.iconSize, rect.height());
+            return parts;
+        }
+        if (action) parts.action = tabBarCloseRect(rect, direction);
+        const int gap = tabPartGap;
+        int begin = right ? rect.left() + tabBarTrailing : center + metrics_.iconSize / 2 + gap;
+        int end = right ? center - metrics_.iconSize / 2 - gap : rect.right() + 1 - tabBarTrailing;
+        if (action && sticky) {
+            if (right) begin = parts.action.right() + 1 + tabActionGap;
+            else end = parts.action.left() - tabActionGap;
+        }
+        // Numbering follows the icon; reserving it before the icon would
+        // move that icon as soon as the title is revealed.
+        const int readableTitle = std::min(label.title, metrics_.rowHeight - 10);
+        if (label.number && end - begin >= label.number + gap + readableTitle) {
+            parts.number = QRect(right ? end - label.number : begin, rect.top(), label.number, rect.height());
+            if (right) end -= label.number + gap; else begin += label.number + gap;
+        }
+        parts.title = QRect(begin, rect.top(), std::max(0, end - begin), rect.height());
+        return parts;
+    }
+    return painter_.parts(rect, shapeOf(index), label, iconOnly, action, sticky, layoutDirection());
 }
 
 QRect TabBar::titleRect(int index) const
@@ -715,26 +1230,51 @@ QRect TabBar::animatedRect(int index) const
     const auto slide = slides_.constFind(tabs_.at(index).data.toUuid());
     if (slide == slides_.cend() || !slideClock_.isValid()) return target;
     const qreal progress = std::clamp(qreal(slideClock_.elapsed()) / slideDuration_, 0.0, 1.0);
-    return lerp(slide->from, target, QEasingCurve(QEasingCurve::OutCubic).valueForProgress(progress));
+    auto result = lerp(slide->from, target, QEasingCurve(QEasingCurve::OutCubic).valueForProgress(progress));
+    // A stretched row has one width driver: the column itself. Preserve the
+    // separate rearrangement of multiple compact sticky tiles on an explicit
+    // mode switch, including their positions and size transition.
+    const bool rearrangingTiles = columnModeTransition_ && stickyCount_ > 1 && index < stickyCount_
+        && appearance_.stickySizing == StickyTabSizing::Compact;
+    if (vertical() && columnManaged_ && !rearrangingTiles) result.setWidth(target.width());
+    return result;
 }
 
 int TabBar::scrollOffset() const
 {
-    if (!vertical() && appearance_.multiline) return 0;
     return regularOffset_;
+}
+
+void TabBar::restoreScrollOffsets(int regular, int sticky, int rows)
+{
+    scrollMotion_.stop(); smoothLane_ = -1;
+    regular = std::max(0, regular); sticky = std::max(0, sticky); rows = std::max(0, rows);
+    if (regularOffset_ == regular && stickyOffset_ == sticky && rowsOffset_ == rows) return;
+    regularOffset_ = regular; stickyOffset_ = sticky; rowsOffset_ = rows;
+    relayout(false, false);
 }
 
 void TabBar::setScrollOffset(int offset)
 {
-    if (!vertical() && appearance_.multiline) return;
     for (int lane = 0; lane < layout_.laneList.size(); ++lane)
-        if (!layout_.laneList.at(lane).sticky) { setLaneOffset(lane, offset); return; }
+        if (!layout_.laneList.at(lane).sticky && !layout_.laneList.at(lane).vertical) { setLaneOffset(lane, offset); return; }
 }
 
 int TabBar::maximumScrollOffset() const
 {
     for (const auto& lane : layout_.laneList) if (!lane.sticky) return lane.maximumOffset();
     return 0;
+}
+
+QRect TabBar::scrollViewportAt(QPoint local) const
+{
+    const int index = laneAt(local);
+    return index < 0 ? QRect{} : layout_.laneList.at(index).viewport.translated(tabOrigin());
+}
+bool TabBar::scrollsHorizontallyAt(QPoint local) const
+{
+    const int index = laneAt(local);
+    return index >= 0 && !layout_.laneList.at(index).vertical;
 }
 
 QRect TabBar::scrollViewport() const
@@ -759,7 +1299,7 @@ QRect TabBar::contentTabRect(int index) const
     return lane.vertical ? rect.translated(0, lane.offset) : rect.translated(lane.offset, 0);
 }
 
-bool TabBar::scrollsHorizontally() const { return !vertical() && !appearance_.multiline; }
+bool TabBar::scrollsHorizontally() const { return !vertical() && !wrappedRows(); }
 
 bool TabBar::isOverflowing() const
 {
@@ -770,6 +1310,8 @@ bool TabBar::isOverflowing() const
 int TabBar::laneAt(QPoint local) const
 {
     const auto point = local - tabOrigin();
+    if (!vertical()) for (int lane = 0; lane < layout_.laneList.size(); ++lane)
+        if (!layout_.laneList.at(lane).vertical && layout_.laneList.at(lane).viewport.contains(point)) return lane;
     int nearest = -1, distance = std::numeric_limits<int>::max();
     for (int lane = 0; lane < layout_.laneList.size(); ++lane) {
         const auto viewport = layout_.laneList.at(lane).viewport;
@@ -782,80 +1324,193 @@ int TabBar::laneAt(QPoint local) const
 
 void TabBar::setLaneOffset(int lane, int offset)
 {
+    if (!applyingScrollMotion_) { scrollMotion_.stop(); smoothLane_ = -1; }
     if (lane < 0 || lane >= layout_.laneList.size()) return;
     const auto& info = layout_.laneList.at(lane);
     offset = std::clamp(offset, 0, info.maximumOffset());
     if (offset == info.offset) return;
-    if (!vertical() && appearance_.multiline) rowsOffset_ = offset;
+    if (info.maximumOffset() > 0 && isVisible()) revealScrollbar(lane);
+    if (!vertical() && info.vertical) rowsOffset_ = offset;
     else (info.sticky ? stickyOffset_ : regularOffset_) = offset;
-    relayout(false);
+    if (!layout_.scrollLane(lane, offset)) { relayout(false, false); return; }
+    relayoutTrailing();
+    carrierBounds_.reset();
+    updateLiftedLayer();
+    syncAttachment();
+    const QPointer<TabBar> self(this);
+    surfaceFrameChanged();
+    if (!self) return;
+    emit viewChanged();
+    if (!self) return;
+    refreshScrollInput();
 }
 
-bool TabBar::scrollAt(QPoint local, QPoint delta)
+bool TabBar::scrollLaneBy(int lane, int delta, bool smooth)
 {
+    const auto info = layout_.laneList.at(lane);
+    if (!smooth || !animationsEnabled() || !isSmoothScrollingEnabled(this)) {
+        const bool moved = std::clamp(info.offset + delta, 0, info.maximumOffset()) != info.offset;
+        setLaneOffset(lane, info.offset + delta); return moved;
+    }
+    if (smoothLane_ != lane) scrollMotion_.stop();
+    smoothLane_ = lane;
+    scrollMotion_.scrollBy(delta, info.offset, 0, info.maximumOffset());
+    return qRound(scrollMotion_.target()) != info.offset;
+}
+
+void TabBar::revealScrollbar(int lane)
+{
+    scrollingLane_ = lane;
+    scrollbarOpacity_.animateTo(1, Motion::Presence, animationsEnabled());
+    if (scrollDragLane_ < 0) scrollbarHideTimer_.start();
+    else scrollbarHideTimer_.stop();
+    refreshScrollInput();
+}
+
+QRect TabBar::scrollbarHitRect() const
+{
+    if (!isVisible() || scrollbarOpacity_.value() <= 0.05 || scrollingLane_ < 0 || scrollingLane_ >= layout_.laneList.size()) return {};
+    const auto& lane = layout_.laneList.at(scrollingLane_);
+    if (lane.maximumOffset() <= 0) return {};
+    const auto track = scrollTrack(scrollingLane_);
+    return (lane.vertical ? track.adjusted(-2, 0, 2, 0) : track.adjusted(0, -2, 0, 2)).intersected(rect());
+}
+
+void TabBar::refreshScrollInput()
+{
+    const auto hit = scrollbarHitRect();
+    if (hit.isEmpty()) { if (scrollInput_ && scrollDragLane_ < 0) scrollInput_->hide(); return; }
+    if (!scrollInput_) {
+        scrollInput_ = new QWidget(window());
+        scrollInput_->setObjectName("TabScrollbarInput"); scrollInput_->setMouseTracking(true);
+        scrollInput_->setCursor(Qt::ArrowCursor); scrollInput_->setFocusPolicy(Qt::NoFocus);
+        scrollInput_->installEventFilter(this);
+    } else if (scrollInput_->parentWidget() != window()) scrollInput_->setParent(window());
+    scrollInput_->setGeometry(QRect(mapTo(window(), hit.topLeft()), hit.size()));
+    scrollInput_->show(); scrollInput_->raise();
+}
+
+bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
+{
+    if (delta.isNull()) return false;
+    const int directLane = laneAt(local);
+    if (!vertical() && directLane >= 0 && !layout_.laneList.at(directLane).vertical
+        && layout_.laneList.at(directLane).maximumOffset() > 0) {
+        const auto lane = layout_.laneList.at(directLane);
+        const int amount = delta.x() ? delta.x() : delta.y();
+        revealScrollbar(directLane);
+        scrollLaneBy(directLane, -amount, smooth);
+        return true;
+    }
     if (collapsible() && appearance_.wheelExpandRows && (collapsedNow() || expanded_)) {
-        const int amount = delta.y() ? delta.y() : delta.x();
-        if (amount < 0 && collapsedNow()) { setExpanded(true, true); return true; }
-        if (amount > 0 && expanded_ && layout_.laneList.value(0).offset == 0) { setExpanded(false); return true; }
+        const bool bottom = placement_ == TabBarPlacement::Bottom;
+        const int amount = (delta.y() ? delta.y() : delta.x()) * (bottom ? -1 : 1);
+        if (amount < 0 && collapsedNow() && layout_.hidden > 0) { setExpanded(true, true); return true; }
+        const auto lane = layout_.laneList.value(layout_.rowScrollLane);
+        const bool atCollapseEdge = lane.offset == (bottom ? lane.maximumOffset() : 0);
+        if (amount > 0 && expanded_ && atCollapseEdge) {
+            if (rowWheelGuard_.allowsExit(lane.maximumOffset() > 0, rowWheelClock_.elapsed())) setExpanded(false);
+            return true;
+        }
     }
     const int lane = laneAt(local);
     if (lane < 0) return false;
     const auto& info = layout_.laneList.at(lane);
     const int amount = info.vertical ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
-    const int before = info.offset;
     // A listener of the change may destroy this strip.
     const QPointer<TabBar> self(this);
-    setLaneOffset(lane, before - amount);
-    return !self || layout_.laneList.value(lane).offset != before;
+    const bool moved = scrollLaneBy(lane, -amount, smooth);
+    if (!self) return true;
+    if (expanded_ && layout_.rowScrollLane == lane) {
+        const auto after = layout_.laneList.value(lane);
+        rowWheelGuard_.observe(after.offset == (placement_ == TabBarPlacement::Bottom ? after.maximumOffset() : 0), rowWheelClock_.elapsed());
+    }
+    return moved;
 }
 
 void TabBar::ensureVisible(int index)
 {
+    scrollMotion_.stop(); smoothLane_ = -1;
     if (index < 0 || index >= layout_.tabs.size() || layout_.lanes.at(index) < 0) return;
-    const int laneIndex = layout_.lanes.at(index);
-    const auto& lane = layout_.laneList.at(laneIndex);
-    if (lane.frozen && index < stickyCount_) return;
-    const auto rect = layout_.tabs.at(index);
-    if (lane.vertical) {
-        if (rect.top() < lane.viewport.top()) setLaneOffset(laneIndex, lane.offset - (lane.viewport.top() - rect.top()));
-        else if (rect.bottom() > lane.viewport.bottom()) setLaneOffset(laneIndex, lane.offset + rect.bottom() - lane.viewport.bottom());
-        return;
+    const QPointer<TabBar> self(this);
+    const int outerIndex = layout_.rowScrollLane;
+    if (outerIndex >= 0 && outerIndex != layout_.lanes.at(index)) {
+        const auto outer = layout_.laneList.at(outerIndex);
+        setLaneOffset(outerIndex, outer.offsetToReveal(layout_.tabs.at(index), metrics_.edgeFade));
+        if (!self || index >= layout_.tabs.size() || layout_.lanes.at(index) < 0) return;
     }
-    const int start = lane.viewport.left() + lane.frozen;
-    if (rect.left() < start) setLaneOffset(laneIndex, lane.offset - (start - rect.left()));
-    else if (rect.right() > lane.viewport.right())
-        setLaneOffset(laneIndex, lane.offset + std::min(rect.right() - lane.viewport.right(), rect.left() - start));
+    const int laneIndex = layout_.lanes.at(index);
+    const auto lane = layout_.laneList.at(laneIndex);
+    if (lane.frozen && index < stickyCount_) return;
+    setLaneOffset(laneIndex, lane.offsetToReveal(layout_.tabs.at(index), metrics_.edgeFade));
 }
 
-void TabBar::setExpanded(bool expanded, bool byWheel)
+bool TabBar::fullyVisible(int index) const
+{
+    if (index < 0 || index >= layout_.tabs.size() || layout_.tabs.at(index).isEmpty() || layout_.lanes.at(index) < 0) return false;
+    const auto& lane = layout_.laneList.at(layout_.lanes.at(index));
+    const auto viewport = lane.frozen && index < stickyCount_ ? lane.viewport : lane.readableViewport(metrics_.edgeFade);
+    if (!viewport.contains(layout_.tabs.at(index))) return false;
+    return layout_.rowScrollLane < 0 || layout_.rowScrollLane == layout_.lanes.at(index)
+        || layout_.laneList.at(layout_.rowScrollLane).readableViewport(metrics_.edgeFade).contains(layout_.tabs.at(index));
+}
+
+void TabBar::updateRowPresentation(VisualState previous, bool moving, bool revealActive)
+{
+    const QPointer<TabBar> self(this);
+    const bool open = expanded_ || dragExpanded_;
+    if (open || moving && rowsReveal_.value() > 0) {
+        if (temporaryRowsOverlay_ || appearance_.rowExpansion == TabRowExpansion::Overlay) qApp->installEventFilter(this);
+    } else qApp->removeEventFilter(this);
+    if (moving) rowsReveal_.animateTo(open ? 1.0 : 0.0, Motion::Reveal, true);
+    else rowsReveal_.jump(open ? 1 : 0);
+    if (!self) return;
+    relayout(false);
+    if (!self) return;
+    if (open && revealActive) ensureVisible(current_);
+    if (!self) return;
+    if (const auto callback = reservedSizeChanged) callback();
+    if (!self) return;
+    if (moving) transitionFrom(std::move(previous), Motion::Reveal);
+}
+
+void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
 {
     if (!collapsible()) expanded = false;
     expandedByWheel_ = expanded && byWheel;
     collapseTimer_.stop();
-    if (expanded_ == expanded) return;
+    if (expanded_ == expanded) {
+        if (!animate) rowsReveal_.jump(expanded || dragExpanded_ ? 1 : 0);
+        return;
+    }
+    const bool moving = animate && isVisible() && animationsEnabled();
+    const bool activeWasVisible = fullyVisible(current_);
+    auto before = moving ? captureVisualState() : VisualState{};
     expanded_ = expanded;
-    rowsOffset_ = 0;
-    if (expanded && appearance_.collapseRows == TabRowCollapse::Overlay) qApp->installEventFilter(this);
-    else qApp->removeEventFilter(this);
-    relayout(false);
-    if (const auto callback = reservedSizeChanged) callback();
+    rowWheelGuard_.reset();
+    updateRowPresentation(std::move(before), moving, activeWasVisible);
 }
 
 void TabBar::setDragExpanded(bool expanded)
 {
     if (!collapsible()) expanded = false;
     if (dragExpanded_ == expanded) return;
+    const bool moving = isVisible() && animationsEnabled();
+    const bool activeWasVisible = fullyVisible(current_);
+    auto before = moving ? captureVisualState() : VisualState{};
     dragExpanded_ = expanded;
-    relayout(false);
-    if (const auto callback = reservedSizeChanged) callback();
+    if (expanded && !expanded_) temporaryRowsOverlay_ = true;
+    if (!expanded && (!moving || expanded_)) temporaryRowsOverlay_ = false;
+    updateRowPresentation(std::move(before), moving, activeWasVisible);
 }
 
 void TabBar::setDraggedTab(TabId tab)
 {
     const int index = tab.isNull() ? -1 : indexOf(tab);
     if (index == dragged_) return;
+    initialStickyBoundary_ = index >= 0 ? stickyBoundary() : std::nullopt;
     dragged_ = index;
-    if (index < 0) liftedPointer_.reset();
+    if (index < 0) { liftedPointer_.reset(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled()); }
     relayout(true);
 }
 
@@ -870,14 +1525,118 @@ void TabBar::setDraggedFolder(QUuid folder)
 }
 void TabBar::setLifted(QPoint local, QPoint grab)
 {
-    if (local.isNull()) { if (!liftedPointer_) return; liftedPointer_.reset(); update(); return; }
-    if (!liftedPointer_) {
-        liftClock_.start();
-        if (animationsEnabled()) for (int step = 1; step <= 5; ++step)
-            QTimer::singleShot(step * 18, this, [self = QPointer<TabBar>(this)] { if (self) self->update(); });
+    if (local.isNull()) {
+        if (!liftedPointer_) return;
+        liftedPointer_.reset(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled());
+        syncAttachment(); surfaceFrameChanged(); return;
     }
+    if (!liftedPointer_) liftElevation_.animateTo(1, Motion::SurfaceLift, animationsEnabled());
     liftedPointer_ = local; liftedGrab_ = grab;
-    update();
+    syncAttachment(); surfaceFrameChanged();
+}
+
+void TabBar::updateLiftedLayer()
+{
+    const bool shown = (liftedPointer_ && (dragged_ >= 0 || draggedFolder_ >= 0)) || bool(incomingVisual_.paint)
+        || (current_ >= 0 && (liftElevation_.value() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
+    if (shown && !liftedLayer_) {
+        // Child controls paint above their parent's paintEvent. Create one
+        // transparent layer on the first lift, not one widget per tab.
+        liftedLayer_ = new QWidget(this);
+        liftedLayer_->setObjectName("LiftedTabLayer");
+        liftedLayer_->setAttribute(Qt::WA_TransparentForMouseEvents);
+        liftedLayer_->setAttribute(Qt::WA_NoSystemBackground);
+        liftedLayer_->installEventFilter(this);
+    }
+    if (!liftedLayer_) return;
+    liftedLayer_->setVisible(shown);
+    if (!shown) return;
+    liftedLayer_->setGeometry(rect());
+    liftedLayer_->raise();
+    liftedLayer_->update();
+}
+
+QRect TabBar::carrierBounds() const
+{
+    if (!carrierBounds_) {
+        QRect bounds;
+        carrierTabs_.clear();
+        for (int index = 0; index < count(); ++index) if (const auto rect = tabRect(index); !rect.isEmpty()) {
+            bounds |= rect; carrierTabs_.append(index);
+        }
+        carrierBounds_ = bounds;
+    }
+    return *carrierBounds_;
+}
+
+void TabBar::paintCarrier(QPainter& painter, const SurfaceGeometry* geometry)
+{
+    (void)carrierBounds();
+    painter.save(); painter.setFont(font());
+    for (const auto index : std::as_const(carrierTabs_)) {
+        auto state = paintState(index);
+        state.selected = index == current_; state.lifted = false;
+        state.elevationManaged = true;
+        state.surface = state.selected ? geometry : nullptr;
+        painter_.paintTab(painter, partsOf(index, animatedRect(index)), state);
+    }
+    painter.restore();
+}
+
+QPoint TabBar::carrierAnchor() const
+{
+    (void)carrierBounds();
+    return carrierTabs_.isEmpty() ? QPoint{} : tabRect(carrierTabs_.first()).center();
+}
+
+void TabBar::setIncomingVisual(TabDragVisual visual, QPoint local)
+{
+    if (!incomingVisual_.paint && !visual.paint) return;
+    const bool entering = !incomingVisual_.paint && bool(visual.paint);
+    const bool leaving = bool(incomingVisual_.paint) && !visual.paint;
+    incomingVisual_ = std::move(visual); incomingPointer_ = local;
+    if (entering || leaving) liftElevation_.animateTo(entering ? 1 : 0,
+        entering ? Motion::SurfaceLift : Motion::SurfaceLower, animationsEnabled());
+    syncAttachment(); surfaceFrameChanged();
+}
+
+QRect TabBar::compactLiftedRect(QPoint pointer, QSize size, QPoint grab) const
+{
+    const auto origin = tabOrigin();
+    // A long label's grab offset has no useful meaning after it becomes a
+    // tile. Both local and incoming drags hold the tile by its center.
+    const int x = std::clamp(pointer.x() - grab.x(), metrics_.verticalInset,
+        std::max(metrics_.verticalInset, width() - metrics_.verticalInset - size.width()));
+    const int y = std::clamp(pointer.y() - grab.y(), origin.y(), std::max(origin.y(), height() - size.height()));
+    return {QPoint(x, y), size};
+}
+
+int TabBar::horizontalDragRowTop(QPoint local) const
+{
+    const auto origin = tabOrigin();
+    if (layout_.rowScrollLane >= 0)
+        return origin.y() + layout_.laneList.at(layout_.rowScrollLane).rowTopAt(local.y() - origin.y(), metrics_.rowHeight);
+    if (layout_.laneList.size() > 1)
+        return origin.y() + layout_.laneList.at(std::max(0, laneAt(local))).viewport.top();
+    return origin.y();
+}
+
+QRect TabBar::incomingRect() const
+{
+    if (!incomingVisual_.paint || incomingVisual_.size.isEmpty()) return {};
+    auto rect = QRect(incomingPointer_ - incomingVisual_.anchor, incomingVisual_.size);
+    const auto origin = tabOrigin();
+    if (vertical()) {
+        // Rows slide vertically; compact tiles follow the same centered
+        // grab as a local row being carried into the sticky section.
+        const bool tile = dropSticky_ && compactStickyTiles();
+        if (tile) return compactLiftedRect(incomingPointer_, rect.size(), incomingVisual_.anchor);
+        rect.moveLeft(metrics_.verticalInset);
+        rect.moveTop(std::clamp(rect.top(), origin.y(), std::max(origin.y(), height() - rect.height())));
+    } else {
+        rect.moveTop(horizontalDragRowTop(incomingPointer_));
+    }
+    return rect;
 }
 
 QRect TabBar::liftedRect() const
@@ -894,38 +1653,50 @@ QRect TabBar::liftedRect() const
         }
         int extent = folderHeaderExtent(folder);
         for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) extent += tabExtent(index, false);
-        int y = origin.y();
-        if (!layout_.gap.isEmpty() && layout_.gapLane >= 0) y = layout_.laneList.at(layout_.gapLane).viewport.top() + origin.y();
-        return {liftedPointer_->x() - liftedGrab_.x(), y, extent, metrics_.rowHeight};
+        return {liftedPointer_->x() - liftedGrab_.x(), horizontalDragRowTop(*liftedPointer_), extent, metrics_.rowHeight};
     }
     if (!liftedPointer_ || dragged_ < 0 || dragged_ >= tabs_.size()) return {};
     const bool sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
     const auto origin = tabOrigin();
     if (vertical()) {
         const int rowWidth = std::max(0, width() - 2 * metrics_.verticalInset);
+        if (sticky && compactStickyTiles()) {
+            // The gap is laid out with the target section's tile dimensions.
+            // Its position is not the pointer's; only its size is reused.
+            const auto size = !layout_.gap.isEmpty() ? layout_.gap.first().size() : layout_.tabs.value(dragged_).size();
+            return compactLiftedRect(*liftedPointer_, size, QRect(QPoint(), size).center());
+        }
         const int y = std::clamp(liftedPointer_->y() - liftedGrab_.y(), origin.y(), std::max(origin.y(), height() - metrics_.rowHeight));
         return {metrics_.verticalInset, y, rowWidth, metrics_.rowHeight};
     }
     const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? compactStickyTabWidth : tabExtent(dragged_, sticky);
-    // A single row keeps the tab on its row; several rows follow the pointer
-    // to the row it is over.
-    int y = origin.y();
-    if (appearance_.multiline) {
-        const int pitch = metrics_.rowHeight + metrics_.rowGap;
-        const int row = std::max(0, (liftedPointer_->y() - origin.y()) / pitch);
-        y = origin.y() + std::min(row, std::max(0, (height() - origin.y()) / pitch - 1)) * pitch;
-    } else if (layout_.laneList.size() > 1) {
-        // A separate sticky row: the row under the pointer.
-        y = layout_.laneList.at(std::max(0, laneAt(*liftedPointer_))).viewport.top() + origin.y();
-    } else if (!layout_.gap.isEmpty() && layout_.gapLane >= 0) y = layout_.laneList.at(layout_.gapLane).viewport.top() + origin.y();
-    return {liftedPointer_->x() - liftedGrab_.x(), y, extent, metrics_.rowHeight};
+    // Local and incoming labels use the same scrolled row grid, including
+    // a partially visible final row and a bottom strip's shadow origin.
+    const int y = horizontalDragRowTop(*liftedPointer_);
+    const int grab = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? extent / 2 : liftedGrab_.x();
+    return {liftedPointer_->x() - grab, y, extent, metrics_.rowHeight};
+}
+
+std::optional<int> TabBar::stickyBoundary() const
+{
+    if (stickyCount_ <= 0) return {};
+    if (vertical() && !layout_.separator.isNull()) return layout_.separator.top() + tabOrigin().y();
+    if (!vertical() && appearance_.stickyTabsOnSeparateRow)
+        return layout_.sectionBoundary.value_or(metrics_.rowHeight) + tabOrigin().y();
+    return {};
 }
 
 TabInsertion TabBar::insertionAt(QPoint local, int stickyReach, TabLayoutInput::Carried carried) const
 {
     auto input = layoutInput(tabArea(size()), collapsedNow());
     input.carried = carried;
-    return tabInsertionAt(input, local - tabOrigin(), stickyReach);
+    const auto boundary = dragged_ >= 0 && dropIndex_ < 0 ? initialStickyBoundary_ : stickyBoundary();
+    const std::optional<bool> section = boundary ? std::optional<bool>(liftedPointer_.value_or(local).y() < *boundary) : std::nullopt;
+    // A bottom strip grows upward for a temporary gap, while the stable
+    // no-gap layout used to pick the slot stays next to the content.
+    if (placement_ == TabBarPlacement::Bottom && !overlayActive())
+        local.ry() -= std::max(0, height() - reservedSize(available_).height());
+    return tabInsertionAt(input, local - tabOrigin(), stickyReach, section);
 }
 
 void TabBar::setDropPreview(int index, bool sticky, QVector<int> block, int folder)
@@ -954,7 +1725,7 @@ QRect TabBar::scrollTrack(int laneIndex) const
         return QRect(viewport.left() + lane.frozen, viewport.bottom() - thickness + 1, viewport.width() - lane.frozen, thickness);
     // Vertical lanes put the bar on the content side.
     const bool left = placement_ == TabBarPlacement::Right;
-    return QRect(left ? viewport.left() : viewport.right() - thickness + 1, viewport.top(), thickness, viewport.height());
+    return QRect(left ? viewport.left() + 1 : viewport.right() - thickness, viewport.top(), thickness, viewport.height());
 }
 
 QRect TabBar::scrollThumb(int laneIndex) const
@@ -970,18 +1741,20 @@ QRect TabBar::scrollThumb(int laneIndex) const
                          : QRect(track.left() + position, track.top(), thumb, track.height());
 }
 
-void TabBar::paintTabAt(QPainter& painter, int index)
+TabPaintState TabBar::paintState(int index)
 {
-    const auto rect = animatedRect(index);
-    if (rect.isEmpty()) return;
     TabPaintState state;
     state.shape = shapeOf(index);
-    state.selected = index == current_;
-    state.hovered = index == hovered_;
-    state.pressed = index == pressed_;
-    state.groupFocused = groupFocused_;
+    state.selected = index == current_ && !incomingVisual_.paint;
+    state.hovered = !carriedDisplay_ && index == hovered_;
+    state.pressed = !carriedDisplay_ && index == pressed_;
+    state.groupFocused = carriedDisplay_ || groupFocused_;
+    state.windowActive = window()->isActiveWindow();
+    state.lifted = carriedDisplay_;
     state.sticky = index < stickyCount_;
-    state.iconOnly = (vertical() && iconMode_ && !peeking_) || (!vertical() && isCompactSticky(index));
+    state.compactSticky = state.shape == TabShape::Tile;
+    state.iconOnly = (vertical() && iconsOnly() && columnReveal_ <= 0) || (!vertical() && isCompactSticky(index));
+    state.titleOpacity = vertical() && state.shape == TabShape::Row && !state.iconOnly ? columnReveal_ : 1.0;
     state.outerRight = placement_ == TabBarPlacement::Right;
     state.preset = tabPreset(index);
     state.number = appearance_.showNumbers ? QString::number(index + 1) : QString{};
@@ -989,13 +1762,29 @@ void TabBar::paintTabAt(QPainter& painter, int index)
     state.title = tabs_.at(index).title;
     state.titleLayout = &tabs_[index].titleLayout;
     // A sticky tab always shows its action; the others on hover.
-    state.actionShown = state.sticky || index == hovered_ || index == actionPressed_;
-    state.actionHovered = index == hovered_ && actionHovered_;
-    state.actionPressed = index == actionPressed_;
+    state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == actionPressed_
+        || (index == fadingAction_ && actionOpacity_.value() > 0))));
+    state.actionHovered = !carriedDisplay_ && index == hovered_ && actionHovered_;
+    state.actionPressed = !carriedDisplay_ && index == actionPressed_;
     state.actionReserved = state.sticky;
-    state.actionOpacity = state.sticky || index != hovered_ ? 1.0 : hoverProgress();
+    state.actionOpacity = state.sticky || index == actionPressed_ ? 1.0 : actionOpacity_.value();
     state.actionIcon = iconFor(!state.sticky ? QStringLiteral("close") : vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
-    painter_.paintTab(painter, partsOf(index, rect), state);
+    return state;
+}
+
+void TabBar::paintTabAt(QPainter& painter, int index)
+{
+    const auto rect = animatedRect(index);
+    if (rect.isEmpty() || painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(rect).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
+    auto state = paintState(index);
+    const int lane = layout_.lanes.value(index, -1);
+    const QRect visible = lane < 0 ? QRect{} : rect.intersected(layout_.laneList.at(lane).viewport.translated(tabOrigin())).intersected(this->rect());
+    const auto geometry = anchorGeometry(rect, visible, state.shape == TabShape::Tile, false);
+    state.surface = state.selected && !visible.isEmpty() ? &geometry : nullptr;
+    state.elevationManaged = !surfaceBody_.isEmpty();
+    const auto presence = presence_.constFind(tabs_.at(index).data.toUuid());
+    const qreal visibility = presence == presence_.cend() ? 1.0 : presence->from + (presence->to - presence->from) * presenceProgress_.value();
+    LabelPresenceEffect::paint(painter, rect, visibility, [&] { painter_.paintTab(painter, partsOf(index, rect), state); });
 }
 
 TabFolderPaintState TabBar::folderPaintState(int folder) const
@@ -1078,22 +1867,17 @@ void TabBar::paintLaneDecorations(QPainter& painter)
     const auto origin = tabOrigin();
     for (int laneIndex = 0; laneIndex < layout_.laneList.size(); ++laneIndex) {
         const auto& lane = layout_.laneList.at(laneIndex);
-        const auto viewport = lane.viewport.translated(origin);
-        const int fade = metrics_.edgeFade;
-        if (lane.offset > 0) {
-            painter_.paintFade(painter, lane.vertical ? QRect(viewport.left(), viewport.top(), viewport.width(), fade)
-                                                      : QRect(viewport.left() + lane.frozen, viewport.top(), fade, viewport.height()),
-                               lane.vertical ? Qt::TopEdge : Qt::LeftEdge);
+        auto viewport = lane.viewport.translated(origin);
+        if (lane.vertical) viewport.adjust(1, 0, -1, 0);
+        const bool showBar = lane.maximumOffset() > 0 && laneIndex == scrollingLane_ && scrollbarOpacity_.value() > 0;
+        if (showBar) {
+            painter.save(); painter.setOpacity(painter.opacity() * scrollbarOpacity_.value());
+            painter_.paintScrollbar(painter, scrollThumb(laneIndex), laneIndex == scrollDragLane_);
+            painter.restore();
         }
-        if (lane.offset < lane.maximumOffset()) {
-            painter_.paintFade(painter, lane.vertical ? QRect(viewport.left(), viewport.bottom() - fade + 1, viewport.width(), fade)
-                                                      : QRect(viewport.right() - fade + 1, viewport.top(), fade, viewport.height()),
-                               lane.vertical ? Qt::BottomEdge : Qt::RightEdge);
-        }
-        const bool showBar = lane.maximumOffset() > 0 && (laneIndex == hoveredLane_ || laneIndex == scrollDragLane_);
-        if (showBar) painter_.paintScrollbar(painter, scrollThumb(laneIndex), laneIndex == scrollDragLane_);
     }
-    if (!layout_.separator.isNull()) painter_.paintSeparator(painter, layout_.separator.translated(origin));
+    if (!layout_.separator.isNull()) painter_.paintSeparator(painter, layout_.separator.translated(origin),
+        window()->isActiveWindow(), vertical());
 }
 
 void TabBar::paintEvent(QPaintEvent*)
@@ -1103,10 +1887,10 @@ void TabBar::paintEvent(QPaintEvent*)
     // An overlay's shadow band stays unfilled, so the content shows through.
     auto background = rect();
     if (overlayActive() && !vertical()) {
-        if (placement_ == TabBarPlacement::Bottom) background.setTop(metrics_.shadowBlur);
-        else background.setBottom(height() - metrics_.shadowBlur - 1);
+        if (placement_ == TabBarPlacement::Bottom) background.setTop(rowShadowExtent());
+        else background.setBottom(height() - rowShadowExtent() - 1);
     }
-    painter.fillRect(background, painter_.palette().strip);
+    if (overlayActive() && !vertical()) painter.fillRect(background, painter_.palette().strip);
     const auto origin = tabOrigin();
     // Short lines between resting tabs of one row.
     for (int index = 0; index + 1 < tabs_.size(); ++index) {
@@ -1121,42 +1905,89 @@ void TabBar::paintEvent(QPaintEvent*)
     }
     for (int laneIndex = 0; laneIndex < layout_.laneList.size(); ++laneIndex) {
         const auto& lane = layout_.laneList.at(laneIndex);
-        painter.save();
-        painter.setClipRect(lane.viewport.translated(origin));
-        // Tabs scrolling under a frozen run first, then the run; the current
-        // tab of each part over its neighbors.
-        const auto paintRange = [&](int first, int last, bool clipFrozen) {
+        QVector<EdgeFade> fades;
+        const auto appendFades = [&](const TabLayoutLane& segment) {
+            const auto viewport = segment.viewport.translated(origin);
+            const int fade = segment.fadeExtent(metrics_.edgeFade);
+            if (segment.offset > 0) fades.append({segment.vertical
+                ? QRect(viewport.left(), viewport.top(), viewport.width(), fade)
+                : QRect(viewport.left() + segment.frozen, viewport.top(), fade, viewport.height()),
+                segment.vertical ? Qt::TopEdge : Qt::LeftEdge});
+            if (segment.offset < segment.maximumOffset()) fades.append({segment.vertical
+                ? QRect(viewport.left(), viewport.bottom() - fade + 1, viewport.width(), fade)
+                : QRect(viewport.right() - fade + 1, viewport.top(), fade, viewport.height()),
+                segment.vertical ? Qt::BottomEdge : Qt::RightEdge});
+        };
+        appendFades(lane);
+        if (layout_.rowScrollLane >= 0 && layout_.rowScrollLane != laneIndex)
+            appendFades(layout_.laneList.at(layout_.rowScrollLane));
+        const auto drawLane = [&](QPainter& painter) {
             painter.save();
-            if (clipFrozen && lane.frozen)
-                painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-            for (int index = first; index < last; ++index)
-                if (index != current_ && layout_.lanes.at(index) == laneIndex) paintTabAt(painter, index);
-            if (current_ >= first && current_ < last && layout_.lanes.value(current_) == laneIndex) paintTabAt(painter, current_);
+            painter.setClipRect(lane.viewport.translated(origin), Qt::IntersectClip);
+            // Tabs scrolling under a frozen run first, then the run; the current
+            // tab of each part over its neighbors.
+            const auto paintRange = [&](int first, int last, bool clipFrozen) {
+                painter.save();
+                if (clipFrozen && lane.frozen)
+                    painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
+                for (int index = first; index < last; ++index)
+                    if (index != current_ && layout_.lanes.at(index) == laneIndex) paintTabAt(painter, index);
+                if (current_ >= first && current_ < last && layout_.lanes.value(current_) == laneIndex) paintTabAt(painter, current_);
+                painter.restore();
+            };
+            // Folders live among the regular tabs, under a frozen run.
+            painter.save();
+            if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
+            paintFolders(painter, laneIndex);
+            painter.restore();
+            if (lane.frozen) { paintRange(stickyCount_, count(), true); paintRange(0, stickyCount_, false); }
+            else paintRange(0, count(), false);
+            painter.save();
+            if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
+            paintFolderLines(painter, laneIndex);
+            paintFolderOutline(painter, laneIndex);
+            painter.restore();
             painter.restore();
         };
-        // Folders live among the regular tabs, under a frozen run.
-        painter.save();
-        if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-        paintFolders(painter, laneIndex);
-        painter.restore();
-        if (lane.frozen) { paintRange(stickyCount_, count(), true); paintRange(0, stickyCount_, false); }
-        else paintRange(0, count(), false);
-        painter.save();
-        if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-        paintFolderLines(painter, laneIndex);
-        paintFolderOutline(painter, laneIndex);
-        painter.restore();
-        painter.restore();
+        paintEdgeFades(painter, lane.viewport.translated(origin), fades, drawLane);
     }
     paintLaneDecorations(painter);
+    const auto globalOrigin = mapToGlobal(QPoint());
+    for (const auto& label : std::as_const(departing_))
+        paintRetiredLabel(painter, painter_, label, globalOrigin, 1 - presenceProgress_.value());
+    if (overlayActive() && !vertical()) {
+        // The overlay reads as the strip grown over the content.
+        const bool above = placement_ == TabBarPlacement::Bottom;
+        const int shadow = rowShadowExtent();
+        const QRect band(0, above ? 0 : height() - shadow, width(), shadow);
+        surfaceRenderer_.paintOverlayBand(painter, band, above, painter_.palette().elevation, rowsReveal_.value());
+    }
+}
+
+void TabBar::paintLiftedTabs(QPainter& painter)
+{
+    painter.setFont(font());
+    const auto bodyProfile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
+        elevationProfile(ElevationLevel::BodyRaised), surfaceFocus_);
+    auto style = painter_.palette().elevation;
+    style.focused = groupFocused_ && window()->isActiveWindow();
+    for (const auto& anchor : surfaceAnchors()) if (anchor.lifted || anchor.foreground)
+        surfaceRenderer_.paintAnchor(painter, anchor.geometry,
+            anchor.foreground ? elevationProfile(ElevationLevel::Flat) : bodyProfile,
+            anchor.elevation, style, !anchor.foreground);
+    if (const auto incoming = incomingRect(); !incoming.isEmpty()) {
+        const auto anchors = surfaceAnchors();
+        const auto geometry = anchors.isEmpty() ? SurfaceGeometry{} : translatedSurfaceGeometry(anchors.first().geometry, -incoming.topLeft());
+        painter.save(); painter.translate(incoming.topLeft());
+        if (incomingVisual_.paintSurface) incomingVisual_.paintSurface(painter, geometry);
+        else incomingVisual_.paint(painter);
+        painter.restore();
+    }
     if (const auto lifted = liftedRect(); !lifted.isEmpty() && draggedFolder_ >= 0) {
         // The carried folder rides above everything: header, tabs, its line.
         const auto& folder = folders_.at(draggedFolder_);
         const auto state = folderPaintState(draggedFolder_);
-        painter.save(); painter.setOpacity(liftProgress());
-        painter_.paintShadow(painter, QRectF(lifted), metrics_.radius);
-        painter.restore();
-        painter.fillRect(lifted, painter_.palette().strip);
+
         const int pitch = metrics_.rowHeight + metrics_.rowGap;
         QRect header = vertical() ? QRect(lifted.left(), lifted.top(), lifted.width(), metrics_.rowHeight)
                                   : QRect(lifted.left(), lifted.top(), folderHeaderExtent(folder), metrics_.rowHeight);
@@ -1171,6 +2002,8 @@ void TabBar::paintEvent(QPaintEvent*)
             tab.outerRight = placement_ == TabBarPlacement::Right; tab.preset = tabPreset(index);
             tab.icon = appearance_.showIcons ? tabs_.at(index).icon : QIcon{};
             tab.title = tabs_.at(index).title; tab.titleLayout = &tabs_[index].titleLayout;
+            const auto geometry = anchorGeometry(rect, rect.intersected(this->rect()), false, true);
+            tab.elevationManaged = true; tab.surface = tab.selected ? &geometry : nullptr;
             painter_.paintTab(painter, painter_.parts(rect, tab.shape, labelParts(index, false), false, false, false, layoutDirection()), tab);
             x = rect.right() + 1; y += pitch;
         }
@@ -1182,55 +2015,54 @@ void TabBar::paintEvent(QPaintEvent*)
             const int x0 = lifted.left() + metrics_.folderIndent / 2 - metrics_.folderLine / 2;
             painter_.paintFolderLine(painter, QRect(x0, header.bottom() + 1 + metrics_.rowGap, metrics_.folderLine, lifted.bottom() - header.bottom() - metrics_.rowGap), state.color);
         }
-    } else if (const auto lifted = liftedRect(); !lifted.isEmpty()) {
+    } else if (const auto movingLabel = liftedRect(); !movingLabel.isEmpty()) {
         // The dragged tab rides above everything, with its shadow.
         TabPaintState state;
         state.shape = shapeOf(dragged_);
         state.lifted = true; state.selected = true; state.groupFocused = true;
         state.shadowOpacity = liftProgress();
         state.sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
+        if (vertical()) state.shape = state.sticky && compactStickyTiles() ? TabShape::Tile : TabShape::Row;
         state.outerRight = placement_ == TabBarPlacement::Right;
         state.preset = tabPreset(dragged_);
         state.number = appearance_.showNumbers ? QString::number(dragged_ + 1) : QString{};
         state.icon = appearance_.showIcons ? tabs_.at(dragged_).icon : QIcon{};
         state.title = tabs_.at(dragged_).title;
         state.titleLayout = &tabs_[dragged_].titleLayout;
-        state.iconOnly = !vertical() && state.sticky && appearance_.stickySizing == StickyTabSizing::Compact;
+        state.iconOnly = state.shape == TabShape::Tile || (vertical() && iconsOnly() && columnReveal_ <= 0)
+            || (!vertical() && state.sticky && appearance_.stickySizing == StickyTabSizing::Compact);
         state.actionShown = state.sticky && !state.iconOnly; state.actionReserved = true;
         state.actionIcon = iconFor(vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
+        const auto geometry = anchorGeometry(movingLabel, movingLabel.intersected(rect()), state.shape == TabShape::Tile, true);
+        state.surface = &geometry; state.elevationManaged = true; state.bodyElevation = &bodyProfile;
         const auto label = labelParts(dragged_, state.sticky);
-        painter_.paintTab(painter, painter_.parts(lifted, state.shape, label, state.iconOnly, state.actionShown, state.sticky,
+        painter_.paintTab(painter, painter_.parts(movingLabel, state.shape, label, state.iconOnly, state.actionShown, state.sticky,
                                                   layoutDirection()), state);
-    }
-    if (overlayActive() && !vertical()) {
-        // The overlay reads as the strip grown over the content.
-        const bool above = placement_ == TabBarPlacement::Bottom;
-        const QRect band(0, above ? 0 : height() - metrics_.shadowBlur, width(), metrics_.shadowBlur);
-        QLinearGradient shade(above ? band.bottomLeft() : band.topLeft(), above ? band.topLeft() : band.bottomLeft());
-        shade.setColorAt(0, QColor(0, 0, 0, 50)); shade.setColorAt(1, QColor(0, 0, 0, 0));
-        painter.fillRect(band, shade);
     }
 }
 
-qreal TabBar::liftProgress() const
+qreal TabBar::liftProgress() const { return liftElevation_.value(); }
+
+void TabBar::inheritHover(const TabBar& previous)
 {
-    if (!liftClock_.isValid() || !animationsEnabled()) return 1.0;
-    return std::clamp(qreal(liftClock_.elapsed()) / 80.0, 0.0, 1.0);
-}
-qreal TabBar::hoverProgress() const
-{
-    if (!hoverClock_.isValid() || !animationsEnabled()) return 1.0;
-    return std::clamp(qreal(hoverClock_.elapsed()) / 100.0, 0.0, 1.0);
+    if (!previous.labelHoverSession_ || !rect().contains(mapFromGlobal(QCursor::pos()))) return;
+    labelHoverSession_ = true;
+    updateHover(mapFromGlobal(QCursor::pos()));
+    if (hovered_ >= 0) { fadingAction_ = hovered_; actionOpacity_.jump(1); update(); }
 }
 
 void TabBar::updateHover(QPoint local)
 {
     const int hovered = tabAt(local);
-    if (hovered != hovered_ && hovered >= 0) {
-        // A covering close button fades in over the title.
-        hoverClock_.start();
-        if (animationsEnabled()) for (int step = 1; step <= 6; ++step)
-            QTimer::singleShot(step * 18, this, [self = QPointer<TabBar>(this)] { if (self) self->update(); });
+    if (hovered >= 0 && hovered != hovered_) {
+        fadingAction_ = hovered;
+        // Enter once; moving between labels, even across their gaps, does
+        // not replay the reveal. The old label gives up its action at once.
+        if (labelHoverSession_) actionOpacity_.jump(1);
+        else actionOpacity_.animateTo(1, Motion::Hover, animationsEnabled());
+        labelHoverSession_ = true;
+    } else if (hovered < 0 && hovered_ >= 0) {
+        actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
     }
     const bool overAction = hovered >= 0 && actionRect(hovered).contains(local)
         && (hovered < stickyCount_ ? !isCompactSticky(hovered) : true);
@@ -1249,21 +2081,22 @@ void TabBar::mousePressEvent(QMouseEvent* event)
     const auto point = event->position().toPoint();
     if (event->button() == Qt::MiddleButton) { middlePressed_ = tabAt(point); event->accept(); return; }
     if (event->button() != Qt::LeftButton) { event->accept(); return; }
-    // The scrollbar of a hovered lane.
-    if (hoveredLane_ >= 0 && hoveredLane_ < layout_.laneList.size() && layout_.laneList.at(hoveredLane_).maximumOffset() > 0) {
-        const auto track = scrollTrack(hoveredLane_);
-        if (track.adjusted(0, -2, 0, 2).contains(point)) {
-            const auto thumb = scrollThumb(hoveredLane_);
-            const auto& lane = layout_.laneList.at(hoveredLane_);
-            if (!thumb.contains(point)) {
-                // A press on the track jumps there.
-                const int length = lane.vertical ? track.height() - thumb.height() : track.width() - thumb.width();
-                const int along = lane.vertical ? point.y() - track.top() - thumb.height() / 2 : point.x() - track.left() - thumb.width() / 2;
-                setLaneOffset(hoveredLane_, int(qint64(std::clamp(along, 0, std::max(1, length))) * lane.maximumOffset() / std::max(1, length)));
-            }
-            scrollDragLane_ = hoveredLane_; scrollDragOrigin_ = layout_.laneList.at(hoveredLane_).offset; scrollDragStart_ = point;
-            event->accept(); return;
+    // Hidden scrollbars do not create invisible drag targets over labels.
+    if (scrollingLane_ >= 0 && scrollingLane_ < layout_.laneList.size() && scrollbarHitRect().contains(point)) {
+        const int laneIndex = scrollingLane_;
+        const auto track = scrollTrack(laneIndex);
+        const auto thumb = scrollThumb(laneIndex);
+        const auto& lane = layout_.laneList.at(laneIndex);
+        if (!thumb.contains(point)) {
+            // A press on the track jumps there.
+            const int length = lane.vertical ? track.height() - thumb.height() : track.width() - thumb.width();
+            const int along = lane.vertical ? point.y() - track.top() - thumb.height() / 2 : point.x() - track.left() - thumb.width() / 2;
+            setLaneOffset(laneIndex, int(qint64(std::clamp(along, 0, std::max(1, length))) * lane.maximumOffset() / std::max(1, length)));
         }
+        rowWheelGuard_.reset();
+        scrollDragLane_ = laneIndex; scrollDragOrigin_ = layout_.laneList.at(laneIndex).offset; scrollDragStart_ = point;
+        revealScrollbar(scrollDragLane_);
+        event->accept(); return;
     }
     const int index = tabAt(point);
     pressPoint_ = point;
@@ -1276,7 +2109,7 @@ void TabBar::mousePressEvent(QMouseEvent* event)
     pressed_ = index;
     if (index >= 0) {
         setCurrentIndex(index);
-        if (appearance_.collapseRows == TabRowCollapse::Overlay && expanded_) setExpanded(false);
+        if (appearance_.rowExpansion == TabRowExpansion::Overlay && expanded_) setExpanded(false);
     }
     event->accept();
 }
@@ -1284,6 +2117,7 @@ void TabBar::mousePressEvent(QMouseEvent* event)
 void TabBar::mouseMoveEvent(QMouseEvent* event)
 {
     const auto point = event->position().toPoint();
+    if (iconMode_ && rect().contains(point)) setColumnHovered(true);
     if (scrollDragLane_ >= 0 && scrollDragLane_ < layout_.laneList.size()) {
         const auto& lane = layout_.laneList.at(scrollDragLane_);
         const auto track = scrollTrack(scrollDragLane_);
@@ -1319,7 +2153,7 @@ void TabBar::mouseReleaseEvent(QMouseEvent* event)
         if (index >= 0 && !kept && tabAt(point) == index) { const auto callback = close; if (callback) callback(index); }
         return;
     }
-    if (scrollDragLane_ >= 0) { scrollDragLane_ = -1; update(); return; }
+    if (scrollDragLane_ >= 0) { rowWheelGuard_.reset(); scrollDragLane_ = -1; scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
     pressed_ = -1;
     if (pressedHeader_ >= 0) {
         const int folder = pressedHeader_; pressedHeader_ = -1; update();
@@ -1349,22 +2183,24 @@ void TabBar::mouseDoubleClickEvent(QMouseEvent* event)
 void TabBar::wheelEvent(QWheelEvent* event)
 {
     const auto delta = event->pixelDelta().isNull() ? event->angleDelta() / 3 : event->pixelDelta();
-    scrollAt(event->position().toPoint(), delta);
+    scrollAt(event->position().toPoint(), delta, event->pixelDelta().isNull());
     event->accept();
 }
 
 void TabBar::enterEvent(QEnterEvent* event)
 {
     collapseTimer_.stop();
-    if (iconMode_ && !peeking_) peekTimer_.start();
+    updateHover(event->position().toPoint());
+    setColumnHovered(true);
     QWidget::enterEvent(event);
 }
 
 void TabBar::leaveEvent(QEvent* event)
 {
+    actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
+    labelHoverSession_ = false;
     hovered_ = -1; actionHovered_ = false; hoveredLane_ = -1; hoveredHeader_ = -1; headerAddHovered_ = false;
-    peekTimer_.stop();
-    if (peeking_) { peeking_ = false; relayout(false); if (const auto callback = reservedSizeChanged) callback(); }
+    if (!columnManaged_) setColumnHovered(false);
     if (expandedByWheel_) collapseTimer_.start();
     update();
     QWidget::leaveEvent(event);
@@ -1374,11 +2210,11 @@ void TabBar::contextMenuEvent(QContextMenuEvent* event)
 {
     if (const int folder = tabAt(event->pos()) < 0 ? folderAt(event->pos()) : -1; folder >= 0) {
         const auto callback = folderMenu;
-        if (callback) callback(folder, event->globalPos());
+        if (callback) showColumnPopup([callback, folder, global = event->globalPos()] { callback(folder, global); });
         return;
     }
     const auto callback = menu;
-    if (callback) callback(tabAt(event->pos()), event->globalPos());
+    if (callback) showColumnPopup([callback, index = tabAt(event->pos()), global = event->globalPos()] { callback(index, global); });
 }
 
 void TabBar::keyPressEvent(QKeyEvent* event)
@@ -1400,11 +2236,19 @@ void TabBar::keyPressEvent(QKeyEvent* event)
 void TabBar::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    relayout(false);
+    if (!vertical() && rowTransitionRunning() && event->oldSize().width() == event->size().width()) {
+        relayoutTrailing(); updateLiftedLayer(); refreshScrollInput(); update(); return;
+    }
+    relayout(vertical() && columnModeTransition_ && stickyCount_ > 1
+        && appearance_.stickySizing == StickyTabSizing::Compact);
 }
 
 void TabBar::changeEvent(QEvent* event)
 {
+    if (event->type() == QEvent::ActivationChange) {
+        update();
+        if (liftedLayer_) liftedLayer_->update();
+    }
     if (event->type() == QEvent::FontChange || event->type() == QEvent::LayoutDirectionChange) {
         metrics_ = TabMetrics::forTheme(theme_, font());
         painter_ = TabPainter(metrics_, TabPalette::forTheme(theme_));
@@ -1417,6 +2261,38 @@ void TabBar::changeEvent(QEvent* event)
 
 bool TabBar::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == scrollInput_) {
+        if (event->type() == QEvent::Enter) {
+            if (scrollDragLane_ < 0) scrollbarHideTimer_.start();
+            setColumnHovered(true);
+        } else if (event->type() == QEvent::Leave) {
+            if (scrollDragLane_ < 0) { scrollbarHideTimer_.start(); reconcileColumnHover(); }
+        } else if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease
+                   || event->type() == QEvent::MouseButtonDblClick || event->type() == QEvent::MouseMove) {
+            auto* source = static_cast<QMouseEvent*>(event);
+            QMouseEvent forwarded(source->type(), QPointF(mapFromGlobal(source->globalPosition().toPoint())), source->globalPosition(),
+                source->button(), source->buttons(), source->modifiers(), source->pointingDevice());
+            forwarded.setTimestamp(source->timestamp());
+            QCoreApplication::sendEvent(this, &forwarded);
+            return true;
+        } else if (event->type() == QEvent::Wheel) {
+            auto* source = static_cast<QWheelEvent*>(event);
+            scrollAt(mapFromGlobal(source->globalPosition().toPoint()), source->pixelDelta().isNull() ? source->angleDelta() / 3 : source->pixelDelta(), source->pixelDelta().isNull());
+            return true;
+        } else if (event->type() == QEvent::ContextMenu) {
+            auto* source = static_cast<QContextMenuEvent*>(event);
+            QContextMenuEvent forwarded(source->reason(), mapFromGlobal(source->globalPos()), source->globalPos(), source->modifiers());
+            QCoreApplication::sendEvent(this, &forwarded); return true;
+        }
+    }
+    if (watched == liftedLayer_ && event->type() == QEvent::Paint) {
+        QPainter painter(liftedLayer_);
+        paintLiftedTabs(painter);
+        return true;
+    }
+    if ((watched == trailing_ || watched == end_) && event->type() == QEvent::Enter) {
+        updateHover(QPoint(-1, -1)); labelHoverSession_ = false;
+    }
     // The trailing controls change size when their contents change.
     if ((watched == trailing_ || watched == end_) && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::ShowToParent
                                  || event->type() == QEvent::HideToParent)) {
@@ -1424,7 +2300,7 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
         return false;
     }
     // An expanded overlay closes on a press elsewhere or Escape.
-    if (expanded_ && appearance_.collapseRows == TabRowCollapse::Overlay) {
+    if (expanded_ && appearance_.rowExpansion == TabRowExpansion::Overlay) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             const QRect area(mapToGlobal(QPoint()), size());
@@ -1439,6 +2315,10 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
 
 bool TabBar::event(QEvent* event)
 {
+    if (event->type() == QEvent::Hide) { scrollMotion_.stop(); smoothLane_ = -1; }
+    if (event->type() == QEvent::Hide && scrollInput_) scrollInput_->hide();
+    if (event->type() == QEvent::Show || event->type() == QEvent::Move)
+        QTimer::singleShot(0, this, [this] { refreshScrollInput(); if (iconMode_) reconcileColumnHover(); });
     if (event->type() == QEvent::ToolTip) {
         auto* help = static_cast<QHelpEvent*>(event);
         const int index = tabAt(help->pos());

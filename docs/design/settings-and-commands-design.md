@@ -8,9 +8,9 @@
 
 命令面板默认非模态，点击其外部后关闭，原点击继续交付。通用浮动面板 API 分别控制自动关闭和模态。标签末尾新建按钮、类型下拉、菜单和快捷键调用同一套宿主命令。窗口菜单末尾按完整窗口及其轻量窗口列出可切换目标；状态栏右键可选择显示的状态控件。
 
-关联：[V0 设计](v0-design.md)、[工作区设计](workspace-design.md)、[终端 Normal 与选择模式](terminal-mark-mode-design.md)、[测试规范](../development/testing-design.md)。
-
 平滑滚动的按组件开关是宿主运行期策略，不写入布局或用户设置；接口见 [模块说明](../../modules/window-system/README.md#组件滚动策略)，交互规则见 [界面设计](ui-design-system.md#48-滚动条)。
+
+关联：[V0 设计](v0-design.md)、[工作区设计](workspace-design.md)、[终端 Normal 与选择模式](terminal-mark-mode-design.md)、[测试规范](../development/testing-design.md)。
 
 ## 1. 参考范围
 
@@ -120,10 +120,13 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | --- | --- |
 | `tabs.centralPlacement` | 普通标签栏位置：`top`（默认）、`bottom`、`left` 或 `right`；左右是竖向标签栏，见 [标签栏设计 §4](tab-strip-design.md#4-竖向标签栏)（`left`／`right` 随 8.23 实现）。 |
 | `tabs.pinnedPlacement` | 固定侧栏标签栏位置，取值同上，默认 `top`，独立于普通栏。 |
-| `tabs.verticalTabWidth` | 竖向标签栏的默认宽度，`px`，整数 `140–480`，默认 `220`；拖动调整后的宽度保存在各组的布局里。 |
-| `tabs.multiline` | 多行排列，默认 `false`；开启后排满换行，取消横向滚动条。只用于横向标签栏。 |
-| `tabs.collapseRows` | 多行时是否收起，见 [标签栏设计 §3.4](tab-strip-design.md#34-收起与展开)：`off`（默认，全部显示）、`push`（收起，展开时推开内容）、`overlay`（收起，展开时浮层盖在内容上）。不是多行时保留值、不生效。 |
-| `tabs.wheelExpandRows` | 默认 `false`，只在多行且 `tabs.collapseRows` 不是 `off` 时起作用：滚轮向下展开，向上收起。不起作用时保留这个值（用户 2026-10-24 决定），设置页和菜单里显示为不可用。 |
+| `tabs.verticalTabWidth` | 竖向标签栏的默认宽度，单位 `px`；范围和默认值见 [标签栏设计 §4](tab-strip-design.md#4-竖向标签栏)，拖动调整后的宽度保存在各组的布局里。 |
+| `tabs.multiline` | 普通段多行排列，默认 `false`；开启后排满换行，不使用横向滚动条。置顶标签未独占一段时也使用这项设置。只用于横向标签栏。 |
+| `tabs.showAllRows` | 默认 `true`，始终显示普通段所有行；关闭后平时只显示活动标签所在行。仅在 `tabs.multiline` 开启时生效，否则保留值。 |
+| `tabs.stickyMultiline` | 默认 `false`，独立控制置顶段是否使用多行；只在 `tabs.stickyTabsOnSeparateRow` 开启时生效，否则保留值。 |
+| `tabs.stickyShowAllRows` | 默认 `true`，始终显示置顶段所有行；关闭后平时只显示该段的活动行。仅在置顶段单独排列且开启多行时生效，否则保留值。 |
+| `tabs.rowExpansion` | 置顶段和普通段共用的展开方式：`push` 推开内容、`overlay`（默认）浮层覆盖内容。所有收起的段一起展开和收起，见 [标签栏设计 §3.4](tab-strip-design.md#34-收起与展开)。 |
+| `tabs.wheelExpandRows` | 默认 `false`。存在可收起的多行段时，用滚轮展开和收起；方向、横向滚动优先级与滚到边界后的保护见 [标签栏设计 §3.4](tab-strip-design.md#34-收起与展开)。不可用时保留值，设置页和菜单显示为不可用。 |
 | `tabs.showIcons` | 默认 `true`；仅控制中央标签栏，开启时仍尊重单标签的宿主设置。 |
 | `tabs.showNewTabButton` | 默认 `true`，同时控制末尾加号与类型下拉，隐藏不移除新建命令。 |
 | `tabs.showGroupNames` | 默认 `true`；在标签栏右端显示有名字的标签组的名称，见 [标签栏设计 §13](tab-strip-design.md#13-标签组名称)。 |
@@ -137,12 +140,12 @@ SSH config 仍是外部只读、动态来源，不复制到 `sessions/items/`。
 | `tabs.colors` | 整体替换预设数组，缺省使用内置颜色。 |
 | `tabs.stickySizing` | 置顶标签的尺寸，对应 VS Code 的 `workbench.editor.pinnedTabSizing`：`normal`（默认，和普通标签一样）、`compact`（宽 38，只显示图标，没有图标时显示标题首字，没有置顶按钮）、`shrink`（显示编号、图标和标题开头，标题长度由 `tabs.shrinkStickyTitleWidth` 限制，保留置顶按钮）。紧凑和收缩时，单行标签栏滚动时置顶标签留在视口开头，其他标签从它们下面滚过，最后一个置顶标签右侧有一条主题边框色的分隔线；多行时不固定。 |
 | `tabs.shrinkStickyTitleWidth` | 收缩时置顶标签的标题最大长度，和 `tabs.maximumTitleWidth` 一样只限制文字，编号、图标和置顶按钮另占位置；单位、范围和控件与它相同（`px`，整数 `0–1000000`，`0` 不显示标题文字），默认 `40`，有图标时整个标签和 VS Code 固定的 80 差不多宽。标题短于限制时按原长显示。和普通标题裁切分开算：`tabs.clipTitles` 开关和长度都不影响收缩的置顶标签（用户 2026-10-24 决定）。VS Code 没有这一项，是用户 2026-10-24 要求加的；只在 `tabs.stickySizing` 为 `shrink` 时生效，设置页里其他尺寸下不可编辑但保留数值。 |
-| `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后有置顶标签的组把它们放在其他标签上方单独的行里，两段按同样的方式排列：单行时各自横向滚动，多行时各自换行、收起时各显示一行，见 [标签栏设计 §3.6](tab-strip-design.md#36-置顶标签单独一行)。只用于横向标签栏。 |
+| `tabs.stickyTabsOnSeparateRow` | 默认 `false`，对应 VS Code 的 `workbench.editor.pinnedTabsOnSeparateRow`。开启后置顶段单独排列，可以与普通段选择不同的单行、多行和始终显示所有行设置，见 [标签栏设计 §3.6](tab-strip-design.md#36-置顶标签单独一行)。只用于横向标签栏。 |
 | `tabs.preventStickyClose` | 哪些关闭方式不关置顶标签，对应 VS Code 的 `workbench.editor.preventPinnedEditorClose`：`keyboardAndMouse`（默认）、`keyboard`、`mouse`、`never`。按键指从快捷键执行的关闭当前标签（`workspace.closeTab`），以及会连带关闭标签的关闭窗格（`pane.close`，标签只剩这一个窗格时）；被拦下时和 VS Code 一样切到本组第一个未置顶的标签，本组没有就切到同一窗口其他组的第一个未置顶标签，都没有就什么也不做。鼠标指中键点击。菜单、命令面板、标签列表的关闭按钮、API 和 Lua 照常关闭。Lua 中取值写作 `keyboard_and_mouse`、`keyboard`、`mouse`、`never`。 |
 
-置顶标签的设置在设置页“标签外观”下单独的“置顶标签”分类里，没有右键菜单入口（VS Code 也没有）。
+置顶标签的尺寸和关闭保护在设置页“标签外观”下单独的“置顶标签”分类里。两段的排列开关和共用展开方式也可从标签栏右键菜单修改。
 
-图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制顶部／底部。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。关闭多行时滚轮展开保留原值、暂不生效，滚轮展开命令在单行时不可用。
+图标、新建入口、编号和多行开关也可从标签栏右键菜单修改。普通位置与固定位置分别控制标签栏位置。命令 `presentation.toggleIcons`、`presentation.toggleNewTabButton`、`presentation.toggleNumbers`、`presentation.toggleMultiline`、`presentation.toggleAllRows`、`presentation.toggleStickyMultiline`、`presentation.toggleStickyAllRows`、`presentation.toggleWheelExpandRows` 共用这些字段；带 `visible` 参数时必须是布尔值。`presentation.setRowExpansion` 使用字符串参数 `mode` 选择 `push` 或 `overlay`。不适用的开关保留原值，命令按设置的适用条件启用。
 
 两套裁切开关和长度控件放在同一标签外观分类，明确标注普通／固定栏与非固定收纳条；各自关闭时禁用整组控件并保留数值。每项在同一行放滑条和 Qt 数字框，数字框保留上下微调按钮，后缀使用 `px`。滑条覆盖 `0–1000`，数字框支持该设置的完整范围；超出滑条范围的输入仍原样保留，不能被滑条夹回边界。
 

@@ -33,6 +33,7 @@
 #include <QTest>
 #include <QToolButton>
 #include <QToolTip>
+#include <QtMath>
 
 using namespace window_system;
 
@@ -133,6 +134,19 @@ private slots:
     void middleClickClosesManagedStripAndRailTabs();
     void newTabButtonsShareTheRowAndOpenTheTypeMenu();
     void insertionFollowsThePointerRow();
+    void liftedRowsKeepTheirContentAndFollowThePointer_data();
+    void liftedRowsKeepTheirContentAndFollowThePointer();
+    void incomingGapRemainsVisibleWithoutResizingContent_data();
+    void incomingGapRemainsVisibleWithoutResizingContent();
+    void dragSettingsCombinationsPreserveContentAndWheelRouting();
+    void liftedLabelPaintsAboveCreationControls();
+    void liftedCompactVerticalTabKeepsItsTileSize();
+    void actionFadeStaysInsideTheTabContour();
+    void liftedSurfaceHasNoInsetOutline();
+    void lastStickyTileStaysStickyUntilTheVisibleDivider();
+    void floatingCarrierUsesTheTargetStyleAndRestoresItsOwn();
+    void incomingVisualMatchesTheInStripLiftAndAxis_data();
+    void incomingVisualMatchesTheInStripLiftAndAxis();
     void multilineDragReordersAndTearsOffOnlyPastEveryRow_data();
     void multilineDragReordersAndTearsOffOnlyPastEveryRow();
     void verticalStripResizesAndFoldsToIcons();
@@ -141,6 +155,206 @@ private slots:
     void accessibilityListsTabsAndFolders();
     void groupNamesEndTheStripUnlessTurnedOff();
 };
+
+void TabStripLayoutTest::liftedLabelPaintsAboveCreationControls()
+{
+    GroupTabs tabs(defaultTheme(), nullptr);
+    const auto ids = populate(tabs, 3);
+    tabs.resize(800, 400); tabs.show();
+    QCoreApplication::processEvents();
+    auto* bar = tabs.tabBar();
+    const auto trailing = tabs.findChild<QWidget*>("TabCreateActions");
+    QVERIFY(trailing && trailing->isVisible());
+    const auto point = trailing->mapTo(bar, trailing->rect().center());
+    tabs.setDraggedTab(ids.first());
+    tabs.setLiftedTab(bar->mapToGlobal(point), {0, 0});
+    const auto layer = bar->findChild<QWidget*>("LiftedTabLayer");
+    QVERIFY(layer && layer->isVisible());
+    QVERIFY(layer->testAttribute(Qt::WA_TransparentForMouseEvents));
+    QVERIFY(bar->children().indexOf(layer) > bar->children().indexOf(trailing));
+    tabs.clearLiftedTab();
+    QVERIFY(layer->isHidden());
+}
+
+void TabStripLayoutTest::liftedCompactVerticalTabKeepsItsTileSize()
+{
+    for (const auto placement : {TabBarPlacement::Left, TabBarPlacement::Right}) {
+        GroupTabs tabs(defaultTheme(), nullptr);
+        TabAppearance appearance;
+        appearance.centralPlacement = placement;
+        appearance.stickySizing = StickyTabSizing::Compact;
+        tabs.setAppearance(appearance);
+        const auto ids = populate(tabs, 8, true);
+        tabs.setStickyCount(4);
+        tabs.resize(800, 500); tabs.show();
+        QCoreApplication::processEvents();
+        auto* bar = tabs.tabBar();
+        const auto original = bar->tabRect(1);
+        const auto grab = original.center() - original.topLeft();
+        tabs.setDraggedTab(ids.at(1));
+        tabs.setLiftedTab(bar->mapToGlobal(original.center()), grab);
+        tabs.setInsertionPreview(1, {{bar->tabText(1), true}}, true);
+        QCOMPARE(bar->liftedRect().size(), original.size());
+    }
+}
+
+void TabStripLayoutTest::actionFadeStaysInsideTheTabContour()
+{
+    const auto theme = defaultTheme();
+    const auto metrics = TabMetrics::forTheme(theme, qApp->font());
+    const TabPainter renderer(metrics, TabPalette::forTheme(theme));
+    for (const auto shape : {TabShape::Top, TabShape::Bottom}) for (const bool selected : {false, true}) {
+        TabPaintState state;
+        state.shape = shape; state.selected = selected; state.hovered = true; state.groupFocused = true;
+        const QRect tab(12, 12, 160, metrics.rowHeight);
+        const auto parts = renderer.parts(tab, shape, {}, false, true, false, Qt::LeftToRight);
+        const auto picture = [&](bool action) {
+            QImage image(190, metrics.rowHeight + 24, QImage::Format_ARGB32_Premultiplied);
+            image.fill(renderer.palette().strip);
+            QPainter painter(&image);
+            state.actionShown = action;
+            renderer.paintTab(painter, parts, state);
+            return image;
+        };
+        const auto before = picture(false), after = picture(true);
+        // The outer right corner must remain exactly as it was before the
+        // covering action appeared, for both the selected and hovered tab.
+        const int y = shape == TabShape::Top ? tab.top() : tab.bottom();
+        QCOMPARE(after.pixelColor(tab.right(), y), before.pixelColor(tab.right(), y));
+        const auto contour = renderer.outline(QRectF(tab), shape, selected);
+        QVERIFY(!QRegion(contour.toFillPolygon().toPolygon()).contains(QPoint(tab.right(), y)));
+    }
+}
+
+void TabStripLayoutTest::liftedSurfaceHasNoInsetOutline()
+{
+    const auto theme = defaultTheme();
+    const auto metrics = TabMetrics::forTheme(theme, qApp->font());
+    const TabPainter renderer(metrics, TabPalette::forTheme(theme));
+    for (const auto shape : {TabShape::Top, TabShape::Bottom, TabShape::Row, TabShape::Tile})
+    for (const qreal ratio : {1.0, 1.5, 2.0}) {
+        const QRect area(12, 12, 160, metrics.rowHeight);
+        QImage image(QSize(190, metrics.rowHeight + 24) * ratio, QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(ratio); image.fill(renderer.palette().strip);
+        TabPaintState state; state.shape = shape; state.selected = true; state.groupFocused = true; state.lifted = true;
+        TabParts parts; parts.tab = area;
+        QPainter painter(&image); renderer.paintTab(painter, parts, state); painter.end();
+        const int y = qFloor((area.top() + area.height() / 2.0) * ratio);
+        const int x = qFloor(area.left() * ratio);
+        QCOMPARE(image.pixelColor(x, y), renderer.palette().active);
+        QCOMPARE(image.pixelColor(x + 1, y), renderer.palette().active);
+    }
+}
+
+void TabStripLayoutTest::lastStickyTileStaysStickyUntilTheVisibleDivider()
+{
+    for (const auto side : {TabBarPlacement::Left, TabBarPlacement::Right}) {
+        GroupTabs tabs(defaultTheme(), nullptr);
+        TabAppearance appearance; appearance.centralPlacement = side; appearance.stickySizing = StickyTabSizing::Compact;
+        tabs.setAppearance(appearance);
+        const auto ids = populate(tabs, 12, true);
+        tabs.resize(800, 500); tabs.show(); QCoreApplication::processEvents();
+        auto* bar = tabs.tabBar();
+        const int perRow = std::max(1, (bar->width() - 2 * bar->metrics().verticalInset + bar->metrics().rowGap)
+            / (bar->metrics().tile.width() + bar->metrics().rowGap));
+        tabs.setStickyCount(perRow + 1);
+        const auto original = bar->tabRect(perRow);
+        const auto grab = original.center() - original.topLeft();
+        tabs.setDraggedTab(ids.at(perRow));
+        tabs.setLiftedTab(bar->mapToGlobal(original.center()), grab);
+        tabs.setInsertionPreview(perRow, {{bar->tabText(perRow), true}}, true);
+        const int divider = bar->tabLayout().separator.top() + bar->tabOrigin().y();
+        for (int y = original.center().y(); y < divider; ++y) {
+            const auto global = bar->mapToGlobal(QPoint(original.center().x(), y));
+            tabs.setLiftedTab(global, grab);
+            tabs.setInsertionPreview(tabs.insertionIndex(global), {{bar->tabText(perRow), true}}, true);
+            QVERIFY(tabs.insertionSticky());
+        }
+        const auto global = bar->mapToGlobal(QPoint(original.center().x(), divider));
+        tabs.setLiftedTab(global, grab);
+        tabs.setInsertionPreview(tabs.insertionIndex(global), {{bar->tabText(perRow), true}}, true);
+        QVERIFY(!tabs.insertionSticky());
+    }
+}
+
+void TabStripLayoutTest::floatingCarrierUsesTheTargetStyleAndRestoresItsOwn()
+{
+    GroupTabs carrier(defaultTheme(), nullptr), target(defaultTheme(), nullptr);
+    populate(carrier, 1, true); populate(target, 6, true);
+    TabAppearance normal; normal.centralPlacement = TabBarPlacement::Top;
+    carrier.setAppearance(normal);
+    TabAppearance destination; destination.centralPlacement = TabBarPlacement::Left;
+    destination.stickySizing = StickyTabSizing::Compact;
+    target.setAppearance(destination); target.setVerticalState(160, false); target.setStickyCount(4);
+    carrier.resize(880, 500); target.resize(800, 500);
+    carrier.show(); target.show(); QCoreApplication::processEvents();
+    carrier.setDragPresentation(true, false);
+    QVERIFY(carrier.setDragTabStyle(*target.tabBar(), true));
+    QCOMPARE(carrier.tabBar()->placement(), TabBarPlacement::Left);
+    QCOMPARE(carrier.tabBar()->tabRect(0).size(), target.tabBar()->tabRect(0).size());
+    QVERIFY(!carrier.setDragTabStyle(*target.tabBar(), true));
+    // Entering the regular section follows its exact row width too.
+    QVERIFY(carrier.setDragTabStyle(*target.tabBar(), false));
+    QCOMPARE(carrier.tabBar()->tabRect(0).size(), target.tabBar()->tabRect(4).size());
+    carrier.setDragPresentation(false, false);
+    QCOMPARE(carrier.tabBar()->placement(), normal.centralPlacement);
+    QCOMPARE(carrier.tabBar()->appearance(), normal);
+    QCOMPARE(carrier.tabBar()->stickyCount(), 0);
+}
+
+void TabStripLayoutTest::incomingVisualMatchesTheInStripLiftAndAxis_data()
+{
+    QTest::addColumn<TabBarPlacement>("placement");
+    QTest::newRow("top") << TabBarPlacement::Top;
+    QTest::newRow("bottom") << TabBarPlacement::Bottom;
+    QTest::newRow("left") << TabBarPlacement::Left;
+    QTest::newRow("right") << TabBarPlacement::Right;
+}
+
+void TabStripLayoutTest::incomingVisualMatchesTheInStripLiftAndAxis()
+{
+    QFETCH(TabBarPlacement, placement);
+    GroupTabs target(defaultTheme(), nullptr), source(defaultTheme(), nullptr);
+    const auto ids = populate(target, 1);
+    populate(source, 1);
+    TabAppearance appearance; appearance.centralPlacement = placement; appearance.showNewTabButton = false;
+    target.setAppearance(appearance); source.setAppearance(appearance);
+    target.resize(800, 500); source.resize(800, 500);
+    target.show(); source.show(); QCoreApplication::processEvents();
+    auto* bar = target.tabBar();
+    const auto original = bar->tabRect(0);
+    const auto grab = original.center() - original.topLeft();
+    const auto point = bar->vertical() ? QPoint(original.center().x(), 130) : QPoint(220, original.center().y());
+    target.setDraggedTab(ids.first());
+    target.setLiftedTab(bar->mapToGlobal(point), grab);
+    target.setInsertionPreview(0, {{bar->tabText(0), false}});
+    const auto internalRect = bar->liftedRect();
+    const auto internal = render(bar);
+    target.clearLiftedTab();
+    source.setDragPresentation(true, false);
+    source.setDragTabStyle(*bar, false);
+    auto* carried = source.tabBar();
+    const auto bounds = carried->carrierBounds();
+    TabDragVisual visual{bounds.size(), carried->carrierAnchor() - bounds.topLeft(),
+        [carried, bounds](QPainter& painter) {
+            painter.save(); painter.translate(-bounds.topLeft());
+            carried->paintCarrier(painter); painter.restore();
+        }};
+    bar->setIncomingVisual(visual, point);
+    QCOMPARE(bar->incomingRect(), internalRect);
+    QCOMPARE(render(bar), internal);
+    if (bar->vertical()) {
+        bar->setIncomingVisual(visual, point + QPoint(35, 40));
+        QCOMPARE(bar->incomingRect().left(), internalRect.left());
+        QCOMPARE(bar->incomingRect().top(), internalRect.top() + 40);
+    } else {
+        bar->setIncomingVisual(visual, point + QPoint(35, 0));
+        QCOMPARE(bar->incomingRect().top(), internalRect.top());
+        QCOMPARE(bar->incomingRect().left(), internalRect.left() + 35);
+    }
+    bar->setIncomingVisual({});
+    QVERIFY(bar->incomingRect().isEmpty());
+}
 
 void TabStripLayoutTest::stripSizesFollowTheDesign()
 {
@@ -238,7 +452,7 @@ void TabStripLayoutTest::placementPutsTheStripOnItsSide()
 void TabStripLayoutTest::multilineWrapsAndKeepsEveryTab()
 {
     GroupTabs tabs(defaultTheme(), nullptr);
-    TabAppearance appearance; appearance.multiline = true; appearance.showNewTabButton = false;
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showNewTabButton = false;
     tabs.setAppearance(appearance); const auto ids = populate(tabs, 9);
     tabs.resize(410, 300); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar();
@@ -296,14 +510,14 @@ void TabStripLayoutTest::endControlsEndTheFirstRow()
 void TabStripLayoutTest::collapsedRowsShowACountAndExpand_data()
 {
     QTest::addColumn<int>("mode");
-    QTest::newRow("push") << int(TabRowCollapse::Push);
-    QTest::newRow("overlay") << int(TabRowCollapse::Overlay);
+    QTest::newRow("push") << int(TabRowExpansion::Push);
+    QTest::newRow("overlay") << int(TabRowExpansion::Overlay);
 }
 void TabStripLayoutTest::collapsedRowsShowACountAndExpand()
 {
     QFETCH(int, mode);
     GroupTabs tabs(defaultTheme(), nullptr);
-    TabAppearance appearance; appearance.multiline = true; appearance.collapseRows = TabRowCollapse(mode);
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion(mode);
     tabs.setAppearance(appearance); populate(tabs, 20);
     tabs.resize(500, 400); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar(); auto* stack = tabs.findChild<QStackedWidget*>();
@@ -320,7 +534,7 @@ void TabStripLayoutTest::collapsedRowsShowACountAndExpand()
     QTRY_VERIFY(bar->expanded());
     QCOMPARE(bar->hiddenTabs(), 0);
     for (int index = 0; index < bar->count(); ++index) QVERIFY(!bar->displayTabRect(index).isEmpty() || bar->isOverflowing());
-    if (TabRowCollapse(mode) == TabRowCollapse::Push) {
+    if (TabRowExpansion(mode) == TabRowExpansion::Push) {
         // Push: the content gives way.
         QTRY_VERIFY(stack->geometry().top() > contentBefore.top());
         // Selecting a tab keeps it open; the count collapses it.
@@ -344,7 +558,7 @@ void TabStripLayoutTest::collapsedRowsShowACountAndExpand()
 void TabStripLayoutTest::wheelExpandsAndCollapsesRows()
 {
     GroupTabs tabs(defaultTheme(), nullptr);
-    TabAppearance appearance; appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push;
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion::Push;
     appearance.wheelExpandRows = true; appearance.showNewTabButton = false;
     tabs.setAppearance(appearance); populate(tabs, 12); tabs.resize(410, 300); tabs.show();
     QVERIFY(QTest::qWaitForWindowExposed(&tabs));
@@ -386,7 +600,7 @@ void TabStripLayoutTest::wheelExpandedRowsSurviveRebuildsUntilCollapsed()
     // A pushed expansion stays until it is collapsed, even when changes
     // rebuild the strip (tab strip design 3.4).
     WindowManager manager; auto appearance = manager.tabAppearance();
-    appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push; appearance.wheelExpandRows = true;
+    appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion::Push; appearance.wheelExpandRows = true;
     appearance.showNewTabButton = false;
     QVERIFY(manager.setTabAppearance(appearance));
     const auto window = manager.createWindow(WindowKind::Workbench, {"Rows reconstruction", {480, 340}});
@@ -423,7 +637,7 @@ void TabStripLayoutTest::dragOverACollapsedStripShowsEveryRow()
     // Every row takes drops while a drag is over a collapsed strip; it
     // returns afterwards (tab strip design 3.4).
     GroupTabs tabs(defaultTheme(), nullptr);
-    TabAppearance appearance; appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push;
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion::Push;
     tabs.setAppearance(appearance); populate(tabs, 20);
     tabs.resize(500, 400); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar(); auto* stack = tabs.findChild<QStackedWidget*>();
@@ -605,7 +819,7 @@ void TabStripLayoutTest::titleWidthChangesKeepTheActiveTabInPlace()
 
 void TabStripLayoutTest::tooltipsNameTheDisplayedTab()
 {
-    TabAppearance appearance; appearance.showNewTabButton = false; appearance.multiline = true;
+    TabAppearance appearance; appearance.showNewTabButton = false; appearance.multiline = true; appearance.stickyMultiline = true;
     GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 8);
     for (int index = 0; index < 8; ++index) tabs.tabBar()->setTabToolTip(index, QStringLiteral("Tip %1").arg(index));
     tabs.resize(320, 300); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
@@ -702,7 +916,7 @@ void TabStripLayoutTest::insertionFollowsThePointerRow()
     // A carried tab lands on the row under it; its gap is one row high and
     // lies on that row (tab strip design 6.1).
     GroupTabs tabs(defaultTheme(), nullptr);
-    TabAppearance appearance; appearance.multiline = true; appearance.showNewTabButton = false;
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showNewTabButton = false;
     tabs.setAppearance(appearance); populate(tabs, 12);
     tabs.resize(420, 400); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar();
@@ -726,6 +940,132 @@ void TabStripLayoutTest::insertionFollowsThePointerRow()
     tabs.setInsertionPreview(-1, {});
 }
 
+void TabStripLayoutTest::liftedRowsKeepTheirContentAndFollowThePointer_data()
+{
+    QTest::addColumn<bool>("bottom"); QTest::addColumn<bool>("multiline");
+    for (bool bottom : {false, true}) for (bool multiline : {false, true})
+        QTest::newRow(qPrintable(QString("%1-%2").arg(bottom).arg(multiline))) << bottom << multiline;
+}
+
+void TabStripLayoutTest::liftedRowsKeepTheirContentAndFollowThePointer()
+{
+    QFETCH(bool, bottom); QFETCH(bool, multiline);
+    TabAppearance appearance; appearance.showNewTabButton = false;
+    appearance.multiline = multiline; appearance.stickyTabsOnSeparateRow = true;
+    appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
+    GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance);
+    const auto ids = populate(tabs, 9); tabs.setStickyCount(4); tabs.setCurrentIndex(8);
+    tabs.resize(340, 600); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); bar->ensureVisible(8);
+    const auto original = bar->tabRect(8); QVERIFY(!original.isEmpty());
+    const auto content = tabs.page(8)->geometry();
+    const auto start = bar->mapToGlobal(original.center());
+    const auto grab = original.center() - original.topLeft();
+    QVector<QPoint> points;
+    for (int index : {0, 3, 5, 8}) if (!bar->tabRect(index).isEmpty())
+        points.append(bar->mapToGlobal(bar->tabRect(index).center()));
+    tabs.setDraggedTab(ids[8]); tabs.setLiftedTab(start, grab);
+    tabs.setInsertionPreview(8, {{bar->tabText(8), false}});
+    // Lifting the last tab of a row must not shrink the content or relocate
+    // the label into the sticky rows before the first movement arrives.
+    QCOMPARE(tabs.page(8)->geometry(), content);
+    QCOMPARE(bar->liftedRect().center().y(), bar->mapFromGlobal(start).y());
+    QVERIFY(!tabs.insertionSticky());
+    for (int repeat = 0; repeat < 2; ++repeat) for (const auto point : points) {
+        tabs.setLiftedTab(point, grab);
+        const int insertion = tabs.insertionIndex(point);
+        tabs.setInsertionPreview(insertion, {{bar->tabText(8), false}});
+        tabs.setDragHover(point);
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs.page(8)->geometry(), content);
+        const auto lifted = bar->liftedRect();
+        QVERIFY(lifted.contains(QPoint(lifted.center().x(), bar->mapFromGlobal(point).y())));
+        const auto gap = tabs.insertionPreviewRectGlobal(); QVERIFY(!gap.isEmpty());
+        QVERIFY(tabs.viewportRectGlobal().contains(gap));
+    }
+    tabs.clearLiftedTab(); tabs.setDraggedTab({}); tabs.setInsertionPreview(-1, {});
+    QCOMPARE(tabs.page(8)->geometry(), content);
+}
+
+void TabStripLayoutTest::incomingGapRemainsVisibleWithoutResizingContent_data()
+{
+    QTest::addColumn<bool>("bottom");
+    QTest::newRow("top") << false; QTest::newRow("bottom") << true;
+}
+
+void TabStripLayoutTest::incomingGapRemainsVisibleWithoutResizingContent()
+{
+    QFETCH(bool, bottom);
+    TabAppearance appearance; appearance.multiline = true; appearance.stickyMultiline = true; appearance.showNewTabButton = false;
+    appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
+    GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 6);
+    tabs.resize(340, 600); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto* bar = tabs.tabBar(); const auto content = tabs.page(0)->geometry();
+    const auto last = bar->tabRect(5); QVERIFY(!last.isEmpty());
+    const auto point = bar->mapToGlobal(QPoint(bar->width() - 2, last.center().y()));
+    const int insertion = tabs.insertionIndex(point); QCOMPARE(insertion, 6);
+    tabs.setInsertionPreview(insertion, {{QString(100, QLatin1Char('W')), false}});
+    const auto gap = tabs.insertionPreviewRectGlobal();
+    QVERIFY(!gap.isEmpty());
+    QVERIFY(tabs.viewportRectGlobal().contains(gap));
+    QCOMPARE(gap.height(), bar->metrics().rowHeight);
+    QCOMPARE(tabs.page(0)->geometry(), content);
+    QCOMPARE(tabs.insertionIndex(point), insertion);
+    tabs.setInsertionPreview(-1, {});
+    QCOMPARE(tabs.page(0)->geometry(), content);
+}
+
+void TabStripLayoutTest::dragSettingsCombinationsPreserveContentAndWheelRouting()
+{
+    QWidget host; host.resize(520, 600); host.show(); QVERIFY(QTest::qWaitForWindowExposed(&host));
+    int scenarios = 0;
+    for (auto placement : {TabBarPlacement::Top, TabBarPlacement::Bottom, TabBarPlacement::Left, TabBarPlacement::Right})
+    for (bool multiline : {false, true})
+    for (int collapse : {0, 1, 2})
+    for (bool wheel : {false, true})
+    for (auto sizing : {StickyTabSizing::Normal, StickyTabSizing::Compact, StickyTabSizing::Shrink})
+    for (bool separate : {false, true}) {
+        const auto context = QString("placement=%1 multiline=%2 collapse=%3 wheel=%4 sizing=%5 separate=%6")
+            .arg(int(placement)).arg(multiline).arg(int(collapse)).arg(wheel).arg(int(sizing)).arg(separate).toUtf8();
+        GroupTabs tabs(defaultTheme(), &host); tabs.setGeometry(host.rect());
+        TabAppearance appearance; appearance.centralPlacement = placement; appearance.multiline = multiline;
+        appearance.showAllRows = collapse == 0; appearance.stickyShowAllRows = collapse == 0; appearance.rowExpansion = collapse == 1 ? TabRowExpansion::Push : TabRowExpansion::Overlay; appearance.wheelExpandRows = wheel;
+        appearance.stickySizing = sizing; appearance.stickyTabsOnSeparateRow = separate;
+        const auto ids = populate(tabs, 12); tabs.setStickyCount(4); tabs.setAppearance(appearance);
+        tabs.setCurrentIndex(11); tabs.show(); QCoreApplication::processEvents();
+        auto* bar = tabs.tabBar(); bar->ensureVisible(11);
+        auto label = bar->tabRect(11); QVERIFY2(!label.isEmpty(), context.constData());
+        const auto content = tabs.page(11)->geometry();
+        // Opening collapsed rows for a drag is an overlay, for both collapse
+        // policies. The content's size stays fixed through wheel input too.
+        tabs.setDragHover(bar->mapToGlobal(label.center()));
+        label = bar->tabRect(11);
+        if (label.isEmpty()) { bar->ensureVisible(11); label = bar->tabRect(11); }
+        QVERIFY2(!label.isEmpty(), context.constData());
+        const auto start = bar->mapToGlobal(label.center());
+        const auto grab = label.center() - label.topLeft();
+        tabs.setDraggedTab(ids[11]); tabs.setLiftedTab(start, grab);
+        tabs.setInsertionPreview(11, {{bar->tabText(11), false}});
+        QVERIFY2(tabs.page(11)->geometry() == content, context.constData());
+        for (int amount : {-120, 120}) {
+            QWheelEvent event(bar->mapFromGlobal(start), start, {}, QPoint(0, amount), Qt::LeftButton,
+                Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(bar, &event);
+            tabs.setLiftedTab(start, grab);
+            tabs.setInsertionPreview(tabs.insertionIndex(start), {{bar->tabText(11), false}});
+            QVERIFY2(tabs.page(11)->geometry() == content, context.constData());
+            QVERIFY2(bar->currentIndex() == 11 && tabs.count() == 12, context.constData());
+            for (const auto& lane : bar->tabLayout().laneList)
+                QVERIFY2(lane.offset >= 0 && lane.offset <= lane.maximumOffset(), context.constData());
+        }
+        tabs.clearLiftedTab(); tabs.setDraggedTab({}); tabs.setInsertionPreview(-1, {});
+        tabs.setDragHover(QPoint(-100000, -100000));
+        QVERIFY2(tabs.page(11)->geometry() == content, context.constData());
+        ++scenarios;
+    }
+    QCOMPARE(scenarios, 288);
+}
+
 void TabStripLayoutTest::multilineDragReordersAndTearsOffOnlyPastEveryRow_data()
 {
     QTest::addColumn<bool>("bottom");
@@ -740,7 +1080,7 @@ void TabStripLayoutTest::multilineDragReordersAndTearsOffOnlyPastEveryRow()
         test::authoredMouseInput().finish();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     });
-    WindowManager manager; auto appearance = manager.tabAppearance(); appearance.multiline = true;
+    WindowManager manager; auto appearance = manager.tabAppearance(); appearance.multiline = true; appearance.stickyMultiline = true;
     appearance.showNewTabButton = false;
     appearance.centralPlacement = bottom ? TabBarPlacement::Bottom : TabBarPlacement::Top;
     QVERIFY(manager.setTabAppearance(appearance));
@@ -788,8 +1128,7 @@ void TabStripLayoutTest::verticalStripResizesAndFoldsToIcons()
     TabAppearance appearance; appearance.centralPlacement = TabBarPlacement::Left;
     GroupTabs tabs(defaultTheme(), nullptr); tabs.setAppearance(appearance); populate(tabs, 6);
     int width = -1; std::optional<bool> icons;
-    tabs.verticalWidthChanged = [&width](int value) { width = value; };
-    tabs.iconModeChanged = [&icons](bool value) { icons = value; };
+    tabs.verticalStateChanged = [&width, &icons](int value, bool iconMode) { width = value; icons = iconMode; };
     tabs.resize(900, 400); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar(); QVERIFY(bar->vertical());
     QCOMPARE(bar->width(), defaultVerticalTabWidth);

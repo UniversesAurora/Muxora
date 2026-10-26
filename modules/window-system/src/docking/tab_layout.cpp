@@ -145,7 +145,7 @@ void layoutSingleRows(const TabLayoutInput& input, const Sections& sections, Tab
         finish(placed, 0, x, input.regularOffset, false, frozen, true);
         if (frozen) layout.separator = QRect(frozen - 1, 0, 1, input.rowHeight);
     }
-    if (separate) layout.stickyRows = 1;
+    if (separate) { layout.stickyRows = 1; layout.sectionBoundary = row; }
     const int rows = int(layout.laneList.size());
     layout.size = QSize(input.width, rows * input.rowHeight + std::max(0, rows - 1) * input.rowGap);
 }
@@ -154,20 +154,26 @@ void layoutSingleRows(const TabLayoutInput& input, const Sections& sections, Tab
 void layoutWrappedRows(const TabLayoutInput& input, const Sections& sections, TabLayout& layout)
 {
     const bool separate = input.separateStickyRow && input.stickyCount > 0;
-    // Collapsed, any row may be the one shown, so every row keeps room for
-    // the controls; expanded, only the first row holds the end controls.
-    const int wrap = std::max(1, input.width - (input.collapsed ? input.trailingExtent + input.endExtent : 0));
     struct Row { QVector<std::pair<Item, int>> items; int end = 0; bool sticky = false; };
     QVector<Row> rows;
-    const auto limitOf = [&](qsizetype row) { return row == 0 && !input.collapsed ? std::max(1, wrap - input.endExtent) : wrap; };
+    const bool twoSections = separate && !sections.regular.isEmpty();
+    const auto limitOf = [&](qsizetype row, bool sticky) {
+        // A collapsed section can expose any of its rows. Reserve only
+        // the controls displayed on that section, not the other section's.
+        const int end = input.collapsed ? (!twoSections || sticky ? input.endExtent : 0)
+                                        : (row == 0 ? input.endExtent : 0);
+        const int trailing = input.collapsed && (!twoSections || !sticky) ? input.trailingExtent : 0;
+        return std::max(1, input.width - end - trailing);
+    };
     const auto wrapItems = [&](const QVector<Item>& items, bool sticky, bool newRow) {
         if (newRow || rows.isEmpty()) rows.append(Row{{}, 0, sticky});
         for (auto item : items) {
-            const int limit = limitOf(rows.size() - 1);
-            item.extent = std::min(item.extent, limit);
+            const int naturalExtent = item.extent;
+            const int limit = limitOf(rows.size() - 1, sticky);
+            item.extent = std::min(naturalExtent, limit);
             if (rows.last().end && rows.last().end + item.extent > limit) {
                 rows.append(Row{{}, 0, sticky});
-                item.extent = std::min(item.extent, limitOf(rows.size() - 1));
+                item.extent = std::min(naturalExtent, limitOf(rows.size() - 1, sticky));
             }
             rows.last().items.append({item, rows.last().end});
             rows.last().end += item.extent;
@@ -220,7 +226,7 @@ void layoutWrappedRows(const TabLayoutInput& input, const Sections& sections, Ta
     lane.vertical = true;
     lane.viewport = QRect(0, 0, input.width, std::min(total, cap));
     lane.extent = total;
-    lane.offset = clampOffset(input.regularOffset, total, lane.viewport.height());
+    lane.offset = clampOffset(input.rowsOffset, total, lane.viewport.height());
     for (int position = 0; position < shown.size(); ++position) {
         const auto& row = rows.at(shown.at(position));
         const int y = position * pitch - lane.offset;
@@ -235,8 +241,73 @@ void layoutWrappedRows(const TabLayoutInput& input, const Sections& sections, Ta
     for (const int index : shown) layout.stickyRows += separate && rows.at(index).sticky ? 1 : 0;
     for (int index = 0; index < rows.size(); ++index) if (!shown.contains(index))
         for (const auto& [item, x] : rows.at(index).items) layout.hidden += item.isTab() ? 1 : 0;
+    layout.rowScrollLane = int(layout.laneList.size());
+    if (separate) layout.sectionBoundary = layout.stickyRows * pitch - lane.offset;
     layout.laneList.append(lane);
     layout.size = QSize(input.width, lane.viewport.height());
+}
+
+// Independent section policies share one outer vertical scroll surface.
+// A single-line section keeps its own horizontal lane inside that surface.
+void layoutMixedRows(const TabLayoutInput& input, const Sections& sections, TabLayout& layout)
+{
+    const auto section = [&](const QVector<Item>& items, bool sticky, bool last) {
+        auto partInput = input;
+        partInput.separateStickyRow = false; partInput.stickyCount = 0; partInput.freezeSticky = false;
+        partInput.multiline = sticky ? input.stickyMultiline : input.multiline;
+        partInput.collapsed = sticky ? input.stickyCollapsed : input.collapsed;
+        partInput.collapsedRegularRow = sticky ? input.collapsedStickyRow : input.collapsedRegularRow;
+        partInput.regularOffset = sticky ? input.stickyOffset : input.regularOffset;
+        partInput.rowsOffset = 0; partInput.height = 0;
+        partInput.endExtent = sticky ? input.endExtent : 0;
+        partInput.trailingExtent = last ? input.trailingExtent : 0;
+        TabLayout part;
+        part.tabs.resize(input.extents.size()); part.lanes.fill(-1, input.extents.size());
+        part.headers.resize(input.folders.size()); part.headerLanes.fill(-1, input.folders.size());
+        const Sections content{{}, items};
+        if (partInput.multiline) layoutWrappedRows(partInput, content, part);
+        else layoutSingleRows(partInput, content, part);
+        return part;
+    };
+    const auto sticky = section(sections.sticky, true, sections.regular.isEmpty());
+    const auto regular = sections.regular.isEmpty() ? TabLayout{} : section(sections.regular, false, true);
+    const int regularTop = sticky.size.height() + (regular.size.isEmpty() ? 0 : input.rowGap);
+    const int total = regularTop + regular.size.height();
+    const int cap = input.height > 0 ? std::max(input.height, 2 * input.rowHeight + input.rowGap) : total;
+    TabLayoutLane outer;
+    outer.vertical = true; outer.viewport = QRect(0, 0, input.width, std::min(total, cap));
+    outer.extent = total; outer.offset = clampOffset(input.rowsOffset, total, outer.viewport.height());
+    layout.rowScrollLane = 0; layout.laneList.append(outer);
+    const auto append = [&](const TabLayout& part, bool isSticky, int top, bool wrapped) {
+        if (part.size.isEmpty()) return;
+        const QPoint shift(0, top - outer.offset);
+        int laneIndex = 0;
+        if (!wrapped) {
+            auto lane = part.laneList.first(); lane.sticky = isSticky;
+            lane.viewport.translate(shift); lane.viewport &= outer.viewport;
+            laneIndex = int(layout.laneList.size()); layout.laneList.append(lane);
+        }
+        for (int index = 0; index < part.tabs.size(); ++index) if (part.lanes.at(index) >= 0) {
+            layout.tabs[index] = part.tabs.at(index).translated(shift); layout.lanes[index] = laneIndex;
+        }
+        for (int index = 0; index < part.headers.size(); ++index) if (part.headerLanes.at(index) >= 0) {
+            layout.headers[index] = part.headers.at(index).translated(shift); layout.headerLanes[index] = laneIndex;
+        }
+        if (!part.gap.isEmpty()) {
+            layout.gap = part.gap;
+            for (auto& cell : layout.gap) cell.translate(shift);
+            layout.gapLane = laneIndex;
+        }
+        if (!part.trailing.isNull()) { layout.trailing = part.trailing.translated(shift); layout.trailingLane = laneIndex; }
+        if (!part.end.isNull()) layout.end = part.end.translated(shift);
+        layout.hidden += part.hidden;
+    };
+    append(sticky, true, 0, input.stickyMultiline);
+    append(regular, false, regularTop, input.multiline);
+    layout.stickyRows = (sticky.size.height() + input.rowGap) / (input.rowHeight + input.rowGap);
+    layout.stickyRow = sticky.regularRow; layout.regularRow = regular.regularRow;
+    layout.sectionBoundary = regularTop - outer.offset;
+    layout.size = outer.viewport.size();
 }
 
 // A column: sticky rows or tiles above, then the other rows; each scrolls.
@@ -250,11 +321,17 @@ void layoutColumn(const TabLayoutInput& input, const Sections& sections, TabLayo
         int content = 0;
         if (input.stickyTiles) {
             // As many tiles a row as fit, sharing the row's width.
-            const int perRow = std::max(1, (rowWidth + input.rowGap) / (input.minimumTileWidth + input.rowGap));
-            const int tile = std::max(1, (rowWidth - (perRow - 1) * input.rowGap) / perRow);
+            const int capacity = std::max(1, (rowWidth + input.rowGap) / (input.minimumTileWidth + input.rowGap));
+            const int perRow = input.tileColumns > 0 ? std::min(capacity, input.tileColumns)
+                : std::min(capacity, std::max(1, int(sections.sticky.size())));
+            layout.tileColumns = perRow;
+            const int cells = rowWidth - (perRow - 1) * input.rowGap;
             for (int index = 0; index < sections.sticky.size(); ++index) {
-                const QRect rect(input.inset + (index % perRow) * (tile + input.rowGap),
-                                 (index / perRow) * (input.tile.height() + input.rowGap), tile, input.tile.height());
+                const int column = index % perRow;
+                const int start = column * cells / perRow;
+                const int end = (column + 1) * cells / perRow;
+                const QRect rect(input.inset + start + column * input.rowGap,
+                                 (index / perRow) * (input.tile.height() + input.rowGap), std::max(1, end - start), input.tile.height());
                 placed.append({sections.sticky.at(index), rect}); content = rect.bottom() + 1;
             }
         } else for (int index = 0; index < sections.sticky.size(); ++index) {
@@ -329,6 +406,26 @@ int TabLayout::tabAt(QPoint point) const
     return -1;
 }
 
+bool TabLayout::scrollLane(int lane, int offset)
+{
+    if (lane < 0 || lane >= laneList.size() || (lane == rowScrollLane && laneList.size() > 1)) return false;
+    auto& info = laneList[lane];
+    offset = std::clamp(offset, 0, info.maximumOffset());
+    const int distance = info.offset - offset;
+    const QPoint shift = info.vertical ? QPoint(0, distance) : QPoint(distance, 0);
+    info.offset = offset;
+    for (int index = 0; index < tabs.size(); ++index)
+        if (lanes.at(index) == lane && !(info.frozen && index < sticky)) tabs[index].translate(shift);
+    for (int index = 0; index < headers.size(); ++index)
+        if (headerLanes.at(index) == lane) headers[index].translate(shift);
+    const bool frozenGap = info.frozen && !gap.isEmpty() && gap.first().left() < info.frozen;
+    if (gapLane == lane && !frozenGap) for (auto& rect : gap) rect.translate(shift);
+    if (trailingLane == lane && !trailing.isNull()) trailing.translate(shift);
+    if (lane == rowScrollLane && !end.isNull()) end.translate(shift);
+    if (lane == rowScrollLane && sectionBoundary) *sectionBoundary += distance;
+    return true;
+}
+
 TabLayout layoutTabs(const TabLayoutInput& original)
 {
     // A strip narrower than its controls keeps a pixel of tabs; the end
@@ -345,12 +442,19 @@ TabLayout layoutTabs(const TabLayoutInput& original)
     layout.sticky = std::clamp(input.stickyCount, 0, count);
     const auto sections = sectionsOf(input);
     if (input.orientation == TabLayoutInput::Orientation::Vertical) layoutColumn(input, sections, layout);
-    else if (input.multiline) layoutWrappedRows(input, sections, layout);
+    else if (input.separateStickyRow && input.stickyCount > 0
+        && (input.multiline != input.stickyMultiline || input.collapsed != input.stickyCollapsed)) {
+        if (sections.regular.isEmpty()) {
+            input.multiline = input.stickyMultiline; input.collapsed = input.stickyCollapsed;
+            if (input.multiline) layoutWrappedRows(input, sections, layout);
+            else layoutSingleRows(input, sections, layout);
+        } else layoutMixedRows(input, sections, layout);
+    } else if (input.multiline) layoutWrappedRows(input, sections, layout);
     else layoutSingleRows(input, sections, layout);
     return layout;
 }
 
-TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
+TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach, std::optional<bool> stickySection)
 {
     input.insertion = -1; input.block.clear(); input.insertionFolder = -1;
     const auto layout = layoutTabs(input);
@@ -372,7 +476,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
     for (const int index : remaining) stickyRemaining += index < input.stickyCount ? 1 : 0;
     const bool vertical = input.orientation == TabLayoutInput::Orientation::Vertical;
     const auto center = [&](int index) { const auto rect = rectOf(index); return vertical ? rect.center().y() : rect.center().x(); };
-    const int along = vertical ? probe.y() : probe.x();
+    int along = vertical ? probe.y() : probe.x();
 
     // A section of its own (separate sticky row or vertical section) decides
     // stickiness by where the probe is.
@@ -380,11 +484,10 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
     if (input.stickyCount > 0) {
         if (vertical) section = probe.y() < (layout.laneList.size() > 1 ? layout.laneList.at(1).viewport.top() : std::numeric_limits<int>::max());
         else if (input.separateStickyRow) {
-            const auto& lane = layout.laneList.value(0);
-            const int pitch = input.rowHeight + input.rowGap;
-            section = probe.y() + (input.multiline ? lane.offset : 0) < std::max(1, layout.stickyRows) * pitch - input.rowGap / 2;
+            section = probe.y() < layout.sectionBoundary.value_or(input.rowHeight);
         }
     }
+    if (stickySection) section = stickySection;
     // A folder never lands among the sticky tabs: their section counts as
     // the start of the others.
     const bool folderBlock = input.removedFolder >= 0 || input.carried == TabLayoutInput::Carried::Folder;
@@ -396,7 +499,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
         if (laneOf(index) < 0) continue;
         candidates.append(index);
     }
-    if (!vertical && input.multiline) {
+    if (!vertical && (input.multiline || (input.separateStickyRow && input.stickyMultiline))) {
         int best = std::numeric_limits<int>::max(), rowTop = 0;
         for (const int index : candidates) {
             const auto rect = rectOf(index);
@@ -406,6 +509,11 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
         QVector<int> row;
         for (const int index : candidates) if (rectOf(index).top() == rowTop) row.append(index);
         candidates = row;
+        // The trailing controls (or the carried gap) can occupy a row after
+        // the final label. That whole empty row means after the last label,
+        // even when the pointer is near its left edge.
+        if (!candidates.isEmpty() && probe.y() >= rowTop + input.rowHeight)
+            along = std::numeric_limits<int>::max();
     }
     if (vertical && input.stickyTiles && section && *section) {
         // Tiles: rows first, then the probe's position along its row.
@@ -449,7 +557,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
             int end = std::numeric_limits<int>::min();
             for (const int index : remaining) if (index < input.stickyCount && layout.lanes.at(index) >= 0) {
                 const auto rect = layout.tabs.at(index);
-                if (!input.multiline || probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap)
+                if (!(input.multiline || input.stickyMultiline) || probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap)
                     end = std::max(end, vertical ? rect.bottom() + 1 : rect.right() + 1);
             }
             if (end == std::numeric_limits<int>::min() && stickyRemaining == 0 && !layout.laneList.isEmpty())
@@ -464,7 +572,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
     const auto end = [&](QRect rect) { return vertical ? rect.bottom() + 1 : rect.right() + 1; };
     const auto mid = [&](QRect rect) { return vertical ? rect.center().y() : rect.center().x(); };
     // Rows of a multi-row strip: only a rectangle on the probe's row counts.
-    const auto onRow = [&](QRect rect) { return vertical || !input.multiline || (probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap); };
+    const auto onRow = [&](QRect rect) { return vertical || !(input.multiline || input.stickyMultiline) || (probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap); };
     for (int folder = 0; folder < input.folders.size(); ++folder) {
         if (folder == input.removedFolder || layout.headerLanes.value(folder, -1) < 0) continue;
         const auto& f = input.folders.at(folder);
@@ -490,6 +598,50 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach)
         break;
     }
     return result;
+}
+
+int TabLayoutLane::rowTopAt(int coordinate, int pitch) const
+{
+    pitch = std::max(1, pitch);
+    const int row = int(std::max<qint64>(0, qint64(coordinate) - viewport.top() + offset) / pitch);
+    const int last = std::max(0, (extent - 1) / pitch);
+    return viewport.top() + std::min(row, last) * pitch - offset;
+}
+
+QRect TabLayoutLane::readableViewport(int fade) const
+{
+    auto result = viewport;
+    fade = fadeExtent(fade);
+    const int leading = offset > 0 ? fade : 0;
+    const int trailing = offset < maximumOffset() ? fade : 0;
+    if (vertical) result.adjust(0, leading, 0, -trailing);
+    else result.adjust(frozen + leading, 0, -trailing, 0);
+    return result;
+}
+
+int TabLayoutLane::offsetToReveal(QRect tab, int fade) const
+{
+    const int maximum = maximumOffset();
+    if (maximum == 0 || tab.isEmpty()) return 0;
+    fade = fadeExtent(fade);
+    const qint64 length = vertical ? viewport.height() : viewport.width() - frozen;
+    const qint64 start = (vertical ? tab.top() - viewport.top() : tab.left() - viewport.left() - frozen) + qint64(offset);
+    const qint64 end = start + (vertical ? tab.height() : tab.width());
+    int best = -1;
+    qint64 distance = std::numeric_limits<qint64>::max();
+    const auto consider = [&](int candidate) {
+        const qint64 first = candidate + (candidate > 0 ? fade : 0);
+        const qint64 last = candidate + length - (candidate < maximum ? fade : 0);
+        if (start < first || end > last) return;
+        const qint64 cost = std::abs(qint64(candidate) - offset);
+        if (cost < distance) { best = candidate; distance = cost; }
+    };
+    consider(0); consider(maximum);
+    const qint64 low = std::max<qint64>(1, end - length + fade);
+    const qint64 high = std::min<qint64>(maximum - 1, start - fade);
+    if (low <= high) consider(int(std::clamp<qint64>(offset, low, high)));
+    // A label wider than the unobscured viewport exposes its beginning.
+    return best >= 0 ? best : int(std::clamp<qint64>(start - fade, 0, maximum));
 }
 
 } // namespace window_system

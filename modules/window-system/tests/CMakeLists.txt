@@ -48,10 +48,13 @@ add_dependencies(window-system-drag-test window-system-overlay-fixture)
 # windows or drive native input and run serially; model and widget suites
 # create no visible window and may run in parallel.
 set(window_system_model_suites pinned-layout pinned-positions tab-layout)
-set(window_system_widget_suites smooth-scroll hierarchy-conversion visibility-profile tab-appearance tab-title-layout shortcut-settings localization input-method-scope)
-set(window_system_desktop_suites pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
+set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixed-tab-rows hierarchy-conversion visibility-profile tab-appearance tab-title-layout shortcut-settings localization input-method-scope)
+set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
 list(APPEND window_system_desktop_suites integer-slider)
 list(APPEND window_system_desktop_suites input-method-native)
+if(WIN32)
+    list(APPEND window_system_desktop_suites native-drag)
+endif()
 function(window_system_add_suite suite label)
     string(REPLACE "-" "_" source_name ${suite})
     qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
@@ -87,6 +90,14 @@ add_test(NAME window-system.caption-strip-scaled COMMAND window-system-caption-s
     -o ${CMAKE_CURRENT_BINARY_DIR}/caption-strip-scaled-results.txt,txt)
 set_tests_properties(window-system.caption-strip-scaled PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS desktop
     ENVIRONMENT QT_SCALE_FACTOR=0.75)
+qt_add_executable(window-system-dock-guides-geometry-test dock_guides_geometry_test.cpp)
+target_link_libraries(window-system-dock-guides-geometry-test PRIVATE WindowSystem::Model Qt6::Test)
+target_include_directories(window-system-dock-guides-geometry-test PRIVATE ../src)
+set_target_properties(window-system-dock-guides-geometry-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.dock-guides-geometry COMMAND window-system-dock-guides-geometry-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/dock-guides-geometry-results.txt,txt)
+set_tests_properties(window-system.dock-guides-geometry PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-tab-ordering-model-test tab_ordering_model_test.cpp)
 target_link_libraries(window-system-tab-ordering-model-test PRIVATE WindowSystem::Model Qt6::Test)
 set_target_properties(window-system-tab-ordering-model-test PROPERTIES AUTOMOC ON)

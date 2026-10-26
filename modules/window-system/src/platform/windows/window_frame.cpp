@@ -117,6 +117,7 @@ public:
     bool attributesReady = false;
     bool configuring = false;
     bool extending = false;
+    bool dropCommit = false;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
@@ -320,10 +321,10 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
     const HRESULT policyResult = DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
     if (!retained) return;
-    // Permit the compositor's ordinary transitions. This is not an animation
-    // request and does not override Windows' global animation/accessibility
-    // preferences. We never change SPI_SETANIMATION or client-area settings.
-    const BOOL forceDisableTransitions = FALSE;
+    // Ordinary windows follow the compositor's transitions. Only a carrier
+    // being committed into a tab group suppresses its removal transition.
+    // Windows' global animation/accessibility preferences are never changed.
+    const BOOL forceDisableTransitions = state->dropCommit ? TRUE : FALSE;
     const HRESULT transitionResult = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED,
         &forceDisableTransitions, sizeof(forceDisableTransitions));
     if (!retained) return;
@@ -433,6 +434,23 @@ void applyNativeFrame(QWidget* window)
     }
 #else
     Q_UNUSED(window)
+#endif
+}
+
+void setNativeDropCommit(QWidget* window, bool committing)
+{
+#ifdef Q_OS_WIN
+    if (!window || !window->isWindow()) return;
+    auto* state = frameState(window);
+    state->dropCommit = committing;
+    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    if (!handle) return;
+    const BOOL disabled = committing ? TRUE : FALSE;
+    const HRESULT result = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
+    state->transitions = {true, qint32(result), committing};
+#else
+    Q_UNUSED(window)
+    Q_UNUSED(committing)
 #endif
 }
 

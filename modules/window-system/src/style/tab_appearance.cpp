@@ -50,8 +50,7 @@ bool validColors(const TabVisualColors& colors)
 
 constexpr std::array placementNames{std::pair{TabBarPlacement::Top, "top"}, std::pair{TabBarPlacement::Bottom, "bottom"},
     std::pair{TabBarPlacement::Left, "left"}, std::pair{TabBarPlacement::Right, "right"}};
-constexpr std::array collapseNames{std::pair{TabRowCollapse::Off, "off"}, std::pair{TabRowCollapse::Push, "push"},
-    std::pair{TabRowCollapse::Overlay, "overlay"}};
+constexpr std::array expansionNames{std::pair{TabRowExpansion::Push, "push"}, std::pair{TabRowExpansion::Overlay, "overlay"}};
 
 template <typename Value, std::size_t Size>
 QString enumName(const std::array<std::pair<Value, const char*>, Size>& names, Value value)
@@ -158,7 +157,7 @@ bool validTabAppearance(const TabAppearance& appearance)
 {
     const auto validPlacement = [](TabBarPlacement value) { return !placementName(value).isEmpty(); };
     if (!validPlacement(appearance.centralPlacement) || !validPlacement(appearance.pinnedPlacement)
-        || enumName(collapseNames, appearance.collapseRows).isEmpty()
+        || enumName(expansionNames, appearance.rowExpansion).isEmpty()
         || appearance.verticalTabWidth < minimumVerticalTabWidth || appearance.verticalTabWidth > maximumVerticalTabWidth
         || appearance.maximumTitleWidth < minimumTabTitleWidth || appearance.maximumTitleWidth > maximumTabTitleWidth
         || appearance.maximumSidebarTitleWidth < minimumTabTitleWidth || appearance.maximumSidebarTitleWidth > maximumTabTitleWidth
@@ -186,7 +185,9 @@ QJsonObject tabAppearanceToJson(const TabAppearance& appearance)
         {"autoHideInactive", colorsToJson(preset.autoHideInactive)}});
     return {{"centralPlacement", placementName(appearance.centralPlacement)},
         {"pinnedPlacement", placementName(appearance.pinnedPlacement)}, {"multiline", appearance.multiline},
-        {"collapseRows", enumName(collapseNames, appearance.collapseRows)},
+        {"rowExpansion", enumName(expansionNames, appearance.rowExpansion)},
+        {"showAllRows", appearance.showAllRows}, {"stickyMultiline", appearance.stickyMultiline},
+        {"stickyShowAllRows", appearance.stickyShowAllRows},
         {"wheelExpandRows", appearance.wheelExpandRows}, {"verticalTabWidth", appearance.verticalTabWidth},
         {"showIcons", appearance.showIcons},
         {"showNewTabButton", appearance.showNewTabButton}, {"showNumbers", appearance.showNumbers},
@@ -209,15 +210,16 @@ OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appea
     if (!parsePlacement(object.value("centralPlacement"), candidate.centralPlacement)
         || !parsePlacement(object.value("pinnedPlacement"), candidate.pinnedPlacement))
         return {false, QCoreApplication::translate("WindowSystem", "Tab bars can be placed only top, bottom, left or right")};
-    if (!parseEnum(collapseNames, object.value("collapseRows"), candidate.collapseRows))
-        return {false, QCoreApplication::translate("WindowSystem", "Collapsing tab rows must be off, push or overlay")};
+    if (!parseEnum(expansionNames, object.value("rowExpansion"), candidate.rowExpansion))
+        return {false, QCoreApplication::translate("WindowSystem", "Expanded tab rows must push or overlay the content")};
     if (const auto width = object.value("verticalTabWidth"); !width.isUndefined()) {
-        const double value = width.toDouble();
-        if (!width.isDouble() || std::trunc(value) != value || value < minimumVerticalTabWidth || value > maximumVerticalTabWidth)
-            return {false, QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 140 to 480 logical pixels")};
-        candidate.verticalTabWidth = int(value);
+        const double number = width.toDouble();
+        if (!width.isDouble() || std::trunc(number) != number || number < minimumVerticalTabWidth || number > maximumVerticalTabWidth)
+            return {false, QCoreApplication::translate("WindowSystem", "The vertical tab bar width must be an integer from 67 to 480 logical pixels")};
+        candidate.verticalTabWidth = int(number);
     }
-    for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
+    for (const auto& entry : {std::pair{"multiline", &candidate.multiline}, std::pair{"showAllRows", &candidate.showAllRows},
+        std::pair{"stickyMultiline", &candidate.stickyMultiline}, std::pair{"stickyShowAllRows", &candidate.stickyShowAllRows}, std::pair{"wheelExpandRows", &candidate.wheelExpandRows},
         std::pair{"showIcons", &candidate.showIcons}, std::pair{"showNewTabButton", &candidate.showNewTabButton},
         std::pair{"showNumbers", &candidate.showNumbers}, std::pair{"showSidebarIcons", &candidate.showSidebarIcons},
         std::pair{"showSidebarNumbers", &candidate.showSidebarNumbers}, std::pair{"clipTitles", &candidate.clipTitles},

@@ -77,6 +77,8 @@ public:
                       const ElevationProfile& bodyElevation, const ElevationStyle& style);
     void paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
                        const ElevationStyle& style, qreal progress = 1);
+    void paintOverlayBand(QPainter& painter, const QRect& band, bool above,
+                          const ElevationStyle& style, qreal progress);
     void clear();
     [[nodiscard]] ElevationCacheStats cacheStats() const;
 

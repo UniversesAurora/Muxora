@@ -7,6 +7,8 @@
 #include <QRect>
 #include <QSet>
 #include <QTimer>
+#include <array>
+#include <memory>
 
 namespace window_system {
 class DockOverlay;
@@ -57,7 +59,7 @@ private:
     bool updateSourceStrip(QPoint global);
     void update(QPoint global);
     void finish(QPoint global);
-    void stop();
+    void stop(bool restorePresentation = true);
     void completeLayoutTransaction();
     [[nodiscard]] bool belongsToDropWindow(QObject* object) const;
     DropTarget hit(QPoint global);
@@ -71,7 +73,9 @@ private:
     void enterNativeMove();
     void leaveNativeMove();
     void nativeMoved();
-    void nativeMoveEnded();
+    void nativeMoveBegan(quint64 generation);
+    void queueNativeRelease();
+    void nativeMoveEnded(quint64 generation);
     [[nodiscard]] bool nativeMoveAvailable() const;
     WindowManager* manager_;
     QPointer<DockOverlay> overlay_;
@@ -124,7 +128,10 @@ private:
     // Set when a drag starts with the real left button held.
     bool nativeInput_ = false;
     bool nativeMoving_ = false;
+    bool nativeMoveStarted_ = false;
+    bool nativeReleaseQueued_ = false;
     bool leavingNativeMove_ = false;
+    quint64 nativeMoveGeneration_ = 0;
     NativeMoveWatcher* nativeWatcher_ = nullptr;
     friend class NativeMoveWatcher;
 };

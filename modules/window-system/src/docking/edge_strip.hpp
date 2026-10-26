@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "style/smooth_scroll.hpp"
+
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
 
@@ -48,7 +50,7 @@ public:
     };
     [[nodiscard]] ScrollAnchor scrollAnchor() const;
     void restoreScrollAnchor(const ScrollAnchor& anchor);
-    void scrollByWheel(QPoint delta);
+    void scrollByWheel(QPoint delta, bool smooth = true);
     std::function<void()> hoverGeometryChanged;
 
 protected:
@@ -86,6 +88,8 @@ private:
     bool arranging_ = false;
     bool hoverNotificationQueued_ = false;
     bool trackLayoutQueued_ = false;
+    SmoothScrollAnimation scrollMotion_;
+    bool applyingScrollMotion_ = false;
     std::optional<int> pendingScrollOffset_;
 };
 

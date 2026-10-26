@@ -192,7 +192,7 @@ void PinnedUiTest::dragGuidesSplitPinnedGroupsAndRemainReachableAfterAvoidance()
     auto* dock = target->surface(); const auto pinnedRect = dock->groupRects().value(pinnedGroup); QVERIFY(!pinnedRect.isEmpty());
     sendDragEvent(actor, QEvent::MouseMove, pinnedRect.center()); QVERIFY(actor);
     const QRect bounds(dock->mapToGlobal(QPoint()), dock->size());
-    const auto guides = dockGuides(bounds, pinnedRect, true, dock->tabBarRects().values(), dock->edgeBarRects());
+    const auto guides = dockGuides(bounds, pinnedRect, true, dock->dockStrips(), dock->edgeBarRects());
     QPoint destination; int groupGuideCount = 0;
     for (const auto& guide : guides) if (!guide.toEdge) {
         ++groupGuideCount;

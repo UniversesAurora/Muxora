@@ -121,10 +121,20 @@ assert(muxora.settings.update({ clip_tab_titles = false }))
 
 ## 标签栏排列
 
-`tab_position`／`pinned_tab_position` 取 `'top'`、`'bottom'`、`'left'` 或 `'right'`，左右是竖向标签栏，宽度默认取整数字段 `vertical_tab_width`（140–480）。横向时布尔字段 `multiline` 开启多行，`collapse_rows` 取 `'off'`、`'push'` 或 `'overlay'`，决定多行是否收起、展开时推开内容还是盖在内容上；`wheel_expand_rows` 在收起时让滚轮展开和收起。规则见 [标签栏设计](../design/tab-strip-design.md)，取值和默认值见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。
+`tab_position`／`pinned_tab_position` 取 `'top'`、`'bottom'`、`'left'` 或 `'right'`，左右是竖向标签栏，默认宽度通过整数字段 `vertical_tab_width` 设置。宽度范围见 [标签栏设计 §4](../design/tab-strip-design.md#4-竖向标签栏)。
+
+横向时，`multiline` 和 `show_all_rows` 控制普通段的多行排列与始终显示所有行；`sticky_tabs_on_separate_row` 开启后，置顶段独立使用 `sticky_multiline` 和 `sticky_show_all_rows`。两段共用 `row_expansion`（`'push'` 或 `'overlay'`）与 `wheel_expand_rows`，所有收起的段一起展开或收起。一段可以横向滚动、另一段多行展开。滚轮优先滚动鼠标下有横向溢出的段；纵向滚动到收起边界时有防止误收起的停顿保护。交互见 [标签栏设计 §3.4](../design/tab-strip-design.md#34-收起与展开)，取值和默认值见 [标签外观设置](../design/settings-and-commands-design.md#31-标签外观与颜色)。
 
 ```lua
-assert(muxora.tabs.set_appearance({ multiline = true, collapse_rows = 'overlay' }))
+assert(muxora.tabs.set_appearance({
+    multiline = true,
+    show_all_rows = false,
+    sticky_tabs_on_separate_row = true,
+    sticky_multiline = true,
+    sticky_show_all_rows = false,
+    row_expansion = 'overlay',
+    wheel_expand_rows = true,
+}))
 ```
 
 `groups.rename(group_id, name)` 给标签组命名，空字符串去掉名字，`group_id` 为 `nil` 时使用当前组；`groups.list()` 的每一项有 `name`。布尔字段 `show_group_names` 决定标签栏是否显示名字。
@@ -289,3 +299,5 @@ end)
 `runtime.stats()` 提供 Lua 当前／峰值字节、待处理任务和各类注册资源计数。这些数字不包含 Qt 界面、应用缓存或外部程序占用，不能代表整个进程的内存。
 
 应用部署检查可以独立运行 `pwsh tools/tests/lua-deployment-test.ps1`。它使用隔离状态目录和已部署的程序，断言 Lua 启动、命令、保存与重启后的工具区和栏显隐；不计算校验值或读取截图。执行前应关闭固定部署目录中的程序。
+
+主题的 `widgetShadow` 和 `surfaceEdge` 可通过 `muxora.theme.get()`／`muxora.theme.update()` 读写，分别对应阴影与中性轮廓色；规则见 [表面设计](../design/surface-elevation-design.md#21-不同主题)。

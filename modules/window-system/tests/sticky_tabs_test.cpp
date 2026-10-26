@@ -253,7 +253,7 @@ void StickyTabsTest::sizedStickyTabsStayInViewWhileOthersScroll()
     normal.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(normal.scrollOffset() > 0);
     QCOMPARE(normal.tabBar()->frozenExtent(), 0);
     QVERIFY(normal.tabBar()->displayTabRect(0).isEmpty());
-    auto multiline = sized(StickyTabSizing::Compact); multiline.multiline = true;
+    auto multiline = sized(StickyTabSizing::Compact); multiline.multiline = true; multiline.stickyMultiline = true;
     GroupTabs rows(defaultTheme(), nullptr); populate(rows, 20, 2, multiline);
     rows.resize(500, 300); rows.show(); QVERIFY(QTest::qWaitForWindowExposed(&rows));
     QCOMPARE(rows.tabBar()->frozenExtent(), 0);
@@ -371,7 +371,7 @@ void StickyTabsTest::separateRowHoldsStickyTabsAboveTheOthers()
     QVERIFY(rows->scrollAt(QPoint(rows->displayTabRect(0).center()), QPoint(0, -120)));
     QCOMPARE(narrow.scrollOffset(), regularOffset);
     QVERIFY(rows->displayTabRect(0).isEmpty() || rows->displayTabRect(0).left() < rows->contentTabRect(0).left());
-    appearance.multiline = true; narrow.setAppearance(appearance);
+    appearance.multiline = true; appearance.stickyMultiline = true; narrow.setAppearance(appearance);
     QVERIFY(rows->contentTabRect(2).top() > rows->contentTabRect(0).top());
     QVERIFY(rows->contentTabRect(3).top() > rows->contentTabRect(2).top());
     appearance.stickySizing = StickyTabSizing::Compact; narrow.setAppearance(appearance);
@@ -384,7 +384,7 @@ void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
     // The sticky rows wrap within the viewport and the new-tab buttons follow
     // the few other tabs on the next row; nothing overflows, so nothing scrolls.
     auto appearance = sized(StickyTabSizing::Shrink); appearance.stickyTabsOnSeparateRow = true;
-    appearance.showNewTabButton = true; appearance.multiline = true;
+    appearance.showNewTabButton = true; appearance.multiline = true; appearance.stickyMultiline = true;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 14, 12, appearance);
     tabs.setAppearance(appearance);
     auto* bar = tabs.tabBar();
@@ -400,7 +400,7 @@ void StickyTabsTest::fullStickyRowsDoNotMakeTheStripScroll()
 void StickyTabsTest::collapsedRowsKeepTheStickyRowShown()
 {
     auto appearance = sized(StickyTabSizing::Normal); appearance.stickyTabsOnSeparateRow = true;
-    appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push; appearance.wheelExpandRows = true;
+    appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion::Push; appearance.wheelExpandRows = true;
     GroupTabs tabs(defaultTheme(), nullptr); populate(tabs, 20, 2, appearance);
     tabs.resize(500, 300); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
     auto* bar = tabs.tabBar(); const int row = bar->metrics().rowHeight;

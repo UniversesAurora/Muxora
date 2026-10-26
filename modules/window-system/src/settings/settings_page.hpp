@@ -75,7 +75,10 @@ private:
     ThemedComboBox* centralPlacement_ = nullptr;
     ThemedComboBox* pinnedPlacement_ = nullptr;
     QCheckBox* multiline_ = nullptr;
-    ThemedComboBox* collapseRows_ = nullptr;
+    QCheckBox* showAllRows_ = nullptr;
+    QCheckBox* stickyMultiline_ = nullptr;
+    QCheckBox* stickyShowAllRows_ = nullptr;
+    ThemedComboBox* rowExpansion_ = nullptr;
     QCheckBox* showGroupNames_ = nullptr;
     QCheckBox* wheelExpandRows_ = nullptr;
     class UnitSpinBox* verticalTabWidth_ = nullptr;

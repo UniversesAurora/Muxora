@@ -23,7 +23,7 @@ struct ThemeMetrics {
     int padding = 6;
     int spacing = 4;
     int iconSize = 16;
-    int groupSplitterWidth = 2;
+    int groupSplitterWidth = 1;
 };
 
 /// Value tokens also available to hosts that paint their own content.
@@ -55,6 +55,10 @@ struct Theme {
     QColor focus = QColor(QStringLiteral("#8e4fc4"));
     QColor danger = QColor(QStringLiteral("#c42b42"));
     QColor checkedIndicatorText = QColor(QStringLiteral("#ffffff"));
+    QColor widgetShadow = Qt::black;
+    QColor surfaceEdge = QColor::fromRgbF(0, 0, 0, 0.07f);
+    qreal surfaceShadowMultiplier = 1;
+    bool highContrast = false;
     Metrics metrics;
 };
 

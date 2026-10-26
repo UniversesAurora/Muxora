@@ -121,7 +121,7 @@
 
 `WindowBehavior::inputMethodScope` 选择输入法记忆范围，默认 `InputMethodScope::Tab`。`inputMethodScopeKey()`／`inputMethodScopeFromKey()` 在枚举与稳定字符串之间转换，未知值返回空字符串／`nullopt`；`setBehavior()` 拒绝无效枚举且不部分应用。设置页复用现有下拉框，选择范围随行为保存，实际输入状态不序列化。层级、继承和临时界面的规则见 [输入法状态](../../docs/design/window-interaction-design.md#输入法状态)。Windows 后端保存活动 TSF 配置、键盘布局和全部输入模式；其他平台暂不读写系统状态。
 
-每组最后一个标签后是组合的新建按钮与类型下拉，中间保留 1 个逻辑像素细缝；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
+每组最后一个标签后是组合的新建按钮与类型下拉，样式和间距见 [新建入口](../../docs/design/tab-strip-design.md#81-新建入口)；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
 
 标签条尺寸变化时的滚动规则见 [标签栏设计 · 条带尺寸变化](../../docs/design/tab-strip-design.md#条带尺寸变化)，模块内部实现，不需要宿主参与。
 
@@ -129,7 +129,7 @@
 
 [TabAppearance](include/window_system/tab_appearance.hpp) 通过 `tabAppearance()` / `setTabAppearance()` 读取和完整校验后应用，随布局快照保存。`centralPlacement` 与 `pinnedPlacement` 分别选择中央和固定侧栏标签位于 `Top` 或 `Bottom`。中央栏使用 `showIcons`、`showNumbers`；固定和非固定侧栏使用独立的 `showSidebarIcons`、`showSidebarNumbers`，默认均关闭。编号从 1 开始：中央与固定栏按本组顺序，非固定收纳条按整侧顺序，跨内部组继续递增。`showNewTabButton` 控制各标签栏末尾的新建入口。右键打开目标菜单，不切换标签；菜单含本栏适用的显隐、多行和上下位置设置。
 
-`multiline` 开启后按可用宽度换行，不提供横向滚动条。`wheelExpandRows` 只在多行时起作用：向下滚动展开全部行，向上仅显示活动行；单行时保留值但不生效。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。
+`multiline`／`showAllRows` 控制普通段的多行与始终显示所有行；`stickyTabsOnSeparateRow` 开启后，置顶段独立使用 `stickyMultiline`／`stickyShowAllRows`。`rowExpansion`（`TabRowExpansion::Push`／`Overlay`）和 `wheelExpandRows` 为两段共用：配置收起的段一起展开或收起，展开区域内部仍支持单行段横向滚动。适用条件、上下镜像方向及滚轮优先级见 [收起与展开](../../docs/design/tab-strip-design.md#34-收起与展开)。拖动按实际行和显示矩形计算插入位置与换行空位，隐藏行不接收投放；从原条带的可见行之间移动不拆窗，首次离开整个条带才形成真实浮窗。
 
 `clipTitles`／`maximumTitleWidth` 控制普通及固定标签栏，`clipSidebarTitles`／`maximumSidebarTitleWidth` 独立控制四边非固定收纳条。两者均直接裁切而不生成省略号，图标、编号、关闭目标另占空间；完整标题、提示及可访问名称保留，拖拽预览按呈现样式选择对应策略。单位、默认值、允许范围见 [标签外观设置](../../docs/design/settings-and-commands-design.md#31-标签外观与颜色)，头文件提供范围常量。设置页、`presentation.toggleTitleClipping`／`presentation.toggleSidebarTitleClipping` 命令和布局快照共用同一份外观。
 
@@ -204,3 +204,5 @@
 - [测试要求](../../docs/development/testing-design.md)
 
 运行 `pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1` 验证 Muxora、独立模块、安装后的外部接入及部署启动。用例由程序断言模型、几何、颜色、输入结果与内容身份，结果可自行运行复现；不依赖人工或模型阅读截图，不使用 computer use 执行测试。安装后的外部夹具还检查颜色、排序和整组跨窗移动。具体执行状态以预览说明及实际日志为准；失败须修复实现，不自行降低标准。
+
+表面阴影使用 `Theme::widgetShadow`、`surfaceEdge` 和 `surfaceShadowMultiplier`，`highContrast` 控制高对比绘制；接合几何、层级与缓存规则见 [表面与阴影设计](../../docs/design/surface-elevation-design.md)。

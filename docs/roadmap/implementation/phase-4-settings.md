@@ -21,7 +21,7 @@
   | `window.hideToolbarOptionsWhenLocked` | `hideToolbarOptionsWhenLocked` |
   | `window.zenFullscreenMode` | `zenFullscreenMode` |
   | `window.captionButtonOrder` | `captionButtonOrder` |
-  | `tabs.centralPlacement`、`tabs.pinnedPlacement`、`tabs.multiline`、`tabs.wheelExpandRows`、`tabs.showIcons`、`tabs.showNewTabButton`、`tabs.showNumbers`、`tabs.showSidebarIcons`、`tabs.showSidebarNumbers`、`tabs.clipTitles`、`tabs.maximumTitleWidth`、`tabs.clipSidebarTitles`、`tabs.maximumSidebarTitleWidth`、`tabs.stickySizing`、`tabs.shrinkStickyTitleWidth`、`tabs.stickyTabsOnSeparateRow`、`tabs.preventStickyClose`、`tabs.colors` | `TabAppearance` 各字段 |
+  | [标签外观设置](../../design/settings-and-commands-design.md#31-标签外观与颜色) 中的 `tabs.*` | `TabAppearance` 各字段；包括普通／置顶段独立的多行、显示所有行及共用的展开方式 |
   | `window.visibility.*` | 四栏显隐（属于窗口状态，见 4.4） |
 
 - 模块不读写文件。注册表只保存“值”和“是否修改过”，由宿主负责持久化。

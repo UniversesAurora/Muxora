@@ -601,7 +601,7 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
     QFETCH(bool, floating); QFETCH(QString, id);
     WindowManager manager;
     if (id == "presentation.toggleWheelExpandRows") {
-        auto appearance = manager.tabAppearance(); appearance.multiline = true; appearance.collapseRows = TabRowCollapse::Push;
+        auto appearance = manager.tabAppearance(); appearance.multiline = true; appearance.stickyMultiline = true; appearance.showAllRows = false; appearance.stickyShowAllRows = false; appearance.rowExpansion = TabRowExpansion::Push;
         QVERIFY(manager.setTabAppearance(appearance));
     }
     const auto owner = manager.createWindow();
@@ -676,7 +676,7 @@ void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(multiline->isChecked());
     // The wheel needs collapsing rows too (tab strip design 3.4).
     QVERIFY(!wheel->isEnabled());
-    QVERIFY(manager.executeInContext("presentation.setRowCollapse", [&] { auto c = manager.context(window); c.args.insert("mode", "push"); return c; }()));
+    QVERIFY(manager.executeInContext("presentation.setRowExpansion", [&] { auto c = manager.context(window); c.args.insert("mode", "push"); return c; }()));
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isEnabled());
     wheel->trigger(); QTRY_VERIFY(manager.tabAppearance().wheelExpandRows);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isChecked());

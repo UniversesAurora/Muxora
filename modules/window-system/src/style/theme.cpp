@@ -252,13 +252,14 @@ QWidget#WorkspaceWindow[windowSystemNativeSides="true"] { border-width: 1px 0 0 
 QWidget#WorkspaceWindow[windowSystemExpanded="true"] { border: 0; }
 QWidget#WindowHeader, QWidget#CommandStripHost, QWidget#CommandStrip, QLabel#StripDragPreview { background: @header; color: @headerText; }
 QWidget#WindowHeader QLabel { color: @headerText; }
-QWidget#TabGroup, QWidget#TabGroupHeader, QWidget#TabStripCanvas, QWidget#TabCreateButtons { background: @header; }
-QScrollArea#TabScrollViewport { background: @header; }
+QWidget#TabGroup, QWidget#TabGroupHeader, QWidget#TabStripCanvas, QWidget#TabCreateButtons { background: transparent; }
+QScrollArea#TabScrollViewport { background: transparent; }
 QWidget#TabPage, QWidget#PaneHost { background: @surface; }
 QLabel#TabGroupName, QLabel#TabGroupTitle { color: @muted; background: transparent; }
 QWidget#PaneHeader { background: @raised; border-bottom: 1px solid @border; }
 QWidget#PaneHeader[active="true"] { background: @soft; border-bottom: 1px solid @accent; }
-QWidget#DockSurfaceRoot, QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
+QWidget#DockSurfaceRoot { background: transparent; }
+QWidget#EdgeBar, QWidget#EdgeTabTrack, QScrollArea#EdgeScrollViewport { background: @header; }
 QWidget#PeekPanel { background: @surface; border: 1px solid @accent; }
 QWidget#DragEdgeContent { background: @surface; border: 1px solid @border; }
 QWidget#DragPeekTitle { background: @header; color: @headerText; }
@@ -287,11 +288,21 @@ QToolButton#CaptionButton:hover { background: @buttonHover; }
 QToolButton#CaptionButton[role="close"]:hover { background: @danger; color: white; }
 QToolButton#EdgeButton { color: @statusText; border: none; border-radius: 0; padding: 3px 6px; }
 QToolButton#EdgeButton:hover, QToolButton#EdgeButton:checked { background: @buttonHover; color: @text; }
-QWidget#TabCreateButtons QToolButton { background: @header; border: none; padding: 0; min-height: 0; min-width: 0; }
-QWidget#TabCreateButtons[emphasized="true"] QToolButton { background: @soft; }
-QWidget#TabCreateButtons QToolButton:pressed { background: @selection; }
-QWidget#TabCreateButtons[popupOpen="true"] QToolButton#NewTabButton { background: @header; }
-QWidget#TabCreateButtons[popupOpen="true"] QToolButton#NewTabTypeButton { background: @selection; }
+QWidget[windowSystemSplitButton="true"] QToolButton {
+    background: @raised; border: none; padding: 0; min-height: 0; min-width: 0;
+}
+QWidget[windowSystemSplitButton="true"] QToolButton[splitSide="left"] {
+    border-top-left-radius: 6px; border-bottom-left-radius: 6px;
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
+}
+QWidget[windowSystemSplitButton="true"] QToolButton[splitSide="right"] {
+    border-top-left-radius: 0; border-bottom-left-radius: 0;
+    border-top-right-radius: 6px; border-bottom-right-radius: 6px;
+}
+QWidget[windowSystemSplitButton="true"][emphasized="true"] QToolButton { background: @buttonHover; }
+QWidget[windowSystemSplitButton="true"] QToolButton:pressed { background: @selection; }
+QWidget[windowSystemSplitButton="true"][popupOpen="true"] QToolButton[splitPart="primary"] { background: @raised; }
+QWidget[windowSystemSplitButton="true"][popupOpen="true"] QToolButton[splitPart="menu"] { background: @selection; }
 QMenuBar, QMenuBar#MenuStrip { background: transparent; border: none; padding: 0; color: @headerText; }
 QMenuBar::item { background: transparent; padding: 5px 8px; }
 QMenuBar::item:selected { background: @soft; }
@@ -354,8 +365,8 @@ QSplitter::handle:horizontal { width: @splitterpx; }
 QSplitter::handle:vertical { height: @splitterpx; }
 QSplitter[windowSystemGroupSplitter="true"]::handle:horizontal { width: @groupSplitterpx; }
 QSplitter[windowSystemGroupSplitter="true"]::handle:vertical { height: @groupSplitterpx; }
-QSplitter[windowSystemGroupSplitter="true"]::handle { background: @header; }
-QSplitter[windowSystemGroupSplitter="true"]::handle:hover { background: @soft; }
+QSplitter[windowSystemGroupSplitter="true"]::handle { background: transparent; }
+QSplitter[windowSystemGroupSplitter="true"]::handle:hover { background: transparent; }
 QSplitter#PaneSplitter::handle { background: @border; }
 QWidget#PaneHost QAbstractItemView, QWidget#PaneHost QPlainTextEdit, QWidget#PaneHost QTextEdit { border: none; }
 QStatusBar, QWidget#StatusBar { background: @status; color: @statusText; border: none; padding: 1px 6px; }

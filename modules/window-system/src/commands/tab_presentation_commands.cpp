@@ -11,9 +11,9 @@
 
 namespace window_system {
 namespace {
-// Indexed by TabBarPlacement and TabRowCollapse, as in the settings file.
+// Indexed by TabBarPlacement and TabRowExpansion, as in the settings file.
 const QStringList placementNames{QStringLiteral("top"), QStringLiteral("bottom"), QStringLiteral("left"), QStringLiteral("right")};
-const QStringList collapseNames{QStringLiteral("off"), QStringLiteral("push"), QStringLiteral("overlay")};
+const QStringList expansionNames{QStringLiteral("push"), QStringLiteral("overlay")};
 bool vertical(TabBarPlacement placement) { return placement == TabBarPlacement::Left || placement == TabBarPlacement::Right; }
 } // namespace
 
@@ -23,9 +23,14 @@ void registerTabPresentationCommands(WindowManager* manager)
     const auto registerFlag = [manager, retained](const char* id, const QString& title, bool TabAppearance::*field) {
         manager->commands().add({QString::fromLatin1(id), title, QStringLiteral("view"), {},
             [retained, field](const CommandContext&) {
-                if (!retained || field != &TabAppearance::wheelExpandRows) return bool(retained);
+                if (!retained) return false;
                 const auto appearance = retained->tabAppearance();
-                return appearance.multiline && appearance.collapseRows != TabRowCollapse::Off;
+                if (field == &TabAppearance::showAllRows) return appearance.multiline;
+                if (field == &TabAppearance::stickyMultiline) return appearance.stickyTabsOnSeparateRow;
+                if (field == &TabAppearance::stickyShowAllRows) return appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline;
+                if (field == &TabAppearance::wheelExpandRows) return (appearance.multiline && !appearance.showAllRows)
+                    || (appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline && !appearance.stickyShowAllRows);
+                return true;
             }, [retained, field](const CommandContext& context) {
                 if (!retained) return false;
                 auto next = retained->tabAppearance();
@@ -43,7 +48,10 @@ void registerTabPresentationCommands(WindowManager* manager)
     registerFlag("presentation.toggleSidebarNumbers", QCoreApplication::translate("WindowSystem", "Show sidebar tab numbers"), &TabAppearance::showSidebarNumbers);
     registerFlag("presentation.toggleTitleClipping", QCoreApplication::translate("WindowSystem", "Clip long regular and pinned tab titles"), &TabAppearance::clipTitles);
     registerFlag("presentation.toggleSidebarTitleClipping", QCoreApplication::translate("WindowSystem", "Clip long auto-hide sidebar tab titles"), &TabAppearance::clipSidebarTitles);
-    registerFlag("presentation.toggleMultiline", QCoreApplication::translate("WindowSystem", "Show tabs in multiple rows"), &TabAppearance::multiline);
+    registerFlag("presentation.toggleMultiline", QCoreApplication::translate("WindowSystem", "Show regular tabs in multiple rows"), &TabAppearance::multiline);
+    registerFlag("presentation.toggleAllRows", QCoreApplication::translate("WindowSystem", "Always show all regular tab rows"), &TabAppearance::showAllRows);
+    registerFlag("presentation.toggleStickyMultiline", QCoreApplication::translate("WindowSystem", "Show sticky tabs in multiple rows"), &TabAppearance::stickyMultiline);
+    registerFlag("presentation.toggleStickyAllRows", QCoreApplication::translate("WindowSystem", "Always show all sticky tab rows"), &TabAppearance::stickyShowAllRows);
     registerFlag("presentation.toggleWheelExpandRows", QCoreApplication::translate("WindowSystem", "Expand tab rows with mouse wheel"), &TabAppearance::wheelExpandRows);
     for (const bool pinned : {false, true}) manager->commands().add({
         pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement"),
@@ -56,13 +64,19 @@ void registerTabPresentationCommands(WindowManager* manager)
             (pinned ? next.pinnedPlacement : next.centralPlacement) = TabBarPlacement(position);
             return retained->setTabAppearance(next);
         }});
-    manager->commands().add({QStringLiteral("presentation.setRowCollapse"), QCoreApplication::translate("WindowSystem", "Collapse tab rows"),
-        QStringLiteral("view"), {}, [retained](const CommandContext&) { return retained && retained->tabAppearance().multiline; },
+    manager->commands().add({QStringLiteral("presentation.setRowExpansion"), QCoreApplication::translate("WindowSystem", "Expanded tab rows"),
+        QStringLiteral("view"), {}, [retained](const CommandContext&) {
+            if (!retained) return false;
+            const auto appearance = retained->tabAppearance();
+            const auto horizontal = [](TabBarPlacement place) { return place == TabBarPlacement::Top || place == TabBarPlacement::Bottom; };
+            return (horizontal(appearance.centralPlacement) || horizontal(appearance.pinnedPlacement))
+                && (appearance.multiline || (appearance.stickyTabsOnSeparateRow && appearance.stickyMultiline));
+        },
         [retained](const CommandContext& context) {
             if (!retained || context.args.value("mode").metaType().id() != QMetaType::QString) return false;
-            const auto mode = collapseNames.indexOf(context.args.value("mode").toString());
+            const auto mode = expansionNames.indexOf(context.args.value("mode").toString());
             if (mode < 0) return false;
-            auto next = retained->tabAppearance(); next.collapseRows = TabRowCollapse(mode);
+            auto next = retained->tabAppearance(); next.rowExpansion = TabRowExpansion(mode);
             return retained->setTabAppearance(next);
         }});
 }
@@ -122,12 +136,16 @@ void appendTabPresentationActions(QMenu* menu, WindowManager* manager, const Com
     menu->addSeparator();
     if (!vertical(current)) {
         addFlag("presentation.toggleMultiline");
-        if (appearance.multiline) {
-            addChoices(QCoreApplication::translate("WindowSystem", "Collapse tab rows"), "TabRowCollapseMenu",
-                QStringLiteral("presentation.setRowCollapse"), QStringLiteral("mode"), collapseNames,
-                {QCoreApplication::translate("WindowSystem", "Show all rows"),
-                 QCoreApplication::translate("WindowSystem", "Collapse; expanded rows push the content down"),
-                 QCoreApplication::translate("WindowSystem", "Collapse; expanded rows overlay the content")}, int(appearance.collapseRows));
+        if (appearance.multiline) addFlag("presentation.toggleAllRows");
+        if (appearance.stickyTabsOnSeparateRow) {
+            addFlag("presentation.toggleStickyMultiline");
+            if (appearance.stickyMultiline) addFlag("presentation.toggleStickyAllRows");
+        }
+        if (appearance.multiline || appearance.stickyMultiline) {
+            addChoices(QCoreApplication::translate("WindowSystem", "Expanded tab rows"), "TabRowExpansionMenu",
+                QStringLiteral("presentation.setRowExpansion"), QStringLiteral("mode"), expansionNames,
+                {QCoreApplication::translate("WindowSystem", "Push the content"),
+                 QCoreApplication::translate("WindowSystem", "Overlay the content")}, int(appearance.rowExpansion));
             addFlag("presentation.toggleWheelExpandRows");
         }
     }

@@ -75,6 +75,14 @@ QString describe(const TabLayoutInput& input)
 class TabLayoutTest final : public QObject {
     Q_OBJECT
 private slots:
+    void independentSectionsUseOneVerticalSurface_data();
+    void independentSectionsUseOneVerticalSurface();
+    void collapsedSectionsReserveOnlyTheirOwnControls();
+    void aLabelWrappingPastTheHeaderKeepsItsNaturalWidth();
+    void liftedRowsFollowTheScrolledGrid();
+    void activationAvoidsTheEdgeFades_data();
+    void activationAvoidsTheEdgeFades();
+    void scrollingPreservesPackedGeometry();
     void everyStateKeepsTheInvariants();
     void randomStatesKeepTheInvariants();
     void singleRowScrollsOnlyWithinItsContent();
@@ -89,6 +97,7 @@ private slots:
     void gapTakesTheBlockAsItWillBeShown();
     void insertionFollowsLabelCenters_data();
     void insertionFollowsLabelCenters();
+    void emptyTrailingRowAcceptsTheLastPosition();
     void dropPositionDecidesStickiness();
     void aLoneStickyTabStaysStickyNearTheStart();
     void blockIntoAnEmptyRegularSectionGetsItsOwnRow();
@@ -101,6 +110,96 @@ private slots:
 private:
     void verify(const TabLayoutInput& input);
 };
+
+void TabLayoutTest::collapsedSectionsReserveOnlyTheirOwnControls()
+{
+    auto input = horizontal(QVector<int>(8, 100), 500, 4);
+    input.multiline = true; input.stickyMultiline = true; input.collapsed = true; input.stickyCollapsed = input.collapsed; input.separateStickyRow = true;
+    input.rowGap = 0; input.endExtent = 80; input.trailingExtent = 40; input.current = 7;
+    const auto layout = layoutTabs(input);
+    QCOMPARE(layout.hidden, 0);
+    for (int index = 0; index < 4; ++index) QCOMPARE(layout.tabs[index].top(), 0);
+    for (int index = 4; index < 8; ++index) QCOMPARE(layout.tabs[index].top(), input.rowHeight);
+    QCOMPARE(layout.end, QRect(420, 0, 80, input.rowHeight));
+    QCOMPARE(layout.trailing, QRect(400, input.rowHeight, 40, input.rowHeight));
+    // A sole shown row still reserves both sets of controls.
+    input.separateStickyRow = false;
+    const auto single = layoutTabs(input);
+    QCOMPARE(single.hidden, 6);
+    QVERIFY(single.trailing.right() < single.end.left());
+}
+
+void TabLayoutTest::aLabelWrappingPastTheHeaderKeepsItsNaturalWidth()
+{
+    auto input = horizontal({100, 350, 40}, 400);
+    input.multiline = true; input.stickyMultiline = true; input.endExtent = 100; input.rowGap = 0;
+    const auto layout = layoutTabs(input);
+    QCOMPARE(layout.tabs[1], QRect(0, input.rowHeight, 350, input.rowHeight));
+    QCOMPARE(layout.tabs[2], QRect(350, input.rowHeight, 40, input.rowHeight));
+}
+
+void TabLayoutTest::liftedRowsFollowTheScrolledGrid()
+{
+    TabLayoutLane lane;
+    lane.vertical = true; lane.viewport = QRect(0, 11, 400, 100); lane.extent = 180;
+    for (const int offset : {0, 13, 29}) {
+        lane.offset = offset;
+        for (int row = 0; row < 6; ++row) {
+            const int top = lane.viewport.top() + row * 30 - offset;
+            const int pointer = top + 15;
+            if (pointer < lane.viewport.top() || pointer > lane.viewport.bottom()) continue;
+            QCOMPARE(lane.rowTopAt(pointer, 30), top);
+        }
+    }
+}
+
+void TabLayoutTest::independentSectionsUseOneVerticalSurface_data()
+{
+    QTest::addColumn<bool>("regularRows"); QTest::addColumn<bool>("stickyRows");
+    QTest::addColumn<bool>("regularClosed"); QTest::addColumn<bool>("stickyClosed");
+    for (bool regular : {false, true}) for (bool sticky : {false, true})
+        for (bool regularClosed : {false, true}) for (bool stickyClosed : {false, true})
+            QTest::newRow(qPrintable(QString("regular-%1-sticky-%2-close-%3-%4").arg(regular).arg(sticky).arg(regularClosed).arg(stickyClosed)))
+                << regular << sticky << regularClosed << stickyClosed;
+}
+void TabLayoutTest::independentSectionsUseOneVerticalSurface()
+{
+    QFETCH(bool, regularRows); QFETCH(bool, stickyRows); QFETCH(bool, regularClosed); QFETCH(bool, stickyClosed);
+    auto input = horizontal(QVector<int>(36, 100), 340, 9);
+    input.separateStickyRow = true; input.rowGap = 0; input.height = 150;
+    input.multiline = regularRows; input.stickyMultiline = stickyRows;
+    input.collapsed = regularRows && regularClosed; input.stickyCollapsed = stickyRows && stickyClosed;
+    input.regularOffset = 70; input.stickyOffset = 50; input.rowsOffset = 13;
+    input.endExtent = 30; input.trailingExtent = 40; input.current = 20;
+    const auto layout = layoutTabs(input);
+    int verticalLanes = 0;
+    for (const auto& lane : layout.laneList) {
+        verticalLanes += lane.vertical;
+        QVERIFY(lane.offset >= 0 && lane.offset <= lane.maximumOffset());
+    }
+    QCOMPARE(verticalLanes, regularRows || stickyRows ? 1 : 0);
+    QCOMPARE(layout.rowScrollLane >= 0, regularRows || stickyRows);
+    QVERIFY(layout.sectionBoundary.has_value());
+    QVERIFY(layout.lanes[20] >= 0);
+    for (int first = 0; first < layout.tabs.size(); ++first) for (int second = first + 1; second < layout.tabs.size(); ++second)
+        QVERIFY(!layout.visibleRect(first).intersects(layout.visibleRect(second)));
+}
+
+void TabLayoutTest::emptyTrailingRowAcceptsTheLastPosition()
+{
+    auto input = horizontal({100, 100, 100, 100}, 210);
+    input.multiline = true; input.stickyMultiline = true;
+    input.rowGap = 0;
+    input.trailingExtent = 38;
+    // The controls occupy a third row, after the two rows of labels.
+    QCOMPARE(layoutTabs(input).trailing.top(), 2 * input.rowHeight);
+    QCOMPARE(tabInsertionAt(input, {4, 2 * input.rowHeight + input.rowHeight / 2}).index, 4);
+    // A lifted label's temporary gap can also be the only item on that row.
+    input.removed = 0;
+    input.insertion = 3;
+    input.block = {180};
+    QCOMPARE(tabInsertionAt(input, {4, 2 * input.rowHeight + input.rowHeight / 2}).index, 3);
+}
 
 void TabLayoutTest::verify(const TabLayoutInput& input)
 {
@@ -177,7 +276,8 @@ void TabLayoutTest::verify(const TabLayoutInput& input)
         for (int cell = 0; cell < layout.gap.size(); ++cell) {
             QVERIFY2(!layout.gap.at(cell).isNull(), context);
             // An oversized block stays one row and no wider than the strip.
-            if (input.multiline && !vertical)
+            const bool gapMultiline = input.separateStickyRow && input.insertionSticky ? input.stickyMultiline : input.multiline;
+            if (gapMultiline && !vertical)
                 QVERIFY2(layout.gap.at(cell).height() == input.rowHeight && layout.gap.at(cell).width() <= input.width, context);
             for (int index = 0; index < count; ++index)
                 if (layout.lanes.at(index) == layout.gapLane && !(layout.laneList.at(layout.gapLane).frozen && (index < input.stickyCount) != input.insertionSticky))
@@ -235,11 +335,11 @@ void TabLayoutTest::everyStateKeepsTheInvariants()
         if (!multiline && collapsed) continue;
         if (sticky > count) continue;
         TabLayoutInput input = horizontal(widths(count, count * 7 + width), width, sticky);
-        input.orientation = orientation; input.multiline = multiline; input.separateStickyRow = separate;
-        input.freezeSticky = frozen && !multiline; input.collapsed = collapsed; input.stickyTiles = vertical && separate;
+        input.orientation = orientation; input.multiline = multiline; input.stickyMultiline = multiline; input.separateStickyRow = separate;
+        input.freezeSticky = frozen && !multiline; input.collapsed = collapsed; input.stickyCollapsed = input.collapsed; input.stickyTiles = vertical && separate;
         input.trailingExtent = vertical ? 0 : 38; input.endExtent = vertical ? 0 : 28; input.height = vertical ? 600 : (multiline ? 96 : 0);
         input.current = count ? count / 2 : -1;
-        input.stickyOffset = offset; input.regularOffset = offset;
+        input.stickyOffset = offset; input.regularOffset = offset; input.rowsOffset = input.regularOffset;
         if (count && drag == 1) input.removed = count - 1;
         if (count && drag == 2) { input.removed = 0; input.insertion = count / 2; input.insertionSticky = sticky > 1 && count / 2 < sticky; input.block = {input.extents.at(0)}; }
         if (drag == 3) { input.insertion = 0; input.insertionSticky = sticky > 0; input.block = {70, 400, 3000}; }
@@ -268,14 +368,14 @@ void TabLayoutTest::randomStatesKeepTheInvariants()
         input.multiline = !vertical && random.bounded(2);
         input.separateStickyRow = random.bounded(2);
         input.freezeSticky = !input.multiline && !vertical && random.bounded(2);
-        input.collapsed = input.multiline && random.bounded(2);
+        input.collapsed = input.multiline && random.bounded(2); input.stickyCollapsed = input.collapsed;
         input.stickyTiles = vertical && random.bounded(2);
         input.height = vertical ? 30 + int(random.bounded(900)) : input.multiline ? int(random.bounded(200)) : 0;
         input.trailingExtent = vertical ? 0 : int(random.bounded(120));
         input.endExtent = vertical ? 0 : int(random.bounded(90));
         input.current = count ? int(random.bounded(count)) : -1;
         input.collapsedStickyRow = int(random.bounded(5)); input.collapsedRegularRow = int(random.bounded(5));
-        input.stickyOffset = int(random.bounded(5000)); input.regularOffset = int(random.bounded(5000));
+        input.stickyOffset = int(random.bounded(5000)); input.regularOffset = int(random.bounded(5000)); input.rowsOffset = input.regularOffset;
         if (count && random.bounded(3) == 0) input.removed = int(random.bounded(count));
         if (random.bounded(2)) {
             input.insertion = int(random.bounded(count + 1));
@@ -303,20 +403,20 @@ void TabLayoutTest::randomStatesKeepTheInvariants()
 
 void TabLayoutTest::singleRowScrollsOnlyWithinItsContent()
 {
-    auto input = horizontal({100, 100, 100}, 500); input.trailingExtent = 40; input.regularOffset = 80;
+    auto input = horizontal({100, 100, 100}, 500); input.trailingExtent = 40; input.regularOffset = 80; input.rowsOffset = input.regularOffset;
     auto layout = layoutTabs(input);
     QCOMPARE(layout.laneList.first().offset, 0); // Everything fits.
     QCOMPARE(layout.tabs.at(0).left(), 0); QCOMPARE(layout.trailing, QRect(300, 0, 40, 30));
     input.width = 250; layout = layoutTabs(input);
     QCOMPARE(layout.laneList.first().offset, 80); QCOMPARE(layout.tabs.at(1).left(), 20);
-    input.regularOffset = 1000; layout = layoutTabs(input);
+    input.regularOffset = 1000; input.rowsOffset = input.regularOffset; layout = layoutTabs(input);
     // The last control ends exactly at the viewport's end; no blank extent.
     QCOMPARE(layout.laneList.first().offset, 90); QCOMPARE(layout.trailing.right(), 249);
 }
 
 void TabLayoutTest::frozenStickyTabsStayAtTheStart()
 {
-    auto input = horizontal({40, 40, 120, 120, 120}, 300, 2); input.freezeSticky = true; input.regularOffset = 60;
+    auto input = horizontal({40, 40, 120, 120, 120}, 300, 2); input.freezeSticky = true; input.regularOffset = 60; input.rowsOffset = input.regularOffset;
     const auto layout = layoutTabs(input);
     QCOMPARE(layout.tabs.at(0).left(), 0); QCOMPARE(layout.tabs.at(1).left(), 40);
     QCOMPARE(layout.tabs.at(2).left(), 80 - 60);
@@ -329,7 +429,7 @@ void TabLayoutTest::frozenStickyTabsStayAtTheStart()
 void TabLayoutTest::separateStickyRowScrollsOnItsOwn()
 {
     auto input = horizontal({200, 200, 200, 150, 150, 150}, 300, 3); input.separateStickyRow = true;
-    input.stickyOffset = 100; input.regularOffset = 20; input.trailingExtent = 40;
+    input.stickyOffset = 100; input.regularOffset = 20; input.rowsOffset = input.regularOffset; input.trailingExtent = 40;
     const auto layout = layoutTabs(input);
     QCOMPARE(layout.laneList.size(), 2);
     QCOMPARE(layout.laneList.at(0).offset, 100); QCOMPARE(layout.laneList.at(1).offset, 20);
@@ -348,7 +448,7 @@ void TabLayoutTest::separateStickyRowHoldsTrailingControlsWithoutOtherTabs()
 
 void TabLayoutTest::multipleRowsScrollPastTheirHeightLimit()
 {
-    auto input = horizontal(QVector<int>(20, 100), 300); input.multiline = true; input.height = 70; input.regularOffset = 33;
+    auto input = horizontal(QVector<int>(20, 100), 300); input.multiline = true; input.stickyMultiline = true; input.height = 70; input.regularOffset = 33; input.rowsOffset = input.regularOffset;
     const auto layout = layoutTabs(input);
     const auto& lane = layout.laneList.first();
     QVERIFY(lane.vertical);
@@ -359,7 +459,7 @@ void TabLayoutTest::multipleRowsScrollPastTheirHeightLimit()
 
 void TabLayoutTest::collapsedRowsShowTheCurrentRowAndCountTheRest()
 {
-    auto input = horizontal(QVector<int>(10, 100), 330); input.multiline = true; input.collapsed = true;
+    auto input = horizontal(QVector<int>(10, 100), 330); input.multiline = true; input.stickyMultiline = true; input.collapsed = true; input.stickyCollapsed = input.collapsed;
     input.trailingExtent = 30; input.current = 7;
     const auto layout = layoutTabs(input);
     // 300 px wrap 3 tabs a row: rows 0-2, 3-5, 6-8, 9. Row 2 holds the current tab.
@@ -371,7 +471,7 @@ void TabLayoutTest::collapsedRowsShowTheCurrentRowAndCountTheRest()
 
 void TabLayoutTest::collapsedSeparateRowsShowOneRowEach()
 {
-    auto input = horizontal(QVector<int>(12, 100), 330, 5); input.multiline = true; input.collapsed = true;
+    auto input = horizontal(QVector<int>(12, 100), 330, 5); input.multiline = true; input.stickyMultiline = true; input.collapsed = true; input.stickyCollapsed = input.collapsed;
     input.separateStickyRow = true; input.trailingExtent = 30; input.current = 10; input.collapsedStickyRow = 1;
     const auto layout = layoutTabs(input);
     QCOMPARE(layout.stickyRow, 1); QCOMPARE(layout.tabs.at(3).top(), 0); QCOMPARE(layout.tabs.at(4).top(), 0);
@@ -396,6 +496,7 @@ void TabLayoutTest::stickyTilesWrapInTheColumn()
 {
     TabLayoutInput input; input.orientation = Orientation::Vertical; input.width = 160; input.height = 600;
     input.extents = QVector<int>(8, 0); input.stickyCount = 5; input.stickyTiles = true;
+    input.minimumTileWidth = 44; input.tile = {44, 32};
     const auto layout = layoutTabs(input);
     // 148 px of row: three tiles of at least 44 with 2 px between them fit;
     // they share the row, (148 - 4) / 3 = 48 each.
@@ -410,7 +511,7 @@ void TabLayoutTest::gapTakesTheBlockAsItWillBeShown()
     QCOMPARE(layout.gap, (QVector<QRect>{QRect(100, 0, 50, 30), QRect(150, 0, 70, 30)}));
     QCOMPARE(layout.tabs.at(1).left(), 220);
     // Wrapped, the block wraps like tabs.
-    input.multiline = true; input.width = 200;
+    input.multiline = true; input.stickyMultiline = true; input.width = 200;
     const auto wrapped = layoutTabs(input);
     QCOMPARE(wrapped.gap.at(1).top(), 32);
 }
@@ -466,13 +567,13 @@ void TabLayoutTest::blockIntoAnEmptyRegularSectionGetsItsOwnRow()
 void TabLayoutTest::endControlsStayAtTheFirstRowsEnd()
 {
     // One row: the tabs scroll only up to the controls.
-    auto input = horizontal({200, 200, 200}, 400); input.endExtent = 60; input.trailingExtent = 30; input.regularOffset = 1000;
+    auto input = horizontal({200, 200, 200}, 400); input.endExtent = 60; input.trailingExtent = 30; input.regularOffset = 1000; input.rowsOffset = input.regularOffset;
     auto layout = layoutTabs(input);
     QCOMPARE(layout.end, QRect(340, 0, 60, 30));
     QCOMPARE(layout.laneList.first().viewport.width(), 340);
     QCOMPARE(layout.trailing.right(), 339);
     // Rows: only the first row leaves room for them.
-    input.multiline = true; input.regularOffset = 0; input.width = 420;
+    input.multiline = true; input.stickyMultiline = true; input.regularOffset = 0; input.rowsOffset = input.regularOffset; input.width = 420;
     layout = layoutTabs(input);
     QCOMPARE(layout.end, QRect(360, 0, 60, 30));
     QCOMPARE(layout.tabs.at(1).top(), 30 + input.rowGap); // 200 + 200 > 360 on the first row
@@ -546,6 +647,87 @@ void TabLayoutTest::verticalFolderRowsAreIndented()
     QCOMPARE(layout.headers.at(0), QRect(6, pitch, 188, input.rowHeight));
     QCOMPARE(layout.tabs.at(1), QRect(18, 2 * pitch, 176, input.rowHeight));
     QCOMPARE(layout.tabs.at(3), QRect(6, 4 * pitch, 188, input.rowHeight));
+}
+
+void TabLayoutTest::activationAvoidsTheEdgeFades_data()
+{
+    QTest::addColumn<bool>("vertical"); QTest::addColumn<int>("offset");
+    QTest::addColumn<int>("start"); QTest::addColumn<int>("length");
+    QTest::addColumn<int>("extent"); QTest::addColumn<int>("frozen"); QTest::addColumn<int>("expected");
+    struct Case { const char* name; int offset, start, length, extent, frozen, expected; };
+    const Case cases[]{
+        {"already-readable", 40, 70, 30, 300, 0, 40},
+        {"trailing-fade", 40, 115, 28, 300, 0, 59},
+        {"leading-fade", 40, 45, 28, 300, 0, 29},
+        {"first-label", 0, 0, 30, 300, 0, 0},
+        {"last-label", 170, 270, 30, 300, 0, 200},
+        {"oversized-label", 40, 80, 150, 300, 0, 64},
+        {"no-overflow", 0, 10, 30, 80, 0, 0},
+        {"frozen-prefix", 40, 115, 28, 300, 20, 79}
+    };
+    for (bool vertical : {false, true}) for (const auto& item : cases) {
+        if (vertical && item.frozen) continue;
+        QTest::newRow(qPrintable(QString("%1-%2").arg(vertical ? "vertical" : "horizontal", item.name)))
+            << vertical << item.offset << item.start << item.length << item.extent << item.frozen << item.expected;
+    }
+}
+
+void TabLayoutTest::activationAvoidsTheEdgeFades()
+{
+    QFETCH(bool, vertical); QFETCH(int, offset); QFETCH(int, start); QFETCH(int, length);
+    QFETCH(int, extent); QFETCH(int, frozen); QFETCH(int, expected);
+    TabLayoutLane lane;
+    lane.vertical = vertical; lane.offset = offset; lane.extent = extent; lane.frozen = frozen;
+    lane.viewport = vertical ? QRect(7, 11, 40, 100) : QRect(7, 11, 100, 40);
+    auto label = vertical ? QRect(7, 11 + start - offset, 40, length)
+                          : QRect(7 + frozen + start - offset, 11, length, 40);
+    const int next = lane.offsetToReveal(label, 16);
+    QCOMPARE(next, expected);
+    label.translate(vertical ? QPoint(0, offset - next) : QPoint(offset - next, 0));
+    lane.offset = next;
+    const auto readable = lane.readableViewport(16);
+    if (length <= (vertical ? readable.height() : readable.width())) QVERIFY(readable.contains(label));
+    else QVERIFY(readable.contains(label.topLeft()));
+}
+
+void TabLayoutTest::scrollingPreservesPackedGeometry()
+{
+    for (const auto orientation : {Orientation::Horizontal, Orientation::Vertical})
+    for (bool multiline : {false, true}) for (bool separate : {false, true})
+    for (bool frozen : {false, true}) for (bool tiles : {false, true})
+    for (int gap : {-1, 1, 7}) {
+        auto input = horizontal(widths(24, 42), 300, 4);
+        input.orientation = orientation; input.height = 120;
+        input.multiline = multiline; input.stickyMultiline = multiline;
+        input.separateStickyRow = separate; input.freezeSticky = frozen; input.stickyTiles = tiles;
+        input.insertion = gap; input.insertionSticky = gap == 1;
+        if (gap >= 0) input.block = {80};
+        input.trailingExtent = 40; input.endExtent = 16;
+        addFolders(input, 1);
+        const auto initial = layoutTabs(input);
+        for (int lane = 0; lane < initial.laneList.size(); ++lane) {
+            for (int offset : {37, 100000, 0}) {
+                auto moved = initial;
+                if (!moved.scrollLane(lane, offset)) continue;
+                auto changed = input;
+                if (lane == initial.rowScrollLane) changed.rowsOffset = offset;
+                else (initial.laneList.at(lane).sticky ? changed.stickyOffset : changed.regularOffset) = offset;
+                const auto packed = layoutTabs(changed);
+                QCOMPARE(moved.tabs, packed.tabs);
+                QCOMPARE(moved.headers, packed.headers);
+                QCOMPARE(moved.gap, packed.gap);
+                QCOMPARE(moved.trailing, packed.trailing);
+                QCOMPARE(moved.end, packed.end);
+                QCOMPARE(moved.separator, packed.separator);
+                QCOMPARE(moved.sectionBoundary, packed.sectionBoundary);
+                for (int index = 0; index < moved.tabs.size(); ++index) {
+                    QCOMPARE(moved.visibleRect(index), packed.visibleRect(index));
+                    if (!moved.visibleRect(index).isEmpty())
+                        QCOMPARE(moved.tabAt(moved.visibleRect(index).center()), packed.tabAt(packed.visibleRect(index).center()));
+                }
+            }
+        }
+    }
 }
 
 QTEST_MAIN(TabLayoutTest)

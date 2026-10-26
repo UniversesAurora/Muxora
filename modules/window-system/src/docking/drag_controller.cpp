@@ -5,6 +5,7 @@
 #include "dock_guides.hpp"
 #include "drag_presentation.hpp"
 #include "commands/popup_menu.hpp"
+#include "platform/windows/window_frame.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
@@ -17,6 +18,7 @@
 #include <QScopeGuard>
 #include <QWindow>
 #include <QWheelEvent>
+#include <utility>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <dwmapi.h>
@@ -97,16 +99,20 @@ protected:
 // Watches the moving window while the system's move loop drives it.
 class NativeMoveWatcher final : public QAbstractNativeEventFilter {
 public:
-    NativeMoveWatcher(DragController* controller, quintptr window) : controller_(controller), window_(window) {}
+    NativeMoveWatcher(DragController* controller, quintptr window, quint64 generation)
+        : controller_(controller), window_(window), generation_(generation) {}
     bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override
     {
 #ifdef Q_OS_WIN
         const auto* msg = static_cast<const MSG*>(message);
         if (quintptr(msg->hwnd) != window_ || !controller_) return false;
         if (msg->message == WM_MOVE || msg->message == WM_MOVING) controller_->nativeMoved();
-        else if (msg->message == WM_EXITSIZEMOVE) {
+        else if (msg->message == WM_ENTERSIZEMOVE) controller_->nativeMoveBegan(generation_);
+        else if (msg->message == WM_EXITSIZEMOVE && !ending_) {
+            ending_ = true;
             const QPointer<DragController> controller = controller_;
-            QTimer::singleShot(0, controller, [controller] { if (controller) controller->nativeMoveEnded(); });
+            const auto generation = generation_;
+            QTimer::singleShot(0, controller, [controller, generation] { if (controller) controller->nativeMoveEnded(generation); });
         }
 #else
         Q_UNUSED(message);
@@ -116,6 +122,8 @@ public:
 private:
     QPointer<DragController> controller_;
     quintptr window_ = 0;
+    quint64 generation_ = 0;
+    bool ending_ = false;
 };
 
 DragController::DragController(WindowManager* manager) : QObject(manager), manager_(manager)
@@ -154,45 +162,115 @@ bool DragController::nativeMoveAvailable() const
 void DragController::enterNativeMove()
 {
 #ifdef Q_OS_WIN
-    if (nativeMoving_ || !nativeMoveAvailable()) return;
+    if (nativeMoving_ || leavingNativeMove_ || !nativeMoveAvailable()) return;
     const bool left = !GetSystemMetrics(SM_SWAPBUTTON);
     if (!(GetAsyncKeyState(left ? VK_LBUTTON : VK_RBUTTON) & 0x8000)) return;
     const QPointer<DragController> self(this);
+    // Tear-out builds a window synchronously. The physical pointer can move
+    // far beyond the event which started it before the new HWND is ready.
+    // Give Windows the current cursor anchor, not that stale event position.
+    const auto current = QCursor::pos();
+    capture_->move(current - normalOffset_);
+    if (!self || !active_ || !capture_) return;
+    lastPosition_ = current;
     transferringCapture_ = true;
     if (QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
     if (!self) return;
     transferringCapture_ = false;
+    if (!active_ || !capture_ || !capture_->windowHandle()) return;
     if (!nativeWatcher_) {
-        nativeWatcher_ = new NativeMoveWatcher(this, quintptr(capture_->winId()));
+        nativeWatcher_ = new NativeMoveWatcher(this, quintptr(capture_->winId()), ++nativeMoveGeneration_);
         qApp->installNativeEventFilter(nativeWatcher_);
     }
+    nativeMoveStarted_ = false;
     nativeMoving_ = true;
-    capture_->windowHandle()->startSystemMove();
+    const bool started = capture_->windowHandle()->startSystemMove();
+    if (!self) return;
+    if (!started) {
+        nativeMoving_ = false;
+        if (nativeWatcher_) { qApp->removeNativeEventFilter(nativeWatcher_); delete nativeWatcher_; nativeWatcher_ = nullptr; }
+        if (self && active_ && capture_) capture_->grabMouse(Qt::ClosedHandCursor);
+    }
 #endif
 }
 void DragController::leaveNativeMove()
 {
 #ifdef Q_OS_WIN
     if (!nativeMoving_) return;
-    // Releasing the capture ends the system's loop; the drag then holds the
-    // mouse itself while the button stays down.
+    // The system checks for capture loss after this native message returns.
+    // Regrabbing the same HWND here keeps its move loop running, even though
+    // the window has already become a compact label. Wait for EXITSIZEMOVE.
     leavingNativeMove_ = true; nativeMoving_ = false;
-    ReleaseCapture();
-    if (capture_) capture_->grabMouse(Qt::ClosedHandCursor);
+    transferringCapture_ = true;
+    // startSystemMove posts its system command. A leave can arrive before
+    // Windows has entered the loop or taken capture. Releasing now would do
+    // nothing; complete the release after the loop actually starts instead.
+    if (nativeMoveStarted_) {
+        if (capture_ && GetCapture() == reinterpret_cast<HWND>(capture_->effectiveWinId())) ReleaseCapture();
+        else queueNativeRelease();
+    }
+#endif
+}
+void DragController::nativeMoveBegan(quint64 generation)
+{
+    if (generation != nativeMoveGeneration_ || !active_) return;
+    nativeMoveStarted_ = true;
+    if (leavingNativeMove_) queueNativeRelease();
+}
+void DragController::queueNativeRelease()
+{
+#ifdef Q_OS_WIN
+    if (nativeReleaseQueued_) return;
+    nativeReleaseQueued_ = true;
+    const auto generation = nativeMoveGeneration_;
+    QTimer::singleShot(0, this, [self = QPointer<DragController>(this), generation] {
+        if (!self || generation != self->nativeMoveGeneration_) return;
+        self->nativeReleaseQueued_ = false;
+        if (!self->active_ || !self->leavingNativeMove_ || !self->nativeMoveStarted_ || !self->capture_) return;
+        // ENTERSIZEMOVE precedes Windows' SetCapture. The queued callback
+        // runs after that message, when release can actually end the loop.
+        if (GetCapture() == reinterpret_cast<HWND>(self->capture_->effectiveWinId())) {
+            ReleaseCapture();
+        }
+    });
 #endif
 }
 void DragController::nativeMoved()
 {
+    if (active_ && leavingNativeMove_) { queueNativeRelease(); return; }
     if (!active_ || !nativeMoving_) return;
     lastPosition_ = QCursor::pos();
     refreshHover();
 }
-void DragController::nativeMoveEnded()
+void DragController::nativeMoveEnded(quint64 generation)
 {
+    if (generation != nativeMoveGeneration_) return;
+    nativeMoveStarted_ = false; nativeReleaseQueued_ = false;
     if (nativeWatcher_) { qApp->removeNativeEventFilter(nativeWatcher_); delete nativeWatcher_; nativeWatcher_ = nullptr; }
-    if (leavingNativeMove_) { leavingNativeMove_ = false; return; }
-    if (!active_ || !nativeMoving_) return;
+    const bool handingBack = std::exchange(leavingNativeMove_, false);
+    transferringCapture_ = false;
+    if (!active_) return;
+    if (handingBack) {
+#ifdef Q_OS_WIN
+        const bool left = !GetSystemMetrics(SM_SWAPBUTTON);
+        if (GetAsyncKeyState(left ? VK_LBUTTON : VK_RBUTTON) & 0x8000) {
+            const QPointer<DragController> self(this);
+            if (capture_) capture_->grabMouse(Qt::ClosedHandCursor);
+            if (!self || !active_) return;
+            update(QCursor::pos());
+            if (self && active_ && target_.insertionIndex < 0) enterNativeMove();
+            return;
+        }
+#endif
+    }
     nativeMoving_ = false;
+    if (!handingBack && capture_) {
+        // Windows owns the final placement of a native move. Its initial
+        // cursor offset can change (DPI, native snapping); finish() must not
+        // move the window back using our offset from before the system loop.
+        windowOffset_ = QCursor::pos() - capture_->pos();
+        normalOffset_ = windowOffset_;
+    }
     // The system's loop consumed the button's release, so Qt still holds the
     // widget it was pressed on and sends no hover to the others. Deliver the
     // release once the drop is done.
@@ -294,15 +372,10 @@ bool DragController::detach(QPoint global)
     labelPreview_.clear(); labelOnly_ = false;
     if ((wasActive && !active_) || !manager_->model().tab(tab_)) { transferringCapture_ = false; return false; }
     const auto tab = tab_;
-    const auto group = manager_->model().groupForTab(tab);
-    auto origin = source ? source->surface()->groupRects().value(group) : QRect();
-    if (origin.isEmpty() && source) if (auto* peek = source->findChild<QWidget*>("PeekPanel"); peek && peek->isVisible())
-        origin = QRect(peek->mapToGlobal(QPoint()), peek->size());
-    if (origin.isEmpty() && source) if (const auto* record = manager_->model().group(group); record && record->location == GroupLocation::AutoHide)
-        origin = source->surface()->edgeBarRects().value(record->edge);
-    const auto place = [self, global, origin](QWidget* window) {
+    const auto place = [self, global](QWidget* window) {
         if (!self) return;
-        self->windowOffset_ = QPoint(qBound(28, global.x() - origin.left(), window->width() - 28), 16);
+        auto* workspace = static_cast<WorkspaceWindow*>(window);
+        self->windowOffset_ = workspace->mapToGlobal(workspace->captionDragAnchor()) - workspace->pos();
         window->move(global - self->windowOffset_);
     };
     const auto moving = folder_.isNull() ? manager_->detachTabImpl(tab, WindowKind::Floating, place, true)
@@ -314,6 +387,11 @@ bool DragController::detach(QPoint global)
     if (!folder_.isNull()) { wholeWindow_ = movingWindow_; tab_ = {}; }
     capture_ = manager_->windowWidget(movingWindow_);
     if (!capture_) return false;
+    // Showing can finalize the custom frame's margins and toolbar geometry.
+    // Re-anchor once before entering the system move loop, using that frame.
+    auto* movingWindow = static_cast<WorkspaceWindow*>(capture_.data());
+    windowOffset_ = movingWindow->mapToGlobal(movingWindow->captionDragAnchor()) - movingWindow->pos();
+    movingWindow->move(global - windowOffset_);
     detached_ = true; normalOffset_ = windowOffset_;
     if (active_) capture_->grabMouse(Qt::ClosedHandCursor);
     return self && capture_;
@@ -355,15 +433,15 @@ void DragController::start(QPoint global)
 }
 WindowId DragController::candidateAt(QPoint global) const
 {
-    if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_) return forcedWindow_;
+    if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_) { return forcedWindow_; }
 #ifdef Q_OS_WIN
-    if (!capture_ || !capture_->windowHandle()) return {};
+    if (!capture_ || !capture_->windowHandle()) { return {}; }
     // Resolve the same queued event in Qt and native coordinates. Do not sample
     // GetCursorPos, which can already point at a later mouse event.
     const auto local = capture_->windowHandle()->mapFromGlobal(QPointF(global));
     const auto ratio = capture_->devicePixelRatioF();
     POINT nativePoint{qRound(local.x() * ratio), qRound(local.y() * ratio)};
-    if (!ClientToScreen(reinterpret_cast<HWND>(capture_->winId()), &nativePoint)) return {};
+    if (!ClientToScreen(reinterpret_cast<HWND>(capture_->winId()), &nativePoint)) { return {}; }
     for (HWND handle = GetTopWindow(nullptr); handle; handle = GetWindow(handle, GW_HWNDNEXT)) {
         if (!IsWindowVisible(handle) || IsIconic(handle)) continue;
         const auto extendedStyle = GetWindowLongPtr(handle, GWL_EXSTYLE);
@@ -375,14 +453,14 @@ WindowId DragController::candidateAt(QPoint global) const
         if (overlay_ && handle == reinterpret_cast<HWND>(overlay_->winId())) continue;
         if (capture_ && handle == reinterpret_cast<HWND>(capture_->winId())) continue;
         DWORD process = 0; GetWindowThreadProcessId(handle, &process);
-        if (process != GetCurrentProcessId()) return {};
+        if (process != GetCurrentProcessId()) { return {}; }
         for (const auto id : manager_->model().windowOrder()) {
             if (id == movingWindow_) continue;
             auto* widget = manager_->windowWidget(id);
             if (widget && reinterpret_cast<HWND>(widget->winId()) == handle &&
-                widget->rect().contains(widget->mapFromGlobal(global))) return id;
+                widget->rect().contains(widget->mapFromGlobal(global))) { return id; }
         }
-    }
+        }
 #else
     const auto order = manager_->model().windowOrder();
     for (auto it = order.crbegin(); it != order.crend(); ++it) {
@@ -436,8 +514,13 @@ DropTarget DragController::hit(QPoint global)
         result.insertionIndex = surface->tabInsertionIndex(barGroup, global, carriedKind());
         result.insertionRow = surface->tabInsertionRow(barGroup, global);
     }
-    const auto strips = surface->tabBarRects().values();
-    result.guides = dockGuides(result.windowRect, result.groupRect, result.splitGroup, strips, edgeBars);
+    const auto strips = surface->dockStrips();
+    // The content geometry already excludes strips on any side. Treating a
+    // full-height vertical strip as a top header reduces the guide area to
+    // the footer and incorrectly shrinks and lowers the group cross.
+    auto guideArea = surface->groupContentRect(result.group);
+    if (guideArea.isEmpty()) guideArea = result.groupRect;
+    result.guides = dockGuides(result.windowRect, guideArea, result.splitGroup, strips, edgeBars, DockGuideArea::Content);
     for (const auto& guide : result.guides) if (!result.accepted && guide.rect.contains(global)) {
         result.accepted = true; result.toEdge = guide.toEdge; result.pinned = guide.pinned;
         result.edge = guide.edge; result.placement = guide.placement; break;
@@ -506,6 +589,7 @@ void DragController::update(QPoint global)
                 : surface->insertionPreviewRect(target_.group);
         } else surface->clearInsertionPreviews();
         surface->setDragHover(id == target_.window ? global : QPoint(-100000, -100000));
+        if (id != target_.window || !insertion || target_.toEdgeBar) surface->setIncomingVisual({}, {});
     }
     if (QPointer<WorkspaceWindow> moving = dynamic_cast<WorkspaceWindow*>(capture_.data())) {
         const auto presentation = !insertion ? WorkspaceWindow::DragPresentation::Window
@@ -513,6 +597,10 @@ void DragController::update(QPoint global)
             : WorkspaceWindow::DragPresentation(int(WorkspaceWindow::DragPresentation::Left) + int(target_.edge));
         // Over a strip the drag places the window itself.
         if (insertion && nativeMoving_) leaveNativeMove();
+        // Do not change the HWND's frame or region inside Windows' still
+        // unwinding move loop. It would replay the old window rectangle over
+        // the compact shape, leaving stale borders and a displaced anchor.
+        if (leavingNativeMove_) return;
         // The target group shows the content as if its tab were already
         // there; the picture is taken before the window shrinks to its tabs.
         if (presentation == WorkspaceWindow::DragPresentation::Tab && moving->dragPresentation() == WorkspaceWindow::DragPresentation::Window)
@@ -526,11 +614,41 @@ void DragController::update(QPoint global)
         if (moving->dragPresentation() != presentation) {
             moving->setDragPresentation(presentation);
             if (!self || !active_ || !moving) return;
-            windowOffset_ = presentation == WorkspaceWindow::DragPresentation::Window ? normalOffset_ : moving->dragLabelAnchor();
-            if (!nativeMoving_) moving->move(global - windowOffset_);
+            if (presentation == WorkspaceWindow::DragPresentation::Tab)
+                if (auto* targetWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window)))
+                    moving->setDragTabStyle(*targetWindow, target_.group, target_.insertionSticky);
+            if (!self || !active_ || !moving) return;
+            // QWidget::move positions a top-level frame; the label anchor is
+            // in client coordinates. Native frame margins can change while
+            // the window switches between its normal and compact shapes.
+            if (presentation != WorkspaceWindow::DragPresentation::Tab) {
+                windowOffset_ = presentation == WorkspaceWindow::DragPresentation::Window ? normalOffset_
+                    : moving->mapToGlobal(moving->dragLabelAnchor()) - moving->pos();
+                if (!nativeMoving_) moving->move(global - windowOffset_);
+            }
             // Back over the desktop, the system moves it again.
             if (!insertion) QTimer::singleShot(0, this, [self] { if (self && self->active_ && self->target_.insertionIndex < 0) self->enterNativeMove(); });
-        } else if (!nativeMoving_) moving->move(global - windowOffset_);
+        } else if (!nativeMoving_) {
+            if (presentation == WorkspaceWindow::DragPresentation::Tab)
+                if (auto* targetWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window)))
+                    moving->setDragTabStyle(*targetWindow, target_.group, target_.insertionSticky);
+            if (!self || !active_ || !moving) return;
+            if (presentation != WorkspaceWindow::DragPresentation::Tab) {
+                if (insertion) windowOffset_ = moving->mapToGlobal(moving->dragLabelAnchor()) - moving->pos();
+                moving->move(global - windowOffset_);
+            }
+        }
+        if (presentation == WorkspaceWindow::DragPresentation::Tab) {
+            if (auto* targetWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window))) {
+                auto visual = moving->surface()->dragLabelVisual();
+                if (visual.paint) {
+                    targetWindow->surface()->setIncomingVisual(target_.group, std::move(visual), global);
+                    if (!self || !active_ || !moving) return;
+                    moving->setDragLabelHidden(true);
+                }
+            }
+        } else moving->setDragLabelHidden(false);
+        if (!self || !active_) return;
     }
     if (manager_->behavior().revealDuringDrag && target_.window != revealCandidate_) {
         revealTimer_.stop(); revealCandidate_ = target_.window;
@@ -634,8 +752,13 @@ void DragController::finish(QPoint global)
     const auto target = target_; const auto tab = tab_; const auto whole = wholeWindow_;
     const auto moving = movingWindow_; const auto source = sourceWindow_;
     const auto folder = folder_; const bool detachedFolder = !folder_.isNull() && detached_;
+    const QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(capture_.data());
+    const bool embeddedDrop = target.accepted && target.insertionIndex >= 0 && carrier
+        && carrier->dragPresentation() == WorkspaceWindow::DragPresentation::Tab;
+    if (embeddedDrop) setNativeDropCommit(carrier, true);
     finalizing_ = true;
-    stop();
+    // An embedded carrier must not flash its full chrome before it vanishes.
+    stop(!embeddedDrop);
     if (!self) return;
     bool success = !target.accepted;
     if (target.accepted && !folder.isNull() && !detachedFolder) {
@@ -673,10 +796,29 @@ void DragController::finish(QPoint global)
     } else if (detached_ && !tab.isNull() && manager_->behavior().dragOutsideKind == WindowKind::Workbench)
         success = manager_->promoteWindow(moving);
     if (!self) return;
+    if (embeddedDrop && carrier && manager_->model().window(moving)) {
+        // A rejected move leaves the real window intact. Restore both its
+        // shape and its ordinary animation policy, under the drop guard.
+        carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+        if (!self) return;
+        if (carrier) carrier->move(global - normalOffset_);
+        if (!self) return;
+        if (carrier) { carrier->setDragLabelHidden(false); setNativeDropCommit(carrier, false); }
+    }
     if (success && target.accepted) {
         manager_->showWindow(target.window);
         if (!self) return;
         if (!tab.isNull()) manager_->activateTab(tab);
+    }
+    if (!self) return;
+    if (embeddedDrop) for (const auto id : manager_->model().windowOrder()) {
+        // Keep the target's picture until the real page is mounted and
+        // activated; clearing it in stop() briefly exposes the old page.
+        if (auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(id))) {
+            window->surface()->setContentPreview({}, {});
+            window->surface()->setIncomingVisual({}, {});
+        }
+        if (!self) return;
     }
     folder_ = {};
     if (!self) return;
@@ -745,21 +887,30 @@ void DragController::releaseForMutation()
     originalSourceStrips_ = {};
     originalSourceInactiveStrips_ = {};
 }
-void DragController::stop()
+void DragController::stop(bool restorePresentation)
 {
     const QPointer<DragController> self(this);
+    // Invalidate a queued end from this gesture before a new one can start.
+    ++nativeMoveGeneration_;
+    active_ = false;
 #ifdef Q_OS_WIN
     // A drag ended from elsewhere (closing, a layout change) also ends the
     // system's move loop.
-    if (nativeMoving_) { nativeMoving_ = false; leavingNativeMove_ = true; ReleaseCapture(); }
+    if (nativeMoving_ || leavingNativeMove_) { nativeMoving_ = false; transferringCapture_ = true; ReleaseCapture(); }
 #endif
+    leavingNativeMove_ = false; transferringCapture_ = false;
+    nativeMoveStarted_ = false; nativeReleaseQueued_ = false;
+    if (nativeWatcher_) { qApp->removeNativeEventFilter(nativeWatcher_); delete nativeWatcher_; nativeWatcher_ = nullptr; }
     nativeInput_ = false;
     contentPicture_ = {}; previewGroup_ = {}; previewWindow_ = {};
     revealTimer_.stop(); active_ = false; qApp->removeEventFilter(this);
     ++hoverGeneration_; hoverUpdateQueued_ = false;
     if (!finalizing_) originalLayout_ = {};
-    if (auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data()))
+    if (restorePresentation) if (auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data())) {
         moving->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
+        if (!self) return;
+        if (capture_) static_cast<WorkspaceWindow*>(capture_.data())->setDragLabelHidden(false);
+    }
     if (!self) return;
     if (capture_ && QWidget::mouseGrabber() == capture_) capture_->releaseMouse();
     if (!self) return;
@@ -777,7 +928,10 @@ void DragController::stop()
         if (window) {
             window->surface()->captureStripScrollOffsets();
             window->surface()->clearLiftedTabs();
-            window->surface()->setContentPreview({}, {});
+            if (restorePresentation) {
+                window->surface()->setContentPreview({}, {});
+                window->surface()->setIncomingVisual({}, {});
+            }
             window->surface()->setDraggedTab({});
             window->surface()->setDraggedFolder({});
             window->surface()->clearInsertionPreviews();
@@ -822,7 +976,10 @@ bool DragController::eventFilter(QObject* watched, QEvent* event)
     // notifications, while keeping this drag's carrier movement out of the
     // invalidation path. A stationary pointer must not leave old guides alive.
     if (affectsDockGeometry(event->type()) && belongsToDropWindow(watched)) refreshHover();
-    if (event->type() == QEvent::MouseMove) { update(static_cast<QMouseEvent*>(event)->globalPosition().toPoint()); return true; }
+    if (event->type() == QEvent::MouseMove) {
+        const auto position = static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+        update(position); return true;
+    }
     if (event->type() == QEvent::Wheel) {
         const QPointer<DragController> self(this);
         const auto* wheel = static_cast<QWheelEvent*>(event);
@@ -832,7 +989,7 @@ bool DragController::eventFilter(QObject* watched, QEvent* event)
         // actual strip under the pointer without dispatching another event.
         const auto targetWindow = labelOnly_ ? sourceWindow_ : candidateAt(global);
         auto* window = static_cast<WorkspaceWindow*>(manager_->windowWidget(targetWindow));
-        if (window && window->surface()->scrollStripAt(global, delta)) {
+        if (window && window->surface()->scrollStripAt(global, delta, wheel->pixelDelta().isNull())) {
             event->accept(); if (self && active_) update(global); return true;
         }
         return false;

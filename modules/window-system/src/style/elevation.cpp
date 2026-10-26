@@ -223,7 +223,7 @@ ElevationProfile elevationProfile(ElevationLevel level)
     case ElevationLevel::BodyRest: return {{1, 3, 0.10}, {2, 8, 0.06}, 1};
     case ElevationLevel::BodyRaised: return {{2, 6, 0.14}, {4, 12, 0.08}, 1};
     case ElevationLevel::Lifted: return {{2, 4, 0.16}, {3, 6, 0.08}, 1};
-    case ElevationLevel::RowsOverlay: return {{2, 8, 0.30}, {}, 0};
+    case ElevationLevel::RowsOverlay: return {{0, 8, 50.0 / 255}, {}, 0};
     case ElevationLevel::ColumnOverlay: return {{0, 2, 0.14}, {}, 0};
     }
     return {};
@@ -429,7 +429,7 @@ void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAn
         paintAnchor(painter, anchors.front().geometry, bodyElevation, anchors.front().elevation, style);
         return;
     }
-    // A selection transition can leave two nearby anchors casting shadows.
+    // Several simultaneously elevated anchors may cast nearby shadows.
     // Their local patches both contain the same body shadow: source-over
     // would darken it twice. Merge only their disjoint local regions by max.
     QRegion regions;
@@ -465,6 +465,18 @@ void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAn
         painter.save(); painter.setClipRect(band, Qt::IntersectClip);
         painter.drawImage(band.topLeft(), merged); painter.restore();
     }
+}
+
+void ElevationRenderer::paintOverlayBand(QPainter& painter, const QRect& band, bool above,
+                                          const ElevationStyle& style, qreal progress)
+{
+    if (band.isEmpty() || progress <= 0 || style.highContrast) return;
+    QLinearGradient shade(above ? band.bottomLeft() : band.topLeft(), above ? band.topLeft() : band.bottomLeft());
+    auto edge = style.shadow;
+    edge.setAlphaF(edge.alphaF() * elevationProfile(ElevationLevel::RowsOverlay).key.opacity * std::clamp(progress, qreal(0), qreal(1)));
+    auto clear = edge; clear.setAlpha(0);
+    shade.setColorAt(0, edge); shade.setColorAt(1, clear);
+    painter.fillRect(band, shade);
 }
 
 void ElevationRenderer::paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,

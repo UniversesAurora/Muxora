@@ -103,7 +103,7 @@ QSet<QString> allSettingKeys()
     return {"window.inputMethodScope", "window.newTabPosition", "window.dragOutsideKind", "window.closeEmptyWorkbench", "window.revealDuringDrag", "window.revealDelayMs",
             "window.zenFullscreenMode", "window.hideToolbarOptionsWhenLocked", "window.captionButtonOrder", "window.visibility.toolbars", "window.visibility.statusBar",
             "window.visibility.tabBars", "window.visibility.sideBars", "window.hideSingleTabWorkbench", "window.hideSingleTabFloating",
-            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.collapseRows", "tabs.wheelExpandRows", "tabs.verticalTabWidth", "tabs.showGroupNames", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
+            "tabs.centralPlacement", "tabs.pinnedPlacement", "tabs.multiline", "tabs.showAllRows", "tabs.stickyMultiline", "tabs.stickyShowAllRows", "tabs.rowExpansion", "tabs.wheelExpandRows", "tabs.verticalTabWidth", "tabs.showGroupNames", "tabs.showIcons", "tabs.showNewTabButton", "tabs.showNumbers", "tabs.showSidebarIcons", "tabs.showSidebarNumbers", "tabs.clipTitles", "tabs.maximumTitleWidth", "tabs.clipSidebarTitles", "tabs.maximumSidebarTitleWidth", "tabs.colors", "tabs.stickySizing", "tabs.shrinkStickyTitleWidth", "tabs.stickyTabsOnSeparateRow", "tabs.preventStickyClose"};
 }
 
 QRect physicalRect(const QRect& logical, qreal ratio)
@@ -1106,7 +1106,7 @@ void PaneSettingsTest::settingNotificationsAllowSynchronousHostDestruction()
     QPointer<QWidget> page = pageFor(*manager, QStringLiteral("window_system.settings")); QVERIFY(page);
     const auto tab = tabFor(*manager, page); const auto pane = manager->model().tab(tab)->activePane;
     if (control == "WheelExpandTabRows") {
-        auto appearance = manager->tabAppearance(); appearance.multiline = true;
+        auto appearance = manager->tabAppearance(); appearance.multiline = true; appearance.stickyMultiline = true;
         QVERIFY(manager->setTabAppearance(appearance));
     }
     auto* target = page->findChild<QWidget*>(control); QVERIFY(target);

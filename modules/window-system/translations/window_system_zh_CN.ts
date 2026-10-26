@@ -1118,8 +1118,20 @@
         <translation>显示侧边栏标签编号</translation>
     </message>
     <message>
-        <source>Show tabs in multiple rows</source>
-        <translation>多行显示标签</translation>
+        <source>Show regular tabs in multiple rows</source>
+        <translation>普通标签使用多行排列</translation>
+    </message>
+    <message>
+        <source>Always show all regular tab rows</source>
+        <translation>始终显示所有普通标签行</translation>
+    </message>
+    <message>
+        <source>Show sticky tabs in multiple rows</source>
+        <translation>置顶标签使用多行排列</translation>
+    </message>
+    <message>
+        <source>Always show all sticky tab rows</source>
+        <translation>始终显示所有置顶标签行</translation>
     </message>
     <message>
         <source>Expand tab rows with mouse wheel</source>
@@ -1134,20 +1146,16 @@
         <translation>普通标签栏位置</translation>
     </message>
     <message>
-        <source>Collapse tab rows</source>
-        <translation>收起标签行</translation>
+        <source>Expanded tab rows</source>
+        <translation>标签行展开方式</translation>
     </message>
     <message>
-        <source>Show all rows</source>
-        <translation>显示所有行</translation>
+        <source>Push the content</source>
+        <translation>推开内容</translation>
     </message>
     <message>
-        <source>Collapse; expanded rows push the content down</source>
-        <translation>收起；展开时把内容往下推</translation>
-    </message>
-    <message>
-        <source>Collapse; expanded rows overlay the content</source>
-        <translation>收起；展开时盖在内容上</translation>
+        <source>Overlay the content</source>
+        <translation>覆盖内容</translation>
     </message>
     <message>
         <source>Tab bar position</source>
@@ -1423,12 +1431,12 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>标签栏只能放在上、下、左或右</translation>
     </message>
     <message>
-        <source>Collapsing tab rows must be off, push or overlay</source>
-        <translation>收起标签行只能是 off、push 或 overlay</translation>
+        <source>Expanded tab rows must push or overlay the content</source>
+        <translation>标签行展开方式必须是推开内容或覆盖内容</translation>
     </message>
     <message>
-        <source>The vertical tab bar width must be an integer from 140 to 480 logical pixels</source>
-        <translation>竖向标签栏宽度必须是 140 到 480 之间的整数逻辑像素</translation>
+        <source>The vertical tab bar width must be an integer from 67 to 480 logical pixels</source>
+        <translation>竖向标签栏宽度必须是 67 到 480 之间的整数逻辑像素</translation>
     </message>
     <message>
         <source>Invalid tab visibility setting type</source>
@@ -1781,12 +1789,24 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>中央标签栏放在内容上方、下方或旁边。放在左右时，标签竖着排成列表。</translation>
     </message>
     <message>
-        <source>With multiple rows, show only the active tab&apos;s row. A count after it shows how many tabs are hidden; click it to expand.</source>
-        <translation>多行时只显示活动标签所在的行，行末的数字表示隐藏了几个标签，点击可展开。</translation>
+        <source>When off, show the active row until the shared tab panel is expanded.</source>
+        <translation>关闭后只显示当前标签所在行，展开后显示其余行。</translation>
     </message>
     <message>
-        <source>With collapsed rows, scroll down to expand them and up to collapse them again.</source>
-        <translation>标签行收起时，向下滚动滚轮展开，向上滚动收起。</translation>
+        <source>Use a separate row layout for sticky tabs when they have their own section.</source>
+        <translation>置顶标签独占一段时，单独设置多行排列。</translation>
+    </message>
+    <message>
+        <source>When off, sticky rows expand and collapse together with regular rows.</source>
+        <translation>关闭后，置顶标签行与普通标签行一起展开、收起。</translation>
+    </message>
+    <message>
+        <source>Sticky and regular tabs share one expanded panel and the same expansion behavior.</source>
+        <translation>置顶标签和普通标签共用一个展开区域，展开方式相同。</translation>
+    </message>
+    <message>
+        <source>Expand toward the content and collapse away from it. Horizontal tab scrolling takes priority.</source>
+        <translation>向内容方向滚动展开，反方向收起。鼠标所在段的横向滚动优先。</translation>
     </message>
     <message>
         <source>Vertical tab bar width</source>
@@ -2341,8 +2361,8 @@ Ctrl+Shift+P 打开命令面板</translation>
         <translation>侧边分区尺寸必须是有效范围内的整数。</translation>
     </message>
     <message>
-        <source>A vertical tab bar width must be 0 or an integer from 140 to 480.</source>
-        <translation>竖向标签栏宽度必须是 0 或 140 到 480 之间的整数。</translation>
+        <source>A vertical tab bar width must be 0 or an integer from 67 to 480.</source>
+        <translation>竖向标签栏宽度必须是 0 或 67 到 480 之间的整数。</translation>
     </message>
     <message>
         <source>A tab group name must be text of at most 256 characters.</source>

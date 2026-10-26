@@ -13,6 +13,10 @@ namespace window_system {
 // calls are idempotent and do not start an animation. Qt continues to own window
 // visibility and state. Other platforms keep their ordinary Qt behavior.
 void applyNativeFrame(QWidget* window);
+// A compact carrier disappears into a tab group, rather than closing as a
+// separate window. Limit transition suppression to this commit; restore it
+// if the drop fails and the carrier survives.
+void setNativeDropCommit(QWidget* window, bool committing);
 bool handleNativeFrame(QWidget* window, void* message, qintptr* result);
 // Native state can change before Qt delivers its queued state/geometry events.
 [[nodiscard]] bool hasNormalNativePlacement(const QWidget* window);
