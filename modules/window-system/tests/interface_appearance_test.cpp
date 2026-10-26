@@ -29,6 +29,11 @@ void InterfaceAppearanceTest::familyListsAndValidation()
         QStringList({"First Family", "Second, Family", "sans-serif"}));
     InterfaceAppearanceController controller;
     const auto original = controller.appearance();
+#ifdef Q_OS_WIN
+    QCOMPARE(controller.font().hintingPreference(), QFont::PreferNoHinting);
+    QCOMPARE(qApp->font().hintingPreference(), QFont::PreferNoHinting);
+    QVERIFY(!(controller.font().styleStrategy() & (QFont::NoAntialias | QFont::NoSubpixelAntialias)));
+#endif
     for (auto bad : {InterfaceAppearance{"'unclosed", 13, 0}, InterfaceAppearance{{}, 0, 0},
          InterfaceAppearance{{}, 97, 0}, InterfaceAppearance{{}, 13, 9},
          InterfaceAppearance{{}, 13, std::numeric_limits<double>::quiet_NaN()}}) {

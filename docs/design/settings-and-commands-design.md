@@ -194,6 +194,8 @@ JSONC 支持 `//`、`/* ... */` 和尾逗号，不扩大为任意 JSON5 或可�
 
 Windows 的默认字体链为 `Segoe UI, Microsoft YaHei, sans-serif`，参照 [VS Code 的 Windows 简中界面字体](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/media/style.css)。其他平台从 Qt 系统界面字体开始回退。Qt 的字体匹配与整形处理缺字，不按字符手工选择字体，也不把系统没有安装的字体打包进应用。[QFont::setFamilies](https://doc.qt.io/qt-6/qfont.html#setFamilies)
 
+名称使用系统登记的完整字族名；字体文件名或不对应实际字族的系列总称不会自动匹配某个变体，找不到的项继续按列表回退。不添加针对某台机器字体的别名。
+
 三项均立即作用于本进程全部完整窗口和浮窗，包括之后新建的窗口。字体、字号与缩放分别保存，不把放大后的字号写回基础值。终端和编辑器的字体设置独立；界面缩放仍影响它们的呈现尺寸。屏幕 DPI 由 Qt 继续处理，实际绘制按目标屏幕重新生成文字与矢量图标；实现选择见 [ADR 0012](../adr/0012-live-interface-scaling.md)。
 
 标题长度、竖栏宽度以及工具条 API 和布局中的保存宽度使用缩放前的逻辑长度；绘制与鼠标命中使用当前 Qt 坐标。恢复时按当前倍率求值，不能拿放大后的最小宽度拒绝未缩放的布局数据。

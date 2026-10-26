@@ -81,6 +81,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 设置页“界面”和“视图 → 界面”可分别调整字体、字号及全界面缩放，立即作用于已有与新建窗口；字体可填写有顺序的回退列表，行为见 [设置设计](../design/settings-and-commands-design.md#33-界面字体与缩放)。
 
+Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持不变；具体策略见 [字体规范](../design/ui-design-system.md#24-字体)，清晰度仍待试用确认。
+
 浮窗拖入紧凑置顶区时沿用栏内提起样式，避免重复的静置描边；真实观感仍由用户试用。
 
 紧凑置顶区的单行增删使用平面伸缩，拖动仍保留卡片动效，见 [本轮记录](verification-log/2026-10.md#紧凑置顶标签的平面增删2026-10-26)。
@@ -173,6 +175,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+字体的实际字形来源、Qt 栅格化分支及浏览器同字体对照已排查，调整后相关隐藏控件检查通过，Release 已覆盖固定目录并启动试用。诊断不能代替清晰度验收，见 [记录](verification-log/2026-10.md#字体栅格化模式的对照2026-10-27)；没有运行桌面、外观基线或全量检查，也没有制作 7z。
 
 右侧提起标签的布局已统一，Release 构建与现有隐藏控件相关检查通过；实际拖动待试用，见 [记录](verification-log/2026-10.md#右侧竖向标签的提起布局2026-10-27)。没有新增外观基线，也没有运行桌面或全量检查。
 

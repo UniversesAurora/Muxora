@@ -96,6 +96,13 @@ QFont InterfaceAppearanceController::font() const
     auto font = d->originalFont;
     font.setFamilies(d->value.fontFamily.trimmed().isEmpty() ? defaults() : interfaceFontFamilies(d->value.fontFamily));
     font.setStyleHint(QFont::SansSerif);
+#ifdef Q_OS_WIN
+    // Qt's default hinting uses asymmetric DirectWrite rendering at small
+    // logical sizes, even on high-DPI displays. Natural symmetric coverage
+    // preserves fine strokes without snapping their vertical shape to rows.
+    // This keeps system ClearType/grayscale policy and native DPR rendering.
+    font.setHintingPreference(QFont::PreferNoHinting);
+#endif
     font.setPointSizeF(d->value.fontSize * interfaceScale() * 72.0 / 96.0);
     return font;
 }

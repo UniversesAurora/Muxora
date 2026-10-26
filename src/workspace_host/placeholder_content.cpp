@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QApplication>
 #include "placeholder_content.hpp"
 #include <QHeaderView>
 #include <QLabel>
@@ -25,7 +26,7 @@ QWidget* createPlaceholder(const TabOptions& options, WindowManager* windows)
         auto* editor = new QPlainTextEdit;
         editor->setObjectName("WorkspaceNotes");
         const auto resizeFont = [editor] {
-            QFont font; font.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Microsoft YaHei"), QStringLiteral("monospace")});
+            auto font = QApplication::font(); font.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Microsoft YaHei"), QStringLiteral("monospace")});
             font.setStyleHint(QFont::Monospace); font.setPointSizeF(11 * interfaceScale()); editor->setFont(font);
         };
         resizeFont();
