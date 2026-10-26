@@ -86,18 +86,38 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
                                          rightShoulder, clippedLeft, clippedRight);
     if (result.joined && anchor.bottom() > visible.bottom()
         && (start > visible.left() || end < visible.right())) {
-        // A vertical row can begin alongside the body's rounded corner.
-        // Keep the row itself intact, but extend only the portion facing
-        // the body's straight edge; the extension must not square that
-        // corner off. A clipped end drops straight down without a shoulder.
+        // Approach a body's straight edge smoothly when its rounded corner
+        // leaves no room for a shoulder. A rectangular extension crop would
+        // punch a step into the first/last anchor's outside contour.
         const QRectF bounds = outline.boundingRect();
+        const qreal leftTaper = !clippedLeft && start > visible.left() && leftShoulder <= 0
+            ? std::min(input.anchorRadius, start - visible.left()) * result.joinProgress : 0;
+        const qreal rightTaper = !clippedRight && end < visible.right() && rightShoulder <= 0
+            ? std::min(input.anchorRadius, visible.right() - end) * result.joinProgress : 0;
+        const qreal leftTop = visible.bottom() - leftTaper;
+        const qreal rightTop = visible.bottom() - rightTaper;
         QPainterPath allowed, extension;
         allowed.addRect(QRectF(bounds.left() - 1, bounds.top() - 1,
-                               bounds.width() + 2, visible.bottom() - bounds.top() + 1));
+                               bounds.width() + 2, std::min(leftTop, rightTop) - bounds.top() + 1));
         const qreal extensionStart = leftShoulder > 0 ? visible.left() - leftShoulder : start;
         const qreal extensionEnd = rightShoulder > 0 ? visible.right() + rightShoulder : end;
-        extension.addRect(QRectF(extensionStart, visible.bottom() - 0.01,
-                                 extensionEnd - extensionStart, anchor.bottom() - visible.bottom() + 0.02));
+        extension.moveTo(bounds.left(), leftTop - 0.01);
+        if (leftTaper > 0)
+            extension.quadTo(visible.left(), anchor.bottom(), extensionStart, anchor.bottom());
+        else {
+            extension.lineTo(extensionStart, leftTop - 0.01);
+            extension.lineTo(extensionStart, anchor.bottom());
+        }
+        extension.lineTo(extensionEnd, anchor.bottom());
+        if (rightTaper > 0)
+            extension.quadTo(visible.right(), anchor.bottom(), bounds.right(), rightTop - 0.01);
+        else {
+            extension.lineTo(extensionEnd, rightTop - 0.01);
+            extension.lineTo(bounds.right(), rightTop - 0.01);
+        }
+        extension.lineTo(bounds.right(), std::min(leftTop, rightTop) - 0.01);
+        extension.lineTo(bounds.left(), std::min(leftTop, rightTop) - 0.01);
+        extension.closeSubpath();
         outline = outline.intersected(allowed.united(extension));
     }
     result.anchorPath = inverse.map(outline);
