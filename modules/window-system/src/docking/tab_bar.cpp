@@ -2313,7 +2313,7 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
     }
     if (watched == liftedLayer_ && event->type() == QEvent::Paint) {
         QPainter painter(liftedLayer_);
-        painter.translate(mapTo(liftedLayer_, QPoint()));
+        painter.translate(mapTo(liftedLayer_->parentWidget(), QPoint()) - liftedLayer_->pos());
         paintLiftedTabs(painter);
         return true;
     }

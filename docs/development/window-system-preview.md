@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+拖动标签不可见的坐标转换已修正，见 [记录](verification-log/2026-10.md#拖动标签层坐标修正2026-10-26)。
+
 横向首标签齐边、横竖裁切端部与接缝渐隐已调整，见 [本轮记录](verification-log/2026-10.md#标签齐边与接缝渐隐2026-10-26)。
 
 四边侧边收纳条的空白背景现透出统一底板，阴影可延伸到收纳条区域，见 [本轮记录](verification-log/2026-10.md#底板阴影透过侧边收纳条2026-10-26)。
