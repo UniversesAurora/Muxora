@@ -134,8 +134,8 @@ qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     TS_FILES ${window_system_translation_sources}
     LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 if(WIN32)
-    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
-    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid)
+    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp src/platform/windows/font_families.cpp)
+    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
 foreach(target WindowSystemModel WindowSystemWidgets)
     if(MSVC)

@@ -41,6 +41,7 @@ public:
 signals:
     void appearanceChanged();
 private:
+    void applyAppearance();
     struct Private;
     std::unique_ptr<Private> d;
 };

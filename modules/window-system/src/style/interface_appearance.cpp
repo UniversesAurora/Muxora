@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/interface_appearance.hpp>
+#include "platform/font_families.hpp"
 
 #include <QApplication>
 #include <QFontDatabase>
@@ -72,6 +73,7 @@ struct InterfaceAppearanceController::Private {
     InterfaceAppearance value;
     QFont originalFont;
     QString originalStyle;
+    QStringList families;
 };
 
 InterfaceAppearanceController::InterfaceAppearanceController(QObject* parent)
@@ -79,12 +81,20 @@ InterfaceAppearanceController::InterfaceAppearanceController(QObject* parent)
 {
     Q_ASSERT(qApp && !instance);
     d->originalFont = qApp->font(); d->originalStyle = qApp->style()->objectName();
+    d->families = resolvePlatformFontFamilies(defaults());
     instance = this;
     qApp->setStyle(new ScaledStyle(QStyleFactory::create(d->originalStyle)));
     qApp->setFont(font());
+    connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
+        const auto names = resolvePlatformFontFamilies(d->value.fontFamily.trimmed().isEmpty()
+            ? defaults() : interfaceFontFamilies(d->value.fontFamily));
+        if (names == d->families) return;
+        d->families = names; applyAppearance();
+    });
 }
 InterfaceAppearanceController::~InterfaceAppearanceController()
 {
+    disconnect(qApp, nullptr, this, nullptr);
     instance.clear(); detail::interfaceScaleValue = 1;
     qApp->setFont(d->originalFont);
     if (auto* original = QStyleFactory::create(d->originalStyle)) qApp->setStyle(original);
@@ -94,7 +104,7 @@ InterfaceAppearance InterfaceAppearanceController::appearance() const { return d
 QFont InterfaceAppearanceController::font() const
 {
     auto font = d->originalFont;
-    font.setFamilies(d->value.fontFamily.trimmed().isEmpty() ? defaults() : interfaceFontFamilies(d->value.fontFamily));
+    font.setFamilies(d->families);
     font.setStyleHint(QFont::SansSerif);
 #ifdef Q_OS_WIN
     // Qt's default hinting uses asymmetric DirectWrite rendering at small
@@ -110,7 +120,14 @@ bool InterfaceAppearanceController::setAppearance(const InterfaceAppearance& val
 {
     if (!validInterfaceAppearance(value)) return false;
     if (value == d->value) return true;
+    if (value.fontFamily != d->value.fontFamily)
+        d->families = resolvePlatformFontFamilies(value.fontFamily.trimmed().isEmpty() ? defaults() : interfaceFontFamilies(value.fontFamily));
     d->value = value; detail::interfaceScaleValue = interfaceScaleForZoom(value.zoomLevel);
+    applyAppearance();
+    return true;
+}
+void InterfaceAppearanceController::applyAppearance()
+{
     qApp->setFont(font());
     emit appearanceChanged();
     // Propagate style metric changes without replacing the style object (or
@@ -121,6 +138,5 @@ bool InterfaceAppearanceController::setAppearance(const InterfaceAppearance& val
         QEvent changed(QEvent::StyleChange); QCoreApplication::sendEvent(widget, &changed);
         if (widget) { widget->updateGeometry(); widget->update(); }
     }
-    return true;
 }
 } // namespace window_system

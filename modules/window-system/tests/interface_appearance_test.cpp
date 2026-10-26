@@ -5,6 +5,7 @@
 #include <window_system/window_manager.hpp>
 #include "docking/tab_bar.hpp"
 #include "chrome/command_strip.hpp"
+#include "platform/font_families.hpp"
 #include <QApplication>
 #include <QPlainTextEdit>
 #include <QLabel>
@@ -18,6 +19,7 @@ class InterfaceAppearanceTest final : public QObject {
     Q_OBJECT
 private slots:
     void familyListsAndValidation();
+    void familyAliasesPreserveFallbacks();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent_data();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent();
     void settingsAndCommandsShareOneState();
@@ -116,6 +118,17 @@ void InterfaceAppearanceTest::savedToolbarWidthsRemainValidAtAnotherZoom()
     QVERIFY(restored.isLocked());
     QCOMPARE(restored.saveLayout().value("strips").toObject().value("tools").toObject().value("width"),
         saved.value("strips").toObject().value("tools").toObject().value("width"));
+}
+void InterfaceAppearanceTest::familyAliasesPreserveFallbacks()
+{
+    QStringList lookedUp;
+    const auto mapped = mapFontFamilyAliases({"Legacy Family", "Typographic Family", "Missing Family", "SECOND"},
+        {"Typographic Family", "Second"}, [&](const QString& name) {
+            lookedUp.append(name);
+            return name == "Legacy Family" ? QStringLiteral("Typographic Family") : QStringLiteral("Unavailable Target");
+        });
+    QCOMPARE(mapped, QStringList({"Typographic Family", "Typographic Family", "Missing Family", "SECOND"}));
+    QCOMPARE(lookedUp, QStringList({"Legacy Family", "Missing Family"}));
 }
 QTEST_MAIN(InterfaceAppearanceTest)
 #include "interface_appearance_test.moc"
