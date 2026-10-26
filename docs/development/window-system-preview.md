@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+单窗格全屏使用临时贴边布局，退出后恢复普通卡片，见 [记录](verification-log/2026-10.md#单窗格全屏贴边2026-10-26)。
+
 拖动标签不可见的坐标转换已修正，见 [记录](verification-log/2026-10.md#拖动标签层坐标修正2026-10-26)。
 
 横向首标签齐边、横竖裁切端部与接缝渐隐已调整，见 [本轮记录](verification-log/2026-10.md#标签齐边与接缝渐隐2026-10-26)。

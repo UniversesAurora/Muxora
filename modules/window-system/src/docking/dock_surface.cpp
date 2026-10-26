@@ -33,6 +33,8 @@
 
 namespace window_system {
 namespace {
+constexpr int surfaceOuterMargin = 4;
+
 // A group's tab folders as its strip shows them, in strip order.
 QVector<TabStripFolder> stripFolders(const LayoutModel& model, const GroupRecord& group)
 {
@@ -311,7 +313,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     vertical_ = vertical;
     configureGroupSplitter(vertical, manager_->theme());
     // With each group's own margin, cards stay 6 from the window's edges.
-    vertical->setContentsMargins(4, 4, 4, 4);
+    vertical->setContentsMargins(surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin);
     if (auto* top = buildPinned(Edge::Top, contents)) vertical->addWidget(top);
     auto* horizontal = new GroupSplitter(Qt::Horizontal, vertical);
     horizontal_ = horizontal;
@@ -1282,6 +1284,7 @@ void DockSurface::setDragPresentation(bool compact, bool edge)
                 || centralTabBarVisible(manager_->tabBarsVisible(window_))));
         }
     }
+    refreshContentEdgeToEdge();
 }
 QRect DockSurface::centralRectGlobal() const
 {
@@ -1409,6 +1412,9 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     }
     if (!currentRequest()) return;
     layout->activate();
+    if (!currentRequest()) return;
+    refreshContentEdgeToEdge();
+    if (!currentRequest()) return;
     if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 bool DockSurface::centralTabBarVisible(bool requested) const
@@ -1423,11 +1429,14 @@ bool DockSurface::centralTabBarVisible(bool requested) const
 }
 void DockSurface::setTabBarsVisible(bool visible)
 {
+    const QPointer<DockSurface> self(this);
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
         const auto* record = manager_->model().group(it.key());
         if (it.value() && record)
             it.value()->setTabBarVisible(!focusState_.zen && (record->location != GroupLocation::Central || centralTabBarVisible(visible)));
     }
+    refreshContentEdgeToEdge();
+    if (!self) return;
     if (root_) root_->layout()->activate();
     placePeek();
 }
@@ -1444,6 +1453,43 @@ void DockSurface::setSideBarsVisible(bool visible)
 bool DockSurface::hasContentFocusScope() const
 {
     return focusState_.mode == ViewMode::GroupFullscreen || focusState_.mode == ViewMode::PaneFullscreen;
+}
+void DockSurface::refreshContentEdgeToEdge()
+{
+    GroupId soleGroup;
+    if (manager_ && focusState_.mode != ViewMode::Normal && !compactPresentation_) {
+        const auto& model = manager_->model();
+        if (hasContentFocusScope()) {
+            const auto* group = model.group(focusState_.group);
+            const auto* tab = group ? model.tab(focusState_.mode == ViewMode::PaneFullscreen ? focusState_.tab : group->activeTab) : nullptr;
+            if (group && group->windowId == window_ && tab && tab->panes
+                && (focusState_.mode == ViewMode::PaneFullscreen || tab->panes->isLeaf()))
+                soleGroup = group->id;
+        } else if (!peek_) {
+            // Only active pages contribute visible panes. Stop at the second
+            // pane rather than walking inactive tabs or every pane leaf.
+            for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
+                const auto* group = model.group(it.key());
+                if (!it.value() || !group || group->windowId != window_ || group->location == GroupLocation::AutoHide) continue;
+                const auto* tab = model.tab(group->activeTab);
+                if (!tab || !tab->panes) continue;
+                if (!soleGroup.isNull() || !tab->panes->isLeaf()) { soleGroup = {}; break; }
+                soleGroup = group->id;
+            }
+        }
+    }
+    const QPointer<DockSurface> self(this);
+    const auto generation = rebuildGeneration_;
+    const auto groups = groups_;
+    for (auto it = groups.cbegin(); it != groups.cend(); ++it) if (it.value()) {
+        it.value()->setContentEdgeToEdge(it.key() == soleGroup);
+        if (!self || rebuildGeneration_ != generation) return;
+    }
+    if (vertical_) {
+        const QMargins margins = soleGroup.isNull()
+            ? QMargins(surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin, surfaceOuterMargin) : QMargins();
+        if (vertical_->contentsMargins() != margins) vertical_->setContentsMargins(margins);
+    }
 }
 bool DockSurface::ownsTab(TabId tab) const
 {
@@ -1478,10 +1524,11 @@ void DockSurface::restoreFocusScope()
 }
 void DockSurface::applyFocusScope()
 {
-    if (!hasContentFocusScope()) return;
+    if (!hasContentFocusScope()) { refreshContentEdgeToEdge(); return; }
     const auto* record = manager_->model().group(focusState_.group);
     if (!record || record->windowId != window_) {
         focusState_.mode = ViewMode::Normal;
+        refreshContentEdgeToEdge();
         return;
     }
     closePeek();
@@ -1507,6 +1554,9 @@ void DockSurface::applyFocusScope()
         && (record->location != GroupLocation::Central || focusState_.effective.tabBars));
     if (focusState_.mode == ViewMode::PaneFullscreen)
         if (auto content = contents_.value(focusState_.tab)) content->setFocusedPane(focusState_.pane);
+    const QPointer<DockSurface> self(this);
+    refreshContentEdgeToEdge();
+    if (!self) return;
     layout()->activate();
 }
 void DockSurface::setFocusScope(const WindowViewState& state)
@@ -1581,6 +1631,9 @@ void DockSurface::closePeek()
         }
     }
     delete closing.data();
+    if (!self) return;
+    refreshContentEdgeToEdge();
+    if (!self) return;
     if (manager_) manager_->scheduleContentVisibilityNotification();
 }
 void DockSurface::updatePeekSize(TabId tab) { if (tab == peekTab_) placePeek(); }

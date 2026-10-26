@@ -102,6 +102,7 @@ public:
     void setIncomingVisual(TabDragVisual visual, QPoint global = {});
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
     void setTabBarVisible(bool visible);
+    void setContentEdgeToEdge(bool enabled);
     // Repaints with a new theme without rebuilding the strip.
     void setTheme(const Theme& theme);
     void setAppearance(const TabAppearance& appearance, bool pinned = false);
@@ -181,6 +182,7 @@ private:
     TabAppearance appearance_;
     bool pinned_ = false;
     bool compactPresentation_ = false;
+    bool contentEdgeToEdge_ = false;
     struct DragStyle {
         TabAppearance appearance;
         TabBarPlacement placement;

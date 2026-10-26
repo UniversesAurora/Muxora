@@ -104,6 +104,23 @@ private slots:
         QVERIFY(!group.isVisible());
     }
 
+    void borderlessContentRestoresItsNormalLayout()
+    {
+        GroupTabs group(defaultTheme(), nullptr);
+        group.resize(640, 500);
+        group.addTab(new QWidget, {}, "Workspace", QUuid::createUuid());
+        group.setTabBarVisible(false);
+        const auto ordinary = group.contentRectGlobal();
+        QVERIFY(!group.surfaceBounds().isEmpty());
+        group.setContentEdgeToEdge(true);
+        QCOMPARE(group.contentRectGlobal(), QRect(group.mapToGlobal(QPoint()), group.size()));
+        QVERIFY(group.surfaceBounds().isEmpty());
+        group.setContentEdgeToEdge(false);
+        QCOMPARE(group.contentRectGlobal(), ordinary);
+        QVERIFY(!group.surfaceBounds().isEmpty());
+        QVERIFY(!group.isVisible());
+    }
+
     void horizontalOuterRowsAreCovered_data()
     {
         QTest::addColumn<bool>("bottom");

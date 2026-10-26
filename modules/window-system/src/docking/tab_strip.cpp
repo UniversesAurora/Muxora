@@ -418,7 +418,7 @@ void GroupTabs::updateCardJoin()
 }
 QRect GroupTabs::surfaceBounds() const
 {
-    if (compactPresentation_ || !stack_ || stack_->isHidden()) return {};
+    if (compactPresentation_ || contentEdgeToEdge_ || !stack_ || stack_->isHidden()) return {};
     const auto profile = elevationProfile(ElevationLevel::BodyRaised);
     const auto margins = elevationMargins(profile);
     QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
@@ -428,7 +428,7 @@ QRect GroupTabs::surfaceBounds() const
 }
 QRegion GroupTabs::surfacePaintRegion() const
 {
-    if (compactPresentation_ || !stack_ || stack_->isHidden()) return {};
+    if (compactPresentation_ || contentEdgeToEdge_ || !stack_ || stack_->isHidden()) return {};
     // Elevation changes affect the perimeter, never the hosted content.
     // Keep the corners and every anchor, including a lifted outer row.
     const int inset = qCeil(bar_->metrics().cardRadius) + 1;
@@ -495,7 +495,7 @@ int GroupTabs::columnWidth() const
 }
 int GroupTabs::maximumColumnWidth() const
 {
-    const int margin = bar_->metrics().cardMargin;
+    const int margin = contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
     const int content = std::max(0, stack_->minimumSizeHint().expandedTo(stack_->minimumSize()).width());
     // The strip borrows space only from its own content, never from the
     // enclosing splitter. Keep the content's declared minimum intact.
@@ -597,7 +597,7 @@ void GroupTabs::layoutChildren()
     placeControls();
     // The group keeps a margin around its card; a drag carrier shows only
     // its tabs and needs none.
-    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    const int margin = compactPresentation_ || contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
     const auto area = rect().adjusted(margin, margin, -margin, -margin);
     if (!card_) card_ = new CardOverlay(theme_, this);
     auto* card = static_cast<CardOverlay*>(card_);
@@ -606,7 +606,7 @@ void GroupTabs::layoutChildren()
         card->setGeometry(content.adjusted(-margin, -margin, margin, margin));
         card->setCard(QRect(QPoint(margin, margin), content.size()));
         updateCardJoin();
-        card->setVisible(!compactPresentation_);
+        card->setVisible(!compactPresentation_ && !contentEdgeToEdge_);
         card->raise();
     };
     if (!barVisible_) {
@@ -679,7 +679,7 @@ void GroupTabs::layoutChildren()
 QSize GroupTabs::sizeHint() const
 {
     // The card keeps a margin all round; a vertical column a gap beside it.
-    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    const int margin = compactPresentation_ || contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
     auto size = stack_->sizeHint() + QSize(2 * margin, 2 * margin);
     if (!barVisible_) return size;
     if (vertical()) size.rwidth() += columnWidth() + 2 * margin;
@@ -688,7 +688,7 @@ QSize GroupTabs::sizeHint() const
 }
 QSize GroupTabs::minimumSizeHint() const
 {
-    const int margin = compactPresentation_ ? 0 : bar_->metrics().cardMargin;
+    const int margin = compactPresentation_ || contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
     auto size = stack_->minimumSizeHint().expandedTo(stack_->minimumSize()) + QSize(2 * margin, 2 * margin);
     if (!barVisible_) return size;
     // A requested column width must not become a splitter minimum: resizing
@@ -698,6 +698,15 @@ QSize GroupTabs::minimumSizeHint() const
     else size.rheight() += bar_->reservedSize(QSize(std::max(width(), 1), height())).height();
     return size;
 }
+void GroupTabs::setContentEdgeToEdge(bool enabled)
+{
+    if (contentEdgeToEdge_ == enabled) return;
+    const QPointer<GroupTabs> self(this);
+    contentEdgeToEdge_ = enabled;
+    layoutChildren();
+    if (self) updateGeometry();
+}
+
 void GroupTabs::setTabBarVisible(bool visible)
 {
     if (barVisible_ == visible) return;

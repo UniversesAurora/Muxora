@@ -137,6 +137,7 @@ private:
     void restorePinnedExtents();
     void restoreFocusScope();
     void applyFocusScope();
+    void refreshContentEdgeToEdge();
     [[nodiscard]] bool hasContentFocusScope() const;
     [[nodiscard]] bool ownsTab(TabId tab) const;
     QPointer<WindowManager> manager_;
