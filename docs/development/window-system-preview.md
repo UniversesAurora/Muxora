@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+右侧竖向标签提起时保持静置标签的镜像顺序和图标轨道；具体规则见 [标签栏设计](../design/tab-strip-design.md#4-竖向标签栏)。
+
 设置页“界面”和“视图 → 界面”可分别调整字体、字号及全界面缩放，立即作用于已有与新建窗口；字体可填写有顺序的回退列表，行为见 [设置设计](../design/settings-and-commands-design.md#33-界面字体与缩放)。
 
 浮窗拖入紧凑置顶区时沿用栏内提起样式，避免重复的静置描边；真实观感仍由用户试用。
@@ -171,6 +173,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+右侧提起标签的布局已统一，Release 构建与现有隐藏控件相关检查通过；实际拖动待试用，见 [记录](verification-log/2026-10.md#右侧竖向标签的提起布局2026-10-27)。没有新增外观基线，也没有运行桌面或全量检查。
 
 界面字体与即时缩放已更新到固定 Release 预览；相关功能套件及修正后的翻译检查通过，未运行桌面、截图或全量检查，没有制作 7z。字体观感和完整缩放交互待试用，逐次失败与结果见 [记录](verification-log/2026-10.md#界面字体回退与即时缩放2026-10-26)。
 

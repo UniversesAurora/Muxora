@@ -1350,8 +1350,13 @@ TabParts TabBar::partsOf(int index, const QRect& rect) const
     const bool sticky = index < stickyCount_;
     const bool iconOnly = (vertical() && iconsOnly() && columnReveal_ <= 0) || (!vertical() && isCompactSticky(index));
     const bool action = hasLabelAction(index);
-    auto label = labelParts(index, sticky);
-    if (vertical() && shapeOf(index) == TabShape::Row) {
+    return labelGeometry(rect, shapeOf(index), labelParts(index, sticky), iconOnly, action, sticky);
+}
+
+TabParts TabBar::labelGeometry(const QRect& rect, TabShape shape, TabLabelParts label,
+                              bool iconOnly, bool action, bool sticky) const
+{
+    if (vertical() && shape == TabShape::Row) {
         // The icon follows an outer rail, not the width of the revealed
         // title. Mirror the rail for a right-hand column.
         TabParts parts; parts.tab = rect;
@@ -1381,7 +1386,7 @@ TabParts TabBar::partsOf(int index, const QRect& rect) const
         parts.title = QRect(begin, rect.top(), std::max(0, end - begin), rect.height());
         return parts;
     }
-    return painter_.parts(rect, shapeOf(index), label, iconOnly, action, sticky, layoutDirection());
+    return painter_.parts(rect, shape, label, iconOnly, action, sticky, layoutDirection());
 }
 
 QRect TabBar::titleRect(int index) const
@@ -2206,7 +2211,7 @@ void TabBar::paintLiftedTabs(QPainter& painter)
             tab.title = tabs_.at(index).title; tab.titleLayout = &tabs_[index].titleLayout;
             const auto geometry = anchorGeometry(rect, rect.intersected(this->rect()), false, true);
             tab.elevationManaged = true; tab.surface = tab.selected ? &geometry : nullptr;
-            painter_.paintTab(painter, painter_.parts(rect, tab.shape, labelParts(index, false), false, false, false, layoutDirection()), tab);
+            painter_.paintTab(painter, labelGeometry(rect, tab.shape, labelParts(index, false), false, false, false), tab);
             x = rect.right() + 1; y += pitch;
         }
         if (tabs && !vertical()) {
@@ -2238,8 +2243,7 @@ void TabBar::paintLiftedTabs(QPainter& painter)
         const auto geometry = anchorGeometry(movingLabel, movingLabel.intersected(rect()), state.shape == TabShape::Tile, true);
         state.surface = &geometry; state.elevationManaged = true; state.bodyElevation = &bodyProfile;
         const auto label = labelParts(dragged_, state.sticky);
-        painter_.paintTab(painter, painter_.parts(movingLabel, state.shape, label, state.iconOnly, state.actionShown, state.sticky,
-                                                  layoutDirection()), state);
+        painter_.paintTab(painter, labelGeometry(movingLabel, state.shape, label, state.iconOnly, state.actionShown, state.sticky), state);
     }
     for (auto it = settling_.cbegin(); it != settling_.cend(); ++it)
         if (it.value() >= 0 && it.value() < count() && tabData(it.value()).toUuid() == it.key())

@@ -338,6 +338,8 @@ private:
     [[nodiscard]] bool rowShape() const;
     [[nodiscard]] TabShape shapeOf(int index) const;
     [[nodiscard]] TabParts partsOf(int index, const QRect& rect) const;
+    [[nodiscard]] TabParts labelGeometry(const QRect& rect, TabShape shape, TabLabelParts label,
+                                         bool iconOnly, bool action, bool sticky) const;
     [[nodiscard]] QRect animatedRect(int index) const;
     void paintTabAt(QPainter& painter, int index, bool settling = false);
     [[nodiscard]] TabPaintState paintState(int index);
