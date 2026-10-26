@@ -64,3 +64,5 @@ Body: what changed for the user, why, and which checks actually ran.
 评审说明应包括解决的问题、用户行为变化、验证命令和结果，以及尚未验证的范围。不得将未运行检查写为通过，也不得削弱测试标准以掩盖实现缺陷，详见 [测试要求](docs/development/testing-design.md)。
 
 禁止使用 merge：整合分支和解决冲突只用 rebase 或快进（fast-forward），保持线性历史。贡献的自有代码和文档按仓库 MIT 许可证发布；引入第三方代码时保留来源与原许可，并核对依赖对分发的实际要求。
+
+远程只推送 `main`，不创建或推送其他远程分支。可以使用本地工作分支，完成后以快进或 rebase 整合到 `main` 再推送；不把本地工作分支直接发布到远程。
