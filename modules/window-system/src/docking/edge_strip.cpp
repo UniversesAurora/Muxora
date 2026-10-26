@@ -41,8 +41,6 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     track_->setObjectName("EdgeTabTrack");
-    auto trackPalette = track_->palette(); trackPalette.setColor(QPalette::Window, theme_.headerBackground);
-    track_->setPalette(trackPalette); track_->setAutoFillBackground(true);
     trackLayout_->setContentsMargins(0, 0, 0, 0); trackLayout_->setSpacing(spacing);
     trackLayout_->setSizeConstraint(QLayout::SetNoConstraint); trackLayout_->addStretch();
     gap_->setObjectName("EdgeInsertionPreview");
@@ -51,6 +49,12 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     gap_->setStyleSheet(QStringLiteral("QWidget#EdgeInsertionPreview { background: transparent; border: none; }"));
     gap_->hide();
     scroll_->setWidget(track_); column->addWidget(scroll_, 1);
+    // QScrollArea::setWidget enables background filling on its content.
+    // Keep every intermediate layer transparent to the shared backplate,
+    // including the card shadows which extend into an empty sidebar.
+    track_->setAutoFillBackground(false);
+    scroll_->setAutoFillBackground(false);
+    scroll_->viewport()->setAutoFillBackground(false);
 
     scrollbar_->setObjectName("EdgeScrollBar"); scrollbar_->setSingleStep(28);
     // The overlay is not managed by QScrollArea. A new QScrollBar otherwise
