@@ -118,6 +118,9 @@
 pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1 -ReleaseOnly
 ```
 
+
+便携包的默认 `Full` 验证经上述桌面隔离入口运行。只交付外观试用包时可用 `-Validation Archive`，只检查压缩与解压文件，不执行应用测试；报告必须保留 `applicationChecksExecuted = false`，不能写成完整验证通过。入口与参数见 [预览说明](window-system-preview.md#开发环境)。
+
 ### 翻译覆盖
 
 ```powershell

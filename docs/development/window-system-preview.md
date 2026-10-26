@@ -50,10 +50,12 @@ pwsh ./tools/build.ps1 -Configuration Release -Package
 交付到另一台 Windows x64 电脑试用时，使用 7-Zip 便携包：
 
 ```powershell
-pwsh ./tools/package-portable.ps1
+pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/package-portable.ps1
 ```
 
 按交付需要生成便携包时，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
+
+日常外观试用只需更新便携包时，可运行 `pwsh ./tools/package-portable.ps1 -Validation Archive`。它仍构建 Release、刷新固定部署、检查压缩包并解压核对运行文件，但不执行全量、启动或恢复测试，也不生成这些检查的通过记录。默认 `Full` 保留全量及启动恢复验证，按桌面测试规则经隔离入口运行。
 
 压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，再次生成时覆盖旧包。默认不计算或复核文件校验值，也不生成 `.sha256`；该固定路径上遗留的旧校验文件会删除。确需校验值时使用 `pwsh ./tools/package-portable.ps1 -IncludeHashes`：开关同时传给构建脚本，记录程序校验值、核验解压后的程序，并生成同名 `.7z.sha256` 文件。未启用时，`build-info.json` 和便携检查记录省略校验值字段。
 

@@ -2,6 +2,7 @@
 param(
     [string]$QtRoot,
     [string]$SevenZip,
+    [ValidateSet('Full', 'Archive')][string]$Validation = 'Full',
     [switch]$IncludeHashes
 )
 $ErrorActionPreference = 'Stop'
@@ -22,7 +23,7 @@ $taskSourcePackage = [IO.Path]::GetFullPath((Join-Path $taskRepository 'out/pack
 $taskCheckRoot = Join-Path $taskRepository 'out/portable-checks/current'
 $taskStageOwned = $false
 $taskCheckOwned = $false
-$taskBuildArguments = @{ Configuration = 'Release'; Test = $true; Package = $true }
+$taskBuildArguments = @{ Configuration = 'Release'; Test = ($Validation -eq 'Full'); Package = $true }
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
 if ($IncludeHashes) { $taskBuildArguments.IncludeHashes = $true }
 & (Join-Path $PSScriptRoot 'build.ps1') @taskBuildArguments
@@ -164,6 +165,10 @@ function Invoke-PortableSmoke([bool]$Fresh) {
         if ($taskProcess.ExitCode -ne 0) { throw "Portable startup failed ($($taskProcess.ExitCode)): $taskDiagnostics" }
     } finally { $taskProcess.Dispose() }
 }
+$taskPackageResult = @{ checkedAtUtc = [DateTime]::UtcNow.ToString('o'); archive = "$taskArchiveName.7z";
+   validation = $Validation; archiveIntegrity = $true; nonAsciiPathWithSpaces = $true;
+   applicationChecksExecuted = ($Validation -eq 'Full') }
+if ($Validation -eq 'Full') {
 Invoke-PortableSmoke $true
 $taskLayoutFile = Join-Path $taskExtracted 'data/window-layout.json'
 if (-not (Test-Path -LiteralPath $taskLayoutFile)) { throw 'Portable application did not save its layout under data/.' }
@@ -175,10 +180,22 @@ if (($taskInitial.model | ConvertTo-Json -Depth 100 -Compress) -ne
     ($taskRestored.model | ConvertTo-Json -Depth 100 -Compress)) {
     throw 'Portable restart did not preserve the saved layout model.'
 }
-$taskPackageResult = @{ checkedAtUtc = [DateTime]::UtcNow.ToString('o'); archive = "$taskArchiveName.7z";
-   archiveIntegrity = $true; extractedStartupExitCode = 0; restoredStartupExitCode = 0;
-   sdkRemovedFromPath = $true; localStateSaved = $true; layoutRestored = $true;
-   nonAsciiPathWithSpaces = $true }
+$taskPackageResult.extractedStartupExitCode = 0
+$taskPackageResult.restoredStartupExitCode = 0
+$taskPackageResult.sdkRemovedFromPath = $true
+$taskPackageResult.localStateSaved = $true
+$taskPackageResult.layoutRestored = $true
+} else {
+    if (-not (Test-Path -LiteralPath $taskExecutable -PathType Leaf)) { throw 'Extracted portable executable is missing.' }
+    foreach ($taskRelative in $taskInventory.files) {
+        $taskExtractedFile = Assert-OutputPath ([IO.Path]::GetFullPath($taskRelative, $taskExtracted)) $taskOutputRoot
+        if (-not $taskExtractedFile.StartsWith($taskExtracted + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $taskExtractedFile -PathType Leaf)) {
+            throw 'Extracted archive is missing a deployment inventory file.'
+        }
+    }
+    Write-Host 'Archive checked. Application tests and startup checks were not executed.'
+}
 if ($IncludeHashes) {
     $taskHash = (Get-FileHash -LiteralPath $taskArchive -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($taskHashFile, "$taskHash  $taskArchiveName.7z`n", [Text.UTF8Encoding]::new($false))
