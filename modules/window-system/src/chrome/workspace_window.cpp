@@ -710,9 +710,15 @@ void WorkspaceWindow::restorePlacement(const QRect& geometry, bool maximized)
     initialPlacementChecked_ = true;
     restoringPlacement_ = true;
     placementTimer_->stop();
-    if (isMaximized() || isMinimized() || isFullScreen()) showNormal();
-    setGeometry(geometry);
-    normalPlacement_ = this->geometry();
+    // Qt saved the native normal rectangle when fullscreen began. Return
+    // directly to maximized instead of first exposing a normal-size window.
+    // A caller requesting a different normal rectangle still needs placement.
+    const bool directMaximizedRestore = maximized && isFullScreen() && geometry == normalPlacement_;
+    if (!directMaximizedRestore) {
+        if (isMaximized() || isMinimized() || isFullScreen()) showNormal();
+        setGeometry(geometry);
+        normalPlacement_ = this->geometry();
+    }
     maximizedPlacement_ = maximized;
     maximized ? showMaximized() : showNormal();
     notifiedPlacement_ = normalPlacementGeometry();

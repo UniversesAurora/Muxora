@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+从最大化退出全屏的恢复路径已调整，见 [记录](verification-log/2026-10.md#全屏直接恢复最大化2026-10-26)。
+
 栏末控件按内容边缘对齐，最近一批修改的交付范围见 [记录](verification-log/2026-10.md#栏末控件对齐与本批交付2026-10-26)。
 
 标签临近内容圆角时使用连续桥接曲线，外观仍在试用；旧圆角断言的待处理范围见 [记录](verification-log/2026-10.md#临近圆角的连接过渡2026-10-26)。
