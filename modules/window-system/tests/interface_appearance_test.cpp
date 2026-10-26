@@ -9,16 +9,52 @@
 #include <QApplication>
 #include <QPlainTextEdit>
 #include <QLabel>
+#include <QMenuBar>
+#include <QPaintEngine>
+#include <QPainter>
+#include <QStyleOptionMenuItem>
 #include <QSpinBox>
 #include <QTest>
 #include <QToolButton>
 #include <limits>
 
 using namespace window_system;
+namespace {
+class FontRecordingDevice final : public QPaintDevice {
+    class Engine final : public QPaintEngine {
+    public:
+        Engine() : QPaintEngine(AllFeatures) {}
+        QList<QFont> fonts;
+        bool begin(QPaintDevice*) override { return true; }
+        bool end() override { return true; }
+        Type type() const override { return User; }
+        void updateState(const QPaintEngineState&) override {}
+        void drawPixmap(const QRectF&, const QPixmap&, const QRectF&) override {}
+        void drawPath(const QPainterPath&) override {}
+        void drawTextItem(const QPointF&, const QTextItem& item) override { fonts.append(item.font()); }
+    };
+    mutable Engine engine_;
+public:
+    QPaintEngine* paintEngine() const override { return &engine_; }
+    const QList<QFont>& fonts() const { return engine_.fonts; }
+protected:
+    int metric(PaintDeviceMetric metric) const override {
+        switch (metric) {
+        case PdmWidth: return 400; case PdmHeight: return 80; case PdmDepth: return 32;
+        case PdmDpiX: case PdmDpiY: case PdmPhysicalDpiX: case PdmPhysicalDpiY: return 96;
+        case PdmDevicePixelRatio: return 1;
+        case PdmDevicePixelRatioScaled: return int(devicePixelRatioFScale());
+        default: return 0;
+        }
+    }
+};
+}
 class InterfaceAppearanceTest final : public QObject {
     Q_OBJECT
 private slots:
     void familyListsAndValidation();
+    void menusFollowFontChanges();
+    void menusFollowFontChanges_data();
     void familyAliasesPreserveFallbacks();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent_data();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent();
@@ -129,6 +165,47 @@ void InterfaceAppearanceTest::familyAliasesPreserveFallbacks()
         });
     QCOMPARE(mapped, QStringList({"Typographic Family", "Typographic Family", "Missing Family", "SECOND"}));
     QCOMPARE(lookedUp, QStringList({"Legacy Family", "Missing Family"}));
+}
+void InterfaceAppearanceTest::menusFollowFontChanges_data()
+{
+    QTest::addColumn<bool>("startup");
+    QTest::newRow("startup") << true;
+    QTest::newRow("live") << false;
+}
+void InterfaceAppearanceTest::menusFollowFontChanges()
+{
+    QFETCH(bool, startup);
+    InterfaceAppearanceController controller;
+    auto value = controller.appearance(); value.fontFamily = "serif"; value.fontSize = 26;
+    if (startup) QVERIFY(controller.setAppearance(value));
+    WindowManager manager;
+    const auto window = manager.createWindow();
+    manager.addTab(window, new QLabel("Content"), {"Tab", "test", {}});
+    auto* root = manager.windowWidget(window);
+    auto* menu = root->findChild<QMenuBar*>("MenuStrip"); QVERIFY(menu);
+    if (!startup) QVERIFY(controller.setAppearance(value));
+    QCoreApplication::processEvents();
+    QCOMPARE(menu->font().families(), controller.font().families());
+    QCOMPARE(menu->font().pointSizeF(), controller.font().pointSizeF());
+    QCOMPARE(menu->font().hintingPreference(), controller.font().hintingPreference());
+    for (auto* popup : root->findChildren<QMenu*>()) {
+        QCOMPARE(popup->font().families(), controller.font().families());
+        QCOMPARE(popup->font().pointSizeF(), controller.font().pointSizeF());
+        QCOMPARE(popup->font().hintingPreference(), controller.font().hintingPreference());
+    }
+    // Record the font actually passed to Qt's text drawing, not a screenshot
+    // or just the QWidget property. Match QMenuBar::initStyleOption's inputs.
+    FontRecordingDevice recorded;
+    QPainter painter(&recorded); painter.setFont(menu->font());
+    QStyleOptionMenuItemV2 item;
+    item.palette = menu->palette(); item.state = QStyle::State_Enabled; item.fontMetrics = menu->fontMetrics();
+    item.rect = QRect(0, 0, 400, 80); item.text = "File(&F)";
+    menu->style()->drawControl(QStyle::CE_MenuBarItem, &item, &painter, menu);
+    painter.end();
+    QVERIFY(!recorded.fonts().isEmpty());
+    QCOMPARE(recorded.fonts().last().families(), controller.font().families());
+    QCOMPARE(recorded.fonts().last().pointSizeF(), controller.font().pointSizeF());
+    QCOMPARE(recorded.fonts().last().hintingPreference(), controller.font().hintingPreference());
 }
 QTEST_MAIN(InterfaceAppearanceTest)
 #include "interface_appearance_test.moc"

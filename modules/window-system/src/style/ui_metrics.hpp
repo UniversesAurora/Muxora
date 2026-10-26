@@ -18,6 +18,15 @@ inline void bindUiMetrics(QObject* owner, std::function<void()> apply)
         QObject::connect(controller, &InterfaceAppearanceController::appearanceChanged, owner, std::move(apply));
 }
 inline QSize uiSize(QSize size) { return {uiPixels(size.width()), uiPixels(size.height())}; }
+inline void uiInterfaceFont(QWidget* widget)
+{
+    // Some native widget classes choose a platform font when first created,
+    // after the application font was already installed at startup.
+    bindUiMetrics(widget, [widget] {
+        if (auto* controller = InterfaceAppearanceController::applicationInstance())
+            widget->setFont(controller->font());
+    });
+}
 template<class T> inline void uiMargins(T* layout, int left, int top, int right, int bottom)
 {
     bindUiMetrics(layout, [=] { layout->setContentsMargins(uiPixels(left), uiPixels(top), uiPixels(right), uiPixels(bottom)); });

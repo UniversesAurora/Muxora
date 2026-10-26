@@ -453,6 +453,7 @@ void WorkspaceWindow::createChrome()
     });
     strips_->setContextMenuCustomizer([this](QMenu* menu) { addWindowMenuActions(menu); });
     auto* menu = new QMenuBar(strips_); menu->setObjectName("MenuStrip"); menu->setNativeMenuBar(false);
+    uiInterfaceFont(menu);
     menu->installEventFilter(this);
     const bool floating = kind_ == WindowKind::Floating;
     menus_ = new ApplicationCommandMenus(menu, manager_, id_, floating

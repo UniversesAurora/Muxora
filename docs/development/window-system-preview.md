@@ -83,6 +83,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 Windows 的传统字族名称可由系统解析后交给 Qt，设置中可继续填写 `New York`；原始字体列表不会被解析结果覆盖。
 
+菜单栏和弹出菜单在启动恢复、后续创建与运行中修改设置时，都跟随界面字体。
+
 Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持不变；具体策略见 [字体规范](../design/ui-design-system.md#24-字体)，清晰度仍待试用确认。
 
 浮窗拖入紧凑置顶区时沿用栏内提起样式，避免重复的静置描边；真实观感仍由用户试用。
@@ -177,6 +179,8 @@ Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持�
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+菜单启动字体的回归已复现并修正，实际绘字字体的程序检查通过；本批相关套件结果见 [记录](verification-log/2026-10.md#菜单的启动字体绑定2026-10-27)。用户试用继续确认实际观感，不将隐藏控件检查当成清晰度验收。
 
 Windows 字族名称的两种集合查询与映射已核对，回退顺序用例通过，见 [记录](verification-log/2026-10.md#windows-字体名称映射2026-10-27)。菜单与侧栏的后续检查分别记录，不把名称映射当成整批外观验收。
 

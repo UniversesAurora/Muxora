@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "popup_menu.hpp"
+#include "style/ui_metrics.hpp"
 
 #include <QApplication>
 #include <QMenuBar>
@@ -45,6 +46,7 @@ void setPopupAnchor(QMenu* menu, const QRect& anchor)
 
 DismissOnlyMenu::DismissOnlyMenu(QWidget* parent) : QMenu(parent)
 {
+    uiInterfaceFont(this);
     connect(this, &QMenu::aboutToShow, this, [this] { configureNativePopup(); });
 }
 
