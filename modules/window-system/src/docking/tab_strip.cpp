@@ -68,16 +68,31 @@ public:
         setObjectName("VerticalTabPanel"); setMouseTracking(true);
     }
     void setTheme(const Theme& theme) { theme_ = theme; painter_ = TabPainter(panelMetrics(), TabPalette::forTheme(theme)); update(); }
-    void setSurface(QRect body, qreal overlay)
+    void setSurface(QRect body, qreal overlay, int verticalOutset)
     {
         const bool changed = body_ != body || (overlay_ > 0) != (overlay > 0);
-        body_ = body; overlay_ = overlay;
+        body_ = body; content_ = body.adjusted(0, verticalOutset, 0, -verticalOutset); overlay_ = overlay;
         // The resting panel must not intercept its neighbor's content or
         // resize handle through the padding reserved for an overlay shadow.
         if (changed) { if (overlay > 0) clearMask(); else setMask(QRegion(body.adjusted(-TabMetrics{}.columnGap, 0, TabMetrics{}.columnGap, 0))); }
         update();
     }
     [[nodiscard]] QRect bodyRect() const { return body_; }
+    [[nodiscard]] QRect contentRect() const { return content_; }
+    void paintShell(QPainter& paint, QPoint offset = {}) const
+    {
+        if (overlay_ <= 0) return;
+        paint.save(); paint.translate(offset); paint.setRenderHint(QPainter::Antialiasing);
+        const QRectF body(body_);
+        QPainterPath outline; outline.addRoundedRect(body, 8, 8);
+        QPainterPath outside; outside.addRect(rect());
+        paint.save(); paint.setClipPath(outside.subtracted(outline), Qt::IntersectClip);
+        paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, 8, true); paint.restore();
+        paint.setBrush(theme_.headerBackground);
+        auto line = painter_.palette().tileBorder.resolve(window()->isActiveWindow()); line.setAlphaF(line.alphaF() * overlay_);
+        paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+        paint.restore();
+    }
 protected:
     void changeEvent(QEvent* event) override
     {
@@ -86,17 +101,7 @@ protected:
     }
     void paintEvent(QPaintEvent*) override
     {
-        QPainter paint(this); paint.setRenderHint(QPainter::Antialiasing);
-        const QRectF body(body_);
-        if (overlay_ > 0) {
-            QPainterPath outline; outline.addRoundedRect(body, 8, 8);
-            QPainterPath outside; outside.addRect(rect());
-            paint.save(); paint.setClipPath(outside.subtracted(outline));
-            paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, 8, true); paint.restore();
-            paint.setBrush(theme_.headerBackground);
-            auto line = painter_.palette().tileBorder.resolve(window()->isActiveWindow()); line.setAlphaF(line.alphaF() * overlay_);
-            paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
-        }
+        QPainter paint(this); paintShell(paint);
     }
 private:
     static TabMetrics panelMetrics()
@@ -106,6 +111,7 @@ private:
     Theme theme_;
     TabPainter painter_;
     QRect body_;
+    QRect content_;
     qreal overlay_ = 0;
 };
 
@@ -424,6 +430,11 @@ QRect GroupTabs::surfaceBounds() const
     QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
     if (barVisible_) for (const auto& anchor : bar_->surfaceAnchors(bar_->mapTo(this, QPoint())))
         bounds |= anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation));
+    if (vertical() && peekExpansion_.value() > 0) {
+        const auto panel = static_cast<VerticalTabPanel*>(columnPanel_);
+        bounds |= QRectF(panel->bodyRect().translated(panel->pos())).marginsAdded(
+            elevationMargins(elevationProfile(ElevationLevel::ColumnOverlay)));
+    }
     return bounds.toAlignedRect();
 }
 QRegion GroupTabs::surfacePaintRegion() const
@@ -464,6 +475,15 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
         shadows.append({anchor.geometry, anchor.elevation});
     renderer.paintAnchors(painter, shadows, profile, style);
     bar_->paintSurfaceExtension(painter, bar_->mapTo(this, QPoint()));
+    if (vertical() && peekExpansion_.value() > 0) {
+        // The shell can enter shared splitter margins. Paint only its part
+        // outside this group here; the live panel paints the rest once.
+        QPainterPath outside, group;
+        outside.addRect(surfaceBounds()); group.addRect(rect());
+        painter.save(); painter.setClipPath(outside.subtracted(group), Qt::IntersectClip);
+        static_cast<VerticalTabPanel*>(columnPanel_)->paintShell(painter, columnPanel_->pos());
+        painter.restore();
+    }
     painter.restore();
 }
 void GroupTabs::invalidateSurfaceCorners(const QRect& area)
@@ -629,17 +649,19 @@ void GroupTabs::layoutChildren()
         const bool left = bar_->placement() == TabBarPlacement::Left;
         const int x = area.left() + (left ? 0 : area.width() - shownWidth);
         const int pad = 3;
-        columnPanel_->setGeometry(x - pad, area.top() - pad, shownWidth + 2 * pad, area.height() + 2 * pad);
-        static_cast<VerticalTabPanel*>(columnPanel_)->setSurface(QRect(pad, pad, shownWidth, area.height()), peekExpansion_.value());
+        const int outset = qRound(metrics.columnOverlayOutset * peekExpansion_.value());
+        columnPanel_->setGeometry(x - pad, area.top() - pad - outset, shownWidth + 2 * pad, area.height() + 2 * (pad + outset));
+        static_cast<VerticalTabPanel*>(columnPanel_)->setSurface(
+            QRect(pad, pad, shownWidth, area.height() + 2 * outset), peekExpansion_.value(), outset);
         columnPanel_->show();
         if (titled) {
             const int inset = bar_->metrics().verticalInset + 4;
-            title_->setGeometry(pad + inset, pad, std::max(0, shownWidth - 2 * inset), titleHeight);
+            title_->setGeometry(pad + inset, pad + outset, std::max(0, shownWidth - 2 * inset), titleHeight);
             title_->setText(title_->fontMetrics().elidedText(groupName_, Qt::ElideRight, title_->width()));
         }
         title_->setVisible(titled && reveal > 0);
-        bar_->setGeometry(pad, pad + titleHeight, shownWidth, available.height());
-        footer_->setGeometry(pad, pad + titleHeight + available.height(), shownWidth, footerHeight); footer_->setVisible(!compactPresentation_);
+        bar_->setGeometry(pad, pad + outset + titleHeight, shownWidth, available.height());
+        footer_->setGeometry(pad, pad + outset + titleHeight + available.height(), shownWidth, footerHeight); footer_->setVisible(!compactPresentation_);
         // The column sits on the background beside the card, with a gap.
         const int gap = compactPresentation_ ? 0 : metrics.columnGap;
         placeCard(left ? QRect(area.left() + reservedWidth + gap, area.top(), area.width() - reservedWidth - gap, area.height())
@@ -1040,7 +1062,7 @@ QRect GroupTabs::stripPanelRectGlobal() const
 {
     if (!barVisible_ || bar_->isHidden()) return {};
     if (!vertical()) return viewportRectGlobal();
-    const auto body = static_cast<VerticalTabPanel*>(columnPanel_)->bodyRect();
+    const auto body = static_cast<VerticalTabPanel*>(columnPanel_)->contentRect();
     return QRect(columnPanel_->mapToGlobal(body.topLeft()), body.size());
 }
 void GroupTabs::restoreColumnPeek()
@@ -1222,7 +1244,7 @@ bool GroupTabs::event(QEvent* event) {
 bool GroupTabs::eventFilter(QObject* watched, QEvent* event) {
     if (watched == columnPanel_) {
         if (event->type() == QEvent::Enter) bar_->setColumnHovered(true);
-        if (event->type() == QEvent::Leave && !columnPanel_->rect().contains(columnPanel_->mapFromGlobal(QCursor::pos())))
+        if (event->type() == QEvent::Leave && !stripPanelRectGlobal().contains(QCursor::pos()))
             bar_->setColumnHovered(false);
     }
     if (event->type() == QEvent::ContextMenu && (watched == footer_ || watched == trailing_ || watched == end_)) {

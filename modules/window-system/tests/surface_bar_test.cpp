@@ -342,9 +342,15 @@ private slots:
         TabAppearance policy;
         policy.centralPlacement = right ? TabBarPlacement::Right : TabBarPlacement::Left;
         group.setAppearance(policy); group.setVerticalState(200, true);
+        const auto before = group.stripPanelRectGlobal();
+        const auto available = group.tabBar()->availableSize();
+        const int firstY = group.tabBar()->mapToGlobal(group.tabBar()->tabRect(0).topLeft()).y();
         group.restoreColumnPeek();
         QVERIFY(group.tabBar()->peeking());
         const auto panel = group.stripPanelRectGlobal();
+        QCOMPARE(panel.top(), before.top()); QCOMPARE(panel.bottom(), before.bottom());
+        QCOMPARE(group.tabBar()->availableSize(), available);
+        QCOMPARE(group.tabBar()->mapToGlobal(group.tabBar()->tabRect(0).topLeft()).y(), firstY);
         QVERIFY(!panel.isEmpty());
         const auto inside = footer ? QPoint(panel.center().x(), panel.bottom() - 1) : panel.center();
         group.clearDragHover(inside);

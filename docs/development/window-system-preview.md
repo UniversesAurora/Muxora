@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+竖向悬停外壳增加上下留白，列表与按钮的位置、可用长度保持，见 [记录](verification-log/2026-10.md#悬停栏外壳与逻辑区域分离2026-10-26)。
+
 标签松手后从当前位置平滑落位，相关坐标检查与本轮包见 [记录](verification-log/2026-10.md#标签从松手位置平滑落位2026-10-26)。
 
 标签高度过渡已放慢，旧活动标签仍立即平放，见 [记录](verification-log/2026-10.md#延长标签高度过渡2026-10-26)。

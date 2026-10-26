@@ -40,6 +40,7 @@ struct TabMetrics {
     int countMinimumWidth = 26;
     int verticalInset = 4;
     int columnGap = 1;
+    int columnOverlayOutset = 4;
     QSize tile{26, 26};
     int verticalAccent = 3;
     int verticalAccentLength = 16;
