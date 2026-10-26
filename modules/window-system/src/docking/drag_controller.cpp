@@ -936,7 +936,7 @@ void DragController::stop(bool restorePresentation)
             window->surface()->setDraggedFolder({});
             window->surface()->clearInsertionPreviews();
             window->surface()->restoreStripScrollOffsets();
-            window->surface()->setDragHover(QPoint(-100000, -100000));
+            window->surface()->clearDragHover(QCursor::pos());
         }
     }
 }

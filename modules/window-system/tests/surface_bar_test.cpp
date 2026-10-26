@@ -2,6 +2,7 @@
 // Surface reporting through a real, never-exposed strip. These checks use
 // geometry and animation values, without native input or rendered pixels.
 #include "docking/tab_bar.hpp"
+#include "docking/tab_strip.hpp"
 
 #include <QTest>
 #include <algorithm>
@@ -276,6 +277,35 @@ private slots:
         first.end(); second.end();
         QVERIFY(before.copy(parts.icon) == after.copy(parts.icon));
         QVERIFY(before.copy(parts.title) != after.copy(parts.title));
+    }
+
+    void endingAColumnDragKeepsOnlyTheHoveredPanelExpanded_data()
+    {
+        QTest::addColumn<bool>("right");
+        QTest::addColumn<bool>("footer");
+        for (bool right : {false, true}) for (bool footer : {false, true})
+            QTest::newRow(qPrintable(QString("right-%1-footer-%2").arg(right).arg(footer))) << right << footer;
+    }
+
+    void endingAColumnDragKeepsOnlyTheHoveredPanelExpanded()
+    {
+        QFETCH(bool, right); QFETCH(bool, footer);
+        GroupTabs group(defaultTheme(), nullptr);
+        group.resize(620, 420);
+        group.addTab(new QWidget, {}, "Workspace", QUuid::createUuid());
+        TabAppearance policy;
+        policy.centralPlacement = right ? TabBarPlacement::Right : TabBarPlacement::Left;
+        group.setAppearance(policy); group.setVerticalState(200, true);
+        group.restoreColumnPeek();
+        QVERIFY(group.tabBar()->peeking());
+        const auto panel = group.stripPanelRectGlobal();
+        QVERIFY(!panel.isEmpty());
+        const auto inside = footer ? QPoint(panel.center().x(), panel.bottom() - 1) : panel.center();
+        group.clearDragHover(inside);
+        QVERIFY(group.tabBar()->peeking());
+        group.clearDragHover(panel.bottomRight() + QPoint(100, 100));
+        QVERIFY(!group.tabBar()->peeking());
+        QVERIFY(!group.isVisible());
     }
 
     void surfaceMotionRetargetsFromTheDisplayedValue()

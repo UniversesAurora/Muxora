@@ -63,6 +63,7 @@ public:
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
+    void clearDragHover(QPoint global);
     void setInsertionPreview(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky = false,
                              TabLayoutInput::Carried kind = TabLayoutInput::Carried::Tab);
     // The tab folder a drop at the group's insertion preview joins; null for none.

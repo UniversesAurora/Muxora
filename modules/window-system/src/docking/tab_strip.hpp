@@ -76,6 +76,7 @@ public:
     void restoreColumnPeek();
     int insertionIndex(QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     void setDragHover(QPoint global);
+    void clearDragHover(QPoint global);
     // The carried tabs open a gap at `index`, each as wide as it will be in
     // the section the drop position decides.
     void setInsertionPreview(int index, const QVector<CarriedLabel>& carried, bool carriedSticky = false,

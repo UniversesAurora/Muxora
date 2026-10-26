@@ -1178,6 +1178,16 @@ void GroupTabs::setDragHover(QPoint global) {
     if (!direction.isNull() && bar_->isOverflowing() && !autoScroll_->isActive()) { autoScroll_->setInterval(200); autoScroll_->start(); }
     else if (direction.isNull()) autoScroll_->stop();
 }
+void GroupTabs::clearDragHover(QPoint global)
+{
+    // End drag-only expansion and edge scrolling without inventing a leave
+    // event for a pointer that still belongs to the complete column panel.
+    const bool hovered = vertical() && stripPanelRectGlobal().contains(global);
+    dragHovered_ = false; scrollDirection_ = {}; autoScroll_->stop();
+    const QPointer<GroupTabs> self(this);
+    bar_->setDragExpanded(false);
+    if (self && vertical()) bar_->setColumnHovered(hovered);
+}
 void GroupTabs::setPinnedActions(std::function<void()> current, std::function<void()> all) {
     QWidget* owner = vertical() ? footer_ : end_;
     for (auto item : {std::tuple{std::move(current), QCoreApplication::translate("WindowSystem", "Unpin current tab"), QStringLiteral("unpin")},

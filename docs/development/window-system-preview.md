@@ -77,7 +77,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
-竖向首行顶齐内容、悬停栏末端阴影范围已调整，相关检查见 [本轮记录](verification-log/2026-10.md#竖向首行顶齐与末端阴影范围2026-10-26)。
+竖向首行顶齐内容、悬停栏末端阴影范围及拖放后展开保持已调整，相关检查和交付见 [本轮记录](verification-log/2026-10.md#拖放后保留竖向栏的实际悬停2026-10-26)。
 
 首尾活动标签靠近内容圆角时的连接缺口已修正，见 [本轮记录](verification-log/2026-10.md#首尾标签接合处的矩形缺口2026-10-26)。
 
@@ -143,6 +143,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+固定 Release 预览及 7z 已包含竖向齐边、阴影与拖放后悬停修正，执行范围见 [交付记录](verification-log/2026-10.md#拖放后保留竖向栏的实际悬停2026-10-26)。
 
 首尾标签接合缺口已修正并覆盖固定 Release 预览及 7z，相关边界检查与交付范围见 [修正记录](verification-log/2026-10.md#首尾标签接合处的矩形缺口2026-10-26)。
 

@@ -217,7 +217,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     const bool animate = root_ && isVisible() && !manager_->d->drag->hasStableLayout() && TabBar::animationsAllowed();
     QHash<GroupId, TabBar::VisualState> previousVisuals;
     QSet<GroupId> peekedGroups;
-    if (!manager_->d->drag->hasStableLayout()) for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
         if (it.value() && it.value()->tabBar()->peeking()) peekedGroups.insert(it.key());
     QSet<GroupId> previousGroupsIds;
     if (animate) for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) {
@@ -1158,6 +1158,17 @@ void DockSurface::setDragHover(QPoint point)
 {
     for (const auto& widget : groups_) if (widget) widget->setDragHover(point);
     for (const auto& widget : edgeBars_) if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(point);
+}
+void DockSurface::clearDragHover(QPoint point)
+{
+    const auto groups = groups_.values();
+    const QPointer<DockSurface> self(this);
+    for (const auto& group : groups) {
+        if (group) group->clearDragHover(point);
+        if (!self) return;
+    }
+    for (const auto& widget : edgeBars_)
+        if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDragHover(QPoint(-100000, -100000));
 }
 void DockSurface::setInsertionPreview(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky,
                                       TabLayoutInput::Carried kind)
