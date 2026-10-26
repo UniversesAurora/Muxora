@@ -204,7 +204,23 @@ private slots:
         addTabs(bar, 5); bar.setStickyCount(3); bar.setCurrentIndex(1);
         arrange(bar, {180, 500});
         const auto anchors = bar.surfaceAnchors();
-        if (sizing == StickyTabSizing::Compact) QVERIFY(anchors.isEmpty());
+        if (sizing == StickyTabSizing::Compact) {
+            QVERIFY(anchors.isEmpty());
+            const auto tile = bar.tabRect(1);
+            TabDragVisual incoming;
+            incoming.size = tile.size(); incoming.anchor = tile.center() - tile.topLeft();
+            incoming.active = QRect(QPoint(), incoming.size); incoming.identity = QUuid::createUuid();
+            incoming.paint = [](QPainter&) {};
+            bar.setDropPreview(1, true, {tile.width()});
+            bar.setIncomingVisual(std::move(incoming), tile.center());
+            const auto preview = bar.surfaceAnchors();
+            QCOMPARE(preview.size(), 1);
+            QVERIFY(preview.front().geometry.compact);
+            QVERIFY(!preview.front().geometry.joined);
+            QVERIFY(!preview.front().geometry.covered);
+            QVERIFY(QRectF(bar.incomingRect()).contains(preview.front().geometry.anchorPath.boundingRect()));
+            bar.setIncomingVisual({}); bar.setDropPreview(-1, false, {});
+        }
         else {
             QCOMPARE(anchors.size(), 1);
             QVERIFY(anchors.front().geometry.joined);

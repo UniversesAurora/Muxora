@@ -49,7 +49,7 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     result.body = input.body;
     result.bodyRadius = std::max(qreal(0), std::min({input.bodyRadius, input.body.width() / 2, input.body.height() / 2}));
     result.edge = input.edge;
-    result.covered = input.covered && !input.overlay;
+    result.covered = input.covered && !input.overlay && !input.compact;
     result.coveredProgress = result.covered ? std::clamp(input.coveredProgress, qreal(0), qreal(1)) : 0;
     result.compact = input.compact;
     if (!input.body.isEmpty()) result.bodyPath.addRoundedRect(input.body, result.bodyRadius, result.bodyRadius);
@@ -86,8 +86,20 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
             rightShoulder = shoulder;
     }
     const qreal inward = input.anchorRadius * (1 - result.joinProgress) * (1 - result.coveredProgress);
-    QPainterPath outline = anchorOutline(anchor, input.anchorRadius, inward, leftShoulder,
-                                         rightShoulder, clippedLeft, clippedRight);
+    QPainterPath outline;
+    if (input.compact) {
+        // Tiles keep the same circular corners as their resting fill and
+        // outline. Clipping cuts that shape; it never creates new corners.
+        const qreal radius = std::min({input.anchorRadius, original.width() / 2, original.height() / 2});
+        outline.addRoundedRect(original, radius, radius);
+        if (visible != original) {
+            QPainterPath clip; clip.addRect(visible);
+            outline = outline.intersected(clip);
+        }
+    } else {
+        outline = anchorOutline(anchor, input.anchorRadius, inward, leftShoulder,
+                                rightShoulder, clippedLeft, clippedRight);
+    }
     QPainterPath cornerBridges;
     if (result.joined) {
         // Near a body's corner, turn the label's side into the body's side

@@ -152,7 +152,9 @@ QPainterPath TabPainter::outline(const QRectF& tab, TabShape shape, bool selecte
     if (shape == TabShape::Top || shape == TabShape::Bottom)
         return tabPath(tab, metrics_.radius, shape == TabShape::Top, selected && !lifted ? metrics_.controlRadius : 0);
     QPainterPath path;
-    path.addRoundedRect(tab, metrics_.radius, metrics_.radius);
+    const qreal radius = shape == TabShape::Tile
+        ? std::min({qreal(metrics_.radius), tab.width() / 2, tab.height() / 2}) : metrics_.radius;
+    path.addRoundedRect(tab, radius, radius);
     return path;
 }
 
@@ -193,7 +195,10 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
         // wash inside the same contour instead of a second frame.
         painter.setBrush(Qt::NoBrush);
         painter.setPen(QPen(palette_.tileBorder.resolve(state.windowActive), 1));
-        painter.drawRoundedRect(tab.adjusted(0.5, 0.5, -0.5, -0.5), metrics_.radius, metrics_.radius);
+        // The stroke's outer edge shares the fill's circle, including its
+        // center. Insetting the rectangle also insets the centerline radius.
+        const qreal radius = std::max(qreal(0), std::min({qreal(metrics_.radius), tab.width() / 2, tab.height() / 2}) - 0.5);
+        painter.drawRoundedRect(tab.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
         painter.setPen(Qt::NoPen);
     }
     // Text and the covering action fade belong to the same rounded surface.

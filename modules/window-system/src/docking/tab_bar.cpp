@@ -401,7 +401,7 @@ SurfaceGeometry TabBar::anchorGeometry(QRectF anchor, QRectF visible, bool compa
     // A shoulder may change shape, but cannot stretch across another row.
     input.adjacent = adjacent && input.joinProgress > 0;
     input.covered = values.second * panel > 0; input.coveredProgress = values.second * panel;
-    input.compact = compact && input.joinProgress <= 0;
+    input.compact = compact;
     auto geometry = surfaceGeometry(input);
     if (foreground && transitioning) {
         geometry.body = {}; geometry.bodyPath = {}; geometry.mergedPath = geometry.anchorPath;
