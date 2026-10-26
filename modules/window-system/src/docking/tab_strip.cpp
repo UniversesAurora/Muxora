@@ -670,7 +670,7 @@ void GroupTabs::layoutChildren()
     if (lifting_) bar_->setLifted(bar_->mapFromGlobal(liftedGlobal_), liftedGrab_);
     if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); if (vertical()) columnPanel_->raise(); }
     footer_->raise();
-    bar_->refreshScrollInput();
+    bar_->refreshPresentationLayers();
     if (columnExpansion_.state() != QAbstractAnimation::Running && peekExpansion_.state() != QAbstractAnimation::Running && !bar_->rowTransitionRunning())
         updateGeometry();
     const auto callback = hoverGeometryChanged; if (callback) callback();

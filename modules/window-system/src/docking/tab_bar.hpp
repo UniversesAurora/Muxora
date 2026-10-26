@@ -146,6 +146,7 @@ public:
     void restoreColumnPeek(bool peeked);
     void showColumnPopup(std::function<void()> open);
     void refreshScrollInput();
+    void refreshPresentationLayers();
     void inheritHover(const TabBar& previous);
     struct RetiredLabel {
         TabPaintState state;
@@ -438,7 +439,7 @@ private:
     std::optional<QPoint> liftedPointer_;
     QPoint liftedGrab_;
     std::optional<int> initialStickyBoundary_;
-    QWidget* liftedLayer_ = nullptr;
+    QPointer<QWidget> liftedLayer_;
     TabDragVisual incomingVisual_;
     QPoint incomingPointer_;
     mutable std::optional<QRect> carrierBounds_;

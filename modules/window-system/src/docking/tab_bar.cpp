@@ -280,7 +280,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     });
 }
 
-TabBar::~TabBar() { qApp->removeEventFilter(this); delete scrollInput_.data(); }
+TabBar::~TabBar() { qApp->removeEventFilter(this); delete scrollInput_.data(); delete liftedLayer_.data(); }
 
 int TabBar::addTab(const QIcon& icon, const QString& title)
 {
@@ -941,7 +941,7 @@ TabLayoutInput TabBar::layoutInput(QSize area, bool collapsed) const
 
 QPoint TabBar::tabOrigin() const
 {
-    if (vertical()) return {0, metrics_.outerMargin};
+    if (vertical()) return {};
     // Below the content an overlay grows upward, its shadow on top.
     if (placement_ == TabBarPlacement::Bottom) return {0, rowShadowExtent()};
     return {0, metrics_.outerMargin};
@@ -951,7 +951,7 @@ QSize TabBar::tabArea(QSize size) const
 {
     // An overlay keeps room for its shadow below the rows.
     const int shadow = !vertical() ? rowShadowExtent() : 0;
-    return {size.width(), std::max(0, size.height() - metrics_.outerMargin - shadow)};
+    return {size.width(), std::max(0, size.height() - (vertical() ? 0 : metrics_.outerMargin) - shadow)};
 }
 
 int TabBar::minimumColumnWidth() const
@@ -1537,23 +1537,31 @@ void TabBar::setLifted(QPoint local, QPoint grab)
 
 void TabBar::updateLiftedLayer()
 {
+    auto* owner = vertical() && columnManaged_ && parentWidget() ? parentWidget() : this;
     const bool shown = (liftedPointer_ && (dragged_ >= 0 || draggedFolder_ >= 0)) || bool(incomingVisual_.paint)
         || (current_ >= 0 && (liftElevation_.value() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
     if (shown && !liftedLayer_) {
         // Child controls paint above their parent's paintEvent. Create one
         // transparent layer on the first lift, not one widget per tab.
-        liftedLayer_ = new QWidget(this);
+        liftedLayer_ = new QWidget(owner);
         liftedLayer_->setObjectName("LiftedTabLayer");
         liftedLayer_->setAttribute(Qt::WA_TransparentForMouseEvents);
         liftedLayer_->setAttribute(Qt::WA_NoSystemBackground);
         liftedLayer_->installEventFilter(this);
     }
     if (!liftedLayer_) return;
+    if (liftedLayer_->parentWidget() != owner) liftedLayer_->setParent(owner);
     liftedLayer_->setVisible(shown);
     if (!shown) return;
-    liftedLayer_->setGeometry(rect());
+    liftedLayer_->setGeometry(owner->rect());
     liftedLayer_->raise();
     liftedLayer_->update();
+}
+
+void TabBar::refreshPresentationLayers()
+{
+    updateLiftedLayer();
+    refreshScrollInput();
 }
 
 QRect TabBar::carrierBounds() const
@@ -2287,6 +2295,7 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
     }
     if (watched == liftedLayer_ && event->type() == QEvent::Paint) {
         QPainter painter(liftedLayer_);
+        painter.translate(mapTo(liftedLayer_, QPoint()));
         paintLiftedTabs(painter);
         return true;
     }

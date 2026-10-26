@@ -3,6 +3,7 @@
 
 #include <QTransform>
 #include <algorithm>
+#include <cmath>
 
 namespace window_system {
 namespace {
@@ -72,9 +73,12 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     result.joinEnd = std::max(start, end);
     const bool clippedLeft = visible.left() > original.left() + 0.01;
     const bool clippedRight = visible.right() < original.right() - 0.01;
+    const bool flushLeft = !clippedLeft && std::abs(visible.left() - body.left()) < 0.01;
+    const bool flushRight = !clippedRight && std::abs(visible.right() - body.right()) < 0.01;
     qreal leftShoulder = 0, rightShoulder = 0;
     if (result.joined) {
-        anchor.setBottom(visible.bottom() + (body.top() - visible.bottom()) * result.joinProgress);
+        const qreal overlap = flushLeft || flushRight ? result.bodyRadius : 0;
+        anchor.setBottom(visible.bottom() + (body.top() + overlap - visible.bottom()) * result.joinProgress);
         const qreal shoulder = input.shoulderRadius * result.joinProgress;
         if (!clippedLeft && visible.left() - shoulder >= body.left() + result.bodyRadius)
             leftShoulder = shoulder;
@@ -90,17 +94,17 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
         // leaves no room for a shoulder. A rectangular extension crop would
         // punch a step into the first/last anchor's outside contour.
         const QRectF bounds = outline.boundingRect();
-        const qreal leftTaper = !clippedLeft && start > visible.left() && leftShoulder <= 0
+        const qreal leftTaper = !flushLeft && !clippedLeft && start > visible.left() && leftShoulder <= 0
             ? std::min(input.anchorRadius, start - visible.left()) * result.joinProgress : 0;
-        const qreal rightTaper = !clippedRight && end < visible.right() && rightShoulder <= 0
+        const qreal rightTaper = !flushRight && !clippedRight && end < visible.right() && rightShoulder <= 0
             ? std::min(input.anchorRadius, visible.right() - end) * result.joinProgress : 0;
         const qreal leftTop = visible.bottom() - leftTaper;
         const qreal rightTop = visible.bottom() - rightTaper;
         QPainterPath allowed, extension;
         allowed.addRect(QRectF(bounds.left() - 1, bounds.top() - 1,
                                bounds.width() + 2, std::min(leftTop, rightTop) - bounds.top() + 1));
-        const qreal extensionStart = leftShoulder > 0 ? visible.left() - leftShoulder : start;
-        const qreal extensionEnd = rightShoulder > 0 ? visible.right() + rightShoulder : end;
+        const qreal extensionStart = flushLeft || leftShoulder > 0 ? visible.left() - leftShoulder : start;
+        const qreal extensionEnd = flushRight || rightShoulder > 0 ? visible.right() + rightShoulder : end;
         extension.moveTo(bounds.left(), leftTop - 0.01);
         if (leftTaper > 0)
             extension.quadTo(visible.left(), anchor.bottom(), extensionStart, anchor.bottom());
@@ -124,7 +128,14 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     if (result.joined) {
         QPainterPath bodyRectangle;
         bodyRectangle.addRect(input.body);
-        result.anchorPath = result.anchorPath.subtracted(bodyRectangle.subtracted(result.bodyPath));
+        auto protectedCorners = bodyRectangle.subtracted(result.bodyPath);
+        // An exactly aligned anchor turns this corner into an internal
+        // junction. Let its fill meet the body's outer straight edge.
+        QPainterPath flushCorners;
+        if (flushLeft) flushCorners.addRect(QRectF(body.left(), body.top(), result.bodyRadius, result.bodyRadius));
+        if (flushRight) flushCorners.addRect(QRectF(body.right() - result.bodyRadius, body.top(), result.bodyRadius, result.bodyRadius));
+        protectedCorners = protectedCorners.subtracted(inverse.map(flushCorners));
+        result.anchorPath = result.anchorPath.subtracted(protectedCorners);
     }
     result.anchor = inverse.mapRect(anchor);
     if (result.joined && result.joinProgress >= 1) {

@@ -85,6 +85,11 @@ private slots:
         QCOMPARE(anchors.size(), 1);
         QVERIFY(anchors.front().geometry.joined);
         compareProfiles(anchors.front().elevation, elevationProfile(ElevationLevel::AnchorRest));
+        if (bar.vertical()) {
+            bar.setCurrentIndex(0);
+            QCOMPARE(qreal(bar.tabRect(0).top()), body.top());
+            QCOMPARE(bar.surfaceAnchors().front().geometry.anchor.top(), body.top());
+        }
     }
 
     void horizontalOuterRowsAreCovered_data()
