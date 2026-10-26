@@ -1457,7 +1457,9 @@ bool DockSurface::hasContentFocusScope() const
 void DockSurface::refreshContentEdgeToEdge()
 {
     GroupId soleGroup;
-    if (manager_ && focusState_.mode != ViewMode::Normal && !compactPresentation_) {
+    const auto& bars = focusState_.effective;
+    if (manager_ && focusState_.zen && focusState_.mode != ViewMode::Normal && !compactPresentation_
+        && !bars.toolbars && !bars.statusBar && !bars.tabBars && !bars.sideBars) {
         const auto& model = manager_->model();
         if (hasContentFocusScope()) {
             const auto* group = model.group(focusState_.group);
