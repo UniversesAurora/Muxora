@@ -71,22 +71,44 @@ QVector<float> gaussian(const QVector<float>& source, QSize size, qreal blur)
     }
     for (auto& weight : weights) weight /= total;
     QVector<float> horizontal(source.size()), result(source.size());
+    struct Support { int begin = 0; int end = 0; };
+    QVector<Support> support(size.height());
+    int top = size.height(), bottom = 0;
+    QVector<qreal> accumulated(size.width());
     for (int y = 0; y < size.height(); ++y) {
         const int row = y * size.width();
-        for (int x = 0; x < size.width(); ++x) {
-            qreal value = 0;
-            for (int tap = std::max(-extent, -x); tap <= std::min(extent, size.width() - x - 1); ++tap)
-                value += source[row + x + tap] * weights[tap + extent];
-            horizontal[row + x] = float(value);
+        int first = 0, last = size.width();
+        while (first < last && source[row + first] == 0) ++first;
+        while (last > first && source[row + last - 1] == 0) --last;
+        if (first == last) continue;
+        top = std::min(top, y); bottom = y + 1;
+        const int left = std::max(0, first - extent), right = std::min(size.width(), last + extent);
+        support[y] = {left, right};
+        std::fill(accumulated.begin(), accumulated.end(), qreal(0));
+        for (int tap = -extent; tap <= extent; ++tap) {
+            const qreal weight = weights[tap + extent];
+            const float* input = source.constData() + row;
+            qreal* output = accumulated.data();
+            const int begin = std::max(left, first - tap), end = std::min(right, last - tap);
+            // Consecutive pixels share this coefficient. Keeping the pixel
+            // loop innermost permits SIMD without changing coefficients,
+            // accumulation precision, kernel extent or addition order.
+            for (int x = begin; x < end; ++x) output[x] += input[x + tap] * weight;
         }
+        for (int x = left; x < right; ++x) horizontal[row + x] = float(accumulated[x]);
     }
-    for (int y = 0; y < size.height(); ++y) {
-        for (int x = 0; x < size.width(); ++x) {
-            qreal value = 0;
-            for (int tap = std::max(-extent, -y); tap <= std::min(extent, size.height() - y - 1); ++tap)
-                value += horizontal[(y + tap) * size.width() + x] * weights[tap + extent];
-            result[y * size.width() + x] = float(value);
+    // Padding and the transparent corner bands have exactly zero support.
+    // Skipping their zero products preserves the kernel and addition order.
+    for (int y = std::max(0, top - extent); y < std::min(size.height(), bottom + extent); ++y) {
+        std::fill(accumulated.begin(), accumulated.end(), qreal(0));
+        for (int tap = std::max(-extent, top - y); tap <= std::min(extent, bottom - y - 1); ++tap) {
+            const qreal weight = weights[tap + extent];
+            const float* input = horizontal.constData() + (y + tap) * size.width();
+            qreal* output = accumulated.data();
+            const auto band = support[y + tap];
+            for (int x = band.begin; x < band.end; ++x) output[x] += input[x] * weight;
         }
+        for (int x = 0; x < size.width(); ++x) result[y * size.width() + x] = float(accumulated[x]);
     }
     return result;
 }
@@ -109,8 +131,13 @@ struct Coverage {
 Coverage coverage(const QPainterPath& path, const QRectF& bounds, qreal ratio,
                   const ElevationProfile& profile, const ElevationStyle& style)
 {
-    const QImage silhouette = mask(path, bounds, ratio);
     Coverage result;
+    if (path.isEmpty()) {
+        const int count = qCeil(bounds.width() * ratio) * qCeil(bounds.height() * ratio);
+        result.inside.resize(count); result.shadow.resize(count); result.edge.resize(count);
+        return result;
+    }
+    const QImage silhouette = mask(path, bounds, ratio);
     result.inside = alpha(silhouette);
     result.shadow.resize(result.inside.size());
     result.edge = alpha(mask(path, bounds, ratio, true));
@@ -350,13 +377,15 @@ void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& ge
     // Remote body corners cannot influence this small raster. Normalize
     // them out of the key so sliding an anchor along a straight body edge
     // reuses its sprite instead of blurring on every pointer move.
-    QRectF localBody = geometry.body.translated(-origin);
-    if (localBody.left() + geometry.bodyRadius < -extent) localBody.setLeft(-extent - geometry.bodyRadius - 1);
-    if (localBody.right() - geometry.bodyRadius > bounds.width() + extent)
-        localBody.setRight(bounds.width() + extent + geometry.bodyRadius + 1);
-    if (localBody.top() + geometry.bodyRadius < -extent) localBody.setTop(-extent - geometry.bodyRadius - 1);
-    if (localBody.bottom() - geometry.bodyRadius > bounds.height() + extent)
-        localBody.setBottom(bounds.height() + extent + geometry.bodyRadius + 1);
+    QRectF localBody = geometry.body.isEmpty() ? QRectF{} : geometry.body.translated(-origin);
+    if (!geometry.body.isEmpty()) {
+        if (localBody.left() + geometry.bodyRadius < -extent) localBody.setLeft(-extent - geometry.bodyRadius - 1);
+        if (localBody.right() - geometry.bodyRadius > bounds.width() + extent)
+            localBody.setRight(bounds.width() + extent + geometry.bodyRadius + 1);
+        if (localBody.top() + geometry.bodyRadius < -extent) localBody.setTop(-extent - geometry.bodyRadius - 1);
+        if (localBody.bottom() - geometry.bodyRadius > bounds.height() + extent)
+            localBody.setBottom(bounds.height() + extent + geometry.bodyRadius + 1);
+    }
     for (const auto& rect : {localBody, bounds.translated(-origin)})
         key += QStringLiteral(":%1,%2,%3,%4").arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height());
     key += QStringLiteral(":%1").arg(geometry.bodyRadius);
