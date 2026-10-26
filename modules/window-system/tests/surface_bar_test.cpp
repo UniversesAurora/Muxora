@@ -244,6 +244,9 @@ private slots:
         bar.setDraggedTab(bar.tabData(1).toUuid());
         bar.setDropPreview(1, false, {bar.tabExtent(1, false)});
         bar.setLifted(point, grab);
+        const auto localDrop = bar.captureDropPositions();
+        QCOMPARE(localDrop.value(bar.tabData(1).toUuid()),
+            QRect(bar.mapToGlobal(bar.liftedRect().topLeft()), bar.liftedRect().size()));
         const auto local = bar.surfaceAnchors();
         QCOMPARE(local.size(), 1);
         QVERIFY(local.front().lifted);
@@ -257,7 +260,18 @@ private slots:
         incoming.active = QRect(QPoint{}, incoming.size);
         incoming.identity = QUuid::createUuid();
         incoming.paint = [](QPainter&) {};
+        const auto incomingId = incoming.identity;
+        int positionQueries = 0;
+        incoming.positions = [&positionQueries, incomingId, size = incoming.size] {
+            ++positionQueries;
+            return LabelPositions{{incomingId, QRect(QPoint(), size)}};
+        };
         bar.setIncomingVisual(std::move(incoming), point);
+        QCOMPARE(positionQueries, 0);
+        const auto incomingDrop = bar.captureDropPositions();
+        QCOMPARE(positionQueries, 1);
+        QCOMPARE(incomingDrop.value(incomingId),
+            QRect(bar.mapToGlobal(bar.incomingRect().topLeft()), bar.incomingRect().size()));
         const auto external = bar.surfaceAnchors();
         QCOMPARE(external.size(), 1);
         QVERIFY(external.front().lifted);

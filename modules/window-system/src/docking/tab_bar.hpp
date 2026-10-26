@@ -40,6 +40,8 @@ struct CarriedLabel {
     int count = 0;
 };
 
+using LabelPositions = QHash<QUuid, QRect>;
+
 // A bounded view of the live carrier's labels. The target paints them with
 // its own device, retaining smooth corners and the ordinary lifted shadow.
 struct TabDragVisual {
@@ -47,6 +49,9 @@ struct TabDragVisual {
     QPoint anchor;
     std::function<void(QPainter&)> paint;
     std::function<void(QPainter&, const SurfaceGeometry&)> paintSurface;
+    // Queried once on release, not on pointer updates; coordinates are local
+    // to this visual, and include every visible label in a carried window.
+    std::function<LabelPositions()> positions;
     QRect active;
     QUuid identity;
 };
@@ -168,6 +173,8 @@ public:
     using VisualState = QHash<QUuid, LabelVisual>;
     [[nodiscard]] VisualState captureVisualState();
     void transitionFrom(VisualState state, Motion motion = Motion::Relocate);
+    [[nodiscard]] LabelPositions captureDropPositions() const;
+    void settleFrom(const LabelPositions& globalPositions);
     static void paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
                                  QPoint globalOrigin, qreal visibility);
     // Reused by any operation that makes existing labels appear or disappear.
@@ -329,7 +336,7 @@ private:
     [[nodiscard]] TabShape shapeOf(int index) const;
     [[nodiscard]] TabParts partsOf(int index, const QRect& rect) const;
     [[nodiscard]] QRect animatedRect(int index) const;
-    void paintTabAt(QPainter& painter, int index);
+    void paintTabAt(QPainter& painter, int index, bool settling = false);
     [[nodiscard]] TabPaintState paintState(int index);
     void paintLiftedTabs(QPainter& painter);
     void updateLiftedLayer();
@@ -468,6 +475,7 @@ private:
     // Slides: where each tab was drawn when its position last changed.
     struct Slide { QRect from; };
     QHash<QUuid, Slide> slides_;
+    QHash<QUuid, int> settling_;
     QHash<QUuid, QRect> shown_;
     QElapsedTimer slideClock_;
     ProgressAnimation actionOpacity_{0};
@@ -476,6 +484,7 @@ private:
     // Since the dragged tab was lifted: its shadow fades in (tab strip design 7).
     QTimer slideTimer_;
     int slideDuration_ = motionDuration(Motion::Relocate);
+    QEasingCurve slideCurve_ = motionCurve(Motion::Relocate);
 };
 
 } // namespace window_system

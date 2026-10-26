@@ -753,6 +753,9 @@ void DragController::finish(QPoint global)
     const auto moving = movingWindow_; const auto source = sourceWindow_;
     const auto folder = folder_; const bool detachedFolder = !folder_.isNull() && detached_;
     const QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(capture_.data());
+    const QPointer<WorkspaceWindow> dropWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target.window));
+    const auto dropPositions = target.accepted && target.insertionIndex >= 0 && !target.toEdgeBar && dropWindow
+        ? dropWindow->surface()->captureDropPositions(target.group) : LabelPositions{};
     const bool embeddedDrop = target.accepted && target.insertionIndex >= 0 && carrier
         && carrier->dragPresentation() == WorkspaceWindow::DragPresentation::Tab;
     if (embeddedDrop) setNativeDropCommit(carrier, true);
@@ -830,6 +833,7 @@ void DragController::finish(QPoint global)
     originalSourceInactiveStrips_ = {};
     detached_ = false;
     completeLayoutTransaction();
+    if (self && success && dropWindow) dropWindow->surface()->settleDroppedTabs(target.group, dropPositions);
 }
 void DragController::cancel()
 {

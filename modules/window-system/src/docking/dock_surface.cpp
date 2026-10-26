@@ -1256,12 +1256,30 @@ TabDragVisual DockSurface::dragLabelVisual() const
             piece.bar->paintCarrier(painter, &local); painter.restore();
         }
     };
+    visual.positions = [pieces] {
+        LabelPositions positions;
+        for (const auto& piece : pieces) if (piece.bar)
+            for (int index = 0; index < piece.bar->count(); ++index) {
+                const auto area = piece.bar->tabRect(index);
+                if (!area.isEmpty()) positions.insert(piece.bar->tabData(index).toUuid(), area.translated(piece.offset));
+            }
+        return positions;
+    };
     return visual;
 }
 void DockSurface::setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value())
         it.value()->setIncomingVisual(it.key() == group ? visual : TabDragVisual{}, global);
+}
+LabelPositions DockSurface::captureDropPositions(GroupId group) const
+{
+    const auto view = groups_.value(group);
+    return view ? view->tabBar()->captureDropPositions() : LabelPositions{};
+}
+void DockSurface::settleDroppedTabs(GroupId group, const LabelPositions& globalPositions)
+{
+    if (const auto view = groups_.value(group)) view->tabBar()->settleFrom(globalPositions);
 }
 bool DockSurface::setDragTabStyle(const DockSurface& target, GroupId group, bool sticky)
 {

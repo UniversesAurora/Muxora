@@ -83,6 +83,8 @@ public:
     bool setDragTabStyle(const DockSurface& target, GroupId group, bool sticky);
     [[nodiscard]] TabDragVisual dragLabelVisual() const;
     void setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global = {});
+    [[nodiscard]] QHash<QUuid, QRect> captureDropPositions(GroupId group) const;
+    void settleDroppedTabs(GroupId group, const QHash<QUuid, QRect>& globalPositions);
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
     void closePeek();
