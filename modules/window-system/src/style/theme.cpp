@@ -3,6 +3,7 @@
 #include <window_system/interface_appearance.hpp>
 
 #include <QApplication>
+#include <QFontMetrics>
 #include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
@@ -247,6 +248,9 @@ Theme scaledInterfaceTheme(const Theme& theme)
     for (auto* value : {&m.controlHeight, &m.headerHeight, &m.tabHeight, &m.statusHeight,
          &m.edgeThickness, &m.paneHeaderHeight, &m.splitterWidth, &m.cornerRadius,
          &m.padding, &m.spacing, &m.iconSize, &m.groupSplitterWidth}) *value = uiPixels(*value);
+    // Font size is independent of interface zoom. Rails must fit the current
+    // interface font, and their geometry must agree with DockSurface's insets.
+    if (qApp) m.edgeThickness = std::max(m.edgeThickness, QFontMetrics(QApplication::font()).height() + uiPixels(4));
     return resolved;
 }
 

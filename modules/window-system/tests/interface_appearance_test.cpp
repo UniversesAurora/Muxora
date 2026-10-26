@@ -4,6 +4,7 @@
 #include <window_system/interface_appearance.hpp>
 #include <window_system/window_manager.hpp>
 #include "docking/tab_bar.hpp"
+#include "docking/edge_tab_button.hpp"
 #include "chrome/command_strip.hpp"
 #include "platform/font_families.hpp"
 #include <QApplication>
@@ -55,6 +56,8 @@ private slots:
     void familyListsAndValidation();
     void menusFollowFontChanges();
     void menusFollowFontChanges_data();
+    void railsFollowFontChanges();
+    void railsFollowFontChanges_data();
     void familyAliasesPreserveFallbacks();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent_data();
     void zoomUpdatesExistingAndFutureWindowsWithoutReplacingContent();
@@ -206,6 +209,38 @@ void InterfaceAppearanceTest::menusFollowFontChanges()
     QCOMPARE(recorded.fonts().last().families(), controller.font().families());
     QCOMPARE(recorded.fonts().last().pointSizeF(), controller.font().pointSizeF());
     QCOMPARE(recorded.fonts().last().hintingPreference(), controller.font().hintingPreference());
+}
+void InterfaceAppearanceTest::railsFollowFontChanges_data()
+{
+    QTest::addColumn<int>("edge"); QTest::addColumn<bool>("startup");
+    for (int edge = 0; edge < 4; ++edge)
+        for (bool startup : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(edge).arg(startup))) << edge << startup;
+}
+void InterfaceAppearanceTest::railsFollowFontChanges()
+{
+    QFETCH(int, edge); QFETCH(bool, startup);
+    const bool vertical = Edge(edge) == Edge::Left || Edge(edge) == Edge::Right;
+    InterfaceAppearanceController controller;
+    auto value = controller.appearance(); value.fontFamily = "serif"; value.fontSize = 26; value.zoomLevel = 0.5;
+    if (startup) QVERIFY(controller.setAppearance(value));
+    WindowManager manager;
+    auto appearance = manager.tabAppearance(); appearance.showSidebarIcons = true; appearance.showSidebarNumbers = true;
+    QVERIFY(manager.setTabAppearance(appearance));
+    const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, new QLabel("Content"), {"A wide sidebar label", "test", {}});
+    QVERIFY(manager.moveTabToEdge(tab, Edge(edge)));
+    auto* root = manager.windowWidget(window);
+    auto* rail = dynamic_cast<EdgeTabButton*>(root->findChild<QAbstractButton*>("EdgeButton")); QVERIFY(rail);
+    if (!startup) QVERIFY(controller.setAppearance(value));
+    for (int i = 0; i < 3; ++i) QCoreApplication::processEvents();
+    QCOMPARE(rail->font().families(), controller.font().families());
+    QCOMPARE(rail->size(), rail->sizeHint());
+    const int cross = vertical ? rail->width() : rail->height();
+    QVERIFY(cross >= QFontMetrics(rail->font()).height());
+    QCOMPARE(cross, manager.interfaceTheme().metrics.edgeThickness);
+    auto localFont = rail->font(); localFont.setPointSizeF(30); rail->setFont(localFont);
+    QTRY_COMPARE(rail->size(), rail->sizeHint());
 }
 QTEST_MAIN(InterfaceAppearanceTest)
 #include "interface_appearance_test.moc"

@@ -111,11 +111,11 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
     if (!rects.number.isEmpty())
         painter.drawText(rects.number, Qt::AlignVCenter | Qt::AlignLeading, QString::number(number_));
     if (!rects.icon.isEmpty()) {
-        auto image=icon().pixmap(QSize(edgeTabIconSize,edgeTabIconSize));
+        auto image=icon().pixmap(rects.icon.size(), devicePixelRatioF());
         QPainter tint(&image); tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
         tint.fillRect(image.rect(),colors ? colors->icon : edgeTabColor(this,"edgeTabText",QPalette::ButtonText)); tint.end();
         painter.save(); painter.setClipRect(rects.icon, Qt::IntersectClip);
-        painter.drawPixmap(QRect(rects.icon.topLeft(), QSize(edgeTabIconSize, edgeTabIconSize)), image);
+        painter.drawPixmap(rects.icon, image);
         painter.restore();
     }
     titleLayout_.draw(painter, rects.title);

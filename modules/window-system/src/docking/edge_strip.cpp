@@ -5,6 +5,7 @@
 #include "edge_tab_button.hpp"
 
 #include <QAbstractButton>
+#include <QApplication>
 #include <QBoxLayout>
 #include <QEvent>
 #include <QHideEvent>
@@ -103,10 +104,12 @@ EdgeStrip::EdgeStrip(Edge edge, const Theme& theme, QWidget* parent)
     connect(scrollbar_, &QScrollBar::sliderMoved, this, [this] { scrollMotion_.stopAt(axisScrollBar()->value()); pendingScrollOffset_.reset(); });
     connect(scrollbar_, &QScrollBar::actionTriggered, this, [this] { scrollMotion_.stopAt(axisScrollBar()->value()); pendingScrollOffset_.reset(); });
     layoutTrack();
+    connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] { queueTrackLayout(); });
 }
 
 EdgeStrip::~EdgeStrip()
 {
+    disconnect(qApp, nullptr, this, nullptr);
     autoScroll_->stop();
     // Child destruction can emit signals after member storage is gone.
     for (auto* object : findChildren<QObject*>()) {
@@ -388,7 +391,9 @@ void EdgeStrip::setDragHover(QPoint global)
 
 bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) {
+        queueTrackLayout();
+    } else if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {
         layoutTrack(); queueHoverGeometryChanged();
     } else if (watched == track_ && event->type() == QEvent::LayoutRequest) {
         queueTrackLayout();
