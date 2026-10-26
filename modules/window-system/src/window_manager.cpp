@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include "style/tooltip_layout.hpp"
 #include "style/wheel_guard.hpp"
+#include "style/smooth_scroll.hpp"
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
@@ -1189,6 +1190,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     removeValueControlWheelFocus(watched, event);
     balanceToolTipShape(watched, event);
     if (redirectValueControlWheel(watched, event)) return true;
+    if (filterSmoothScroll(watched, event)) return true;
     if (d->destroying || d->refreshing) return false;
     auto* widget = qobject_cast<QWidget*>(watched);
     const auto cancelChord = [this] { cancelPendingShortcut(); };

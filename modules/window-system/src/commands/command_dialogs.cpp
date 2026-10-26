@@ -96,6 +96,7 @@ QLabel* hintLabel(const QString& text, QWidget* parent)
 QTreeWidget* createList(QWidget* parent, const QStringList& headers)
 {
     auto* tree = new QTreeWidget(parent);
+    tree->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     tree->setColumnCount(headers.size());
     tree->setHeaderLabels(headers);
     tree->setRootIsDecorated(false);

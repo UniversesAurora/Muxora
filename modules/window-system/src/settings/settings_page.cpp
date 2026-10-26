@@ -190,6 +190,7 @@ SettingsPage::SettingsPage(WindowManager* manager, QWidget* parent)
     auto* body = new QHBoxLayout;
     body->setSpacing(12);
     categories_ = new CategoryNavigation(manager, this);
+    categories_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     categories_->setObjectName(QStringLiteral("SettingsCategories"));
     categories_->setAccessibleName(QCoreApplication::translate("WindowSystem", "Setting categories"));
     categories_->setHeaderHidden(true);

@@ -189,6 +189,12 @@
 
 命令目录新增／移除通过 `setCatalogChangedHandler` 通知，绑定修改通过 `setBindingsChangedHandler` 通知。WindowManager 将目录的界面刷新合并到下一事件循环；注册过程中不提前调用命令的 `enabled`，批量注册也不会递归刷新菜单。需要观察界面贡献的宿主应等待该提交，命令本身注册后即可查询和执行。
 
+## 组件滚动策略
+
+包含 `<window_system/scrolling.hpp>` 后，可调用 `setSmoothScrollingEnabled(widget, false)` 关闭该组件及其子控件的平滑滚动，例如交给终端自身处理滚动；传 `true` 恢复该组件的默认策略，祖先关闭时仍保持关闭。`isSmoothScrollingEnabled(widget)` 查询有效策略。这是运行期行为，不随布局保存。
+
+标准 Qt 滚动区域在模块的事件入口接入，自绘标签栏和收纳条共用同一个滚动驱动。触控板、业务子控件及中断规则见 [界面设计](../../docs/design/ui-design-system.md#48-滚动条)。宿主自己管理的滚动容器可设置 `windowSystemOwnWheelScrolling` 属性，由自己的事件逻辑消费滚轮。
+
 ## 规范与验证
 
 - [窗口系统设计](../../docs/design/window-system-design.md)

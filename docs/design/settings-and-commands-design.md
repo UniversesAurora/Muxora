@@ -10,6 +10,8 @@
 
 关联：[V0 设计](v0-design.md)、[工作区设计](workspace-design.md)、[终端 Normal 与选择模式](terminal-mark-mode-design.md)、[测试规范](../development/testing-design.md)。
 
+平滑滚动的按组件开关是宿主运行期策略，不写入布局或用户设置；接口见 [模块说明](../../modules/window-system/README.md#组件滚动策略)，交互规则见 [界面设计](ui-design-system.md#48-滚动条)。
+
 ## 1. 参考范围
 
 设置和快捷键参考 VS Code：可直接编辑的 `settings.json`、`keybindings.json`，统一配置定义、默认值、搜索、校验、上下文和命令 ID。命令面板也参考 Windows Terminal 的搜索及动作入口。窗口视觉继续参考 Visual Studio 2019 之后的设计，不因配置借鉴 VS Code 而改变。

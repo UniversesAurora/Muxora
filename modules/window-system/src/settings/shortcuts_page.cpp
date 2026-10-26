@@ -165,6 +165,7 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     searchCapture_->hide();
     layout->addWidget(searchCapture_);
     commands_ = new QTreeWidget(this);
+    commands_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     commands_->setObjectName(QStringLiteral("ShortcutCommands"));
     commands_->setColumnCount(3);
     commands_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "Command"),
@@ -187,6 +188,7 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
     commandHelp_->hide();
     layout->addWidget(commandHelp_);
     bindings_ = new QTreeWidget(this);
+    bindings_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     bindings_->setObjectName(QStringLiteral("ShortcutBindings"));
     bindings_->setColumnCount(2);
     bindings_->setHeaderLabels({QCoreApplication::translate("WindowSystem", "Shortcut"),

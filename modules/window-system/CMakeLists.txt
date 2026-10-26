@@ -68,6 +68,7 @@ add_library(WindowSystemWidgets STATIC
     src/style/themed_controls.cpp
     src/style/integer_slider.cpp
     src/style/wheel_guard.cpp
+    src/style/smooth_scroll.cpp
     src/style/tooltip_layout.cpp
     src/settings/settings_page.cpp
     src/settings/shortcuts_page.cpp
