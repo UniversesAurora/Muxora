@@ -1755,7 +1755,7 @@ void TabBar::paintCarrier(QPainter& painter, const SurfaceGeometry* geometry)
     painter.save(); painter.setFont(font());
     for (const auto index : std::as_const(carrierTabs_)) {
         auto state = paintState(index);
-        state.selected = index == current_; state.lifted = false;
+        state.selected = index == current_; state.lifted = geometry != nullptr;
         state.elevationManaged = true;
         state.surface = state.selected ? geometry : nullptr;
         painter_.paintTab(painter, partsOf(index, animatedRect(index)), state);
