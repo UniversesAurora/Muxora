@@ -77,6 +77,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+栏末控件按内容边缘对齐，最近一批修改的交付范围见 [记录](verification-log/2026-10.md#栏末控件对齐与本批交付2026-10-26)。
+
 标签临近内容圆角时使用连续桥接曲线，外观仍在试用；旧圆角断言的待处理范围见 [记录](verification-log/2026-10.md#临近圆角的连接过渡2026-10-26)。
 
 单窗格全屏使用临时贴边布局，退出后恢复普通卡片，见 [记录](verification-log/2026-10.md#单窗格全屏贴边2026-10-26)。
@@ -153,6 +155,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+本批拖动层坐标、单窗格全屏、临近圆角连接及栏末对齐已编译。隐藏控件关系检查通过；两项仍要求旧缺口的圆角取样断言失败并保留待审查，不能声称相关检查全部通过。执行范围见 [本批记录](verification-log/2026-10.md#栏末控件对齐与本批交付2026-10-26) 及其链接，桌面与全量继续暂停。
 
 齐边与接缝渐隐已编译并更新固定预览及 7z；相关离屏检查通过，外观待用户试用，见 [记录](verification-log/2026-10.md#标签齐边与接缝渐隐2026-10-26)。
 

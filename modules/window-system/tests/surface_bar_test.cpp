@@ -100,7 +100,11 @@ private slots:
         const auto first = group.tabBar()->mapToGlobal(group.tabBar()->tabRect(0).topLeft());
         const auto content = group.contentRectGlobal();
         if (group.tabBar()->vertical()) QCOMPARE(first.y(), content.top());
-        else QCOMPARE(first.x(), content.left());
+        else {
+            QCOMPARE(first.x(), content.left());
+            const auto barEnd = group.tabBar()->mapToGlobal(group.tabBar()->rect().bottomRight());
+            QCOMPARE(barEnd.x(), content.right());
+        }
         QVERIFY(!group.isVisible());
     }
 

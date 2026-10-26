@@ -49,11 +49,9 @@ struct TabMetrics {
     int shadowBlur = int(elevationProfile(ElevationLevel::RowsOverlay).key.blur);
     int iconSize = 16;
     // Tab group cards (window interaction design: cards and focus): the
-    // space a group keeps around its card, the card's corner radius, and
-    // how far the first tab stays from the card's corner.
+    // space a group keeps around its card and the card's corner radius.
     int cardMargin = 2;
     int cardRadius = 8;
-    int stripInset = 10;
     // Tab folders (tab strip design 12): a horizontal header is a chip this
     // much shorter than a tab, padded inside and spaced outside; without a
     // name it is a dot. The folder's line, the active tab's outline in the

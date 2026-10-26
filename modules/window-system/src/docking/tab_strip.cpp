@@ -348,7 +348,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     trailing_->installEventFilter(this);
     bar_->setTrailingWidget(trailing_);
     end_ = new QWidget(this); end_->setObjectName("TabHeaderActions");
-    auto* ending = new QHBoxLayout(end_); ending->setContentsMargins(0, 0, 4, 0); ending->setSpacing(bar_->metrics().controlGap);
+    auto* ending = new QHBoxLayout(end_); ending->setContentsMargins(0, 0, 0, 0); ending->setSpacing(bar_->metrics().controlGap);
     list_ = new CompactToolButton(end_, QSize(bar_->metrics().listWidth, row)); list_->setObjectName("TabListButton");
     list_->setMouseTracking(true);
     setThemedIcon(list_, "tab-list", theme); list_->setToolTip(QCoreApplication::translate("WindowSystem", "All tabs"));
@@ -365,7 +365,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     // A vertical strip's footer: new tab, sidebar actions, icon mode.
     footer_ = new QWidget(this); footer_->setObjectName("TabStripFooter"); footer_->hide();
     auto* footer = new QBoxLayout(QBoxLayout::LeftToRight, footer_);
-    footer->setContentsMargins(bar_->metrics().verticalInset, 2, bar_->metrics().verticalInset, 2); footer->setSpacing(2);
+    footer->setContentsMargins(bar_->metrics().verticalInset, 0, bar_->metrics().verticalInset, 0); footer->setSpacing(2);
     iconModeButton_ = new CompactToolButton(footer_, QSize(26, row)); iconModeButton_->setObjectName("TabStripIconModeButton");
     footer_->installEventFilter(this);
     QObject::connect(iconModeButton_, &QToolButton::clicked, this, [this] {
@@ -619,7 +619,7 @@ void GroupTabs::layoutChildren()
         const auto& metrics = bar_->metrics();
         const qreal reveal = std::max(columnExpansion_.value(), peekExpansion_.value());
         bar_->setColumnReveal(reveal, columnExpansion_.state() == QAbstractAnimation::Running);
-        const int footerHeight = metrics.rowHeight + 4;
+        const int footerHeight = metrics.rowHeight;
         const bool titled = !groupName_.isEmpty() && appearance_.showGroupNames && !compactPresentation_;
         const int titleHeight = titled ? bar_->metrics().rowHeight : 0;
         const QSize available(columnWidth(), std::max(0, area.height() - footerHeight - titleHeight));
@@ -653,11 +653,8 @@ void GroupTabs::layoutChildren()
     } else {
         columnPanel_->hide();
         footer_->hide(); resizeHandle_->hide(); title_->hide();
-        // Only the trailing controls keep an inset. The first label joins
-        // the card's leading edge, using the shared flush-corner geometry.
-        const int trailingInset = compactPresentation_ ? 0 : bar_->metrics().stripInset;
         const int availableWidth = compactPresentation_ && normalDragStyle_
-            ? std::min(area.width(), dragTabArea_.width()) : area.width() - trailingInset;
+            ? std::min(area.width(), dragTabArea_.width()) : area.width();
         const QSize strip(std::max(1, availableWidth), area.height());
         bar_->setAvailableSize(strip);
         const auto reserved = bar_->reservedSize(strip), shown = bar_->displaySize(strip);
