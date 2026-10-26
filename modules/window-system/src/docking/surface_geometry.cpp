@@ -73,8 +73,8 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     result.joinEnd = std::max(start, end);
     const bool clippedLeft = visible.left() > original.left() + 0.01;
     const bool clippedRight = visible.right() < original.right() - 0.01;
-    const bool flushLeft = !clippedLeft && std::abs(visible.left() - body.left()) < 0.01;
-    const bool flushRight = !clippedRight && std::abs(visible.right() - body.right()) < 0.01;
+    const bool flushLeft = std::abs(visible.left() - body.left()) < 0.01;
+    const bool flushRight = std::abs(visible.right() - body.right()) < 0.01;
     qreal leftShoulder = 0, rightShoulder = 0;
     if (result.joined) {
         const qreal overlap = flushLeft || flushRight ? result.bodyRadius : 0;

@@ -1929,6 +1929,24 @@ void TabBar::paintEvent(QPaintEvent*)
         appendFades(lane);
         if (layout_.rowScrollLane >= 0 && layout_.rowScrollLane != laneIndex)
             appendFades(layout_.laneList.at(layout_.rowScrollLane));
+        if (!fades.isEmpty() && layout_.lanes.value(current_, -1) == laneIndex
+            && !incomingVisual_.paint && !liftedPointer_ && liftElevation_.value() <= 0) {
+            const auto area = animatedRect(current_);
+            const auto visible = area.intersected(lane.viewport.translated(origin)).intersected(rect());
+            const auto geometry = anchorGeometry(area, visible, shapeOf(current_) == TabShape::Tile, false);
+            if (geometry.joined) {
+                const auto joint = vertical() ? (placement_ == TabBarPlacement::Left ? Qt::RightEdge : Qt::LeftEdge)
+                    : placement_ == TabBarPlacement::Top ? Qt::BottomEdge : Qt::TopEdge;
+                auto surface = QRectF(area);
+                // Complete the fade before the separately painted connection
+                // leaves this widget. The content itself remains opaque.
+                if (joint == Qt::RightEdge) surface.setRight(width());
+                else if (joint == Qt::LeftEdge) surface.setLeft(0);
+                else if (joint == Qt::BottomEdge) surface.setBottom(height());
+                else surface.setTop(0);
+                for (auto& fade : fades) if (fade.area.intersects(visible)) fade.convergeTo(joint, surface);
+            }
+        }
         const auto drawLane = [&](QPainter& painter) {
             painter.save();
             painter.setClipRect(lane.viewport.translated(origin), Qt::IntersectClip);

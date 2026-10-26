@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QImage>
+#include <QLineF>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -15,6 +16,31 @@ namespace window_system {
 struct EdgeFade {
     QRect area;
     Qt::Edge edge;
+    QLineF opacityRamp;
+
+    // Let a scrolling surface become opaque as it meets another surface.
+    // The two perpendicular ramps add, so the fade ends on the joint rather
+    // than leaving an abrupt transparent-to-opaque cut there.
+    void convergeTo(Qt::Edge joint, QRectF surface)
+    {
+        const bool horizontal = edge == Qt::LeftEdge || edge == Qt::RightEdge;
+        const bool horizontalJoint = joint == Qt::LeftEdge || joint == Qt::RightEdge;
+        if (horizontal == horizontalJoint || area.isEmpty() || surface.isEmpty()) return;
+        const bool fromStart = edge == Qt::LeftEdge || edge == Qt::TopEdge;
+        const bool jointAtEnd = joint == Qt::RightEdge || joint == Qt::BottomEdge;
+        const qreal extent = horizontal ? area.width() : area.height();
+        const qreal thickness = horizontal ? surface.height() : surface.width();
+        const qreal along = fromStart ? (horizontal ? area.left() : area.top())
+            : (horizontal ? area.right() + 1 : area.bottom() + 1);
+        const qreal across = horizontal ? (jointAtEnd ? surface.top() : surface.bottom())
+            : (jointAtEnd ? surface.left() : surface.right());
+        const QPointF start = horizontal ? QPointF(along, across) : QPointF(across, along);
+        const qreal axis = (fromStart ? 1.0 : -1.0) / extent;
+        const qreal normal = (jointAtEnd ? 1.0 : -1.0) / thickness;
+        const QPointF gradient = horizontal ? QPointF(axis, normal) : QPointF(normal, axis);
+        const qreal squared = QPointF::dotProduct(gradient, gradient);
+        opacityRamp = QLineF(start, start + gradient / squared);
+    }
 };
 
 // Draw in the caller's logical coordinates. Only the faded bands need a
@@ -78,8 +104,13 @@ void paintEdgeFades(QPainter& painter, QRect bounds, const QVector<EdgeFade>& fa
             const bool fromStart = fade.edge == Qt::LeftEdge || fade.edge == Qt::TopEdge;
             QLinearGradient mask(horizontal ? QPointF(fade.area.left(), 0) : QPointF(0, fade.area.top()),
                                  horizontal ? QPointF(fade.area.right() + 1, 0) : QPointF(0, fade.area.bottom() + 1));
-            mask.setColorAt(0, QColor(0, 0, 0, fromStart ? 0 : 255));
-            mask.setColorAt(1, QColor(0, 0, 0, fromStart ? 255 : 0));
+            if (!fade.opacityRamp.isNull()) {
+                mask.setStart(fade.opacityRamp.p1());
+                mask.setFinalStop(fade.opacityRamp.p2());
+            }
+            const bool increasing = !fade.opacityRamp.isNull() || fromStart;
+            mask.setColorAt(0, QColor(0, 0, 0, increasing ? 0 : 255));
+            mask.setColorAt(1, QColor(0, 0, 0, increasing ? 255 : 0));
             layer.fillRect(fade.area, mask);
         }
         layer.end();

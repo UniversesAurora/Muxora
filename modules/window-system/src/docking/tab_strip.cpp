@@ -653,15 +653,16 @@ void GroupTabs::layoutChildren()
     } else {
         columnPanel_->hide();
         footer_->hide(); resizeHandle_->hide(); title_->hide();
-        // The first tab keeps clear of the card's rounded corner.
-        const int inset = compactPresentation_ ? 0 : bar_->metrics().stripInset;
+        // Only the trailing controls keep an inset. The first label joins
+        // the card's leading edge, using the shared flush-corner geometry.
+        const int trailingInset = compactPresentation_ ? 0 : bar_->metrics().stripInset;
         const int availableWidth = compactPresentation_ && normalDragStyle_
-            ? std::min(area.width(), dragTabArea_.width()) : area.width() - 2 * inset;
+            ? std::min(area.width(), dragTabArea_.width()) : area.width() - trailingInset;
         const QSize strip(std::max(1, availableWidth), area.height());
         bar_->setAvailableSize(strip);
         const auto reserved = bar_->reservedSize(strip), shown = bar_->displaySize(strip);
         const bool top = bar_->placement() != TabBarPlacement::Bottom;
-        bar_->setGeometry(area.left() + inset, top ? area.top() : area.bottom() + 1 - shown.height(), strip.width(), shown.height());
+        bar_->setGeometry(area.left(), top ? area.top() : area.bottom() + 1 - shown.height(), strip.width(), shown.height());
         const QRect content(area.left(), top ? area.top() + reserved.height() : area.top(), area.width(), std::max(0, area.height() - reserved.height()));
         placeCard(content);
         bar_->raise();

@@ -91,6 +91,17 @@ private slots:
             QCOMPARE(qreal(bar.tabRect(0).top()), body.top());
             QCOMPARE(bar.surfaceAnchors().front().geometry.anchor.top(), body.top());
         }
+
+        GroupTabs group(defaultTheme(), nullptr);
+        group.resize(640, 500);
+        group.addTab(new QWidget, {}, "Workspace", QUuid::createUuid());
+        policy.centralPlacement = placement;
+        group.setAppearance(policy);
+        const auto first = group.tabBar()->mapToGlobal(group.tabBar()->tabRect(0).topLeft());
+        const auto content = group.contentRectGlobal();
+        if (group.tabBar()->vertical()) QCOMPARE(first.y(), content.top());
+        else QCOMPARE(first.x(), content.left());
+        QVERIFY(!group.isVisible());
     }
 
     void horizontalOuterRowsAreCovered_data()
