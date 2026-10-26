@@ -88,11 +88,22 @@ private:
 // triggered it. Callers can drive visibility in either direction and keep
 // logical geometry, hit testing and the label's own drawing unchanged.
 struct LabelPresenceEffect {
+    enum class Kind { Lift, Planar };
+
+    [[nodiscard]] static QRect planarRect(QRect open, QRect closed, qreal visibility)
+    {
+        const qreal progress = std::clamp(visibility, 0.0, 1.0);
+        const auto blend = [progress](int a, int b) { return qRound(a + (b - a) * progress); };
+        return {blend(closed.x(), open.x()), blend(closed.y(), open.y()),
+            std::max(0, blend(closed.width(), open.width())), std::max(0, blend(closed.height(), open.height()))};
+    }
+
     template<class Draw>
-    static void paint(QPainter& painter, const QRect& rect, qreal visibility, Draw draw)
+    static void paint(QPainter& painter, const QRect& rect, qreal visibility, Draw draw, Kind kind = Kind::Lift)
     {
         const qreal progress = std::clamp(visibility, 0.0, 1.0);
         if (progress <= 0) return;
+        if (kind == Kind::Planar) { draw(); return; }
         painter.save();
         painter.setOpacity(painter.opacity() * progress);
         const QPointF center = QRectF(rect).center();

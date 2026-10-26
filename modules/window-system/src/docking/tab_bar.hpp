@@ -169,10 +169,13 @@ public:
         bool iconOnly;
         TabParts parts;
         std::shared_ptr<RetiredLabel> retired;
+        bool singleTileRow = false;
+        std::optional<QRect> collapse;
     };
     using VisualState = QHash<QUuid, LabelVisual>;
     [[nodiscard]] VisualState captureVisualState();
     void transitionFrom(VisualState state, Motion motion = Motion::Relocate);
+    [[nodiscard]] VisualState takeSeparateDepartures(VisualState& previous) const;
     [[nodiscard]] LabelPositions captureDropPositions() const;
     void settleFrom(const LabelPositions& globalPositions);
     static void paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
@@ -412,7 +415,7 @@ private:
     QMetaObject::Connection popupHidden_;
     QMetaObject::Connection popupDestroyed_;
     ProgressAnimation presenceProgress_{1};
-    struct Presence { qreal from; qreal to; };
+    struct Presence { qreal from; qreal to; LabelPresenceEffect::Kind kind = LabelPresenceEffect::Kind::Lift; };
     QHash<QUuid, Presence> presence_;
     VisualState departing_;
     QSize available_;
@@ -473,7 +476,7 @@ private:
     QPointer<QWidget> end_;
     QToolButton* countButton_ = nullptr;
     // Slides: where each tab was drawn when its position last changed.
-    struct Slide { QRect from; };
+    struct Slide { QRect from; bool resizeWidth = false; };
     QHash<QUuid, Slide> slides_;
     QHash<QUuid, int> settling_;
     QHash<QUuid, QRect> shown_;
@@ -485,6 +488,9 @@ private:
     QTimer slideTimer_;
     int slideDuration_ = motionDuration(Motion::Relocate);
     QEasingCurve slideCurve_ = motionCurve(Motion::Relocate);
+    bool planarReflow_ = false;
+    [[nodiscard]] bool hasSingleTileRow() const;
+    [[nodiscard]] bool usesPlanarReflow(const VisualState& previous) const;
 };
 
 } // namespace window_system

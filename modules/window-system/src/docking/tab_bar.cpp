@@ -35,6 +35,29 @@ QRect lerp(const QRect& from, const QRect& to, qreal t)
                  QSize(mix(from.width(), to.width()), mix(from.height(), to.height())));
 }
 
+// Match a changing row's empty slots to the other layout. Neighbor edges,
+// including both outer ends, are resolved in two linear passes, not per frame.
+LabelPositions collapsedSlots(const QVector<QPair<QUuid, QRect>>& row, const LabelPositions& other)
+{
+    QVector<std::optional<QRect>> right(row.size());
+    std::optional<QRect> next;
+    for (int index = int(row.size()) - 1; index >= 0; --index) {
+        right[index] = next;
+        if (const auto found = other.constFind(row.at(index).first); found != other.cend()) next = *found;
+    }
+    LabelPositions closedRects;
+    std::optional<QRect> previous;
+    for (int index = 0; index < row.size(); ++index) {
+        const auto& [id, rect] = row.at(index);
+        if (const auto found = other.constFind(id); found != other.cend()) { previous = *found; continue; }
+        const auto after = right.at(index);
+        const int x = previous && after ? (previous->right() + 1 + after->left()) / 2
+            : previous ? previous->right() + 1 : after ? after->left() : rect.center().x();
+        closedRects.insert(id, QRect(x, rect.y(), 0, rect.height()));
+    }
+    return closedRects;
+}
+
 // Screen readers see the strip as a page tab list of its tabs.
 class TabAccessible final : public QAccessibleInterface {
 public:
@@ -228,7 +251,9 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     });
     slideTimer_.setInterval(15);
     connect(&slideTimer_, &QTimer::timeout, this, [this] {
-        if (slideClock_.elapsed() >= slideDuration_) { slides_.clear(); settling_.clear(); slideTimer_.stop(); }
+        if (slideClock_.elapsed() >= slideDuration_ && (!planarReflow_ || presenceProgress_.state() != QAbstractAnimation::Running)) {
+            slides_.clear(); settling_.clear(); planarReflow_ = false; slideTimer_.stop();
+        }
         syncAttachment(); surfaceFrameChanged();
     });
     connect(&actionOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); });
@@ -728,10 +753,18 @@ TabBar::VisualState TabBar::captureVisualState()
             if (retired->state.preset) retired->preset = *retired->state.preset;
             retired->state.preset = nullptr; retired->state.titleLayout = nullptr;
             const auto presence = presence_.constFind(tabData(index).toUuid());
-            if (presence != presence_.cend()) retired->visibility = presence->from + (presence->to - presence->from) * presenceProgress_.value();
+            if (presence != presence_.cend() && presence->kind != LabelPresenceEffect::Kind::Planar)
+                retired->visibility = presence->from + (presence->to - presence->from) * presenceProgress_.value();
         }
         result.insert(tabData(index).toUuid(), {rect.translated(globalOrigin), shapeOf(index),
-            index < stickyCount_, index == current_, iconsOnly() || shapeOf(index) == TabShape::Tile, parts, std::move(retired)});
+            index < stickyCount_, index == current_, iconsOnly() || shapeOf(index) == TabShape::Tile, parts, std::move(retired), hasSingleTileRow()});
+    }
+    // Flat exits belong to this strip's single clock. Capture their current
+    // width too, so reversing a pin operation does not restart from full size.
+    for (auto it = departing_.cbegin(); it != departing_.cend(); ++it) if (it->collapse && it->retired) {
+        auto visible = *it;
+        visible.global = LabelPresenceEffect::planarRect(it->global, *it->collapse, 1 - presenceProgress_.value());
+        if (!visible.global.isEmpty()) result.insert(it.key(), std::move(visible));
     }
     return result;
 }
@@ -751,7 +784,15 @@ void TabBar::paintRetiredLabel(QPainter& painter, const TabPainter& style, const
     auto parts = label.parts;
     for (auto* part : {&parts.tab, &parts.icon, &parts.number, &parts.title, &parts.action}) part->translate(-globalOrigin);
     painter.save(); painter.setFont(retired.font);
-    LabelPresenceEffect::paint(painter, parts.tab, visibility * retired.visibility, [&] { style.paintTab(painter, parts, state); });
+    if (label.collapse) {
+        const auto area = LabelPresenceEffect::planarRect(label.global, *label.collapse, visibility).translated(-globalOrigin);
+        if (!area.isEmpty()) {
+            TabLabelParts sizes; sizes.icon = parts.icon.width();
+            parts = style.parts(area, state.shape, sizes, true, false, false, Qt::LeftToRight);
+            state.surface = nullptr; state.elevationManaged = true; state.lifted = false;
+            style.paintTab(painter, parts, state);
+        }
+    } else LabelPresenceEffect::paint(painter, parts.tab, visibility * retired.visibility, [&] { style.paintTab(painter, parts, state); });
     painter.restore();
 }
 
@@ -768,11 +809,66 @@ void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion
     if (!animationsEnabled()) { departing_.clear(); if (visible) for (const auto& id : ids) presence_.remove(id); }
 }
 
+bool TabBar::hasSingleTileRow() const
+{
+    return compactStickyTiles() && stickyCount_ > 0 && layout_.tileColumns >= stickyCount_;
+}
+
+bool TabBar::usesPlanarReflow(const VisualState& previous) const
+{
+    if (!hasSingleTileRow()) return false;
+    int oldTiles = 0;
+    bool reversing = false;
+    for (const auto& label : previous) if (label.shape == TabShape::Tile) {
+        if (!label.singleTileRow) return false;
+        ++oldTiles; reversing |= label.collapse.has_value();
+    }
+    return oldTiles > 0 && (oldTiles != stickyCount_ || reversing);
+}
+
+TabBar::VisualState TabBar::takeSeparateDepartures(VisualState& previous) const
+{
+    VisualState separate;
+    const bool planar = usesPlanarReflow(previous);
+    QHash<QUuid, int> indexes;
+    for (int index = 0; index < count(); ++index) indexes.insert(tabData(index).toUuid(), index);
+    for (auto label = previous.begin(); label != previous.end(); ++label) {
+        const int index = indexes.value(label.key(), -1);
+        if (label->retired && (index < 0 || label->sticky != (index < stickyCount_))
+            && !(planar && label->shape == TabShape::Tile)) {
+            separate.insert(label.key(), *label); label->retired.reset();
+        }
+    }
+    return separate;
+}
+
 void TabBar::transitionFrom(VisualState previous, Motion motion)
 {
     if (!animationsEnabled() || !isVisible()) return;
+    planarReflow_ = usesPlanarReflow(previous);
+    if (planarReflow_) motion = Motion::Presence;
     slideDuration_ = motionDuration(motion); slideCurve_ = motionCurve(motion);
     QSet<QUuid> appeared;
+    QSet<QUuid> planarEntries;
+    LabelPositions entrySlots;
+    if (planarReflow_) {
+        LabelPositions oldRects, newRects;
+        QVector<QPair<QUuid, QRect>> oldRow, newRow;
+        for (auto label = previous.cbegin(); label != previous.cend(); ++label) if (label->shape == TabShape::Tile) {
+            oldRects.insert(label.key(), label->global); oldRow.append({label.key(), label->global});
+        }
+        std::sort(oldRow.begin(), oldRow.end(), [](const auto& a, const auto& b) { return a.second.left() < b.second.left(); });
+        const auto origin = mapToGlobal(QPoint());
+        for (int index = 0; index < stickyCount_; ++index) {
+            const auto id = tabData(index).toUuid();
+            const auto area = layout_.tabs.at(index).translated(tabOrigin() + origin);
+            newRects.insert(id, area); newRow.append({id, area});
+        }
+        entrySlots = collapsedSlots(newRow, oldRects);
+        const auto exitSlots = collapsedSlots(oldRow, newRects);
+        for (auto label = previous.begin(); label != previous.end(); ++label)
+            if (const auto end = exitSlots.constFind(label.key()); end != exitSlots.cend()) label->collapse = *end;
+    }
     QSet<QUuid> currentIds;
     slides_.clear(); settling_.clear(); departing_.clear();
     for (int index = 0; index < count(); ++index) {
@@ -783,17 +879,29 @@ void TabBar::transitionFrom(VisualState previous, Motion motion)
             continue;
         }
         currentIds.insert(id);
-        if (old == previous.cend()) { appeared.insert(id); continue; }
+        if (old == previous.cend()) {
+            appeared.insert(id);
+            if (entrySlots.contains(id)) {
+                const auto slot = entrySlots.value(id);
+                slides_.insert(id, {QRect(mapFromGlobal(slot.topLeft()), slot.size()), true}); planarEntries.insert(id);
+            }
+            continue;
+        }
         const QRect from(mapFromGlobal(old->global.topLeft()), old->global.size());
         if (old->sticky != (index < stickyCount_)) {
             departing_.insert(id, *old); appeared.insert(id);
+            if (entrySlots.contains(id)) {
+                const auto slot = entrySlots.value(id);
+                slides_.insert(id, {QRect(mapFromGlobal(slot.topLeft()), slot.size()), true}); planarEntries.insert(id);
+            }
         } else if (!from.isEmpty() && from != layout_.tabs.at(index).translated(tabOrigin()))
-            slides_.insert(id, {from});
+            slides_.insert(id, {from, old->shape == TabShape::Tile && shapeOf(index) == TabShape::Tile});
     }
     for (auto it = previous.cbegin(); it != previous.cend(); ++it)
         if (it->retired && !currentIds.contains(it.key())) departing_.insert(it.key(), *it);
     if (!slides_.isEmpty()) { slideClock_.start(); slideTimer_.start(); }
-    if (!appeared.isEmpty() || !departing_.isEmpty()) animatePresence(appeared, true, motion);
+    if (planarReflow_ || !appeared.isEmpty() || !departing_.isEmpty()) animatePresence(appeared, true, motion);
+    for (const auto& id : planarEntries) if (presence_.contains(id)) presence_[id].kind = LabelPresenceEffect::Kind::Planar;
 }
 
 LabelPositions TabBar::captureDropPositions() const
@@ -837,11 +945,12 @@ void TabBar::settleFrom(const LabelPositions& globalPositions)
             const auto target = layout_.tabs.at(index).translated(tabOrigin());
             const QRect local(mapFromGlobal(from->topLeft()), from->size());
             if (!target.isEmpty() && !local.isEmpty() && local != target) {
-                slides_.insert(id, {local}); settling_.insert(id, index); presence_.remove(id);
+                slides_.insert(id, {local, true}); settling_.insert(id, index); presence_.remove(id);
             }
         } else if (slides_.contains(id)) slides_[id].from = animatedRect(index);
     }
     if (settling_.isEmpty()) return;
+    planarReflow_ = false;
     slideCurve_ = motionCurve(Motion::SurfaceLower); slideDuration_ = motionDuration(Motion::SurfaceLower);
     slideClock_.start(); slideTimer_.start();
     surfaceFrameChanged();
@@ -1082,9 +1191,15 @@ void TabBar::relayout(bool animate, bool measureChanged)
     if (measureChanged) rowMeasure_.reset();
     // Where each tab is drawn now, to slide from.
     QHash<QUuid, QRect> before;
+    QSet<QUuid> resizing;
+    const int previousTileColumns = layout_.tileColumns;
     const bool sliding = animate && animationsEnabled() && isVisible();
     if (sliding) for (int index = 0; index < tabs_.size() && index < layout_.tabs.size(); ++index)
-        if (!layout_.tabs.at(index).isNull()) before.insert(tabs_.at(index).data.toUuid(), animatedRect(index));
+        if (!layout_.tabs.at(index).isNull()) {
+            const auto id = tabs_.at(index).data.toUuid();
+            before.insert(id, animatedRect(index));
+            if (const auto slide = slides_.constFind(id); slide != slides_.cend() && slide->resizeWidth) resizing.insert(id);
+        }
     for (auto& tab : tabs_) if (tab.titleWidth < 0) {
         tab.titleLayout.prepare(tab.title, font(), layoutDirection(), true, this);
         tab.titleWidth = tab.titleLayout.naturalWidth();
@@ -1132,12 +1247,15 @@ void TabBar::relayout(bool animate, bool measureChanged)
     updateLiftedLayer();
     if (sliding) {
         // Restart from wherever each tab is drawn now.
-        slides_.clear(); settling_.clear(); slideCurve_ = motionCurve(Motion::Relocate); slideDuration_ = motionDuration(Motion::Relocate);
+        slides_.clear(); settling_.clear(); planarReflow_ = false;
+        slideCurve_ = motionCurve(Motion::Relocate); slideDuration_ = motionDuration(Motion::Relocate);
         for (int index = 0; index < tabs_.size(); ++index) {
             const auto id = tabs_.at(index).data.toUuid();
             const auto from = before.value(id);
             const auto to = layout_.tabs.at(index).translated(tabOrigin());
-            if (!from.isNull() && !layout_.tabs.at(index).isNull() && from != to) slides_.insert(id, {from});
+            if (!from.isNull() && !layout_.tabs.at(index).isNull() && from != to)
+                slides_.insert(id, {from, shapeOf(index) == TabShape::Tile
+                    && (previousTileColumns != layout_.tileColumns || resizing.contains(id))});
         }
         if (!slides_.isEmpty()) { slideClock_.start(); slideTimer_.start(); }
     }
@@ -1283,13 +1401,14 @@ QRect TabBar::animatedRect(int index) const
     const auto slide = slides_.constFind(tabs_.at(index).data.toUuid());
     if (slide == slides_.cend() || !slideClock_.isValid()) return target;
     const qreal progress = std::clamp(qreal(slideClock_.elapsed()) / slideDuration_, 0.0, 1.0);
-    auto result = lerp(slide->from, target, slideCurve_.valueForProgress(progress));
+    auto result = lerp(slide->from, target, planarReflow_ ? presenceProgress_.value() : slideCurve_.valueForProgress(progress));
     // A stretched row has one width driver: the column itself. Preserve the
     // separate rearrangement of multiple compact sticky tiles on an explicit
     // mode switch, including their positions and size transition.
     const bool rearrangingTiles = columnModeTransition_ && stickyCount_ > 1 && index < stickyCount_
         && appearance_.stickySizing == StickyTabSizing::Compact;
-    if (vertical() && columnManaged_ && !rearrangingTiles && !settling_.contains(tabs_.at(index).data.toUuid())) result.setWidth(target.width());
+    if (vertical() && columnManaged_ && !rearrangingTiles && (columnModeTransition_ || !slide->resizeWidth)
+        && !settling_.contains(tabs_.at(index).data.toUuid())) result.setWidth(target.width());
     return result;
 }
 
@@ -1847,7 +1966,8 @@ void TabBar::paintTabAt(QPainter& painter, int index, bool settling)
     state.elevationManaged = !surfaceBody_.isEmpty();
     const auto presence = presence_.constFind(tabs_.at(index).data.toUuid());
     const qreal visibility = presence == presence_.cend() ? 1.0 : presence->from + (presence->to - presence->from) * presenceProgress_.value();
-    LabelPresenceEffect::paint(painter, rect, visibility, [&] { painter_.paintTab(painter, partsOf(index, rect), state); });
+    const auto kind = presence == presence_.cend() ? LabelPresenceEffect::Kind::Lift : presence->kind;
+    LabelPresenceEffect::paint(painter, rect, visibility, [&] { painter_.paintTab(painter, partsOf(index, rect), state); }, kind);
 }
 
 TabFolderPaintState TabBar::folderPaintState(int folder) const

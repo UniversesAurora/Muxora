@@ -237,22 +237,21 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
             const auto view = groups_.value(it.key());
             if (!view) { new RetiringLabels(std::move(it.value()), manager_->theme(), this); continue; }
             const QPointer<TabBar> bar(view->tabBar());
-            TabBar::VisualState departures;
-            for (auto label = it.value().begin(); label != it.value().end(); ++label) {
-                const int index = bar->indexOf(label.key());
-                if (label->retired && (index < 0 || label->sticky != (index < bar->stickyCount()))) {
-                    departures.insert(label.key(), *label);
-                    label->retired.reset();
-                }
-            }
+            auto departures = bar->takeSeparateDepartures(it.value());
             // A closing last row can already be outside the new bar's bounds.
             // Paint departures in the surface, independently of its new size.
             if (!departures.isEmpty()) new RetiringLabels(std::move(departures), manager_->theme(), this);
-            QTimer::singleShot(0, bar, [bar, state = std::move(it.value())]() mutable { if (bar) bar->transitionFrom(std::move(state)); });
+            const auto generation = rebuildGeneration_;
+            QTimer::singleShot(0, bar, [self, bar, generation, state = std::move(it.value())]() mutable {
+                if (self && self->rebuildGeneration_ == generation && bar) bar->transitionFrom(std::move(state));
+            });
         }
         for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value() && !previousGroupsIds.contains(it.key())) {
             const QPointer<TabBar> bar(it.value()->tabBar());
-            QTimer::singleShot(0, bar, [bar] { if (bar) bar->transitionFrom({}); });
+            const auto generation = rebuildGeneration_;
+            QTimer::singleShot(0, bar, [self, bar, generation] {
+                if (self && self->rebuildGeneration_ == generation && bar) bar->transitionFrom({});
+            });
         }
     };
     ++rebuildGeneration_;
