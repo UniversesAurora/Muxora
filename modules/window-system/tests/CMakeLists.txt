@@ -14,6 +14,27 @@ add_test(NAME window-system.frame-motion COMMAND window-system-frame-motion-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/frame-motion-results.txt,txt)
 set_tests_properties(window-system.frame-motion PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-quick-path-test quick_path_test.cpp
+    ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)
+target_link_libraries(window-system-quick-path-test PRIVATE Qt6::Gui Qt6::Test)
+target_compile_features(window-system-quick-path-test PRIVATE cxx_std_20)
+target_include_directories(window-system-quick-path-test PRIVATE ../src)
+set_target_properties(window-system-quick-path-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.quick-path COMMAND window-system-quick-path-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/quick-path-results.txt,txt)
+set_tests_properties(window-system.quick-path PROPERTIES TIMEOUT 60 LABELS model)
+
+if(TARGET WindowSystemQuick)
+    qt_add_executable(window-system-quick-rendering-test quick_rendering_test.cpp ../src/docking/surface_geometry.cpp)
+    target_link_libraries(window-system-quick-rendering-test PRIVATE WindowSystemQuick Qt6::Test)
+    target_compile_features(window-system-quick-rendering-test PRIVATE cxx_std_20)
+    target_include_directories(window-system-quick-rendering-test PRIVATE ../src)
+    set_target_properties(window-system-quick-rendering-test PROPERTIES AUTOMOC ON)
+    add_test(NAME window-system.quick-rendering COMMAND window-system-quick-rendering-test
+        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-rendering-results.txt,txt)
+    set_tests_properties(window-system.quick-rendering PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
+endif()
+
 qt_add_executable(window-system-widget-test workspace_test.cpp)
 target_link_libraries(window-system-widget-test PRIVATE WindowSystem::Widgets Qt6::Test)
 set_target_properties(window-system-widget-test PROPERTIES AUTOMOC ON)

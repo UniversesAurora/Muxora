@@ -8,6 +8,7 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TESTING})
 option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
+option(WINDOW_SYSTEM_BUILD_QUICK "Build the in-progress Quick rendering layer" OFF)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
@@ -90,6 +91,19 @@ target_include_directories(WindowSystemWidgets PUBLIC
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets)
 
+if(WINDOW_SYSTEM_BUILD_QUICK)
+    find_package(Qt6 6.9 REQUIRED COMPONENTS Quick)
+    # Internal until content and native-window interfaces complete the
+    # migration. Enabling this does not replace the application renderer.
+    add_library(WindowSystemQuick STATIC
+        src/quick/path_geometry.cpp src/quick/path_item.cpp
+        src/quick/frame_motion.cpp src/quick/window_motion.cpp)
+    set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
+    target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
+    target_include_directories(WindowSystemQuick PRIVATE src)
+    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick)
+endif()
+
 # Keep editable Qt Linguist sources in version control; compiled catalogs are
 # generated and embedded for SDK-independent deployment and module consumers.
 set(window_system_translation_sources
@@ -137,7 +151,11 @@ if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp src/platform/windows/font_families.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
-foreach(target WindowSystemModel WindowSystemWidgets)
+set(window_system_compile_targets WindowSystemModel WindowSystemWidgets)
+if(TARGET WindowSystemQuick)
+    list(APPEND window_system_compile_targets WindowSystemQuick)
+endif()
+foreach(target IN LISTS window_system_compile_targets)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
     else()
