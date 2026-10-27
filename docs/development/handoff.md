@@ -49,6 +49,21 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 待 Claude 清理：策略拦截的临时诊断文件
+
+Codex 在 Quick 迁移期间删除下列目标时被自动审批拦截，工具只返回“blocked by policy”，未给出更具体原因；没有换工具绕过。按 [Codex 删除受阻规则](../../AGENTS.md#必须遵守)，由 Claude 接手时先核对再清理。本条只是清理任务，不表示当前迁移已交出。
+
+位置均相对于系统临时目录，接手时通过 `[IO.Path]::GetTempPath()` 解析；不对同前缀的其他文件批量操作。
+
+| 目标 | 用途与核对依据 |
+| --- | --- |
+| `muxora-quick-render-batch.ps1`、`muxora-quick-motion-diagnostic.ps1`、`muxora-quick-frame-probe.ps1`、`muxora-quick-awake-batch.ps1` | Quick GPU 接线、帧调度、亮屏和休眠的临时诊断入口，结果已记入 [验证日志](verification-log/2026-10.md#quick-保留绘制与屏幕刷新验证2026-10-27)。 |
+| `muxora-vblank-probe.ps1`、`muxora-vblank-probe.cpp`、`muxora-vblank-probe.exe`、`muxora-vblank-probe.obj` | 独立刷新等待探针及其编译产物，依据同上。 |
+| `muxora-wheel-controller-batch.ps1`、`muxora-wheel-before-batch.ps1` | 滚轮接线和改前对照入口，结果见 [滚轮记录](verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)。 |
+| `muxora-wheel-compare-7d0d5c14053143f9895e2bf1a65e7e9a/` | 改前对照时暂存本次 `tab_bar.cpp`、`tab_bar.hpp` 的目录；现行代码已恢复并提交，不能将副本覆盖回源码。删除前检查目录只含这两个诊断副本。 |
+
+完成后移除本清单；目标不存在或不能确认用途时写明实际情况，不将其记为已删除。
+
 ## 2026-10-25 · Claude：标签栏重做（8.20–8.26），测试未全绿
 
 - **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。之前本地的 5 个 WIP 检查点已合成一个提交。
