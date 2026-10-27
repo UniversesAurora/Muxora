@@ -3,6 +3,7 @@
 
 #include <QPainterPath>
 #include <QRectF>
+#include <tuple>
 
 namespace window_system {
 
@@ -26,6 +27,14 @@ struct SurfaceGeometryInput {
     bool covered = false;
     qreal coveredProgress = 1;
     bool compact = false;
+    bool operator==(const SurfaceGeometryInput& other) const
+    {
+        return std::tie(body, bodyRadius, anchor, visibleAnchor, edge, anchorRadius,
+                        shoulderRadius, joinProgress, adjacent, overlay, covered, coveredProgress, compact)
+            == std::tie(other.body, other.bodyRadius, other.anchor, other.visibleAnchor, other.edge,
+                        other.anchorRadius, other.shoulderRadius, other.joinProgress, other.adjacent,
+                        other.overlay, other.covered, other.coveredProgress, other.compact);
+    }
 };
 
 struct SurfaceGeometry {

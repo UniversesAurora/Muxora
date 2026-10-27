@@ -39,7 +39,7 @@ public:
     void refreshGroupFocus();
     // Uses surface coordinates, including when replayed beneath a card's
     // rounded corner. Never renders QWidget contents or calls itself.
-    void paintBackplate(QPainter& painter, const QRect& exposed);
+    void paintBackplate(QPainter& painter, const QRegion& exposed);
     [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
     [[nodiscard]] QRect groupContentRect(GroupId group) const;
     [[nodiscard]] GroupId groupAt(QPoint global) const;

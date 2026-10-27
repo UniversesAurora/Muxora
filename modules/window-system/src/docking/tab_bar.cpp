@@ -428,7 +428,9 @@ SurfaceGeometry TabBar::anchorGeometry(QRectF anchor, QRectF visible, bool compa
     input.adjacent = adjacent && input.joinProgress > 0;
     input.covered = values.second * panel > 0; input.coveredProgress = values.second * panel;
     input.compact = compact;
-    auto geometry = surfaceGeometry(input);
+    auto& cached = anchorGeometryCache_[transitioning ? 1 : 0];
+    if (!cached || !(cached->first == input)) cached = std::pair{input, surfaceGeometry(input)};
+    auto geometry = cached->second;
     if (foreground && transitioning) {
         geometry.body = {}; geometry.bodyPath = {}; geometry.mergedPath = geometry.anchorPath;
         geometry.joined = false;

@@ -621,15 +621,15 @@ void DockSurface::restoreStripScrollOffsets()
 void DockSurface::paintEvent(QPaintEvent* event)
 {
     QPainter painter(this);
-    paintBackplate(painter, event->rect());
+    paintBackplate(painter, event->region());
 }
-void DockSurface::paintBackplate(QPainter& painter, const QRect& exposed)
+void DockSurface::paintBackplate(QPainter& painter, const QRegion& exposed)
 {
-    if (!manager_ || compactPresentation_) return;
+    if (!manager_ || compactPresentation_ || exposed.isEmpty()) return;
     painter.save();
-    painter.setClipRect(exposed, Qt::IntersectClip);
+    painter.setClipRegion(exposed, Qt::IntersectClip);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(exposed, manager_->interfaceTheme().headerBackground);
+    for (const auto& rect : exposed) painter.fillRect(rect, manager_->interfaceTheme().headerBackground);
     for (const auto& group : std::as_const(groups_))
         if (group && group->isVisibleTo(this))
             group->paintSurface(painter, elevation_, group->mapTo(this, QPoint()), exposed);

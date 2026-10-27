@@ -23,6 +23,7 @@
 #include <QVariant>
 #include <QWidget>
 #include <functional>
+#include <array>
 #include <optional>
 #include <memory>
 
@@ -458,6 +459,9 @@ private:
     TabDragVisual incomingVisual_;
     QPoint incomingPointer_;
     mutable std::optional<QRect> carrierBounds_;
+    // Two bounded shape snapshots: attachment probing and displayed shape.
+    // Full input keys cover resize, animation, scrolling, and theme metrics.
+    mutable std::array<std::optional<std::pair<SurfaceGeometryInput, SurfaceGeometry>>, 2> anchorGeometryCache_;
     mutable QVector<int> carrierTabs_;
     bool dropSticky_ = false;
     QVector<int> dropBlock_;

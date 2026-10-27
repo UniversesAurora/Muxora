@@ -20,6 +20,7 @@
 #include <QMouseEvent>
 #include <QMoveEvent>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QScopedValueRollback>
 #include <QStackedWidget>
 #include <QStyle>
@@ -135,7 +136,7 @@ public:
     }
     void invalidate(const QRect& area) { update(corners() & QRegion(area)); }
 protected:
-    void paintEvent(QPaintEvent*) override
+    void paintEvent(QPaintEvent* event) override
     {
         if (card_.isEmpty()) return;
         QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
@@ -149,7 +150,7 @@ protected:
         if (!surface) { painter.fillRect(card_, theme_.headerBackground); return; }
         const auto origin = mapTo(surface, QPoint());
         painter.translate(-origin);
-        surface->paintBackplate(painter, card_.translated(origin));
+        surface->paintBackplate(painter, (event->region() & corners()).translated(origin));
     }
 private:
     [[nodiscard]] QRegion corners() const
@@ -451,9 +452,9 @@ QRegion GroupTabs::surfacePaintRegion() const
     region -= stack_->geometry().adjusted(inset, inset, -inset, -inset);
     return region;
 }
-void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRect& exposed) const
+void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRegion& exposed) const
 {
-    if (compactPresentation_ || !stack_ || stack_->isHidden() || !surfaceBounds().translated(offset).intersects(exposed)) return;
+    if (compactPresentation_ || !stack_ || stack_->isHidden() || !exposed.intersects(surfaceBounds().translated(offset))) return;
     const QRectF body(stack_->geometry());
     const auto profile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
         elevationProfile(ElevationLevel::BodyRaised), surfaceFocus_.value());
@@ -461,6 +462,10 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
     style.focused = surfaceFocused_;
     const auto anchors = barVisible_ ? bar_->surfaceAnchors(bar_->mapTo(this, QPoint())) : QVector<TabSurfaceAnchor>{};
     painter.save(); painter.translate(offset);
+    // The shared backplate never contributes inside the hosted page. Bound
+    // raster clipping to the same perimeter used for surface invalidation,
+    // rather than processing a card-sized antialiased clip on every resize.
+    painter.setClipRegion(surfacePaintRegion(), Qt::IntersectClip);
     painter.save();
     QPainterPath bodyRegion; bodyRegion.addRect(surfaceBounds());
     const auto bodyMargins = elevationMargins(profile);

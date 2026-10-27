@@ -47,7 +47,7 @@ public:
     // Painting is delegated to the owning DockSurface, so shadows can cross
     // splitter gaps without snapshots of the group's contents.
     std::function<void()> surfaceInvalidated;
-    void paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRect& exposed) const;
+    void paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRegion& exposed) const;
     [[nodiscard]] QRect surfaceBounds() const;
     [[nodiscard]] QRegion surfacePaintRegion() const;
     void invalidateSurfaceCorners(const QRect& area);
