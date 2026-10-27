@@ -22,6 +22,15 @@ target_include_directories(WindowSystemModel PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 
+# Presentation state and layout are shared by both rendering adapters. This
+# target has no widget, scene graph or platform-window dependency.
+add_library(WindowSystemPresentation STATIC
+    src/docking/tab_layout.cpp src/docking/tab_wheel_controller.cpp src/style/frame_motion.cpp)
+set_target_properties(WindowSystemPresentation PROPERTIES EXPORT_NAME Presentation)
+target_compile_features(WindowSystemPresentation PUBLIC cxx_std_20)
+target_include_directories(WindowSystemPresentation PRIVATE src)
+target_link_libraries(WindowSystemPresentation PRIVATE Qt6::Core)
+
 add_library(WindowSystemWidgets STATIC
     src/localization/localization.cpp
     src/window_manager.cpp
@@ -54,7 +63,6 @@ add_library(WindowSystemWidgets STATIC
     src/commands/command_dialogs.cpp
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
-    src/docking/tab_layout.cpp
     src/docking/tab_bar.cpp
     src/style/tab_painter.cpp
     src/style/elevation.cpp
@@ -89,19 +97,18 @@ target_include_directories(WindowSystemWidgets PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets)
+target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation)
 
 if(WINDOW_SYSTEM_BUILD_QUICK)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Quick)
     # Internal until content and native-window interfaces complete the
     # migration. Enabling this does not replace the application renderer.
     add_library(WindowSystemQuick STATIC
-        src/quick/path_geometry.cpp src/quick/path_item.cpp
-        src/quick/frame_motion.cpp src/quick/window_motion.cpp)
+        src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PRIVATE src)
-    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick)
+    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation)
 endif()
 
 # Keep editable Qt Linguist sources in version control; compiled catalogs are
@@ -151,7 +158,7 @@ if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp src/platform/windows/font_families.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
-set(window_system_compile_targets WindowSystemModel WindowSystemWidgets)
+set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemWidgets)
 if(TARGET WindowSystemQuick)
     list(APPEND window_system_compile_targets WindowSystemQuick)
 endif()
@@ -173,7 +180,7 @@ if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-install(TARGETS WindowSystemModel WindowSystemWidgets EXPORT WindowSystemTargets
+install(TARGETS WindowSystemModel WindowSystemPresentation WindowSystemWidgets EXPORT WindowSystemTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

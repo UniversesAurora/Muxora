@@ -295,10 +295,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         setLaneOffset(lane, qRound(value));
         if (!self) return;
         applyingScrollMotion_ = false;
-        if (expanded_ && layout_.rowScrollLane == lane) {
-            const auto info = layout_.laneList.value(lane);
-            rowWheelGuard_.observe(info.offset == (placement_ == TabBarPlacement::Bottom ? info.maximumOffset() : 0), rowWheelClock_.elapsed());
-        }
+        wheelController_.observeRowScroll(layout_, lane, expanded_, placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
     };
     connect(&scrollbarOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); refreshScrollInput(); });
     connect(&scrollbarHideTimer_, &QTimer::timeout, this, [this] {
@@ -588,7 +585,7 @@ void TabBar::setAppearance(const TabAppearance& appearance, TabBarPlacement plac
     appearance_ = appearance; placement_ = placement;
     if (arrangement) {
         // A new arrangement starts collapsed (when it collapses) and at its start.
-        expanded_ = false; expandedByWheel_ = false; temporaryRowsOverlay_ = false; rowWheelGuard_.reset(); rowsReveal_.jump(0); rowsOffset_ = 0;
+        expanded_ = false; expandedByWheel_ = false; temporaryRowsOverlay_ = false; wheelController_.reset(); rowsReveal_.jump(0); rowsOffset_ = 0;
     }
     if (!vertical()) { iconMode_ = false; peeking_ = false; }
     updateTitleWidths();
@@ -1489,17 +1486,7 @@ bool TabBar::isOverflowing() const
 
 int TabBar::laneAt(QPoint local) const
 {
-    const auto point = local - tabOrigin();
-    if (!vertical()) for (int lane = 0; lane < layout_.laneList.size(); ++lane)
-        if (!layout_.laneList.at(lane).vertical && layout_.laneList.at(lane).viewport.contains(point)) return lane;
-    int nearest = -1, distance = std::numeric_limits<int>::max();
-    for (int lane = 0; lane < layout_.laneList.size(); ++lane) {
-        const auto viewport = layout_.laneList.at(lane).viewport;
-        if (viewport.contains(point)) return lane;
-        const int gap = point.y() < viewport.top() ? viewport.top() - point.y() : point.y() > viewport.bottom() ? point.y() - viewport.bottom() : 0;
-        if (gap < distance) { distance = gap; nearest = lane; }
-    }
-    return nearest;
+    return TabWheelController::laneAt(layout_, local - tabOrigin(), vertical());
 }
 
 void TabBar::setLaneOffset(int lane, int offset)
@@ -1573,38 +1560,31 @@ void TabBar::refreshScrollInput()
 bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
 {
     if (delta.isNull()) return false;
-    const int directLane = laneAt(local);
-    if (!vertical() && directLane >= 0 && !layout_.laneList.at(directLane).vertical
-        && layout_.laneList.at(directLane).maximumOffset() > 0) {
-        const auto lane = layout_.laneList.at(directLane);
-        const int amount = delta.x() ? delta.x() : delta.y();
-        revealScrollbar(directLane);
-        scrollLaneBy(directLane, -amount, smooth);
+    const TabWheelPolicy policy{
+        .vertical = vertical(),
+        .bottom = placement_ == TabBarPlacement::Bottom,
+        .collapsible = collapsible(),
+        .wheelExpandRows = appearance_.wheelExpandRows,
+        .collapsed = collapsedNow(),
+        .expanded = expanded_
+    };
+    const auto decision = wheelController_.route(layout_, local - tabOrigin(), delta, policy, rowWheelClock_.elapsed());
+    using Action = TabWheelDecision::Action;
+    if (decision.action == Action::Ignore) return false;
+    if (decision.action == Action::Expand) { setExpanded(true, true); return true; }
+    if (decision.action == Action::Collapse) { setExpanded(false); return true; }
+    if (decision.action == Action::HoldAtBoundary) return true;
+    const int lane = decision.lane;
+    if (decision.horizontalPriority) {
+        revealScrollbar(lane);
+        scrollLaneBy(lane, decision.delta, smooth);
         return true;
     }
-    if (collapsible() && appearance_.wheelExpandRows && (collapsedNow() || expanded_)) {
-        const bool bottom = placement_ == TabBarPlacement::Bottom;
-        const int amount = (delta.y() ? delta.y() : delta.x()) * (bottom ? -1 : 1);
-        if (amount < 0 && collapsedNow() && layout_.hidden > 0) { setExpanded(true, true); return true; }
-        const auto lane = layout_.laneList.value(layout_.rowScrollLane);
-        const bool atCollapseEdge = lane.offset == (bottom ? lane.maximumOffset() : 0);
-        if (amount > 0 && expanded_ && atCollapseEdge) {
-            if (rowWheelGuard_.allowsExit(lane.maximumOffset() > 0, rowWheelClock_.elapsed())) setExpanded(false);
-            return true;
-        }
-    }
-    const int lane = laneAt(local);
-    if (lane < 0) return false;
-    const auto& info = layout_.laneList.at(lane);
-    const int amount = info.vertical ? (delta.y() ? delta.y() : delta.x()) : (delta.x() ? delta.x() : delta.y());
     // A listener of the change may destroy this strip.
     const QPointer<TabBar> self(this);
-    const bool moved = scrollLaneBy(lane, -amount, smooth);
+    const bool moved = scrollLaneBy(lane, decision.delta, smooth);
     if (!self) return true;
-    if (expanded_ && layout_.rowScrollLane == lane) {
-        const auto after = layout_.laneList.value(lane);
-        rowWheelGuard_.observe(after.offset == (placement_ == TabBarPlacement::Bottom ? after.maximumOffset() : 0), rowWheelClock_.elapsed());
-    }
+    wheelController_.observeRowScroll(layout_, lane, expanded_, placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
     return moved;
 }
 
@@ -1667,7 +1647,7 @@ void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
     const bool activeWasVisible = fullyVisible(current_);
     auto before = moving ? captureVisualState() : VisualState{};
     expanded_ = expanded;
-    rowWheelGuard_.reset();
+    wheelController_.reset();
     updateRowPresentation(std::move(before), moving, activeWasVisible);
 }
 
@@ -2318,7 +2298,7 @@ void TabBar::mousePressEvent(QMouseEvent* event)
             const int along = lane.vertical ? point.y() - track.top() - thumb.height() / 2 : point.x() - track.left() - thumb.width() / 2;
             setLaneOffset(laneIndex, int(qint64(std::clamp(along, 0, std::max(1, length))) * lane.maximumOffset() / std::max(1, length)));
         }
-        rowWheelGuard_.reset();
+        wheelController_.reset();
         scrollDragLane_ = laneIndex; scrollDragOrigin_ = layout_.laneList.at(laneIndex).offset; scrollDragStart_ = point;
         revealScrollbar(scrollDragLane_);
         event->accept(); return;
@@ -2380,7 +2360,7 @@ void TabBar::mouseReleaseEvent(QMouseEvent* event)
         if (index >= 0 && !kept && tabAt(point) == index) { const auto callback = close; if (callback) callback(index); }
         return;
     }
-    if (scrollDragLane_ >= 0) { rowWheelGuard_.reset(); scrollDragLane_ = -1; scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
+    if (scrollDragLane_ >= 0) { wheelController_.reset(); scrollDragLane_ = -1; scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
     pressed_ = -1;
     if (pressedHeader_ >= 0) {
         const int folder = pressedHeader_; pressedHeader_ = -1; update();

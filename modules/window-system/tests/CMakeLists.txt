@@ -5,14 +5,23 @@ add_test(NAME window-system.model COMMAND window-system-model-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/model-results.txt,txt)
 set_tests_properties(window-system.model PROPERTIES LABELS model)
 
-qt_add_executable(window-system-frame-motion-test frame_motion_test.cpp ../src/quick/frame_motion.cpp)
-target_link_libraries(window-system-frame-motion-test PRIVATE Qt6::Core Qt6::Test)
+qt_add_executable(window-system-frame-motion-test frame_motion_test.cpp)
+target_link_libraries(window-system-frame-motion-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_compile_features(window-system-frame-motion-test PRIVATE cxx_std_20)
 target_include_directories(window-system-frame-motion-test PRIVATE ../src)
 set_target_properties(window-system-frame-motion-test PROPERTIES AUTOMOC ON)
 add_test(NAME window-system.frame-motion COMMAND window-system-frame-motion-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/frame-motion-results.txt,txt)
 set_tests_properties(window-system.frame-motion PROPERTIES TIMEOUT 60 LABELS model)
+
+qt_add_executable(window-system-tab-wheel-controller-test tab_wheel_controller_test.cpp)
+target_link_libraries(window-system-tab-wheel-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_compile_features(window-system-tab-wheel-controller-test PRIVATE cxx_std_20)
+target_include_directories(window-system-tab-wheel-controller-test PRIVATE ../src)
+set_target_properties(window-system-tab-wheel-controller-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-wheel-controller COMMAND window-system-tab-wheel-controller-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-wheel-controller-results.txt,txt)
+set_tests_properties(window-system.tab-wheel-controller PROPERTIES TIMEOUT 60 LABELS model)
 
 qt_add_executable(window-system-quick-path-test quick_path_test.cpp
     ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)

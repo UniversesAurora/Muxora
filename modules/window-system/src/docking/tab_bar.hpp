@@ -5,10 +5,10 @@
 #include "style/smooth_scroll.hpp"
 
 #include "tab_layout.hpp"
+#include "tab_wheel_controller.hpp"
 #include "style/tab_painter.hpp"
 #include "style/tab_title_layout.hpp"
 #include "style/motion.hpp"
-#include "style/scroll_boundary_guard.hpp"
 #include "style/elevation.hpp"
 #include <window_system/layout_model.hpp>
 #include <window_system/tab_appearance.hpp>
@@ -442,7 +442,7 @@ private:
     bool temporaryRowsOverlay_ = false;
     QTimer collapseTimer_;
     QTimer peekTimer_;
-    ScrollBoundaryGuard rowWheelGuard_{250};
+    TabWheelController wheelController_;
     QElapsedTimer rowWheelClock_;
     ProgressAnimation rowsReveal_{0};
     ProgressAnimation scrollbarOpacity_{0};

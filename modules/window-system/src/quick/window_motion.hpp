@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "frame_motion.hpp"
+#include "style/frame_motion.hpp"
 #include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>

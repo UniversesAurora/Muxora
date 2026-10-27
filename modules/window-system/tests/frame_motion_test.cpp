@@ -2,7 +2,7 @@
 // Shared motion contract at window frame cadence, without a window or timer.
 // Dimensions: every existing curve, 60/144/240 Hz samples, interruption,
 // proportional surface duration, repeated/backward time, disabled and idle.
-#include "quick/frame_motion.hpp"
+#include "style/frame_motion.hpp"
 
 #include <QTest>
 #include <array>
