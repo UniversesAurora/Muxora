@@ -6,6 +6,7 @@
 #include "edge_strip.hpp"
 #include "dock_guides.hpp"
 #include "tab_layout.hpp"
+#include "drag_start.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/tab_title_layout.hpp"
 #include "style/elevation.hpp"
@@ -51,7 +52,7 @@ public:
     void setDraggedTab(TabId tab);
     // The dragged tab of a strip, drawn lifted under the pointer while the
     // drag stays in that strip; a null tab ends it everywhere.
-    void setLiftedTab(GroupId group, QPoint global, QPoint grab);
+    void setLiftedTab(GroupId group, QPoint global, const DragAnchor& grab);
     void clearLiftedTabs();
     // A picture of dragged content over one group's pages; a null group
     // removes every picture.
@@ -59,7 +60,7 @@ public:
     // The active page of this surface's active group, painted now.
     [[nodiscard]] QPixmap activeContentPicture() const;
     // Where in its tab a drag took hold of it.
-    [[nodiscard]] QPoint tabGrabOffset(TabId tab, QPoint global) const;
+    [[nodiscard]] DragAnchor tabGrabAnchor(TabId tab, QPoint global) const;
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
     [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
@@ -71,7 +72,7 @@ public:
     [[nodiscard]] FolderId insertionFolder(GroupId group) const;
     // A tab folder carried within its own strip; null ends it everywhere.
     void setDraggedFolder(FolderId folder);
-    [[nodiscard]] QPoint folderGrabOffset(FolderId folder, QPoint global) const;
+    [[nodiscard]] DragAnchor folderGrabAnchor(FolderId folder, QPoint global) const;
     // Whether a point is over the group's row of sticky tabs; empty without one.
     [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint point) const;
     // Whether a drop at the group's insertion preview makes the tab sticky.
@@ -101,6 +102,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
+    void beginLabelDrag(TabId tab, FolderId folder, const DragStart& start);
     // Everything a group's strip is built from. A group whose signature and
     // pages are unchanged keeps its GroupTabs across rebuilds.
     struct GroupSignature {

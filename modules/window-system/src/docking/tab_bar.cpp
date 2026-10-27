@@ -1703,6 +1703,11 @@ void TabBar::setDraggedFolder(QUuid folder)
 }
 void TabBar::setLifted(QPoint local, QPoint grab)
 {
+    setLiftedWithAnchor(local, {grab, {}});
+}
+
+void TabBar::setLiftedWithAnchor(QPoint local, const DragAnchor& grab)
+{
     if (local.isNull()) {
         if (!liftedPointer_) return;
         liftedPointer_.reset(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled());
@@ -1810,13 +1815,19 @@ int TabBar::horizontalDragRowTop(QPoint local) const
 QRect TabBar::incomingRect() const
 {
     if (!incomingVisual_.paint || incomingVisual_.size.isEmpty()) return {};
-    auto rect = QRect(incomingPointer_ - incomingVisual_.anchor, incomingVisual_.size);
+    const bool tile = vertical() && dropSticky_ && compactStickyTiles();
+    auto grab = incomingVisual_.anchor;
+    if (incomingVisual_.sourceAnchor) {
+        const auto reference = incomingVisual_.active.isEmpty()
+            ? QRect(QPoint(), incomingVisual_.size) : incomingVisual_.active;
+        grab = reference.topLeft() + incomingVisual_.sourceAnchor->forSize(reference.size(), tile);
+    }
+    auto rect = QRect(incomingPointer_ - grab, incomingVisual_.size);
     const auto origin = tabOrigin();
     if (vertical()) {
         // Rows slide vertically; compact tiles follow the same centered
         // grab as a local row being carried into the sticky section.
-        const bool tile = dropSticky_ && compactStickyTiles();
-        if (tile) return compactLiftedRect(incomingPointer_, rect.size(), incomingVisual_.anchor);
+        if (tile) return compactLiftedRect(incomingPointer_, rect.size(), grab);
         rect.moveLeft(metrics_.verticalInset);
         rect.moveTop(std::clamp(rect.top(), origin.y(), std::max(origin.y(), height() - rect.height())));
     } else {
@@ -1834,12 +1845,14 @@ QRect TabBar::liftedRect() const
         const int tabs = folder.collapsed ? 0 : folder.count;
         if (vertical()) {
             const int rows = 1 + tabs, height = rows * metrics_.rowHeight + (rows - 1) * metrics_.rowGap;
-            const int y = std::clamp(liftedPointer_->y() - liftedGrab_.y(), origin.y(), std::max(origin.y(), this->height() - height));
+            const auto grab = liftedGrab_.forSize({std::max(0, width() - 2 * metrics_.verticalInset), metrics_.rowHeight});
+            const int y = std::clamp(liftedPointer_->y() - grab.y(), origin.y(), std::max(origin.y(), this->height() - height));
             return {metrics_.verticalInset, y, std::max(0, width() - 2 * metrics_.verticalInset), height};
         }
         int extent = folderHeaderExtent(folder);
         for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) extent += tabExtent(index, false);
-        return {liftedPointer_->x() - liftedGrab_.x(), horizontalDragRowTop(*liftedPointer_), extent, metrics_.rowHeight};
+        const auto grab = liftedGrab_.forSize({folderHeaderExtent(folder), metrics_.rowHeight});
+        return {liftedPointer_->x() - grab.x(), horizontalDragRowTop(*liftedPointer_), extent, metrics_.rowHeight};
     }
     if (!liftedPointer_ || dragged_ < 0 || dragged_ >= tabs_.size()) return {};
     const bool sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
@@ -1852,14 +1865,15 @@ QRect TabBar::liftedRect() const
             const auto size = !layout_.gap.isEmpty() ? layout_.gap.first().size() : layout_.tabs.value(dragged_).size();
             return compactLiftedRect(*liftedPointer_, size, QRect(QPoint(), size).center());
         }
-        const int y = std::clamp(liftedPointer_->y() - liftedGrab_.y(), origin.y(), std::max(origin.y(), height() - metrics_.rowHeight));
+        const auto grab = liftedGrab_.forSize({rowWidth, metrics_.rowHeight});
+        const int y = std::clamp(liftedPointer_->y() - grab.y(), origin.y(), std::max(origin.y(), height() - metrics_.rowHeight));
         return {metrics_.verticalInset, y, rowWidth, metrics_.rowHeight};
     }
     const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky);
     // Local and incoming labels use the same scrolled row grid, including
     // a partially visible final row and a bottom strip's shadow origin.
     const int y = horizontalDragRowTop(*liftedPointer_);
-    const int grab = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? extent / 2 : liftedGrab_.x();
+    const int grab = liftedGrab_.forSize({extent, metrics_.rowHeight}, sticky && appearance_.stickySizing == StickyTabSizing::Compact).x();
     return {liftedPointer_->x() - grab, y, extent, metrics_.rowHeight};
 }
 
@@ -2308,8 +2322,10 @@ void TabBar::mousePressEvent(QMouseEvent* event)
         event->accept(); return;
     }
     const int index = tabAt(point);
-    pressPoint_ = point;
+    pressStart_ = DragStart::capture(event->globalPosition().toPoint(), point,
+        index >= 0 ? animatedRect(index) : QRect(point, QSize(1, 1)));
     if (const int header = index < 0 ? folderAt(point) : -1; header >= 0) {
+        pressStart_ = DragStart::capture(event->globalPosition().toPoint(), point, layout_.headers.at(header).translated(tabOrigin()));
         pressedHeader_ = header; update(); event->accept(); return;
     }
     if (index >= 0 && actionRect(index).contains(point) && !(isCompactSticky(index) && !vertical())) {
@@ -2338,18 +2354,18 @@ void TabBar::mouseMoveEvent(QMouseEvent* event)
     }
     updateHover(point);
     if (event->buttons().testFlag(Qt::LeftButton) && pressedHeader_ >= 0
-        && (point - pressPoint_).manhattanLength() >= QApplication::startDragDistance()) {
+        && pressStart_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
         // Dragging a header carries the whole folder.
         const int folder = pressedHeader_; pressedHeader_ = -1; update();
         const auto callback = folderDrag;
-        if (callback) callback(folder, event->globalPosition().toPoint());
+        if (callback) callback(folder, pressStart_.movedTo(event->globalPosition().toPoint()));
         return;
     }
     if (event->buttons().testFlag(Qt::LeftButton) && pressed_ >= 0
-        && (point - pressPoint_).manhattanLength() >= QApplication::startDragDistance()) {
+        && pressStart_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
         const int index = pressed_; pressed_ = -1;
         const auto callback = drag; // Detachment may rebuild and destroy this view.
-        if (callback) callback(index, event->globalPosition().toPoint());
+        if (callback) callback(index, pressStart_.movedTo(event->globalPosition().toPoint()));
     }
 }
 

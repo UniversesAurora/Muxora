@@ -60,7 +60,8 @@ void EdgeTabButton::mousePressEvent(QMouseEvent* event)
         if (event->button() == Qt::MiddleButton) middlePressed_ = true;
         event->accept(); return;
     }
-    start_ = event->position().toPoint(); QAbstractButton::mousePressEvent(event);
+    start_ = DragStart::capture(event->globalPosition().toPoint(), event->position().toPoint(), rect());
+    QAbstractButton::mousePressEvent(event);
 }
 void EdgeTabButton::mouseReleaseEvent(QMouseEvent* event)
 {
@@ -71,9 +72,9 @@ void EdgeTabButton::mouseReleaseEvent(QMouseEvent* event)
 void EdgeTabButton::mouseMoveEvent(QMouseEvent* event)
 {
     if (event->buttons().testFlag(Qt::LeftButton) &&
-        (event->position().toPoint() - start_).manhattanLength() >= QApplication::startDragDistance()) {
+        start_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
         setDown(false); const auto callback = drag;
-        if (callback) callback(event->globalPosition().toPoint());
+        if (callback) callback(start_.movedTo(event->globalPosition().toPoint()));
         return;
     }
     QAbstractButton::mouseMoveEvent(event);

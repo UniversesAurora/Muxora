@@ -41,8 +41,10 @@ public:
     explicit DragController(WindowManager* manager);
     ~DragController() override;
     void beginTab(TabId tab, QPoint global);
+    void beginTab(TabId tab, const DragStart& start);
     // A tab folder carried whole by its header (tab strip design 12).
     void beginFolder(FolderId folder, QPoint global);
+    void beginFolder(FolderId folder, const DragStart& start);
     void beginWindow(WindowId window, QPoint global);
     void cancel();
     void releaseForMutation();
@@ -109,7 +111,7 @@ private:
     QPoint windowOffset_;
     QPoint normalOffset_;
     QPoint lastPosition_;
-    QPoint liftGrab_;
+    DragAnchor liftGrab_;
     // The dragged content's picture, taken as it reaches a tab strip.
     QPixmap contentPicture_;
     GroupId previewGroup_;

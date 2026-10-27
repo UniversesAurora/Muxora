@@ -296,14 +296,23 @@ void DragController::nativeMoveEnded(quint64 generation)
 bool DragController::isActive() const { return active_; }
 void DragController::beginFolder(FolderId folder, QPoint global)
 {
+    beginFolder(folder, DragStart{global, global, {}});
+}
+void DragController::beginFolder(FolderId folder, const DragStart& start)
+{
     const auto tabs = manager_->model().folderTabs(folder);
     if (hasStableLayout() || tabs.isEmpty()) return;
     folder_ = folder;
-    beginTab(tabs.first(), global);
+    beginTab(tabs.first(), start);
     if (!active_) folder_ = {};
 }
 void DragController::beginTab(TabId tab, QPoint global)
 {
+    beginTab(tab, DragStart{global, global, {}});
+}
+void DragController::beginTab(TabId tab, const DragStart& startPoint)
+{
+    const auto global = startPoint.currentGlobal;
     if (hasStableLayout() || !manager_->model().tab(tab)) return;
     if (!manager_->model().folder(folder_) || !manager_->model().folderTabs(folder_).contains(tab)) folder_ = {};
     originalLayout_ = manager_->saveLayout();
@@ -329,7 +338,11 @@ void DragController::beginTab(TabId tab, QPoint global)
     if (!source) { originalLayout_ = {}; return; }
     const auto strip = sourceIsEdge_ ? source->surface()->edgeBarRects().value(sourceEdge_)
         : source->surface()->tabBarRects().value(sourceGroup_);
-    labelOnly_ = strip.contains(global);
+    labelOnly_ = strip.contains(startPoint.pressGlobal);
+    liftGrab_ = startPoint.anchor;
+    if (!liftGrab_.sourceSize.isValid())
+        liftGrab_ = folder_.isNull() ? source->surface()->tabGrabAnchor(tab, startPoint.pressGlobal)
+                                    : source->surface()->folderGrabAnchor(folder_, startPoint.pressGlobal);
     capture_ = source;
     if (labelOnly_) {
         // A group's strip lifts the tab itself (tab strip design 6.1); a rail
@@ -337,8 +350,8 @@ void DragController::beginTab(TabId tab, QPoint global)
         if (sourceIsEdge_) {
             const auto pixmap = source->surface()->dragLabelPixmap(tab);
             if (pixmap.isNull()) { labelOnly_ = false; originalLayout_ = {}; return; }
-            labelPreview_ = new DragLabelPreview(pixmap);
-        } else liftGrab_ = folder_.isNull() ? source->surface()->tabGrabOffset(tab, global) : source->surface()->folderGrabOffset(folder_, global);
+            labelPreview_ = new DragLabelPreview(pixmap, liftGrab_);
+        }
         source->surface()->captureStripScrollOffsets();
         if (folder_.isNull()) source->surface()->setDraggedTab(tab);
         else source->surface()->setDraggedFolder(folder_);
@@ -403,6 +416,7 @@ void DragController::beginWindow(WindowId window, QPoint global)
     originalLayout_ = manager_->saveLayout();
     const QScopedValueRollback preparing(preparing_, true);
     wholeWindow_ = window; tab_ = TabId{}; folder_ = {}; sourceWindow_ = window; movingWindow_ = window; detached_ = false; labelOnly_ = false;
+    liftGrab_ = {};
     capture_ = manager_->windowWidget(window);
     if (!capture_) { originalLayout_ = {}; return; }
     originalGeometry_ = static_cast<WorkspaceWindow*>(capture_.data())->normalPlacementGeometry();
@@ -641,6 +655,7 @@ void DragController::update(QPoint global)
         if (presentation == WorkspaceWindow::DragPresentation::Tab) {
             if (auto* targetWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window))) {
                 auto visual = moving->surface()->dragLabelVisual();
+                if (liftGrab_.sourceSize.isValid()) visual.sourceAnchor = liftGrab_;
                 if (visual.paint) {
                     targetWindow->surface()->setIncomingVisual(target_.group, std::move(visual), global);
                     if (!self || !active_ || !moving) return;

@@ -86,12 +86,13 @@ public:
     [[nodiscard]] QUuid insertionFolder() const;
     void setDraggedFolder(QUuid folder);
     // Where in a folder's header a drag took hold of it.
-    [[nodiscard]] QPoint folderGrabOffset(QUuid folder, QPoint global) const;
+    [[nodiscard]] DragAnchor folderGrabAnchor(QUuid folder, QPoint global) const;
     [[nodiscard]] std::optional<bool> insertionRow(QPoint global) const;
     void setDraggedTab(TabId tab);
     // The dragged tab follows the pointer inside this strip; `grab` is where
     // in the tab it was taken. Its center, not the pointer, picks the slot.
     void setLiftedTab(QPoint global, QPoint grab);
+    void setLiftedTabWithAnchor(QPoint global, const DragAnchor& grab);
     void clearLiftedTab();
     // A picture of dragged content shown over this group's pages, as if its
     // tab were already here (tab strip design 6.4); a null pixmap removes it.
@@ -171,7 +172,7 @@ private:
     mutable QPoint dragProbe_;
     bool lifting_ = false;
     QPoint liftedGlobal_;
-    QPoint liftedGrab_;
+    DragAnchor liftedGrab_;
     bool dragHovered_ = false;
     std::optional<int> pendingScrollOffset_;
     std::optional<TabViewportState> settledViewport_;

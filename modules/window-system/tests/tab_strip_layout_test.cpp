@@ -1184,7 +1184,7 @@ void TabStripLayoutTest::folderHeadersToggleOpenMenusAndCarry()
     bar->toggleFolder = [&toggled](int folder) { toggled << folder; };
     bar->newTabInFolder = [&created](int folder) { created << folder; };
     bar->folderMenu = [&menus](int folder, QPoint point) { menus << QPair{folder, point}; };
-    bar->folderDrag = [&drags](int folder, QPoint point) { drags << QPair{folder, point}; };
+    bar->folderDrag = [&drags](int folder, DragStart start) { drags << QPair{folder, start.currentGlobal}; };
     TabStripFolder folder{QUuid::createUuid(), QStringLiteral("Work"), {}, false, 1, 3};
     bar->setFolders({folder});
     tabs.setCurrentIndex(0);

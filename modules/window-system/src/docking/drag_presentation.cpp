@@ -22,8 +22,8 @@ protected:
     }
 };
 } // namespace
-DragLabelPreview::DragLabelPreview(QPixmap label)
-    : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus), label_(std::move(label))
+DragLabelPreview::DragLabelPreview(QPixmap label, DragAnchor anchor)
+    : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus), label_(std::move(label)), anchor_(anchor)
 {
     setObjectName("DragLabelPreview");
     setAttribute(Qt::WA_TranslucentBackground); setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -32,7 +32,9 @@ DragLabelPreview::DragLabelPreview(QPixmap label)
 }
 void DragLabelPreview::follow(QPoint global)
 {
-    move(global - QPoint(width() / 2, height() / 2));
+    const auto size = label_.deviceIndependentSize().toSize();
+    const auto grab = anchor_.forSize(size, !anchor_.sourceSize.isValid());
+    move(global - QPoint(4, 4) - grab);
     if (!isVisible()) show();
     raise();
 }

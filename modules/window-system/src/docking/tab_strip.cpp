@@ -691,7 +691,7 @@ void GroupTabs::layoutChildren()
         bar_->raise();
         updateCardJoin();
     }
-    if (lifting_) bar_->setLifted(bar_->mapFromGlobal(liftedGlobal_), liftedGrab_);
+    if (lifting_) bar_->setLiftedWithAnchor(bar_->mapFromGlobal(liftedGlobal_), liftedGrab_);
     if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); if (vertical()) columnPanel_->raise(); }
     footer_->raise();
     bar_->refreshPresentationLayers();
@@ -1095,9 +1095,14 @@ void GroupTabs::updateDragProbe(QPoint global) const {
 }
 void GroupTabs::setLiftedTab(QPoint global, QPoint grab)
 {
+    setLiftedTabWithAnchor(global, {grab, {}});
+}
+
+void GroupTabs::setLiftedTabWithAnchor(QPoint global, const DragAnchor& grab)
+{
     lifting_ = true;
     liftedGlobal_ = global; liftedGrab_ = grab;
-    bar_->setLifted(bar_->mapFromGlobal(global), grab);
+    bar_->setLiftedWithAnchor(bar_->mapFromGlobal(global), grab);
     // beginTab opens the first gap before asking for an insertion index.
     // Its probe must already belong to the row where the label was taken.
     updateDragProbe(global);
@@ -1135,10 +1140,11 @@ QUuid GroupTabs::insertionFolder() const
     return folder >= 0 && folder < bar_->folders().size() ? bar_->folders().at(folder).id : QUuid{};
 }
 void GroupTabs::setDraggedFolder(QUuid folder) { bar_->setDraggedFolder(folder); }
-QPoint GroupTabs::folderGrabOffset(QUuid folder, QPoint global) const
+DragAnchor GroupTabs::folderGrabAnchor(QUuid folder, QPoint global) const
 {
     for (int index = 0; index < bar_->folders().size(); ++index)
-        if (bar_->folders().at(index).id == folder) return bar_->mapFromGlobal(global) - bar_->folderHeaderRect(index).topLeft();
+        if (bar_->folders().at(index).id == folder)
+            return DragAnchor::capture(bar_->mapFromGlobal(global), bar_->tabLayout().headers.at(index).translated(bar_->tabOrigin()));
     return {};
 }
 std::optional<bool> GroupTabs::insertionRow(QPoint) const { return std::nullopt; }

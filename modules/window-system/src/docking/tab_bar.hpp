@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include "drag_start.hpp"
 
 #include "style/smooth_scroll.hpp"
 
@@ -54,6 +55,7 @@ struct TabDragVisual {
     std::function<LabelPositions()> positions;
     QRect active;
     QUuid identity;
+    std::optional<DragAnchor> sourceAnchor;
 };
 
 struct TabSurfaceAnchor {
@@ -251,6 +253,7 @@ public:
     // The dragged tab drawn lifted under the pointer, `grab` being where in
     // the tab it was taken (tab strip design 6.1). A null point ends it.
     void setLifted(QPoint local, QPoint grab = {});
+    void setLiftedWithAnchor(QPoint local, const DragAnchor& grab);
     // Where the lifted tab is drawn, in this widget.
     [[nodiscard]] QRect liftedRect() const;
     void setIncomingVisual(TabDragVisual visual, QPoint local = {});
@@ -279,7 +282,7 @@ public:
     // section (tab strip design 6.3).
     [[nodiscard]] int carriedExtent(const CarriedLabel& label, bool sticky) const;
 
-    std::function<void(int, QPoint)> drag;
+    std::function<void(int, DragStart)> drag;
     std::function<void(int, QPoint)> menu;
     std::function<void(int)> close;
     std::function<void(int)> unstick;
@@ -287,7 +290,7 @@ public:
     // carries the folder, and a vertical header's add button.
     std::function<void(int)> toggleFolder;
     std::function<void(int, QPoint)> folderMenu;
-    std::function<void(int, QPoint)> folderDrag;
+    std::function<void(int, DragStart)> folderDrag;
     std::function<void(int)> newTabInFolder;
     // The space the group keeps for the strip changed.
     std::function<void()> reservedSizeChanged;
@@ -449,7 +452,7 @@ private:
     int dragged_ = -1;
     int dropIndex_ = -1;
     std::optional<QPoint> liftedPointer_;
-    QPoint liftedGrab_;
+    DragAnchor liftedGrab_;
     std::optional<int> initialStickyBoundary_;
     QPointer<QWidget> liftedLayer_;
     TabDragVisual incomingVisual_;
@@ -461,7 +464,7 @@ private:
     int dropFolder_ = -1;
     int draggedFolder_ = -1;
     // Input.
-    QPoint pressPoint_;
+    DragStart pressStart_;
     int pressed_ = -1;
     int actionPressed_ = -1;
     int middlePressed_ = -1;

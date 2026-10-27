@@ -57,7 +57,7 @@ namespace {
 class PeekHeader final : public QWidget {
 public:
     explicit PeekHeader(QWidget* parent) : QWidget(parent) { updatePeekHeaderHeight(this); }
-    std::function<void(QPoint)> drag;
+    std::function<void(DragStart)> drag;
 protected:
     bool event(QEvent* event) override {
         const bool handled = QWidget::event(event);
@@ -65,15 +65,19 @@ protected:
             updatePeekHeaderHeight(this);
         return handled;
     }
-    void mousePressEvent(QMouseEvent* event) override { start_ = event->position().toPoint(); }
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            start_ = DragStart::capture(event->globalPosition().toPoint(), event->position().toPoint(), rect());
+    }
     void mouseMoveEvent(QMouseEvent* event) override {
         if (event->buttons().testFlag(Qt::LeftButton) &&
-            (event->position().toPoint() - start_).manhattanLength() >= QApplication::startDragDistance()) {
-            const auto callback = drag; if (callback) callback(event->globalPosition().toPoint());
+            start_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
+            const auto callback = drag; if (callback) callback(start_.movedTo(event->globalPosition().toPoint()));
         }
     }
 private:
-    QPoint start_;
+    DragStart start_;
 };
 // Splitters that hold group strips report their synchronous geometry passes,
 // including handle drags, so a rebuild can tell when moving a strip out of
@@ -708,6 +712,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         return content.data();
     };
     auto* bar = tabs->tabBar();
+    const QPointer<DockSurface> surface(this);
     for (const auto tabId : group->tabs) {
         const auto* record = manager_->model().tab(tabId);
         tabs->addTab(contents.value(tabId), manager_->tabOptions(tabId).showIcon ? iconFor("window", manager_->interfaceTheme()) : QIcon{},
@@ -732,8 +737,8 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     bar->newTabInFolder = [manager = QPointer<WindowManager>(manager_), window = window_, id, folderId](int folder) {
         if (manager) manager->requestNewTab(window, id, {}, folderId(folder));
     };
-    bar->folderDrag = [manager = QPointer<WindowManager>(manager_), folderId](int folder, QPoint point) {
-        if (manager) manager->beginTabFolderDrag(folderId(folder), point);
+    bar->folderDrag = [surface, folderId](int folder, DragStart start) {
+        if (surface) surface->beginLabelDrag({}, folderId(folder), start);
     };
     tabs->unstickRequested = [this, bar](int index) {
         if (manager_ && index >= 0 && index < bar->count()) manager_->setTabSticky(bar->tabData(index).toUuid(), false);
@@ -748,7 +753,6 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
     };
     // A strip can outlive this surface until its deferred deletion; its
     // callbacks then do nothing.
-    const QPointer<DockSurface> surface(this);
     tabs->surfaceInvalidated = [surface, id] { if (surface) surface->invalidateGroupSurface(id); };
     QObject::connect(tabs, &QObject::destroyed, this, [surface, tabs, id] {
         if (surface && (!surface->groups_.value(id) || surface->groups_.value(id).data() == tabs))
@@ -772,8 +776,8 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
             if (current) manager_->pinTab(current->activeTab, false);
         }, [this, edge = group->edge] { if (manager_) manager_->pinEdge(window_, edge, false); });
     }
-    bar->drag = [this, bar](int index, QPoint point) {
-        if (manager_) manager_->beginTabDrag(bar->tabData(index).toUuid(), point);
+    bar->drag = [surface, bar](int index, DragStart start) {
+        if (surface) surface->beginLabelDrag(bar->tabData(index).toUuid(), {}, start);
     };
     tabs->groupMenuRequested = [manager = QPointer<WindowManager>(manager_),id](QPoint point) {
         if(manager) manager->showGroupMenu(id,point);
@@ -857,7 +861,9 @@ QWidget* DockSurface::buildEdge(Edge edge, const QHash<TabId, QPointer<TabConten
             button->setCheckable(true);
             button->setChecked(manager_->context(window_).tab == tabId);
             button->setProperty("tabId", tabId);
-            button->drag = [this, tabId](QPoint point) { if (manager_) manager_->beginTabDrag(tabId, point); };
+            button->drag = [surface = QPointer<DockSurface>(this), tabId](DragStart start) {
+                if (surface) surface->beginLabelDrag(tabId, {}, start);
+            };
             button->menu = [this, tabId](QPoint point) { if (manager_) manager_->showTabMenu(tabId, point); };
             button->close = [this, tabId] { if (manager_) manager_->closeTab(tabId); };
             QObject::connect(button, &QAbstractButton::clicked, manager_, [this, groupId, tabId] {
@@ -1128,9 +1134,18 @@ QPixmap DockSurface::dragLabelPixmap(TabId tab) const
             if (button->property("tabId").toUuid() == tab) return button->grab();
     return {};
 }
-void DockSurface::setLiftedTab(GroupId group, QPoint global, QPoint grab)
+void DockSurface::beginLabelDrag(TabId tab, FolderId folder, const DragStart& start)
 {
-    if (const auto widget = groups_.value(group)) widget->setLiftedTab(global, grab);
+    const QPointer<WindowManager> manager(manager_);
+    if (!manager) return;
+    manager->cancelPendingShortcut();
+    if (!manager) return;
+    if (folder.isNull()) manager->d->drag->beginTab(tab, start);
+    else manager->d->drag->beginFolder(folder, start);
+}
+void DockSurface::setLiftedTab(GroupId group, QPoint global, const DragAnchor& grab)
+{
+    if (const auto widget = groups_.value(group)) widget->setLiftedTabWithAnchor(global, grab);
 }
 void DockSurface::setContentPreview(GroupId group, const QPixmap& picture)
 {
@@ -1149,12 +1164,13 @@ void DockSurface::clearLiftedTabs()
 {
     for (const auto& group : groups_) if (group) group->clearLiftedTab();
 }
-QPoint DockSurface::tabGrabOffset(TabId tab, QPoint global) const
+DragAnchor DockSurface::tabGrabAnchor(TabId tab, QPoint global) const
 {
     if (const auto group = groups_.value(manager_->model().groupForTab(tab))) {
         auto* bar = group->tabBar();
         const int index = bar->indexOf(tab);
-        if (index >= 0) return bar->mapFromGlobal(global) - bar->tabRect(index).topLeft();
+        if (index >= 0) return DragAnchor::capture(bar->mapFromGlobal(global),
+            bar->tabLayout().tabs.at(index).translated(bar->tabOrigin()));
     }
     return {};
 }
@@ -1217,10 +1233,10 @@ void DockSurface::setDraggedFolder(FolderId folder)
 {
     for (const auto& group : groups_) if (group) group->setDraggedFolder(folder);
 }
-QPoint DockSurface::folderGrabOffset(FolderId folder, QPoint global) const
+DragAnchor DockSurface::folderGrabAnchor(FolderId folder, QPoint global) const
 {
     const auto widget = groups_.value(manager_->model().groupForFolder(folder));
-    return widget ? widget->folderGrabOffset(folder, global) : QPoint{};
+    return widget ? widget->folderGrabAnchor(folder, global) : DragAnchor{};
 }
 bool DockSurface::insertionSticky(GroupId group) const
 {
@@ -1394,7 +1410,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
     };
     auto* layout = new QVBoxLayout(peek_); layout->setContentsMargins(1, 1, 1, 1); layout->setSpacing(0);
     auto* header = new PeekHeader(peek_); header->setObjectName("PeekTitleBar");
-    header->drag = [this, tab](QPoint point) { if (manager_) manager_->beginTabDrag(tab, point); };
+    header->drag = [self, tab](DragStart start) { if (self) self->beginLabelDrag(tab, {}, start); };
     auto* row = new QHBoxLayout(header); row->setContentsMargins(6, 1, 2, 1);
     row->setSpacing(2);
     auto* title = new QLabel(titleText, header);

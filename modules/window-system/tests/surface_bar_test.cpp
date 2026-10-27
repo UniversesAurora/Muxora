@@ -4,6 +4,8 @@
 #include "docking/tab_bar.hpp"
 #include "docking/tab_strip.hpp"
 
+#include <QApplication>
+#include <QMouseEvent>
 #include <QTest>
 #include <algorithm>
 
@@ -64,6 +66,58 @@ class SurfaceBarTest final : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { TabBar::setAnimationsEnabled(false); }
+
+    void firstFastDragKeepsItsPressAnchor_data() { positions(); }
+    void firstFastDragKeepsItsPressAnchor()
+    {
+        QFETCH(TabBarPlacement, placement);
+        TabBar bar(defaultTheme(), nullptr);
+        bar.setAppearance(TabAppearance{}, placement);
+        addTabs(bar, 4); bar.setCurrentIndex(1);
+        arrange(bar, bar.vertical() ? QSize(180, 500) : QSize(640, 500));
+        const auto original = bar.tabRect(1);
+        const auto press = original.topLeft() + QPoint(original.width() / 3, original.height() / 3);
+        const auto delta = bar.vertical() ? QPoint(0, 3 * original.height())
+            : QPoint(original.width() + QApplication::startDragDistance(), 0);
+        const auto moved = press + delta;
+        QVERIFY(!original.contains(moved));
+        QVERIFY(bar.rect().contains(moved));
+        bool started = false;
+        QRect lifted;
+        bar.drag = [&](int index, DragStart start) {
+            // Exercise the same start-to-lift coordinate contract as the
+            // controller, without exposing a window or capturing the mouse.
+            QCOMPARE(start.pressGlobal, bar.mapToGlobal(press));
+            QCOMPARE(start.currentGlobal, bar.mapToGlobal(moved));
+            bar.setDraggedTab(bar.tabData(index).toUuid());
+            bar.setLiftedWithAnchor(bar.mapFromGlobal(start.currentGlobal), start.anchor);
+            lifted = bar.liftedRect();
+            started = true;
+        };
+        QMouseEvent down(QEvent::MouseButtonPress, QPointF(press), QPointF(bar.mapToGlobal(press)),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&bar, &down);
+        QMouseEvent move(QEvent::MouseMove, QPointF(moved), QPointF(bar.mapToGlobal(moved)),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&bar, &move);
+        QVERIFY(started);
+        QCOMPARE(lifted.topLeft(), original.topLeft() + delta);
+        QVERIFY(lifted.contains(moved));
+        QVERIFY(!bar.isVisible());
+    }
+
+    void dragAnchorsStayInsideEveryPresentation()
+    {
+        for (const auto point : {QPoint(0, 0), QPoint(230, 27), QPoint(229, 26), QPoint(113, 12)}) {
+            const auto anchor = DragAnchor::capture(point, QRect(0, 0, 230, 28));
+            for (const auto size : {QSize(26, 26), QSize(600, 28), QSize(28, 300), QSize(1, 1)})
+                QVERIFY(QRect(QPoint(), size).contains(anchor.forSize(size)));
+        }
+        const auto start = DragStart::capture({200, 300}, {30, 10}, {0, 0, 230, 28});
+        QVERIFY(!start.crossedThreshold({200, 300}, 10));
+        QVERIFY(start.crossedThreshold({230, 340}, 10));
+        QCOMPARE(start.movedTo({230, 340}).anchor.offset, start.anchor.offset);
+    }
 
     void ordinaryPositionsReportTheBodyJoint_data() { positions(); }
     void ordinaryPositionsReportTheBodyJoint()
