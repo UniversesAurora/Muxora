@@ -11,7 +11,7 @@
 | `WindowSystem::Model` | 布局模型、稳定 ID、窗口族、事务和严格 JSON 校验；只依赖 Qt Core。 |
 | `WindowSystem::Widgets` | 原生窗口、停靠视图、窗格、命令、主题与平台适配；依赖 Model 和 Qt Widgets。 |
 
-内部 `WindowSystemPresentation` 只依赖 Qt Core，包含纯标签布局、滚轮控制器和按帧取样的动画；Widgets 与开发中的 Quick 目标共同链接它。安装时作为 `WindowSystem::Presentation` 依赖导出，没有供宿主直接调用的公开头文件。它不拥有窗口、输入设备或 GPU 资源。
+内部 `WindowSystemPresentation` 只依赖 Qt Core，包含纯标签布局、滚轮控制器、拖动限位和按帧取样的动画；Widgets 与开发中的 Quick 目标共同链接它。安装时作为 `WindowSystem::Presentation` 依赖导出，没有供宿主直接调用的公开头文件。它不拥有窗口、输入设备或 GPU 资源。
 
 可通过 `add_subdirectory()` 嵌入，也可安装后使用 `find_package(WindowSystem CONFIG REQUIRED)`。独立模块构建不探测 Muxora 或远程业务依赖；安装后接入由 `tests/fixtures/external-host/` 验证，不额外交付示例产品。
 

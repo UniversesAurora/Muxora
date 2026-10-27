@@ -23,6 +23,15 @@ add_test(NAME window-system.tab-wheel-controller COMMAND window-system-tab-wheel
     -o ${CMAKE_CURRENT_BINARY_DIR}/tab-wheel-controller-results.txt,txt)
 set_tests_properties(window-system.tab-wheel-controller PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-drag-geometry-test tab_drag_geometry_test.cpp)
+target_link_libraries(window-system-tab-drag-geometry-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_compile_features(window-system-tab-drag-geometry-test PRIVATE cxx_std_20)
+target_include_directories(window-system-tab-drag-geometry-test PRIVATE ../src)
+set_target_properties(window-system-tab-drag-geometry-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-drag-geometry COMMAND window-system-tab-drag-geometry-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-drag-geometry-results.txt,txt)
+set_tests_properties(window-system.tab-drag-geometry PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-quick-path-test quick_path_test.cpp
     ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)
 target_link_libraries(window-system-quick-path-test PRIVATE Qt6::Gui Qt6::Test)

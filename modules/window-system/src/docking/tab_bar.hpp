@@ -5,6 +5,7 @@
 #include "style/smooth_scroll.hpp"
 
 #include "tab_layout.hpp"
+#include "tab_drag_geometry.hpp"
 #include "tab_wheel_controller.hpp"
 #include "style/tab_painter.hpp"
 #include "style/tab_title_layout.hpp"
@@ -333,7 +334,7 @@ private:
     };
     [[nodiscard]] TabLayoutInput layoutInput(QSize area, bool collapsed) const;
     [[nodiscard]] QSize tabArea(QSize size) const;
-    [[nodiscard]] QRect compactLiftedRect(QPoint pointer, QSize size, QPoint grab) const;
+    [[nodiscard]] TabDragArea dragArea() const;
     [[nodiscard]] bool collapsedNow() const;
     void relayout(bool animate, bool measureChanged = true);
     void relayoutTrailing();
@@ -373,7 +374,6 @@ private:
     [[nodiscard]] const RowMeasure& measureRows(QSize available) const;
     [[nodiscard]] int rowShadowExtent() const;
     mutable std::optional<RowMeasure> rowMeasure_;
-    [[nodiscard]] int horizontalDragRowTop(QPoint local) const;
     [[nodiscard]] bool hasLabelAction(int index) const;
     void updateHover(QPoint local);
     [[nodiscard]] qreal liftProgress() const;

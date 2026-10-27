@@ -1773,25 +1773,9 @@ void TabBar::setIncomingVisual(TabDragVisual visual, QPoint local)
     syncAttachment(); surfaceFrameChanged();
 }
 
-QRect TabBar::compactLiftedRect(QPoint pointer, QSize size, QPoint grab) const
+TabDragArea TabBar::dragArea() const
 {
-    const auto origin = tabOrigin();
-    // A long label's grab offset has no useful meaning after it becomes a
-    // tile. Both local and incoming drags hold the tile by its center.
-    const int x = std::clamp(pointer.x() - grab.x(), metrics_.verticalInset,
-        std::max(metrics_.verticalInset, width() - metrics_.verticalInset - size.width()));
-    const int y = std::clamp(pointer.y() - grab.y(), origin.y(), std::max(origin.y(), height() - size.height()));
-    return {QPoint(x, y), size};
-}
-
-int TabBar::horizontalDragRowTop(QPoint local) const
-{
-    const auto origin = tabOrigin();
-    if (layout_.rowScrollLane >= 0)
-        return origin.y() + layout_.laneList.at(layout_.rowScrollLane).rowTopAt(local.y() - origin.y(), metrics_.rowHeight);
-    if (layout_.laneList.size() > 1)
-        return origin.y() + layout_.laneList.at(std::max(0, laneAt(local))).viewport.top();
-    return origin.y();
+    return {size(), tabOrigin(), metrics_.rowHeight, metrics_.verticalInset};
 }
 
 QRect TabBar::incomingRect() const
@@ -1804,18 +1788,9 @@ QRect TabBar::incomingRect() const
             ? QRect(QPoint(), incomingVisual_.size) : incomingVisual_.active;
         grab = reference.topLeft() + incomingVisual_.sourceAnchor->forSize(reference.size(), tile);
     }
-    auto rect = QRect(incomingPointer_ - grab, incomingVisual_.size);
-    const auto origin = tabOrigin();
-    if (vertical()) {
-        // Rows slide vertically; compact tiles follow the same centered
-        // grab as a local row being carried into the sticky section.
-        if (tile) return compactLiftedRect(incomingPointer_, rect.size(), grab);
-        rect.moveLeft(metrics_.verticalInset);
-        rect.moveTop(std::clamp(rect.top(), origin.y(), std::max(origin.y(), height() - rect.height())));
-    } else {
-        rect.moveTop(horizontalDragRowTop(incomingPointer_));
-    }
-    return rect;
+    const auto constraint = tile ? TabDragConstraint::CompactTile
+        : vertical() ? TabDragConstraint::VerticalRow : TabDragConstraint::HorizontalRow;
+    return tabDragRect(layout_, dragArea(), incomingPointer_, incomingVisual_.size, grab, constraint);
 }
 
 QRect TabBar::liftedRect() const
@@ -1823,40 +1798,43 @@ QRect TabBar::liftedRect() const
     if (liftedPointer_ && draggedFolder_ >= 0 && draggedFolder_ < folders_.size()) {
         // A carried folder: its header and, open, its tabs, as one block.
         const auto& folder = folders_.at(draggedFolder_);
-        const auto origin = tabOrigin();
         const int tabs = folder.collapsed ? 0 : folder.count;
         if (vertical()) {
-            const int rows = 1 + tabs, height = rows * metrics_.rowHeight + (rows - 1) * metrics_.rowGap;
-            const auto grab = liftedGrab_.forSize({std::max(0, width() - 2 * metrics_.verticalInset), metrics_.rowHeight});
-            const int y = std::clamp(liftedPointer_->y() - grab.y(), origin.y(), std::max(origin.y(), this->height() - height));
-            return {metrics_.verticalInset, y, std::max(0, width() - 2 * metrics_.verticalInset), height};
+            const int rows = 1 + tabs;
+            const int height = rows * metrics_.rowHeight + (rows - 1) * metrics_.rowGap;
+            const int width = std::max(0, this->width() - 2 * metrics_.verticalInset);
+            const auto grab = liftedGrab_.forSize({width, metrics_.rowHeight});
+            return tabDragRect(layout_, dragArea(), *liftedPointer_, {width, height}, grab,
+                TabDragConstraint::VerticalRow);
         }
         int extent = folderHeaderExtent(folder);
         for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) extent += tabExtent(index, false);
         const auto grab = liftedGrab_.forSize({folderHeaderExtent(folder), metrics_.rowHeight});
-        return {liftedPointer_->x() - grab.x(), horizontalDragRowTop(*liftedPointer_), extent, metrics_.rowHeight};
+        return tabDragRect(layout_, dragArea(), *liftedPointer_, {extent, metrics_.rowHeight}, grab,
+            TabDragConstraint::HorizontalRow);
     }
     if (!liftedPointer_ || dragged_ < 0 || dragged_ >= tabs_.size()) return {};
     const bool sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
-    const auto origin = tabOrigin();
     if (vertical()) {
         const int rowWidth = std::max(0, width() - 2 * metrics_.verticalInset);
         if (sticky && compactStickyTiles()) {
             // The gap is laid out with the target section's tile dimensions.
             // Its position is not the pointer's; only its size is reused.
             const auto size = !layout_.gap.isEmpty() ? layout_.gap.first().size() : layout_.tabs.value(dragged_).size();
-            return compactLiftedRect(*liftedPointer_, size, QRect(QPoint(), size).center());
+            return tabDragRect(layout_, dragArea(), *liftedPointer_, size, QRect(QPoint(), size).center(),
+                TabDragConstraint::CompactTile);
         }
         const auto grab = liftedGrab_.forSize({rowWidth, metrics_.rowHeight});
-        const int y = std::clamp(liftedPointer_->y() - grab.y(), origin.y(), std::max(origin.y(), height() - metrics_.rowHeight));
-        return {metrics_.verticalInset, y, rowWidth, metrics_.rowHeight};
+        return tabDragRect(layout_, dragArea(), *liftedPointer_, {rowWidth, metrics_.rowHeight}, grab,
+            TabDragConstraint::VerticalRow);
     }
     const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky);
     // Local and incoming labels use the same scrolled row grid, including
     // a partially visible final row and a bottom strip's shadow origin.
-    const int y = horizontalDragRowTop(*liftedPointer_);
-    const int grab = liftedGrab_.forSize({extent, metrics_.rowHeight}, sticky && appearance_.stickySizing == StickyTabSizing::Compact).x();
-    return {liftedPointer_->x() - grab, y, extent, metrics_.rowHeight};
+    const auto grab = liftedGrab_.forSize({extent, metrics_.rowHeight},
+        sticky && appearance_.stickySizing == StickyTabSizing::Compact);
+    return tabDragRect(layout_, dragArea(), *liftedPointer_, {extent, metrics_.rowHeight}, grab,
+        TabDragConstraint::HorizontalRow);
 }
 
 std::optional<int> TabBar::stickyBoundary() const
