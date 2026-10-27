@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QTest>
+#include <QTextLayout>
 
 using namespace window_system;
 
@@ -50,7 +51,45 @@ private slots:
     void cacheInvalidationKeepsMeasurementAndPixelsCorrect();
     void pointSizeFontFollowsLogicalDpiChanges();
     void colorChangesReuseTheShapedGlyphs();
+    void fittedMetricsEncloseInkAndCacheMeasurements();
 };
+
+void TabTitleLayoutTest::fittedMetricsEncloseInkAndCacheMeasurements()
+{
+    QFont font = qApp->font(); font.setPixelSize(31); font.setItalic(true);
+    for (const auto& text : {QStringLiteral("ffff jjjj"), QStringLiteral("工作区 17"),
+                            QString::fromUtf8("A 😀 👩🏽‍💻 Ω العربية")}) {
+        for (auto direction : {Qt::LeftToRight, Qt::RightToLeft}) {
+            TabTitleLayout cached; cached.prepare(text, font, direction, false);
+            const auto fit = cached.fittedMetrics();
+            QTextLayout reference(text, font); QTextOption option;
+            option.setWrapMode(QTextOption::NoWrap); option.setTextDirection(direction);
+            reference.setTextOption(option); reference.beginLayout(); auto line = reference.createLine();
+            line.setLineWidth(0x01000000); reference.endLayout();
+            const QRectF viewport(QPointF(), fit.size);
+            const QPointF shift(fit.leftInset, fit.topInset);
+            for (const auto& run : line.glyphRuns()) {
+                const auto glyphs = run.glyphIndexes(); const auto positions = run.positions();
+                for (qsizetype i = 0; i < glyphs.size(); ++i) {
+                    const auto ink = run.rawFont().boundingRect(glyphs[i]).translated(positions[i] + shift);
+                    if (!ink.isEmpty()) QVERIFY2(viewport.contains(ink), qPrintable(text));
+                }
+            }
+            QImage image(fit.size, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::white);
+            QPainter painter(&image); painter.setFont(font);
+            cached.drawFitted(painter, image.rect());
+            const auto shaping = cached.shapingCount();
+            for (int i = 0; i < 8; ++i) {
+                cached.prepare(text, font, direction, false);
+                QCOMPARE(cached.fittedMetrics().size, fit.size);
+                cached.drawFitted(painter, image.rect());
+            }
+            QCOMPARE(cached.fitMeasurementCount(), quint64(1));
+            QCOMPARE(cached.shapingCount(), shaping);
+            painter.end();
+        }
+    }
+}
 
 void TabTitleLayoutTest::matchesQtPixelForPixel_data()
 {

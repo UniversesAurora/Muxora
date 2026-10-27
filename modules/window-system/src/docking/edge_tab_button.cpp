@@ -34,9 +34,11 @@ EdgeTabButton::EdgeTabButton(QString title, bool vertical, int thickness, QWidge
 QSize EdgeTabButton::sizeHint() const
 {
     titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
-    const auto extent = edgeTabExtent(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_, thickness_,
+    const auto fitted = titleLayout_.fittedMetrics().size;
+    const int thickness = std::max(thickness_, fitted.height() + uiPixels(4));
+    const auto extent = edgeTabExtent(fontMetrics(), fitted.width(), !icon().isNull(), number_, thickness,
                                       clipTitles_, maximumTitleWidth_);
-    return vertical_ ? QSize(thickness_, extent) : QSize(extent, thickness_);
+    return vertical_ ? QSize(thickness, extent) : QSize(extent, thickness);
 }
 void EdgeTabButton::setPresentation(QIcon image, int number)
 {
@@ -102,7 +104,7 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
     }
     const QRect area=vertical_ ? QRect(0,0,height(),width()) : rect();
     titleLayout_.prepare(text(), font(), layoutDirection(), false, this);
-    const auto parts = edgeTabParts(fontMetrics(), titleLayout_.naturalWidth(), !icon().isNull(), number_,
+    const auto parts = edgeTabParts(fontMetrics(), titleLayout_.fittedMetrics().size.width(), !icon().isNull(), number_,
                                     clipTitles_, maximumTitleWidth_);
     // The extent matches the label exactly; a longer button (an empty label
     // on a thick rail) centers it, and a shorter one cuts the title.
@@ -119,6 +121,6 @@ void EdgeTabButton::paintEvent(QPaintEvent*)
         painter.drawPixmap(rects.icon, image);
         painter.restore();
     }
-    titleLayout_.draw(painter, rects.title);
+    titleLayout_.drawFitted(painter, rects.title);
 }
 } // namespace window_system

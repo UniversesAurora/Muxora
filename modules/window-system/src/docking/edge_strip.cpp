@@ -298,7 +298,12 @@ void EdgeStrip::layoutTrack()
 {
     if (arranging_) return;
     QScopedValueRollback guard(arranging_, true);
-    const int thickness = std::max(1, theme_.metrics.edgeThickness);
+    int thickness = std::max(1, theme_.metrics.edgeThickness);
+    for (const auto& button : buttons_) if (button) {
+        const auto hint = button->sizeHint();
+        thickness = std::max(thickness, vertical_ ? hint.width() : hint.height());
+    }
+    if (vertical_) setFixedWidth(thickness); else setFixedHeight(thickness);
     qint64 total = 0; int count = 0;
     for (const auto& button : buttons_) if (button && button != draggedButton_) {
         const auto hint = button->sizeHint();

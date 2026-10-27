@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QTextLayout>
 #include <QTextOption>
+#include <cmath>
 
 namespace window_system {
 namespace {
@@ -32,29 +33,97 @@ void TabTitleLayout::prepare(const QString& text, const QFont& font, Qt::LayoutD
     const int dpiY = device ? device->logicalDpiY() : qRound(metrics.fontDpi());
     if (prepared_ && source_ == text && font_ == font && direction_ == direction
         && mnemonic_ == mnemonic && dpiX_ == dpiX && dpiY_ == dpiY) return;
-    source_ = text; font_ = font; direction_ = direction; mnemonic_ = mnemonic;
+    source_ = text; font_ = font; measurementFont_ = device ? QFont(font, device) : font;
+    direction_ = direction; mnemonic_ = mnemonic;
     dpiX_ = dpiX; dpiY_ = dpiY; prepared_ = true;
     naturalWidth_ = mnemonic
         ? metrics.size(Qt::TextShowMnemonic | Qt::TextSingleLine, text).width()
         : metrics.horizontalAdvance(text);
     fallback_ = needsNativeFormatting(text, font, mnemonic);
+    fitReady_ = false;
     runs_.clear(); viewport_ = QSize(); renderedRatio_ = 0;
 }
 
-void TabTitleLayout::draw(QPainter& painter, const QRect& area)
+int TabTitleLayout::naturalWidth() const { return naturalWidth_; }
+
+const TabTitleFittedMetrics& TabTitleLayout::fittedMetrics() const
+{
+    if (fitReady_) return fit_;
+    fitReady_ = true; ++fitMeasurementCount_; fit_ = {};
+    // QPainter's single-line path replaces these separators with spaces.
+    // Length variants remain on the native formatter path; reserve enough
+    // space for every variant without discarding their selection semantics.
+    auto text = source_;
+    text.replace(QLatin1Char('\r'), QLatin1Char(' '));
+    text.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    text.replace(QLatin1Char('\t'), QLatin1Char(' '));
+    if (mnemonic_) {
+        QString visible;
+        for (qsizetype i = 0; i < text.size(); ++i) {
+            if (text[i] == QLatin1Char('&')) {
+                if (i + 1 >= text.size() || text[i + 1] != QLatin1Char('&')) continue;
+                ++i;
+            }
+            visible += text[i];
+        }
+        text = visible;
+    }
+    for (const auto& variant : text.split(QChar(0x009c))) {
+        QTextLayout layout(variant, measurementFont_);
+        QTextOption option; option.setWrapMode(QTextOption::NoWrap);
+        option.setTextDirection(direction_); option.setAlignment(Qt::AlignLeft);
+        option.setFlags(QTextOption::IncludeTrailingSpaces); layout.setTextOption(option);
+        layout.beginLayout(); auto line = layout.createLine();
+        if (!line.isValid()) { layout.endLayout(); continue; }
+        line.setLineWidth(0x01000000); line.setPosition({}); layout.endLayout();
+        fit_.advance = std::max(fit_.advance, line.horizontalAdvance());
+        fit_.lineHeight = std::max(fit_.lineHeight, line.ascent() + line.descent());
+        for (const auto& run : line.glyphRuns()) {
+            const auto raw = run.rawFont(); const auto glyphs = run.glyphIndexes(); const auto positions = run.positions();
+            QHash<quint32, QRectF> bounds;
+            for (qsizetype i = 0; i < glyphs.size(); ++i) {
+                const auto glyph = glyphs[i];
+                if (!bounds.contains(glyph)) bounds.insert(glyph, raw.boundingRect(glyph));
+                fit_.inkBounds |= bounds.value(glyph).translated(positions[i]);
+            }
+        }
+    }
+    fit_.lineRect = QRectF(0, 0, fit_.advance, fit_.lineHeight);
+    const auto bounds = fit_.lineRect.united(fit_.inkBounds);
+    const int left = int(std::floor(std::min(qreal(0), bounds.left())));
+    const int top = int(std::floor(std::min(qreal(0), bounds.top())));
+    const int right = int(std::ceil(std::max(fit_.advance, bounds.right())));
+    const int bottom = int(std::ceil(std::max(fit_.lineHeight, bounds.bottom())));
+    fit_.leftInset = -left; fit_.topInset = -top;
+    fit_.rightInset = right - fit_.advance;
+    fit_.bottomInset = bottom - int(std::ceil(fit_.lineHeight));
+    fit_.size = QSize(right - left, bottom - top);
+    return fit_;
+}
+
+void TabTitleLayout::draw(QPainter& painter, const QRect& area) { drawInternal(painter, area, Origin::Painter); }
+void TabTitleLayout::drawFitted(QPainter& painter, const QRect& area) { drawInternal(painter, area, Origin::Fitted); }
+
+void TabTitleLayout::drawInternal(QPainter& painter, const QRect& area, Origin origin)
 {
     if (!prepared_ || source_.isEmpty() || area.isEmpty()) return;
     painter.save();
     painter.setClipRect(area, Qt::IntersectClip);
     if (fallback_) {
         painter.setFont(font_); painter.setLayoutDirection(direction_);
-        painter.drawText(area, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextSingleLine
+        QRectF textArea(area);
+        if (origin == Origin::Fitted) {
+            const auto& fit = fittedMetrics();
+            textArea.adjust(direction_ == Qt::LeftToRight ? fit.leftInset : 0,
+                            fit.topInset, direction_ == Qt::RightToLeft ? -fit.rightInset : 0, -fit.bottomInset);
+        }
+        painter.drawText(textArea, Qt::AlignLeading | Qt::AlignVCenter | Qt::TextSingleLine
             | (mnemonic_ ? Qt::TextShowMnemonic : 0), source_);
     } else {
         const auto* device = painter.device();
-        if (viewport_ != area.size() || renderedDpiX_ != device->logicalDpiX()
+        if (viewport_ != area.size() || renderedOrigin_ != origin || renderedDpiX_ != device->logicalDpiX()
             || renderedDpiY_ != device->logicalDpiY() || renderedRatio_ != device->devicePixelRatioF())
-            rebuild(painter, area.size());
+            rebuild(painter, area.size(), origin);
         // Match drawText's own overflow clip as well as the caller's clip.
         // Fractionally transformed ARGB emoji apply both coverages when Qt
         // temporarily draws their cached image with an identity transform.
@@ -74,10 +143,11 @@ void TabTitleLayout::draw(QPainter& painter, const QRect& area)
     painter.restore();
 }
 
-void TabTitleLayout::rebuild(QPainter& painter, QSize viewport)
+void TabTitleLayout::rebuild(QPainter& painter, QSize viewport, Origin origin)
 {
     ++shapingCount_;
     runs_.clear(); viewport_ = viewport; innerClip_ = false;
+    renderedOrigin_ = origin;
     renderedDpiX_ = painter.device()->logicalDpiX();
     renderedDpiY_ = painter.device()->logicalDpiY();
     renderedRatio_ = painter.device()->devicePixelRatioF();
@@ -103,8 +173,14 @@ void TabTitleLayout::rebuild(QPainter& painter, QSize viewport)
     // the baseline. Do that before the device transform too; combining first
     // can move native glyphs across a fractional-scale raster boundary.
     const auto fixed = [](qreal coordinate) { return qreal(qint64(coordinate * 64)) / 64; };
-    const QPointF offset(fixed(direction_ == Qt::RightToLeft ? viewport.width() - line.horizontalAdvance() : 0),
-                         fixed((viewport.height() - line.ascent() - line.descent()) / 2));
+    auto x = direction_ == Qt::RightToLeft ? viewport.width() - line.horizontalAdvance() : 0;
+    auto y = (viewport.height() - line.ascent() - line.descent()) / 2;
+    if (origin == Origin::Fitted) {
+        const auto& fit = fittedMetrics();
+        x += direction_ == Qt::RightToLeft ? -fit.rightInset : fit.leftInset;
+        y = (viewport.height() - fit.size.height()) / 2.0 + fit.topInset;
+    }
+    const QPointF offset(fixed(x), fixed(y));
     const QRectF visible{QPointF(), QSizeF(viewport)};
     // QFontEngine ink bounds do not include the antialiasing fringe. Keep a
     // conservative extra pixel; the actual viewport still clips precisely.

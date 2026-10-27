@@ -1082,7 +1082,7 @@ int DockSurface::dragLabelExtent(TabId tab, bool edge) const
         }
         auto& title = dragTitleLayouts_[tab][1];
         title.prepare(record->title, font(), layoutDirection(), false, this);
-        return edgeTabExtent(fontMetrics(),title.naturalWidth(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
+        return edgeTabExtent(fontMetrics(),title.fittedMetrics().size.width(),appearance.showSidebarIcons && manager_->tabOptions(tab).showIcon,
             appearance.showSidebarNumbers ? std::max(1, ordinal) : 0, manager_->interfaceTheme().metrics.edgeThickness,
             appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
     }

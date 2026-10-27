@@ -246,7 +246,9 @@ void InterfaceAppearanceTest::railsFollowFontChanges()
     QCOMPARE(rail->size(), rail->sizeHint());
     const int cross = vertical ? rail->width() : rail->height();
     QVERIFY(cross >= QFontMetrics(rail->font()).height());
-    QCOMPARE(cross, manager.interfaceTheme().metrics.edgeThickness);
+    QVERIFY(cross >= manager.interfaceTheme().metrics.edgeThickness);
+    auto* strip = root->findChild<QWidget*>("EdgeBar"); QVERIFY(strip);
+    QCOMPARE(vertical ? strip->width() : strip->height(), cross);
     auto localFont = rail->font(); localFont.setPointSizeF(30); rail->setFont(localFont);
     QTRY_COMPARE(rail->size(), rail->sizeHint());
 }
