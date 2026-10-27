@@ -2,6 +2,7 @@
 #pragma once
 
 #include "elevation.hpp"
+#include "tab_label_presentation.hpp"
 #include "tab_label_geometry.hpp"
 #include "tab_title_layout.hpp"
 #include "window_state_color.hpp"
@@ -93,16 +94,6 @@ struct TabPalette {
 
 [[nodiscard]] ElevationStyle elevationStyleForTheme(const Theme& theme);
 
-enum class TabShape {
-    // A horizontal tab whose outer corners are rounded; `Top` means the strip
-    // is above the content.
-    Top,
-    Bottom,
-    // A row or icon tile of a vertical strip.
-    Row,
-    Tile,
-};
-
 // A tab folder header as painted (tab strip design 12).
 struct TabFolderPaintState {
     QString name;
@@ -119,53 +110,13 @@ struct TabFolderPaintState {
     QIcon addIcon;
 };
 
-// The positions of a tab's slots. A slot that is not shown is null. Later
-// features fill these slots (pane activity in the icon or action slot,
-// inline rename over the title) without changing the layout.
-struct TabParts {
-    QRect tab;
-    QRect number;
-    QRect icon;
-    QRect title;
-    QRect action;
-};
-
-struct TabPaintState {
-    TabShape shape = TabShape::Top;
-    bool selected = false;
-    bool hovered = false;
-    bool pressed = false;
-    bool groupFocused = false;
-    bool windowActive = true;
-    qreal titleOpacity = 1.0;
-    bool sticky = false;
-    bool compactSticky = false;
-    // Only the icon, or the title's initial without one, centered.
-    bool iconOnly = false;
-    bool lifted = false;
+struct TabPaintState : TabLabelState {
     // These describe only this paint call. Retained label snapshots do not
     // keep pointers into the current layout or surface animation.
     const SurfaceGeometry* surface = nullptr;
     const ElevationProfile* bodyElevation = nullptr;
-    bool elevationManaged = false;
-    // 0..1 while a lifted tab's shadow fades in.
-    qreal shadowOpacity = 1.0;
-    // A row of a strip right of its content: the outer side is the right.
-    bool outerRight = false;
-    bool enabled = true;
-    bool actionShown = false;
-    bool actionHovered = false;
-    bool actionPressed = false;
-    // 0..1 while a covering action fades in or out.
-    qreal actionOpacity = 1.0;
-    // The action has room of its own and covers nothing.
-    bool actionReserved = false;
     const TabColorPreset* preset = nullptr;
-    QString number;
-    QIcon icon;
-    QString title;
     TabTitleLayout* titleLayout = nullptr;
-    QIcon actionIcon;
 };
 
 class TabPainter final {
@@ -180,6 +131,11 @@ public:
     [[nodiscard]] TabParts parts(const QRect& tab, TabShape shape, TabLabelParts label, bool iconOnly,
                                  bool action, bool reserveAction, Qt::LayoutDirection direction) const;
     void paintTab(QPainter& painter, const TabParts& parts, const TabPaintState& state) const;
+    [[nodiscard]] static TabLabelPresentation captureLabel(const TabParts& parts, const TabPaintState& state,
+                                                           const QFont& font, Qt::LayoutDirection direction);
+    // The caller explicitly supplies a persistent, prepared cache or nullptr.
+    // This adapter never prepares or replaces the caller's text cache.
+    void paintLabel(QPainter& painter, const TabLabelPresentation& label, TabTitleLayout* widgetCache) const;
     [[nodiscard]] QPainterPath outline(const QRectF& tab, TabShape shape, bool selected, bool lifted = false) const;
     // The short line between two resting tabs.
     void paintSeparator(QPainter& painter, const QRect& line, bool windowActive = true, bool section = false) const;
@@ -200,8 +156,8 @@ public:
     [[nodiscard]] QColor textOn(const QColor& background) const;
 
 private:
-    [[nodiscard]] QColor backgroundOf(const TabPaintState& state) const;
-    [[nodiscard]] QColor textOf(const TabPaintState& state) const;
+    [[nodiscard]] QColor backgroundOf(const TabLabelPresentation& label) const;
+    [[nodiscard]] QColor textOf(const TabLabelPresentation& label) const;
     [[nodiscard]] ElevationRenderer& elevationRenderer() const;
     TabMetrics metrics_;
     TabPalette palette_;

@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: MIT
+// Label presentation ownership and the synchronous Widgets adapter contract.
+// Dimensions: source lifetime, absent/owned style data, copy-on-write paths
+// and presets, explicit text caches, painter font/direction state restoration.
+// No exposed windows, native input, or fixed visual baselines.
+#include "style/tab_painter.hpp"
+#include "docking/tab_bar.hpp"
+
+#include <QApplication>
+#include <QImage>
+#include <QPainter>
+#include <QPixmap>
+#include <QTest>
+
+using namespace window_system;
+
+namespace {
+TabParts labelParts()
+{
+    return {QRect(2, 2, 230, 36), {}, QRect(10, 12, 16, 16), QRect(34, 2, 170, 36), QRect(207, 10, 20, 20)};
+}
+
+TabPainter labelPainter()
+{
+    return TabPainter(TabMetrics{}, TabPalette::forTheme(defaultTheme()));
+}
+} // namespace
+
+class TabLabelPresentationTest final : public QObject {
+    Q_OBJECT
+private slots:
+    void capturedLabel_outlivesItsSourceWidgetAndBorrowedData()
+    {
+        TabLabelPresentation captured;
+        QPainterPath expectedPath;
+        expectedPath.addRoundedRect(QRectF(2, 2, 230, 36), 6, 6);
+        QFont expectedFont = QApplication::font(); expectedFont.setPixelSize(19);
+        {
+            TabBar source(defaultTheme(), nullptr);
+            QPixmap glyph(16, 16); glyph.fill(Qt::magenta);
+            source.addTab(QIcon(glyph), QStringLiteral("Owned label"));
+            source.setFont(expectedFont); source.setLayoutDirection(Qt::RightToLeft);
+            std::optional<SurfaceGeometry> geometry{SurfaceGeometry{}};
+            geometry->anchorPath = expectedPath;
+            std::optional<ElevationProfile> profile{elevationProfile(ElevationLevel::Lifted)};
+            std::optional<TabColorPreset> preset{TabColorPreset{}};
+            preset->id = QStringLiteral("captured");
+            preset->groupActive.background = Qt::green;
+            TabTitleLayout title;
+            TabPaintState state;
+            state.title = source.tabText(0); state.icon = source.tabIcon(0);
+            state.number = QStringLiteral("7"); state.shape = TabShape::Row;
+            state.selected = true; state.outerRight = true; state.actionOpacity = 0.4;
+            state.surface = &*geometry; state.bodyElevation = &*profile;
+            state.preset = &*preset; state.titleLayout = &title;
+            captured = TabPainter::captureLabel(labelParts(), state, source.font(), source.layoutDirection());
+            state.title = QStringLiteral("Changed source"); state.number.clear(); state.icon = {};
+            state.selected = false; state.actionOpacity = 1;
+            geometry.reset(); profile.reset(); preset.reset();
+        }
+        QCOMPARE(captured.state.title, QStringLiteral("Owned label"));
+        QCOMPARE(captured.state.number, QStringLiteral("7"));
+        QVERIFY(!captured.state.icon.isNull());
+        QVERIFY(captured.state.selected); QVERIFY(captured.state.outerRight);
+        QCOMPARE(captured.state.shape, TabShape::Row);
+        QCOMPARE(captured.state.actionOpacity, qreal(0.4));
+        QCOMPARE(captured.parts.tab, labelParts().tab);
+        QCOMPARE(captured.font, expectedFont); QCOMPARE(captured.direction, Qt::RightToLeft);
+        QVERIFY(captured.surface.has_value()); QCOMPARE(captured.surface->anchorPath, expectedPath);
+        QVERIFY(captured.bodyElevation.has_value());
+        QCOMPARE(captured.bodyElevation->key.blur, elevationProfile(ElevationLevel::Lifted).key.blur);
+        QVERIFY(captured.preset.has_value()); QCOMPARE(captured.preset->id, QStringLiteral("captured"));
+        QCOMPARE(captured.preset->groupActive.background, QColor(Qt::green));
+    }
+
+    void optionalStyle_isCopiedOnlyWhenPresent()
+    {
+        const auto captured = TabPainter::captureLabel(labelParts(), {}, QApplication::font(), Qt::LeftToRight);
+        QVERIFY(!captured.surface); QVERIFY(!captured.bodyElevation); QVERIFY(!captured.preset);
+        QCOMPARE(captured.state.shape, TabShape::Top);
+        QCOMPARE(captured.state.titleOpacity, qreal(1));
+        QVERIFY(captured.state.enabled);
+    }
+
+    void copiedPathsAndPresets_areIsolatedFromLaterChanges()
+    {
+        SurfaceGeometry geometry;
+        geometry.anchorPath.addRoundedRect(QRectF(2, 2, 230, 36), 6, 6);
+        geometry.mergedPath = geometry.anchorPath;
+        TabColorPreset preset; preset.id = QStringLiteral("original");
+        preset.groupActive.text = Qt::blue;
+        TabPaintState state; state.surface = &geometry; state.preset = &preset;
+        const auto captured = TabPainter::captureLabel(labelParts(), state, QApplication::font(), Qt::LeftToRight);
+        const auto expectedPath = geometry.anchorPath;
+        geometry.anchorPath.clear(); geometry.mergedPath.clear();
+        preset.id = QStringLiteral("source changed"); preset.groupActive.text = Qt::red;
+        QCOMPARE(captured.surface->anchorPath, expectedPath);
+        QCOMPARE(captured.surface->mergedPath, expectedPath);
+        QCOMPARE(captured.preset->id, QStringLiteral("original"));
+        QCOMPARE(captured.preset->groupActive.text, QColor(Qt::blue));
+
+        auto copy = captured;
+        copy.surface->anchorPath.setElementPositionAt(0, -100, -100);
+        copy.preset->id = QStringLiteral("copy changed");
+        copy.preset->groupActive.text = Qt::yellow;
+        QVERIFY(copy.surface->anchorPath != captured.surface->anchorPath);
+        QCOMPARE(captured.surface->anchorPath, expectedPath);
+        QCOMPARE(captured.preset->id, QStringLiteral("original"));
+        QCOMPARE(captured.preset->groupActive.text, QColor(Qt::blue));
+    }
+
+    void painting_usesTheExplicitPersistentCacheAndRestoresPainterState_data()
+    {
+        QTest::addColumn<bool>("matchingTextState");
+        QTest::newRow("matching-text-state") << true;
+        QTest::newRow("detached-text-state") << false;
+    }
+
+    void painting_usesTheExplicitPersistentCacheAndRestoresPainterState()
+    {
+        QFETCH(bool, matchingTextState);
+        auto style = labelPainter();
+        QImage image(250, 48, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QFont font = QApplication::font(); font.setPixelSize(18);
+        TabTitleLayout capturedCache;
+        TabPaintState state; state.title = QStringLiteral("Cached label title");
+        state.titleLayout = &capturedCache; state.elevationManaged = true;
+        const auto captured = TabPainter::captureLabel(labelParts(), state, font, Qt::RightToLeft);
+        TabTitleLayout targetCache;
+        targetCache.prepare(captured.state.title, captured.font, captured.direction, true, &image);
+        QPainter painter(&image);
+        auto originalFont = matchingTextState ? font : QApplication::font();
+        if (!matchingTextState) originalFont.setPixelSize(11);
+        const auto originalDirection = matchingTextState ? Qt::RightToLeft : Qt::LeftToRight;
+        painter.setFont(originalFont); painter.setLayoutDirection(originalDirection);
+        painter.setOpacity(0.7); painter.setPen(Qt::darkGreen);
+        const auto originalPen = painter.pen();
+        const auto originalTransform = painter.transform();
+        style.paintLabel(painter, captured, &targetCache);
+        QVERIFY(targetCache.retainedGlyphCount() > 0);
+        QVERIFY(targetCache.shapingCount() > 0);
+        QCOMPARE(capturedCache.shapingCount(), quint64(0));
+        QCOMPARE(painter.font(), originalFont); QCOMPARE(painter.layoutDirection(), originalDirection);
+        QCOMPARE(painter.opacity(), qreal(0.7)); QCOMPARE(painter.pen(), originalPen);
+        QCOMPARE(painter.transform(), originalTransform);
+        const auto shaped = targetCache.shapingCount();
+        style.paintLabel(painter, captured, &targetCache);
+        QCOMPARE(targetCache.shapingCount(), shaped);
+    }
+
+    void paintingWithoutACache_doesNotRetainOrPrepareBorrowedText()
+    {
+        auto style = labelPainter();
+        QImage image(250, 48, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        TabTitleLayout sourceCache;
+        TabPaintState state; state.title = QStringLiteral("No implicit shaping");
+        state.titleLayout = &sourceCache; state.elevationManaged = true;
+        const auto captured = TabPainter::captureLabel(labelParts(), state, QApplication::font(), Qt::LeftToRight);
+        QPainter painter(&image);
+        style.paintLabel(painter, captured, nullptr);
+        QCOMPARE(sourceCache.shapingCount(), quint64(0));
+        QCOMPARE(sourceCache.retainedGlyphCount(), qsizetype(0));
+    }
+};
+
+QTEST_MAIN(TabLabelPresentationTest)
+#include "tab_label_presentation_test.moc"

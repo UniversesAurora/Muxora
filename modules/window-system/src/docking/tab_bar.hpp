@@ -158,11 +158,8 @@ public:
     void refreshPresentationLayers();
     void inheritHover(const TabBar& previous);
     struct RetiredLabel {
-        TabPaintState state;
+        TabLabelPresentation label;
         TabTitleLayout titleLayout;
-        std::optional<SurfaceGeometry> surface;
-        std::optional<TabColorPreset> preset;
-        QFont font;
         qreal visibility = 1;
     };
     struct LabelVisual {

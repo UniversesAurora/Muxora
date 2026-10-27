@@ -137,10 +137,11 @@ TabParts TabPainter::parts(const QRect& tab, TabShape shape, TabLabelParts label
     return result;
 }
 
-QColor TabPainter::backgroundOf(const TabPaintState& state) const
+QColor TabPainter::backgroundOf(const TabLabelPresentation& label) const
 {
-    if (state.surface && state.surface->joined && (state.selected || state.lifted)) return palette_.active;
-    if (state.preset) return (state.selected || state.lifted ? state.preset->groupActive : state.preset->groupInactive).background;
+    const auto& state = label.state;
+    if (label.surface && label.surface->joined && (state.selected || state.lifted)) return palette_.active;
+    if (label.preset) return (state.selected || state.lifted ? label.preset->groupActive : label.preset->groupInactive).background;
     if (state.shape == TabShape::Tile) {
         if (state.selected || state.lifted) return palette_.active;
         if (state.pressed) return palette_.tilePressed.resolve(state.windowActive);
@@ -153,9 +154,10 @@ QColor TabPainter::backgroundOf(const TabPaintState& state) const
     return {};
 }
 
-QColor TabPainter::textOf(const TabPaintState& state) const
+QColor TabPainter::textOf(const TabLabelPresentation& label) const
 {
-    if (state.preset) return (state.selected ? state.preset->groupActive : state.preset->groupInactive).text;
+    const auto& state = label.state;
+    if (label.preset) return (state.selected ? label.preset->groupActive : label.preset->groupInactive).text;
     return state.selected || state.hovered || state.lifted ? palette_.text : palette_.mutedText;
 }
 
@@ -170,38 +172,61 @@ QPainterPath TabPainter::outline(const QRectF& tab, TabShape shape, bool selecte
     return path;
 }
 
+TabLabelPresentation TabPainter::captureLabel(const TabParts& parts, const TabPaintState& state,
+                                             const QFont& font, Qt::LayoutDirection direction)
+{
+    TabLabelPresentation label;
+    label.parts = parts;
+    label.state = state;
+    label.font = font;
+    label.direction = direction;
+    if (state.surface) label.surface = *state.surface;
+    if (state.bodyElevation) label.bodyElevation = *state.bodyElevation;
+    if (state.preset) label.preset = *state.preset;
+    return label;
+}
+
 void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPaintState& state) const
 {
+    paintLabel(painter, captureLabel(parts, state, painter.font(), painter.layoutDirection()), state.titleLayout);
+}
+
+void TabPainter::paintLabel(QPainter& painter, const TabLabelPresentation& label, TabTitleLayout* widgetCache) const
+{
+    const auto& state = label.state;
+    const auto& parts = label.parts;
     painter.save();
+    if (painter.font() != label.font) painter.setFont(label.font);
+    if (painter.layoutDirection() != label.direction) painter.setLayoutDirection(label.direction);
     painter.setRenderHint(QPainter::Antialiasing);
     const QRectF tab(parts.tab);
-    const auto background = backgroundOf(state);
-    const auto contour = state.surface ? state.surface->anchorPath : outline(tab, state.shape, state.selected, state.lifted);
+    const auto background = backgroundOf(label);
+    const auto contour = label.surface ? label.surface->anchorPath : outline(tab, state.shape, state.selected, state.lifted);
     if (!state.elevationManaged && (state.lifted || state.selected && state.shape != TabShape::Tile)) {
         painter.save();
         const bool focused = state.groupFocused && state.windowActive;
         auto style = palette_.elevation; style.focused = focused;
         const auto resting = elevationProfile(focused ? ElevationLevel::AnchorRaised : ElevationLevel::AnchorRest);
         const auto elevation = state.lifted ? interpolateElevation(resting, elevationProfile(ElevationLevel::Lifted), state.shadowOpacity) : resting;
-        const auto body = state.bodyElevation ? *state.bodyElevation
+        const auto body = label.bodyElevation ? *label.bodyElevation
             : elevationProfile(focused ? ElevationLevel::BodyRaised : ElevationLevel::BodyRest);
         SurfaceGeometry detached;
-        if (!state.surface) {
+        if (!label.surface) {
             detached.anchor = tab;
             detached.anchorPath = contour;
             detached.mergedPath = contour;
             detached.compact = state.shape == TabShape::Tile;
         }
-        elevationRenderer().paintAnchor(painter, state.surface ? *state.surface : detached,
-            state.surface ? body : elevationProfile(ElevationLevel::Flat), elevation, style, state.surface && state.surface->joined);
+        elevationRenderer().paintAnchor(painter, label.surface ? *label.surface : detached,
+            label.surface ? body : elevationProfile(ElevationLevel::Flat), elevation, style, label.surface && label.surface->joined);
         painter.restore();
     }
     if (background.isValid()) {
         painter.setPen(Qt::NoPen); painter.setBrush(background);
         painter.drawPath(contour);
     }
-    if (state.surface && (state.selected || state.lifted))
-        elevationRenderer().paintCoverage(painter, *state.surface, palette_.elevation);
+    if (label.surface && (state.selected || state.lifted))
+        elevationRenderer().paintCoverage(painter, *label.surface, palette_.elevation);
     if (state.shape == TabShape::Tile && !state.lifted) {
         // Resting tiles have one outline and no elevation. Hover adds a
         // wash inside the same contour instead of a second frame.
@@ -217,9 +242,9 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
     // In particular, the rectangular fade must not square off either end.
     painter.setClipPath(contour, Qt::IntersectClip);
     // A tab's color is its background alone; lines belong to tab folders.
-    const auto* colors = state.preset ? (state.selected ? &state.preset->groupActive : &state.preset->groupInactive) : nullptr;
+    const auto* colors = label.preset ? (state.selected ? &label.preset->groupActive : &label.preset->groupInactive) : nullptr;
     painter.setRenderHint(QPainter::Antialiasing, false);
-    const QColor text = textOf(state);
+    const QColor text = textOf(label);
     if (!parts.number.isEmpty()) {
         painter.save(); painter.setOpacity(painter.opacity() * state.titleOpacity);
         painter.setPen(text);
@@ -236,8 +261,8 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
         if (state.iconOnly || state.shape == TabShape::Tile) {
             painter.setPen(text);
             painter.drawText(parts.title, Qt::AlignCenter | Qt::TextSingleLine, state.title.left(1).toUpper());
-        } else if (state.titleLayout) {
-            const bool cut = state.titleLayout->naturalWidth() > parts.title.width();
+        } else if (widgetCache) {
+            const bool cut = widgetCache->naturalWidth() > parts.title.width();
             const int fadeLength = state.shape == TabShape::Row
                 ? std::min(metrics_.titleFade, std::max(0, parts.title.width() - (metrics_.rowHeight - uiPixels(10)))) : metrics_.titleFade;
             const bool covering = state.actionShown && !state.actionReserved && !parts.action.isEmpty()
@@ -267,7 +292,7 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
                 for (const auto x : stops) fade.setColorAt((x - left) / (end - left), withAlpha(text, opacityAt(x)));
                 painter.setPen(QPen(QBrush(fade), 1));
             } else painter.setPen(text);
-            state.titleLayout->draw(painter, parts.title);
+            widgetCache->draw(painter, parts.title);
         }
         painter.restore();
     }
