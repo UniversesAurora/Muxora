@@ -118,18 +118,19 @@ QJsonObject measure(QWidget& widget, const QString& renderer, const QString& tit
 
 QJsonObject measureTabBar(const QString& title, const Options& options)
 {
-    DragTabBar bar(nullptr);
+    TabBar bar(defaultTheme(), nullptr);
+    bar.resize(canvasExtent, canvasThickness);
+    bar.setAvailableSize(bar.size());
     TabAppearance appearance;
     appearance.clipTitles = true;
     appearance.maximumTitleWidth = titleWidth;
     appearance.showIcons = false;
     appearance.showNumbers = false;
     appearance.showNewTabButton = false;
-    bar.setAppearance(appearance);
-    bar.addTab(title);
+    bar.setAppearance(appearance, TabBarPlacement::Top);
+    bar.addTab({}, title);
     bar.setCurrentIndex(0);
     bar.resize(canvasExtent, canvasThickness);
-    bar.layoutTabs(canvasExtent, true);
     const auto rect = bar.displayTabRect(0);
     require(!rect.isEmpty() && rect.width() <= titleWidth + 34,
             "the tab bar must apply the configured title limit");
