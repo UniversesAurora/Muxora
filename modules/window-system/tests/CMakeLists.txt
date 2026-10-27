@@ -5,6 +5,15 @@ add_test(NAME window-system.model COMMAND window-system-model-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/model-results.txt,txt)
 set_tests_properties(window-system.model PROPERTIES LABELS model)
 
+qt_add_executable(window-system-frame-motion-test frame_motion_test.cpp ../src/quick/frame_motion.cpp)
+target_link_libraries(window-system-frame-motion-test PRIVATE Qt6::Core Qt6::Test)
+target_compile_features(window-system-frame-motion-test PRIVATE cxx_std_20)
+target_include_directories(window-system-frame-motion-test PRIVATE ../src)
+set_target_properties(window-system-frame-motion-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.frame-motion COMMAND window-system-frame-motion-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/frame-motion-results.txt,txt)
+set_tests_properties(window-system.frame-motion PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-widget-test workspace_test.cpp)
 target_link_libraries(window-system-widget-test PRIVATE WindowSystem::Widgets Qt6::Test)
 set_target_properties(window-system-widget-test PROPERTIES AUTOMOC ON)

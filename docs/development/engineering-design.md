@@ -258,6 +258,7 @@ Muxora/
 │       ├── CMakeLists.txt
 │       ├── include/window_system/
 │       ├── src/               # 模型、命令、壳、窗格、样式与后端
+│       │   └── quick/        # 迁移中的帧动画与场景图呈现
 │       ├── themes/
 │       ├── tests/
 │       │   └── fixtures/external-host/ # 独立复用验证夹具
