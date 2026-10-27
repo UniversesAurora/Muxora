@@ -100,6 +100,7 @@ set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixe
 set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
 list(APPEND window_system_widget_suites interface-appearance)
 list(APPEND window_system_widget_suites tab-label-presentation)
+list(APPEND window_system_widget_suites tab-carrier-presentation tab-carrier-source)
 list(APPEND window_system_desktop_suites integer-slider)
 list(APPEND window_system_desktop_suites input-method-native)
 if(WIN32)

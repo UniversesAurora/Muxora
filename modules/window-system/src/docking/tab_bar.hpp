@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "drag_start.hpp"
+#include "tab_drag_visual.hpp"
 
 #include "style/smooth_scroll.hpp"
 
@@ -8,6 +9,7 @@
 #include "tab_drag_geometry.hpp"
 #include "tab_wheel_controller.hpp"
 #include "style/tab_painter.hpp"
+#include "style/tab_carrier_painter.hpp"
 #include "style/tab_title_layout.hpp"
 #include "style/motion.hpp"
 #include "style/elevation.hpp"
@@ -44,21 +46,6 @@ struct CarriedLabel {
 };
 
 using LabelPositions = QHash<QUuid, QRect>;
-
-// A bounded view of the live carrier's labels. The target paints them with
-// its own device, retaining smooth corners and the ordinary lifted shadow.
-struct TabDragVisual {
-    QSize size;
-    QPoint anchor;
-    std::function<void(QPainter&)> paint;
-    std::function<void(QPainter&, const SurfaceGeometry&)> paintSurface;
-    // Queried once on release, not on pointer updates; coordinates are local
-    // to this visual, and include every visible label in a carried window.
-    std::function<LabelPositions()> positions;
-    QRect active;
-    QUuid identity;
-    std::optional<DragAnchor> sourceAnchor;
-};
 
 struct TabSurfaceAnchor {
     SurfaceGeometry geometry;
@@ -177,7 +164,7 @@ public:
     [[nodiscard]] VisualState captureVisualState();
     void transitionFrom(VisualState state, Motion motion = Motion::Relocate);
     [[nodiscard]] VisualState takeSeparateDepartures(VisualState& previous) const;
-    [[nodiscard]] LabelPositions captureDropPositions() const;
+    [[nodiscard]] LabelPositions captureDropPositions(std::optional<LabelPositions> carrierPositions = {}) const;
     void settleFrom(const LabelPositions& globalPositions);
     static void paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
                                  QPoint globalOrigin, qreal visibility);
@@ -259,7 +246,7 @@ public:
     [[nodiscard]] QRect incomingRect() const;
     [[nodiscard]] QRect carrierBounds() const;
     [[nodiscard]] QPoint carrierAnchor() const;
-    void paintCarrier(QPainter& painter, const SurfaceGeometry* geometry = nullptr);
+    [[nodiscard]] std::shared_ptr<const TabCarrierFrame> carrierFrame();
     [[nodiscard]] TabInsertion insertionAt(QPoint local, int stickyReach = 0,
                                            TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     // `folder` is the folder the block joins, -1 for none.
@@ -302,6 +289,8 @@ signals:
     void currentChanged(int index);
     // Offsets, expansion or layout changed: hover geometry is stale.
     void viewChanged();
+    // State notifications still run while a carried HWND stops painting.
+    void carrierInvalidated();
 
 protected:
     bool event(QEvent* event) override;
@@ -320,6 +309,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    void invalidateCarrier(bool content);
     struct Tab {
         QVariant data;
         QString title;
@@ -454,8 +444,13 @@ private:
     std::optional<int> initialStickyBoundary_;
     QPointer<QWidget> liftedLayer_;
     TabDragVisual incomingVisual_;
+    TabCarrierPainter incomingPainter_;
     QPoint incomingPointer_;
     mutable std::optional<QRect> carrierBounds_;
+    std::shared_ptr<const TabCarrierLabels> carrierContent_;
+    std::shared_ptr<const TabCarrierFrame> carrierFrame_;
+    std::array<std::shared_ptr<TabCarrierFrame>, 2> carrierBuffers_;
+    bool carrierContentDirty_ = true;
     // Two bounded shape snapshots: attachment probing and displayed shape.
     // Full input keys cover resize, animation, scrolling, and theme metrics.
     mutable std::array<std::optional<std::pair<SurfaceGeometryInput, SurfaceGeometry>>, 2> anchorGeometryCache_;

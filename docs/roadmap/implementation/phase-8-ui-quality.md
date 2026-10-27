@@ -551,6 +551,8 @@ void showMessageDialog(QWidget* owner, MessageDialogOptions options, std::functi
 
 补充待审计：现行 `wheelExpandedRowsSurviveRebuildsUntilCollapsed` 的收起断言在控制器提取前后均失败，见 [改前对照](../../development/verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)；未改预期或作为通过处理。
 
+拖动夹具中 `stickyRowPreviewKeepsTheLabelAgainstItsContent` 的载体/遮罩断言及 `compactPreviewMaskFollowsTheDisplayedRows` 的遮罩断言也有改前同样失败的记录，见 [载荷对照](../../development/verification-log/2026-10.md#拖动预览改为自有数据帧2026-10-27)。审计时核对现行拖出条件与圆角遮罩设计，不把这些失败写成已修复。
+
 ## 8.21 标签栏布局引擎与自绘控件
 
 **目标**：按 [标签栏设计](../../design/tab-strip-design.md) §2、§2.1、§3、§5、§8–§10 和 [ADR 0011](../../adr/0011-own-tab-strip.md) 重做横向标签栏：新外观、置顶段独立滚动、多行高度上限、收起计数块与推开／浮层两种展开、渐隐、置顶改名和新图标、标签内容垂直居中、完整列表按钮间距。用户 2026-10-25 提出这些问题，要求统一重构、视觉可以大胆改，标准是适度紧凑、现代美观。拖动的新行为在 8.22，竖向标签栏在 8.23，但布局模块从一开始就支持竖向。

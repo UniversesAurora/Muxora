@@ -335,11 +335,9 @@ void TabStripLayoutTest::incomingVisualMatchesTheInStripLiftAndAxis()
     source.setDragTabStyle(*bar, false);
     auto* carried = source.tabBar();
     const auto bounds = carried->carrierBounds();
-    TabDragVisual visual{bounds.size(), carried->carrierAnchor() - bounds.topLeft(),
-        [carried, bounds](QPainter& painter) {
-            painter.save(); painter.translate(-bounds.topLeft());
-            carried->paintCarrier(painter); painter.restore();
-        }};
+    TabDragVisual visual;
+    visual.size = bounds.size(); visual.anchor = carried->carrierAnchor() - bounds.topLeft();
+    visual.pieces.append({-bounds.topLeft(), carried->carrierFrame()});
     bar->setIncomingVisual(visual, point);
     QCOMPARE(bar->incomingRect(), internalRect);
     QCOMPARE(render(bar), internal);

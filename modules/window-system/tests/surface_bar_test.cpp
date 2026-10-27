@@ -264,7 +264,7 @@ private slots:
             TabDragVisual incoming;
             incoming.size = tile.size(); incoming.anchor = tile.center() - tile.topLeft();
             incoming.active = QRect(QPoint(), incoming.size); incoming.identity = QUuid::createUuid();
-            incoming.paint = [](QPainter&) {};
+            incoming.pieces.append(TabCarrierPiece{});
             bar.setDropPreview(1, true, {tile.width()});
             bar.setIncomingVisual(std::move(incoming), tile.center());
             const auto preview = bar.surfaceAnchors();
@@ -329,17 +329,13 @@ private slots:
         incoming.size = area.size(); incoming.anchor = grab;
         incoming.active = QRect(QPoint{}, incoming.size);
         incoming.identity = QUuid::createUuid();
-        incoming.paint = [](QPainter&) {};
+        incoming.pieces.append(TabCarrierPiece{});
         const auto incomingId = incoming.identity;
-        int positionQueries = 0;
-        incoming.positions = [&positionQueries, incomingId, size = incoming.size] {
-            ++positionQueries;
-            return LabelPositions{{incomingId, QRect(QPoint(), size)}};
-        };
+        // Release positions are supplied by the GUI controller, not a
+        // callback retained by the target or a rendering frame.
+        LabelPositions positions{{incomingId, QRect(QPoint(), incoming.size)}};
         bar.setIncomingVisual(std::move(incoming), point);
-        QCOMPARE(positionQueries, 0);
-        const auto incomingDrop = bar.captureDropPositions();
-        QCOMPARE(positionQueries, 1);
+        const auto incomingDrop = bar.captureDropPositions(std::move(positions));
         QCOMPARE(incomingDrop.value(incomingId),
             QRect(bar.mapToGlobal(bar.incomingRect().topLeft()), bar.incomingRect().size()));
         const auto external = bar.surfaceAnchors();

@@ -237,6 +237,7 @@ DockSurface::~DockSurface()
 }
 void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
 {
+    invalidateCarrierVisual();
     const QPointer<DockSurface> self(this);
     const bool animate = root_ && isVisible() && !manager_->d->drag->hasStableLayout() && TabBar::animationsAllowed();
     QHash<GroupId, TabBar::VisualState> previousVisuals;
@@ -712,6 +713,7 @@ GroupTabs* DockSurface::buildGroup(GroupId id, const QHash<TabId, QPointer<TabCo
         return content.data();
     };
     auto* bar = tabs->tabBar();
+    connect(bar, &TabBar::carrierInvalidated, this, &DockSurface::invalidateCarrierVisual);
     const QPointer<DockSurface> surface(this);
     for (const auto tabId : group->tabs) {
         const auto* record = manager_->model().tab(tabId);
@@ -1253,10 +1255,23 @@ QRect DockSurface::edgeInsertionPreviewRect(Edge edge) const
     const auto* strip = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
     return strip ? strip->insertionPreviewRect() : QRect{};
 }
+void DockSurface::invalidateCarrierVisual()
+{
+    carrierVisual_.reset();
+    if (!compactPresentation_ || carrierPublishQueued_) return;
+    carrierPublishQueued_ = true;
+    const auto generation = carrierPublishGeneration_;
+    QTimer::singleShot(0, this, [this, generation] {
+        if (generation != carrierPublishGeneration_) return;
+        carrierPublishQueued_ = false;
+        if (compactPresentation_) emit carrierChanged();
+    });
+}
+
 TabDragVisual DockSurface::dragLabelVisual() const
 {
-    struct Piece { QPointer<TabBar> bar; QPoint offset; };
-    QVector<Piece> pieces;
+    if (carrierVisual_) return *carrierVisual_;
+    TabDragVisual visual;
     QRect bounds;
     QPoint anchor;
     for (const auto& group : std::as_const(groups_)) if (group && group->isVisible()) {
@@ -1264,52 +1279,53 @@ TabDragVisual DockSurface::dragLabelVisual() const
         const auto rect = bar->carrierBounds();
         if (!bar->isVisible() || rect.isEmpty()) continue;
         const auto offset = bar->mapTo(this, QPoint());
-        if (pieces.isEmpty()) anchor = offset + bar->carrierAnchor();
+        if (visual.pieces.isEmpty()) anchor = offset + bar->carrierAnchor();
         bounds |= rect.translated(offset);
-        pieces.append({bar, offset});
-    }
-    if (pieces.isEmpty()) return {};
-    for (auto& piece : pieces) piece.offset -= bounds.topLeft();
-    TabDragVisual visual;
-    visual.size = bounds.size(); visual.anchor = anchor - bounds.topLeft();
-    for (const auto& piece : pieces) if (piece.bar && piece.bar->currentIndex() >= 0) {
-        visual.active = piece.bar->tabRect(piece.bar->currentIndex()).translated(piece.offset);
-        visual.identity = piece.bar->tabData(piece.bar->currentIndex()).toUuid();
-        break;
-    }
-    visual.paint = [pieces](QPainter& painter) {
-        for (const auto& piece : pieces) if (piece.bar) {
-            painter.save(); painter.translate(piece.offset);
-            piece.bar->paintCarrier(painter); painter.restore();
+        visual.pieces.append({offset, bar->carrierFrame()});
+        if (visual.identity.isNull() && bar->currentIndex() >= 0) {
+            visual.active = bar->tabRect(bar->currentIndex()).translated(offset);
+            visual.identity = bar->tabData(bar->currentIndex()).toUuid();
         }
-    };
-    visual.paintSurface = [pieces](QPainter& painter, const SurfaceGeometry& geometry) {
-        for (const auto& piece : pieces) if (piece.bar) {
-            const auto local = translatedSurfaceGeometry(geometry, -piece.offset);
-            painter.save(); painter.translate(piece.offset);
-            piece.bar->paintCarrier(painter, &local); painter.restore();
-        }
-    };
-    visual.positions = [pieces] {
-        LabelPositions positions;
-        for (const auto& piece : pieces) if (piece.bar)
-            for (int index = 0; index < piece.bar->count(); ++index) {
-                const auto area = piece.bar->tabRect(index);
-                if (!area.isEmpty()) positions.insert(piece.bar->tabData(index).toUuid(), area.translated(piece.offset));
-            }
-        return positions;
-    };
+    }
+    if (!visual.empty()) {
+        for (auto& piece : visual.pieces) piece.offset -= bounds.topLeft();
+        visual.size = bounds.size(); visual.anchor = anchor - bounds.topLeft();
+        visual.active.translate(-bounds.topLeft());
+    }
+    carrierVisual_ = visual;
     return visual;
+}
+
+LabelPositions DockSurface::carrierDropPositions() const
+{
+    LabelPositions positions;
+    // Keep the release contract's final layout rectangles, rather than the
+    // animated paint rectangles. This scan runs only when a drop is committed.
+    QRect bounds;
+    for (const auto& group : std::as_const(groups_)) if (group && group->isVisible()) {
+        const auto* bar = group->tabBar();
+        if (bar->isVisible()) bounds |= bar->carrierBounds().translated(bar->mapTo(this, QPoint()));
+    }
+    for (const auto& group : std::as_const(groups_)) if (group && group->isVisible()) {
+        const auto* bar = group->tabBar();
+        if (!bar->isVisible() || bar->carrierBounds().isEmpty()) continue;
+        const auto offset = bar->mapTo(this, QPoint()) - bounds.topLeft();
+        for (int index = 0; index < bar->count(); ++index) {
+            const auto area = bar->tabRect(index);
+            if (!area.isEmpty()) positions.insert(bar->tabData(index).toUuid(), area.translated(offset));
+        }
+    }
+    return positions;
 }
 void DockSurface::setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global)
 {
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value())
         it.value()->setIncomingVisual(it.key() == group ? visual : TabDragVisual{}, global);
 }
-LabelPositions DockSurface::captureDropPositions(GroupId group) const
+LabelPositions DockSurface::captureDropPositions(GroupId group, std::optional<LabelPositions> carrierPositions) const
 {
     const auto view = groups_.value(group);
-    return view ? view->tabBar()->captureDropPositions() : LabelPositions{};
+    return view ? view->tabBar()->captureDropPositions(std::move(carrierPositions)) : LabelPositions{};
 }
 void DockSurface::settleDroppedTabs(GroupId group, const LabelPositions& globalPositions)
 {
@@ -1326,7 +1342,11 @@ bool DockSurface::setDragTabStyle(const DockSurface& target, GroupId group, bool
 }
 void DockSurface::setDragPresentation(bool compact, bool edge)
 {
+    if (compactPresentation_ != compact) {
+        ++carrierPublishGeneration_; carrierPublishQueued_ = false;
+    }
     compactPresentation_ = compact;
+    invalidateCarrierVisual();
     update();
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it) if (it.value()) {
         it.value()->setDragPresentation(compact, edge);
@@ -1758,6 +1778,7 @@ void DockSurface::placePeek()
 }
 void DockSurface::resizeEvent(QResizeEvent* event)
 {
+    invalidateCarrierVisual();
     const QPointer<DockSurface> self(this);
     const QPointer<WindowManager> owner(manager_);
     const auto generation = rebuildGeneration_;
@@ -1771,6 +1792,11 @@ void DockSurface::resizeEvent(QResizeEvent* event)
 }
 bool DockSurface::eventFilter(QObject* watched, QEvent* event)
 {
+    if (compactPresentation_ && (event->type() == QEvent::Move || event->type() == QEvent::Resize
+        || event->type() == QEvent::Show || event->type() == QEvent::Hide)) {
+        const auto* widget = qobject_cast<QWidget*>(watched);
+        if (widget && groups_.value(widget->property("groupId").toUuid()).data() == widget) invalidateCarrierVisual();
+    }
     if (!manager_) return QFrame::eventFilter(watched, event);
     if (!peek_) return QFrame::eventFilter(watched, event);
     if (event->type() == QEvent::KeyPress) {

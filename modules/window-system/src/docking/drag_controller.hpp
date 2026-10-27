@@ -14,6 +14,7 @@ namespace window_system {
 class DockOverlay;
 class DragLabelPreview;
 class NativeMoveWatcher;
+class DockSurface;
 struct DropTarget {
     WindowId window;
     GroupId group;
@@ -60,6 +61,8 @@ private:
     bool detach(QPoint global);
     bool updateSourceStrip(QPoint global);
     void update(QPoint global);
+    void watchCarrier(DockSurface* source);
+    bool publishCarrier();
     void finish(QPoint global);
     void stop(bool restorePresentation = true);
     void completeLayoutTransaction();
@@ -117,6 +120,9 @@ private:
     GroupId previewGroup_;
     WindowId previewWindow_;
     DropTarget target_;
+    QPointer<DockSurface> carrierSource_;
+    QMetaObject::Connection carrierConnection_;
+    quint64 carrierGeneration_ = 0;
     WindowId revealCandidate_;
     WindowId revealedWindow_;
     WindowId forcedWindow_;

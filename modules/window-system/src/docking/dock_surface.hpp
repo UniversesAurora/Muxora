@@ -7,6 +7,7 @@
 #include "dock_guides.hpp"
 #include "tab_layout.hpp"
 #include "drag_start.hpp"
+#include "tab_drag_visual.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/tab_title_layout.hpp"
 #include "style/elevation.hpp"
@@ -23,6 +24,7 @@ struct TabDragVisual;
 class EdgeTabButton;
 class GroupTabs;
 class DockSurface final : public QFrame {
+    Q_OBJECT
 public:
     DockSurface(WindowManager* manager, WindowId window, QWidget* parent);
     ~DockSurface() override;
@@ -84,8 +86,11 @@ public:
     void setDragPresentation(bool compact, bool edge);
     bool setDragTabStyle(const DockSurface& target, GroupId group, bool sticky);
     [[nodiscard]] TabDragVisual dragLabelVisual() const;
+    // GUI-only release query, intentionally separate from frame publication.
+    [[nodiscard]] QHash<QUuid, QRect> carrierDropPositions() const;
     void setIncomingVisual(GroupId group, TabDragVisual visual, QPoint global = {});
-    [[nodiscard]] QHash<QUuid, QRect> captureDropPositions(GroupId group) const;
+    [[nodiscard]] QHash<QUuid, QRect> captureDropPositions(GroupId group,
+        std::optional<QHash<QUuid, QRect>> carrierPositions = {}) const;
     void settleDroppedTabs(GroupId group, const QHash<QUuid, QRect>& globalPositions);
     void selectTab(TabId tab);
     void showEdgeGroup(GroupId group, TabId tab = {});
@@ -97,11 +102,17 @@ public:
     [[nodiscard]] QRect centralRectGlobal() const;
     // The splitter built for a central or pinned tree split node, or null.
     [[nodiscard]] QSplitter* splitterFor(QUuid node) const;
+signals:
+    void carrierChanged();
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
+    void invalidateCarrierVisual();
+    mutable std::optional<TabDragVisual> carrierVisual_;
+    bool carrierPublishQueued_ = false;
+    quint64 carrierPublishGeneration_ = 0;
     void beginLabelDrag(TabId tab, FolderId folder, const DragStart& start);
     // Everything a group's strip is built from. A group whose signature and
     // pages are unchanged keeps its GroupTabs across rebuilds.

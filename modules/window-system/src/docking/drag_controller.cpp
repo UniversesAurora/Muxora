@@ -653,16 +653,12 @@ void DragController::update(QPoint global)
             }
         }
         if (presentation == WorkspaceWindow::DragPresentation::Tab) {
-            if (auto* targetWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window))) {
-                auto visual = moving->surface()->dragLabelVisual();
-                if (liftGrab_.sourceSize.isValid()) visual.sourceAnchor = liftGrab_;
-                if (visual.paint) {
-                    targetWindow->surface()->setIncomingVisual(target_.group, std::move(visual), global);
-                    if (!self || !active_ || !moving) return;
-                    moving->setDragLabelHidden(true);
-                }
+            watchCarrier(moving->surface());
+            if (publishCarrier()) {
+                if (!self || !active_ || !moving) return;
+                moving->setDragLabelHidden(true);
             }
-        } else moving->setDragLabelHidden(false);
+        } else { watchCarrier(nullptr); moving->setDragLabelHidden(false); }
         if (!self || !active_) return;
     }
     if (manager_->behavior().revealDuringDrag && target_.window != revealCandidate_) {
@@ -676,6 +672,35 @@ void DragController::update(QPoint global)
     overlay_->setGeometry(QRect(window->mapToGlobal(QPoint()), window->size()));
     overlay_->show(); overlay_->raise(); overlay_->update();
 }
+void DragController::watchCarrier(DockSurface* source)
+{
+    if (carrierSource_ == source) return;
+    QObject::disconnect(carrierConnection_);
+    carrierSource_ = source;
+    const auto generation = ++carrierGeneration_;
+    if (source) carrierConnection_ = connect(source, &DockSurface::carrierChanged, this, [this, generation] {
+        if (generation != carrierGeneration_ || !active_ || finalizing_ || choosing_) return;
+        // A source frame changes presentation only: repeating hit detection
+        // or target styling here could feed layout changes back into itself.
+        (void)publishCarrier();
+    });
+}
+
+bool DragController::publishCarrier()
+{
+    auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data());
+    if (!active_ || !moving || moving->surface() != carrierSource_
+        || moving->dragPresentation() != WorkspaceWindow::DragPresentation::Tab
+        || !target_.accepted || target_.insertionIndex < 0 || target_.toEdgeBar) return false;
+    auto* target = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target_.window));
+    if (!target) return false;
+    auto visual = carrierSource_->dragLabelVisual();
+    if (visual.empty()) return false;
+    if (liftGrab_.sourceSize.isValid()) visual.sourceAnchor = liftGrab_;
+    target->surface()->setIncomingVisual(target_.group, std::move(visual), lastPosition_);
+    return true;
+}
+
 QVector<CarriedLabel> DragController::carriedLabels() const
 {
     QVector<CarriedLabel> labels;
@@ -769,8 +794,12 @@ void DragController::finish(QPoint global)
     const auto folder = folder_; const bool detachedFolder = !folder_.isNull() && detached_;
     const QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(capture_.data());
     const QPointer<WorkspaceWindow> dropWindow = dynamic_cast<WorkspaceWindow*>(manager_->windowWidget(target.window));
+    std::optional<LabelPositions> carrierPositions;
+    if (target.accepted && target.insertionIndex >= 0 && !target.toEdgeBar && dropWindow && carrier
+        && carrier->dragPresentation() == WorkspaceWindow::DragPresentation::Tab)
+        carrierPositions = carrier->surface()->carrierDropPositions();
     const auto dropPositions = target.accepted && target.insertionIndex >= 0 && !target.toEdgeBar && dropWindow
-        ? dropWindow->surface()->captureDropPositions(target.group) : LabelPositions{};
+        ? dropWindow->surface()->captureDropPositions(target.group, std::move(carrierPositions)) : LabelPositions{};
     const bool embeddedDrop = target.accepted && target.insertionIndex >= 0 && carrier
         && carrier->dragPresentation() == WorkspaceWindow::DragPresentation::Tab;
     if (embeddedDrop) setNativeDropCommit(carrier, true);
@@ -908,6 +937,7 @@ void DragController::releaseForMutation()
 }
 void DragController::stop(bool restorePresentation)
 {
+    watchCarrier(nullptr);
     const QPointer<DragController> self(this);
     // Invalidate a queued end from this gesture before a new one can start.
     ++nativeMoveGeneration_;
