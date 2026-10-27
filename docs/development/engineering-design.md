@@ -16,7 +16,7 @@ macOS、Linux 是确定的后续目标，但 V0 不要求编译它们，也不�
 
 ## 2. C++ 与 Qt 编码规范
 
-采用 C++20、Qt Widgets 和传统头文件／源文件。工程模块与 CMake target 按职责拆分；V0 不要求使用 C++20 Modules。
+采用 C++20 和传统头文件／源文件。当前预览使用 Qt Widgets；按 [ADR 0013](../adr/0013-qt-quick-rendering.md) 逐步迁移到 Qt Quick，呈现和帧预算见 [Quick 呈现设计](../design/quick-rendering-design.md)。工程模块与 CMake target 按职责拆分；V0 不要求使用 C++20 Modules。
 
 窗口系统是 `modules/window-system/` 中的独立公开 API 模块，可独立配置并用于其他宿主；`src/workspace_host/` 只承担 Muxora 接入。V0 采用自有窗口、停靠与拖拽实现，复用合适的 Qt 基础组件，不引入 KDDockWidgets（[ADR 0001](../adr/0001-own-docking-implementation.md)）；具体 Qt 控件不属于强制依赖。
 
@@ -142,7 +142,7 @@ Ghostty 当前历史限制按 page 裁剪，属于近似限额，不等于整个
 | 大目录、传输并行 | 首批可用结果、取消响应、内存峰值及终端交互。 |
 | 长期与反复开关 | native heap、句柄、线程、对象与各缓存的趋势。 |
 
-本地操作初始目标为 p95 不超过 50 ms，普通拖动按 60 Hz 交互评估；这是原型调优目标，需记录参考机器、数据量与测量方法。远端输出到达后的本地处理延迟与 SSH 网络往返分别统计，不把服务器或网络等待归成 UI 绘制性能。
+本地操作初始目标为 p95 不超过 50 ms；Widgets 基线按 60 Hz 记录，Quick 迁移的高刷新目标按 [Quick 呈现设计](../design/quick-rendering-design.md#4-帧与资源预算) 评估；这是原型调优目标，需记录参考机器、数据量与测量方法。远端输出到达后的本地处理延迟与 SSH 网络往返分别统计，不把服务器或网络等待归成 UI 绘制性能。
 
 内存以 private bytes、native heap、组件预算和辅助进程总量为主要证据，工作集作为补充。系统缓存、分配器保留或 ASan 开销不能直接认定泄漏；已关闭的资源持续增长、分配未释放或句柄累积必须定位。
 
