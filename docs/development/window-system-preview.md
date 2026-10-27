@@ -28,7 +28,6 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot <Qt 安装目录>/6.12.0/msv
 | `-TestLabel <regex>` | 与 `-Test` 一起使用，只运行指定层：`model`、`widget`、`desktop` 或 `model\|widget` |
 | `-Run` | 构建后启动 Muxora |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
-| `-IncludeHashes` | 显式记录部署程序的 SHA-256；默认不计算 |
 
 运行全部自动化测试（桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复）：
 
@@ -57,7 +56,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/package-portable.ps1
 
 日常外观试用只需更新便携包时，可运行 `pwsh ./tools/package-portable.ps1 -Validation Archive`。它仍构建 Release、刷新固定部署、检查压缩包并解压核对运行文件，但不执行全量、启动或恢复测试，也不生成这些检查的通过记录。默认 `Full` 保留全量及启动恢复验证，按桌面测试规则经隔离入口运行。
 
-压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，再次生成时覆盖旧包。默认不计算或复核文件校验值，也不生成 `.sha256`；该固定路径上遗留的旧校验文件会删除。确需校验值时使用 `pwsh ./tools/package-portable.ps1 -IncludeHashes`：开关同时传给构建脚本，记录程序校验值、核验解压后的程序，并生成同名 `.7z.sha256` 文件。未启用时，`build-info.json` 和便携检查记录省略校验值字段。
+压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，再次生成时覆盖旧包。构建与便携检查记录保存版本、配置、产物路径和实际检查结果，不计算文件哈希，也不生成校验文件；校验代码的适用范围见 [仓库规则](../../AGENTS.md#必须遵守)。
 
 解压整个 `Muxora` 文件夹后双击 `muxora.exe`；运行电脑不需要 Qt、编译器或 PowerShell。包内的空 `data/` 目录启用便携状态，布局保存在 `data/window-layout.json`，可随文件夹一起移动。显式 `--state-dir` 优先；没有相邻 `data/` 的普通构建继续使用系统用户状态目录。
 

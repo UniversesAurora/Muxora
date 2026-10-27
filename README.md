@@ -10,7 +10,7 @@ Lua 脚本可以调用窗口和布局 API、注册命令与快捷键、定制工
 
 Windows x64 已发布的便携版见 [GitHub 预发布](https://github.com/UniversesAurora/Muxora/releases/tag/v0.1.0-preview.1)。下载 `Muxora-preview-windows-x64.7z`，完整解压后运行 `Muxora/muxora.exe`，无需安装 Qt。该发布包的功能以对应 Release 说明为准；后续源码改动不会自动进入旧包。
 
-同页的 `.sha256` 文件用于核验下载。Qt 源码 ZIP 是可选的依赖源码，运行程序无需下载；自有代码与各项依赖的许可证见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Qt 源码 ZIP 是可选的依赖源码，运行程序无需下载；自有代码与各项依赖的许可证见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 构建与运行
 

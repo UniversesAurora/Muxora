@@ -2,8 +2,7 @@
 param(
     [string]$QtRoot,
     [string]$SevenZip,
-    [ValidateSet('Full', 'Archive')][string]$Validation = 'Full',
-    [switch]$IncludeHashes
+    [ValidateSet('Full', 'Archive')][string]$Validation = 'Full'
 )
 $ErrorActionPreference = 'Stop'
 $taskRepository = Split-Path -Parent $PSScriptRoot
@@ -25,7 +24,6 @@ $taskStageOwned = $false
 $taskCheckOwned = $false
 $taskBuildArguments = @{ Configuration = 'Release'; Test = ($Validation -eq 'Full'); Package = $true }
 if ($QtRoot) { $taskBuildArguments.QtRoot = $QtRoot }
-if ($IncludeHashes) { $taskBuildArguments.IncludeHashes = $true }
 & (Join-Path $PSScriptRoot 'build.ps1') @taskBuildArguments
 
 # Copy only the generated inventory, never a user's data/ or unknown files in
@@ -65,13 +63,6 @@ $taskDist = Join-Path $taskRepository 'out/dist'
 New-Item -ItemType Directory -Path $taskDist -Force | Out-Null
 $taskArchive = Join-Path $taskDist "$taskArchiveName.7z"
 Remove-OutputItem $taskArchive $taskOutputRoot
-$taskHashFile = Assert-OutputPath "$taskArchive.sha256" $taskOutputRoot
-if (Test-Path -LiteralPath $taskHashFile) {
-    if (-not (Test-Path -LiteralPath $taskHashFile -PathType Leaf)) {
-        throw "The checksum file path is occupied by a directory: $taskHashFile"
-    }
-    Remove-Item -LiteralPath $taskHashFile -Force
-}
 $taskReadme = @'
 Muxora 窗口系统预览 — Windows x64 便携版
 
@@ -127,12 +118,6 @@ $taskCheckOwned = $true
 Invoke-Archive @('x', '-y', '-bso0', "-o$taskCheck", $taskArchive)
 $taskExtracted = Join-Path $taskCheck 'Muxora'
 $taskExecutable = Join-Path $taskExtracted 'muxora.exe'
-if ($IncludeHashes) {
-    if (-not $taskBuildInfo.executableSha256) { throw 'The Release build did not provide the requested executable hash.' }
-    if ((Get-FileHash -LiteralPath $taskExecutable -Algorithm SHA256).Hash -ne $taskBuildInfo.executableSha256) {
-        throw 'The extracted executable does not match the Release build.'
-    }
-}
 function Invoke-PortableSmoke([bool]$Fresh) {
     $taskStart = [Diagnostics.ProcessStartInfo]::new()
     $taskStart.FileName = $taskExecutable
@@ -196,16 +181,9 @@ $taskPackageResult.layoutRestored = $true
     }
     Write-Host 'Archive checked. Application tests and startup checks were not executed.'
 }
-if ($IncludeHashes) {
-    $taskHash = (Get-FileHash -LiteralPath $taskArchive -Algorithm SHA256).Hash
-    [IO.File]::WriteAllText($taskHashFile, "$taskHash  $taskArchiveName.7z`n", [Text.UTF8Encoding]::new($false))
-    $taskPackageResult.archiveSha256 = $taskHash
-    $taskPackageResult.executableSha256 = $taskBuildInfo.executableSha256
-}
 $taskPackageResult | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $taskRepository 'out/test-results/portable-package.json') -Encoding utf8NoBOM
 Write-Host "Portable package ready: $taskArchive"
-if ($IncludeHashes) { Write-Host "SHA-256: $taskHash" }
 } finally {
     if ($taskStageOwned) { Remove-OutputItem $taskStage $taskOutputRoot }
     if ($taskCheckOwned) { Remove-OutputItem $taskCheckRoot $taskOutputRoot }
