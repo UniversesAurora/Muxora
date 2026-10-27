@@ -2,10 +2,12 @@
 #pragma once
 
 #include "motion_curve.hpp"
+#include "label_presence.hpp"
 #include <QPainter>
 #include <QSignalBlocker>
 #include <QVariantAnimation>
 #include <algorithm>
+#include <utility>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -64,7 +66,7 @@ private:
 // triggered it. Callers can drive visibility in either direction and keep
 // logical geometry, hit testing and the label's own drawing unchanged.
 struct LabelPresenceEffect {
-    enum class Kind { Lift, Planar };
+    using Kind = LabelPresenceKind;
 
     [[nodiscard]] static QRect planarRect(QRect open, QRect closed, qreal visibility)
     {
@@ -77,15 +79,17 @@ struct LabelPresenceEffect {
     template<class Draw>
     static void paint(QPainter& painter, const QRect& rect, qreal visibility, Draw draw, Kind kind = Kind::Lift)
     {
-        const qreal progress = std::clamp(visibility, 0.0, 1.0);
-        if (progress <= 0) return;
-        if (kind == Kind::Planar) { draw(); return; }
+        paint(painter, labelPresencePose(rect, visibility, kind), std::move(draw));
+    }
+
+    template<class Draw>
+    static void paint(QPainter& painter, const LabelPresencePose& pose, Draw draw)
+    {
+        if (pose.opacity <= 0) return;
+        if (pose.complete()) { draw(); return; }
         painter.save();
-        painter.setOpacity(painter.opacity() * progress);
-        const QPointF center = QRectF(rect).center();
-        const qreal scale = 0.88 + 0.12 * progress;
-        painter.translate(center + QPointF(0, 3 * (1 - progress)));
-        painter.scale(scale, scale); painter.translate(-center);
+        painter.setOpacity(painter.opacity() * pose.opacity);
+        painter.translate(pose.offset); painter.scale(pose.scale, pose.scale);
         draw(); painter.restore();
     }
 };

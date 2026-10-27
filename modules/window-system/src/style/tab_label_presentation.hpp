@@ -2,6 +2,7 @@
 #pragma once
 
 #include "elevation.hpp"
+#include "label_presence.hpp"
 #include <window_system/tab_appearance.hpp>
 #include <QFont>
 #include <QIcon>
@@ -73,6 +74,7 @@ struct TabLabelPresentation {
     TabLabelState state;
     QFont font;
     Qt::LayoutDirection direction = Qt::LeftToRight;
+    LabelPresencePose presence;
     std::optional<SurfaceGeometry> surface;
     std::optional<ElevationProfile> bodyElevation;
     std::optional<TabColorPreset> preset;

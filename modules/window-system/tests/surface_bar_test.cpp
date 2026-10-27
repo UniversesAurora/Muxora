@@ -6,6 +6,9 @@
 
 #include <QApplication>
 #include <QMouseEvent>
+#include <QImage>
+#include <QPainter>
+#include <QScopeGuard>
 #include <QTest>
 #include <algorithm>
 
@@ -66,6 +69,68 @@ class SurfaceBarTest final : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { TabBar::setAnimationsEnabled(false); }
+
+    void surfacePresenceFollowsItsLabelPose_data()
+    {
+        QTest::addColumn<TabBarPlacement>("placement");
+        QTest::addColumn<bool>("entering");
+        for (const auto placement : {TabBarPlacement::Top, TabBarPlacement::Bottom, TabBarPlacement::Left, TabBarPlacement::Right})
+            for (const bool entering : {false, true})
+                QTest::newRow(qPrintable(QStringLiteral("%1-enter-%2").arg(int(placement)).arg(entering))) << placement << entering;
+    }
+    void surfacePresenceFollowsItsLabelPose()
+    {
+        QFETCH(TabBarPlacement, placement);
+        QFETCH(bool, entering);
+        TabBar::setAnimationsEnabled(true);
+        const auto restoreAnimations = qScopeGuard([] { TabBar::setAnimationsEnabled(false); });
+        if (!TabBar::animationsAllowed()) QSKIP("System client-area animations are disabled");
+        TabBar bar(defaultTheme(), nullptr);
+        bar.setAppearance(TabAppearance{}, placement);
+        addTabs(bar, 2); bar.setCurrentIndex(0);
+        const auto body = arrange(bar, bar.vertical() ? QSize(180, 500) : QSize(640, 500));
+        int backplateChanges = 0;
+        bar.surfaceChanged = [&] { ++backplateChanges; };
+        bar.animatePresence({bar.tabData(0).toUuid()}, entering);
+        QCOMPARE(bar.labelPresence(0).opacity, entering ? qreal(0) : qreal(1));
+        QCOMPARE(bar.surfaceAnchors().isEmpty(), entering);
+        const int initialChanges = backplateChanges;
+        QTRY_VERIFY_WITH_TIMEOUT(bar.labelPresence(0).opacity > 0 && bar.labelPresence(0).opacity < 1, 1000);
+        const auto pose = bar.labelPresence(0);
+        const auto anchors = bar.surfaceAnchors();
+        QCOMPARE(anchors.size(), 1);
+        QCOMPARE(anchors[0].presence.opacity, pose.opacity);
+        QCOMPARE(anchors[0].presence.scale, pose.scale);
+        QCOMPARE(anchors[0].presence.offset, pose.offset);
+        QCOMPARE(anchors[0].geometry.body, body);
+        QVERIFY(backplateChanges > initialChanges);
+        QTRY_COMPARE_WITH_TIMEOUT(bar.labelPresence(0).opacity, entering ? qreal(1) : qreal(0), 1000);
+        if (entering) QVERIFY(bar.surfaceAnchors()[0].presence.complete());
+        else QVERIFY(bar.surfaceAnchors().isEmpty());
+        QVERIFY(!bar.isVisible());
+    }
+
+    void presenceTransformsReuseCachedShadowImages()
+    {
+        SurfaceGeometryInput input;
+        input.body = QRectF(180, 0, 400, 400);
+        input.anchor = QRectF(0, 40, 180, 28); input.visibleAnchor = input.anchor;
+        input.edge = SurfaceEdge::Left;
+        const auto geometry = surfaceGeometry(input);
+        ElevationRenderer renderer;
+        QImage image(600, 420, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image);
+        const auto draw = [&](qreal progress) {
+            LabelPresenceEffect::paint(painter, labelPresencePose(input.anchor, progress), [&] {
+                renderer.paintAnchor(painter, geometry, elevationProfile(ElevationLevel::BodyRest),
+                    elevationProfile(ElevationLevel::AnchorRest), elevationStyleForTheme(defaultTheme()), true);
+            });
+        };
+        draw(0.1);
+        const auto warmed = renderer.cacheStats().generatedImages;
+        for (int step = 2; step <= 10; ++step) draw(qreal(step) / 10);
+        QCOMPARE(renderer.cacheStats().generatedImages, warmed);
+    }
 
     void firstFastDragKeepsItsPressAnchor_data() { positions(); }
     void firstFastDragKeepsItsPressAnchor()

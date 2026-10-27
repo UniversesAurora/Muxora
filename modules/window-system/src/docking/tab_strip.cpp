@@ -434,7 +434,7 @@ QRect GroupTabs::surfaceBounds() const
     const auto margins = elevationMargins(profile);
     QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
     if (barVisible_) for (const auto& anchor : bar_->surfaceAnchors(bar_->mapTo(this, QPoint())))
-        bounds |= anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation));
+        bounds |= anchor.presence.mapRect(anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation)));
     if (vertical() && peekExpansion_.value() > 0) {
         const auto panel = static_cast<VerticalTabPanel*>(columnPanel_);
         bounds |= QRectF(panel->bodyRect().translated(panel->pos())).marginsAdded(
@@ -469,7 +469,7 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
     painter.save();
     QPainterPath bodyRegion; bodyRegion.addRect(surfaceBounds());
     const auto bodyMargins = elevationMargins(profile);
-    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact) {
+    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && anchor.presence.complete()) {
         const auto margins = elevationMargins(anchor.elevation);
         const qreal extent = std::ceil(std::max({margins.left(), margins.top(), margins.bottom(),
             bodyMargins.left(), bodyMargins.top(), bodyMargins.bottom()})) + 1;
@@ -480,9 +480,15 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
     renderer.paintBody(painter, body, bar_->metrics().cardRadius, profile, style);
     painter.restore();
     QVector<ElevatedAnchor> shadows;
-    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact)
+    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && anchor.presence.complete())
         shadows.append({anchor.geometry, anchor.elevation});
     renderer.paintAnchors(painter, shadows, profile, style);
+    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && !anchor.presence.complete())
+        LabelPresenceEffect::paint(painter, anchor.presence, [&] {
+            // Keep the body in place. Transform only the cached additional
+            // anchor contribution, avoiding new blur images at each scale.
+            renderer.paintAnchor(painter, anchor.geometry, profile, anchor.elevation, style, true);
+        });
     bar_->paintSurfaceExtension(painter, bar_->mapTo(this, QPoint()));
     if (vertical() && peekExpansion_.value() > 0) {
         // The shell can enter shared splitter margins. Paint only its part

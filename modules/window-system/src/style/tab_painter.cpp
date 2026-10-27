@@ -193,9 +193,14 @@ void TabPainter::paintTab(QPainter& painter, const TabParts& parts, const TabPai
 
 void TabPainter::paintLabel(QPainter& painter, const TabLabelPresentation& label, TabTitleLayout* widgetCache) const
 {
+    if (label.presence.opacity <= 0) return;
     const auto& state = label.state;
     const auto& parts = label.parts;
     painter.save();
+    if (!label.presence.complete()) {
+        painter.setOpacity(painter.opacity() * label.presence.opacity);
+        painter.translate(label.presence.offset); painter.scale(label.presence.scale, label.presence.scale);
+    }
     if (painter.font() != label.font) painter.setFont(label.font);
     if (painter.layoutDirection() != label.direction) painter.setLayoutDirection(label.direction);
     painter.setRenderHint(QPainter::Antialiasing);

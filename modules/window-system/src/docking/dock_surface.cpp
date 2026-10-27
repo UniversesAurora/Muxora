@@ -141,7 +141,12 @@ public:
         setObjectName("RetiringTabLabels"); setAttribute(Qt::WA_TransparentForMouseEvents);
         QRect bounds;
         for (auto it = labels_.begin(); it != labels_.end();)
-            if (!it->retired) it = labels_.erase(it); else { bounds |= it->global; ++it; }
+            if (!it->retired) it = labels_.erase(it); else {
+                const auto shape = it->retired->label.surface ? it->retired->label.surface->anchorPath.boundingRect() : QRectF(it->global);
+                const auto shadow = shape.marginsAdded(elevationMargins(elevationProfile(ElevationLevel::Lifted)));
+                bounds |= (shadow | labelPresencePose(it->global, 0).mapRect(shadow)).toAlignedRect();
+                ++it;
+            }
         const auto local = bounds.translated(-parent->mapToGlobal(QPoint())).intersected(parent->rect());
         setGeometry(local); origin_ = parent->mapToGlobal(local.topLeft());
         connect(&visibility_, &QVariantAnimation::valueChanged, this, [this] { update(); });

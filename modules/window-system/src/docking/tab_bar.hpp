@@ -52,6 +52,7 @@ struct TabSurfaceAnchor {
     ElevationProfile elevation;
     bool lifted = false;
     bool foreground = false;
+    LabelPresencePose presence;
 };
 
 // A tab folder as a strip shows it: a run of `count` tabs from `first`
@@ -117,6 +118,7 @@ public:
     [[nodiscard]] SurfaceState captureSurfaceState() const;
     void inheritSurface(const SurfaceState& previous, bool animate);
     [[nodiscard]] QVector<TabSurfaceAnchor> surfaceAnchors(QPointF offset = {}) const;
+    [[nodiscard]] LabelPresencePose labelPresence(int index) const;
     void paintSurfaceExtension(QPainter& painter, QPointF offset = {}) const;
     std::function<void()> surfaceChanged;
     void setCarriedDisplay(bool carried);
@@ -310,6 +312,7 @@ protected:
 
 private:
     void invalidateCarrier(bool content);
+    [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
     struct Tab {
         QVariant data;
         QString title;

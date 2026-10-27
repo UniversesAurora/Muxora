@@ -262,12 +262,12 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         if (actionOpacity_.value() == 0) fadingAction_ = -1;
         invalidateCarrier(true);
     });
-    connect(&presenceProgress_, &QVariantAnimation::valueChanged, this, [this] { invalidateCarrier(false); update(); });
+    connect(&presenceProgress_, &QVariantAnimation::valueChanged, this, [this] { surfaceFrameChanged(); });
     connect(&presenceProgress_, &QVariantAnimation::finished, this, [this] {
         departing_.clear();
         for (auto it = presence_.begin(); it != presence_.end();)
             if (it->to == 1) it = presence_.erase(it); else ++it;
-        invalidateCarrier(false); update();
+        surfaceFrameChanged();
     });
     connect(&rowsReveal_, &QVariantAnimation::valueChanged, this, [this] {
         invalidateCarrier(false);
@@ -525,6 +525,20 @@ void TabBar::setSurfaceContext(QRectF body, qreal focus, qreal join)
     syncAttachment(); surfaceFrameChanged();
 }
 
+LabelPresencePose TabBar::labelPresence(int index) const
+{
+    if (index < 0 || index >= count()) return {};
+    return presenceFor(index, animatedRect(index));
+}
+
+LabelPresencePose TabBar::presenceFor(int index, QRect area) const
+{
+    if (index < 0 || index >= count()) return {};
+    const auto found = presence_.constFind(tabs_.at(index).data.toUuid());
+    if (found == presence_.cend()) return {};
+    return labelPresencePose(area, found->from + (found->to - found->from) * presenceProgress_.value(), found->kind);
+}
+
 QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
 {
     QVector<TabSurfaceAnchor> anchors;
@@ -546,6 +560,8 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
         const auto weight = selectionWeight(index);
         if (weight <= 0 || layout_.lanes.value(index, -1) < 0) return anchors;
         const auto area = animatedRect(index);
+        const auto presence = presenceFor(index, area);
+        if (presence.opacity <= 0) return anchors;
         const bool settling = settling_.contains(tabData(index).toUuid());
         const auto visible = settling ? area
             : area.intersected(layout_.laneList.at(layout_.lanes.at(index)).viewport.translated(tabOrigin())).intersected(rect());
@@ -556,7 +572,7 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
         if (index == current_ && liftElevation_.value() > 0)
             profile = interpolateElevation(profile, elevationProfile(ElevationLevel::Lifted), liftElevation_.value());
         anchors.append({translatedSurfaceGeometry(geometry, offset), profile, liftElevation_.value() > 0 || settling,
-            overlayActive() || vertical() && surfaceJoin_ < 1});
+            overlayActive() || vertical() && surfaceJoin_ < 1, presence.translated(offset)});
     }
     return anchors;
 }
@@ -569,9 +585,13 @@ void TabBar::paintSurfaceExtension(QPainter& painter, QPointF offset) const
     const bool compact = moving ? dropSticky_ && compactStickyTiles() : shapeOf(current_) == TabShape::Tile;
     const auto geometry = translatedSurfaceGeometry(anchorGeometry(area, area.intersected(rect()), compact, moving), offset);
     if (!geometry.joined) return;
+    const auto presence = moving ? LabelPresencePose{} : presenceFor(current_, area).translated(offset);
+    if (presence.opacity <= 0) return;
     QPainterPath widget; widget.addRect(QRectF(rect()).translated(offset));
     painter.save(); painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillPath(geometry.anchorPath.subtracted(widget), theme_.surface);
+    painter.setOpacity(painter.opacity() * presence.opacity);
+    QTransform transform; transform.translate(presence.offset.x(), presence.offset.y()); transform.scale(presence.scale, presence.scale);
+    painter.fillPath(transform.map(geometry.anchorPath).subtracted(widget), theme_.surface);
     painter.restore();
 }
 
@@ -797,8 +817,10 @@ void TabBar::paintRetiredLabel(QPainter& painter, const TabPainter& style, const
             presentation.surface.reset(); presentation.state.elevationManaged = true; presentation.state.lifted = false;
             style.paintLabel(painter, presentation, &retired.titleLayout);
         }
-    } else LabelPresenceEffect::paint(painter, parts.tab, visibility * retired.visibility,
-        [&] { style.paintLabel(painter, presentation, &retired.titleLayout); });
+    } else {
+        presentation.presence = labelPresencePose(parts.tab, visibility * retired.visibility);
+        style.paintLabel(painter, presentation, &retired.titleLayout);
+    }
 }
 
 void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion)
@@ -812,6 +834,7 @@ void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion
     presenceProgress_.jump(0);
     presenceProgress_.animateTo(1, motion, animationsEnabled());
     if (!animationsEnabled()) { departing_.clear(); if (visible) for (const auto& id : ids) presence_.remove(id); }
+    surfaceFrameChanged();
 }
 
 bool TabBar::hasSingleTileRow() const
@@ -1984,11 +2007,9 @@ void TabBar::paintTabAt(QPainter& painter, int index, bool settling)
     const auto geometry = anchorGeometry(rect, visible, state.shape == TabShape::Tile, false);
     state.surface = state.selected && !visible.isEmpty() ? &geometry : nullptr;
     state.elevationManaged = !surfaceBody_.isEmpty();
-    const auto presence = presence_.constFind(tabs_.at(index).data.toUuid());
-    const qreal visibility = presence == presence_.cend() ? 1.0 : presence->from + (presence->to - presence->from) * presenceProgress_.value();
-    const auto kind = presence == presence_.cend() ? LabelPresenceEffect::Kind::Lift : presence->kind;
-    const auto label = TabPainter::captureLabel(partsOf(index, rect), state, painter.font(), painter.layoutDirection());
-    LabelPresenceEffect::paint(painter, rect, visibility, [&] { painter_.paintLabel(painter, label, state.titleLayout); }, kind);
+    auto label = TabPainter::captureLabel(partsOf(index, rect), state, painter.font(), painter.layoutDirection());
+    label.presence = presenceFor(index, rect);
+    painter_.paintLabel(painter, label, state.titleLayout);
 }
 
 TabFolderPaintState TabBar::folderPaintState(int folder) const
@@ -2194,9 +2215,9 @@ void TabBar::paintLiftedTabs(QPainter& painter)
     auto style = painter_.palette().elevation;
     style.focused = groupFocused_ && window()->isActiveWindow();
     for (const auto& anchor : surfaceAnchors()) if (anchor.lifted || anchor.foreground)
-        surfaceRenderer_.paintAnchor(painter, anchor.geometry,
+        LabelPresenceEffect::paint(painter, anchor.presence, [&] { surfaceRenderer_.paintAnchor(painter, anchor.geometry,
             anchor.foreground ? elevationProfile(ElevationLevel::Flat) : bodyProfile,
-            anchor.elevation, style, !anchor.foreground);
+            anchor.elevation, style, !anchor.foreground); });
     if (const auto incoming = incomingRect(); !incoming.isEmpty()) {
         const auto anchors = surfaceAnchors();
         const auto geometry = anchors.isEmpty() ? SurfaceGeometry{} : translatedSurfaceGeometry(anchors.first().geometry, -incoming.topLeft());
