@@ -188,6 +188,14 @@ void InterfaceAppearanceTest::menusFollowFontChanges()
     auto* menu = root->findChild<QMenuBar*>("MenuStrip"); QVERIFY(menu);
     if (!startup) QVERIFY(controller.setAppearance(value));
     QCoreApplication::processEvents();
+    // Theme stylesheet installation repopulates Qt's native class fonts.
+    // Newly created controls must still inherit the full interface font.
+    QMenu futurePopup; QMenuBar futureBar;
+    for (auto* widget : {static_cast<QWidget*>(&futurePopup), static_cast<QWidget*>(&futureBar)}) {
+        QCOMPARE(widget->font().families(), controller.font().families());
+        QCOMPARE(widget->font().pointSizeF(), controller.font().pointSizeF());
+        QVERIFY(!widget->testAttribute(Qt::WA_SetFont));
+    }
     QCOMPARE(menu->font().families(), controller.font().families());
     QCOMPARE(menu->font().pointSizeF(), controller.font().pointSizeF());
     QCOMPARE(menu->font().hintingPreference(), controller.font().hintingPreference());

@@ -20,6 +20,16 @@ QPointer<InterfaceAppearanceController> instance;
 class ScaledStyle final : public QProxyStyle {
 public:
     explicit ScaledStyle(QStyle* base) : QProxyStyle(base) {}
+    void polish(QApplication* app) override
+    {
+        QProxyStyle::polish(app);
+        // QApplication resets native class-font defaults whenever installing
+        // a style, including the first application stylesheet. Reapply the
+        // interface font at that boundary so existing and future controls
+        // inherit one policy, without per-menu fonts or signal bindings.
+        if (auto* controller = InterfaceAppearanceController::applicationInstance())
+            app->setFont(controller->font());
+    }
     int pixelMetric(PixelMetric metric, const QStyleOption* option, const QWidget* widget) const override
     {
         const int value = QProxyStyle::pixelMetric(metric, option, widget);

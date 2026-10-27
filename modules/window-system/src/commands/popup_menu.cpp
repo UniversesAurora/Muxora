@@ -46,7 +46,6 @@ void setPopupAnchor(QMenu* menu, const QRect& anchor)
 
 DismissOnlyMenu::DismissOnlyMenu(QWidget* parent) : QMenu(parent)
 {
-    uiInterfaceFont(this);
     connect(this, &QMenu::aboutToShow, this, [this] { configureNativePopup(); });
 }
 
