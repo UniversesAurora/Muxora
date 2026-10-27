@@ -84,8 +84,11 @@ WorkspaceWindow* beginDrag(WindowManager& manager, WindowId source, TabId tab)
     if (!group) return nullptr;
     auto* bar = group->tabBar();
     const int index = manager.model().group(manager.model().groupForTab(tab))->tabs.indexOf(tab);
+    // This fixture requests an already detached drag; it does not simulate
+    // a press followed by threshold crossing inside the source strip.
+    const auto global = bar->mapToGlobal(bar->tabRect(index).center()) + QPoint(0, 35);
     const auto callback = bar->drag;
-    callback(index, bar->mapToGlobal(bar->tabRect(index).center()) + QPoint(0, 35));
+    callback(index, DragStart{global, global, {}});
     return dynamic_cast<WorkspaceWindow*>(QWidget::mouseGrabber());
 }
 } // namespace
