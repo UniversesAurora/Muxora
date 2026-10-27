@@ -132,6 +132,36 @@ private slots:
         QCOMPARE(renderer.cacheStats().generatedImages, warmed);
     }
 
+    void liftedLayerEscapesTheStripMask_data() { positions(); }
+    void liftedLayerEscapesTheStripMask()
+    {
+        QFETCH(TabBarPlacement, placement);
+        QWidget host; host.resize(800, 600);
+        auto* group = new GroupTabs(defaultTheme(), &host);
+        group->setGeometry(100, 100, 600, 400);
+        const auto id = QUuid::createUuid();
+        group->addTab(new QWidget, {}, "Workspace", id);
+        TabAppearance policy; policy.centralPlacement = placement;
+        group->setAppearance(policy);
+        auto* bar = group->tabBar();
+        const auto area = bar->tabRect(0);
+        group->setDraggedTab(id);
+        const auto point = area.center() - (bar->vertical() ? QPoint(0, 2 * area.height()) : QPoint(0, 0));
+        group->setLiftedTab(bar->mapToGlobal(point), area.center() - area.topLeft());
+        QPointer<QWidget> layer = host.findChild<QWidget*>("LiftedTabLayer", Qt::FindDirectChildrenOnly);
+        QVERIFY(layer); QCOMPARE(layer->parentWidget(), &host);
+        QCOMPARE(layer->geometry(), host.rect());
+        QVERIFY(!layer->mask().isEmpty());
+        QVERIFY(layer->mask() != QRegion(host.rect()));
+        const auto margins = elevationMargins(elevationProfile(ElevationLevel::Lifted));
+        const auto shadow = QRectF(bar->liftedRect()).marginsAdded(margins).translated(bar->mapTo(&host, QPoint()));
+        QVERIFY(layer->rect().contains(shadow.toAlignedRect()));
+        QVERIFY(layer->mask().contains(shadow.toAlignedRect()));
+        QVERIFY(!host.isVisible());
+        delete group;
+        QVERIFY(layer.isNull());
+    }
+
     void firstFastDragKeepsItsPressAnchor_data() { positions(); }
     void firstFastDragKeepsItsPressAnchor()
     {

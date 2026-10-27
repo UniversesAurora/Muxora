@@ -21,6 +21,7 @@
 #include <QHash>
 #include <QIcon>
 #include <QPointer>
+#include <QRegion>
 #include <QSet>
 #include <QTimer>
 #include <QVariant>
@@ -446,6 +447,7 @@ private:
     DragAnchor liftedGrab_;
     std::optional<int> initialStickyBoundary_;
     QPointer<QWidget> liftedLayer_;
+    QRegion liftedPaintRegion_;
     TabDragVisual incomingVisual_;
     TabCarrierPainter incomingPainter_;
     QPoint incomingPointer_;

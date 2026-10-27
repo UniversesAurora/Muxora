@@ -168,10 +168,13 @@ void TabStripLayoutTest::liftedLabelPaintsAboveCreationControls()
     const auto point = trailing->mapTo(bar, trailing->rect().center());
     tabs.setDraggedTab(ids.first());
     tabs.setLiftedTab(bar->mapToGlobal(point), {0, 0});
-    const auto layer = bar->findChild<QWidget*>("LiftedTabLayer");
+    auto* owner = bar->window();
+    const auto layer = owner->findChild<QWidget*>("LiftedTabLayer", Qt::FindDirectChildrenOnly);
     QVERIFY(layer && layer->isVisible());
     QVERIFY(layer->testAttribute(Qt::WA_TransparentForMouseEvents));
-    QVERIFY(bar->children().indexOf(layer) > bar->children().indexOf(trailing));
+    auto* controlBranch = trailing;
+    while (controlBranch->parentWidget() != owner) controlBranch = controlBranch->parentWidget();
+    QVERIFY(owner->children().indexOf(layer) > owner->children().indexOf(controlBranch));
     tabs.clearLiftedTab();
     QVERIFY(layer->isHidden());
 }
@@ -329,7 +332,7 @@ void TabStripLayoutTest::incomingVisualMatchesTheInStripLiftAndAxis()
     target.setLiftedTab(bar->mapToGlobal(point), grab);
     target.setInsertionPreview(0, {{bar->tabText(0), false}});
     const auto internalRect = bar->liftedRect();
-    const auto internal = render(bar);
+    const auto internal = render(&target);
     target.clearLiftedTab();
     source.setDragPresentation(true, false);
     source.setDragTabStyle(*bar, false);
@@ -340,7 +343,7 @@ void TabStripLayoutTest::incomingVisualMatchesTheInStripLiftAndAxis()
     visual.pieces.append({-bounds.topLeft(), carried->carrierFrame()});
     bar->setIncomingVisual(visual, point);
     QCOMPARE(bar->incomingRect(), internalRect);
-    QCOMPARE(render(bar), internal);
+    QCOMPARE(render(&target), internal);
     if (bar->vertical()) {
         bar->setIncomingVisual(visual, point + QPoint(35, 40));
         QCOMPARE(bar->incomingRect().left(), internalRect.left());

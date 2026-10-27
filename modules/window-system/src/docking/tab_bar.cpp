@@ -1734,12 +1734,32 @@ void TabBar::setLiftedWithAnchor(QPoint local, const DragAnchor& grab)
 
 void TabBar::updateLiftedLayer()
 {
-    auto* owner = ((vertical() && columnManaged_) || !settling_.isEmpty()) && parentWidget() ? parentWidget() : this;
+    // The logical strip still constrains the label. Its elevation must not
+    // inherit a narrow column's resting mask or stop at the strip's edge.
+    auto* owner = window();
     const bool shown = !settling_.isEmpty() || (liftedPointer_ && (dragged_ >= 0 || draggedFolder_ >= 0)) || !incomingVisual_.empty()
         || (current_ >= 0 && (liftElevation_.value() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
-    if (shown && !liftedLayer_) {
-        // Child controls paint above their parent's paintEvent. Create one
-        // transparent layer on the first lift, not one widget per tab.
+    QRegion current;
+    if (shown) {
+        const auto origin = mapTo(owner, QPoint());
+        const auto labelMargins = elevationMargins(elevationProfile(ElevationLevel::Lifted));
+        const auto bodyMargins = elevationMargins(elevationProfile(ElevationLevel::BodyRaised));
+        const QMarginsF margins(std::max(labelMargins.left(), bodyMargins.left()), std::max(labelMargins.top(), bodyMargins.top()),
+            std::max(labelMargins.right(), bodyMargins.right()), std::max(labelMargins.bottom(), bodyMargins.bottom()));
+        const auto include = [&](QRect area) {
+            if (!area.isEmpty()) current |= QRectF(area.translated(origin)).marginsAdded(margins).toAlignedRect().adjusted(-1, -1, 1, 1);
+        };
+        include(liftedRect()); include(incomingRect());
+        for (auto it = settling_.cbegin(); it != settling_.cend(); ++it)
+            if (it.value() >= 0 && it.value() < count()) include(animatedRect(it.value()));
+        for (const auto& anchor : surfaceAnchors(origin)) if (anchor.lifted || anchor.foreground)
+            current |= anchor.presence.mapRect(anchor.geometry.anchorPath.boundingRect().marginsAdded(margins))
+                .toAlignedRect().adjusted(-1, -1, 1, 1);
+        current &= owner->rect();
+    }
+    if (!current.isEmpty() && !liftedLayer_) {
+        // One sparse, transparent child per active strip, not per tab. The
+        // window owns its stacking plane; the strip explicitly destroys it.
         liftedLayer_ = new QWidget(owner);
         liftedLayer_->setObjectName("LiftedTabLayer");
         liftedLayer_->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -1747,12 +1767,22 @@ void TabBar::updateLiftedLayer()
         liftedLayer_->installEventFilter(this);
     }
     if (!liftedLayer_) return;
-    if (liftedLayer_->parentWidget() != owner) liftedLayer_->setParent(owner);
-    liftedLayer_->setVisible(shown);
-    if (!shown) return;
-    liftedLayer_->setGeometry(owner->rect());
-    liftedLayer_->raise();
-    liftedLayer_->update();
+    if (liftedLayer_->parentWidget() != owner) {
+        liftedLayer_->setParent(owner); liftedPaintRegion_ = {};
+    }
+    const auto dirty = liftedPaintRegion_ | current;
+    if (current.isEmpty()) {
+        liftedLayer_->hide();
+    } else {
+        liftedLayer_->setGeometry(owner->rect());
+        // A full-window host must not turn each pointer update, mask change,
+        // or final hide into a full-window repaint.
+        if (current != liftedPaintRegion_) liftedLayer_->setMask(current);
+        liftedLayer_->show(); liftedLayer_->raise();
+        liftedLayer_->update(dirty);
+    }
+    if (!dirty.isEmpty()) owner->update(dirty);
+    liftedPaintRegion_ = std::move(current);
 }
 
 void TabBar::refreshPresentationLayers()
