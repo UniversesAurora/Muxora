@@ -372,6 +372,17 @@ WindowSystem 的公共 target 独立于 Muxora 的业务 core；宿主单向依�
 
 第三方完整源码放在构建缓存或可校验的来源中，不将 SDK 与大仓库直接复制进项目。需要离线构建时提供明确的源码／缓存包，仍保留出处和许可。
 
+### 8.1 本机的源码、调试符号和文档
+
+用户 2026-10-27 要求。开发机上除了仓库，通常还有 Qt 源码、调试符号、离线文档和 `reference/` 里的同类项目源码。写代码、排查 Qt 行为（事件顺序、绘制、布局、焦点、原生窗口、动画）或想看别人怎么做时，先查这些本地资料，不凭记忆猜，也不必上网找：
+
+- **本机路径清单**：`.local/environment.md`（忽略提交，每台机器自己写）。有这个文件就先读它；里面的绝对路径只用在本机，不抄进仓库文档和提交说明。
+- **没有清单时按通用位置找**：Qt 套件目录是构建用的 `qtRoot`（`-QtRoot`、`QT_ROOT` 或 `.local/sdk.json`，见 §6.1）。官方安装器装的 Qt 里，套件目录的上一级 `<Qt 根>/<版本>/` 下有 `Src/`（选装了源码时，例如 `Src/qtbase/src/widgets`、`Src/qtbase/src/plugins/platforms/windows`）；套件的 `bin/` 里有 `*.pdb` 调试符号（选装了调试信息时，Debug 构建可以单步进 Qt）；`<Qt 根>/Docs/Qt-<版本>/` 是离线文档，`<Qt 根>/Examples/Qt-<版本>/` 是官方示例。
+- **本项目的产物**：`out/build/<预设>/` 里有程序和测试的 `.pdb`，以及 `compile_commands.json`。
+- **同类项目**：`reference/`，见上文。
+
+新机器上建 `.local/environment.md` 时，至少写清 Qt 根、套件、源码、调试符号、离线文档、编译器和调试器的位置，以及 `reference/` 里各项目的用途。
+
 ## 9. Windows 分发
 
 使用 Qt 的部署工具收集需要的 Qt 运行文件；额外 SSH、Ghostty、加密与辅助程序由项目清单补齐，不能假设工具会收集所有第三方依赖。[Qt Windows 部署](https://doc.qt.io/qt-6/windows-deployment.html)
