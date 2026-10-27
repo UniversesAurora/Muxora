@@ -29,7 +29,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot <Qt 安装目录>/6.12.0/msv
 | `-Run` | 构建后启动 Muxora |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
 
-运行全部自动化测试（桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复）：
+下列全量及完整验证命令须先按 [测试范围规则](testing-design.md#1-必须遵守的规则) 取得单独授权。桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复。
 
 ```powershell
 pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/build.ps1 -Configuration Release -Test
@@ -54,7 +54,7 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/package-portable.ps1
 
 按交付需要生成便携包时，脚本从 PATH 查找 `7z` 或 `7zz`，也可通过 `-SevenZip` 指定程序路径。Qt 的选择仍使用 `-QtRoot` 或原有自动发现方式。打包先更新固定 Release 部署，再按 `deployment-files.json` 复制运行文件到 `out/package/portable-input/`，不带入部署目录中的私人布局或未知文件。
 
-日常外观试用只需更新便携包时，可运行 `pwsh ./tools/package-portable.ps1 -Validation Archive`。它仍构建 Release、刷新固定部署、检查压缩包并解压核对运行文件，但不执行全量、启动或恢复测试，也不生成这些检查的通过记录。默认 `Full` 保留全量及启动恢复验证，按桌面测试规则经隔离入口运行。
+日常外观试用只需更新便携包时，可运行 `pwsh ./tools/package-portable.ps1 -Validation Archive`。它仍构建 Release、刷新固定部署、检查压缩包并解压核对运行文件，但不执行全量、启动或恢复测试，也不生成这些检查的通过记录。默认 `Full` 包含全量及启动恢复验证，须先按 [测试范围规则](testing-design.md#1-必须遵守的规则) 取得单独授权，再经桌面隔离入口运行。
 
 压缩包固定为 `out/dist/Muxora-preview-windows-x64.7z`，再次生成时覆盖旧包。构建与便携检查记录保存版本、配置、产物路径和实际检查结果，不计算文件哈希，也不生成校验文件；校验代码的适用范围见 [仓库规则](../../AGENTS.md#必须遵守)。
 
