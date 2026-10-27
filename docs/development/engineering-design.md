@@ -102,6 +102,17 @@ QObject 在所属线程使用和销毁；worker 停止、对象清理与事件�
 **用好当前的 Qt**
 
 - 项目绑定的 Qt 版本见 §6.1。写新功能前先查这个版本的官方文档，有现成的类或机制就用它，不自己重新实现；新代码不用文档标为过时（deprecated）的接口，碰到旧写法时顺手换掉。
+- 没标过时不等于该用。Qt 里不少老组件还留着，但已经有更快或效果更好的新组件做同样的事。选组件时先看文档有没有更新的替代（类的说明页常写着“see also”或推荐用法），有就用新的。新的不一定在每种用法下都更快，用在热路径上时按下面“性能是实现的一部分”实测。本项目常碰到的几组：
+
+  | 老做法 | 改用 | 原因 |
+  | --- | --- | --- |
+  | `QGraphicsDropShadowEffect` 等 `QGraphicsEffect` | 自己画并缓存阴影；Qt Quick 里用 `RectangularShadow`、`MultiEffect` | 老效果每次重绘都在 CPU 上把控件画到离屏图再模糊 |
+  | `Qt5Compat.GraphicalEffects` | `QtQuick.Effects` 的 `MultiEffect`、`RectangularShadow` | 新组件在 GPU 上用着色器做，一次完成多种效果 |
+  | `QOpenGLWidget` | `QRhiWidget` | 走 Qt 的 RHI，Windows 上用 Direct3D，和 Qt Quick 同一套图形后端 |
+  | `QGraphicsView` 做大量动画图元 | Qt Quick（按 ADR 0013） | 场景图在 GPU 上合批绘制 |
+  | 继承 `QThread` 重写 `run`、手写线程间信号 | `QThreadPool`、`QtConcurrent`、`QFuture::then` | 线程复用，结果和取消有现成的通路 |
+  | 大段样式表（QSS）给自绘控件定外观 | 主题 token 加自绘 | 样式表在每次 polish 和绘制时解析匹配规则，开销大且难控制 |
+  | QML 里用 JavaScript 函数、`var` 属性、运行时 `Qt.binding` | 带类型的属性、`required property`、`QML_ELEMENT` 声明式注册 | 能被 qmlcachegen 编译成 C++，绑定更快 |
 - 常用的现代写法：基于函数指针、带 context 对象的 `connect`；`QStringView`、`QAnyStringView` 传只读字符串；`u"..."_s` 字面量；`std::chrono` 时长；`QPixmapCache` 或自己的有界缓存保存绘制结果；动画用 `QVariantAnimation` 加集中定义的曲线。注意 Qt 容器的隐式共享，在循环里避免意外拷贝（detach）。
 - 新的界面呈现方向按 [ADR 0013](../adr/0013-qt-quick-rendering.md) 和 [Quick 呈现设计](../design/quick-rendering-design.md)，不在 Widgets 上为将来要迁移的部分做大投入。
 
