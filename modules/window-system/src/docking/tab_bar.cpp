@@ -327,7 +327,7 @@ void TabBar::removeTab(int index)
     if (dragged_ == index) dragged_ = -1; else if (dragged_ > index) --dragged_;
     if (hovered_ >= index) hovered_ = -1;
     if (fadingAction_ == index) fadingAction_ = -1; else if (fadingAction_ > index) --fadingAction_;
-    pressed_ = actionPressed_ = middlePressed_ = -1;
+    pointer_.cancelTabs();
     const int previous = current_;
     if (tabs_.isEmpty()) current_ = -1;
     else if (index < current_) --current_;
@@ -637,7 +637,7 @@ void TabBar::setFolders(QVector<TabStripFolder> folders)
     folders_ = std::move(folders);
     draggedFolder_ = -1;
     for (int folder = 0; folder < folders_.size(); ++folder) if (folders_.at(folder).id == dragged) draggedFolder_ = folder;
-    hoveredHeader_ = pressedHeader_ = -1;
+    hoveredHeader_ = -1; pointer_.cancelFolders();
     relayout(true);
     if (const auto callback = reservedSizeChanged) callback();
 }
@@ -1845,7 +1845,7 @@ std::shared_ptr<const TabCarrierFrame> TabBar::carrierFrame()
         sample.parts = partsOf(index, animatedRect(index));
         const auto& state = carrierContent_->labels.at(at).label.state;
         sample.titleOpacity = vertical() && state.shape == TabShape::Row && !state.iconOnly ? columnReveal_ : 1;
-        sample.actionOpacity = state.sticky || index == actionPressed_ ? 1 : actionOpacity_.value();
+        sample.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1 : actionOpacity_.value();
     }
     carrierFrame_ = *available;
     return carrierFrame_;
@@ -2029,7 +2029,7 @@ TabPaintState TabBar::paintState(int index)
     state.shape = shapeOf(index);
     state.selected = index == current_ && incomingVisual_.empty();
     state.hovered = !carriedDisplay_ && index == hovered_;
-    state.pressed = !carriedDisplay_ && index == pressed_;
+    state.pressed = !carriedDisplay_ && index == pointer_.pressedTab();
     state.groupFocused = carriedDisplay_ || groupFocused_;
     state.windowActive = window()->isActiveWindow();
     state.lifted = carriedDisplay_;
@@ -2044,12 +2044,12 @@ TabPaintState TabBar::paintState(int index)
     state.title = tabs_.at(index).title;
     state.titleLayout = &tabs_[index].titleLayout;
     // A sticky tab always shows its action; the others on hover.
-    state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == actionPressed_
+    state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == pointer_.pressedAction()
         || (index == fadingAction_ && actionOpacity_.value() > 0))));
     state.actionHovered = !carriedDisplay_ && index == hovered_ && actionHovered_;
-    state.actionPressed = !carriedDisplay_ && index == actionPressed_;
+    state.actionPressed = !carriedDisplay_ && index == pointer_.pressedAction();
     state.actionReserved = state.sticky;
-    state.actionOpacity = state.sticky || index == actionPressed_ ? 1.0 : actionOpacity_.value();
+    state.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1.0 : actionOpacity_.value();
     state.actionIcon = iconFor(!state.sticky ? QStringLiteral("close") : vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
     return state;
 }
@@ -2076,7 +2076,7 @@ TabFolderPaintState TabBar::folderPaintState(int folder) const
     const auto& record = folders_.at(folder);
     TabFolderPaintState state;
     state.name = record.name; state.count = record.count; state.collapsed = record.collapsed;
-    state.hovered = folder == hoveredHeader_; state.pressed = folder == pressedHeader_;
+    state.hovered = folder == hoveredHeader_; state.pressed = folder == pointer_.pressedFolder();
     state.addHovered = state.hovered && headerAddHovered_;
     if (const auto* preset = folderPreset(folder)) {
         state.color = preset->groupActive.line;
@@ -2384,10 +2384,54 @@ void TabBar::updateHover(QPoint local)
     }
 }
 
+TabPointerHit TabBar::pointerHit(QPoint local, bool releasing) const
+{
+    TabPointerHit hit;
+    hit.tab = tabAt(local);
+    hit.folder = hit.tab < 0 ? folderAt(local) : -1;
+    const int action = releasing ? pointer_.pressedAction() : hit.tab;
+    if (action >= 0 && actionRect(action).contains(local)
+        && (releasing || !(isCompactSticky(action) && !vertical()))) hit.action = action;
+    hit.folderAdd = releasing && vertical() && hit.folder >= 0
+        && painter_.folderAddRect(folderHeaderRect(hit.folder)).contains(local);
+    return hit;
+}
+
+void TabBar::applyPointerDecision(const TabPointerDecision& decision)
+{
+    using Action = TabPointerDecision::Action;
+    switch (decision.action) {
+    case Action::None: return;
+    case Action::ActivateTab: {
+        const QPointer<TabBar> self(this);
+        setCurrentIndex(decision.index);
+        if (self && appearance_.rowExpansion == TabRowExpansion::Overlay && expanded_) setExpanded(false);
+        return;
+    }
+    case Action::DragTab: {
+        const auto callback = drag;
+        if (callback) callback(decision.index, decision.start);
+        return;
+    }
+    case Action::DragFolder: {
+        update();
+        const auto callback = folderDrag;
+        if (callback) callback(decision.index, decision.start);
+        return;
+    }
+    case Action::CloseTab: { const auto callback = close; if (callback) callback(decision.index); return; }
+    case Action::UnstickTab: { const auto callback = unstick; if (callback) callback(decision.index); return; }
+    case Action::ToggleFolder: { const auto callback = toggleFolder; if (callback) callback(decision.index); return; }
+    case Action::AddTabToFolder: { const auto callback = newTabInFolder; if (callback) callback(decision.index); return; }
+    }
+}
+
 void TabBar::mousePressEvent(QMouseEvent* event)
 {
     const auto point = event->position().toPoint();
-    if (event->button() == Qt::MiddleButton) { middlePressed_ = tabAt(point); event->accept(); return; }
+    if (event->button() == Qt::MiddleButton) {
+        (void)pointer_.press(event->button(), {tabAt(point)}, {}); event->accept(); return;
+    }
     if (event->button() != Qt::LeftButton) { event->accept(); return; }
     // Hidden scrollbars do not create invisible drag targets over labels.
     if (scrollingLane_ >= 0 && scrollingLane_ < layout_.laneList.size() && scrollbarHitRect().contains(point)) {
@@ -2406,22 +2450,14 @@ void TabBar::mousePressEvent(QMouseEvent* event)
         revealScrollbar(scrollDragLane_);
         event->accept(); return;
     }
-    const int index = tabAt(point);
-    pressStart_ = DragStart::capture(event->globalPosition().toPoint(), point,
-        index >= 0 ? animatedRect(index) : QRect(point, QSize(1, 1)));
-    if (const int header = index < 0 ? folderAt(point) : -1; header >= 0) {
-        pressStart_ = DragStart::capture(event->globalPosition().toPoint(), point, layout_.headers.at(header).translated(tabOrigin()));
-        pressedHeader_ = header; update(); event->accept(); return;
-    }
-    if (index >= 0 && actionRect(index).contains(point) && !(isCompactSticky(index) && !vertical())) {
-        actionPressed_ = index; update(); event->accept(); return;
-    }
-    pressed_ = index;
-    if (index >= 0) {
-        setCurrentIndex(index);
-        if (appearance_.rowExpansion == TabRowExpansion::Overlay && expanded_) setExpanded(false);
-    }
+    const auto hit = pointerHit(point, false);
+    const auto label = hit.folder >= 0 ? layout_.headers.at(hit.folder).translated(tabOrigin())
+        : hit.tab >= 0 ? animatedRect(hit.tab) : QRect(point, QSize(1, 1));
+    const auto start = DragStart::capture(event->globalPosition().toPoint(), point, label);
+    const auto decision = pointer_.press(event->button(), hit, start);
+    if (hit.folder >= 0 || hit.action >= 0) update();
     event->accept();
+    applyPointerDecision(decision);
 }
 
 void TabBar::mouseMoveEvent(QMouseEvent* event)
@@ -2438,50 +2474,23 @@ void TabBar::mouseMoveEvent(QMouseEvent* event)
         return;
     }
     updateHover(point);
-    if (event->buttons().testFlag(Qt::LeftButton) && pressedHeader_ >= 0
-        && pressStart_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
-        // Dragging a header carries the whole folder.
-        const int folder = pressedHeader_; pressedHeader_ = -1; update();
-        const auto callback = folderDrag;
-        if (callback) callback(folder, pressStart_.movedTo(event->globalPosition().toPoint()));
-        return;
-    }
-    if (event->buttons().testFlag(Qt::LeftButton) && pressed_ >= 0
-        && pressStart_.crossedThreshold(event->globalPosition().toPoint(), QApplication::startDragDistance())) {
-        const int index = pressed_; pressed_ = -1;
-        const auto callback = drag; // Detachment may rebuild and destroy this view.
-        if (callback) callback(index, pressStart_.movedTo(event->globalPosition().toPoint()));
-    }
+    applyPointerDecision(pointer_.move(event->buttons(), event->globalPosition().toPoint(), QApplication::startDragDistance()));
 }
 
 void TabBar::mouseReleaseEvent(QMouseEvent* event)
 {
     const auto point = event->position().toPoint();
+    event->accept();
     if (event->button() == Qt::MiddleButton) {
-        const int index = middlePressed_; middlePressed_ = -1; event->accept();
-        const bool kept = index < stickyCount_ && guardsMiddleClick(appearance_.preventStickyClose);
-        if (index >= 0 && !kept && tabAt(point) == index) { const auto callback = close; if (callback) callback(index); }
+        applyPointerDecision(pointer_.release(event->button(), {tabAt(point)}, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose)));
         return;
     }
     if (scrollDragLane_ >= 0) { wheelController_.reset(); scrollDragLane_ = -1; scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
-    pressed_ = -1;
-    if (pressedHeader_ >= 0) {
-        const int folder = pressedHeader_; pressedHeader_ = -1; update();
-        if (event->button() == Qt::LeftButton && folderAt(point) == folder) {
-            const bool add = vertical() && painter_.folderAddRect(folderHeaderRect(folder)).contains(point);
-            const auto callback = add ? newTabInFolder : toggleFolder;
-            if (callback) callback(folder);
-        }
-        event->accept(); return;
-    }
-    if (actionPressed_ >= 0) {
-        const int index = actionPressed_; actionPressed_ = -1; update();
-        if (event->button() == Qt::LeftButton && actionRect(index).contains(point)) {
-            const auto callback = index < stickyCount_ ? unstick : close;
-            if (callback) callback(index);
-        }
-    }
-    event->accept();
+    const auto hit = pointerHit(point, true);
+    const bool repaint = pointer_.pressedFolder() >= 0 || pointer_.pressedAction() >= 0;
+    const auto decision = pointer_.release(event->button(), hit, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose));
+    if (repaint) update();
+    applyPointerDecision(decision);
 }
 
 void TabBar::mouseDoubleClickEvent(QMouseEvent* event)

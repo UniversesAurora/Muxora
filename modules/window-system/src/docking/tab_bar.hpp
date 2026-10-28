@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include "drag_start.hpp"
+#include "tab_pointer_controller.hpp"
 #include "tab_drag_visual.hpp"
 
 #include "style/smooth_scroll.hpp"
@@ -369,6 +369,8 @@ private:
     mutable std::optional<RowMeasure> rowMeasure_;
     [[nodiscard]] bool hasLabelAction(int index) const;
     void updateHover(QPoint local);
+    [[nodiscard]] TabPointerHit pointerHit(QPoint local, bool releasing) const;
+    void applyPointerDecision(const TabPointerDecision& decision);
     [[nodiscard]] qreal liftProgress() const;
     [[nodiscard]] SurfaceGeometry anchorGeometry(QRectF anchor, QRectF visible, bool compact, bool lifted, bool transitioning = true) const;
     [[nodiscard]] QRect activeDragRect() const;
@@ -473,15 +475,11 @@ private:
     int dropFolder_ = -1;
     int draggedFolder_ = -1;
     // Input.
-    DragStart pressStart_;
-    int pressed_ = -1;
-    int actionPressed_ = -1;
-    int middlePressed_ = -1;
+    TabPointerController pointer_;
     int hovered_ = -1;
     bool actionHovered_ = false;
     int hoveredHeader_ = -1;
     bool headerAddHovered_ = false;
-    int pressedHeader_ = -1;
     int hoveredLane_ = -1;
     int scrollDragLane_ = -1;
     int scrollDragOrigin_ = 0;

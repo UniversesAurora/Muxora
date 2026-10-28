@@ -389,6 +389,8 @@ Qt 事件模拟与离屏渲染用于快速组件检查；真实桌面测试另�
 
 分隔条定向基准为可选目标 `window-system-resize-benchmark`，与上面的目标使用相同构建开关。负载和输出字段见 [基准源码](../../modules/window-system/benchmarks/splitter_resize_benchmark.cpp)；用 `--commit <源码版本> --out <报告文件>` 运行。它在隐藏窗口中往返调整两个真实标签组，分别测量简单不透明内容和富文本、顶部和竖向标签栏；输出布局提交、含延迟尺寸事件的完整绘制及两者总计的分位数，并单列预热后的阴影图生成数。它不显示窗口、不发送输入、不注册 CTest，也不设置机器相关阈值；离屏完整绘制耗时不能当作桌面帧率。
 
+标签输入基准为可选目标 `window-system-tab-input-benchmark`，参数沿用上述 `--commit` 和 `--out`。它向从未显示的真实标签栏发送 Qt 鼠标事件，测悬停和未达到起拖阈值的按住移动，分别记录各方向的分位数；不发送原生输入、不测绘制或帧率、不注册 CTest。负载见 [源码](../../modules/window-system/benchmarks/tab_input_benchmark.cpp)。
+
 布局规模基准的 `restore` 场景先用模型生成完整标签和内容描述，再通过一次 `restoreLayout()` 创建全部宿主内容、显示窗口并进入事件循环；内存记录的 `workspace` 为 `restore`。它衡量“未显示标签不创建页面视图”，不能和逐个添加并激活的 `create` 场景混为一谈。可用 `pwsh tools/bench.ps1 -Name <名字> -Tabs 1000 -Repeat 1 -Scenario restore` 单独测量；前后比较必须使用同一机器、平台、参数和基准源码。
 
 ```powershell
