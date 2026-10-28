@@ -7,6 +7,28 @@
 
 namespace window_system {
 
+enum class TabShape {
+    // A horizontal tab whose outer corners are rounded; `Top` means the strip
+    // is above the content.
+    Top,
+    Bottom,
+    // A row or icon tile of a vertical strip.
+    Row,
+    Tile,
+};
+
+// The positions of a tab's slots. A slot that is not shown is null. Later
+// features fill these slots (pane activity in the icon or action slot,
+// inline rename over the title) without changing the layout.
+struct TabParts {
+    QRect tab;
+    QRect number;
+    QRect icon;
+    QRect title;
+    QRect action;
+};
+
+
 // One tab label laid out along its text direction: [number][icon][title].
 // Only the parts that are shown take space and adjacent parts are separated
 // by a single gap, so a title clipped to zero leaves no gap behind the icon.
@@ -115,6 +137,65 @@ struct TabLabelRects {
         result.icon = QRect(icon.left(), area.top() + (area.height() - parts.icon) / 2, icon.width(), parts.icon);
     result.title = take(parts.title);
     return result;
+}
+
+[[nodiscard]] inline TabParts layoutTabParts(const QRect& tab, TabShape shape, TabLabelParts label, bool iconOnly, bool action,
+                           bool reserveAction, Qt::LayoutDirection direction)
+{
+    TabParts result;
+    result.tab = tab;
+    if (iconOnly || shape == TabShape::Tile) {
+        const QRect icon(QPoint(), QSize(label.icon, label.icon));
+        result.icon = label.icon ? icon.translated(tab.center() - icon.center()) : QRect{};
+        result.title = label.icon ? QRect{} : tab;
+        return result;
+    }
+    // Slots run along the text direction and sit centered in the tab.
+    const QRect content = tab;
+    if (action) result.action = tabBarCloseRect(content, direction);
+    const auto area = tabBarLabelArea(content, direction, action && reserveAction);
+    auto rects = layoutTabLabel(area, label, direction, uiPixels(tabPartGap));
+    result.number = rects.number; result.icon = rects.icon; result.title = rects.title;
+    // A title slot keeps the label area's full extent when it is the last
+    // part, so the fade lands at the label's real end.
+    return result;
+}
+
+struct TabColumnLabelMetrics {
+    int width;
+    int railWidth;
+    int iconSize;
+    int rowHeight;
+};
+
+// The outer icon rail stays fixed as the title column reveals; right columns
+// mirror the rail and action slots independently of the UI text direction.
+[[nodiscard]] inline TabParts layoutColumnTabParts(const QRect& rect, TabLabelParts label, bool iconOnly,
+    bool action, bool sticky, bool right, const TabColumnLabelMetrics& metrics)
+{
+    TabParts parts; parts.tab = rect;
+    const auto direction = right ? Qt::RightToLeft : Qt::LeftToRight;
+    const int center = right ? metrics.width - metrics.railWidth / 2 : metrics.railWidth / 2;
+    if (label.icon) parts.icon = QRect(center - label.icon / 2, rect.center().y() - label.icon / 2, label.icon, label.icon);
+    if (iconOnly) {
+        if (!label.icon) parts.title = QRect(center - metrics.iconSize / 2, rect.top(), metrics.iconSize, rect.height());
+        return parts;
+    }
+    if (action) parts.action = tabBarCloseRect(rect, direction);
+    const int gap = uiPixels(tabPartGap);
+    int begin = right ? rect.left() + uiPixels(tabBarTrailing) : center + metrics.iconSize / 2 + gap;
+    int end = right ? center - metrics.iconSize / 2 - gap : rect.right() + 1 - uiPixels(tabBarTrailing);
+    if (action && sticky) {
+        if (right) begin = parts.action.right() + 1 + uiPixels(tabActionGap);
+        else end = parts.action.left() - uiPixels(tabActionGap);
+    }
+    const int readableTitle = std::min(label.title, metrics.rowHeight - 10);
+    if (label.number && end - begin >= label.number + gap + readableTitle) {
+        parts.number = QRect(right ? end - label.number : begin, rect.top(), label.number, rect.height());
+        if (right) end -= label.number + gap; else begin += label.number + gap;
+    }
+    parts.title = QRect(begin, rect.top(), std::max(0, end - begin), rect.height());
+    return parts;
 }
 
 } // namespace window_system

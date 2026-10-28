@@ -158,7 +158,7 @@ protected:
     void paintEvent(QPaintEvent*) override
     {
         QPainter paint(this);
-        sampleTabDepartures(labels_, origin_, visibility_.value(), painter_, samples_);
+        sampleTabDepartures(labels_, origin_, visibility_.value(), samples_);
         departurePainter_.paint(paint, painter_, samples_);
     }
 private:

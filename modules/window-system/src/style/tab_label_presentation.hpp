@@ -3,6 +3,7 @@
 
 #include "elevation.hpp"
 #include "label_presence.hpp"
+#include "tab_label_geometry.hpp"
 #include <window_system/tab_appearance.hpp>
 #include <QFont>
 #include <QIcon>
@@ -11,27 +12,6 @@
 #include <optional>
 
 namespace window_system {
-
-enum class TabShape {
-    // A horizontal tab whose outer corners are rounded; `Top` means the strip
-    // is above the content.
-    Top,
-    Bottom,
-    // A row or icon tile of a vertical strip.
-    Row,
-    Tile,
-};
-
-// The positions of a tab's slots. A slot that is not shown is null. Later
-// features fill these slots (pane activity in the icon or action slot,
-// inline rename over the title) without changing the layout.
-struct TabParts {
-    QRect tab;
-    QRect number;
-    QRect icon;
-    QRect title;
-    QRect action;
-};
 
 struct TabLabelState {
     TabShape shape = TabShape::Top;

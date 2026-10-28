@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include "tab_departure.hpp"
+#include "tab_painter.hpp"
 #include "label_presence.hpp"
 #include <QPainter>
 
 namespace window_system {
 
 void sampleTabDepartures(const TabVisualState& labels, QPoint globalOrigin, qreal visibility,
-                        const TabPainter& style, QVector<TabDepartureSample>& samples)
+                        QVector<TabDepartureSample>& samples)
 {
     samples.clear();
     for (auto it = labels.cbegin(); it != labels.cend(); ++it) {
@@ -24,7 +25,7 @@ void sampleTabDepartures(const TabVisualState& labels, QPoint globalOrigin, qrea
             const auto area = planarLabelRect(label.global, *label.collapse, visibility).translated(-globalOrigin);
             if (area.isEmpty()) continue;
             TabLabelParts sizes; sizes.icon = parts.icon.width();
-            parts = style.parts(area, presentation.state.shape, sizes, true, false, false, Qt::LeftToRight);
+            parts = layoutTabParts(area, presentation.state.shape, sizes, true, false, false, Qt::LeftToRight);
             presentation.surface.reset(); presentation.state.elevationManaged = true; presentation.state.lifted = false;
         } else presentation.presence = labelPresencePose(parts.tab, visibility * retired.visibility);
         samples.append({it.key(), std::move(presentation)});

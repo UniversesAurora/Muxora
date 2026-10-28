@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "tab_painter.hpp"
+#include "tab_label_presentation.hpp"
+#include "tab_title_layout.hpp"
 #include <QHash>
 #include <QUuid>
 #include <memory>
 
 namespace window_system {
+class TabPainter;
 
 struct TabRetiredLabel {
     TabLabelPresentation label;
@@ -34,7 +36,7 @@ struct TabDepartureSample {
 // Global transition records are sampled into the receiving plane's coordinates.
 // Neither records nor samples retain a source control or its text cache.
 void sampleTabDepartures(const TabVisualState& labels, QPoint globalOrigin, qreal visibility,
-                        const TabPainter& style, QVector<TabDepartureSample>& samples);
+                        QVector<TabDepartureSample>& samples);
 
 // GUI-thread raster adaptation; text caches live only as long as their labels
 // remain in the current departure plane, independently of source lifetime.

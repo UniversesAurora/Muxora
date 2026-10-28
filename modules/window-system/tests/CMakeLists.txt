@@ -23,6 +23,15 @@ add_test(NAME window-system.label-presence COMMAND window-system-label-presence-
     -o ${CMAKE_CURRENT_BINARY_DIR}/label-presence-results.txt,txt)
 set_tests_properties(window-system.label-presence PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-label-geometry-test tab_label_geometry_test.cpp)
+target_link_libraries(window-system-tab-label-geometry-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_compile_features(window-system-tab-label-geometry-test PRIVATE cxx_std_20)
+target_include_directories(window-system-tab-label-geometry-test PRIVATE ../src ../include)
+set_target_properties(window-system-tab-label-geometry-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-label-geometry COMMAND window-system-tab-label-geometry-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-label-geometry-results.txt,txt)
+set_tests_properties(window-system.tab-label-geometry PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-tab-reorder-test tab_reorder_test.cpp)
 target_link_libraries(window-system-tab-reorder-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_compile_features(window-system-tab-reorder-test PRIVATE cxx_std_20)

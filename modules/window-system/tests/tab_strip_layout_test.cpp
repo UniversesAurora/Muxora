@@ -214,7 +214,7 @@ void TabStripLayoutTest::actionFadeStaysInsideTheTabContour()
         TabPaintState state;
         state.shape = shape; state.selected = selected; state.hovered = true; state.groupFocused = true;
         const QRect tab(12, 12, 160, metrics.rowHeight);
-        const auto parts = renderer.parts(tab, shape, {}, false, true, false, Qt::LeftToRight);
+        const auto parts = layoutTabParts(tab, shape, {}, false, true, false, Qt::LeftToRight);
         const auto picture = [&](bool action) {
             QImage image(190, metrics.rowHeight + 24, QImage::Format_ARGB32_Premultiplied);
             image.fill(renderer.palette().strip);

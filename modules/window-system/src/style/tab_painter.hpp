@@ -50,11 +50,6 @@ public:
     [[nodiscard]] const TabMetrics& metrics() const { return metrics_; }
     [[nodiscard]] const TabPalette& palette() const { return palette_; }
 
-    // The slots of a tab with these label parts.
-    // `reserveAction` keeps room for an action that always shows; otherwise
-    // the action covers the title's end while it shows.
-    [[nodiscard]] TabParts parts(const QRect& tab, TabShape shape, TabLabelParts label, bool iconOnly,
-                                 bool action, bool reserveAction, Qt::LayoutDirection direction) const;
     void paintTab(QPainter& painter, const TabParts& parts, const TabPaintState& state) const;
     [[nodiscard]] static TabLabelPresentation captureLabel(const TabParts& parts, const TabPaintState& state,
                                                            const QFont& font, Qt::LayoutDirection direction);

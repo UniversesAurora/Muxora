@@ -1361,37 +1361,10 @@ TabParts TabBar::partsOf(int index, const QRect& rect) const
 TabParts TabBar::labelGeometry(const QRect& rect, TabShape shape, TabLabelParts label,
                               bool iconOnly, bool action, bool sticky) const
 {
-    if (vertical() && shape == TabShape::Row) {
-        // The icon follows an outer rail, not the width of the revealed
-        // title. Mirror the rail for a right-hand column.
-        TabParts parts; parts.tab = rect;
-        const bool right = placement_ == TabBarPlacement::Right;
-        const auto direction = right ? Qt::RightToLeft : Qt::LeftToRight;
-        const int center = right ? width() - metrics_.verticalIconWidth / 2 : metrics_.verticalIconWidth / 2;
-        if (label.icon) parts.icon = QRect(center - label.icon / 2, rect.center().y() - label.icon / 2, label.icon, label.icon);
-        if (iconOnly) {
-            if (!label.icon) parts.title = QRect(center - metrics_.iconSize / 2, rect.top(), metrics_.iconSize, rect.height());
-            return parts;
-        }
-        if (action) parts.action = tabBarCloseRect(rect, direction);
-        const int gap = uiPixels(tabPartGap);
-        int begin = right ? rect.left() + uiPixels(tabBarTrailing) : center + metrics_.iconSize / 2 + gap;
-        int end = right ? center - metrics_.iconSize / 2 - gap : rect.right() + 1 - uiPixels(tabBarTrailing);
-        if (action && sticky) {
-            if (right) begin = parts.action.right() + 1 + uiPixels(tabActionGap);
-            else end = parts.action.left() - uiPixels(tabActionGap);
-        }
-        // Numbering follows the icon; reserving it before the icon would
-        // move that icon as soon as the title is revealed.
-        const int readableTitle = std::min(label.title, metrics_.rowHeight - 10);
-        if (label.number && end - begin >= label.number + gap + readableTitle) {
-            parts.number = QRect(right ? end - label.number : begin, rect.top(), label.number, rect.height());
-            if (right) end -= label.number + gap; else begin += label.number + gap;
-        }
-        parts.title = QRect(begin, rect.top(), std::max(0, end - begin), rect.height());
-        return parts;
-    }
-    return painter_.parts(rect, shape, label, iconOnly, action, sticky, layoutDirection());
+    if (vertical() && shape == TabShape::Row)
+        return layoutColumnTabParts(rect, label, iconOnly, action, sticky, placement_ == TabBarPlacement::Right,
+            {width(), metrics_.verticalIconWidth, metrics_.iconSize, metrics_.rowHeight});
+    return layoutTabParts(rect, shape, label, iconOnly, action, sticky, layoutDirection());
 }
 
 QRect TabBar::titleRect(int index) const

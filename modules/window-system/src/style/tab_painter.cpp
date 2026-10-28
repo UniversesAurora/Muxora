@@ -115,28 +115,6 @@ TabPalette TabPalette::forTheme(const Theme& theme)
     return palette;
 }
 
-TabParts TabPainter::parts(const QRect& tab, TabShape shape, TabLabelParts label, bool iconOnly, bool action,
-                           bool reserveAction, Qt::LayoutDirection direction) const
-{
-    TabParts result;
-    result.tab = tab;
-    if (iconOnly || shape == TabShape::Tile) {
-        const QRect icon(QPoint(), QSize(label.icon, label.icon));
-        result.icon = label.icon ? icon.translated(tab.center() - icon.center()) : QRect{};
-        result.title = label.icon ? QRect{} : tab;
-        return result;
-    }
-    // Slots run along the text direction and sit centered in the tab.
-    const QRect content = tab;
-    if (action) result.action = tabBarCloseRect(content, direction);
-    const auto area = tabBarLabelArea(content, direction, action && reserveAction);
-    auto rects = layoutTabLabel(area, label, direction, uiPixels(tabPartGap));
-    result.number = rects.number; result.icon = rects.icon; result.title = rects.title;
-    // A title slot keeps the label area's full extent when it is the last
-    // part, so the fade lands at the label's real end.
-    return result;
-}
-
 QColor TabPainter::backgroundOf(const TabLabelPresentation& label) const
 {
     const auto& state = label.state;

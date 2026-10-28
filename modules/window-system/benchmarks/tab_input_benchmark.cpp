@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         for (int index = 0; index < 12; ++index) {
             const QRect area = bar.vertical() ? QRect(0, index * 32, 220, 32) : QRect(index * 110, 0, 110, 32);
             auto source = std::make_shared<TabRetiredLabel>();
-            source->label.parts = retirementStyle.parts(area, bar.vertical() ? TabShape::Row
+            source->label.parts = layoutTabParts(area, bar.vertical() ? TabShape::Row
                 : placement == TabBarPlacement::Bottom ? TabShape::Bottom : TabShape::Top,
                 {0, 0, area.width() - 20}, false, false, false, Qt::LeftToRight);
             source->label.state.shape = bar.vertical() ? TabShape::Row
@@ -168,7 +168,7 @@ int main(int argc, char** argv)
         QVector<TabDepartureSample> retirementSamples; TabDeparturePainter retirementPainter;
         auto departing = measure([&](int) {
             canvas.fill(Qt::white); QPainter paint(&canvas);
-            sampleTabDepartures(retired, {}, 0.5, retirementStyle, retirementSamples);
+            sampleTabDepartures(retired, {}, 0.5, retirementSamples);
             retirementPainter.paint(paint, retirementStyle, retirementSamples);
         }, 180, 30);
         departing.insert("placement", int(placement)); departing.insert("departingPaint", true);
