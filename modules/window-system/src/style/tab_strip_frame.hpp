@@ -18,7 +18,7 @@ struct TabStripLabelSample {
     TabLabelPresentation label;
 };
 
-struct TabStripFolderSample { QRect area; TabFolderPaintState state; };
+struct TabStripFolderSample { QRect area; TabFolderPaintState state; QUuid id; };
 struct TabStripFolderLine { QRect area; QColor color; };
 struct TabStripFolderOutline { QRect area; TabShape shape; QColor color; };
 struct TabStripScrollbar { QRect thumb; qreal opacity; bool emphasized; };

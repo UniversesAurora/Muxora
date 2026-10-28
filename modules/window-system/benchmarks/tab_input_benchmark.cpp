@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QImage>
 #include <QMouseEvent>
 #include <QSaveFile>
 #include <QWheelEvent>
@@ -17,17 +18,28 @@
 using namespace window_system;
 
 namespace {
-QJsonObject measure(auto send)
+class PaintCounter final : public QObject {
+public:
+    int count = 0;
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() == QEvent::Paint) ++count;
+        return false;
+    }
+};
+
+QJsonObject measure(auto send, int count = 2000, int warmup = 200)
 {
-    QList<double> samples; samples.reserve(2000);
-    for (int index = 0; index < 2200; ++index) {
+    QList<double> samples; samples.reserve(count);
+    for (int index = 0; index < warmup + count; ++index) {
         QElapsedTimer timer; timer.start();
         send(index);
         const double us = timer.nsecsElapsed() / 1000.0;
-        if (index >= 200) samples.append(us);
+        if (index >= warmup) samples.append(us);
     }
     std::sort(samples.begin(), samples.end());
-    return {{"p50us", samples[999]}, {"p95us", samples[1899]}};
+    return {{"p50us", samples[qCeil(count * 0.5) - 1]}, {"p95us", samples[qCeil(count * 0.95) - 1]}};
 }
 }
 
@@ -85,6 +97,24 @@ int main(int argc, char** argv)
             column.insert("placement", int(placement)); column.insert("columnHover", true);
             cases.append(column);
         }
+        const auto dragged = QUuid::createUuid(); bar.setTabData(0, dragged); bar.ensureVisible(0);
+        const auto label = bar.tabRect(0); bar.setDraggedTab(dragged);
+        if (label.isEmpty()) return 3;
+        bar.setLifted(label.center(), label.center() - label.topLeft());
+        auto* layer = bar.findChild<QWidget*>("LiftedTabLayer");
+        if (bar.liftedRect().isEmpty() || !layer || layer->isHidden()) return 3;
+        PaintCounter paints; layer->installEventFilter(&paints);
+        const qreal ratio = bar.devicePixelRatioF();
+        QImage canvas(QSize(qCeil(bar.width() * ratio), qCeil(bar.height() * ratio)), QImage::Format_RGB32);
+        canvas.setDevicePixelRatio(ratio);
+        auto lifted = measure([&](int) { canvas.fill(Qt::white); bar.render(&canvas); }, 180, 30);
+        if (paints.count < 210) return 3;
+        layer->removeEventFilter(&paints);
+        lifted.insert("placement", int(placement)); lifted.insert("liftedPaint", true);
+        lifted.insert("samples", 180); lifted.insert("warmup", 30); lifted.insert("dpr", ratio);
+        lifted.insert("layerPaints", paints.count); lifted.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
+        cases.append(lifted);
+        bar.setLifted({}); bar.setDraggedTab({});
         policy.showNumbers = true;
         bar.setAppearance(policy, placement);
         for (int index = bar.count(); index < 100; ++index) bar.addTab({}, QStringLiteral("Workspace %1").arg(index));

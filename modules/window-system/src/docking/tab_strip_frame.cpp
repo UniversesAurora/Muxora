@@ -89,7 +89,7 @@ void TabBar::captureFolderFrame(TabStripLaneFrame& frame, int laneIndex)
         const auto& record = folders_.at(folder);
         const bool headerHere = layout_.headerLanes.value(folder, -1) == laneIndex;
         if (headerHere && frame.regularClip.intersects(layout_.headers.at(folder).translated(origin)))
-            frame.folders.append({layout_.headers.at(folder).translated(origin), state});
+            frame.folders.append({layout_.headers.at(folder).translated(origin), state, record.id});
         QVector<QRect> rows;
         if (headerHere) rows.append(layout_.headers.at(folder));
         for (int index = record.first; index < record.first + record.count && index < tabs_.size(); ++index) {

@@ -31,6 +31,58 @@ TabPainter labelPainter()
 class TabLabelPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
+    void foregroundFramesOwnLocalAndIncomingDragData()
+    {
+        const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(false);
+        const auto restore = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+        for (auto side : {TabBarPlacement::Top, TabBarPlacement::Bottom, TabBarPlacement::Left, TabBarPlacement::Right}) {
+            auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);
+            bar->setAppearance(TabAppearance{}, side);
+            bar->resize(bar->vertical() ? QSize(220, 300) : QSize(700, 80)); bar->setAvailableSize(bar->size());
+            for (int index = 0; index < 4; ++index) { bar->addTab({}, QStringLiteral("Workspace %1").arg(index)); bar->setTabData(index, QUuid::createUuid()); }
+            bar->setCurrentIndex(1);
+            const auto id = bar->tabData(1).toUuid(); const auto area = bar->tabRect(1);
+            const auto point = area.center(), grab = area.center() - area.topLeft();
+            bar->setDraggedTab(id); bar->setDropPreview(1, false, {bar->tabExtent(1, false)}); bar->setLifted(point, grab);
+            const auto local = bar->captureForegroundFrame(bar->font(), bar->layoutDirection());
+            QCOMPARE(local->carried.size(), 1); QCOMPARE(local->carried.first().id, id);
+            QCOMPARE(local->carried.first().label.parts.tab, bar->liftedRect());
+            QVERIFY(local->carried.first().label.state.lifted);
+            QCOMPARE(local->carried.first().label.state.outerRight, side == TabBarPlacement::Right);
+            const auto original = local->carried.first().label.parts;
+            bar->setLifted({}); bar->setDraggedTab({}); bar->setDropPreview(-1, false, {});
+            const auto bounds = bar->carrierBounds(); TabDragVisual visual;
+            visual.identity = id; visual.size = bounds.size(); visual.active = area.translated(-bounds.topLeft());
+            visual.anchor = point - bounds.topLeft(); visual.pieces.append({-bounds.topLeft(), bar->carrierFrame()});
+            bar->setIncomingVisual(std::move(visual), point);
+            const auto incoming = bar->captureForegroundFrame(bar->font(), bar->layoutDirection());
+            QVERIFY(incoming->incoming); QCOMPARE(incoming->incoming->origin, bar->incomingRect().topLeft());
+            bar.reset();
+            QCOMPARE(local->carried.first().label.parts.tab, original.tab);
+            QCOMPARE(local->carried.first().label.state.title, QStringLiteral("Workspace 1"));
+            QCOMPARE(incoming->incoming->visual.pieces.first().frame->content->labels.at(1).id, id);
+        }
+    }
+
+    void foregroundFolderFramesRetainTheHeaderIdentity()
+    {
+        const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(false);
+        const auto restore = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+        auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);
+        bar->setAppearance(TabAppearance{}, TabBarPlacement::Left); bar->resize(220, 300); bar->setAvailableSize(bar->size());
+        for (int index = 0; index < 4; ++index) { bar->addTab({}, QStringLiteral("Workspace %1").arg(index)); bar->setTabData(index, QUuid::createUuid()); }
+        TabStripFolder folder{QUuid::createUuid(), QStringLiteral("Folder"), {}, false, 1, 3};
+        bar->setFolders({folder}); const auto header = bar->folderHeaderRect(0);
+        const auto base = bar->captureStripFrame(bar->font(), bar->layoutDirection());
+        QCOMPARE(base->lanes.first().folders.first().id, folder.id);
+        bar->setDraggedFolder(folder.id); bar->setLifted(header.center(), header.center() - header.topLeft());
+        const auto carried = bar->captureForegroundFrame(bar->font(), bar->layoutDirection());
+        QVERIFY(carried->folder); QCOMPARE(carried->carried.size(), 3); QVERIFY(carried->folderLine);
+        bar.reset();
+        QCOMPARE(carried->folder->id, folder.id); QCOMPARE(carried->folder->state.name, folder.name);
+        QCOMPARE(carried->carried.first().label.state.title, QStringLiteral("Workspace 1"));
+    }
+
     void stripFramesOwnTheirLabelsAndKeepFrozenLayersSeparate()
     {
         const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(false);

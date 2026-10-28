@@ -2096,13 +2096,6 @@ TabPaintState TabBar::paintState(int index)
     return state;
 }
 
-void TabBar::paintTabAt(QPainter& painter, int index, bool settling)
-{
-    const auto area = animatedRect(index);
-    if (painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(area).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
-    if (auto sample = labelSample(index, area, painter.font(), painter.layoutDirection(), settling))
-        painter_.paintLabel(painter, sample->label, &tabs_[index].titleLayout);
-}
 
 TabFolderPaintState TabBar::folderPaintState(int folder) const
 {
@@ -2163,84 +2156,23 @@ void TabBar::paintEvent(QPaintEvent*)
 void TabBar::paintLiftedTabs(QPainter& painter)
 {
     painter.setFont(font());
-    const auto bodyProfile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
-        elevationProfile(ElevationLevel::BodyRaised), surfaceFocus_);
-    auto style = painter_.palette().elevation;
-    style.focused = groupFocused_ && window()->isActiveWindow();
-    for (const auto& anchor : surfaceAnchors()) if (anchor.lifted || anchor.foreground)
-        LabelPresenceEffect::paint(painter, anchor.presence, [&] { surfaceRenderer_.paintAnchor(painter, anchor.geometry,
-            anchor.foreground ? elevationProfile(ElevationLevel::Flat) : bodyProfile,
-            anchor.elevation, style, !anchor.foreground); });
-    if (const auto incoming = incomingRect(); !incoming.isEmpty()) {
-        const auto anchors = surfaceAnchors();
-        const auto geometry = anchors.isEmpty() ? SurfaceGeometry{} : translatedSurfaceGeometry(anchors.first().geometry, -incoming.topLeft());
-        painter.save(); painter.translate(incoming.topLeft());
-        incomingPainter_.paint(painter, incomingVisual_, &geometry);
-        painter.restore();
+    const auto frame = captureForegroundFrame(painter.font(), painter.layoutDirection());
+    for (const auto& shadow : frame->shadows) LabelPresenceEffect::paint(painter, shadow.presence, [&] {
+        surfaceRenderer_.paintAnchor(painter, shadow.geometry, shadow.body, shadow.anchor, frame->elevation, shadow.incremental);
+    });
+    if (frame->incoming) {
+        const auto& incoming = *frame->incoming;
+        painter.save(); painter.translate(incoming.origin);
+        incomingPainter_.paint(painter, incoming.visual, &incoming.geometry); painter.restore();
     }
-    if (const auto lifted = liftedRect(); !lifted.isEmpty() && draggedFolder_ >= 0) {
-        // The carried folder rides above everything: header, tabs, its line.
-        const auto& folder = folders_.at(draggedFolder_);
-        const auto state = folderPaintState(draggedFolder_);
-
-        const int pitch = metrics_.rowHeight + metrics_.rowGap;
-        QRect header = vertical() ? QRect(lifted.left(), lifted.top(), lifted.width(), metrics_.rowHeight)
-                                  : QRect(lifted.left(), lifted.top(), folderHeaderExtent(folder), metrics_.rowHeight);
-        painter_.paintFolderHeader(painter, header, vertical(), state);
-        int x = header.right() + 1, y = header.top() + pitch;
-        const int tabs = folder.collapsed ? 0 : folder.count;
-        for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) {
-            const QRect rect = vertical() ? QRect(lifted.left() + metrics_.folderIndent, y, lifted.width() - metrics_.folderIndent, metrics_.rowHeight)
-                                          : QRect(x, lifted.top(), tabExtent(index, false), metrics_.rowHeight);
-            TabPaintState tab;
-            tab.shape = shapeOf(index); tab.selected = index == current_; tab.groupFocused = true;
-            tab.outerRight = placement_ == TabBarPlacement::Right; tab.preset = tabPreset(index);
-            tab.icon = appearance_.showIcons ? tabs_.at(index).icon : QIcon{};
-            tab.title = tabs_.at(index).title; tab.titleLayout = &tabs_[index].titleLayout;
-            const auto geometry = anchorGeometry(rect, rect.intersected(this->rect()), false, true);
-            tab.elevationManaged = true; tab.surface = tab.selected ? &geometry : nullptr;
-            const auto label = TabPainter::captureLabel(labelGeometry(rect, tab.shape, labelParts(index, false), false, false, false),
-                tab, painter.font(), painter.layoutDirection());
-            painter_.paintLabel(painter, label, tab.titleLayout);
-            x = rect.right() + 1; y += pitch;
-        }
-        if (tabs && !vertical()) {
-            const int line = placement_ == TabBarPlacement::Bottom ? lifted.top() : lifted.bottom() + 1 - metrics_.folderLine;
-            const int start = painter_.folderChipRect(header).left();
-            painter_.paintFolderLine(painter, QRect(start, line, lifted.right() + 1 - start, metrics_.folderLine), state.color);
-        } else if (tabs) {
-            const int x0 = lifted.left() + metrics_.folderIndent / 2 - metrics_.folderLine / 2;
-            painter_.paintFolderLine(painter, QRect(x0, header.bottom() + 1 + metrics_.rowGap, metrics_.folderLine, lifted.bottom() - header.bottom() - metrics_.rowGap), state.color);
-        }
-    } else if (const auto movingLabel = liftedRect(); !movingLabel.isEmpty()) {
-        // The dragged tab rides above everything, with its shadow.
-        TabPaintState state;
-        state.shape = shapeOf(dragged_);
-        state.lifted = true; state.selected = true; state.groupFocused = true;
-        state.shadowOpacity = liftProgress();
-        state.sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
-        if (vertical()) state.shape = state.sticky && compactStickyTiles() ? TabShape::Tile : TabShape::Row;
-        state.outerRight = placement_ == TabBarPlacement::Right;
-        state.preset = tabPreset(dragged_);
-        state.number = labelContent(dragged_)->number;
-        state.icon = appearance_.showIcons ? tabs_.at(dragged_).icon : QIcon{};
-        state.title = tabs_.at(dragged_).title;
-        state.titleLayout = &tabs_[dragged_].titleLayout;
-        state.iconOnly = state.shape == TabShape::Tile || (vertical() && iconsOnly() && columnReveal_ <= 0)
-            || (!vertical() && state.sticky && appearance_.stickySizing == StickyTabSizing::Compact);
-        state.actionShown = state.sticky && !state.iconOnly; state.actionReserved = true;
-        state.actionIcon = labelStyle()->stickyIcon;
-        const auto geometry = anchorGeometry(movingLabel, movingLabel.intersected(rect()), state.shape == TabShape::Tile, true);
-        state.surface = &geometry; state.elevationManaged = true; state.bodyElevation = &bodyProfile;
-        const auto label = labelParts(dragged_, state.sticky);
-        const auto presentation = TabPainter::captureLabel(
-            labelGeometry(movingLabel, state.shape, label, state.iconOnly, state.actionShown, state.sticky),
-            state, painter.font(), painter.layoutDirection());
-        painter_.paintLabel(painter, presentation, state.titleLayout);
+    if (frame->folder) painter_.paintFolderHeader(painter, frame->folder->area, frame->vertical, frame->folder->state);
+    for (const auto& sample : frame->carried) painter_.paintLabel(painter, sample.label, &tabs_[sample.sourceIndex].titleLayout);
+    if (frame->folderLine) painter_.paintFolderLine(painter, frame->folderLine->area, frame->folderLine->color);
+    for (const auto& sample : frame->settling) {
+        if (painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(sample.label.parts.tab)
+            .adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) continue;
+        painter_.paintLabel(painter, sample.label, &tabs_[sample.sourceIndex].titleLayout);
     }
-    for (auto it = settling_.cbegin(); it != settling_.cend(); ++it)
-        if (it.value() >= 0 && it.value() < count() && tabData(it.value()).toUuid() == it.key())
-            paintTabAt(painter, it.value(), true);
 }
 
 qreal TabBar::liftProgress() const { return liftElevation_.value(); }

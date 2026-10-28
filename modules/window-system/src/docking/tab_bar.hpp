@@ -4,6 +4,7 @@
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_drag_visual.hpp"
+#include "tab_foreground_frame.hpp"
 
 #include "style/smooth_scroll.hpp"
 
@@ -198,6 +199,7 @@ public:
     [[nodiscard]] QSize availableSize() const { return available_; }
     [[nodiscard]] const TabLayout& tabLayout() const { return layout_; }
     [[nodiscard]] std::shared_ptr<const TabStripFrame> captureStripFrame(const QFont& font, Qt::LayoutDirection direction);
+    [[nodiscard]] std::shared_ptr<const TabForegroundFrame> captureForegroundFrame(const QFont& font, Qt::LayoutDirection direction);
     // Where tab coordinates of the layout start inside the widget.
     [[nodiscard]] QPoint tabOrigin() const;
     // Displayed and visible: what a click on it hits.
@@ -349,7 +351,6 @@ private:
     [[nodiscard]] TabParts labelGeometry(const QRect& rect, TabShape shape, TabLabelParts label,
                                          bool iconOnly, bool action, bool sticky) const;
     [[nodiscard]] QRect animatedRect(int index) const;
-    void paintTabAt(QPainter& painter, int index, bool settling = false);
     [[nodiscard]] std::optional<TabStripLabelSample> labelSample(int index, QRect area, const QFont& font,
         Qt::LayoutDirection direction, bool settling = false);
     [[nodiscard]] TabPaintState paintState(int index);
@@ -357,6 +358,8 @@ private:
     void updateLiftedLayer();
     void captureLaneFrame(TabStripLaneFrame& frame, int lane, const QFont& font, Qt::LayoutDirection direction);
     void captureFolderFrame(TabStripLaneFrame& frame, int lane);
+    void captureCarriedFolder(TabForegroundFrame& frame, QRect area);
+    [[nodiscard]] TabStripLabelSample captureLiftedLabel(QRect area, const QFont& font, Qt::LayoutDirection direction);
     [[nodiscard]] TabFolderPaintState folderPaintState(int folder) const;
     [[nodiscard]] int laneAt(QPoint local) const;
     [[nodiscard]] std::optional<int> stickyBoundary() const;
@@ -475,6 +478,7 @@ private:
     std::shared_ptr<const TabCarrierFrame> carrierFrame_;
     std::array<std::shared_ptr<TabCarrierFrame>, 2> carrierBuffers_;
     std::array<std::shared_ptr<TabStripFrame>, 2> stripBuffers_;
+    std::array<std::shared_ptr<TabForegroundFrame>, 2> foregroundBuffers_;
     bool carrierContentDirty_ = true;
     // Two bounded shape snapshots: attachment probing and displayed shape.
     // Full input keys cover resize, animation, scrolling, and theme metrics.
