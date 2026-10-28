@@ -41,6 +41,14 @@ add_test(NAME window-system.tab-pointer-controller COMMAND window-system-tab-poi
     -o ${CMAKE_CURRENT_BINARY_DIR}/tab-pointer-controller-results.txt,txt)
 set_tests_properties(window-system.tab-pointer-controller PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-viewport-reflow-test tab_viewport_reflow_test.cpp)
+target_link_libraries(window-system-tab-viewport-reflow-test PRIVATE WindowSystem::Model Qt6::Test)
+target_include_directories(window-system-tab-viewport-reflow-test PRIVATE ../src)
+set_target_properties(window-system-tab-viewport-reflow-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-viewport-reflow COMMAND window-system-tab-viewport-reflow-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-viewport-reflow-results.txt,txt)
+set_tests_properties(window-system.tab-viewport-reflow PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-tab-wheel-controller-test tab_wheel_controller_test.cpp)
 target_link_libraries(window-system-tab-wheel-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_compile_features(window-system-tab-wheel-controller-test PRIVATE cxx_std_20)

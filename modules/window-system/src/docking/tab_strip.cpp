@@ -856,43 +856,13 @@ bool GroupTabs::applyPendingViewportState()
     QScopedValueRollback applying(applyingViewportState_, true);
     const auto old = *pendingViewportState_;
     const auto current = currentViewportState();
-    if (current.bounds.isEmpty()) return !barVisible_;
-    const bool newActive = !old.activeTab.isNull() && current.activeTab != old.activeTab;
-    if (!bar_->scrollsHorizontally()) {
-        // Vertical sections and expanded multiline rows each own their
-        // scroll position. A replacement strip must restore all of them.
-        bar_->restoreScrollOffsets(old.offset, old.stickyOffset, old.rowsOffset);
-        if (newActive || old.activeFullyVisible) bar_->ensureVisible(bar_->currentIndex());
-        return true;
+    const auto decision = tabViewportReflow(old, current, bar_->scrollsHorizontally(), barVisible_,
+        bar_->contentTabRect(bar_->currentIndex()), stickyInset(bar_->currentIndex()));
+    if (!decision.ready) return false;
+    if (decision.restore) {
+        bar_->restoreScrollOffsets(decision.offset, decision.stickyOffset, decision.rowsOffset);
+        if (decision.ensureActive) bar_->ensureVisible(bar_->currentIndex());
     }
-    if (old.bounds.isEmpty()) {
-        // A newly constructed hidden strip has no displayed anchor. Its
-        // provisional focus scroll must clamp to the first real viewport,
-        // rather than manufacture trailing space before the window is shown.
-        bar_->restoreScrollOffsets(old.offset, old.stickyOffset, old.rowsOffset);
-        if (newActive) bar_->ensureVisible(bar_->currentIndex());
-        return true;
-    }
-    int offset = old.offset;
-    // Preserve the displayed content through either edge moving, including
-    // expansion. A plain desktop translation is unrelated to strip scrolling.
-    const int windowLeftShift = current.windowClientBounds.width() != old.windowClientBounds.width()
-        ? current.windowClientBounds.left() - old.windowClientBounds.left() : 0;
-    offset += current.bounds.left() - old.bounds.left() + windowLeftShift;
-    if (old.activeFullyVisible && old.activeTab == current.activeTab) {
-        const auto area = bar_->contentTabRect(bar_->currentIndex());
-        if (!area.isEmpty()) {
-            const int inset = stickyInset(bar_->currentIndex());
-            const int rightLimit = area.right() - current.bounds.width() + 1;
-            // Only move as far as needed to keep the active tab readable.
-            // An oversized label exposes its beginning; no extra blank extent
-            // is manufactured for a last tab or an underfilled strip.
-            offset = current.bounds.width() - inset >= area.width()
-                ? qBound(rightLimit, offset, area.left() - inset) : area.left() - inset;
-        }
-    }
-    bar_->restoreScrollOffsets(offset, old.stickyOffset, old.rowsOffset);
-    if (newActive || old.activeFullyVisible) bar_->ensureVisible(bar_->currentIndex());
     return true;
 }
 void GroupTabs::applyPendingScrollOffset()
