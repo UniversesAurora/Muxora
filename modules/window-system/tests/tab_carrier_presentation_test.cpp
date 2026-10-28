@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Carrier descriptors own their data; the Widgets adapter reuses styles and
+// Carrier descriptors own their data; the raster adapter reuses styles and
 // bounded text caches across movement and frame samples. All drawing targets
 // are in-memory images, without exposed windows or fixed visual baselines.
 // Dimensions: source lifetime, shared content/changed samples, font/content
@@ -7,7 +7,7 @@
 #include "docking/tab_drag_visual.hpp"
 #include "style/tab_carrier_painter.hpp"
 
-#include <QApplication>
+#include <QGuiApplication>
 #include <QImage>
 #include <QPainter>
 #include <QTest>
@@ -30,7 +30,7 @@ std::shared_ptr<TabCarrierLabels> labels(int count = 1)
         label.state.title = QStringLiteral("Carrier title %1").arg(index + 1);
         label.state.shape = TabShape::Row;
         label.state.selected = index == 0;
-        label.font = QApplication::font(); label.font.setPixelSize(15);
+        label.font = QGuiApplication::font(); label.font.setPixelSize(15);
         content->labels.append({QUuid::createUuid(), std::move(label)});
     }
     return content;
@@ -187,7 +187,7 @@ private slots:
         geometry.mergedPath = geometry.anchorPath;
         QImage image(600, 200, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         QPainter painter(&image);
-        QFont originalFont = QApplication::font(); originalFont.setPixelSize(11);
+        QFont originalFont = QGuiApplication::font(); originalFont.setPixelSize(11);
         painter.setFont(originalFont); painter.setLayoutDirection(Qt::LeftToRight);
         painter.translate(5, 8); painter.setOpacity(0.75);
         const auto originalTransform = painter.transform();

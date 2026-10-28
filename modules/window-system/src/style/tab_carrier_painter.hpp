@@ -16,7 +16,7 @@ struct TabCarrierCacheStats {
     quint64 shapingCount = 0;
 };
 
-// GUI-thread Widgets renderer. Retains the styles and text caches for the
+// GUI-thread raster renderer. Retains the styles and text caches for the
 // currently presented carrier; moving it does not recreate either resource.
 class TabCarrierPainter final {
 public:

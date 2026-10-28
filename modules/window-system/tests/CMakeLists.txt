@@ -151,7 +151,7 @@ set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixe
 set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy toolbar-preview sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
 list(APPEND window_system_widget_suites interface-appearance)
 list(APPEND window_system_widget_suites tab-label-presentation)
-list(APPEND window_system_widget_suites tab-carrier-presentation tab-carrier-source)
+list(APPEND window_system_widget_suites tab-carrier-source)
 list(APPEND window_system_widget_suites tab-reorder-wiring)
 list(APPEND window_system_widget_suites edge-reorder)
 list(APPEND window_system_desktop_suites integer-slider)
@@ -172,6 +172,17 @@ function(window_system_add_suite suite label)
         set_tests_properties(window-system.${suite} PROPERTIES RUN_SERIAL TRUE)
     endif()
 endfunction()
+
+# The shared raster resource adapter must link without Widgets, just as it
+# will when the Quick adapter prepares GUI-thread resources.
+qt_add_executable(window-system-tab-carrier-presentation-test tab_carrier_presentation_test.cpp)
+target_link_libraries(window-system-tab-carrier-presentation-test PRIVATE WindowSystemSurfaces Qt6::Test)
+target_include_directories(window-system-tab-carrier-presentation-test PRIVATE ../src ../include)
+set_target_properties(window-system-tab-carrier-presentation-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-carrier-presentation COMMAND window-system-tab-carrier-presentation-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-carrier-presentation-results.txt,txt)
+set_tests_properties(window-system.tab-carrier-presentation PROPERTIES TIMEOUT 60 LABELS widget)
+
 foreach(label model widget desktop)
     foreach(suite IN LISTS window_system_${label}_suites)
         window_system_add_suite(${suite} ${label})
