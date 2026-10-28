@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include "tab_pointer_controller.hpp"
+#include "tab_hover_controller.hpp"
 #include "tab_drag_visual.hpp"
 
 #include "style/smooth_scroll.hpp"
@@ -476,11 +477,7 @@ private:
     int draggedFolder_ = -1;
     // Input.
     TabPointerController pointer_;
-    int hovered_ = -1;
-    bool actionHovered_ = false;
-    int hoveredHeader_ = -1;
-    bool headerAddHovered_ = false;
-    int hoveredLane_ = -1;
+    TabHoverController hover_;
     int scrollDragLane_ = -1;
     int scrollDragOrigin_ = 0;
     QPoint scrollDragStart_;
@@ -495,7 +492,6 @@ private:
     QElapsedTimer slideClock_;
     ProgressAnimation actionOpacity_{0};
     int fadingAction_ = -1;
-    bool labelHoverSession_ = false;
     // Since the dragged tab was lifted: its shadow fades in (tab strip design 7).
     QTimer slideTimer_;
     int slideDuration_ = motionDuration(Motion::Relocate);

@@ -41,6 +41,14 @@ add_test(NAME window-system.tab-pointer-controller COMMAND window-system-tab-poi
     -o ${CMAKE_CURRENT_BINARY_DIR}/tab-pointer-controller-results.txt,txt)
 set_tests_properties(window-system.tab-pointer-controller PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-hover-controller-test tab_hover_controller_test.cpp)
+target_link_libraries(window-system-tab-hover-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_include_directories(window-system-tab-hover-controller-test PRIVATE ../src)
+set_target_properties(window-system-tab-hover-controller-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-hover-controller COMMAND window-system-tab-hover-controller-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-hover-controller-results.txt,txt)
+set_tests_properties(window-system.tab-hover-controller PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-tab-keyboard-controller-test tab_keyboard_controller_test.cpp)
 target_link_libraries(window-system-tab-keyboard-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_include_directories(window-system-tab-keyboard-controller-test PRIVATE ../src)

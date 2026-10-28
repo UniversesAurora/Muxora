@@ -13,9 +13,9 @@
 
 ## 10.2 分离标签交互与呈现
 
-**状态**：进行中。滚轮/展开边界、拖动落点、单标签与浮窗载荷描述，以及点击、关闭、起拖、键盘和视口锚定判断已分离；来源停止 QWidget 绘制后仍可发布数据。悬停输入、完整拖动状态机和完整标签栏快照仍待分离。
+**状态**：进行中。滚轮/展开边界、拖动落点、单标签与浮窗载荷描述，以及点击、关闭、起拖、键盘、标签悬停和视口锚定判断已分离；来源停止 QWidget 绘制后仍可发布数据。列悬停计时、完整拖动状态机和完整标签栏快照仍待分离。
 
-已验证的子步见 [滚轮](../../development/verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)、[拖动几何](../../development/verification-log/2026-10.md#标签拖动落点的共用几何2026-10-27)、[标签描述](../../development/verification-log/2026-10.md#标签呈现描述的所有权2026-10-27)、[载荷数据](../../development/verification-log/2026-10.md#拖动预览改为自有数据帧2026-10-27)、[视口锚定](../../development/verification-log/2026-10.md#视口锚定的共用决策2026-10-28)、[键盘输入](../../development/verification-log/2026-10.md#标签键盘输入的共用决策2026-10-28) 和 [指针输入](../../development/verification-log/2026-10.md#标签指针输入的共用状态2026-10-28)。迁移中的 [出现姿态](../../development/verification-log/2026-10.md#标签出现退出与外侧轮廓同步2026-10-27)、[贴边阴影](../../development/verification-log/2026-10.md#提起阴影跨越条带裁切边界2026-10-27) 与 [边缘换位](../../development/verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28) 修正已分别验证；旧夹具改前对照仍见载荷数据记录。
+已验证的子步见 [滚轮](../../development/verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)、[拖动几何](../../development/verification-log/2026-10.md#标签拖动落点的共用几何2026-10-27)、[标签描述](../../development/verification-log/2026-10.md#标签呈现描述的所有权2026-10-27)、[载荷数据](../../development/verification-log/2026-10.md#拖动预览改为自有数据帧2026-10-27)、[视口锚定](../../development/verification-log/2026-10.md#视口锚定的共用决策2026-10-28)、[键盘输入](../../development/verification-log/2026-10.md#标签键盘输入的共用决策2026-10-28)、[标签悬停](../../development/verification-log/2026-10.md#标签悬停会话的共用状态2026-10-28) 和 [指针输入](../../development/verification-log/2026-10.md#标签指针输入的共用状态2026-10-28)。迁移中的 [出现姿态](../../development/verification-log/2026-10.md#标签出现退出与外侧轮廓同步2026-10-27)、[贴边阴影](../../development/verification-log/2026-10.md#提起阴影跨越条带裁切边界2026-10-27) 与 [边缘换位](../../development/verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28) 修正已分别验证；旧夹具改前对照仍见载荷数据记录。
 
 - 从 `TabBar` 分离输入、滚动、展开、拖拽与动画状态，保留已有布局计算；Widgets 和 Quick 读取同一份呈现数据，不复制规则。
 - 把 `TabDragVisual` 中的 QPainter 回调改成有界渲染描述，明确资源所属窗口。

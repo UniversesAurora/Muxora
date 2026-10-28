@@ -326,7 +326,7 @@ void TabBar::removeTab(int index)
     tabs_.removeAt(index);
     if (index < stickyCount_) --stickyCount_;
     if (dragged_ == index) dragged_ = -1; else if (dragged_ > index) --dragged_;
-    if (hovered_ >= index) hovered_ = -1;
+    hover_.removedTab(index);
     if (fadingAction_ == index) fadingAction_ = -1; else if (fadingAction_ > index) --fadingAction_;
     pointer_.cancelTabs();
     const int previous = current_;
@@ -638,7 +638,7 @@ void TabBar::setFolders(QVector<TabStripFolder> folders)
     folders_ = std::move(folders);
     draggedFolder_ = -1;
     for (int folder = 0; folder < folders_.size(); ++folder) if (folders_.at(folder).id == dragged) draggedFolder_ = folder;
-    hoveredHeader_ = -1; pointer_.cancelFolders();
+    hover_.clearFolder(); pointer_.cancelFolders();
     relayout(true);
     if (const auto callback = reservedSizeChanged) callback();
 }
@@ -2029,7 +2029,7 @@ TabPaintState TabBar::paintState(int index)
     TabPaintState state;
     state.shape = shapeOf(index);
     state.selected = index == current_ && incomingVisual_.empty();
-    state.hovered = !carriedDisplay_ && index == hovered_;
+    state.hovered = !carriedDisplay_ && index == hover_.hit().tab;
     state.pressed = !carriedDisplay_ && index == pointer_.pressedTab();
     state.groupFocused = carriedDisplay_ || groupFocused_;
     state.windowActive = window()->isActiveWindow();
@@ -2047,7 +2047,7 @@ TabPaintState TabBar::paintState(int index)
     // A sticky tab always shows its action; the others on hover.
     state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == pointer_.pressedAction()
         || (index == fadingAction_ && actionOpacity_.value() > 0))));
-    state.actionHovered = !carriedDisplay_ && index == hovered_ && actionHovered_;
+    state.actionHovered = !carriedDisplay_ && index == hover_.hit().tab && hover_.hit().action;
     state.actionPressed = !carriedDisplay_ && index == pointer_.pressedAction();
     state.actionReserved = state.sticky;
     state.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1.0 : actionOpacity_.value();
@@ -2077,8 +2077,8 @@ TabFolderPaintState TabBar::folderPaintState(int folder) const
     const auto& record = folders_.at(folder);
     TabFolderPaintState state;
     state.name = record.name; state.count = record.count; state.collapsed = record.collapsed;
-    state.hovered = folder == hoveredHeader_; state.pressed = folder == pointer_.pressedFolder();
-    state.addHovered = state.hovered && headerAddHovered_;
+    state.hovered = folder == hover_.hit().folder; state.pressed = folder == pointer_.pressedFolder();
+    state.addHovered = state.hovered && hover_.hit().folderAdd;
     if (const auto* preset = folderPreset(folder)) {
         state.color = preset->groupActive.line;
         state.wash = preset->groupInactive.background; state.washText = preset->groupInactive.text;
@@ -2181,7 +2181,7 @@ void TabBar::paintEvent(QPaintEvent*)
     for (int index = 0; index + 1 < tabs_.size(); ++index) {
         const int next = index + 1;
         if (vertical() || layout_.lanes.at(index) < 0 || layout_.lanes.at(index) != layout_.lanes.at(next)) continue;
-        if (index == current_ || next == current_ || index == hovered_ || next == hovered_ || tabPreset(index) || tabPreset(next)) continue;
+        if (index == current_ || next == current_ || index == hover_.hit().tab || next == hover_.hit().tab || tabPreset(index) || tabPreset(next)) continue;
         if (slides_.contains(tabs_.at(index).data.toUuid()) || slides_.contains(tabs_.at(next).data.toUuid())) continue;
         const auto a = layout_.visibleRect(index), b = layout_.visibleRect(next);
         if (a.isEmpty() || b.isEmpty() || a.top() != b.top() || a.right() + 1 != b.left()) continue;
@@ -2354,35 +2354,29 @@ qreal TabBar::liftProgress() const { return liftElevation_.value(); }
 
 void TabBar::inheritHover(const TabBar& previous)
 {
-    if (!previous.labelHoverSession_ || !rect().contains(mapFromGlobal(QCursor::pos()))) return;
-    labelHoverSession_ = true;
+    if (!previous.hover_.hasSession() || !rect().contains(mapFromGlobal(QCursor::pos()))) return;
+    hover_.beginSession();
     updateHover(mapFromGlobal(QCursor::pos()));
-    if (hovered_ >= 0) { fadingAction_ = hovered_; actionOpacity_.jump(1); update(); }
+    if (hover_.hit().tab >= 0) { fadingAction_ = hover_.hit().tab; actionOpacity_.jump(1); update(); }
 }
 
 void TabBar::updateHover(QPoint local)
 {
-    const int hovered = tabAt(local);
-    if (hovered >= 0 && hovered != hovered_) {
-        fadingAction_ = hovered;
-        // Enter once; moving between labels, even across their gaps, does
-        // not replay the reveal. The old label gives up its action at once.
-        if (labelHoverSession_) actionOpacity_.jump(1);
+    TabHoverHit hit;
+    hit.tab = tabAt(local);
+    hit.action = hit.tab >= 0 && actionRect(hit.tab).contains(local)
+        && (hit.tab < stickyCount_ ? !isCompactSticky(hit.tab) : true);
+    hit.lane = layout_.laneList.isEmpty() || !rect().contains(local) ? -1 : laneAt(local);
+    hit.folder = rect().contains(local) ? folderAt(local) : -1;
+    hit.folderAdd = hit.folder >= 0 && vertical() && painter_.folderAddRect(folderHeaderRect(hit.folder)).contains(local);
+    const auto transition = hover_.move(hit);
+    using Fade = TabHoverTransition::Fade;
+    if (transition.fade == Fade::In || transition.fade == Fade::Show) {
+        fadingAction_ = hit.tab;
+        if (transition.fade == Fade::Show) actionOpacity_.jump(1);
         else actionOpacity_.animateTo(1, Motion::Hover, animationsEnabled());
-        labelHoverSession_ = true;
-    } else if (hovered < 0 && hovered_ >= 0) {
-        actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
-    }
-    const bool overAction = hovered >= 0 && actionRect(hovered).contains(local)
-        && (hovered < stickyCount_ ? !isCompactSticky(hovered) : true);
-    const int lane = layout_.laneList.isEmpty() || !rect().contains(local) ? -1 : laneAt(local);
-    const int header = rect().contains(local) ? folderAt(local) : -1;
-    const bool overAdd = header >= 0 && vertical() && painter_.folderAddRect(folderHeaderRect(header)).contains(local);
-    if (hovered != hovered_ || overAction != actionHovered_ || lane != hoveredLane_ || header != hoveredHeader_ || overAdd != headerAddHovered_) {
-        hovered_ = hovered; actionHovered_ = overAction; hoveredLane_ = lane;
-        hoveredHeader_ = header; headerAddHovered_ = overAdd;
-        update();
-    }
+    } else if (transition.fade == Fade::Out) actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
+    if (transition.changed) update();
 }
 
 TabPointerHit TabBar::pointerHit(QPoint local, bool releasing) const
@@ -2518,8 +2512,7 @@ void TabBar::enterEvent(QEnterEvent* event)
 void TabBar::leaveEvent(QEvent* event)
 {
     actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
-    labelHoverSession_ = false;
-    hovered_ = -1; actionHovered_ = false; hoveredLane_ = -1; hoveredHeader_ = -1; headerAddHovered_ = false;
+    hover_.leave();
     if (!columnManaged_) setColumnHovered(false);
     if (expandedByWheel_) collapseTimer_.start();
     update();
@@ -2612,7 +2605,7 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     if ((watched == trailing_ || watched == end_) && event->type() == QEvent::Enter) {
-        updateHover(QPoint(-1, -1)); labelHoverSession_ = false;
+        updateHover(QPoint(-1, -1)); hover_.endSession();
     }
     // The trailing controls change size when their contents change.
     if ((watched == trailing_ || watched == end_) && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::ShowToParent
