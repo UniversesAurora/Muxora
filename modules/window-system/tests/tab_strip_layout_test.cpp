@@ -16,6 +16,7 @@
 #include "docking/edge_tab_button.hpp"
 #include "style/tab_label_geometry.hpp"
 #include "authored_mouse_input.hpp"
+#include "native_input.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAccessible>
@@ -1185,12 +1186,17 @@ void TabStripLayoutTest::verticalStripResizesAndFoldsToIcons()
     fold->click();
     QCOMPARE(icons, std::optional<bool>(true)); QVERIFY(bar->iconMode()); QVERIFY(!title->isVisible());
     QCOMPARE(bar->width(), bar->metrics().verticalIconWidth);
-    const auto content = tabs.findChild<QStackedWidget*>()->geometry();
+    auto* pages = tabs.findChild<QStackedWidget*>(); QVERIFY(pages);
+    const auto content = pages->geometry();
+    // Startup reconciliation also reads the real cursor; authored enter/leave
+    // events alone must not disagree with that physical hover precondition.
+    native_input::mouse(bar, QPoint(5, 5));
     QEnterEvent enter(QPointF(5, 5), QPointF(5, 5), bar->mapToGlobal(QPointF(5, 5)));
     QApplication::sendEvent(bar, &enter);
     QTRY_VERIFY(bar->overlayActive());
     QVERIFY(bar->width() > bar->metrics().verticalIconWidth);
     QCOMPARE(tabs.findChild<QStackedWidget*>()->geometry(), content);
+    native_input::mouse(pages, pages->rect().center());
     QEvent leave(QEvent::Leave); QApplication::sendEvent(bar, &leave);
     QTRY_VERIFY(!bar->overlayActive());
     QCOMPARE(bar->width(), bar->metrics().verticalIconWidth);
