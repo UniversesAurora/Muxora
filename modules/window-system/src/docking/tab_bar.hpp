@@ -4,6 +4,7 @@
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
+#include "tab_lift_state.hpp"
 #include "tab_incoming_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
@@ -324,6 +325,7 @@ private:
     [[nodiscard]] QSize tabArea(QSize size) const;
     [[nodiscard]] TabDragArea dragArea() const;
     [[nodiscard]] TabDragConstraint incomingConstraint() const;
+    [[nodiscard]] std::optional<TabLiftTarget> liftTarget() const;
     [[nodiscard]] bool collapsedNow() const;
     void relayout(bool animate, bool measureChanged = true);
     void relayoutTrailing();
@@ -446,8 +448,7 @@ private:
     // Drag.
     int dragged_ = -1;
     int dropIndex_ = -1;
-    std::optional<QPoint> liftedPointer_;
-    DragAnchor liftedGrab_;
+    TabLiftState lifted_;
     std::optional<int> initialStickyBoundary_;
     QPointer<QWidget> liftedLayer_;
     QRegion liftedPaintRegion_;

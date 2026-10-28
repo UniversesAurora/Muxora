@@ -3,6 +3,7 @@
 // Covers constraint axes, source anchors, compact tiles, oversized blocks,
 // independently scrolled rows and top/bottom presentation origins.
 #include "docking/tab_drag_geometry.hpp"
+#include "docking/tab_lift_state.hpp"
 #include "docking/drag_start.hpp"
 #include <QTest>
 
@@ -11,6 +12,40 @@ using namespace window_system;
 class TabDragGeometryTest final : public QObject {
     Q_OBJECT
 private slots:
+    void liftStateKeepsThePressAnchorWhileTheLatestPointerMoves()
+    {
+        TabLiftState state;
+        const TabDragArea area{{600, 400}, {0, 4}, 28, 4};
+        const TabLiftTarget row{{172, 28}, {172, 28}, TabDragConstraint::HorizontalRow};
+        const DragAnchor anchor{{350, 12}, {400, 28}};
+        QCOMPARE(state.update(QPoint(300, 100), anchor), TabLiftState::Change::Lift);
+        QCOMPARE(state.rect({}, area, row).left(), 150);
+        QCOMPARE(state.rectAt({500, 100}, {}, area, row).left(), 350);
+        QCOMPARE(state.rect({}, area, row).left(), 150);
+        QCOMPARE(state.update(QPoint(500, 100), anchor), TabLiftState::Change::Move);
+        QCOMPARE(state.rect({}, area, row).left(), 350);
+        QCOMPARE(state.update(std::nullopt, {}), TabLiftState::Change::Lower);
+        QVERIFY(!state.active()); QVERIFY(state.rect({}, area, row).isEmpty());
+        QCOMPARE(state.update(std::nullopt, {}), TabLiftState::Change::None);
+        QCOMPARE(state.update(QPoint(), anchor), TabLiftState::Change::Lift);
+        QVERIFY(state.active()); // A typed pointer may occupy the origin.
+    }
+
+    void liftedFoldersUseTheirHeaderAndCompactTargetsUseTheirCenter()
+    {
+        TabLiftState state;
+        const TabDragArea area{{600, 500}, {}, 28, 4};
+        QCOMPARE(state.update(QPoint(200, 120), {{70, 7}, {100, 28}}), TabLiftState::Change::Lift);
+        const TabLiftTarget folder{{500, 28}, {100, 28}, TabDragConstraint::HorizontalRow};
+        QCOMPARE(state.rect({}, area, folder), QRect(130, 0, 500, 28));
+        const TabLiftTarget column{{200, 280}, {200, 28}, TabDragConstraint::VerticalRow};
+        const auto vertical = state.rect({}, area, column);
+        QCOMPARE(vertical.top(), 113); QCOMPARE(vertical.height(), 280);
+        const TabLiftTarget tile{{26, 26}, {26, 26}, TabDragConstraint::CompactTile, true};
+        QCOMPARE(state.rect({}, area, tile), QRect(188, 108, 26, 26));
+        state.clear(); QVERIFY(state.rectAt({200, 120}, {}, area, tile).isEmpty());
+    }
+
     void verticalRows_keepTheColumnAndClampTheBlock()
     {
         const TabDragArea area{{180, 400}, {0, 6}, 28, 4};

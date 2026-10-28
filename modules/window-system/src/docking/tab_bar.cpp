@@ -501,12 +501,12 @@ void TabBar::syncAttachment()
         anchor = activeDragRect();
         compact = dropSticky_ && compactStickyTiles();
     } else if (current_ >= 0 && current_ < layout_.tabs.size()) {
-        anchor = liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0) ? activeDragRect() : animatedRect(current_);
+        anchor = lifted_.active() && (dragged_ == current_ || draggedFolder_ >= 0) ? activeDragRect() : animatedRect(current_);
         compact = shapeOf(current_) == TabShape::Tile;
-        if (liftedPointer_ && dragged_ == current_) compact = dropSticky_ && compactStickyTiles();
+        if (lifted_.active() && dragged_ == current_) compact = dropSticky_ && compactStickyTiles();
     }
     const auto geometry = anchorGeometry(anchor, anchor.intersected(rect()), compact,
-        !incoming_.visual().empty() || bool(liftedPointer_), false);
+        !incoming_.visual().empty() || lifted_.active(), false);
     const std::pair<qreal, qreal> target{geometry.joinProgress, geometry.coveredProgress};
     const auto owner = !incoming_.visual().empty() ? incoming_.visual().identity : tabData(current_).toUuid();
     if (!attachmentInitialized_ || attachmentOwner_ != owner) {
@@ -576,7 +576,7 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
     if (surfaceBody_.isEmpty()) return anchors;
     const auto rest = interpolateElevation(elevationProfile(ElevationLevel::AnchorRest),
                                            elevationProfile(ElevationLevel::AnchorRaised), surfaceFocus_);
-    if (!incoming_.visual().empty() || (liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0))) {
+    if (!incoming_.visual().empty() || (lifted_.active() && (dragged_ == current_ || draggedFolder_ >= 0))) {
         const auto anchor = activeDragRect();
         const bool compact = (dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_) && compactStickyTiles();
         const auto geometry = anchorGeometry(anchor, anchor.intersected(rect()), compact, true);
@@ -611,7 +611,7 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
 void TabBar::paintSurfaceExtension(QPainter& painter, QPointF offset) const
 {
     if (surfaceBody_.isEmpty() || current_ < 0 || current_ >= count()) return;
-    const bool moving = !incoming_.visual().empty() || (liftedPointer_ && (dragged_ == current_ || draggedFolder_ >= 0));
+    const bool moving = !incoming_.visual().empty() || (lifted_.active() && (dragged_ == current_ || draggedFolder_ >= 0));
     const QRect area = moving ? activeDragRect() : animatedRect(current_);
     const bool compact = moving ? dropSticky_ && compactStickyTiles() : shapeOf(current_) == TabShape::Tile;
     const auto geometry = translatedSurfaceGeometry(anchorGeometry(area, area.intersected(rect()), compact, moving), offset);
@@ -942,7 +942,7 @@ LabelPositions TabBar::captureDropPositions(std::optional<LabelPositions> carrie
         else if (!incoming_.visual().identity.isNull()) positions.insert(incoming_.visual().identity, incoming_.visual().active);
         const auto offset = origin + incomingRect().topLeft();
         for (auto& area : positions) area.translate(offset);
-    } else if (liftedPointer_) {
+    } else if (lifted_.active()) {
         const auto lifted = liftedRect();
         if (lifted.isEmpty()) return positions;
         if (draggedFolder_ >= 0 && draggedFolder_ < folders_.size()) {
@@ -1709,7 +1709,7 @@ void TabBar::setDraggedTab(TabId tab)
     if (index == dragged_) return;
     initialStickyBoundary_ = index >= 0 ? stickyBoundary() : std::nullopt;
     dragged_ = index;
-    if (index < 0) { liftedPointer_.reset(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled()); }
+    if (index < 0) { lifted_.clear(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled()); }
     relayout(true);
 }
 
@@ -1719,7 +1719,7 @@ void TabBar::setDraggedFolder(QUuid folder)
     for (int at = 0; at < folders_.size(); ++at) if (folders_.at(at).id == folder) index = at;
     if (index == draggedFolder_) return;
     draggedFolder_ = index;
-    if (index < 0) liftedPointer_.reset();
+    if (index < 0) lifted_.clear();
     relayout(true);
 }
 void TabBar::setLifted(QPoint local, QPoint grab)
@@ -1729,13 +1729,12 @@ void TabBar::setLifted(QPoint local, QPoint grab)
 
 void TabBar::setLiftedWithAnchor(QPoint local, const DragAnchor& grab)
 {
-    if (local.isNull()) {
-        if (!liftedPointer_) return;
-        liftedPointer_.reset(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled());
-        syncAttachment(); surfaceFrameChanged(); return;
+    const auto change = lifted_.update(local.isNull() ? std::nullopt : std::optional(local), grab);
+    if (change == TabLiftState::Change::None) return;
+    if (change == TabLiftState::Change::Lift || change == TabLiftState::Change::Lower) {
+        const bool lifting = change == TabLiftState::Change::Lift;
+        liftElevation_.animateTo(lifting ? 1 : 0, lifting ? Motion::SurfaceLift : Motion::SurfaceLower, animationsEnabled());
     }
-    if (!liftedPointer_) liftElevation_.animateTo(1, Motion::SurfaceLift, animationsEnabled());
-    liftedPointer_ = local; liftedGrab_ = grab;
     syncAttachment(); surfaceFrameChanged();
 }
 
@@ -1744,7 +1743,7 @@ void TabBar::updateLiftedLayer()
     // The logical strip still constrains the label. Its elevation must not
     // inherit a narrow column's resting mask or stop at the strip's edge.
     auto* owner = window();
-    const bool shown = !settling_.isEmpty() || (liftedPointer_ && (dragged_ >= 0 || draggedFolder_ >= 0)) || !incoming_.visual().empty()
+    const bool shown = !settling_.isEmpty() || (lifted_.active() && (dragged_ >= 0 || draggedFolder_ >= 0)) || !incoming_.visual().empty()
         || (current_ >= 0 && (liftElevation_.value() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
     QRegion current;
     if (shown) {
@@ -1897,51 +1896,47 @@ TabDragConstraint TabBar::incomingConstraint() const
 
 QRect TabBar::liftedRect() const
 {
-    return liftedPointer_ ? liftedRectAt(*liftedPointer_) : QRect{};
+    const auto target = liftTarget();
+    return target ? lifted_.rect(layout_, dragArea(), *target) : QRect{};
 }
 
 QRect TabBar::liftedRectAt(QPoint local) const
 {
-    if (liftedPointer_ && draggedFolder_ >= 0 && draggedFolder_ < folders_.size()) {
-        // A carried folder: its header and, open, its tabs, as one block.
+    const auto target = liftTarget();
+    return target ? lifted_.rectAt(local, layout_, dragArea(), *target) : QRect{};
+}
+
+std::optional<TabLiftTarget> TabBar::liftTarget() const
+{
+    if (!lifted_.active()) return {};
+    if (draggedFolder_ >= 0 && draggedFolder_ < folders_.size()) {
         const auto& folder = folders_.at(draggedFolder_);
         const int tabs = folder.collapsed ? 0 : folder.count;
         if (vertical()) {
             const int rows = 1 + tabs;
             const int height = rows * metrics_.rowHeight + (rows - 1) * metrics_.rowGap;
             const int width = std::max(0, this->width() - 2 * metrics_.verticalInset);
-            const auto grab = liftedGrab_.forSize({width, metrics_.rowHeight});
-            return tabDragRect(layout_, dragArea(), local, {width, height}, grab,
-                TabDragConstraint::VerticalRow);
+            return TabLiftTarget{{width, height}, {width, metrics_.rowHeight}, TabDragConstraint::VerticalRow};
         }
-        int extent = folderHeaderExtent(folder);
+        const int header = folderHeaderExtent(folder);
+        int extent = header;
         for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) extent += tabExtent(index, false);
-        const auto grab = liftedGrab_.forSize({folderHeaderExtent(folder), metrics_.rowHeight});
-        return tabDragRect(layout_, dragArea(), local, {extent, metrics_.rowHeight}, grab,
-            TabDragConstraint::HorizontalRow);
+        return TabLiftTarget{{extent, metrics_.rowHeight}, {header, metrics_.rowHeight}, TabDragConstraint::HorizontalRow};
     }
-    if (!liftedPointer_ || dragged_ < 0 || dragged_ >= tabs_.size()) return {};
+    if (dragged_ < 0 || dragged_ >= tabs_.size()) return {};
     const bool sticky = dropIndex_ >= 0 ? dropSticky_ : dragged_ < stickyCount_;
     if (vertical()) {
-        const int rowWidth = std::max(0, width() - 2 * metrics_.verticalInset);
         if (sticky && compactStickyTiles()) {
-            // The gap is laid out with the target section's tile dimensions.
-            // Its position is not the pointer's; only its size is reused.
+            // A gap supplies target dimensions, never a replacement pointer.
             const auto size = !layout_.gap.isEmpty() ? layout_.gap.first().size() : layout_.tabs.value(dragged_).size();
-            return tabDragRect(layout_, dragArea(), local, size, QRect(QPoint(), size).center(),
-                TabDragConstraint::CompactTile);
+            return TabLiftTarget{size, size, TabDragConstraint::CompactTile, true};
         }
-        const auto grab = liftedGrab_.forSize({rowWidth, metrics_.rowHeight});
-        return tabDragRect(layout_, dragArea(), local, {rowWidth, metrics_.rowHeight}, grab,
-            TabDragConstraint::VerticalRow);
+        const QSize size(std::max(0, width() - 2 * metrics_.verticalInset), metrics_.rowHeight);
+        return TabLiftTarget{size, size, TabDragConstraint::VerticalRow};
     }
-    const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky);
-    // Local and incoming labels use the same scrolled row grid, including
-    // a partially visible final row and a bottom strip's shadow origin.
-    const auto grab = liftedGrab_.forSize({extent, metrics_.rowHeight},
-        sticky && appearance_.stickySizing == StickyTabSizing::Compact);
-    return tabDragRect(layout_, dragArea(), local, {extent, metrics_.rowHeight}, grab,
-        TabDragConstraint::HorizontalRow);
+    const bool compact = sticky && appearance_.stickySizing == StickyTabSizing::Compact;
+    const QSize size(compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky), metrics_.rowHeight);
+    return TabLiftTarget{size, size, TabDragConstraint::HorizontalRow, compact};
 }
 
 std::optional<int> TabBar::stickyBoundary() const
@@ -1959,7 +1954,7 @@ TabInsertion TabBar::insertionAt(QPoint local, int stickyReach, TabLayoutInput::
     input.carried = carried;
     const auto boundary = dragged_ >= 0 && dropIndex_ < 0 ? initialStickyBoundary_ : stickyBoundary();
     const std::optional<bool> section = boundary ? std::optional<bool>(local.y() < *boundary) : std::nullopt;
-    const auto held = !incoming_.visual().empty() ? incomingRectAt(local) : liftedPointer_ ? liftedRectAt(local) : QRect{};
+    const auto held = !incoming_.visual().empty() ? incomingRectAt(local) : lifted_.active() ? liftedRectAt(local) : QRect{};
     if (!held.isEmpty() && draggedFolder_ >= 0) {
         // A local folder keeps its existing header-based insertion probe;
         // only individual tabs adopt the edge-over-center reorder rule.

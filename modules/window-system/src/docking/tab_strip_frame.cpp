@@ -44,7 +44,7 @@ void TabBar::captureLaneFrame(TabStripLaneFrame& frame, int laneIndex, const QFo
     if (layout_.rowScrollLane >= 0 && layout_.rowScrollLane != laneIndex)
         appendFades(layout_.laneList.at(layout_.rowScrollLane));
     if (!frame.fades.isEmpty() && layout_.lanes.value(current_, -1) == laneIndex
-        && incoming_.visual().empty() && !liftedPointer_ && liftElevation_.value() <= 0) {
+        && incoming_.visual().empty() && !lifted_.active() && liftElevation_.value() <= 0) {
         const auto area = animatedRect(current_);
         const auto visible = area.intersected(frame.viewport).intersected(rect());
         const auto geometry = anchorGeometry(area, visible, shapeOf(current_) == TabShape::Tile, false);
