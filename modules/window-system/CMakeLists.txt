@@ -37,7 +37,8 @@ add_library(WindowSystemSurfaces STATIC
     src/style/elevation.cpp src/docking/surface_geometry.cpp
     src/style/tab_painter.cpp src/style/tab_title_layout.cpp src/style/tab_carrier_painter.cpp
     src/style/theme_resources.cpp src/style/tab_departure.cpp
-    src/docking/tab_incoming_state.cpp src/docking/tab_label_store.cpp)
+    src/docking/tab_incoming_state.cpp src/docking/tab_label_store.cpp
+    src/docking/tab_strip_arrangement.cpp)
 set_target_properties(WindowSystemSurfaces PROPERTIES EXPORT_NAME Surfaces)
 target_compile_features(WindowSystemSurfaces PUBLIC cxx_std_20)
 target_include_directories(WindowSystemSurfaces PRIVATE src include)

@@ -439,8 +439,8 @@ void TabStripLayoutTest::placementPutsTheStripOnItsSide()
     populate(centralGroup, 2); populate(pinnedGroup, 2);
     for (auto* group : {&centralGroup, &pinnedGroup}) { group->resize(500, 300); group->show(); QVERIFY(QTest::qWaitForWindowExposed(group)); }
     const auto check = [](GroupTabs& group, TabBarPlacement placement) {
-        const auto strip = group.tabBar()->geometry();
-        const auto content = group.findChild<QStackedWidget*>()->geometry();
+        const auto strip = geometryIn(group.tabBar(), &group);
+        const auto content = geometryIn(group.findChild<QStackedWidget*>(), &group);
         QVERIFY(!strip.intersects(content));
         switch (placement) {
         case TabBarPlacement::Top: QVERIFY(strip.bottom() < content.top()); break;

@@ -283,11 +283,16 @@ void TabBarPresentationTest::newTabControlsFollowTheLastTabAndShareEmphasis()
     auto* add = tabs.findChild<QToolButton*>("NewTabButton"); QVERIFY(add);
     auto* types = tabs.findChild<QToolButton*>("NewTabTypeButton"); QVERIFY(types);
     auto* controls = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(controls);
+    auto* slot = tabs.findChild<QWidget*>("TabCreateActions"); QVERIFY(slot);
     const auto inBar = [bar](QWidget* widget) { return QRect(widget->mapTo(bar, QPoint()), widget->size()); };
-    // Right after the last tab, as tall as a tab.
-    QCOMPARE(inBar(controls).left(), bar->displayTabRect(1).right() + 1);
-    QCOMPARE(inBar(controls).top(), bar->displayTabRect(1).top());
-    QCOMPARE(add->height(), bar->metrics().rowHeight); QCOMPARE(types->height(), bar->metrics().rowHeight);
+    // The slot follows the tab; the split button has the design's gap and
+    // smaller, vertically centered target (tab strip design 2.1).
+    QCOMPARE(inBar(slot).left(), bar->displayTabRect(1).right() + 1);
+    QCOMPARE(inBar(slot).top(), bar->displayTabRect(1).top());
+    QCOMPARE(inBar(controls).left(), inBar(slot).left() + 4);
+    QCOMPARE(add->height(), bar->metrics().rowHeight - uiPixels(4));
+    QCOMPARE(types->height(), add->height());
+    QCOMPARE(inBar(controls).center().y(), inBar(slot).center().y());
     QVERIFY(inBar(types).left() > inBar(add).right());
     int created = 0; tabs.newTabRequested = [&] { ++created; };
     QTest::mouseClick(add, Qt::LeftButton); QCOMPARE(created, 1);
@@ -310,8 +315,8 @@ void TabBarPresentationTest::newTabControlsFollowTheLastTabAndShareEmphasis()
         tabs.addTab(new QLabel("Content"), {}, QString("Long tab %1").arg(index), QUuid::createUuid());
     QTRY_VERIFY(bar->isOverflowing());
     bar->setScrollOffset(bar->maximumScrollOffset());
-    QVERIFY(bar->scrollViewport().contains(inBar(controls)));
-    QCOMPARE(inBar(controls).left(), bar->displayTabRect(bar->count() - 1).right() + 1);
+    QVERIFY(bar->scrollViewport().contains(inBar(slot)));
+    QCOMPARE(inBar(slot).left(), bar->displayTabRect(bar->count() - 1).right() + 1);
     // A drag carrier shows its tabs alone.
     tabs.setDragPresentation(true, false); QVERIFY(!controls->isVisible());
     tabs.setDragPresentation(false, false); QVERIFY(controls->isVisible());

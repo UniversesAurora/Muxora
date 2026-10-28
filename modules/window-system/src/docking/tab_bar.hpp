@@ -7,6 +7,7 @@
 #include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
+#include "tab_strip_arrangement.hpp"
 #include "tab_incoming_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
@@ -312,14 +313,17 @@ private:
     [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
     [[nodiscard]] QRect incomingRectAt(QPoint local) const;
     [[nodiscard]] QRect liftedRectAt(QPoint local) const;
-    [[nodiscard]] TabLayoutInput layoutInput(QSize area, bool collapsed) const;
-    [[nodiscard]] QSize tabArea(QSize size) const;
+    [[nodiscard]] TabStripRows rowPolicy() const;
+    [[nodiscard]] TabStripGeometry stripGeometry() const;
+    [[nodiscard]] TabStripControls stripControls() const;
+    [[nodiscard]] TabStripArrangementInput arrangementInput() const;
     [[nodiscard]] TabDragArea dragArea() const;
     [[nodiscard]] TabDragConstraint incomingConstraint() const;
     [[nodiscard]] std::optional<TabLiftTarget> liftTarget() const;
     [[nodiscard]] bool collapsedNow() const;
     void relayout(bool animate, bool measureChanged = true);
     void relayoutTrailing();
+    void applyControlRects(const TabStripControlRects& controls);
     [[nodiscard]] TabLabelParts labelParts(int index, bool sticky) const;
     [[nodiscard]] bool isCompactSticky(int index) const;
     [[nodiscard]] bool rowShape() const;
@@ -352,10 +356,9 @@ private:
     [[nodiscard]] int laneOffsetInput(int lane) const;
     void startCollapseTimer();
     void updateRowPresentation(TabVisualState previous, bool moving, bool revealActive);
-    struct RowMeasure { QSize available; int closed; int push; int overlay; };
-    [[nodiscard]] const RowMeasure& measureRows(QSize available) const;
+    [[nodiscard]] const TabStripRowMeasure& measureRows(QSize available) const;
     [[nodiscard]] int rowShadowExtent() const;
-    mutable std::optional<RowMeasure> rowMeasure_;
+    mutable std::optional<TabStripRowMeasure> rowMeasure_;
     [[nodiscard]] bool hasLabelAction(int index) const;
     void updateHover(QPoint local);
     [[nodiscard]] TabPointerHit pointerHit(QPoint local, bool releasing) const;

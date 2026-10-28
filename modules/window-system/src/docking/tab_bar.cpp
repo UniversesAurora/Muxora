@@ -1033,86 +1033,75 @@ void TabBar::updateTitleWidths()
 
 bool TabBar::wrappedRows() const
 {
-    return !vertical() && (appearance_.multiline
-        || (appearance_.stickyTabsOnSeparateRow && stickyCount_ > 0 && appearance_.stickyMultiline));
+    return !vertical() && rowPolicy().wrapped();
 }
 
 bool TabBar::collapsible() const
 {
-    return !vertical() && ((appearance_.multiline && !appearance_.showAllRows)
-        || (appearance_.stickyTabsOnSeparateRow && stickyCount_ > 0 && appearance_.stickyMultiline && !appearance_.stickyShowAllRows));
+    return !vertical() && rowPolicy().collapsible();
 }
 
-bool TabBar::collapsedNow() const { return collapsible() && !expanded_ && !dragExpanded_; }
+bool TabBar::collapsedNow() const { return !vertical() && rowPolicy().collapsed(); }
 
 bool TabBar::overlayActive() const
 {
     if (vertical()) return columnPeek_.iconsOnly() && columnPeek_.expanded();
-    return collapsible() && ((temporaryRowsOverlay_ && (dragExpanded_ || rowsReveal_.value() > 0))
-        || ((expanded_ || rowsReveal_.value() > 0) && appearance_.rowExpansion == TabRowExpansion::Overlay));
+    return rowPolicy().overlay();
 }
 
-TabLayoutInput TabBar::layoutInput(QSize area, bool collapsed) const
+TabStripRows TabBar::rowPolicy() const
 {
-    TabLayoutInput input;
-    input.orientation = vertical() ? TabLayoutInput::Orientation::Vertical : TabLayoutInput::Orientation::Horizontal;
-    input.width = area.width();
-    // Horizontal rows touch, so colored tabs join across rows.
-    input.rowHeight = metrics_.rowHeight; input.rowGap = vertical() ? metrics_.rowGap : 0;
+    return {appearance_.multiline, appearance_.showAllRows, appearance_.stickyMultiline,
+        appearance_.stickyShowAllRows, appearance_.stickyTabsOnSeparateRow, stickyCount_ > 0,
+        expanded_, dragExpanded_, temporaryRowsOverlay_, appearance_.rowExpansion, rowsReveal_.value()};
+}
+
+TabStripGeometry TabBar::stripGeometry() const
+{
+    return {placement_, rowPolicy(), metrics_.outerMargin, metrics_.shadowBlur, metrics_.rowHeight,
+        columnPeek_.iconsOnly(), metrics_.verticalIconWidth, minimumColumnWidth(), maximumVerticalTabWidth};
+}
+
+TabStripControls TabBar::stripControls() const
+{
+    return {trailing_ && !trailing_->isHidden() ? trailing_->sizeHint().width() : 0,
+        end_ && !end_->isHidden() ? end_->sizeHint().width() : 0,
+        trailing_ && !trailing_->isHidden(), end_ && !end_->isHidden(),
+        countButton_ ? countButton_->size() : QSize{}, metrics_.countMinimumWidth, uiPixels(14),
+        countButton_ != nullptr, countButton_ && !countButton_->isHidden(), isVisible()};
+}
+
+TabStripArrangementInput TabBar::arrangementInput() const
+{
+    TabStripArrangementInput source;
+    source.geometry = stripGeometry(); source.group = available_; source.controls = stripControls(); source.font = font();
+    auto& input = source.labels;
+    input.rowGap = vertical() ? metrics_.rowGap : 0;
     input.inset = metrics_.verticalInset; input.tile = metrics_.tile; input.minimumTileWidth = metrics_.tile.width();
-    input.tileColumns = carriedTileColumns_;
-    input.stickyCount = stickyCount_;
+    input.tileColumns = carriedTileColumns_; input.stickyCount = stickyCount_;
     input.extents.reserve(tabs_.size());
     for (int index = 0; index < tabs_.size(); ++index)
         input.extents.append(vertical() ? 0 : tabExtent(index, index < stickyCount_));
-    if (vertical()) {
-        input.height = area.height();
-        input.stickyTiles = compactStickyTiles();
-        input.stickyOffset = stickyOffset_; input.regularOffset = regularOffset_;
-    } else {
-        input.multiline = appearance_.multiline;
-        input.stickyMultiline = appearance_.stickyMultiline;
-        input.separateStickyRow = appearance_.stickyTabsOnSeparateRow;
-        input.freezeSticky = !input.multiline && !input.separateStickyRow && appearance_.stickySizing != StickyTabSizing::Normal;
-        input.collapsed = collapsed && !appearance_.showAllRows;
-        input.stickyCollapsed = collapsed && !appearance_.stickyShowAllRows;
-        // Rows take at most 40 % of the group, an overlay half of it.
-        const int group = available_.height();
-        input.height = !wrappedRows() ? 0 : group <= 0 ? 0 : int(group * (overlayActive() ? 0.5 : 0.4));
-        input.trailingExtent = trailing_ && !trailing_->isHidden() ? trailing_->sizeHint().width() : 0;
-        int end = end_ && !end_->isHidden() ? end_->sizeHint().width() : 0;
-        if (countButton_ && !countButton_->isHidden()) end += countButton_->width();
-        input.endExtent = end;
-        input.stickyOffset = stickyOffset_;
-        input.regularOffset = regularOffset_;
+    input.stickyTiles = compactStickyTiles();
+    input.freezeSticky = !vertical() && !appearance_.multiline && !appearance_.stickyTabsOnSeparateRow && appearance_.stickySizing != StickyTabSizing::Normal;
+    input.stickyOffset = stickyOffset_; input.regularOffset = regularOffset_;
+    if (!vertical()) {
         input.rowsOffset = rowsOffset_;
         input.collapsedStickyRow = collapsedStickyRow_; input.collapsedRegularRow = collapsedRegularRow_;
     }
-    input.current = current_;
-    input.removed = dragged_;
+    input.current = current_; input.removed = dragged_;
     input.insertion = dropIndex_; input.insertionSticky = dropSticky_; input.block = dropBlock_;
-    // Vertical headers are rows; their tabs sit indented under them.
     input.folderIndent = metrics_.folderIndent;
     for (const auto& folder : folders_)
         input.folders.append({folder.first, folder.count, folderHeaderExtent(folder), folder.collapsed});
-    input.removedFolder = draggedFolder_;
-    input.insertionFolder = dropFolder_;
-    return input;
+    input.removedFolder = draggedFolder_; input.insertionFolder = dropFolder_;
+    return source;
 }
 
 QPoint TabBar::tabOrigin() const
 {
-    if (vertical()) return {};
-    // Below the content an overlay grows upward, its shadow on top.
-    if (placement_ == TabBarPlacement::Bottom) return {0, rowShadowExtent()};
-    return {0, metrics_.outerMargin};
-}
-
-QSize TabBar::tabArea(QSize size) const
-{
-    // An overlay keeps room for its shadow below the rows.
-    const int shadow = !vertical() ? rowShadowExtent() : 0;
-    return {size.width(), std::max(0, size.height() - (vertical() ? 0 : metrics_.outerMargin) - shadow)};
+    // Keep this hot query independent of label measurement and control hints.
+    return tabStripOrigin(placement_, metrics_.outerMargin, vertical() ? 0 : rowShadowExtent());
 }
 
 int TabBar::minimumColumnWidth() const
@@ -1128,53 +1117,26 @@ int TabBar::rowShadowExtent() const
     return overlayActive() ? qRound(metrics_.shadowBlur * rowsReveal_.value()) : 0;
 }
 
-const TabBar::RowMeasure& TabBar::measureRows(QSize available) const
+const TabStripRowMeasure& TabBar::measureRows(QSize available) const
 {
-    if (rowMeasure_ && rowMeasure_->available == available) return *rowMeasure_;
-    auto input = layoutInput(QSize(available.width(), 0), true);
-    input.height = std::max(0, int(available.height() * 0.4));
-    input.block.clear(); input.insertion = -1; input.removed = -1; input.removedFolder = -1;
-    const int closed = std::max(metrics_.rowHeight, layoutTabs(input).size.height()) + metrics_.outerMargin;
-    int push = closed, overlay = closed;
-    if (collapsible()) {
-        input = layoutInput(QSize(available.width(), 0), false);
-        input.height = std::max(0, int(available.height() * 0.4));
-        input.block.clear(); input.insertion = -1; input.removed = -1; input.removedFolder = -1;
-        push = std::max(metrics_.rowHeight, layoutTabs(input).size.height()) + metrics_.outerMargin;
-        input = layoutInput(QSize(available.width(), 0), false);
-        input.height = std::max(0, int(available.height() * 0.5));
-        overlay = std::min(available.height(), layoutTabs(input).size.height() + metrics_.outerMargin + metrics_.shadowBlur);
-    }
-    rowMeasure_ = RowMeasure{available, closed, push, overlay};
+    if (!rowMeasure_ || rowMeasure_->available != available) rowMeasure_ = measureTabStripRows(arrangementInput(), available);
     return *rowMeasure_;
 }
 
 QSize TabBar::reservedSize(QSize available) const
 {
-    if (vertical()) {
-        const int width = columnPeek_.iconsOnly() ? metrics_.verticalIconWidth : std::clamp(available.width(), minimumColumnWidth(), maximumVerticalTabWidth);
-        // `available` is the column's width and the group's height.
-        return {width, available.height()};
-    }
-    const auto sizes = measureRows(available);
-    const qreal progress = collapsible() && appearance_.rowExpansion == TabRowExpansion::Push && !temporaryRowsOverlay_ ? rowsReveal_.value() : 0;
-    return {available.width(), qRound(sizes.closed + (sizes.push - sizes.closed) * progress)};
+    const auto geometry = stripGeometry();
+    return tabStripReservedSize(geometry, available, vertical() ? TabStripRowMeasure{} : measureRows(available));
 }
 
 QSize TabBar::displaySize(QSize available) const
 {
-    if (vertical()) return reservedSize(available);
-    auto base = reservedSize(available);
-    if (overlayActive()) {
-        const auto sizes = measureRows(available);
-        const qreal progress = rowsReveal_.value();
-        const int full = sizes.overlay;
-        base.setHeight(qRound(base.height() + (full - base.height()) * progress));
-    } else if (dropIndex_ >= 0) {
-        const auto preview = layoutTabs(layoutInput(QSize(available.width(), 0), collapsedNow()));
-        base.setHeight(std::max(base.height(), preview.size.height() + metrics_.outerMargin));
-    }
-    return base;
+    const auto geometry = stripGeometry();
+    if (vertical()) return tabStripReservedSize(geometry, available);
+    std::optional<TabLayoutInput> preview;
+    if (!geometry.rows.overlay() && dropIndex_ >= 0)
+        preview = tabStripLayoutInput(arrangementInput(), QSize(available.width(), 0), collapsedNow());
+    return tabStripDisplaySize(geometry, available, measureRows(available), preview ? &*preview : nullptr);
 }
 
 void TabBar::setAvailableSize(QSize available)
@@ -1201,46 +1163,23 @@ void TabBar::relayout(bool animate, bool measureChanged)
             if (positions_.resizesWidth(id)) resizing.insert(id);
         }
     tabs_.measureTitles(font(), layoutDirection(), this);
-    const auto area = tabArea(size());
-    // The count shows only while rows are collapsed away; measure without
-    // it first, then make room for it.
-    bool countShown = false;
-    if (collapsible()) {
-        auto probe = layoutInput(area, true); probe.block.clear(); probe.insertion = -1;
-        if (countButton_) countButton_->hide();
-        probe.endExtent = end_ && !end_->isHidden() ? end_->sizeHint().width() : 0;
-        countShown = layoutTabs(probe).hidden > 0;
+    auto arranged = arrangeTabStrip(arrangementInput(), size());
+    arrangedInput_ = std::move(arranged.input); layout_ = std::move(arranged.layout);
+    if (countButton_) {
+        countButton_->setVisible(arranged.controls.countShown);
+        if (arranged.countMeasured) {
+            countButton_->setText(arranged.countText);
+            if (countButton_->size() != arranged.controls.countSize)
+                static_cast<CompactToolButton*>(countButton_)->setTargetSize(arranged.controls.countSize);
+            countButton_->setToolTip(collapsedNow()
+                ? QCoreApplication::translate("WindowSystem", "%n more tab(s) in other rows; click to expand", nullptr, layout_.hidden)
+                : QCoreApplication::translate("WindowSystem", "Collapse other rows"));
+            countButton_->setAccessibleName(countButton_->toolTip());
+        }
     }
-    if (countButton_) countButton_->setVisible(countShown && !dragExpanded_);
-    // Resolve the count width before exposing layout/hit geometry. A digit
-    // change can change wrapping again; shrink once, then only grow within
-    // this pass so proportional figures cannot make the calculation cycle.
-    bool canShrinkCount = true;
-    for (;;) {
-        arrangedInput_ = layoutInput(area, collapsedNow());
-        layout_ = layoutTabs(arrangedInput_);
-        if (!countButton_ || !countButton_->isVisible()) break;
-        const bool collapsed = collapsedNow();
-        countButton_->setText(collapsed ? QStringLiteral("+%1").arg(layout_.hidden) : QStringLiteral("\u2212"));
-        const int needed = std::max(metrics_.countMinimumWidth, fontMetrics().horizontalAdvance(countButton_->text()) + uiPixels(14));
-        const int countWidth = countButton_->width();
-        if (needed == countWidth || (needed < countWidth && !canShrinkCount)) break;
-        canShrinkCount = false;
-        static_cast<CompactToolButton*>(countButton_)->setTargetSize(QSize(needed, metrics_.rowHeight));
-    }
-    if (countButton_ && countButton_->isVisible()) {
-        countButton_->setToolTip(collapsedNow()
-            ? QCoreApplication::translate("WindowSystem", "%n more tab(s) in other rows; click to expand", nullptr, layout_.hidden)
-            : QCoreApplication::translate("WindowSystem", "Collapse other rows"));
-        countButton_->setAccessibleName(countButton_->toolTip());
-    }
-    // Clamped offsets are the offsets.
-    for (const auto& lane : std::as_const(layout_.laneList)) {
-        if (!vertical() && lane.vertical) { rowsOffset_ = lane.offset; continue; }
-        (lane.sticky ? stickyOffset_ : regularOffset_) = lane.offset;
-    }
-    if (collapsedNow()) { collapsedStickyRow_ = layout_.stickyRow; collapsedRegularRow_ = layout_.regularRow; }
-    relayoutTrailing();
+    stickyOffset_ = arranged.stickyOffset; regularOffset_ = arranged.regularOffset; rowsOffset_ = arranged.rowsOffset;
+    collapsedStickyRow_ = arranged.collapsedStickyRow; collapsedRegularRow_ = arranged.collapsedRegularRow;
+    applyControlRects(arranged.controlRects);
     carrierBounds_.reset();
     updateLiftedLayer();
     if (sliding) {
@@ -1265,27 +1204,15 @@ void TabBar::relayout(bool animate, bool measureChanged)
 
 void TabBar::relayoutTrailing()
 {
-    // A vertical strip has no trailing controls; its group shows a footer.
-    if (vertical()) { if (countButton_) countButton_->hide(); return; }
-    if (!layout_.trailing.isNull() && trailing_ && !trailing_->isHidden()) {
-        const auto area = layout_.trailing.translated(tabOrigin());
-        trailing_->setGeometry(QRect(area.topLeft(), QSize(trailing_->sizeHint().width(), metrics_.rowHeight)));
-        trailing_->raise();
-    }
-    if (!layout_.end.isNull()) {
-        // From the row's end leftward: the end widget, then the row count.
-        auto area = layout_.end.translated(tabOrigin());
-        if (end_ && !end_->isHidden()) {
-            const int width = end_->sizeHint().width();
-            end_->setGeometry(area.right() - width + 1, area.top(), width, metrics_.rowHeight);
-            end_->raise();
-            area.setRight(area.right() - width);
-        }
-        if (countButton_ && countButton_->isVisible()) {
-            countButton_->move(area.right() - countButton_->width() + 1, area.top());
-            countButton_->raise();
-        }
-    }
+    if (vertical() && countButton_) countButton_->hide();
+    applyControlRects(tabStripControlRects(stripGeometry(), layout_, stripControls()));
+}
+
+void TabBar::applyControlRects(const TabStripControlRects& controls)
+{
+    if (!controls.trailing.isNull()) { trailing_->setGeometry(controls.trailing); trailing_->raise(); }
+    if (!controls.end.isNull()) { end_->setGeometry(controls.end); end_->raise(); }
+    if (!controls.count.isNull()) { countButton_->move(controls.count.topLeft()); countButton_->raise(); }
 }
 
 QRect TabBar::tabRect(int index) const
