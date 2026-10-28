@@ -163,8 +163,8 @@ std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font
     frame->lanes.resize(layout_.laneList.size());
     for (int lane = 0; lane < layout_.laneList.size(); ++lane) {
         captureLaneFrame(frame->lanes[lane], lane, font, direction);
-        if (layout_.laneList.at(lane).maximumOffset() > 0 && lane == scrollingLane_ && scrollbarOpacity_.value() > 0)
-            frame->scrollbars.append({scrollThumb(lane), scrollbarOpacity_.value(), lane == scrollDragLane_});
+        if (layout_.laneList.at(lane).maximumOffset() > 0 && lane == scrollbars_.shownLane() && scrollbars_.opacity() > 0)
+            frame->scrollbars.append({scrollThumb(lane), scrollbars_.opacity(), lane == scrollbars_.dragLane()});
     }
     frame->sectionSeparator = layout_.separator.isNull() ? QRect{} : layout_.separator.translated(origin);
     sampleTabDepartures(departing_, mapToGlobal(QPoint()), 1 - presenceProgress_.value(), frame->departures);

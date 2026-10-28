@@ -279,7 +279,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     connect(&attachment_, &QVariantAnimation::valueChanged, this, surfaceFrame);
     connect(&selection_, &QVariantAnimation::valueChanged, this, surfaceFrame);
     connect(&liftElevation_, &QVariantAnimation::valueChanged, this, surfaceFrame);
-    scrollbarHideTimer_.setSingleShot(true); scrollbarHideTimer_.setInterval(700);
+    scrollbarHideTimer_.setSingleShot(true); scrollbarHideTimer_.setInterval(TabScrollbarState::hideDelayMs);
     scrollMotion_.applyValue = [this](qreal value) {
         if (smoothLane_ < 0 || smoothLane_ >= layout_.laneList.size()) return;
         const int lane = smoothLane_;
@@ -293,9 +293,13 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         applyingScrollMotion_ = false;
         wheelController_.observeRowScroll(layout_, lane, rowsState_.expanded(), placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
     };
-    connect(&scrollbarOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); refreshScrollInput(); });
+    scrollbarDriver_.advance = [this](qint64 timestampNs) {
+        const bool changed = scrollbars_.advance(timestampNs);
+        if (!scrollbars_.needsFrame()) scrollbarDriver_.stop();
+        if (changed) { update(); refreshScrollInput(); }
+    };
     connect(&scrollbarHideTimer_, &QTimer::timeout, this, [this] {
-        if (scrollDragLane_ < 0) scrollbarOpacity_.animateTo(0, Motion::Presence, animationsEnabled());
+        if (!scrollbars_.dragging()) showScrollbar(false);
     });
 }
 
@@ -731,7 +735,7 @@ void TabBar::applyColumnPeekAction(const TabColumnPeekAction& action)
 
 void TabBar::setColumnHovered(bool hovered)
 {
-    applyColumnPeekAction(columnPeek_.hover(hovered, peekTimer_.isActive(), scrollDragLane_ >= 0));
+    applyColumnPeekAction(columnPeek_.hover(hovered, peekTimer_.isActive(), scrollbars_.dragging()));
 }
 
 void TabBar::restoreColumnPeek(bool peeked)
@@ -1428,26 +1432,35 @@ bool TabBar::scrollLaneBy(int lane, int delta, bool smooth)
 
 void TabBar::revealScrollbar(int lane)
 {
-    scrollingLane_ = lane;
-    scrollbarOpacity_.animateTo(1, Motion::Presence, animationsEnabled());
-    if (scrollDragLane_ < 0) scrollbarHideTimer_.start();
+    scrollbars_.reveal(lane);
+    showScrollbar(true);
+    if (!scrollbars_.dragging()) scrollbarHideTimer_.start();
     else scrollbarHideTimer_.stop();
     refreshScrollInput();
 }
 
+TabScrollbarMetrics TabBar::scrollbarMetrics() const
+{
+    return {tabOrigin(), metrics_.scrollbar, placement_ == TabBarPlacement::Right};
+}
+
+void TabBar::showScrollbar(bool shown)
+{
+    const auto timestamp = scrollbarDriver_.now(rowWheelClock_.nsecsElapsed());
+    if (!scrollbars_.show(shown, animationsEnabled(), timestamp)) return;
+    if (scrollbars_.needsFrame()) scrollbarDriver_.restart(timestamp, scrollbars_.durationMs());
+    else { scrollbarDriver_.stop(); update(); refreshScrollInput(); }
+}
+
 QRect TabBar::scrollbarHitRect() const
 {
-    if (!isVisible() || scrollbarOpacity_.value() <= 0.05 || scrollingLane_ < 0 || scrollingLane_ >= layout_.laneList.size()) return {};
-    const auto& lane = layout_.laneList.at(scrollingLane_);
-    if (lane.maximumOffset() <= 0) return {};
-    const auto track = scrollTrack(scrollingLane_);
-    return (lane.vertical ? track.adjusted(-2, 0, 2, 0) : track.adjusted(0, -2, 0, 2)).intersected(rect());
+    return scrollbars_.hitRect(layout_, scrollbarMetrics(), rect(), isVisible());
 }
 
 void TabBar::refreshScrollInput()
 {
     const auto hit = scrollbarHitRect();
-    if (hit.isEmpty()) { if (scrollInput_ && scrollDragLane_ < 0) scrollInput_->hide(); return; }
+    if (hit.isEmpty()) { if (scrollInput_ && !scrollbars_.dragging()) scrollInput_->hide(); return; }
     if (!scrollInput_) {
         scrollInput_ = new QWidget(window());
         scrollInput_->setObjectName("TabScrollbarInput"); scrollInput_->setMouseTracking(true);
@@ -1851,29 +1864,9 @@ QRect TabBar::dropPreviewRect() const
     return result;
 }
 
-QRect TabBar::scrollTrack(int laneIndex) const
-{
-    const auto& lane = layout_.laneList.at(laneIndex);
-    const auto viewport = lane.viewport.translated(tabOrigin());
-    const int thickness = metrics_.scrollbar;
-    if (!lane.vertical)
-        return QRect(viewport.left() + lane.frozen, viewport.bottom() - thickness + 1, viewport.width() - lane.frozen, thickness);
-    // Vertical lanes put the bar on the content side.
-    const bool left = placement_ == TabBarPlacement::Right;
-    return QRect(left ? viewport.left() + 1 : viewport.right() - thickness, viewport.top(), thickness, viewport.height());
-}
-
 QRect TabBar::scrollThumb(int laneIndex) const
 {
-    const auto& lane = layout_.laneList.at(laneIndex);
-    if (lane.maximumOffset() <= 0 || lane.extent <= 0) return {};
-    const auto track = scrollTrack(laneIndex);
-    const int length = lane.vertical ? track.height() : track.width();
-    const int visible = lane.vertical ? lane.viewport.height() : lane.viewport.width() - lane.frozen;
-    const int thumb = std::max(16, int(qint64(length) * visible / std::max(1, lane.extent - (lane.vertical ? 0 : lane.frozen))));
-    const int position = int(qint64(length - thumb) * lane.offset / std::max(1, lane.maximumOffset()));
-    return lane.vertical ? QRect(track.left(), track.top() + position, track.width(), thumb)
-                         : QRect(track.left() + position, track.top(), thumb, track.height());
+    return tabScrollbarGeometry(layout_.laneList.at(laneIndex), scrollbarMetrics()).thumb;
 }
 
 TabPaintState TabBar::paintState(int index)
@@ -2064,24 +2057,19 @@ void TabBar::mousePressEvent(QMouseEvent* event)
     }
     if (event->button() != Qt::LeftButton) { event->accept(); return; }
     // Hidden scrollbars do not create invisible drag targets over labels.
-    if (scrollingLane_ >= 0 && scrollingLane_ < layout_.laneList.size() && scrollbarHitRect().contains(point)) {
+    if (scrollbars_.shownLane() >= 0 && scrollbars_.shownLane() < layout_.laneList.size() && scrollbarHitRect().contains(point)) {
         const QPointer<TabBar> self(this);
         event->accept();
         emit scrollInputStarted();
         if (!self) return;
-        const int laneIndex = scrollingLane_;
-        const auto track = scrollTrack(laneIndex);
-        const auto thumb = scrollThumb(laneIndex);
-        const auto& lane = layout_.laneList.at(laneIndex);
-        if (!thumb.contains(point)) {
-            // A press on the track jumps there.
-            const int length = lane.vertical ? track.height() - thumb.height() : track.width() - thumb.width();
-            const int along = lane.vertical ? point.y() - track.top() - thumb.height() / 2 : point.x() - track.left() - thumb.width() / 2;
-            setLaneOffset(laneIndex, int(qint64(std::clamp(along, 0, std::max(1, length))) * lane.maximumOffset() / std::max(1, length)));
-        }
+        const int laneIndex = scrollbars_.shownLane();
+        if (laneIndex < 0 || laneIndex >= layout_.laneList.size()) return;
+        const auto geometry = tabScrollbarGeometry(layout_.laneList.at(laneIndex), scrollbarMetrics());
+        if (const auto offset = geometry.jumpOffset(point)) setLaneOffset(laneIndex, *offset);
+        if (!self || laneIndex >= layout_.laneList.size()) return;
         wheelController_.reset();
-        scrollDragLane_ = laneIndex; scrollDragOrigin_ = layout_.laneList.at(laneIndex).offset; scrollDragStart_ = point;
-        revealScrollbar(scrollDragLane_);
+        scrollbars_.beginDrag(laneIndex, point, layout_.laneList.at(laneIndex).offset);
+        revealScrollbar(laneIndex);
         event->accept(); return;
     }
     const auto hit = pointerHit(point, false);
@@ -2098,13 +2086,8 @@ void TabBar::mouseMoveEvent(QMouseEvent* event)
 {
     const auto point = event->position().toPoint();
     if (columnPeek_.iconsOnly() && rect().contains(point)) setColumnHovered(true);
-    if (scrollDragLane_ >= 0 && scrollDragLane_ < layout_.laneList.size()) {
-        const auto& lane = layout_.laneList.at(scrollDragLane_);
-        const auto track = scrollTrack(scrollDragLane_);
-        const auto thumb = scrollThumb(scrollDragLane_);
-        const int length = std::max(1, lane.vertical ? track.height() - thumb.height() : track.width() - thumb.width());
-        const int moved = lane.vertical ? point.y() - scrollDragStart_.y() : point.x() - scrollDragStart_.x();
-        setLaneOffset(scrollDragLane_, scrollDragOrigin_ + int(qint64(moved) * lane.maximumOffset() / length));
+    if (const auto scroll = scrollbars_.move(layout_, scrollbarMetrics(), point)) {
+        setLaneOffset(scroll->lane, scroll->offset);
         return;
     }
     updateHover(point);
@@ -2119,7 +2102,7 @@ void TabBar::mouseReleaseEvent(QMouseEvent* event)
         applyPointerDecision(pointer_.release(event->button(), {tabAt(point)}, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose)));
         return;
     }
-    if (scrollDragLane_ >= 0) { wheelController_.reset(); scrollDragLane_ = -1; scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
+    if (scrollbars_.endDrag()) { wheelController_.reset(); scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
     const auto hit = pointerHit(point, true);
     const bool repaint = pointer_.pressedFolder() >= 0 || pointer_.pressedAction() >= 0;
     const auto decision = pointer_.release(event->button(), hit, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose));
@@ -2215,10 +2198,10 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == scrollInput_) {
         if (event->type() == QEvent::Enter) {
-            if (scrollDragLane_ < 0) scrollbarHideTimer_.start();
+            if (!scrollbars_.dragging()) scrollbarHideTimer_.start();
             setColumnHovered(true);
         } else if (event->type() == QEvent::Leave) {
-            if (scrollDragLane_ < 0) { scrollbarHideTimer_.start(); reconcileColumnHover(); }
+            if (!scrollbars_.dragging()) { scrollbarHideTimer_.start(); reconcileColumnHover(); }
         } else if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease
                    || event->type() == QEvent::MouseButtonDblClick || event->type() == QEvent::MouseMove) {
             auto* source = static_cast<QMouseEvent*>(event);

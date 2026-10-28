@@ -5,6 +5,7 @@
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
 #include "tab_rows_state.hpp"
+#include "tab_scrollbar_state.hpp"
 #include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
@@ -347,7 +348,8 @@ private:
     [[nodiscard]] int laneAt(QPoint local) const;
     [[nodiscard]] std::optional<int> stickyBoundary() const;
     [[nodiscard]] QRect scrollThumb(int lane) const;
-    [[nodiscard]] QRect scrollTrack(int lane) const;
+    [[nodiscard]] TabScrollbarMetrics scrollbarMetrics() const;
+    void showScrollbar(bool shown);
     void setLaneOffset(int lane, int offset);
     bool scrollLaneBy(int lane, int delta, bool smooth);
     void revealScrollbar(int lane);
@@ -434,9 +436,9 @@ private:
     TabWheelController wheelController_;
     QElapsedTimer rowWheelClock_;
     FrameClock rowsDriver_;
-    ProgressAnimation scrollbarOpacity_{0};
+    TabScrollbarState scrollbars_;
+    FrameClock scrollbarDriver_;
     QTimer scrollbarHideTimer_;
-    int scrollingLane_ = -1;
     QPointer<QWidget> scrollInput_;
     // Drag.
     int dragged_ = -1;
@@ -465,9 +467,6 @@ private:
     // Input.
     TabPointerController pointer_;
     TabHoverController hover_;
-    int scrollDragLane_ = -1;
-    int scrollDragOrigin_ = 0;
-    QPoint scrollDragStart_;
     QPointer<QWidget> trailing_;
     QPointer<QWidget> end_;
     QToolButton* countButton_ = nullptr;

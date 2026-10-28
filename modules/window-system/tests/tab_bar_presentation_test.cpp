@@ -147,7 +147,8 @@ void TabBarPresentationTest::scrollbarDraggingDoesNotSelectTabs()
     QVERIFY(QTest::qWaitForWindowExposed(&root));
     auto* bar = tabs->tabBar();
     QTRY_VERIFY(bar->isOverflowing());
-    QTest::mouseMove(bar, bar->displayTabRect(1).center());
+    // The current strip policy reveals the target on scrolling, not hover.
+    bar->setScrollOffset(std::min(40, bar->maximumScrollOffset()));
     QWidget* input = nullptr;
     QTRY_VERIFY((input = root.findChild<QWidget*>("TabScrollbarInput")) && input->isVisible());
     const auto point = input->rect().center();
