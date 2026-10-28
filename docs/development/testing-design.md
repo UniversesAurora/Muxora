@@ -387,7 +387,7 @@ Qt 事件模拟与离屏渲染用于快速组件检查；真实桌面测试另�
 
 长标题绘制定向基准为可选目标 `window-system-title-benchmark`，负载和输出字段定义在 [基准源码](../../modules/window-system/benchmarks/title_rendering_benchmark.cpp)。它只把真实标签控件绘制到固定大小的离屏图像，不显示窗口、不发输入，也不设置依赖机器的性能阈值。首帧单列，重复绘制均值不包含控件构造和初次尺寸计算；不能据此宣称首次排版开销消失。
 
-分隔条定向基准为可选目标 `window-system-resize-benchmark`，与上面的目标使用相同构建开关。负载和输出字段见 [基准源码](../../modules/window-system/benchmarks/splitter_resize_benchmark.cpp)；用 `--commit <源码版本> --out <报告文件>` 运行。它在隐藏窗口中往返调整两个真实标签组，分别测量简单不透明内容和富文本、顶部和竖向标签栏；输出布局提交、含延迟尺寸事件的完整绘制及两者总计的分位数，并单列预热后的阴影图生成数。它不显示窗口、不发送输入、不注册 CTest，也不设置机器相关阈值；离屏完整绘制耗时不能当作桌面帧率。
+分隔条定向基准为可选目标 `window-system-resize-benchmark`，与上面的目标使用相同构建开关。负载和输出字段见 [基准源码](../../modules/window-system/benchmarks/splitter_resize_benchmark.cpp)；用 `--commit <源码版本> --out <报告文件>` 运行。`--driver set-sizes` 只调整尺寸，`--driver handle-command` 在尺寸调整后触发产品实际连接的手柄通知，验证比例确实写入模型，并单列命令提交耗时；它不模拟原生鼠标。它在隐藏窗口中往返调整两个真实标签组，分别测量简单不透明内容和富文本、顶部和竖向标签栏；输出布局提交、含延迟尺寸事件的完整绘制及两者总计的分位数，并单列预热后的阴影图生成数。它不显示窗口、不发送输入、不注册 CTest，也不设置机器相关阈值；离屏完整绘制耗时不能当作桌面帧率。
 
 Quick 图元基准 `window-system-quick-frame-benchmark` 还需要开启 Quick 构建目标。`--scene joined-fills` 测接合表面的填充，`--scene body-resize` 测两个卡片主体的填充和保留阴影；其他参数与字段见 [源码](../../modules/window-system/benchmarks/quick_frame_benchmark.cpp)。它显示真实窗口，须经桌面隔离并保持屏幕工作；分别记录 GUI 准备、渲染提交墙钟、提交间隔和资源更新。它没有宿主内容、文字或原生输入，不是完整应用的帧率验收。
 

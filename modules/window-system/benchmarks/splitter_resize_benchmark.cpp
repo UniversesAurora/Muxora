@@ -34,7 +34,7 @@ QWidget* content(bool text)
         "<p>窗口内容与标签一起调整。<b>Resize</b> and inspect the layout cost.</p>").repeated(5));
     return editor;
 }
-QJsonObject measure(bool text, TabBarPlacement placement, int iterations)
+QJsonObject measure(bool text, TabBarPlacement placement, int iterations, bool handleCommand)
 {
     WindowManager manager;
     auto policy = manager.tabAppearance(); policy.centralPlacement = placement; manager.setTabAppearance(policy);
@@ -49,7 +49,7 @@ QJsonObject measure(bool text, TabBarPlacement placement, int iterations)
     const qreal ratio = root->devicePixelRatioF();
     QImage canvas(QSize(qRound(root->width() * ratio), qRound(root->height() * ratio)), QImage::Format_RGB32);
     canvas.setDevicePixelRatio(ratio);
-    QList<double> layout, paint, total;
+    QList<double> layout, paint, total, commits;
     ElevationRenderer shadows;
     quint64 warmImages = 0;
     for (int frame = -30; frame < iterations; ++frame) {
@@ -58,17 +58,34 @@ QJsonObject measure(bool text, TabBarPlacement placement, int iterations)
         const int left = 400 + 10 * (step < 60 ? step : 120 - step);
         QElapsedTimer timer; timer.start();
         splitter->setSizes({left, 1600 - left});
+        double commitMs = 0;
+        if (handleCommand) {
+            const auto sizes = splitter->sizes();
+            const double expected = double(sizes.first()) / (sizes.first() + sizes.last());
+            QElapsedTimer commit; commit.start();
+            // Exercise the real product connection after the geometry change,
+            // as QSplitter::moveSplitter() does. No synthetic native input.
+            Q_EMIT splitter->splitterMoved(sizes.first(), 1);
+            commitMs = commit.nsecsElapsed() / 1.e6;
+            if (std::abs(manager.model().window(window)->central->ratio - expected) > 1.e-12)
+                qFatal("Handle notification did not commit the displayed ratio");
+        }
         QCoreApplication::processEvents();
         const double layoutMs = timer.nsecsElapsed() / 1.e6;
         root->render(&canvas);
         const double totalMs = timer.nsecsElapsed() / 1.e6;
         if (root->isVisible()) qFatal("Benchmark must remain hidden");
-        if (frame >= 0) { layout.append(layoutMs); paint.append(totalMs - layoutMs); total.append(totalMs); }
+        if (frame >= 0) {
+            layout.append(layoutMs); paint.append(totalMs - layoutMs); total.append(totalMs);
+            if (handleCommand) commits.append(commitMs);
+        }
     }
-    return {{"content", text ? "rich-text" : "opaque"}, {"placement", placement == TabBarPlacement::Top ? "top" : "left"},
+    QJsonObject result{{"content", text ? "rich-text" : "opaque"}, {"placement", placement == TabBarPlacement::Top ? "top" : "left"},
         {"dpr", ratio}, {"logicalSize", QJsonArray{root->width(), root->height()}},
         {"layout", summary(layout)}, {"paintIncludingDeferredResize", summary(paint)}, {"total", summary(total)},
         {"warmShadowImages", qint64(shadows.cacheStats().generatedImages - warmImages)}};
+    if (handleCommand) result.insert("ratioCommit", summary(commits));
+    return result;
 }
 }
 int main(int argc, char** argv)
@@ -78,15 +95,18 @@ int main(int argc, char** argv)
     parser.addOption({"commit", "Measured source revision", "revision"});
     parser.addOption({"out", "Output JSON path", "file"});
     parser.addOption({"iterations", "Measured frames per case", "count", "180"});
+    parser.addOption({"driver", "Resize path: set-sizes or handle-command", "name", "set-sizes"});
     parser.process(app);
     bool ok = false; const int iterations = parser.value("iterations").toInt(&ok);
     if (!ok || iterations < 1 || parser.value("commit").isEmpty()) return 2;
+    const auto driver = parser.value("driver");
+    if (driver != "set-sizes" && driver != "handle-command") return 2;
     QJsonArray cases;
     for (const bool text : {false, true})
         for (const auto placement : {TabBarPlacement::Top, TabBarPlacement::Left})
-            cases.append(measure(text, placement, iterations));
+            cases.append(measure(text, placement, iterations, driver == "handle-command"));
     const auto json = QJsonDocument(QJsonObject{{"commit", parser.value("commit")}, {"qt", qVersion()},
-        {"scope", "hidden widgets; full render, not desktop frame timing"}, {"cases", cases}}).toJson();
+        {"driver", driver}, {"scope", "hidden widgets; full render, not desktop frame timing or native input"}, {"cases", cases}}).toJson();
     if (parser.value("out").isEmpty()) std::fwrite(json.constData(), 1, json.size(), stdout);
     else { QSaveFile file(parser.value("out")); if (!file.open(QIODevice::WriteOnly) || file.write(json) != json.size() || !file.commit()) return 2; }
     return 0;
