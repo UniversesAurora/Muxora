@@ -23,6 +23,15 @@ add_test(NAME window-system.label-presence COMMAND window-system-label-presence-
     -o ${CMAKE_CURRENT_BINARY_DIR}/label-presence-results.txt,txt)
 set_tests_properties(window-system.label-presence PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-reorder-test tab_reorder_test.cpp)
+target_link_libraries(window-system-tab-reorder-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_compile_features(window-system-tab-reorder-test PRIVATE cxx_std_20)
+target_include_directories(window-system-tab-reorder-test PRIVATE ../src)
+set_target_properties(window-system-tab-reorder-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-reorder COMMAND window-system-tab-reorder-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-reorder-results.txt,txt)
+set_tests_properties(window-system.tab-reorder PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-tab-wheel-controller-test tab_wheel_controller_test.cpp)
 target_link_libraries(window-system-tab-wheel-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_compile_features(window-system-tab-wheel-controller-test PRIVATE cxx_std_20)
@@ -110,6 +119,8 @@ set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy 
 list(APPEND window_system_widget_suites interface-appearance)
 list(APPEND window_system_widget_suites tab-label-presentation)
 list(APPEND window_system_widget_suites tab-carrier-presentation tab-carrier-source)
+list(APPEND window_system_widget_suites tab-reorder-wiring)
+list(APPEND window_system_widget_suites edge-reorder)
 list(APPEND window_system_desktop_suites integer-slider)
 list(APPEND window_system_desktop_suites input-method-native)
 if(WIN32)

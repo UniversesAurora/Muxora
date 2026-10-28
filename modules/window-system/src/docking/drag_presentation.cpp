@@ -30,11 +30,15 @@ DragLabelPreview::DragLabelPreview(QPixmap label, DragAnchor anchor)
     setAttribute(Qt::WA_ShowWithoutActivating);
     resize(label_.deviceIndependentSize().toSize() + QSize(12, 12));
 }
-void DragLabelPreview::follow(QPoint global)
+QRect DragLabelPreview::labelRectAt(QPoint global) const
 {
     const auto size = label_.deviceIndependentSize().toSize();
     const auto grab = anchor_.forSize(size, !anchor_.sourceSize.isValid());
-    move(global - QPoint(4, 4) - grab);
+    return {global - grab, size};
+}
+void DragLabelPreview::follow(QPoint global)
+{
+    move(labelRectAt(global).topLeft() - QPoint(4, 4));
     if (!isVisible()) show();
     raise();
 }
@@ -88,6 +92,7 @@ void EdgeDragPresentation::configureLabel(std::optional<TabColorPreset> preset,Q
 }
 QPoint EdgeDragPresentation::labelAnchor() const
 {
-    return label_->geometry().center();
+    return labelRect().center();
 }
+QRect EdgeDragPresentation::labelRect() const { return label_->geometry(); }
 } // namespace window_system

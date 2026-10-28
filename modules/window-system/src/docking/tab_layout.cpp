@@ -437,6 +437,9 @@ TabLayout layoutTabs(const TabLayoutInput& original)
     const int count = int(input.extents.size());
     layout.tabs.resize(count);
     layout.lanes.fill(-1, count);
+    layout.order.reserve(count);
+    for (int index = 0; index < count; ++index)
+        if (!removedTab(input, index)) layout.order.append(index);
     layout.headers.resize(input.folders.size());
     layout.headerLanes.fill(-1, input.folders.size());
     layout.sticky = std::clamp(input.stickyCount, 0, count);
@@ -500,13 +503,126 @@ TabInsertion insertionWithinFolders(const TabLayoutInput& input, const TabLayout
 }
 } // namespace
 
-TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach, std::optional<bool> stickySection)
+namespace {
+struct ReorderPosition {
+    int index;
+    int along;
+};
+
+QRect reorderNeighborRect(const TabLayoutInput& input, const TabLayout& layout, int index)
 {
-    input.insertion = -1; input.block.clear(); input.insertionFolder = -1;
-    const auto layout = layoutTabs(input);
-    const int count = int(input.extents.size());
-    QVector<int> remaining;
-    for (int index = 0; index < count; ++index) if (!removedTab(input, index)) remaining.append(index);
+    if ((index < input.stickyCount) != input.insertionSticky) return {};
+    int lane = layout.lanes.at(index);
+    QRect rect;
+    if (lane >= 0) rect = layout.tabs.at(index);
+    else {
+        const int folder = folderOf(input, index);
+        if (folder < 0) return QRect{};
+        rect = layout.headers.at(folder); lane = layout.headerLanes.at(folder);
+    }
+    if (lane < 0) return QRect{};
+    const auto& info = layout.laneList.at(lane);
+    auto viewport = info.viewport;
+    if (info.frozen && index >= input.stickyCount) viewport.setLeft(viewport.left() + info.frozen);
+    // Keep the real center, rather than moving the threshold to the
+    // center of a clipped label. Scrolling must expose that threshold
+    // before a partly visible carrier can displace it.
+    return viewport.contains(rect.center()) ? rect : QRect{};
+}
+
+std::optional<ReorderPosition> reorderAcrossRows(const TabLayoutInput& input, const TabLayout& layout,
+                                                const QVector<int>& remaining, QRect carried, QRect gap, QPoint motion)
+{
+    const bool vertical = input.orientation == TabLayoutInput::Orientation::Vertical;
+    const bool tiles = vertical && input.stickyTiles && input.insertionSticky;
+    const int accepted = input.insertion;
+    const auto rectOf = [&](int position) { return reorderNeighborRect(input, layout, remaining.at(position)); };
+    const bool rows = tiles || (!vertical && (input.multiline || input.stickyMultiline));
+    if (rows) {
+        std::optional<int> previousRow, nextRow;
+        for (int position = 0; position < remaining.size(); ++position) {
+            const auto rect = rectOf(position);
+            if (rect.isEmpty()) continue;
+            if (rect.bottom() < gap.top()) previousRow = std::max(previousRow.value_or(rect.center().y()), rect.center().y());
+            if (rect.top() > gap.bottom()) nextRow = std::min(nextRow.value_or(rect.center().y()), rect.center().y());
+        }
+        const int dy = motion.y();
+        const bool forward = dy > 0 && (nextRow ? carried.bottom() > *nextRow : carried.top() > gap.center().y());
+        const bool backward = dy < 0 && (previousRow ? carried.top() < *previousRow : carried.bottom() < gap.center().y());
+        if (forward || backward) {
+            // Clear the intervening rows first. On the row actually covered
+            // by the block, its horizontal edge must also pass each center.
+            // Center-seeding here can repack the gap back onto the old row.
+            int position = accepted;
+            const auto crossed = [&](QRect rect) {
+                if (forward) return carried.bottom() > rect.center().y()
+                    && (rect.center().y() < carried.top() || carried.right() > rect.center().x());
+                return carried.top() < rect.center().y()
+                    && (rect.center().y() > carried.bottom() || carried.left() < rect.center().x());
+            };
+            if (forward) while (position < remaining.size()) {
+                const auto rect = rectOf(position);
+                if (rect.isEmpty() || !crossed(rect)) break;
+                ++position;
+            }
+            else while (position > 0) {
+                const auto rect = rectOf(position - 1);
+                if (rect.isEmpty() || !crossed(rect)) break;
+                --position;
+            }
+            return ReorderPosition{position, forward ? carried.right() : carried.left()};
+        }
+    }
+    return {};
+}
+
+ReorderPosition reorderPosition(const TabLayoutInput& input, const TabLayout& layout,
+                                const QVector<int>& remaining, QRect carried, QPoint probe, std::optional<QPoint> previousOffset)
+{
+    Q_ASSERT(input.insertion >= 0 && input.insertion <= remaining.size());
+    const int accepted = input.insertion;
+    const bool vertical = input.orientation == TabLayoutInput::Orientation::Vertical;
+    const bool tiles = vertical && input.stickyTiles && input.insertionSticky;
+    QRect gap;
+    for (const auto& cell : layout.gap) gap |= cell;
+    const auto rectOf = [&](int position) { return reorderNeighborRect(input, layout, remaining.at(position)); };
+    const bool rows = tiles || (!vertical && (input.multiline || input.stickyMultiline));
+    const auto motion = carried.center() - gap.center() - previousOffset.value_or(QPoint());
+    if (const auto crossing = reorderAcrossRows(input, layout, remaining, carried, gap, motion)) return *crossing;
+    const bool alongY = vertical && !tiles;
+    const auto middle = [alongY](QRect rect) { return alongY ? rect.center().y() : rect.center().x(); };
+    const auto sameRow = [&](QRect rect) {
+        return alongY || (!rect.isEmpty() && rect.top() >= gap.top() && rect.bottom() <= gap.bottom()
+            && (!rows || carried.top() < rect.center().y() && carried.bottom() > rect.center().y()));
+    };
+    const int delta = alongY ? motion.y() : motion.x();
+    int position = accepted;
+    if (delta > 0) {
+        const int edge = alongY ? carried.bottom() : carried.right();
+        while (position < remaining.size()) {
+            const auto rect = rectOf(position);
+            if (rect.isEmpty() || !sameRow(rect) || edge <= middle(rect)) break;
+            ++position;
+        }
+        return {position, edge};
+    }
+    if (delta < 0) {
+        const int edge = alongY ? carried.top() : carried.left();
+        while (position > 0) {
+            const auto rect = rectOf(position - 1);
+            if (rect.isEmpty() || !sameRow(rect) || edge >= middle(rect)) break;
+            --position;
+        }
+        return {position, edge};
+    }
+    return {position, vertical ? probe.y() : probe.x()};
+}
+
+TabInsertion insertionForLayout(const TabLayoutInput& input, const TabLayout& layout, QPoint probe,
+                                int stickyReach, std::optional<bool> stickySection, const QRect* carried,
+                                std::optional<QPoint> previousOffset = {})
+{
+    const auto& remaining = layout.order;
     // A tab hidden in a collapsed folder stands where the folder's header is.
     const auto rectOf = [&](int index) { return insertionRect(input, layout, index); };
     const auto laneOf = [&](int index) {
@@ -534,33 +650,36 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach,
     // the start of the others.
     const bool folderBlock = input.removedFolder >= 0 || input.carried == TabLayoutInput::Carried::Folder;
     if (folderBlock && section) section = false;
-    // The tabs on the probe's row (or all of a column section).
-    QVector<int> candidates;
-    for (const int index : remaining) {
-        if (section && (index < input.stickyCount) != *section) continue;
-        if (laneOf(index) < 0) continue;
-        candidates.append(index);
-    }
+    // Select a row without constructing another candidate list. Keeping
+    // positions in the remaining order also avoids a nested contains scan
+    // when the chosen row or section starts late in a large strip.
+    const auto inSection = [&](int index) {
+        return (!section || (index < input.stickyCount) == *section) && laneOf(index) >= 0;
+    };
+    std::optional<int> candidateRow;
     if (!vertical && (input.multiline || (input.separateStickyRow && input.stickyMultiline))) {
         int best = std::numeric_limits<int>::max(), rowTop = 0;
-        for (const int index : candidates) {
+        for (const int index : remaining) if (inSection(index)) {
             const auto rect = rectOf(index);
             const int distance = probe.y() < rect.top() ? rect.top() - probe.y() : probe.y() > rect.bottom() ? probe.y() - rect.bottom() : 0;
             if (distance < best) { best = distance; rowTop = rect.top(); }
         }
-        QVector<int> row;
-        for (const int index : candidates) if (rectOf(index).top() == rowTop) row.append(index);
-        candidates = row;
+        candidateRow = rowTop;
         // The trailing controls (or the carried gap) can occupy a row after
         // the final label. That whole empty row means after the last label,
         // even when the pointer is near its left edge.
-        if (!candidates.isEmpty() && probe.y() >= rowTop + input.rowHeight)
+        if (best != std::numeric_limits<int>::max() && probe.y() >= rowTop + input.rowHeight)
             along = std::numeric_limits<int>::max();
     }
+    const auto candidate = [&](int index) {
+        return inSection(index) && (!candidateRow || rectOf(index).top() == *candidateRow);
+    };
     if (vertical && input.stickyTiles && section && *section) {
+        if (carried && input.insertionSticky)
+            return {reorderPosition(input, layout, remaining, *carried, probe, previousOffset).index, true};
         // Tiles: rows first, then the probe's position along its row.
         TabInsertion result{0, true};
-        for (const int index : candidates) {
+        for (const int index : remaining) if (candidate(index)) {
             const auto rect = layout.tabs.at(index);
             if (rect.bottom() < probe.y() - input.rowGap / 2 || (rect.top() <= probe.y() && rect.center().x() < probe.x()))
                 ++result.index;
@@ -571,15 +690,15 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach,
     // remaining order, plus the candidates whose center lies before the probe.
     int position = 0;
     int firstPosition = -1;
-    for (int index = 0; index < remaining.size(); ++index) if (candidates.contains(remaining.at(index))) { firstPosition = index; break; }
+    for (int index = 0; index < remaining.size(); ++index) if (candidate(remaining.at(index))) { firstPosition = index; break; }
     if (firstPosition < 0) {
         // An empty section: its start.
         position = section && !*section ? stickyRemaining : 0;
     } else {
         position = firstPosition;
-        const auto& lane = layout.laneList.value(laneOf(candidates.first()));
+        const auto& lane = layout.laneList.value(laneOf(remaining.at(firstPosition)));
         const bool overFrozen = lane.frozen && along < lane.viewport.left() + lane.frozen;
-        for (const int index : candidates) {
+        for (const int index : remaining) if (candidate(index)) {
             // Over a frozen sticky run only the sticky tabs count; past it
             // only the tabs scrolling under it do.
             if (lane.frozen && (index < input.stickyCount) != overFrozen) { if (index < input.stickyCount) ++position; continue; }
@@ -608,8 +727,41 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach,
         }
     }
     if (folderBlock && result.sticky) { result.sticky = false; result.index = std::max(result.index, stickyRemaining); }
+    if (carried && result.sticky == input.insertionSticky) {
+        const auto decision = reorderPosition(input, layout, remaining, *carried, probe, previousOffset);
+        bool overHeader = false;
+        for (const auto& header : layout.headers) overHeader = overHeader || header.contains(probe);
+        if (decision.index == input.insertion && !overHeader)
+            return {input.insertion, input.insertionSticky, input.insertionFolder};
+        result.index = decision.index;
+        along = decision.along;
+    }
     if (result.sticky) return result;
     return insertionWithinFolders(input, layout, remaining, probe, along, result);
+}
+
+} // namespace
+
+TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach, std::optional<bool> stickySection)
+{
+    input.insertion = -1; input.block.clear(); input.insertionFolder = -1;
+    const auto layout = layoutTabs(input);
+    return insertionForLayout(input, layout, probe, stickyReach, stickySection, nullptr);
+}
+
+TabInsertion tabReorderAt(const TabLayoutInput& input, const TabLayout& acceptedLayout,
+                          QRect carriedRect, QPoint rowProbe, int stickyReach, std::optional<bool> stickySection,
+                          std::optional<QPoint> previousOffset)
+{
+    if (input.carried == TabLayoutInput::Carried::Folder || input.removedFolder >= 0 || input.block.size() != 1
+        || carriedRect.isEmpty() || input.insertion < 0 || acceptedLayout.gap.isEmpty())
+        return tabInsertionAt(input, rowProbe, stickyReach, stickySection);
+    const bool vertical = input.orientation == TabLayoutInput::Orientation::Vertical;
+    QPoint probe = rowProbe;
+    if (vertical) probe.setY(carriedRect.center().y());
+    else probe.setX(carriedRect.center().x());
+    if (vertical && input.stickyTiles && input.insertionSticky) probe.setX(carriedRect.center().x());
+    return insertionForLayout(input, acceptedLayout, probe, stickyReach, stickySection, &carriedRect, previousOffset);
 }
 
 int TabLayoutLane::rowTopAt(int coordinate, int pitch) const

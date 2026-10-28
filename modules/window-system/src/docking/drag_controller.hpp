@@ -68,6 +68,7 @@ private:
     void completeLayoutTransaction();
     [[nodiscard]] bool belongsToDropWindow(QObject* object) const;
     DropTarget hit(QPoint global);
+    [[nodiscard]] QRect carriedEdgeRect(QPoint global, Edge edge) const;
     [[nodiscard]] QVector<CarriedLabel> carriedLabels() const;
     [[nodiscard]] TabLayoutInput::Carried carriedKind() const;
     WindowId candidateAt(QPoint global) const;

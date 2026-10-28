@@ -485,6 +485,14 @@ WindowId DragController::candidateAt(QPoint global) const
 #endif
     return {};
 }
+QRect DragController::carriedEdgeRect(QPoint global, Edge edge) const
+{
+    if (labelOnly_ && labelPreview_) return labelPreview_->labelRectAt(global);
+    const auto* moving = dynamic_cast<WorkspaceWindow*>(capture_.data());
+    const auto expected = WorkspaceWindow::DragPresentation(int(WorkspaceWindow::DragPresentation::Left) + int(edge));
+    return moving && moving->dragPresentation() == expected ? moving->edgeDragLabelRectAt(global) : QRect{};
+}
+
 DropTarget DragController::hit(QPoint global)
 {
     DropTarget result; result.window = candidateAt(global);
@@ -515,7 +523,7 @@ DropTarget DragController::hit(QPoint global)
     for (auto it = edgeBars.cbegin(); it != edgeBars.cend(); ++it) if (!retainedCross && it.value().contains(global)) {
         result.accepted = true; result.toEdge = true; result.edge = it.key(); result.pinned = false;
         result.toEdgeBar = true;
-        result.insertionIndex = surface->edgeTabInsertionIndex(it.key(), global);
+        result.insertionIndex = surface->edgeTabInsertionIndex(it.key(), global, carriedEdgeRect(global, it.key()));
         break;
     }
     // A visible tab strip is an insertion target. Content bodies and invisible
@@ -736,7 +744,7 @@ bool DragController::updateSourceStrip(QPoint global)
     target_ = {}; target_.window = sourceWindow_; target_.group = sourceGroup_;
     target_.accepted = true; target_.toEdge = sourceIsEdge_; target_.toEdgeBar = sourceIsEdge_;
     target_.edge = sourceEdge_;
-    target_.insertionIndex = sourceIsEdge_ ? surface->edgeTabInsertionIndex(sourceEdge_, global)
+    target_.insertionIndex = sourceIsEdge_ ? surface->edgeTabInsertionIndex(sourceEdge_, global, carriedEdgeRect(global, sourceEdge_))
         : surface->tabInsertionIndex(sourceGroup_, global, carriedKind());
     const int extent = surface->dragLabelExtent(tab_, sourceIsEdge_);
     if (sourceIsEdge_) surface->setEdgeInsertionPreview(sourceEdge_, target_.insertionIndex, extent);

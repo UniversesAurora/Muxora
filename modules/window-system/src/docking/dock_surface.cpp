@@ -1187,10 +1187,10 @@ void DockSurface::setDraggedTab(TabId tab)
     for (const auto& widget : edgeBars_)
         if (auto* strip = dynamic_cast<EdgeStrip*>(widget.data())) strip->setDraggedTab(tab);
 }
-int DockSurface::edgeTabInsertionIndex(Edge edge, QPoint point) const
+int DockSurface::edgeTabInsertionIndex(Edge edge, QPoint point, QRect carriedGlobal) const
 {
     const auto* bar = dynamic_cast<EdgeStrip*>(edgeBars_.value(edge).data());
-    return bar ? bar->insertionIndex(point) : -1;
+    return bar ? bar->insertionIndex(point, carriedGlobal) : -1;
 }
 QRect DockSurface::edgeTabInsertionRect(Edge edge, int index) const
 {

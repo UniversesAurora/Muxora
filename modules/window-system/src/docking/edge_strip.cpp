@@ -224,9 +224,19 @@ void EdgeStrip::scrollByWheel(QPoint delta, bool smooth)
     scrollMotion_.scrollBy(-distance, bar->value(), bar->minimum(), bar->maximum());
 }
 
-int EdgeStrip::insertionIndex(QPoint global) const
+int EdgeStrip::insertionIndex(QPoint global, QRect carriedGlobal) const
 {
-    if (!viewportRectGlobal().contains(global)) return -1;
+    const auto viewport = viewportRectGlobal();
+    if (!viewport.contains(global)) return -1;
+    if (previewIndex_ >= 0 && !carriedGlobal.isEmpty()) {
+        if (!reorderLayoutValid_) rebuildReorderLayout();
+        if (!reorderLayout_.gap.isEmpty()) {
+            const auto visible = carriedGlobal.intersected(viewport);
+            if (visible.isEmpty()) return reorderInput_.insertion;
+            const auto origin = track_->mapToGlobal(QPoint());
+            return tabReorderAt(reorderInput_, reorderLayout_, visible.translated(-origin), global - origin).index;
+        }
+    }
     // A gap captures its own index before midpoint testing, so the shifted
     // neighbour cannot make a stationary cursor alternate between two slots.
     if (previewIndex_ >= 0 && insertionPreviewRect().contains(global)) return previewIndex_;
@@ -237,6 +247,40 @@ int EdgeStrip::insertionIndex(QPoint global) const
         ++index;
     }
     return index;
+}
+
+void EdgeStrip::rebuildReorderLayout() const
+{
+    reorderInput_ = {}; reorderLayout_ = {};
+    if (previewIndex_ < 0) { reorderLayoutValid_ = true; return; }
+    reorderInput_.orientation = vertical_ ? TabLayoutInput::Orientation::Vertical : TabLayoutInput::Orientation::Horizontal;
+    reorderInput_.width = track_->width(); reorderInput_.height = track_->height();
+    reorderInput_.rowHeight = vertical_ ? track_->width() : track_->height();
+    reorderInput_.rowGap = uiPixels(spacing); reorderInput_.insertion = -1;
+    int beforeGap = 0;
+    for (int item = 0; item < trackLayout_->count(); ++item) {
+        const auto* widget = trackLayout_->itemAt(item)->widget();
+        if (widget == gap_) break;
+        if (widget && widget != draggedButton_) ++beforeGap;
+    }
+    reorderInput_.extents.reserve(buttons_.size());
+    reorderLayout_.tabs.reserve(buttons_.size()); reorderLayout_.lanes.reserve(buttons_.size());
+    reorderLayout_.order.reserve(buttons_.size());
+    for (const auto& button : buttons_) if (button && button != draggedButton_) {
+        const auto rect = button->geometry();
+        reorderInput_.extents.append(vertical_ ? rect.height() : rect.width());
+        reorderLayout_.order.append(int(reorderLayout_.tabs.size()));
+        reorderLayout_.tabs.append(rect); reorderLayout_.lanes.append(0);
+    }
+    reorderLayout_.size = track_->size();
+    TabLayoutLane lane;
+    lane.viewport = track_->rect(); lane.extent = vertical_ ? track_->height() : track_->width(); lane.vertical = vertical_;
+    reorderLayout_.laneList.append(lane);
+    if (previewIndex_ >= 0 && !gap_->isHidden() && !gap_->geometry().isEmpty()) {
+        reorderInput_.insertion = beforeGap; reorderInput_.block = {previewExtent_};
+        reorderLayout_.gap.append(gap_->geometry()); reorderLayout_.gapLane = 0;
+    }
+    reorderLayoutValid_ = true;
 }
 
 QRect EdgeStrip::insertionMarkerRect(int index) const
@@ -321,6 +365,7 @@ void EdgeStrip::layoutTrack()
     const int extent = int(std::clamp<qint64>(std::max<qint64>(total, available), 1, QWIDGETSIZE_MAX));
     track_->resize(vertical_ ? QSize(thickness, extent) : QSize(extent, thickness));
     trackLayout_->activate();
+    rebuildReorderLayout();
     updateScrollBarGeometry(); synchronizeScrollBar();
 }
 
@@ -352,6 +397,7 @@ void EdgeStrip::updateScrollBarVisibility()
 }
 void EdgeStrip::queueTrackLayout()
 {
+    reorderLayoutValid_ = false;
     if (trackLayoutQueued_) return;
     trackLayoutQueued_ = true;
     QTimer::singleShot(0, this, [this] {
@@ -396,6 +442,8 @@ void EdgeStrip::setDragHover(QPoint global)
 
 bool EdgeStrip::eventFilter(QObject* watched, QEvent* event)
 {
+    if (!arranging_ && watched != track_ && (event->type() == QEvent::Move || event->type() == QEvent::Resize))
+        reorderLayoutValid_ = false;
     if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) {
         queueTrackLayout();
     } else if (watched == scroll_->viewport() && event->type() == QEvent::Resize) {

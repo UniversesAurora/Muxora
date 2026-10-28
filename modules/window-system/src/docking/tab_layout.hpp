@@ -116,6 +116,9 @@ struct TabLayout {
     // and its lane (-1 then).
     QVector<QRect> tabs;
     QVector<int> lanes;
+    // Remaining order, including collapsed-away labels, after the carried
+    // tab/folder leaves. Hit testing borrows it without per-event allocation.
+    QVector<int> order;
     QVector<QRect> gap;
     int gapLane = -1;
     QVector<TabLayoutLane> laneList;
@@ -171,5 +174,18 @@ struct TabInsertion {
 // center, so removing the last tile of a row cannot move that boundary.
 [[nodiscard]] TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach = 0,
                                          std::optional<bool> stickySection = {});
+
+// Reordering reads the accepted gap layout, not animated neighbor positions
+// or a layout compacted after removing that gap. The carried rectangle is
+// the actual label/block; rowProbe retains pointer-based row/section choice.
+// With no current gap/rectangle this uses the ordinary initial classifier.
+// previousOffset is the label center relative to the accepted gap at the
+// last displayed input; it distinguishes motion from an off-center entry.
+// Multi-label windows and folder blocks keep that classifier: a multi-row
+// block's bounds do not identify its grabbed label or its empty cells.
+[[nodiscard]] TabInsertion tabReorderAt(const TabLayoutInput& input, const TabLayout& acceptedLayout,
+                                       QRect carriedRect, QPoint rowProbe, int stickyReach = 0,
+                                       std::optional<bool> stickySection = {},
+                                       std::optional<QPoint> previousOffset = {});
 
 } // namespace window_system

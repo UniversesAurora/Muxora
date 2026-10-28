@@ -2,6 +2,7 @@
 #pragma once
 
 #include "style/smooth_scroll.hpp"
+#include "tab_layout.hpp"
 
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
@@ -33,7 +34,7 @@ public:
     [[nodiscard]] QList<QAbstractButton*> buttons() const;
     void setTailWidget(QWidget* widget);
     [[nodiscard]] QRect viewportRectGlobal() const;
-    [[nodiscard]] int insertionIndex(QPoint global) const;
+    [[nodiscard]] int insertionIndex(QPoint global, QRect carriedGlobal = {}) const;
     [[nodiscard]] QRect insertionMarkerRect(int index) const;
     void setInsertionPreview(int index, int extent);
     void setDraggedTab(TabId tab);
@@ -70,6 +71,7 @@ private:
     void queueHoverGeometryChanged();
     void observe(QWidget* widget);
     void applyPendingScrollOffset();
+    void rebuildReorderLayout() const;
 
     bool vertical_;
     Theme theme_;
@@ -92,6 +94,11 @@ private:
     SmoothScrollAnimation scrollMotion_;
     bool applyingScrollMotion_ = false;
     std::optional<int> pendingScrollOffset_;
+    // Coordinates belong to track_, so scrolling only changes the mapping
+    // of the pointer/visible carrier and never remeasures these buttons.
+    mutable TabLayoutInput reorderInput_;
+    mutable TabLayout reorderLayout_;
+    mutable bool reorderLayoutValid_ = false;
 };
 
 } // namespace window_system

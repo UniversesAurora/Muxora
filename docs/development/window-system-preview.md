@@ -76,6 +76,8 @@ pwsh ./tools/tests/quiet-desktop.ps1 -Elevate pwsh ./tools/verify.ps1
 
 ## 当前可试用的功能
 
+单标签拖动的换位阈值已统一，横竖、多行、紧凑置顶与收纳条按同一边缘规则让位，见 [拖动设计](../design/tab-strip-design.md#61-在标签栏内拖动)。
+
 右侧竖向标签提起时保持静置标签的镜像顺序和图标轨道；具体规则见 [标签栏设计](../design/tab-strip-design.md#4-竖向标签栏)。
 
 设置页“界面”和“视图 → 界面”可分别调整字体、字号及全界面缩放，立即作用于已有与新建窗口；字体可填写有顺序的回退列表，行为见 [设置设计](../design/settings-and-commands-design.md#33-界面字体与缩放)。
@@ -180,6 +182,8 @@ Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持�
 布局状态默认位于 `QStandardPaths::StateLocation` 下的 `window-preview/window-layout.json`。程序自动合并短时间内的布局变化后保存；占位编辑器中的文字不会保存。通过命令面板选择“恢复初始工作区布局”，或启动 `muxora.exe --fresh`，可从初始布局重新试用；`--state-dir <path>` 可指定独立状态目录。
 
 ## 最近一次验证
+
+标签边缘换位及原地松手已修正，相关隐藏检查通过；最新桌面结果、首次失败与分类成本对照见 [记录](verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28)。已完成 Release 构建，固定预览待覆盖。
 
 提起标签的阴影已改为在窗口的局部覆盖层绘制，贴边时不再受窄面板遮罩限制；相关定向检查通过，固定预览待本批其余修正完成后刷新，见 [记录](verification-log/2026-10.md#提起阴影跨越条带裁切边界2026-10-27)。
 

@@ -15,6 +15,7 @@ namespace window_system {
 class DragLabelPreview final : public QWidget {
 public:
     explicit DragLabelPreview(QPixmap label, DragAnchor anchor = {});
+    [[nodiscard]] QRect labelRectAt(QPoint global) const;
     void follow(QPoint global);
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -29,6 +30,7 @@ public:
     EdgeDragPresentation(QString title, Edge edge, const Theme& theme, QWidget* content, QWidget* parent);
     [[nodiscard]] QRegion visibleRegion() const;
     [[nodiscard]] QPoint labelAnchor() const;
+    [[nodiscard]] QRect labelRect() const;
     void configureLabel(std::optional<TabColorPreset> preset, QIcon icon, int number,
                         const TabAppearance& appearance = {});
 private:

@@ -1094,15 +1094,6 @@ int GroupTabs::insertionIndex(QPoint global, TabLayoutInput::Carried carried) co
 }
 void GroupTabs::updateDragProbe(QPoint global) const {
     dragProbe_ = bar_->mapFromGlobal(global);
-    if (lifting_) if (const auto lifted = bar_->liftedRect(); !lifted.isEmpty()) {
-        // The label's center chooses its slot along the strip, but the
-        // pointer chooses the row. The painted label may still be clipped
-        // at a row boundary while the next gap is being laid out.
-        if (bar_->vertical()) dragProbe_.setY(bar_->draggedFolder() >= 0
-            ? lifted.top() + bar_->metrics().rowHeight / 2 : lifted.center().y());
-        else dragProbe_.setX(bar_->draggedFolder() >= 0
-            ? lifted.left() + bar_->metrics().rowHeight / 2 : lifted.center().x());
-    }
 }
 void GroupTabs::setLiftedTab(QPoint global, QPoint grab)
 {
@@ -1139,6 +1130,15 @@ void GroupTabs::setInsertionPreview(int index, const QVector<CarriedLabel>& carr
     // was sticky stays so a little past the sticky tabs. It also decides the
     // tab folder a single tab joins (tab strip design 12).
     const int first = bar_->carriedExtent(carried.first(), carriedSticky);
+    if (lifting_ && bar_->dropIndex() < 0 && (bar_->draggedIndex() >= 0 || bar_->draggedFolder() >= 0)) {
+        // A local lift starts in the slot it vacated. Compacting first and
+        // classifying the grabbed point would let the first movement skip a
+        // neighbor, especially when the press was near a label's far edge.
+        QVector<int> initial;
+        for (const auto& label : carried) initial.append(bar_->carriedExtent(label, carriedSticky));
+        const int folder = kind == TabLayoutInput::Carried::Tab ? bar_->folderOf(bar_->draggedIndex()) : -1;
+        bar_->setDropPreview(index, carriedSticky, std::move(initial), folder);
+    }
     const auto decision = bar_->insertionAt(dragProbe_, carriedSticky ? first / 2 : 0, kind);
     QVector<int> block;
     for (const auto& label : carried) block.append(bar_->carriedExtent(label, decision.sticky));

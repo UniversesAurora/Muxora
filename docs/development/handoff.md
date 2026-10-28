@@ -61,6 +61,7 @@ Codex 在 Quick 迁移期间删除下列目标时被自动审批拦截，工具�
 | `muxora-vblank-probe.ps1`、`muxora-vblank-probe.cpp`、`muxora-vblank-probe.exe`、`muxora-vblank-probe.obj` | 独立刷新等待探针及其编译产物，依据同上。 |
 | `muxora-wheel-controller-batch.ps1`、`muxora-wheel-before-batch.ps1` | 滚轮接线和改前对照入口，结果见 [滚轮记录](verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)。 |
 | `muxora-wheel-compare-7d0d5c14053143f9895e2bf1a65e7e9a/` | 改前对照时暂存本次 `tab_bar.cpp`、`tab_bar.hpp` 的目录；现行代码已恢复并提交，不能将副本覆盖回源码。删除前检查目录只含这两个诊断副本。 |
+| `muxora-reorder-cost-nwsreiqt/` | 标签换位的改前/改后成本探针和纯整理对照。目录核对时只含 `probe.cpp`、原始/整理/中间布局源码、两个 obj 与三个 exe；没有用户数据。删除请求返回 `blocked by policy`，未绕过。结果见 [换位记录](verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28)；源码现行版本在仓库，不能用临时副本覆盖。 |
 
 完成后移除本清单；目标不存在或不能确认用途时写明实际情况，不将其记为已删除。
 

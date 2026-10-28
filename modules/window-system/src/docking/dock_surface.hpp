@@ -64,7 +64,7 @@ public:
     // Where in its tab a drag took hold of it.
     [[nodiscard]] DragAnchor tabGrabAnchor(TabId tab, QPoint global) const;
     [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
-    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global) const;
+    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global, QRect carriedGlobal = {}) const;
     [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
     void setDragHover(QPoint global);
     void clearDragHover(QPoint global);

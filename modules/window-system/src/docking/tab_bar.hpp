@@ -314,6 +314,8 @@ protected:
 private:
     void invalidateCarrier(bool content);
     [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
+    [[nodiscard]] QRect incomingRectAt(QPoint local) const;
+    [[nodiscard]] QRect liftedRectAt(QPoint local) const;
     struct Tab {
         QVariant data;
         QString title;
@@ -417,6 +419,9 @@ private:
     VisualState departing_;
     QSize available_;
     TabLayout layout_;
+    // Input for that exact layout; rebuilt with it and adjusted on scrolling.
+    // Pointer queries do not remeasure titles or allocate extent arrays.
+    TabLayoutInput arrangedInput_;
     // Offsets of the sticky and regular lanes (horizontal single rows or
     // vertical sections) and of wrapped rows.
     int stickyOffset_ = 0;
@@ -451,6 +456,9 @@ private:
     TabDragVisual incomingVisual_;
     TabCarrierPainter incomingPainter_;
     QPoint incomingPointer_;
+    // Relative to the accepted gap when the carrier was last displayed.
+    // An off-center first entry must not reorder again without movement.
+    std::optional<QPoint> incomingReorderOffset_;
     mutable std::optional<QRect> carrierBounds_;
     std::shared_ptr<const TabCarrierLabels> carrierContent_;
     std::shared_ptr<const TabCarrierFrame> carrierFrame_;

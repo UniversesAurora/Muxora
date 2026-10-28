@@ -276,6 +276,12 @@ void WorkspaceWindow::setDragLabelHidden(bool hidden)
         if (retained) setWindowOpacity(dragLabelOpacity_);
     }
 }
+QRect WorkspaceWindow::edgeDragLabelRectAt(QPoint global) const
+{
+    const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data());
+    return host ? host->labelRect().translated(global - host->labelAnchor()) : QRect{};
+}
+
 QPoint WorkspaceWindow::dragLabelAnchor() const
 {
     if (const auto* host = dynamic_cast<EdgeDragPresentation*>(dragPresentationHost_.data()))

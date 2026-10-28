@@ -49,6 +49,7 @@ public:
     void setDragLabelHidden(bool hidden);
     [[nodiscard]] DragPresentation dragPresentation() const { return dragPresentation_; }
     [[nodiscard]] QPoint dragLabelAnchor() const;
+    [[nodiscard]] QRect edgeDragLabelRectAt(QPoint global) const;
     [[nodiscard]] QPoint captionDragAnchor();
     bool allowClose = false;
 protected:

@@ -1249,7 +1249,8 @@ void TabBar::relayout(bool animate, bool measureChanged)
     // this pass so proportional figures cannot make the calculation cycle.
     bool canShrinkCount = true;
     for (;;) {
-        layout_ = layoutTabs(layoutInput(area, collapsedNow()));
+        arrangedInput_ = layoutInput(area, collapsedNow());
+        layout_ = layoutTabs(arrangedInput_);
         if (!countButton_ || !countButton_->isVisible()) break;
         const bool collapsed = collapsedNow();
         countButton_->setText(collapsed ? QStringLiteral("+%1").arg(layout_.hidden) : QStringLiteral("\u2212"));
@@ -1531,6 +1532,8 @@ void TabBar::setLaneOffset(int lane, int offset)
     if (!vertical() && info.vertical) rowsOffset_ = offset;
     else (info.sticky ? stickyOffset_ : regularOffset_) = offset;
     if (!layout_.scrollLane(lane, offset)) { relayout(false, false); return; }
+    arrangedInput_.stickyOffset = stickyOffset_; arrangedInput_.regularOffset = regularOffset_;
+    arrangedInput_.rowsOffset = rowsOffset_;
     relayoutTrailing();
     carrierBounds_.reset();
     invalidateCarrier(true);
@@ -1860,6 +1863,12 @@ void TabBar::setIncomingVisual(TabDragVisual visual, QPoint local)
     const bool entering = incomingVisual_.empty() && !visual.empty();
     const bool leaving = !incomingVisual_.empty() && visual.empty();
     incomingVisual_ = std::move(visual); incomingPointer_ = local;
+    incomingReorderOffset_.reset();
+    if (!incomingVisual_.empty() && !layout_.gap.isEmpty()) {
+        QRect gap;
+        for (const auto& cell : layout_.gap) gap |= cell;
+        incomingReorderOffset_ = incomingRectAt(local).center() - (gap.center() + tabOrigin());
+    }
     if (leaving) incomingPainter_.clear();
     if (entering || leaving) liftElevation_.animateTo(entering ? 1 : 0,
         entering ? Motion::SurfaceLift : Motion::SurfaceLower, animationsEnabled());
@@ -1873,6 +1882,11 @@ TabDragArea TabBar::dragArea() const
 
 QRect TabBar::incomingRect() const
 {
+    return incomingRectAt(incomingPointer_);
+}
+
+QRect TabBar::incomingRectAt(QPoint local) const
+{
     if (incomingVisual_.empty() || incomingVisual_.size.isEmpty()) return {};
     const bool tile = vertical() && dropSticky_ && compactStickyTiles();
     auto grab = incomingVisual_.anchor;
@@ -1883,10 +1897,15 @@ QRect TabBar::incomingRect() const
     }
     const auto constraint = tile ? TabDragConstraint::CompactTile
         : vertical() ? TabDragConstraint::VerticalRow : TabDragConstraint::HorizontalRow;
-    return tabDragRect(layout_, dragArea(), incomingPointer_, incomingVisual_.size, grab, constraint);
+    return tabDragRect(layout_, dragArea(), local, incomingVisual_.size, grab, constraint);
 }
 
 QRect TabBar::liftedRect() const
+{
+    return liftedPointer_ ? liftedRectAt(*liftedPointer_) : QRect{};
+}
+
+QRect TabBar::liftedRectAt(QPoint local) const
 {
     if (liftedPointer_ && draggedFolder_ >= 0 && draggedFolder_ < folders_.size()) {
         // A carried folder: its header and, open, its tabs, as one block.
@@ -1897,13 +1916,13 @@ QRect TabBar::liftedRect() const
             const int height = rows * metrics_.rowHeight + (rows - 1) * metrics_.rowGap;
             const int width = std::max(0, this->width() - 2 * metrics_.verticalInset);
             const auto grab = liftedGrab_.forSize({width, metrics_.rowHeight});
-            return tabDragRect(layout_, dragArea(), *liftedPointer_, {width, height}, grab,
+            return tabDragRect(layout_, dragArea(), local, {width, height}, grab,
                 TabDragConstraint::VerticalRow);
         }
         int extent = folderHeaderExtent(folder);
         for (int index = folder.first; index < folder.first + tabs && index < tabs_.size(); ++index) extent += tabExtent(index, false);
         const auto grab = liftedGrab_.forSize({folderHeaderExtent(folder), metrics_.rowHeight});
-        return tabDragRect(layout_, dragArea(), *liftedPointer_, {extent, metrics_.rowHeight}, grab,
+        return tabDragRect(layout_, dragArea(), local, {extent, metrics_.rowHeight}, grab,
             TabDragConstraint::HorizontalRow);
     }
     if (!liftedPointer_ || dragged_ < 0 || dragged_ >= tabs_.size()) return {};
@@ -1914,11 +1933,11 @@ QRect TabBar::liftedRect() const
             // The gap is laid out with the target section's tile dimensions.
             // Its position is not the pointer's; only its size is reused.
             const auto size = !layout_.gap.isEmpty() ? layout_.gap.first().size() : layout_.tabs.value(dragged_).size();
-            return tabDragRect(layout_, dragArea(), *liftedPointer_, size, QRect(QPoint(), size).center(),
+            return tabDragRect(layout_, dragArea(), local, size, QRect(QPoint(), size).center(),
                 TabDragConstraint::CompactTile);
         }
         const auto grab = liftedGrab_.forSize({rowWidth, metrics_.rowHeight});
-        return tabDragRect(layout_, dragArea(), *liftedPointer_, {rowWidth, metrics_.rowHeight}, grab,
+        return tabDragRect(layout_, dragArea(), local, {rowWidth, metrics_.rowHeight}, grab,
             TabDragConstraint::VerticalRow);
     }
     const int extent = sticky && appearance_.stickySizing == StickyTabSizing::Compact ? uiPixels(compactStickyTabWidth) : tabExtent(dragged_, sticky);
@@ -1926,7 +1945,7 @@ QRect TabBar::liftedRect() const
     // a partially visible final row and a bottom strip's shadow origin.
     const auto grab = liftedGrab_.forSize({extent, metrics_.rowHeight},
         sticky && appearance_.stickySizing == StickyTabSizing::Compact);
-    return tabDragRect(layout_, dragArea(), *liftedPointer_, {extent, metrics_.rowHeight}, grab,
+    return tabDragRect(layout_, dragArea(), local, {extent, metrics_.rowHeight}, grab,
         TabDragConstraint::HorizontalRow);
 }
 
@@ -1941,10 +1960,20 @@ std::optional<int> TabBar::stickyBoundary() const
 
 TabInsertion TabBar::insertionAt(QPoint local, int stickyReach, TabLayoutInput::Carried carried) const
 {
-    auto input = layoutInput(tabArea(size()), collapsedNow());
+    auto input = arrangedInput_;
     input.carried = carried;
     const auto boundary = dragged_ >= 0 && dropIndex_ < 0 ? initialStickyBoundary_ : stickyBoundary();
-    const std::optional<bool> section = boundary ? std::optional<bool>(liftedPointer_.value_or(local).y() < *boundary) : std::nullopt;
+    const std::optional<bool> section = boundary ? std::optional<bool>(local.y() < *boundary) : std::nullopt;
+    const auto held = !incomingVisual_.empty() ? incomingRectAt(local) : liftedPointer_ ? liftedRectAt(local) : QRect{};
+    if (!held.isEmpty() && draggedFolder_ >= 0) {
+        // A local folder keeps its existing header-based insertion probe;
+        // only individual tabs adopt the edge-over-center reorder rule.
+        if (vertical()) local.setY(held.top() + metrics_.rowHeight / 2);
+        else local.setX(held.left() + metrics_.rowHeight / 2);
+    }
+    if (dropIndex_ >= 0 && !held.isEmpty() && !layout_.gap.isEmpty())
+        return tabReorderAt(input, layout_, held.translated(-tabOrigin()), local - tabOrigin(), stickyReach, section,
+            !incomingVisual_.empty() ? incomingReorderOffset_ : std::nullopt);
     // A bottom strip grows upward for a temporary gap, while the stable
     // no-gap layout used to pick the slot stays next to the content.
     if (placement_ == TabBarPlacement::Bottom && !overlayActive())
@@ -1954,7 +1983,7 @@ TabInsertion TabBar::insertionAt(QPoint local, int stickyReach, TabLayoutInput::
 
 void TabBar::setDropPreview(int index, bool sticky, QVector<int> block, int folder)
 {
-    if (index < 0) { block.clear(); sticky = false; index = -1; folder = -1; }
+    if (index < 0) { block.clear(); sticky = false; index = -1; folder = -1; incomingReorderOffset_.reset(); }
     if (dropIndex_ == index && dropSticky_ == sticky && dropBlock_ == block && dropFolder_ == folder) return;
     dropIndex_ = index; dropSticky_ = sticky; dropBlock_ = std::move(block); dropFolder_ = folder;
     relayout(true);
