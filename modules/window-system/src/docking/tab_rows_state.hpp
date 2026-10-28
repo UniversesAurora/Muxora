@@ -18,7 +18,6 @@ public:
     [[nodiscard]] bool collapseOnLeave() const { return expandedByWheel_; }
     [[nodiscard]] qreal value() const { return reveal_.value(); }
     [[nodiscard]] bool needsFrame() const { return reveal_.needsFrame(); }
-    [[nodiscard]] qint64 startedAt() const { return startedAt_; }
 
     void setExpanded(bool expanded, bool byWheel) { expanded_ = expanded; expandedByWheel_ = expanded && byWheel; }
     void setDragExpanded(bool expanded, bool moving)
@@ -41,7 +40,6 @@ public:
         const bool restart = moving && reveal_.target() != target;
         if (!moving) reveal_.jump(target);
         else reveal_.animateTo(target, Motion::Reveal, true, timestampNs);
-        if (restart) startedAt_ = timestampNs;
         if (moving && !reveal_.needsFrame() && !dragExpanded_) temporaryOverlay_ = false;
         return restart && reveal_.needsFrame();
     }
@@ -63,7 +61,6 @@ private:
     bool dragExpanded_ = false;
     bool temporaryOverlay_ = false;
     FrameMotion reveal_;
-    qint64 startedAt_ = 0;
 };
 
 } // namespace window_system

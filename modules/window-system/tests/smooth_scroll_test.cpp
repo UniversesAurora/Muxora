@@ -18,7 +18,7 @@ class SmoothScrollTest final : public QObject {
     // shown, and the assertions observe the scroll area's public position.
     static void advance(QObject& owner, qreal progress)
     {
-        for (auto* animation : owner.findChildren<QVariantAnimation*>())
+        for (auto* animation : owner.findChildren<QAbstractAnimation*>())
             if (animation->state() == QAbstractAnimation::Running)
                 animation->setCurrentTime(qRound(animation->duration() * progress));
     }

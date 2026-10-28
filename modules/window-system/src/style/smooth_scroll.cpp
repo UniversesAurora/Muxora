@@ -22,19 +22,6 @@ namespace {
 constexpr auto policyProperty = "windowSystemSmoothScrollingEnabled";
 constexpr auto controllerProperty = "windowSystemSmoothScrollController";
 
-// Edge's impulse model uses a distance-bounded duration and keeps the
-// instantaneous velocity when a wheel gesture extends its destination. Only
-// the curve's parameters are shared; Qt owns scheduling and interpolation.
-QEasingCurve impulseCurve(qreal initialSlope)
-{
-    const qreal slope = std::max(qreal(0), initialSlope);
-    const qreal x = slope > 4 ? 1 / slope : 0.25;
-    QEasingCurve curve(QEasingCurve::BezierSpline);
-    curve.addCubicBezierSegment(QPointF(x, std::min(qreal(1), x * slope)),
-                               QPointF(0, 1), QPointF(1, 1));
-    return curve;
-}
-
 class AreaScroller final : public QObject {
 public:
     explicit AreaScroller(QAbstractScrollArea* area) : QObject(area), area_(area)
@@ -155,60 +142,43 @@ bool smoothScrollAnimationsAllowed(const QWidget* widget)
         && widget->style()->styleHint(QStyle::SH_Widget_Animate, nullptr, widget);
 }
 
-SmoothScrollAnimation::SmoothScrollAnimation(QObject* parent) : QVariantAnimation(parent)
+SmoothScrollAnimation::SmoothScrollAnimation(QObject* parent) : FrameClock(parent)
 {
-    connect(this, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
-        value_ = value.toReal();
-        // The consumer can delete its widget (and this motion) while applying
-        // a frame. Keep the callable alive independently of that object.
+    clock_.start();
+    advance = [this](qint64 timestampNs) {
+        if (!motion_.advance(timestampNs)) return;
+        // Applying a scroll position can destroy the owning view and clock.
         const auto apply = applyValue;
-        if (apply) apply(value_);
-    });
+        if (apply) apply(motion_.value());
+    };
 }
 
-qreal SmoothScrollAnimation::velocity() const
+void SmoothScrollAnimation::stop()
 {
-    if (state() != Running || duration() <= 0) return 0;
-    const qreal time = qreal(currentTime()) / duration();
-    const qreal a = std::max(qreal(0), time - 0.0001), b = std::min(qreal(1), time + 0.0001);
-    const qreal gradient = (easingCurve().valueForProgress(b) - easingCurve().valueForProgress(a)) / (b - a);
-    return gradient * (endValue().toReal() - startValue().toReal()) / duration();
+    const QPointer<SmoothScrollAnimation> alive(this);
+    FrameClock::stop();
+    if (alive) motion_.cancel();
 }
 
 void SmoothScrollAnimation::stopAt(qreal current)
 {
     const QPointer<SmoothScrollAnimation> alive(this);
-    stop();
-    if (!alive) return;
-    value_ = target_ = current;
+    FrameClock::stop();
+    if (alive) motion_.stopAt(current);
 }
 
 void SmoothScrollAnimation::scrollBy(qreal delta, qreal current, qreal minimum, qreal maximum, bool animate)
 {
-    if (!std::isfinite(delta) || !std::isfinite(current) || !std::isfinite(minimum)
-        || !std::isfinite(maximum) || minimum > maximum) return;
-    const bool continuing = state() == Running && delta * (target_ - value_) > 0;
-    const qreal speed = continuing ? velocity() : 0;
-    const qreal from = std::clamp(current, minimum, maximum);
-    const qreal destination = std::clamp((continuing ? target_ : from) + delta, minimum, maximum);
-    const QPointer<SmoothScrollAnimation> alive(this);
-    stopAt(from);
-    if (!alive) return;
-    target_ = destination;
-    if (!animate || qFuzzyCompare(from + 1, destination + 1)) {
-        value_ = destination;
-        emit valueChanged(value_);
-        return;
+    const auto timestamp = now(clock_.nsecsElapsed());
+    if (!motion_.scrollBy(delta, current, minimum, maximum, timestamp, animate)) return;
+    if (motion_.needsFrame()) restart(timestamp, motion_.durationMs());
+    else {
+        const QPointer<SmoothScrollAnimation> alive(this);
+        FrameClock::stop();
+        if (!alive) return;
+        const auto apply = applyValue;
+        if (apply) apply(motion_.value());
     }
-    const int milliseconds = qRound(std::clamp(std::abs(destination - from) * 1.5, qreal(200), qreal(500)));
-    {
-        const QSignalBlocker blocker(this);
-        setStartValue(from); setEndValue(destination); setDuration(milliseconds);
-        setEasingCurve(impulseCurve(speed * milliseconds / (destination - from)));
-        setCurrentTime(0);
-        value_ = from;
-    }
-    start();
 }
 
 bool filterSmoothScroll(QObject* watched, QEvent* event)

@@ -2,7 +2,9 @@
 #pragma once
 
 #include <window_system/scrolling.hpp>
-#include <QVariantAnimation>
+#include "frame_clock.hpp"
+#include "scroll_motion_state.hpp"
+#include <QElapsedTimer>
 #include <functional>
 
 class QEvent;
@@ -13,18 +15,18 @@ namespace window_system {
 // One-dimensional impulse scrolling. The caller owns position/range and
 // applies each frame without relaying the original wheel event or rebuilding
 // its layout. Pointer dragging and other direct navigation call stopAt().
-class SmoothScrollAnimation final : public QVariantAnimation {
+class SmoothScrollAnimation final : public FrameClock {
 public:
     explicit SmoothScrollAnimation(QObject* parent = nullptr);
     std::function<void(qreal)> applyValue;
     void scrollBy(qreal delta, qreal current, qreal minimum, qreal maximum, bool animate = true);
     void stopAt(qreal current);
-    [[nodiscard]] qreal value() const { return value_; }
-    [[nodiscard]] qreal target() const { return target_; }
+    void stop();
+    [[nodiscard]] qreal value() const { return motion_.value(); }
+    [[nodiscard]] qreal target() const { return motion_.target(); }
 private:
-    [[nodiscard]] qreal velocity() const;
-    qreal value_ = 0;
-    qreal target_ = 0;
+    ScrollMotionState motion_;
+    QElapsedTimer clock_;
 };
 
 [[nodiscard]] bool smoothScrollAnimationsAllowed(const QWidget* widget);

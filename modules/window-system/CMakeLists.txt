@@ -26,7 +26,7 @@ target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 # target has no widget, scene graph or platform-window dependency.
 add_library(WindowSystemPresentation STATIC
     src/docking/tab_layout.cpp src/docking/tab_wheel_controller.cpp
-    src/docking/tab_drag_geometry.cpp src/style/frame_motion.cpp)
+    src/docking/tab_drag_geometry.cpp src/style/frame_motion.cpp src/style/scroll_motion_state.cpp)
 set_target_properties(WindowSystemPresentation PROPERTIES EXPORT_NAME Presentation)
 target_compile_features(WindowSystemPresentation PUBLIC cxx_std_20)
 target_include_directories(WindowSystemPresentation PRIVATE src)

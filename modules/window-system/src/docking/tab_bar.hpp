@@ -14,6 +14,7 @@
 #include "tab_foreground_frame.hpp"
 
 #include "style/smooth_scroll.hpp"
+#include "style/frame_clock.hpp"
 
 #include "tab_layout.hpp"
 #include "tab_drag_geometry.hpp"
@@ -432,7 +433,7 @@ private:
     QTimer peekTimer_;
     TabWheelController wheelController_;
     QElapsedTimer rowWheelClock_;
-    QVariantAnimation rowsDriver_;
+    FrameClock rowsDriver_;
     ProgressAnimation scrollbarOpacity_{0};
     QTimer scrollbarHideTimer_;
     int scrollingLane_ = -1;

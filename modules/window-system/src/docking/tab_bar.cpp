@@ -259,18 +259,15 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         presence_.finish();
         surfaceFrameChanged();
     });
-    rowsDriver_.setStartValue(0.0); rowsDriver_.setEndValue(1.0);
-    rowsDriver_.setDuration(motionDuration(Motion::Reveal));
-    rowsDriver_.setEasingCurve(QEasingCurve::Linear);
-    connect(&rowsDriver_, &QVariantAnimation::valueChanged, this, [this] {
-        if (!rowsState_.advance(rowsState_.startedAt() + qint64(rowsDriver_.currentTime()) * 1'000'000)) return;
+    rowsDriver_.advance = [this](qint64 timestampNs) {
+        if (!rowsState_.advance(timestampNs)) return;
         invalidateCarrier(false);
         const QPointer<TabBar> self(this);
         if (const auto callback = reservedSizeChanged) callback();
         if (!self) return;
         relayoutTrailing(); refreshScrollInput(); update();
-    });
-    connect(&rowsDriver_, &QVariantAnimation::finished, this, [this] {
+    };
+    connect(&rowsDriver_, &QAbstractAnimation::finished, this, [this] {
         rowsState_.finish();
         if (!rowsState_.open()) qApp->removeEventFilter(this);
         const QPointer<TabBar> self(this);
@@ -1527,12 +1524,10 @@ void TabBar::updateRowPresentation(TabVisualState previous, bool moving, bool re
     const bool open = rowsState_.open();
     if (rowsState_.watchesOutsideInput(moving, appearance_.rowExpansion == TabRowExpansion::Overlay)) qApp->installEventFilter(this);
     else if (!open && !(moving && rowsState_.value() > 0)) qApp->removeEventFilter(this);
-    const bool restart = rowsState_.begin(moving, rowWheelClock_.nsecsElapsed());
+    const auto now = rowsDriver_.now(rowWheelClock_.nsecsElapsed());
+    const bool restart = rowsState_.begin(moving, now);
     if (!moving || !rowsState_.needsFrame()) rowsDriver_.stop();
-    else if (restart) {
-        { const QSignalBlocker quiet(&rowsDriver_); rowsDriver_.stop(); rowsDriver_.setCurrentTime(0); }
-        rowsDriver_.start();
-    }
+    else if (restart) rowsDriver_.restart(now, motionDuration(Motion::Reveal));
     if (!self) return;
     relayout(false);
     if (!self) return;

@@ -16,6 +16,7 @@ public:
     [[nodiscard]] qreal value() const { return value_; }
     [[nodiscard]] qreal target() const { return target_; }
     [[nodiscard]] bool needsFrame() const { return running_; }
+    [[nodiscard]] int durationMs() const { return int(durationNs_ / 1'000'000); }
 
     void jump(qreal value);
     void animateTo(qreal target, Motion motion, bool enabled, qint64 timestampNs, qreal distanceScale = 1);
