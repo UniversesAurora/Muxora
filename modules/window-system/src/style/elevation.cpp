@@ -210,6 +210,29 @@ void highContrast(QPainter& painter, const QPainterPath& path, const ElevationSt
     painter.setPen(QPen(style.focused ? style.focusBorder : style.contrastBorder, style.focused ? 2 : 1));
     painter.drawPath(path);
 }
+
+qreal anchorExtent(const ElevationProfile& body, const ElevationProfile& anchor)
+{
+    const auto a = elevationMargins(anchor), b = elevationMargins(body);
+    return qCeil(std::max({a.left(), a.top(), a.bottom(), b.left(), b.top(), b.bottom()})) + 1;
+}
+
+void anchorBorder(QPainter& painter, const SurfaceGeometry& geometry,
+                  const ElevationStyle& style, const QRectF& clip)
+{
+    if (geometry.covered && geometry.coveredProgress >= 1) {
+        auto borderClip = clip;
+        const qreal width = style.focused ? 2 : 1;
+        switch (geometry.edge) {
+        case SurfaceEdge::Top: borderClip.setBottom(geometry.anchor.bottom() - width / 2); break;
+        case SurfaceEdge::Bottom: borderClip.setTop(geometry.anchor.top() + width / 2); break;
+        case SurfaceEdge::Left: borderClip.setRight(geometry.anchor.right() - width / 2); break;
+        case SurfaceEdge::Right: borderClip.setLeft(geometry.anchor.left() + width / 2); break;
+        }
+        painter.setClipRect(borderClip, Qt::IntersectClip);
+    }
+    highContrast(painter, geometry.mergedPath, style);
+}
 } // namespace
 
 ElevationProfile elevationProfile(ElevationLevel level)
@@ -374,34 +397,36 @@ void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& ge
                                     const ElevationStyle& style, bool incremental)
 {
     if (geometry.anchorPath.isEmpty() || (geometry.compact && anchorElevation.key.opacity <= 0)) return;
-    const auto margins = elevationMargins(anchorElevation);
-    const auto bodyMargins = elevationMargins(bodyElevation);
-    const qreal extent = qCeil(std::max({margins.left(), margins.top(), margins.bottom(),
-                                       bodyMargins.left(), bodyMargins.top(), bodyMargins.bottom()})) + 1;
+    if (style.highContrast) {
+        const qreal extent = anchorExtent(bodyElevation, anchorElevation);
+        const auto clip = surfaceShadowClip(geometry, extent);
+        painter.save(); painter.setClipRect(clip, Qt::IntersectClip);
+        anchorBorder(painter, geometry, style, clip);
+        painter.restore();
+        return;
+    }
+    const auto patch = anchorPatch(geometry, bodyElevation, anchorElevation, style,
+                                   painter.device()->devicePixelRatioF(), incremental);
+    painter.save(); painter.setClipRect(patch.clip, Qt::IntersectClip);
+    painter.drawImage(patch.bounds, patch.image);
+    painter.restore();
+}
+
+ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& geometry,
+    const ElevationProfile& bodyElevation, const ElevationProfile& anchorElevation,
+    const ElevationStyle& style, qreal ratio, bool incremental)
+{
+    if (geometry.anchorPath.isEmpty() || (geometry.compact && anchorElevation.key.opacity <= 0)) return {};
+    const qreal extent = anchorExtent(bodyElevation, anchorElevation);
     const QRectF bounds = geometry.anchorPath.boundingRect().adjusted(-extent, -extent, extent, extent);
     const QRectF clip = surfaceShadowClip(geometry, extent);
-    painter.save();
-    painter.setClipRect(clip, Qt::IntersectClip);
-    if (style.highContrast) {
-        if (geometry.covered && geometry.coveredProgress >= 1) {
-            auto borderClip = clip;
-            const qreal width = style.focused ? 2 : 1;
-            switch (geometry.edge) {
-            case SurfaceEdge::Top: borderClip.setBottom(geometry.anchor.bottom() - width / 2); break;
-            case SurfaceEdge::Bottom: borderClip.setTop(geometry.anchor.top() + width / 2); break;
-            case SurfaceEdge::Left: borderClip.setRight(geometry.anchor.right() - width / 2); break;
-            case SurfaceEdge::Right: borderClip.setLeft(geometry.anchor.left() + width / 2); break;
-            }
-            painter.setClipRect(borderClip, Qt::IntersectClip);
-        }
-        highContrast(painter, geometry.mergedPath, style);
-        painter.restore(); return;
-    }
-    const qreal ratio = painter.device()->devicePixelRatioF();
     const QPointF origin = bounds.topLeft();
     const auto localPath = geometry.anchorPath.translated(-origin);
     QString key = QStringLiteral("anchor:%1:%2:%3:%4:").arg(incremental).arg(geometry.joined).arg(geometry.covered).arg(geometry.compact)
         + keyFor(bodyElevation, style, ratio) + QLatin1Char(':') + keyFor(anchorElevation, style, ratio);
+    if (style.highContrast) key += QStringLiteral(":contrast:%1:%2:%3:%4")
+        .arg(style.focused).arg((style.focused ? style.focusBorder : style.contrastBorder).rgba())
+        .arg(geometry.covered && geometry.coveredProgress >= 1).arg(int(geometry.edge));
     // Remote body corners cannot influence this small raster. Normalize
     // them out of the key so sliding an anchor along a straight body edge
     // reuses its sprite instead of blurring on every pointer move.
@@ -424,29 +449,35 @@ void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& ge
     const Patch* patch = cache_->patches.object(key);
     std::unique_ptr<Patch> owned;
     if (!patch) {
-        const auto body = coverage(geometry.bodyPath, bounds, ratio, bodyElevation, style);
-        const auto anchor = coverage(geometry.anchorPath, bounds, ratio, anchorElevation, style);
-        const auto mergedInside = alpha(mask(geometry.mergedPath, bounds, ratio));
-        const auto mergedEdge = alpha(mask(geometry.mergedPath, bounds, ratio, true));
         owned = std::make_unique<Patch>();
         owned->bounds = bounds.translated(-origin);
         owned->image = QImage(QSize(qCeil(bounds.width() * ratio), qCeil(bounds.height() * ratio)), QImage::Format_ARGB32_Premultiplied);
-        for (int y = 0; y < owned->image.height(); ++y) {
-            auto* row = reinterpret_cast<QRgb*>(owned->image.scanLine(y));
-            for (int x = 0; x < owned->image.width(); ++x) {
-                const int at = y * owned->image.width() + x;
-                const qreal shadow = std::max(body.shadow[at], anchor.shadow[at]) * (1 - mergedInside[at]);
-                const qreal edge = mergedEdge[at] * std::max(bodyElevation.edgeOpacity, anchorElevation.edgeOpacity);
-                const QRgb desired = colored(shadow, edge, style);
-                row[x] = incremental ? missing(desired, colored(body.shadow[at] * (1 - body.inside[at]), body.edge[at], style)) : desired;
+        if (style.highContrast) {
+            owned->image.fill(Qt::transparent);
+            QPainter painter(&owned->image);
+            painter.scale(ratio, ratio); painter.translate(-origin);
+            anchorBorder(painter, geometry, style, clip);
+        } else {
+            const auto body = coverage(geometry.bodyPath, bounds, ratio, bodyElevation, style);
+            const auto anchor = coverage(geometry.anchorPath, bounds, ratio, anchorElevation, style);
+            const auto mergedInside = alpha(mask(geometry.mergedPath, bounds, ratio));
+            const auto mergedEdge = alpha(mask(geometry.mergedPath, bounds, ratio, true));
+            for (int y = 0; y < owned->image.height(); ++y) {
+                auto* row = reinterpret_cast<QRgb*>(owned->image.scanLine(y));
+                for (int x = 0; x < owned->image.width(); ++x) {
+                    const int at = y * owned->image.width() + x;
+                    const qreal shadow = std::max(body.shadow[at], anchor.shadow[at]) * (1 - mergedInside[at]);
+                    const qreal edge = mergedEdge[at] * std::max(bodyElevation.edgeOpacity, anchorElevation.edgeOpacity);
+                    const QRgb desired = colored(shadow, edge, style);
+                    row[x] = incremental ? missing(desired, colored(body.shadow[at] * (1 - body.inside[at]), body.edge[at], style)) : desired;
+                }
             }
         }
         patch = owned.get();
         cache_->generated(owned->image);
         if (owned->cost() <= cacheBudgetKiB) cache_->patches.insert(key, owned.release(), patch->cost());
     }
-    painter.drawImage(bounds, patch->image);
-    painter.restore();
+    return {patch->image, bounds, clip};
 }
 
 void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAnchor>& anchors,

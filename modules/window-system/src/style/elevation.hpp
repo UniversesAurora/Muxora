@@ -68,6 +68,14 @@ struct ElevationBodyPatch {
     [[nodiscard]] std::array<ElevationPatchQuad, 8> quads(const QRectF& body, qreal radius) const;
 };
 
+// Only the anchor's local neighborhood, including its share of the body
+// shadow. Bounds and clip move without copying the cached image's pixels.
+struct ElevationAnchorPatch {
+    QImage image;
+    QRectF bounds;
+    QRectF clip;
+};
+
 [[nodiscard]] ElevationProfile elevationProfile(ElevationLevel level);
 [[nodiscard]] int elevationStep(qreal progress);
 [[nodiscard]] qreal quantizedElevation(qreal progress);
@@ -89,6 +97,9 @@ public:
                    const QRectF& excluded = {});
     [[nodiscard]] ElevationBodyPatch bodyPatch(qreal radius, const ElevationProfile& elevation,
                                              const ElevationStyle& style, qreal devicePixelRatio);
+    [[nodiscard]] ElevationAnchorPatch anchorPatch(const SurfaceGeometry& geometry,
+        const ElevationProfile& bodyElevation, const ElevationProfile& anchorElevation,
+        const ElevationStyle& style, qreal devicePixelRatio, bool incremental = false);
     // When incremental, source-over contributes only the opacity missing
     // above an already painted body shadow, rather than adding two shadows.
     void paintAnchor(QPainter& painter, const SurfaceGeometry& geometry,

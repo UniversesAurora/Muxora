@@ -266,6 +266,39 @@ private slots:
                                            retained.bodyInset, retained.bodyInset));
         }
     }
+
+    void anchorResourcesRetainPixelsAcrossMovementAndCacheRelease()
+    {
+        const auto body = elevationProfile(ElevationLevel::BodyRaised);
+        const auto anchor = elevationProfile(ElevationLevel::AnchorRaised);
+        for (auto edge : {SurfaceEdge::Top, SurfaceEdge::Bottom, SurfaceEdge::Left, SurfaceEdge::Right}) {
+            for (qreal ratio : {1.0, 1.25, 2.0}) {
+                auto input = topGeometry(); const auto transform = orientation(edge);
+                input.body = transform.mapRect(input.body); input.anchor = transform.mapRect(input.anchor); input.edge = edge;
+                ElevationRenderer renderer;
+                const auto geometry = surfaceGeometry(input);
+                const auto first = renderer.anchorPatch(geometry, body, anchor, {}, ratio);
+                QVERIFY(!first.image.isNull());
+                QVERIFY(first.image.sizeInBytes() < 400 * 200 * 4);
+                const auto images = renderer.cacheStats().generatedImages;
+                const auto movedGeometry = translatedSurfaceGeometry(geometry, {37, 81});
+                const auto moved = renderer.anchorPatch(movedGeometry, body, anchor, {}, ratio);
+                QCOMPARE(moved.image.constBits(), first.image.constBits());
+                QCOMPARE(moved.bounds, first.bounds.translated(37, 81));
+                QCOMPARE(moved.clip, first.clip.translated(37, 81));
+                QCOMPARE(renderer.cacheStats().generatedImages, images);
+                // A distant body edge does not enlarge this local resource.
+                input.body.setSize(input.body.size() * 10);
+                if (edge == SurfaceEdge::Top || edge == SurfaceEdge::Left) {
+                    const auto enlarged = renderer.anchorPatch(surfaceGeometry(input), body, anchor, {}, ratio);
+                    QCOMPARE(enlarged.image.constBits(), first.image.constBits());
+                }
+                renderer.clear();
+                QVERIFY(!first.image.isNull());
+                QCOMPARE(first.image.constBits(), moved.image.constBits());
+            }
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(SurfaceElevationTest)
