@@ -262,8 +262,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     connect(&presenceProgress_, &QVariantAnimation::valueChanged, this, [this] { surfaceFrameChanged(); });
     connect(&presenceProgress_, &QVariantAnimation::finished, this, [this] {
         departing_.clear();
-        for (auto it = presence_.begin(); it != presence_.end();)
-            if (it->to == 1) it = presence_.erase(it); else ++it;
+        presence_.finish();
         surfaceFrameChanged();
     });
     connect(&rowsReveal_, &QVariantAnimation::valueChanged, this, [this] {
@@ -568,9 +567,7 @@ LabelPresencePose TabBar::labelPresence(int index) const
 LabelPresencePose TabBar::presenceFor(int index, QRect area) const
 {
     if (index < 0 || index >= count()) return {};
-    const auto found = presence_.constFind(tabs_.at(index).data.toUuid());
-    if (found == presence_.cend()) return {};
-    return labelPresencePose(area, found->from + (found->to - found->from) * presenceProgress_.value(), found->kind);
+    return presence_.pose(tabs_.at(index).data.toUuid(), area, presenceProgress_.value());
 }
 
 QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
@@ -817,9 +814,7 @@ TabVisualState TabBar::captureVisualState()
                 geometry.joined = false;
                 retired->label.surface = translatedSurfaceGeometry(geometry, globalOrigin);
             }
-            const auto presence = presence_.constFind(tabData(index).toUuid());
-            if (presence != presence_.cend() && presence->kind != LabelPresenceEffect::Kind::Planar)
-                retired->visibility = presence->from + (presence->to - presence->from) * presenceProgress_.value();
+            retired->visibility = presence_.capturedVisibility(tabData(index).toUuid(), presenceProgress_.value());
         }
         result.insert(tabData(index).toUuid(), {rect.translated(globalOrigin), shapeOf(index),
             index < stickyCount_, index == current_, iconsOnly() || shapeOf(index) == TabShape::Tile, parts, std::move(retired), hasSingleTileRow()});
@@ -836,12 +831,7 @@ TabVisualState TabBar::captureVisualState()
 
 void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion)
 {
-    const qreal progress = presenceProgress_.value();
-    for (auto& value : presence_) value.from += (value.to - value.from) * progress;
-    for (const auto& id : ids) {
-        const qreal from = presence_.contains(id) ? presence_.value(id).from : (visible ? 0 : 1);
-        presence_.insert(id, {from, visible ? 1.0 : 0.0});
-    }
+    presence_.retarget(ids, visible, presenceProgress_.value());
     presenceProgress_.jump(0);
     presenceProgress_.animateTo(1, motion, animationsEnabled());
     if (!animationsEnabled()) { departing_.clear(); if (visible) for (const auto& id : ids) presence_.remove(id); }
@@ -940,7 +930,7 @@ void TabBar::transitionFrom(TabVisualState previous, Motion motion)
         if (it->retired && !currentIds.contains(it.key())) departing_.insert(it.key(), *it);
     if (!slides_.isEmpty()) { slideClock_.start(); slideTimer_.start(); }
     if (planarReflow_ || !appeared.isEmpty() || !departing_.isEmpty()) animatePresence(appeared, true, motion);
-    for (const auto& id : planarEntries) if (presence_.contains(id)) presence_[id].kind = LabelPresenceEffect::Kind::Planar;
+    presence_.setPlanar(planarEntries);
 }
 
 LabelPositions TabBar::captureDropPositions(std::optional<LabelPositions> carrierPositions) const

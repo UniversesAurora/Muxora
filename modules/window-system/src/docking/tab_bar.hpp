@@ -3,6 +3,7 @@
 #include "tab_pointer_controller.hpp"
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
+#include "tab_presence_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
 
@@ -409,8 +410,7 @@ private:
     QMetaObject::Connection popupHidden_;
     QMetaObject::Connection popupDestroyed_;
     ProgressAnimation presenceProgress_{1};
-    struct Presence { qreal from; qreal to; LabelPresenceEffect::Kind kind = LabelPresenceEffect::Kind::Lift; };
-    QHash<QUuid, Presence> presence_;
+    TabPresenceState presence_;
     TabVisualState departing_;
     TabDeparturePainter departurePainter_;
     QSize available_;
