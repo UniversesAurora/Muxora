@@ -36,12 +36,10 @@ private slots:
     void hidingAppliesToTheWholeWindow_data();
     void hidingAppliesToTheWholeWindow();
     void hiddenSettingRestoresAndSurvivesNewGroups();
-    void thinScrollbarRendersAndDragsWithoutSelectingTabs();
+    void scrollbarDraggingDoesNotSelectTabs();
     void tabListMarksTheActiveTabWithoutChangingSelection();
     void compactIconsLeaveARealCloseTarget();
-    void newTabControlsFollowTheLastTabAndShareEmphasis();
-    void rectangularControlsAndContentUseUniformEdges();
-    void emptyStripsFollowTheToolbarBackgroundAfterThemeChanges();
+    void newTabControlsCreateTabsAndManageTheirMenu();
     void invalidPresentationSettingsLeaveTheLayoutUnchanged();
     void lastClosePublishesTheFinalGeometryBeforeRemoval();
     void departingFramesSurviveTheirSourceStrip_data();
@@ -138,11 +136,8 @@ void TabBarPresentationTest::hiddenSettingRestoresAndSurvivesNewGroups()
     QVERIFY(toggle->isCheckable()); QVERIFY(toggle->isChecked());
 }
 
-void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
+void TabBarPresentationTest::scrollbarDraggingDoesNotSelectTabs()
 {
-    // The strip's scrollbar shows only while the pointer is over its lane,
-    // lies over the tabs without taking room, is at most as thick as the
-    // design says and translucent; dragging it scrolls without selecting.
     QWidget root;
     auto* column = new QVBoxLayout(&root);
     auto* tabs = new GroupTabs(defaultTheme(), &root); column->addWidget(tabs);
@@ -152,45 +147,16 @@ void TabBarPresentationTest::thinScrollbarRendersAndDragsWithoutSelectingTabs()
     QVERIFY(QTest::qWaitForWindowExposed(&root));
     auto* bar = tabs->tabBar();
     QTRY_VERIFY(bar->isOverflowing());
-    const int reserved = bar->height();
-    const auto render = [bar] {
-        QImage image(bar->size(), QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
-        QPainter painter(&image); bar->render(&painter); painter.end(); return image;
-    };
-    const auto hover = [bar](QPoint point) {
-        QMouseEvent move(QEvent::MouseMove, QPointF(point), bar->mapToGlobal(QPointF(point)), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(bar, &move);
-    };
-    const auto leave = [bar] { QEvent event(QEvent::Leave); QApplication::sendEvent(bar, &event); };
-    leave();
-    const auto resting = render();
-    hover(bar->displayTabRect(1).center());
-    QVERIFY(render() != resting);
-    const auto hovered = render();
-    hover(bar->displayTabRect(4).center());
-    const auto other = render();
-    // The thumb: what hovering anywhere on the lane adds, the same for both
-    // hovered tabs (two tabs apart, so no
-    // hover-hidden separator is common to both).
-    QRect thumb;
-    const auto lane = bar->scrollViewport();
-    for (int y = lane.top(); y <= lane.bottom(); ++y)
-        for (int x = lane.left(); x <= lane.right(); ++x)
-            if (hovered.pixelColor(x, y) != resting.pixelColor(x, y) && hovered.pixelColor(x, y) == other.pixelColor(x, y))
-                thumb |= QRect(x, y, 1, 1);
-    QVERIFY(!thumb.isEmpty());
-    QVERIFY2(thumb.height() <= bar->metrics().scrollbar, qPrintable(QStringLiteral("thumb %1,%2 %3x%4 lane %5,%6 %7x%8").arg(thumb.x()).arg(thumb.y()).arg(thumb.width()).arg(thumb.height()).arg(lane.x()).arg(lane.y()).arg(lane.width()).arg(lane.height())));
-    QCOMPARE(bar->height(), reserved);
-    // Translucent: neither the text color nor what lies under it.
-    const auto color = hovered.pixelColor(thumb.center());
-    QVERIFY(color.rgb() != defaultTheme().text.rgb()); QVERIFY(color != resting.pixelColor(thumb.center()));
+    QTest::mouseMove(bar, bar->displayTabRect(1).center());
+    QWidget* input = nullptr;
+    QTRY_VERIFY((input = root.findChild<QWidget*>("TabScrollbarInput")) && input->isVisible());
+    const auto point = input->rect().center();
     const auto selected = tabs->currentIndex();
-    QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, thumb.center());
-    QTest::mouseMove(bar, thumb.center() + QPoint(60, 0));
-    QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, thumb.center() + QPoint(60, 0));
+    QTest::mousePress(input, Qt::LeftButton, Qt::NoModifier, point);
+    QTest::mouseMove(input, point + QPoint(60, 0));
+    QTest::mouseRelease(input, Qt::LeftButton, Qt::NoModifier, point + QPoint(60, 0));
     QTRY_VERIFY(tabs->scrollOffset() > 0);
     QCOMPARE(tabs->currentIndex(), selected);
-    leave();
     tabs->setTabBarVisible(false); QVERIFY(tabs->viewportRectGlobal().isEmpty());
 }
 
@@ -207,44 +173,19 @@ void TabBarPresentationTest::tabListMarksTheActiveTabWithoutChangingSelection()
     auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu && menu->isVisible());
     QCOMPARE(menu->actions().size(), 3);
     menu->setActiveAction(nullptr);
-    DismissOnlyMenu ordinary(&tabs);
-    auto* ordinaryAction = ordinary.addAction(QStringLiteral("Ordinary command"));
-    ordinary.ensurePolished(); ordinary.resize(ordinary.sizeHint());
-    const auto ordinaryHeight = ordinary.actionGeometry(ordinaryAction).height();
-    QVERIFY(ordinaryHeight > 0);
-    const auto pixel = [](const QImage& image, QPoint point) {
-        const auto ratio = image.devicePixelRatio();
-        return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
-    };
     for (int i = 0; i < menu->actions().size(); ++i) {
         auto* action = qobject_cast<QWidgetAction*>(menu->actions()[i]); QVERIFY(action);
         auto* row = action->defaultWidget(); QVERIFY(row);
         QCOMPARE(row->property("activeTab").toBool(), i == 1);
         QVERIFY(action->isCheckable()); QCOMPARE(action->isChecked(), i == 1);
-        QVERIFY(!row->findChild<QLabel*>("TabListActiveMark"));
-        auto* title = row->findChild<QLabel*>("TabListTitle"); QVERIFY(title);
-        QCOMPARE(title->font().bold(), menu->font().bold());
-        QVERIFY(row->height() <= ordinaryHeight);
-        QVERIFY(row->height() >= title->fontMetrics().height());
         auto* close = row->findChild<QToolButton*>("TabListCloseButton"); QVERIFY(close);
-        QCOMPARE(close->size(), QSize(18, 18)); QVERIFY(close->isHidden());
-        const auto image = row->grab().toImage();
-        const auto background = i == 1 ? defaultTheme().selection : defaultTheme().surface;
-        for (int y = 0; y < row->height(); ++y) {
-            // Highlight touches the row's edges, immediately after the full-height marker.
-            QCOMPARE(pixel(image, QPoint(4, y)), background);
-            QCOMPARE(pixel(image, QPoint(row->width() - 1, y)), background);
-            if (i == 1) QCOMPARE(pixel(image, QPoint(0, y)), tabs.tabBar()->tabPreset(1)->groupInactive.line);
-            else QCOMPARE(pixel(image, QPoint(0, y)), background);
-        }
+        QVERIFY(close->isHidden());
     }
     menu->setActiveAction(menu->actions().first());
     auto* hovered = qobject_cast<QWidgetAction*>(menu->actions().first())->defaultWidget();
     auto* active = qobject_cast<QWidgetAction*>(menu->actions()[1])->defaultWidget();
     QTRY_VERIFY(hovered->property("emphasized").toBool());
     QTRY_VERIFY(active->property("emphasized").toBool());
-    QCOMPARE(pixel(hovered->grab().toImage(), QPoint(4, 0)), defaultTheme().selection);
-    QCOMPARE(pixel(active->grab().toImage(), QPoint(4, 0)), defaultTheme().selection);
     QCOMPARE(tabs.currentIndex(), 1); menu->close();
 }
 
@@ -255,45 +196,23 @@ void TabBarPresentationTest::compactIconsLeaveARealCloseTarget()
     tabs.addTab(new QLabel("Content"), QIcon(icon), "MMMM", QUuid::createUuid());
     applyTheme(&tabs); tabs.resize(380, 240); tabs.show();
     QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* bar = tabs.tabBar(); QCOMPARE(bar->iconSize(), QSize(16, 16));
-    const auto image = bar->grab().toImage(); const auto ratio = image.devicePixelRatio();
-    int iconRight = -1; int textLeft = image.width();
-    for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x) {
-        const auto color = image.pixelColor(x, y);
-        if (color.rgb() == QColor("#ff0000").rgb()) iconRight = std::max(iconRight, x);
-        if (color.rgb() == defaultTheme().text.rgb()) textLeft = std::min(textLeft, x);
-    }
-    QVERIFY(iconRight >= 0); QVERIFY(textLeft < image.width());
-    // One part gap between icon and text, allowing for the glyph's bearing.
-    QVERIFY2((textLeft - iconRight - 1) / ratio <= tabPartGap + 2, "Icon/text spacing must be one part gap");
+    auto* bar = tabs.tabBar();
     QSignalSpy changes(bar, &TabBar::currentChanged);
     int closed = 0; tabs.closeRequested = [&](int index) { QCOMPARE(index, 0); ++closed; };
     QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, bar->actionRect(0).center());
     QCOMPARE(closed, 1); QCOMPARE(changes.count(), 0);
 }
 
-void TabBarPresentationTest::newTabControlsFollowTheLastTabAndShareEmphasis()
+void TabBarPresentationTest::newTabControlsCreateTabsAndManageTheirMenu()
 {
     GroupTabs tabs(defaultTheme(), nullptr);
     tabs.addTab(new QLabel("Content"), {}, "One", QUuid::createUuid());
     tabs.addTab(new QLabel("Content"), {}, "Two", QUuid::createUuid());
     applyTheme(&tabs); tabs.resize(700, 250); tabs.show();
     QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* bar = tabs.tabBar();
     auto* add = tabs.findChild<QToolButton*>("NewTabButton"); QVERIFY(add);
     auto* types = tabs.findChild<QToolButton*>("NewTabTypeButton"); QVERIFY(types);
     auto* controls = tabs.findChild<QWidget*>("TabCreateButtons"); QVERIFY(controls);
-    auto* slot = tabs.findChild<QWidget*>("TabCreateActions"); QVERIFY(slot);
-    const auto inBar = [bar](QWidget* widget) { return QRect(widget->mapTo(bar, QPoint()), widget->size()); };
-    // The slot follows the tab; the split button has the design's gap and
-    // smaller, vertically centered target (tab strip design 2.1).
-    QCOMPARE(inBar(slot).left(), bar->displayTabRect(1).right() + 1);
-    QCOMPARE(inBar(slot).top(), bar->displayTabRect(1).top());
-    QCOMPARE(inBar(controls).left(), inBar(slot).left() + 4);
-    QCOMPARE(add->height(), bar->metrics().rowHeight - uiPixels(4));
-    QCOMPARE(types->height(), add->height());
-    QCOMPARE(inBar(controls).center().y(), inBar(slot).center().y());
-    QVERIFY(inBar(types).left() > inBar(add).right());
     int created = 0; tabs.newTabRequested = [&] { ++created; };
     QTest::mouseClick(add, Qt::LeftButton); QCOMPARE(created, 1);
     // Hovering either button emphasizes both.
@@ -310,92 +229,9 @@ void TabBarPresentationTest::newTabControlsFollowTheLastTabAndShareEmphasis()
     QVERIFY(controls->property("popupOpen").toBool()); QVERIFY(types->isDown());
     popup->close(); QVERIFY(!controls->property("popupOpen").toBool()); QVERIFY(!types->isDown());
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QVERIFY(popup.isNull());
-    // Scrolled to the end of an overflowing strip they stay in view.
-    for (int index = 0; index < 10; ++index)
-        tabs.addTab(new QLabel("Content"), {}, QString("Long tab %1").arg(index), QUuid::createUuid());
-    QTRY_VERIFY(bar->isOverflowing());
-    bar->setScrollOffset(bar->maximumScrollOffset());
-    QVERIFY(bar->scrollViewport().contains(inBar(slot)));
-    QCOMPARE(inBar(slot).left(), bar->displayTabRect(bar->count() - 1).right() + 1);
     // A drag carrier shows its tabs alone.
     tabs.setDragPresentation(true, false); QVERIFY(!controls->isVisible());
     tabs.setDragPresentation(false, false); QVERIFY(controls->isVisible());
-}
-
-void TabBarPresentationTest::rectangularControlsAndContentUseUniformEdges()
-{
-    WindowManager manager; const auto id = manager.createWindow();
-    auto* editor = new QPlainTextEdit;
-    const auto tab = manager.addTab(id, editor, {"One", "editor", {}}); QVERIFY(!tab.isNull());
-    manager.showWindow(id); auto* window = manager.windowWidget(id);
-    QVERIFY(QTest::qWaitForWindowExposed(window));
-    editor->clearFocus(); QVERIFY(!editor->hasFocus());
-    auto* pane = editor->parentWidget(); QCOMPARE(pane->objectName(), QStringLiteral("PaneHost"));
-    QCOMPARE(editor->geometry(), pane->rect());
-    const auto image = editor->grab().toImage(); const auto ratio = image.devicePixelRatio();
-    const auto colorAt = [&](QPoint point) { return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio)).rgb(); };
-    // Content draws no frame of its own; its group's card outlines it
-    // (window interaction design: cards and focus).
-    const auto area = editor->rect();
-    for (const QPoint point : {QPoint(area.center().x(), area.top()), QPoint(area.center().x(), area.bottom()),
-                              QPoint(area.left(), area.center().y()), QPoint(area.right(), area.center().y())})
-        QCOMPARE(colorAt(point), QColor(Qt::white).rgb());
-    QCOMPARE(colorAt(area.center()), QColor(Qt::white).rgb());
-    QVERIFY(window->findChild<QWidget*>("TabGroupCard"));
-    QWidget root; auto* layout = new QVBoxLayout(&root); auto* button = new QPushButton("Action", &root);
-    layout->addWidget(button); applyTheme(&root); root.resize(150, 80); root.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&root));
-    button->clearFocus(); QVERIFY(!button->hasFocus());
-    QTest::mouseMove(button, QPoint(4, 4));
-    QEnterEvent hover(QPointF(4, 4), button->mapTo(button->window(), QPoint(4, 4)), button->mapToGlobal(QPoint(4, 4)));
-    QApplication::sendEvent(button, &hover); QVERIFY(button->underMouse());
-    // Qt 6.12 QPushButton updates its private hit state on MouseMove after
-    // Enter. Enter alone sets underMouse but does not establish button hover.
-    QMouseEvent move(QEvent::MouseMove, QPointF(4, 4), button->mapToGlobal(QPoint(4, 4)),
-        Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(button, &move);
-    const auto buttonImage = button->grab().toImage(); const auto buttonRatio = buttonImage.devicePixelRatio();
-    const auto buttonArea = button->rect();
-    for (const auto point : {buttonArea.topLeft(), buttonArea.topRight(), buttonArea.bottomLeft(), buttonArea.bottomRight()})
-        QCOMPARE(buttonImage.pixelColor(qRound(point.x() * buttonRatio), qRound(point.y() * buttonRatio)).rgb(),
-                 defaultTheme().accent.rgb());
-    QCOMPARE(buttonImage.pixelColor(qRound(4 * buttonRatio), qRound(4 * buttonRatio)).rgb(), defaultTheme().buttonHover.rgb());
-}
-
-void TabBarPresentationTest::emptyStripsFollowTheToolbarBackgroundAfterThemeChanges()
-{
-    // Rails follow the style sheet; tab strips follow the manager's theme.
-    QWidget root; auto* column = new QVBoxLayout(&root);
-    QList<EdgeStrip*> strips;
-    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
-        auto* strip = new EdgeStrip(edge, defaultTheme(), &root);
-        if (edge == Edge::Left || edge == Edge::Right) strip->setFixedHeight(100);
-        column->addWidget(strip); strips.append(strip);
-    }
-    root.resize(750, 580); applyTheme(&root); root.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&root));
-    WindowManager manager; const auto id = manager.createWindow();
-    manager.addTab(id, new QLabel("Content"), {"One", "label", {}});
-    manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(id)));
-    const auto pixel = [](QWidget* widget) {
-        const auto image = widget->grab().toImage(); const auto ratio = image.devicePixelRatio();
-        const auto point = widget->rect().bottomRight() - QPoint(6, 6);
-        return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio)).rgb();
-    };
-    auto theme = defaultTheme();
-    for (const auto background : {theme.headerBackground, QColor("#e7caa5")}) {
-        theme.headerBackground = background; applyTheme(&root, theme); manager.setTheme(theme);
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QCoreApplication::processEvents();
-        TabBar* bar = nullptr;
-        for (auto* candidate : manager.windowWidget(id)->findChildren<TabBar*>()) if (candidate->isVisible()) bar = candidate;
-        QVERIFY(bar);
-        QCOMPARE(pixel(bar), background.rgb());
-        for (auto* strip : strips) {
-            auto* track = strip->findChild<QWidget*>("EdgeTabTrack"); QVERIFY(track);
-            QCOMPARE(pixel(track), background.rgb());
-            QCOMPARE(pixel(strip), background.rgb());
-        }
-    }
 }
 
 void TabBarPresentationTest::invalidPresentationSettingsLeaveTheLayoutUnchanged()

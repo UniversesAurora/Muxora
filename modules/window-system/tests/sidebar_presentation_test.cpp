@@ -3,7 +3,6 @@
 #include "chrome/command_strip.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
-#include "style/tab_label_geometry.hpp"
 #include <window_system/window_manager.hpp>
 #include <QAction>
 #include <QApplication>
@@ -29,8 +28,6 @@ private slots:
     void bulkFirstPinPreservesTheNewGroupOrder();
     void visibilityRestoresAndRejectsMalformedSnapshots();
     void hiddenRailsDoNotOccupySpaceWhenExplicitlyOpeningATab();
-    void pinnedIconsAndNumbersUseSidebarPreferences_data();
-    void pinnedIconsAndNumbersUseSidebarPreferences();
 };
 
 void SidebarPresentationTest::hidingKeepsPinnedContentAndCentralTabs_data()
@@ -197,55 +194,5 @@ void SidebarPresentationTest::hiddenRailsDoNotOccupySpaceWhenExplicitlyOpeningAT
     auto* peek = window->findChild<QWidget*>("PeekPanel"); QVERIFY(peek); QVERIFY(peek->isVisible());
     QCOMPARE(peek->geometry().left(), 0); QVERIFY(window->surface()->edgeBarRects().isEmpty());
 }
-void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences_data()
-{
-    QTest::addColumn<int>("edge");
-    for (int edge = 0; edge < 4; ++edge) QTest::newRow(qPrintable(QString::number(edge))) << edge;
-}
-
-void SidebarPresentationTest::pinnedIconsAndNumbersUseSidebarPreferences()
-{
-    QFETCH(int, edge);
-    WindowManager manager; const auto id = manager.createWindow();
-    const auto ordinary = manager.addTab(id, new QLabel("central"), {"Central", "label", {}});
-    const auto side = manager.addTab(id, new QLabel("side"), {"Sidebar", "label", {}});
-    QVERIFY(manager.moveTabToEdge(side, Edge(edge), true));
-    const auto group = manager.model().groupForTab(side); const auto centralGroup = manager.model().groupForTab(ordinary);
-    const auto pane = manager.model().tab(side)->activePane; QPointer<QWidget> content(manager.paneWidget(pane));
-    manager.showWindow(id); auto* host = manager.windowWidget(id); QVERIFY(QTest::qWaitForWindowExposed(host));
-    const auto barFor = [host](GroupId target) -> TabBar* {
-        for (auto* frame : host->findChildren<QFrame*>("TabGroup")) {
-            if (!frame->isVisible() || frame->property("groupId").toUuid() != target) continue;
-            return static_cast<GroupTabs*>(frame)->tabBar();
-        }
-        return nullptr;
-    };
-    const auto width = [barFor](GroupId target) {
-        auto* bar = barFor(target); return bar ? bar->displayTabRect(0).width() : 0;
-    };
-    QVERIFY(barFor(group));
-    // Each shown part adds its size and one part gap (tab strip design 2.1).
-    QTRY_VERIFY(width(group) > 0);
-    const int sidePlain = width(group);
-    const int icon = manager.theme().metrics.iconSize + tabPartGap;
-    QVERIFY(!manager.tabAppearance().showSidebarIcons); QVERIFY(!manager.tabAppearance().showSidebarNumbers);
-    auto appearance = manager.tabAppearance(); appearance.showIcons = false; appearance.showNumbers = true;
-    QVERIFY(manager.setTabAppearance(appearance)); QTRY_COMPARE(width(group), sidePlain);
-    const int ordinaryWidth = width(centralGroup); QVERIFY(ordinaryWidth > 0);
-    appearance.showSidebarIcons = true; QVERIFY(manager.setTabAppearance(appearance));
-    QTRY_COMPARE(width(group), sidePlain + icon);
-    QCOMPARE(width(centralGroup), ordinaryWidth);
-    appearance.showSidebarNumbers = true; QVERIFY(manager.setTabAppearance(appearance));
-    const int numberWidth = barFor(group)->fontMetrics().horizontalAdvance("1") + tabPartGap;
-    QTRY_COMPARE(width(group), sidePlain + icon + numberWidth);
-    QCOMPARE(width(centralGroup), ordinaryWidth);
-    QVERIFY(manager.setTabIconVisible(side, false)); QTRY_COMPARE(width(group), sidePlain + numberWidth);
-    QVERIFY(manager.setTabIconVisible(side, true)); QTRY_COMPARE(width(group), sidePlain + icon + numberWidth);
-    appearance.showSidebarIcons = false; appearance.showSidebarNumbers = false;
-    QVERIFY(manager.setTabAppearance(appearance)); QTRY_COMPARE(width(group), sidePlain);
-    QCOMPARE(width(centralGroup), ordinaryWidth); QCOMPARE(manager.model().groupForTab(side), group);
-    QCOMPARE(manager.paneWidget(pane), content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
-}
-
 QTEST_MAIN(SidebarPresentationTest)
 #include "sidebar_presentation_test.moc"

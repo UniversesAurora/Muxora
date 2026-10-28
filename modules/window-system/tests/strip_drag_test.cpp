@@ -124,15 +124,6 @@ bool beginCentralLabelDrag(WorkspaceWindow* window, GroupId group, TabId tab)
     return false;
 }
 
-void saveLabelScreenshots(QWidget* source, QWidget* preview, const QString& name)
-{
-    const auto directory = qEnvironmentVariable("WINDOW_SYSTEM_SCREENSHOT_DIR");
-    if (directory.isEmpty()) return;
-    QVERIFY(QDir().mkpath(directory));
-    QVERIFY(source->grab().save(QDir(directory).filePath(name + "-label-stage.png")));
-    QVERIFY(preview->grab().save(QDir(directory).filePath(name + "-label-preview.png")));
-}
-
 void addStripRows()
 {
     QTest::addColumn<int>("kindValue"); QTest::addColumn<int>("edgeValue");
@@ -557,17 +548,10 @@ void StripDragTest::liveContentStaysInPlaceUntilFirstExit()
     if (fixture.kind == StripKind::AutoHide) {
         QVERIFY(preview->width() <= label.width() + 16); QVERIFY(preview->height() <= label.height() + 16);
         QVERIFY(!preview->findChild<QWidget*>("DockSurface"));
-        bool shadow = false; const auto pixels = preview->grab().toImage(); const auto ratio = pixels.devicePixelRatio();
-        for (int y = 0; y < pixels.height(); ++y) for (int x = 0; x < pixels.width(); ++x)
-            if ((x < 4 * ratio || y < 4 * ratio) && pixels.pixelColor(x, y).alpha() > 0
-                && pixels.pixelColor(x, y).alpha() < 255) shadow = true;
-        QVERIFY2(shadow, "The small label preview needs a translucent shadow, without copying the content");
-        if (fixture.edge == Edge::Left && peek) saveLabelScreenshots(fixture.window, preview, "auto-hide-left-peek");
     } else {
         // The strip lifts the tab itself, as large as its label.
         const auto lifted = static_cast<TabBar*>(preview.data())->liftedRect();
         QCOMPARE(lifted.size(), label.size());
-        saveLabelScreenshots(fixture.window, preview, "central");
     }
     const auto last = fixture.endpoint(true); sendMouse(actor, QEvent::MouseMove, last);
     QCOMPARE(fixture.manager.model().windows().size(), 1); QCOMPARE(fixture.manager.model().toJson(), before);

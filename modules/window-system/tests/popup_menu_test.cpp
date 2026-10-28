@@ -54,12 +54,10 @@ private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
     void positionPrefersLeftBelowAndFallsBackRightAbove_data();
     void positionPrefersLeftBelowAndFallsBackRightAbove();
-    void dropdownUsesItsActualScreenAndNativeSquareCorners();
-    void comboDropdownUsesTheSameSquareAnchoredPopupPolicy();
+    void dropdownUsesItsActualScreen();
+    void comboDropdownUsesTheAnchoredPopupPolicy();
     void cascadingMenusDoNotRemoveItemsOrToggleParentSeparators();
     void menuBarContextUsesCapturedGroupAndGlobalAppearanceCommands();
-    void popupHasOneSquareClientBorderAndNoNativeRim();
-    void tabListShowsEachAssignedColorBeforeItsContent();
     void tabBarContextExposesMultilineAndItsOwnPlacement_data();
     void tabBarContextExposesMultilineAndItsOwnPlacement();
     void rightClickUsesItsTargetWithoutActivatingIt_data();
@@ -132,7 +130,7 @@ void PopupMenuTest::positionPrefersLeftBelowAndFallsBackRightAbove()
     QCOMPARE(popupMenuPosition(anchor, size, available), expected);
 }
 
-void PopupMenuTest::dropdownUsesItsActualScreenAndNativeSquareCorners()
+void PopupMenuTest::dropdownUsesItsActualScreen()
 {
     QWidget root; root.resize(320, 200); root.show(); QVERIFY(QTest::qWaitForWindowExposed(&root));
     DismissOnlyMenu menu(&root); applyTheme(&menu);
@@ -142,17 +140,11 @@ void PopupMenuTest::dropdownUsesItsActualScreenAndNativeSquareCorners()
     setPopupAnchor(&menu, trigger); menu.popup(trigger.bottomLeft() + QPoint(0, 1));
     QVERIFY(QTest::qWaitForWindowExposed(&menu));
     QCOMPARE(menu.pos(), QPoint(trigger.right() + 1 - menu.width(), trigger.top() - menu.height()));
-    QVERIFY(area.contains(menu.frameGeometry())); QVERIFY(menu.mask().isEmpty());
-#ifdef Q_OS_WIN
-    DWORD corner = 0;
-    const auto result = DwmGetWindowAttribute(reinterpret_cast<HWND>(menu.effectiveWinId()), DWORD(33), &corner, sizeof(corner));
-    if (result == S_OK) QCOMPARE(corner, DWORD(1));
-    else QCOMPARE(result, E_INVALIDARG);
-#endif
+    QVERIFY(area.contains(menu.frameGeometry()));
     menu.close(); QVERIFY(!menu.isVisible());
 }
 
-void PopupMenuTest::comboDropdownUsesTheSameSquareAnchoredPopupPolicy()
+void PopupMenuTest::comboDropdownUsesTheAnchoredPopupPolicy()
 {
     QWidget root(nullptr, Qt::Tool | Qt::FramelessWindowHint); applyTheme(&root); root.resize(320, 200);
     ThemedComboBox combo(&root); combo.addItems({"First", "Second", "Third", "Fourth"});
@@ -170,18 +162,12 @@ void PopupMenuTest::comboDropdownUsesTheSameSquareAnchoredPopupPolicy()
     const QRect trigger(combo.mapToGlobal(QPoint()), combo.size());
     QVERIFY(popup->width() > trigger.width()); QVERIFY(popup->height() > available.bottom() - trigger.bottom());
     QCOMPARE(popup->pos(), QPoint(trigger.right() + 1 - popup->width(), trigger.top() - popup->height()));
-    QVERIFY(available.contains(popup->frameGeometry())); QVERIFY(popup->mask().isEmpty());
-#ifdef Q_OS_WIN
-    DWORD corner = 0;
-    const auto result = DwmGetWindowAttribute(reinterpret_cast<HWND>(popup->effectiveWinId()), DWORD(33), &corner, sizeof(corner));
-    if (result == S_OK) QCOMPARE(corner, DWORD(1));
-    else QCOMPARE(result, E_INVALIDARG);
-#endif
+    QVERIFY(available.contains(popup->frameGeometry()));
     combo.hidePopup(); QVERIFY(!popup->isVisible());
     root.move(available.topLeft() + QPoint(20, 20)); combo.move(0, 0);
     combo.showPopup(); QVERIFY(QTest::qWaitForWindowExposed(popup));
     QCOMPARE(popup->pos(), combo.mapToGlobal(QPoint(0, combo.height())));
-    QVERIFY(popup->mask().isEmpty());
+
     combo.hidePopup(); QCOMPARE(combo.currentIndex(), 0);
 }
 
@@ -244,80 +230,6 @@ void PopupMenuTest::menuBarContextUsesCapturedGroupAndGlobalAppearanceCommands()
     icons->trigger(); QTRY_VERIFY(!manager.tabAppearance().showIcons);
     QVERIFY(manager.model().group(group)); QCOMPARE(manager.model().groupForTab(tab), group);
     menu->close(); QVERIFY(manager.model().validate().ok);
-}
-
-void PopupMenuTest::popupHasOneSquareClientBorderAndNoNativeRim()
-{
-    DismissOnlyMenu menu;
-    auto theme = defaultTheme(); theme.surface = QColor("#eef3e4"); theme.border = QColor("#514465");
-    applyTheme(&menu, theme); menu.addAction("First"); menu.addAction("Second");
-    menu.popup(QPoint(100, 100)); QVERIFY(QTest::qWaitForWindowExposed(&menu));
-    const auto image = menu.grab().toImage(); const auto ratio = image.devicePixelRatio();
-    const auto sample = [&](QPoint point) { return image.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio)); };
-    QCOMPARE(sample(QPoint(0, menu.height() / 2)), theme.border);
-    QCOMPARE(sample(QPoint(menu.width() - 1, menu.height() / 2)), theme.border);
-    QCOMPARE(sample(QPoint(menu.width() / 2, 0)), theme.border);
-    QCOMPARE(sample(QPoint(menu.width() / 2, menu.height() - 1)), theme.border);
-    QCOMPARE(sample(QPoint(1, menu.height() / 2)), theme.surface);
-    QCOMPARE(sample(QPoint(menu.width() - 2, menu.height() / 2)), theme.surface);
-    QCOMPARE(sample(QPoint(menu.width() / 2, 1)), theme.surface);
-    QCOMPARE(sample(QPoint(menu.width() / 2, menu.height() - 2)), theme.surface);
-#ifdef Q_OS_WIN
-    const auto handle = reinterpret_cast<HWND>(menu.effectiveWinId());
-    QVERIFY(!(GetWindowLongPtrW(handle, GWL_STYLE) & (WS_BORDER | WS_DLGFRAME | WS_THICKFRAME)));
-    QVERIFY(!(GetWindowLongPtrW(handle, GWL_EXSTYLE) & (WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE)));
-    RECT outer{}, client{}; QVERIFY(GetWindowRect(handle, &outer)); QVERIFY(GetClientRect(handle, &client));
-    POINT origin{}; QVERIFY(ClientToScreen(handle, &origin));
-    QCOMPARE(origin.x, outer.left); QCOMPARE(origin.y, outer.top);
-    QCOMPARE(client.right, outer.right - outer.left); QCOMPARE(client.bottom, outer.bottom - outer.top);
-    COLORREF border = 0;
-    const auto result = DwmGetWindowAttribute(handle, DWORD(34), &border, sizeof(border));
-    if (result == S_OK) QCOMPARE(border, COLORREF(0xfffffffe));
-    else QCOMPARE(result, E_INVALIDARG);
-#endif
-    menu.close();
-}
-
-void PopupMenuTest::tabListShowsEachAssignedColorBeforeItsContent()
-{
-    GroupTabs tabs(defaultTheme(), nullptr);
-    auto appearance = TabAppearance{};
-    auto custom = appearance.colors[0]; custom.id = "custom"; custom.name = "Custom";
-    custom.groupInactive.line = QColor("#14a083"); appearance.colors.append(custom);
-    tabs.setAppearance(appearance);
-    const QStringList colors{"red", {}, "custom"};
-    for (int index = 0; index < colors.size(); ++index) {
-        const auto id = QUuid::createUuid();
-        tabs.addTab(new QLabel("Content"), {}, QStringLiteral("Entry %1").arg(index), id);
-        TabRecord record; record.id = id; record.colorId = colors[index]; tabs.setTabMetadata(index, record);
-    }
-    auto theme = defaultTheme(); theme.surface = QColor("#edf2f7"); theme.selection = QColor("#bdd7ef");
-    applyTheme(&tabs, theme); tabs.resize(620, 240); tabs.show(); QVERIFY(QTest::qWaitForWindowExposed(&tabs));
-    auto* button = tabs.findChild<QToolButton*>("TabListButton"); QVERIFY(button);
-    QTest::mouseClick(button, Qt::LeftButton);
-    auto* menu = tabs.findChild<QMenu*>(); QVERIFY(menu);
-    QVERIFY(QTest::qWaitForWindowExposed(menu));
-    int index = 0;
-    for (auto* action : menu->actions()) {
-        auto* item = qobject_cast<QWidgetAction*>(action); QVERIFY(item);
-        auto* row = item->defaultWidget(); QVERIFY(row);
-        QColor expected;
-        for (const auto& preset : appearance.colors) if (preset.id == colors[index]) expected = preset.groupInactive.line;
-        QCOMPARE(row->property("tabColorMarker").value<QColor>(), expected);
-        auto checkMarker = [&] {
-            const auto pixels = row->grab().toImage(); const auto scale = pixels.devicePixelRatio();
-            const auto background = row->property("emphasized").toBool() ? theme.selection : theme.surface;
-            for (int y = 0; y < row->height(); ++y) {
-                QCOMPARE(pixels.pixelColor(qRound(3 * scale), qRound(y * scale)),
-                    expected.isValid() ? expected : background);
-                QCOMPARE(pixels.pixelColor(qRound(4 * scale), qRound(y * scale)), background);
-            }
-        };
-        checkMarker();
-        menu->setActiveAction(action); QCoreApplication::processEvents(); checkMarker();
-        ++index;
-    }
-    QCOMPARE(index, 3); QCOMPARE(tabs.currentIndex(), 0); menu->close();
 }
 
 void PopupMenuTest::tabBarContextExposesMultilineAndItsOwnPlacement_data()

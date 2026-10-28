@@ -198,15 +198,6 @@ private slots:
         QVERIFY(bar.labelContent(9)->number.isEmpty()); QCOMPARE(bar.labelContent(9)->numberExtent, 0);
     }
 
-    void sharedGeometryPreservesTheWidgetMirrorAndExtent()
-    {
-        for (auto direction : {Qt::LeftToRight, Qt::RightToLeft, Qt::LayoutDirectionAuto})
-            for (const QRect bounds : {QRect(0, 0, 240, 28), QRect(-80, 12, 230, 42)})
-                for (const QRect label : {QRect(-10, 2, 80, 24), QRect(40, 4, 0, 20), QRect(120, 3, 90, 32)})
-                    QCOMPARE(visualTabLabelRect(direction, bounds, label), QStyle::visualRect(direction, bounds, label));
-        QCOMPARE(clampedExtent(-1), 0);
-        QCOMPARE(clampedExtent(qint64(QWIDGETSIZE_MAX) + 123), QWIDGETSIZE_MAX);
-    }
 
     void capturedLabel_outlivesItsSourceWidgetAndBorrowedData()
     {

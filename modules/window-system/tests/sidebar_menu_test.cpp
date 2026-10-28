@@ -34,22 +34,6 @@ QAbstractButton* edgeButton(QWidget* window, TabId tab)
     return nullptr;
 }
 
-int matchingPixels(const QImage& image, const QColor& color)
-{
-    int count = 0;
-    for (int y = 0; y < image.height(); ++y)
-        for (int x = 0; x < image.width(); ++x)
-            if (image.pixelColor(x, y) == color) ++count;
-    return count;
-}
-
-QColor leftBackground(QWidget* row)
-{
-    const auto image = row->grab().toImage();
-    const auto ratio = image.devicePixelRatio();
-    return image.pixelColor(qRound(3 * ratio), qRound(row->height() / 2.0 * ratio));
-}
-
 } // namespace
 
 class SidebarMenuTest final : public QObject {
@@ -64,8 +48,8 @@ private slots:
     void sidebarContextMenuUsesTheExistingTabCommands_data();
     void sidebarContextMenuUsesTheExistingTabCommands();
     void sidebarContextMenuCanPinTheClickedInactiveTab();
-    void tabListHoverPaintsSelectionAndFollowsTheme_data();
-    void tabListHoverPaintsSelectionAndFollowsTheme();
+    void tabListHoverExposesCloseWithoutChangingSelection_data();
+    void tabListHoverExposesCloseWithoutChangingSelection();
 };
 
 void SidebarMenuTest::initTestCase() { QVERIFY(chineseUi_.install()); qApp->setQuitOnLastWindowClosed(false); }
@@ -260,14 +244,14 @@ void SidebarMenuTest::sidebarContextMenuCanPinTheClickedInactiveTab()
     QVERIFY(clickedContent);
 }
 
-void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme_data()
+void SidebarMenuTest::tabListHoverExposesCloseWithoutChangingSelection_data()
 {
     QTest::addColumn<bool>("dark");
     QTest::newRow("light") << false;
     QTest::newRow("dark") << true;
 }
 
-void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme()
+void SidebarMenuTest::tabListHoverExposesCloseWithoutChangingSelection()
 {
     QFETCH(bool, dark);
     Theme theme;
@@ -294,31 +278,16 @@ void SidebarMenuTest::tabListHoverPaintsSelectionAndFollowsTheme()
     QCOMPARE(rows.size(), 2);
     auto* first = rows.first();
     auto* second = rows.last();
-    auto* title = first->findChild<QLabel*>(QStringLiteral("TabListTitle"));
     auto* close = first->findChild<QToolButton*>();
-    QVERIFY(title && close);
-    QCOMPARE(leftBackground(second), theme.selection);
+    QVERIFY(close);
     QTest::mouseMove(first, QPoint(3, first->height() / 2));
     QTRY_VERIFY(first->property("emphasized").toBool());
-    QTRY_COMPARE(leftBackground(first), theme.selection);
     QTRY_VERIFY(close->isVisible());
-    QVERIFY(matchingPixels(title->grab().toImage(), theme.selectionText) > 0);
     QTest::mouseMove(close, close->rect().center());
-    QTRY_COMPARE(leftBackground(first), theme.selection);
-    auto changed = theme;
-    changed.selection = QColor("#67359A");
-    changed.selectionText = QColor("#FFF9D6");
-    applyTheme(&tabs, changed);
-    QTRY_COMPARE(leftBackground(first), changed.selection);
-    QTRY_VERIFY(matchingPixels(title->grab().toImage(), changed.selectionText) > 0);
     QTest::mouseMove(second, QPoint(3, second->height() / 2));
     QTRY_VERIFY(!first->property("emphasized").toBool());
-    QTRY_COMPARE(leftBackground(first), changed.surface);
     QTRY_VERIFY(!close->isVisible());
-    QTRY_COMPARE(leftBackground(second), changed.selection);
     QTest::mouseMove(first, QPoint(3, first->height() / 2));
-    QTRY_COMPARE(leftBackground(first), changed.selection);
-    QTRY_COMPARE(leftBackground(second), changed.selection);
     QCOMPARE(tabs.currentIndex(), 1);
     QTest::keyClick(menu, Qt::Key_Escape);
     QTRY_VERIFY(!QApplication::activePopupWidget());

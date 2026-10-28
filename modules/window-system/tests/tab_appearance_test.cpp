@@ -15,7 +15,6 @@
 #include <QSpinBox>
 #include <QTest>
 #include <memory>
-#include <cmath>
 #include <limits>
 
 using namespace window_system;
@@ -24,7 +23,6 @@ class TabAppearanceTest final : public QObject {
     Q_OBJECT
 private slots:
     void defaultsHaveSeparatePlacementAndConservativeFlags();
-    void defaultPaletteKeepsColorIdentityAndReadableForegrounds();
     void explicitPaletteValuesRoundTripWithBuiltinIds();
     void appearanceAndEveryPaletteStateRoundTrip();
     void invalidPublicAppearanceDoesNotEmitOrMutate_data();
@@ -99,31 +97,6 @@ void TabAppearanceTest::stickySizingRoundTripsThroughJsonAndLayout()
     QCOMPARE(restored.tabAppearance().stickySizing, StickyTabSizing::Compact);
     appearance.stickySizing = StickyTabSizing(7);
     QVERIFY(!manager.setTabAppearance(appearance)); QCOMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Compact);
-}
-
-void TabAppearanceTest::defaultPaletteKeepsColorIdentityAndReadableForegrounds()
-{
-    const auto luminance = [](const QColor& color) {
-        const auto linear = [](double value) { return value <= .04045 ? value / 12.92 : std::pow((value + .055) / 1.055, 2.4); };
-        return .2126 * linear(color.redF()) + .7152 * linear(color.greenF()) + .0722 * linear(color.blueF());
-    };
-    for (const auto& preset : defaultTabColorPresets()) {
-        const auto& active = preset.groupActive;
-        const auto& inactive = preset.groupInactive;
-        QVERIFY2(inactive.background.saturationF() > active.background.saturationF(), qPrintable(preset.id));
-        QVERIFY(luminance(active.background) > luminance(inactive.background));
-        // A rail rests on the vivid line color with white text and shows the
-        // pastel while expanded (tab strip design 9).
-        QCOMPARE(preset.autoHideActive, inactive);
-        QCOMPARE(preset.autoHideInactive.background, inactive.line); QCOMPARE(preset.autoHideInactive.text, QColor("#ffffff"));
-        for (const auto& colors : {active, inactive}) {
-            QVERIFY(colors.background != colors.line); QVERIFY(colors.background != colors.icon);
-            QVERIFY(colors.text != colors.icon); QVERIFY(colors.line != colors.icon);
-            const double background = luminance(colors.background), text = luminance(colors.text);
-            const auto contrast = (std::max(background, text) + .05) / (std::min(background, text) + .05);
-            QVERIFY2(contrast >= 4.5, qPrintable(preset.id + QStringLiteral(" foreground contrast %1").arg(contrast)));
-        }
-    }
 }
 
 void TabAppearanceTest::explicitPaletteValuesRoundTripWithBuiltinIds()

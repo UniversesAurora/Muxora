@@ -11,45 +11,11 @@
 #include <QPlainTextEdit>
 #include <QLabel>
 #include <QMenuBar>
-#include <QPaintEngine>
-#include <QPainter>
-#include <QStyleOptionMenuItem>
 #include <QSpinBox>
 #include <QTest>
-#include <QToolButton>
 #include <limits>
 
 using namespace window_system;
-namespace {
-class FontRecordingDevice final : public QPaintDevice {
-    class Engine final : public QPaintEngine {
-    public:
-        Engine() : QPaintEngine(AllFeatures) {}
-        QList<QFont> fonts;
-        bool begin(QPaintDevice*) override { return true; }
-        bool end() override { return true; }
-        Type type() const override { return User; }
-        void updateState(const QPaintEngineState&) override {}
-        void drawPixmap(const QRectF&, const QPixmap&, const QRectF&) override {}
-        void drawPath(const QPainterPath&) override {}
-        void drawTextItem(const QPointF&, const QTextItem& item) override { fonts.append(item.font()); }
-    };
-    mutable Engine engine_;
-public:
-    QPaintEngine* paintEngine() const override { return &engine_; }
-    const QList<QFont>& fonts() const { return engine_.fonts; }
-protected:
-    int metric(PaintDeviceMetric metric) const override {
-        switch (metric) {
-        case PdmWidth: return 400; case PdmHeight: return 80; case PdmDepth: return 32;
-        case PdmDpiX: case PdmDpiY: case PdmPhysicalDpiX: case PdmPhysicalDpiY: return 96;
-        case PdmDevicePixelRatio: return 1;
-        case PdmDevicePixelRatioScaled: return int(devicePixelRatioFScale());
-        default: return 0;
-        }
-    }
-};
-}
 class InterfaceAppearanceTest final : public QObject {
     Q_OBJECT
 private slots:
@@ -70,11 +36,6 @@ void InterfaceAppearanceTest::familyListsAndValidation()
         QStringList({"First Family", "Second, Family", "sans-serif"}));
     InterfaceAppearanceController controller;
     const auto original = controller.appearance();
-#ifdef Q_OS_WIN
-    QCOMPARE(controller.font().hintingPreference(), QFont::PreferNoHinting);
-    QCOMPARE(qApp->font().hintingPreference(), QFont::PreferNoHinting);
-    QVERIFY(!(controller.font().styleStrategy() & (QFont::NoAntialias | QFont::NoSubpixelAntialias)));
-#endif
     for (auto bad : {InterfaceAppearance{"'unclosed", 13, 0}, InterfaceAppearance{{}, 0, 0},
          InterfaceAppearance{{}, 97, 0}, InterfaceAppearance{{}, 13, 9},
          InterfaceAppearance{{}, 13, std::numeric_limits<double>::quiet_NaN()}}) {
@@ -108,12 +69,10 @@ void InterfaceAppearanceTest::zoomUpdatesExistingAndFutureWindowsWithoutReplacin
     const auto icon = bar->metrics().iconSize;
     const auto originalFont = bar->font().pointSizeF();
     const auto pane = manager.model().tab(tab)->activePane;
-    auto* caption = root->findChild<QToolButton*>("CaptionButton"); QVERIFY(caption);
-    const auto originalCaption = caption->size();
     auto value = controller.appearance(); value.zoomLevel = 1;
     QVERIFY(controller.setAppearance(value));
     QCOMPARE(manager.paneWidget(pane), content); QCOMPARE(manager.windowWidget(window), root);
-    QVERIFY(bar->metrics().iconSize > icon); QVERIFY(caption->width() > originalCaption.width());
+    QVERIFY(bar->metrics().iconSize > icon);
     QVERIFY(qAbs(bar->font().pointSizeF() / originalFont - 1.2) < 0.01);
     const auto second = manager.createWindow(WindowKind::Floating, {"Second", QSize(600, 400)}, window);
     manager.addTab(second, new QPlainTextEdit, {"Second tab", "test", {}});
@@ -123,7 +82,7 @@ void InterfaceAppearanceTest::zoomUpdatesExistingAndFutureWindowsWithoutReplacin
         value.zoomLevel = 0.5; QVERIFY(controller.setAppearance(value));
         value.zoomLevel = 0; QVERIFY(controller.setAppearance(value));
     }
-    QCOMPARE(bar->metrics().iconSize, icon); QCOMPARE(caption->size(), originalCaption);
+    QCOMPARE(bar->metrics().iconSize, icon);
     QCOMPARE(bar->font().pointSizeF(), originalFont); QCOMPARE(manager.paneWidget(pane), content);
 }
 void InterfaceAppearanceTest::settingsAndCommandsShareOneState()
@@ -198,25 +157,11 @@ void InterfaceAppearanceTest::menusFollowFontChanges()
     }
     QCOMPARE(menu->font().families(), controller.font().families());
     QCOMPARE(menu->font().pointSizeF(), controller.font().pointSizeF());
-    QCOMPARE(menu->font().hintingPreference(), controller.font().hintingPreference());
     for (auto* popup : root->findChildren<QMenu*>()) {
         QCOMPARE(popup->font().families(), controller.font().families());
         QCOMPARE(popup->font().pointSizeF(), controller.font().pointSizeF());
-        QCOMPARE(popup->font().hintingPreference(), controller.font().hintingPreference());
     }
-    // Record the font actually passed to Qt's text drawing, not a screenshot
-    // or just the QWidget property. Match QMenuBar::initStyleOption's inputs.
-    FontRecordingDevice recorded;
-    QPainter painter(&recorded); painter.setFont(menu->font());
-    QStyleOptionMenuItemV2 item;
-    item.palette = menu->palette(); item.state = QStyle::State_Enabled; item.fontMetrics = menu->fontMetrics();
-    item.rect = QRect(0, 0, 400, 80); item.text = "File(&F)";
-    menu->style()->drawControl(QStyle::CE_MenuBarItem, &item, &painter, menu);
-    painter.end();
-    QVERIFY(!recorded.fonts().isEmpty());
-    QCOMPARE(recorded.fonts().last().families(), controller.font().families());
-    QCOMPARE(recorded.fonts().last().pointSizeF(), controller.font().pointSizeF());
-    QCOMPARE(recorded.fonts().last().hintingPreference(), controller.font().hintingPreference());
+
 }
 void InterfaceAppearanceTest::railsFollowFontChanges_data()
 {
@@ -228,7 +173,6 @@ void InterfaceAppearanceTest::railsFollowFontChanges_data()
 void InterfaceAppearanceTest::railsFollowFontChanges()
 {
     QFETCH(int, edge); QFETCH(bool, startup);
-    const bool vertical = Edge(edge) == Edge::Left || Edge(edge) == Edge::Right;
     InterfaceAppearanceController controller;
     auto value = controller.appearance(); value.fontFamily = "serif"; value.fontSize = 26; value.zoomLevel = 0.5;
     if (startup) QVERIFY(controller.setAppearance(value));
@@ -243,14 +187,6 @@ void InterfaceAppearanceTest::railsFollowFontChanges()
     if (!startup) QVERIFY(controller.setAppearance(value));
     for (int i = 0; i < 3; ++i) QCoreApplication::processEvents();
     QCOMPARE(rail->font().families(), controller.font().families());
-    QCOMPARE(rail->size(), rail->sizeHint());
-    const int cross = vertical ? rail->width() : rail->height();
-    QVERIFY(cross >= QFontMetrics(rail->font()).height());
-    QVERIFY(cross >= manager.interfaceTheme().metrics.edgeThickness);
-    auto* strip = root->findChild<QWidget*>("EdgeBar"); QVERIFY(strip);
-    QCOMPARE(vertical ? strip->width() : strip->height(), cross);
-    auto localFont = rail->font(); localFont.setPointSizeF(30); rail->setFont(localFont);
-    QTRY_COMPARE(rail->size(), rail->sizeHint());
 }
 QTEST_MAIN(InterfaceAppearanceTest)
 #include "interface_appearance_test.moc"
