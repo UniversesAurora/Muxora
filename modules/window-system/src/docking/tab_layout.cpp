@@ -454,6 +454,52 @@ TabLayout layoutTabs(const TabLayoutInput& original)
     return layout;
 }
 
+namespace {
+QRect insertionRect(const TabLayoutInput& input, const TabLayout& layout, int index)
+{
+    if (layout.lanes.at(index) >= 0) return layout.tabs.at(index);
+    const int folder = folderOf(input, index);
+    return folder >= 0 ? layout.headers.at(folder) : QRect{};
+}
+
+TabInsertion insertionWithinFolders(const TabLayoutInput& input, const TabLayout& layout,
+                                   const QVector<int>& remaining, QPoint probe, int along, TabInsertion result)
+{
+    const bool vertical = input.orientation == TabLayoutInput::Orientation::Vertical;
+    const bool outside = input.removedFolder >= 0 || input.carried != TabLayoutInput::Carried::Tab;
+    const auto start = [&](QRect rect) { return vertical ? rect.top() : rect.left(); };
+    const auto end = [&](QRect rect) { return vertical ? rect.bottom() + 1 : rect.right() + 1; };
+    const auto mid = [&](QRect rect) { return vertical ? rect.center().y() : rect.center().x(); };
+    // Rows of a multi-row strip: only a rectangle on the probe's row counts.
+    const auto onRow = [&](QRect rect) { return vertical || !(input.multiline || input.stickyMultiline) || (probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap); };
+    for (int folder = 0; folder < input.folders.size(); ++folder) {
+        if (folder == input.removedFolder || layout.headerLanes.value(folder, -1) < 0) continue;
+        const auto& f = input.folders.at(folder);
+        const auto header = layout.headers.at(folder);
+        int first = 0, last = 0, lastTab = -1;
+        for (const int index : remaining) {
+            if (index < f.first) ++first;
+            if (index < f.first + f.count) { ++last; if (index >= f.first) lastTab = index; }
+        }
+        bool inside = false;
+        if (f.collapsed) {
+            if (onRow(header) && along >= start(header) && along < end(header)) { inside = true; result.index = last; }
+        } else if (first == last) {
+            inside = result.index == first && onRow(header) && along >= mid(header) && along < end(header);
+        } else if (result.index > first && result.index < last) inside = true;
+        else if (result.index == first) inside = !(onRow(header) && along < mid(header));
+        else if (result.index == last) { const auto rect = insertionRect(input, layout, lastTab); inside = onRow(rect) && along < end(rect); }
+        if (!inside) continue;
+        if (!outside) { result.folder = folder; break; }
+        // A carried block lands beside this folder, on the nearer side.
+        const auto lastRect = lastTab >= 0 ? insertionRect(input, layout, lastTab) : header;
+        result.index = along < (start(header) + end(lastRect)) / 2 ? first : last;
+        break;
+    }
+    return result;
+}
+} // namespace
+
 TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach, std::optional<bool> stickySection)
 {
     input.insertion = -1; input.block.clear(); input.insertionFolder = -1;
@@ -462,11 +508,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach,
     QVector<int> remaining;
     for (int index = 0; index < count; ++index) if (!removedTab(input, index)) remaining.append(index);
     // A tab hidden in a collapsed folder stands where the folder's header is.
-    const auto rectOf = [&](int index) {
-        if (layout.lanes.at(index) >= 0) return layout.tabs.at(index);
-        const int folder = folderOf(input, index);
-        return folder >= 0 ? layout.headers.value(folder) : QRect{};
-    };
+    const auto rectOf = [&](int index) { return insertionRect(input, layout, index); };
     const auto laneOf = [&](int index) {
         if (layout.lanes.at(index) >= 0) return layout.lanes.at(index);
         const int folder = folderOf(input, index);
@@ -567,37 +609,7 @@ TabInsertion tabInsertionAt(TabLayoutInput input, QPoint probe, int stickyReach,
     }
     if (folderBlock && result.sticky) { result.sticky = false; result.index = std::max(result.index, stickyRemaining); }
     if (result.sticky) return result;
-    const bool outside = folderBlock || input.carried == TabLayoutInput::Carried::Tabs;
-    const auto start = [&](QRect rect) { return vertical ? rect.top() : rect.left(); };
-    const auto end = [&](QRect rect) { return vertical ? rect.bottom() + 1 : rect.right() + 1; };
-    const auto mid = [&](QRect rect) { return vertical ? rect.center().y() : rect.center().x(); };
-    // Rows of a multi-row strip: only a rectangle on the probe's row counts.
-    const auto onRow = [&](QRect rect) { return vertical || !(input.multiline || input.stickyMultiline) || (probe.y() >= rect.top() - input.rowGap && probe.y() <= rect.bottom() + input.rowGap); };
-    for (int folder = 0; folder < input.folders.size(); ++folder) {
-        if (folder == input.removedFolder || layout.headerLanes.value(folder, -1) < 0) continue;
-        const auto& f = input.folders.at(folder);
-        const auto header = layout.headers.at(folder);
-        int first = 0, last = 0, lastTab = -1;
-        for (const int index : remaining) {
-            if (index < f.first) ++first;
-            if (index < f.first + f.count) { ++last; if (index >= f.first) lastTab = index; }
-        }
-        bool inside = false;
-        if (f.collapsed) {
-            if (onRow(header) && along >= start(header) && along < end(header)) { inside = true; result.index = last; }
-        } else if (first == last) {
-            inside = result.index == first && onRow(header) && along >= mid(header) && along < end(header);
-        } else if (result.index > first && result.index < last) inside = true;
-        else if (result.index == first) inside = !(onRow(header) && along < mid(header));
-        else if (result.index == last) { const auto rect = rectOf(lastTab); inside = onRow(rect) && along < end(rect); }
-        if (!inside) continue;
-        if (!outside) { result.folder = folder; break; }
-        // A carried block lands beside this folder, on the nearer side.
-        const auto lastRect = lastTab >= 0 ? rectOf(lastTab) : header;
-        result.index = along < (start(header) + end(lastRect)) / 2 ? first : last;
-        break;
-    }
-    return result;
+    return insertionWithinFolders(input, layout, remaining, probe, along, result);
 }
 
 int TabLayoutLane::rowTopAt(int coordinate, int pitch) const
