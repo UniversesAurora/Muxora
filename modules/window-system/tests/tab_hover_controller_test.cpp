@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "docking/tab_hover_controller.hpp"
+#include "docking/tab_column_peek.hpp"
 #include <QTest>
 
 using namespace window_system;
@@ -8,6 +9,54 @@ using Fade = TabHoverTransition::Fade;
 class TabHoverControllerTest final : public QObject {
     Q_OBJECT
 private slots:
+    void columnDwellDoesNotRestartWhileWaitingOrAlreadyExpanded()
+    {
+        using Timer = TabColumnPeekAction::Timer;
+        TabColumnPeek column;
+        QCOMPARE(column.hover(true, false, false).timer, Timer::Keep);
+        QVERIFY(!column.timeout().relayout);
+        QVERIFY(column.setIconsOnly(true));
+        QCOMPARE(column.hover(true, false, false).timer, Timer::Start);
+        QCOMPARE(column.hover(true, true, false).timer, Timer::Keep);
+        QCOMPARE(column.hover(false, true, false).timer, Timer::Stop);
+        QCOMPARE(column.hover(true, false, false).timer, Timer::Start);
+        const auto opened = column.timeout();
+        QVERIFY(opened.relayout); QVERIFY(opened.animate); QVERIFY(column.expanded());
+        QVERIFY(!column.timeout().relayout);
+        QCOMPARE(column.hover(true, false, false).timer, Timer::Keep);
+        QVERIFY(!column.setIconsOnly(true)); QVERIFY(column.expanded());
+    }
+
+    void columnPopupAndScrollbarCaptureHoldTheExpansion()
+    {
+        for (bool popup : {false, true}) {
+            TabColumnPeek column; column.setIconsOnly(true); (void)column.timeout();
+            column.setPopupOpen(popup);
+            const auto held = column.hover(false, false, !popup);
+            QCOMPARE(held.timer, TabColumnPeekAction::Timer::Stop);
+            QVERIFY(!held.relayout); QVERIFY(column.expanded());
+            column.setPopupOpen(false);
+            const auto closed = column.hover(false, false, false);
+            QVERIFY(closed.relayout); QVERIFY(closed.animate); QVERIFY(!column.expanded());
+            QVERIFY(!column.hover(false, false, false).relayout);
+        }
+    }
+
+    void restoredColumnExpansionUsesNoSecondAnimation()
+    {
+        TabColumnPeek column;
+        QVERIFY(!column.restore(true).relayout);
+        column.setIconsOnly(true);
+        QVERIFY(!column.restore(false).relayout);
+        const auto restored = column.restore(true);
+        QCOMPARE(restored.timer, TabColumnPeekAction::Timer::Stop);
+        QVERIFY(restored.relayout); QVERIFY(!restored.animate); QVERIFY(column.expanded());
+        QVERIFY(!column.restore(true).relayout);
+        column.setIconsOnly(false);
+        QVERIFY(!column.expanded()); QVERIFY(!column.iconsOnly());
+        QVERIFY(!column.timeout().relayout);
+    }
+
     void oneFadePerSessionEvenAcrossGaps()
     {
         TabHoverController hover;

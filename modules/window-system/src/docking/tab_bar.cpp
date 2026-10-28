@@ -245,12 +245,8 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     connect(countButton_, &QToolButton::clicked, this, [this] { setExpanded(!expanded_); });
     collapseTimer_.setSingleShot(true); collapseTimer_.setInterval(400);
     connect(&collapseTimer_, &QTimer::timeout, this, [this] { if (expandedByWheel_) setExpanded(false); });
-    peekTimer_.setSingleShot(true); peekTimer_.setInterval(120);
-    connect(&peekTimer_, &QTimer::timeout, this, [this] {
-        if (!iconMode_ || peeking_) return;
-        peeking_ = true; relayout(true);
-        if (const auto callback = reservedSizeChanged) callback();
-    });
+    peekTimer_.setSingleShot(true); peekTimer_.setInterval(TabColumnPeek::delayMs);
+    connect(&peekTimer_, &QTimer::timeout, this, [this] { applyColumnPeekAction(columnPeek_.timeout()); });
     slideTimer_.setInterval(15);
     connect(&slideTimer_, &QTimer::timeout, this, [this] {
         if (slideClock_.elapsed() >= slideDuration_ && (!planarReflow_ || presenceProgress_.state() != QAbstractAnimation::Running)) {
@@ -653,7 +649,7 @@ void TabBar::setAppearance(const TabAppearance& appearance, TabBarPlacement plac
         // A new arrangement starts collapsed (when it collapses) and at its start.
         expanded_ = false; expandedByWheel_ = false; temporaryRowsOverlay_ = false; wheelController_.reset(); rowsReveal_.jump(0); rowsOffset_ = 0;
     }
-    if (!vertical()) { iconMode_ = false; peeking_ = false; }
+    if (!vertical()) columnPeek_.setIconsOnly(false);
     updateTitleWidths();
     relayout(false);
     if (const auto callback = reservedSizeChanged) callback();
@@ -733,10 +729,11 @@ void TabBar::setGroupFocused(bool focused)
 void TabBar::setIconMode(bool iconMode)
 {
     if (!vertical()) iconMode = false;
-    if (iconMode_ == iconMode) return;
-    iconMode_ = iconMode; peeking_ = false;
+    if (!columnPeek_.setIconsOnly(iconMode)) return;
+    const QPointer<TabBar> self(this);
     relayout(true);
-    if (iconMode_) QTimer::singleShot(0, this, [this] { reconcileColumnHover(); });
+    if (!self) return;
+    if (columnPeek_.iconsOnly()) QTimer::singleShot(0, this, [this] { reconcileColumnHover(); });
     if (const auto callback = reservedSizeChanged) callback();
 }
 
@@ -748,31 +745,34 @@ void TabBar::setColumnReveal(qreal reveal, bool modeTransition)
     invalidateCarrier(iconOnlyChanged); update();
 }
 
+void TabBar::applyColumnPeekAction(const TabColumnPeekAction& action)
+{
+    using Timer = TabColumnPeekAction::Timer;
+    if (action.timer == Timer::Start) peekTimer_.start();
+    else if (action.timer == Timer::Stop) peekTimer_.stop();
+    if (!action.relayout) return;
+    const QPointer<TabBar> self(this);
+    relayout(action.animate);
+    if (self) if (const auto callback = reservedSizeChanged) callback();
+}
+
 void TabBar::setColumnHovered(bool hovered)
 {
-    if (hovered) {
-        if (iconMode_ && !peeking_ && !peekTimer_.isActive()) peekTimer_.start();
-        return;
-    }
-    peekTimer_.stop();
-    if (columnPopupOpen_ || scrollDragLane_ >= 0) return;
-    if (!peeking_) return;
-    peeking_ = false; relayout(true);
-    if (const auto callback = reservedSizeChanged) callback();
+    applyColumnPeekAction(columnPeek_.hover(hovered, peekTimer_.isActive(), scrollDragLane_ >= 0));
 }
 
 void TabBar::restoreColumnPeek(bool peeked)
 {
-    if (!iconMode_ || !peeked || peeking_) return;
-    peekTimer_.stop(); peeking_ = true; relayout(false);
-    if (const auto callback = reservedSizeChanged) callback();
-    QTimer::singleShot(0, this, [this] { trackColumnPopup(); });
+    const auto action = columnPeek_.restore(peeked);
+    const QPointer<TabBar> self(this);
+    applyColumnPeekAction(action);
+    if (self && action.relayout) QTimer::singleShot(0, this, [this] { trackColumnPopup(); });
 }
 
 void TabBar::showColumnPopup(std::function<void()> open)
 {
     const QPointer<TabBar> self(this);
-    columnPopupOpen_ = true; peekTimer_.stop();
+    columnPeek_.setPopupOpen(true); peekTimer_.stop();
     open();
     if (self) QTimer::singleShot(0, this, [this] { trackColumnPopup(); });
 }
@@ -783,13 +783,13 @@ void TabBar::trackColumnPopup()
     disconnect(popupHidden_); disconnect(popupDestroyed_);
     auto* popup = qobject_cast<QMenu*>(QApplication::activePopupWidget());
     if (popup && popup->isVisible()) {
-        columnPopupOpen_ = true; columnPopup_ = popup;
+        columnPeek_.setPopupOpen(true); columnPopup_ = popup;
         const auto closed = [this] { QTimer::singleShot(0, this, [this] { trackColumnPopup(); }); };
         popupHidden_ = connect(popup, &QMenu::aboutToHide, this, closed);
         popupDestroyed_ = connect(popup, &QObject::destroyed, this, closed);
         return;
     }
-    columnPopup_.clear(); columnPopupOpen_ = false; reconcileColumnHover();
+    columnPopup_.clear(); columnPeek_.setPopupOpen(false); reconcileColumnHover();
 }
 
 void TabBar::reconcileColumnHover()
@@ -1115,7 +1115,7 @@ bool TabBar::collapsedNow() const { return collapsible() && !expanded_ && !dragE
 
 bool TabBar::overlayActive() const
 {
-    if (vertical()) return iconMode_ && peeking_;
+    if (vertical()) return columnPeek_.iconsOnly() && columnPeek_.expanded();
     return collapsible() && ((temporaryRowsOverlay_ && (dragExpanded_ || rowsReveal_.value() > 0))
         || ((expanded_ || rowsReveal_.value() > 0) && appearance_.rowExpansion == TabRowExpansion::Overlay));
 }
@@ -1220,7 +1220,7 @@ const TabBar::RowMeasure& TabBar::measureRows(QSize available) const
 QSize TabBar::reservedSize(QSize available) const
 {
     if (vertical()) {
-        const int width = iconMode_ ? metrics_.verticalIconWidth : std::clamp(available.width(), minimumColumnWidth(), maximumVerticalTabWidth);
+        const int width = columnPeek_.iconsOnly() ? metrics_.verticalIconWidth : std::clamp(available.width(), minimumColumnWidth(), maximumVerticalTabWidth);
         // `available` is the column's width and the group's height.
         return {width, available.height()};
     }
@@ -2503,7 +2503,7 @@ void TabBar::mousePressEvent(QMouseEvent* event)
 void TabBar::mouseMoveEvent(QMouseEvent* event)
 {
     const auto point = event->position().toPoint();
-    if (iconMode_ && rect().contains(point)) setColumnHovered(true);
+    if (columnPeek_.iconsOnly() && rect().contains(point)) setColumnHovered(true);
     if (scrollDragLane_ >= 0 && scrollDragLane_ < layout_.laneList.size()) {
         const auto& lane = layout_.laneList.at(scrollDragLane_);
         const auto track = scrollTrack(scrollDragLane_);
@@ -2677,7 +2677,7 @@ bool TabBar::event(QEvent* event)
     if (event->type() == QEvent::Hide) { scrollMotion_.stop(); smoothLane_ = -1; }
     if (event->type() == QEvent::Hide && scrollInput_) scrollInput_->hide();
     if (event->type() == QEvent::Show || event->type() == QEvent::Move)
-        QTimer::singleShot(0, this, [this] { refreshScrollInput(); if (iconMode_) reconcileColumnHover(); });
+        QTimer::singleShot(0, this, [this] { refreshScrollInput(); if (columnPeek_.iconsOnly()) reconcileColumnHover(); });
     if (event->type() == QEvent::ToolTip) {
         auto* help = static_cast<QHelpEvent*>(event);
         const int index = tabAt(help->pos());

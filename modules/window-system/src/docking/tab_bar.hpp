@@ -2,6 +2,7 @@
 #pragma once
 #include "tab_pointer_controller.hpp"
 #include "tab_hover_controller.hpp"
+#include "tab_column_peek.hpp"
 #include "tab_drag_visual.hpp"
 
 #include "style/smooth_scroll.hpp"
@@ -130,13 +131,13 @@ public:
     [[nodiscard]] int carriedTileColumns() const { return carriedTileColumns_; }
     // Vertical: only icons in a narrow column; hovering peeks at full width.
     void setIconMode(bool iconMode);
-    [[nodiscard]] bool iconMode() const { return iconMode_; }
-    [[nodiscard]] bool peeking() const { return peeking_; }
+    [[nodiscard]] bool iconMode() const { return columnPeek_.iconsOnly(); }
+    [[nodiscard]] bool peeking() const { return columnPeek_.expanded(); }
     enum class VerticalPresentation { Icons, Rows, Tiles };
     [[nodiscard]] VerticalPresentation verticalPresentation() const
     {
         if (carriedPresentation_) return *carriedPresentation_;
-        if (iconMode_) return peeking_ ? VerticalPresentation::Rows : VerticalPresentation::Icons;
+        if (iconMode()) return peeking() ? VerticalPresentation::Rows : VerticalPresentation::Icons;
         return appearance_.stickySizing == StickyTabSizing::Compact ? VerticalPresentation::Tiles : VerticalPresentation::Rows;
     }
     void setCarriedPresentation(std::optional<VerticalPresentation> presentation);
@@ -367,6 +368,7 @@ private:
     [[nodiscard]] QRect scrollbarHitRect() const;
     void trackColumnPopup();
     void reconcileColumnHover();
+    void applyColumnPeekAction(const TabColumnPeekAction& action);
     [[nodiscard]] int laneOffsetInput(int lane) const;
     void startCollapseTimer();
     void updateRowPresentation(VisualState previous, bool moving, bool revealActive);
@@ -415,12 +417,10 @@ private:
     bool carriedDisplay_ = false;
     int carriedTileColumns_ = 0;
     std::optional<VerticalPresentation> carriedPresentation_;
-    bool iconMode_ = false;
-    bool peeking_ = false;
+    TabColumnPeek columnPeek_;
     qreal columnReveal_ = 1.0;
     bool columnModeTransition_ = false;
     bool columnManaged_ = false;
-    bool columnPopupOpen_ = false;
     QPointer<QMenu> columnPopup_;
     QMetaObject::Connection popupHidden_;
     QMetaObject::Connection popupDestroyed_;

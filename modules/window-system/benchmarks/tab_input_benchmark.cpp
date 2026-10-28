@@ -78,6 +78,13 @@ int main(int argc, char** argv)
         });
         wheel.insert("placement", int(placement)); wheel.insert("pixelWheel", true);
         cases.append(wheel);
+        if (bar.vertical()) {
+            bar.setIconMode(true);
+            auto column = measure([&](int index) { bar.setColumnHovered(index % 2 == 0); });
+            bar.setColumnHovered(false); bar.setIconMode(false);
+            column.insert("placement", int(placement)); column.insert("columnHover", true);
+            cases.append(column);
+        }
         policy.showNumbers = true;
         bar.setAppearance(policy, placement);
         for (int index = bar.count(); index < 100; ++index) bar.addTab({}, QStringLiteral("Workspace %1").arg(index));
