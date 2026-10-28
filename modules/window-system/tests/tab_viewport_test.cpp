@@ -8,6 +8,8 @@
 #include <QLabel>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QScopeGuard>
+#include <QWheelEvent>
 #include <QTest>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -65,6 +67,8 @@ private slots:
     void underfilledStripTracksBothDirectionsWithoutOverscroll();
     void activeTabMovesOnlyAfterTheShrinkingEdgeReachesIt();
     void explicitScrollingCancelsQueuedFocusProtection();
+    void directScrollInputCancelsQueuedRestoration_data();
+    void directScrollInputCancelsQueuedRestoration();
     void movingAWindowOrVerticallyResizingNeverScrollsItsStrip();
     void realWindowResizePreservesTheUnchangedSide_data();
     void realWindowResizePreservesTheUnchangedSide();
@@ -327,6 +331,40 @@ void TabViewportTest::explicitScrollingCancelsQueuedFocusProtection()
     tabs.restoreViewportState(tabs.captureViewportState());
     tabs.scrollByWheel(QPoint(0, 80)); const int newerOffset = tabs.scrollOffset();
     settle(); QCOMPARE(tabs.scrollOffset(), newerOffset);
+}
+
+void TabViewportTest::directScrollInputCancelsQueuedRestoration_data()
+{
+    QTest::addColumn<bool>("scrollbar");
+    QTest::newRow("pixel-wheel") << false;
+    QTest::newRow("scrollbar-track") << true;
+}
+void TabViewportTest::directScrollInputCancelsQueuedRestoration()
+{
+    QFETCH(bool, scrollbar);
+    const bool animations = TabBar::animationsAllowed();
+    TabBar::setAnimationsEnabled(false);
+    const auto restoreAnimations = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+    QWidget root; GroupTabs tabs(defaultTheme(), &root); populate(tabs);
+    root.resize(760, 380); tabs.setGeometry(20, 20, 680, 300); applyTheme(&root); root.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
+    tabs.setCurrentIndex(8); settle();
+    const auto original = tabs.captureViewportState(); QVERIFY(original.activeFullyVisible);
+    tabs.restoreViewportState(original);
+    auto* bar = tabs.tabBar();
+    if (scrollbar) {
+        auto* input = root.findChild<QWidget*>("TabScrollbarInput"); QVERIFY(input); QVERIFY(input->isVisible());
+        const auto point = QPoint(input->width() - 4, input->height() / 2);
+        QTest::mousePress(input, Qt::LeftButton, Qt::NoModifier, point, 0);
+        QTest::mouseRelease(input, Qt::LeftButton, Qt::NoModifier, point, 0);
+    } else {
+        const auto point = bar->scrollViewport().center();
+        QWheelEvent wheel(point, bar->mapToGlobal(point), QPoint(0, -80), {}, Qt::NoButton,
+                          Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(bar, &wheel);
+    }
+    const int authored = tabs.scrollOffset(); QVERIFY(authored != original.offset);
+    settle(); QCOMPARE(tabs.scrollOffset(), authored);
 }
 
 void TabViewportTest::movingAWindowOrVerticallyResizingNeverScrollsItsStrip()

@@ -295,6 +295,8 @@ signals:
     void currentChanged(int index);
     // Offsets, expansion or layout changed: hover geometry is stale.
     void viewChanged();
+    // Accepted scroll input, before changing offsets or expanding rows.
+    void scrollInputStarted();
     // State notifications still run while a carried HWND stops painting.
     void carrierInvalidated();
 

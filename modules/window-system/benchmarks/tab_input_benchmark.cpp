@@ -10,6 +10,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QSaveFile>
+#include <QWheelEvent>
 #include <algorithm>
 #include <cstdio>
 
@@ -68,6 +69,15 @@ int main(int argc, char** argv)
         });
         keys.insert("placement", int(placement)); keys.insert("keyboard", true);
         cases.append(keys);
+        if (bar.vertical()) { bar.resize(bar.width(), 240); bar.setAvailableSize(bar.size()); }
+        const auto wheelPoint = bar.scrollViewport().center();
+        auto wheel = measure([&](int index) {
+            QWheelEvent event(wheelPoint, bar.mapToGlobal(wheelPoint), QPoint(0, index % 2 ? 8 : -8), {},
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&bar, &event);
+        });
+        wheel.insert("placement", int(placement)); wheel.insert("pixelWheel", true);
+        cases.append(wheel);
         policy.showNumbers = true;
         bar.setAppearance(policy, placement);
         for (int index = bar.count(); index < 100; ++index) bar.addTab({}, QStringLiteral("Workspace %1").arg(index));

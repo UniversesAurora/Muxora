@@ -1645,6 +1645,9 @@ bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
     const auto decision = wheelController_.route(layout_, local - tabOrigin(), delta, policy, rowWheelClock_.elapsed());
     using Action = TabWheelDecision::Action;
     if (decision.action == Action::Ignore) return false;
+    const QPointer<TabBar> self(this);
+    emit scrollInputStarted();
+    if (!self) return true;
     if (decision.action == Action::Expand) { setExpanded(true, true); return true; }
     if (decision.action == Action::Collapse) { setExpanded(false); return true; }
     if (decision.action == Action::HoldAtBoundary) return true;
@@ -1655,7 +1658,6 @@ bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
         return true;
     }
     // A listener of the change may destroy this strip.
-    const QPointer<TabBar> self(this);
     const bool moved = scrollLaneBy(lane, decision.delta, smooth);
     if (!self) return true;
     wheelController_.observeRowScroll(layout_, lane, expanded_, placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
@@ -2469,6 +2471,10 @@ void TabBar::mousePressEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton) { event->accept(); return; }
     // Hidden scrollbars do not create invisible drag targets over labels.
     if (scrollingLane_ >= 0 && scrollingLane_ < layout_.laneList.size() && scrollbarHitRect().contains(point)) {
+        const QPointer<TabBar> self(this);
+        event->accept();
+        emit scrollInputStarted();
+        if (!self) return;
         const int laneIndex = scrollingLane_;
         const auto track = scrollTrack(laneIndex);
         const auto thumb = scrollThumb(laneIndex);

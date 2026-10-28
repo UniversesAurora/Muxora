@@ -389,7 +389,6 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     resizeHandle_->setCursor(Qt::SizeHorCursor); resizeHandle_->hide(); resizeHandle_->installEventFilter(this);
     autoScroll_ = new QTimer(this); autoScroll_->setInterval(200);
     QObject::connect(autoScroll_, &QTimer::timeout, this, [this] {
-        cancelViewportReflow();
         if (scrollDirection_.isNull() || !bar_->scrollAt(dragProbe_, -scrollDirection_ * 12, false)) { autoScroll_->stop(); return; }
         if (autoScroll_->interval() != 35) autoScroll_->setInterval(35);
     });
@@ -412,6 +411,7 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
         updateCardJoin();
         const auto callback = hoverGeometryChanged; if (callback) callback();
     });
+    QObject::connect(bar_, &TabBar::scrollInputStarted, this, &GroupTabs::cancelViewportReflow);
     bar_->close = [this](int index) { const auto callback = closeRequested; if (callback) callback(index); };
     bar_->unstick = [this](int index) { const auto callback = unstickRequested; if (callback) callback(index); };
     bar_->reservedSizeChanged = [this] { layoutChildren(); };
@@ -883,14 +883,12 @@ void GroupTabs::restoreScrollOffset(int offset)
 }
 void GroupTabs::scrollByWheel(QPoint delta)
 {
-    cancelViewportReflow();
     const auto viewport = bar_->scrollViewport();
     bar_->scrollAt(viewport.isEmpty() ? bar_->rect().center() : viewport.center(), delta);
 }
 bool GroupTabs::scrollStripAt(QPoint global, QPoint delta, bool smooth)
 {
     if (!barVisible_ || !QRect(bar_->mapToGlobal(QPoint()), bar_->size()).contains(global)) return false;
-    cancelViewportReflow();
     // The scroll may destroy this group; touch nothing after it.
     bar_->scrollAt(bar_->mapFromGlobal(global), delta, smooth);
     return true;
