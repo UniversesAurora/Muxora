@@ -115,6 +115,20 @@ int main(int argc, char** argv)
         lifted.insert("layerPaints", paints.count); lifted.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
         cases.append(lifted);
         bar.setLifted({}); bar.setDraggedTab({});
+        const auto bounds = bar.carrierBounds();
+        TabDragVisual incoming; incoming.identity = dragged; incoming.size = bounds.size();
+        incoming.active = label.translated(-bounds.topLeft()); incoming.anchor = label.center() - bounds.topLeft();
+        incoming.sourceAnchor = DragAnchor::capture(label.center(), label);
+        incoming.pieces.append({-bounds.topLeft(), bar.carrierFrame()});
+        bar.setDropPreview(0, false, {bar.tabExtent(0, false)});
+        auto incomingUpdates = measure([&](int index) {
+            bar.setIncomingVisual(incoming, label.center() + QPoint(index % 2, index % 2));
+        });
+        if (bar.incomingRect().isEmpty()) return 3;
+        incomingUpdates.insert("placement", int(placement)); incomingUpdates.insert("incomingUpdates", true);
+        incomingUpdates.insert("pieces", incoming.pieces.size());
+        incomingUpdates.insert("labels", incoming.pieces.first().frame->content->labels.size());
+        cases.append(incomingUpdates); bar.setIncomingVisual({}, {}); bar.setDropPreview(-1, false, {});
         QRectF body;
         switch (placement) {
         case TabBarPlacement::Top: body = {0, qreal(bar.height()), qreal(bar.width()), 400}; break;

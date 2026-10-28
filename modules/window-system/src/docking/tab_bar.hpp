@@ -4,6 +4,7 @@
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
+#include "tab_incoming_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
 
@@ -322,6 +323,7 @@ private:
     [[nodiscard]] TabLayoutInput layoutInput(QSize area, bool collapsed) const;
     [[nodiscard]] QSize tabArea(QSize size) const;
     [[nodiscard]] TabDragArea dragArea() const;
+    [[nodiscard]] TabDragConstraint incomingConstraint() const;
     [[nodiscard]] bool collapsedNow() const;
     void relayout(bool animate, bool measureChanged = true);
     void relayoutTrailing();
@@ -449,12 +451,8 @@ private:
     std::optional<int> initialStickyBoundary_;
     QPointer<QWidget> liftedLayer_;
     QRegion liftedPaintRegion_;
-    TabDragVisual incomingVisual_;
+    TabIncomingState incoming_;
     TabCarrierPainter incomingPainter_;
-    QPoint incomingPointer_;
-    // Relative to the accepted gap when the carrier was last displayed.
-    // An off-center first entry must not reorder again without movement.
-    std::optional<QPoint> incomingReorderOffset_;
     mutable std::optional<QRect> carrierBounds_;
     std::shared_ptr<const TabCarrierLabels> carrierContent_;
     std::shared_ptr<const TabCarrierFrame> carrierFrame_;

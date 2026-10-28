@@ -89,7 +89,7 @@ std::shared_ptr<const TabForegroundFrame> TabBar::captureForegroundFrame(const Q
         frame->shadows.append({anchor.geometry, anchor.foreground ? elevationProfile(ElevationLevel::Flat) : body,
             anchor.elevation, anchor.presence, !anchor.foreground});
     if (const auto incoming = incomingRect(); !incoming.isEmpty())
-        frame->incoming = TabIncomingSample{incoming.topLeft(), incomingVisual_, anchors.isEmpty() ? SurfaceGeometry{}
+        frame->incoming = TabIncomingSample{incoming.topLeft(), incoming_.visual(), anchors.isEmpty() ? SurfaceGeometry{}
             : translatedSurfaceGeometry(anchors.first().geometry, -incoming.topLeft())};
     if (const auto lifted = liftedRect(); !lifted.isEmpty()) {
         if (draggedFolder_ >= 0) captureCarriedFolder(*frame, lifted);

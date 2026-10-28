@@ -5,6 +5,7 @@
 // Dimensions: source lifetime, shared content/changed samples, font/content
 // replacement, multiple pieces, cache removal, explicit clear, painter state.
 #include "docking/tab_drag_visual.hpp"
+#include "docking/tab_incoming_state.hpp"
 #include "style/tab_carrier_painter.hpp"
 #include "style/tab_departure.hpp"
 
@@ -65,6 +66,52 @@ void paint(TabCarrierPainter& renderer, const TabDragVisual& descriptor, const S
 class TabCarrierPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
+    void incomingStateOwnsTheCarrierAndPredictsFromTheLatestPointer()
+    {
+        TabIncomingState state;
+        TabLayout layout; layout.gap.append(QRect(20, 0, 120, 32));
+        const TabDragArea area{{600, 100}, {0, 3}, 32, 4};
+        const auto row = TabDragConstraint::HorizontalRow;
+        auto content = labels(); std::weak_ptr<const TabCarrierLabels> owner = content;
+        auto descriptor = visual(frame(content)); descriptor.size = {160, 32};
+        descriptor.active = QRect(20, 0, 120, 32);
+        descriptor.sourceAnchor = DragAnchor{{90, 7}, {120, 32}};
+        descriptor.identity = content->labels.first().id;
+        const auto id = descriptor.identity;
+        QCOMPARE(state.replace(std::move(descriptor), {150, 40}, layout, area, row), TabIncomingState::Change::Enter);
+        content.reset(); QVERIFY(!owner.expired());
+        QCOMPARE(state.visual().identity, id);
+        const auto displayed = state.rect(layout, area, row);
+        QCOMPARE(displayed, QRect(40, 3, 160, 32));
+        QCOMPARE(state.reorderOffset(), std::optional(displayed.center() - (layout.gap.first().center() + area.origin)));
+        QCOMPARE(state.rectAt({450, 40}, layout, area, row).left(), 340);
+        QCOMPARE(state.rect(layout, area, row), displayed);
+        auto retained = state.visual();
+        QCOMPARE(state.replace(retained, {450, 40}, layout, area, row), TabIncomingState::Change::Update);
+        QCOMPARE(state.rect(layout, area, row).left(), 340);
+        state.resetReorderOffset(); QVERIFY(!state.reorderOffset());
+        QCOMPARE(state.replace({}, {}, layout, area, row), TabIncomingState::Change::Leave);
+        QVERIFY(state.visual().empty()); QVERIFY(state.rect(layout, area, row).isEmpty());
+        QVERIFY(!state.reorderOffset());
+        QCOMPARE(state.replace({}, {10, 20}, layout, area, row), TabIncomingState::Change::None);
+        QVERIFY(!owner.expired()); retained = {}; QVERIFY(owner.expired());
+    }
+
+    void incomingStateReprojectsTheOriginalAnchorAfterResizing()
+    {
+        TabIncomingState state; const TabLayout layout;
+        const TabDragArea area{{600, 100}, {}, 32, 4};
+        auto descriptor = visual(frame(labels())); descriptor.size = {100, 32};
+        descriptor.active = QRect(20, 0, 60, 32);
+        descriptor.sourceAnchor = DragAnchor{{90, 7}, {120, 32}};
+        const auto row = TabDragConstraint::HorizontalRow;
+        QCOMPARE(state.replace(std::move(descriptor), {150, 40}, layout, area, row), TabIncomingState::Change::Enter);
+        QCOMPARE(state.rect(layout, area, row).left(), 85);
+        const auto tile = state.rectAt({150, 40}, layout, area, TabDragConstraint::CompactTile);
+        QCOMPARE(tile.topLeft(), QPoint(101, 25));
+        QVERIFY(!state.reorderOffset());
+    }
+
     void departuresOwnDataAndKeepRendererCachesOutsideTheFrame()
     {
         const auto id = QUuid::createUuid();
