@@ -1,6 +1,7 @@
 #include <window_system/interface_appearance.hpp>
 #include <QCoreApplication>
 #include "tab_strip.hpp"
+#include "tab_group_geometry.hpp"
 #include "dock_surface.hpp"
 #include "style/tab_painter.hpp"
 #include "commands/popup_menu.hpp"
@@ -531,10 +532,10 @@ int GroupTabs::columnWidth() const
 int GroupTabs::maximumColumnWidth() const
 {
     const int margin = contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
-    const int content = std::max(0, stack_->minimumSizeHint().expandedTo(stack_->minimumSize()).width());
+    const int content = stack_->minimumSizeHint().expandedTo(stack_->minimumSize()).width();
     // The strip borrows space only from its own content, never from the
     // enclosing splitter. Keep the content's declared minimum intact.
-    return std::clamp(width() - content - 2 * margin - bar_->metrics().columnGap, bar_->minimumColumnWidth(), maximumVerticalTabWidth);
+    return tabGroupColumnLimit(width(), content, margin, bar_->metrics().columnGap, bar_->minimumColumnWidth(), maximumVerticalTabWidth);
 }
 void GroupTabs::placeControls()
 {
@@ -563,27 +564,17 @@ void GroupTabs::placeControls()
         // A labeled new-tab button, or only its icon in a narrow column.
         create->add->setText(QCoreApplication::translate("WindowSystem", "New tab"));
         const auto& metrics = bar_->metrics();
-        const int shownWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth)
-            * std::max(columnExpansion_.value(), peekExpansion_.value()));
-        const int room = shownWidth - 2 * metrics.verticalInset;
-        const bool showToggle = !icons && room >= metrics.newTabWidth + iconModeButton_->sizeHint().width() + 2;
-        iconModeButton_->setVisible(showToggle);
-        const int toggle = showToggle ? iconModeButton_->sizeHint().width() : 0;
-        const int types = metrics.typeWidth + metrics.controlGap;
-        const int actions = int(sidebar.size()) * (uiPixels(tabActionSize) + 2);
-        const bool showActions = !icons && !compactPresentation_
-            && room >= metrics.newTabWidth + types + toggle + actions + 2;
-        const int remaining = room - toggle - (showActions ? actions : 0) - 2;
-        const bool showTypes = !icons && remaining >= metrics.newTabWidth + types;
-        const int fullLabel = metrics.newTabWidth + fontMetrics().horizontalAdvance(create->add->text()) + 8;
-        const bool showText = !icons && remaining >= fullLabel + (showTypes ? types : 0);
-        create->add->setToolButtonStyle(showText ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
-        const int label = showText ? fullLabel : metrics.newTabWidth;
-        create->add->setTargetSize(QSize(label, std::max(1, row - 4)));
+        const int shownWidth = tabColumnExtent(metrics.verticalIconWidth, columnWidth(), std::max(columnExpansion_.value(), peekExpansion_.value()));
+        const auto controls = layoutTabColumnControls({shownWidth, metrics.verticalInset, row, metrics.newTabWidth,
+            iconModeButton_->sizeHint().width(), metrics.typeWidth, metrics.controlGap, uiPixels(tabActionSize),
+            int(sidebar.size()), fontMetrics().horizontalAdvance(create->add->text()), icons, compactPresentation_});
+        iconModeButton_->setVisible(controls.toggle);
+        create->add->setToolButtonStyle(controls.text ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
+        create->add->setTargetSize(controls.primary);
         create->add->setIconRail(metrics.verticalIconWidth / 2 - metrics.verticalInset, left ? Qt::LeftEdge : Qt::RightEdge);
-        create->types->setVisible(showTypes);
-        create->setFixedSize((showTypes ? types : 0) + label, row);
-        for (auto* button : sidebar) button->setVisible(showActions);
+        create->types->setVisible(controls.types);
+        create->setFixedSize(controls.combined);
+        for (auto* button : sidebar) button->setVisible(controls.actions);
         setThemedIcon(iconModeButton_, iconMode_ == left ? QStringLiteral("chevron-right") : QStringLiteral("chevron-left"), theme_);
         iconModeButton_->setToolTip(iconMode_ ? QCoreApplication::translate("WindowSystem", "Show tab titles")
                                               : QCoreApplication::translate("WindowSystem", "Show only tab icons"));
@@ -611,6 +602,23 @@ void GroupTabs::placeControls()
     if (!vertical()) trailing_->setVisible(!create->isHidden());
     list_->setVisible(!compactPresentation_);
 }
+TabGroupGeometryInput GroupTabs::geometryInput() const
+{
+    const auto& metrics = bar_->metrics();
+    TabGroupGeometryInput input;
+    input.bounds = rect(); input.placement = bar_->placement();
+    input.compact = compactPresentation_; input.edgeToEdge = contentEdgeToEdge_; input.barVisible = barVisible_;
+    input.titled = !groupName_.isEmpty() && appearance_.showGroupNames && !compactPresentation_;
+    input.iconMode = iconMode_; input.resizing = resizeOrigin_.has_value();
+    input.normalDragStyle = normalDragStyle_.has_value(); input.dragWidth = dragTabArea_.width();
+    input.cardMargin = metrics.cardMargin; input.columnGap = metrics.columnGap;
+    input.columnWidth = vertical() ? columnWidth() : 0; input.iconColumnWidth = metrics.verticalIconWidth;
+    input.columnOutset = metrics.columnOverlayOutset; input.verticalInset = metrics.verticalInset;
+    input.rowHeight = metrics.rowHeight; input.resizeBand = metrics.resizeBand;
+    input.expansion = columnExpansion_.value(); input.peek = peekExpansion_.value();
+    return input;
+}
+
 void GroupTabs::layoutChildren()
 {
     if (layingOut_) return;
@@ -630,77 +638,44 @@ void GroupTabs::layoutChildren()
         bar_->setParent(this); footer_->setParent(this); title_->setParent(this);
     }
     placeControls();
-    // The group keeps a margin around its card; a drag carrier shows only
-    // its tabs and needs none.
-    const int margin = compactPresentation_ || contentEdgeToEdge_ ? 0 : bar_->metrics().cardMargin;
-    const auto area = rect().adjusted(margin, margin, -margin, -margin);
+    auto input = geometryInput();
     if (!card_) card_ = new CardOverlay(theme_, this);
     auto* card = static_cast<CardOverlay*>(card_);
-    const auto placeCard = [&](QRect content) {
-        stack_->setGeometry(content);
-        card->setGeometry(content.adjusted(-margin, -margin, margin, margin));
-        card->setCard(QRect(QPoint(margin, margin), content.size()));
-        updateCardJoin();
-        card->setVisible(!compactPresentation_ && !contentEdgeToEdge_);
-        card->raise();
+    const auto placeCard = [&](const TabGroupGeometry& geometry) {
+        stack_->setGeometry(geometry.content); card->setGeometry(geometry.card); card->setCard(geometry.cardBody);
+        updateCardJoin(); card->setVisible(geometry.cardVisible); card->raise();
     };
     if (!barVisible_) {
         bar_->hide(); footer_->hide(); resizeHandle_->hide(); title_->hide(); columnPanel_->hide();
-        placeCard(area);
+        placeCard(layoutTabGroup(input));
         return;
     }
     bar_->show();
     if (vertical()) {
-        const auto& metrics = bar_->metrics();
-        const qreal reveal = std::max(columnExpansion_.value(), peekExpansion_.value());
-        bar_->setColumnReveal(reveal, columnExpansion_.state() == QAbstractAnimation::Running);
-        const int footerHeight = metrics.rowHeight;
-        const bool titled = !groupName_.isEmpty() && appearance_.showGroupNames && !compactPresentation_;
-        const int titleHeight = titled ? bar_->metrics().rowHeight : 0;
-        const QSize available(columnWidth(), std::max(0, area.height() - footerHeight - titleHeight));
-        bar_->setAvailableSize(available);
-        const int reservedWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth) * columnExpansion_.value());
-        const int shownWidth = qRound(metrics.verticalIconWidth + (columnWidth() - metrics.verticalIconWidth) * reveal);
-        const bool left = bar_->placement() == TabBarPlacement::Left;
-        const int x = area.left() + (left ? 0 : area.width() - shownWidth);
-        const int pad = 3;
-        const int outset = qRound(metrics.columnOverlayOutset * peekExpansion_.value());
-        columnPanel_->setGeometry(x - pad, area.top() - pad - outset, shownWidth + 2 * pad, area.height() + 2 * (pad + outset));
-        static_cast<VerticalTabPanel*>(columnPanel_)->setSurface(
-            QRect(pad, pad, shownWidth, area.height() + 2 * outset), peekExpansion_.value(), outset);
-        columnPanel_->show();
-        if (titled) {
-            const int inset = bar_->metrics().verticalInset + 4;
-            title_->setGeometry(pad + inset, pad + outset, std::max(0, shownWidth - 2 * inset), titleHeight);
+        bar_->setColumnReveal(std::max(input.expansion, input.peek), columnExpansion_.state() == QAbstractAnimation::Running);
+        bar_->setAvailableSize(tabGroupAvailableSize(input));
+        input.columnWidth = columnWidth();
+        const auto geometry = layoutTabGroup(input);
+        columnPanel_->setGeometry(geometry.panel);
+        static_cast<VerticalTabPanel*>(columnPanel_)->setSurface(geometry.panelBody, input.peek, geometry.panelOutset);
+        columnPanel_->setVisible(geometry.panelVisible);
+        if (input.titled) {
+            title_->setGeometry(geometry.title);
             title_->setText(title_->fontMetrics().elidedText(groupName_, Qt::ElideRight, title_->width()));
         }
-        title_->setVisible(titled && reveal > 0);
-        bar_->setGeometry(pad, pad + outset + titleHeight, shownWidth, available.height());
-        footer_->setGeometry(pad, pad + outset + titleHeight + available.height(), shownWidth, footerHeight); footer_->setVisible(!compactPresentation_);
-        // The column sits on the background beside the card, with a gap.
-        const int gap = compactPresentation_ ? 0 : metrics.columnGap;
-        placeCard(left ? QRect(area.left() + reservedWidth + gap, area.top(), area.width() - reservedWidth - gap, area.height())
-                       : QRect(area.left(), area.top(), area.width() - reservedWidth - gap, area.height()));
-        const int edge = area.left() + (left ? reservedWidth + gap - margin : area.width() - reservedWidth - gap + margin);
-        resizeHandle_->setGeometry(edge - bar_->metrics().resizeBand / 2, area.top(), bar_->metrics().resizeBand, area.height());
-        resizeHandle_->setVisible((!iconMode_ || resizeOrigin_) && !compactPresentation_);
-        resizeHandle_->raise();
-        columnPanel_->raise();
-        resizeHandle_->raise();
+        title_->setVisible(geometry.titleVisible);
+        bar_->setGeometry(geometry.bar); footer_->setGeometry(geometry.footer); footer_->setVisible(geometry.footerVisible);
+        placeCard(geometry);
+        resizeHandle_->setGeometry(geometry.resizeHandle); resizeHandle_->setVisible(geometry.resizeVisible);
+        resizeHandle_->raise(); columnPanel_->raise(); resizeHandle_->raise();
     } else {
-        columnPanel_->hide();
-        footer_->hide(); resizeHandle_->hide(); title_->hide();
-        const int availableWidth = compactPresentation_ && normalDragStyle_
-            ? std::min(area.width(), dragTabArea_.width()) : area.width();
-        const QSize strip(std::max(1, availableWidth), area.height());
-        bar_->setAvailableSize(strip);
-        const auto reserved = bar_->reservedSize(strip), shown = bar_->displaySize(strip);
-        const bool top = bar_->placement() != TabBarPlacement::Bottom;
-        bar_->setGeometry(area.left(), top ? area.top() : area.bottom() + 1 - shown.height(), strip.width(), shown.height());
-        const QRect content(area.left(), top ? area.top() + reserved.height() : area.top(), area.width(), std::max(0, area.height() - reserved.height()));
-        placeCard(content);
-        bar_->raise();
-        updateCardJoin();
+        columnPanel_->hide(); footer_->hide(); resizeHandle_->hide(); title_->hide();
+        const auto available = tabGroupAvailableSize(input);
+        bar_->setAvailableSize(available);
+        input.reservedRows = bar_->reservedSize(available); input.shownRows = bar_->displaySize(available);
+        const auto geometry = layoutTabGroup(input);
+        bar_->setGeometry(geometry.bar); placeCard(geometry);
+        bar_->raise(); updateCardJoin();
     }
     if (lifting_) bar_->setLiftedWithAnchor(bar_->mapFromGlobal(liftedGlobal_), liftedGrab_);
     if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); if (vertical()) columnPanel_->raise(); }

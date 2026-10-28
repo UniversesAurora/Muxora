@@ -19,6 +19,8 @@ class QTimer;
 
 namespace window_system {
 
+struct TabGroupGeometryInput;
+
 // A tab group: its strip (TabBar) beside its pages. The strip goes above,
 // below, left or right of the pages; a vertical strip has a footer with the
 // new-tab and sidebar actions and an edge that resizes it.
@@ -126,6 +128,7 @@ protected:
 private:
     void updateDragProbe(QPoint global) const;
     void layoutChildren();
+    [[nodiscard]] TabGroupGeometryInput geometryInput() const;
     void updateCardJoin();
     void placeControls();
     void showTabList();
