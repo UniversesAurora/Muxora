@@ -147,7 +147,7 @@ std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font
         frame->shadowAbove = placement_ == TabBarPlacement::Bottom;
         const int shadow = rowShadowExtent();
         frame->overlayShadow = QRect(0, frame->shadowAbove ? 0 : height() - shadow, width(), shadow);
-        frame->shadowOpacity = rowsReveal_.value();
+        frame->shadowOpacity = rowsState_.value();
     }
     const auto origin = tabOrigin();
     for (int index = 0; index + 1 < tabs_.size(); ++index) {

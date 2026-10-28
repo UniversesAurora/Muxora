@@ -4,6 +4,7 @@
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
+#include "tab_rows_state.hpp"
 #include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
@@ -220,10 +221,10 @@ public:
 
     // Collapsed rows (tab strip design 3.4).
     [[nodiscard]] bool collapsible() const;
-    [[nodiscard]] bool expanded() const { return expanded_; }
+    [[nodiscard]] bool expanded() const { return rowsState_.expanded(); }
     void setExpanded(bool expanded, bool byWheel = false, bool animate = true);
     [[nodiscard]] bool wrappedRows() const;
-    [[nodiscard]] bool rowTransitionRunning() const { return rowsReveal_.state() == QAbstractAnimation::Running; }
+    [[nodiscard]] bool rowTransitionRunning() const { return rowsState_.needsFrame(); }
     [[nodiscard]] QRect scrollViewportAt(QPoint local) const;
     [[nodiscard]] bool scrollsHorizontallyAt(QPoint local) const;
     [[nodiscard]] int hiddenTabs() const { return layout_.hidden; }
@@ -426,15 +427,12 @@ private:
     bool applyingScrollMotion_ = false;
     int collapsedStickyRow_ = 0;
     int collapsedRegularRow_ = 0;
-    bool expanded_ = false;
-    bool expandedByWheel_ = false;
-    bool dragExpanded_ = false;
-    bool temporaryRowsOverlay_ = false;
+    TabRowsState rowsState_;
     QTimer collapseTimer_;
     QTimer peekTimer_;
     TabWheelController wheelController_;
     QElapsedTimer rowWheelClock_;
-    ProgressAnimation rowsReveal_{0};
+    QVariantAnimation rowsDriver_;
     ProgressAnimation scrollbarOpacity_{0};
     QTimer scrollbarHideTimer_;
     int scrollingLane_ = -1;

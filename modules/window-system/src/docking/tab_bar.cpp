@@ -235,9 +235,9 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     countButton_->setObjectName("TabRowCountButton");
     countButton_->setToolButtonStyle(Qt::ToolButtonTextOnly);
     countButton_->hide();
-    connect(countButton_, &QToolButton::clicked, this, [this] { setExpanded(!expanded_); });
-    collapseTimer_.setSingleShot(true); collapseTimer_.setInterval(400);
-    connect(&collapseTimer_, &QTimer::timeout, this, [this] { if (expandedByWheel_) setExpanded(false); });
+    connect(countButton_, &QToolButton::clicked, this, [this] { setExpanded(!rowsState_.expanded()); });
+    collapseTimer_.setSingleShot(true); collapseTimer_.setInterval(TabRowsState::collapseDelayMs);
+    connect(&collapseTimer_, &QTimer::timeout, this, [this] { if (rowsState_.collapseOnLeave()) setExpanded(false); });
     peekTimer_.setSingleShot(true); peekTimer_.setInterval(TabColumnPeek::delayMs);
     connect(&peekTimer_, &QTimer::timeout, this, [this] { applyColumnPeekAction(columnPeek_.timeout()); });
     slideTimer_.setInterval(15);
@@ -259,16 +259,23 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         presence_.finish();
         surfaceFrameChanged();
     });
-    connect(&rowsReveal_, &QVariantAnimation::valueChanged, this, [this] {
+    rowsDriver_.setStartValue(0.0); rowsDriver_.setEndValue(1.0);
+    rowsDriver_.setDuration(motionDuration(Motion::Reveal));
+    rowsDriver_.setEasingCurve(QEasingCurve::Linear);
+    connect(&rowsDriver_, &QVariantAnimation::valueChanged, this, [this] {
+        if (!rowsState_.advance(rowsState_.startedAt() + qint64(rowsDriver_.currentTime()) * 1'000'000)) return;
         invalidateCarrier(false);
+        const QPointer<TabBar> self(this);
         if (const auto callback = reservedSizeChanged) callback();
-        relayoutTrailing(); refreshScrollInput();
-        update();
+        if (!self) return;
+        relayoutTrailing(); refreshScrollInput(); update();
     });
-    connect(&rowsReveal_, &QVariantAnimation::finished, this, [this] {
-        if (!dragExpanded_) temporaryRowsOverlay_ = false;
-        if (!expanded_ && !dragExpanded_) qApp->removeEventFilter(this);
+    connect(&rowsDriver_, &QVariantAnimation::finished, this, [this] {
+        rowsState_.finish();
+        if (!rowsState_.open()) qApp->removeEventFilter(this);
+        const QPointer<TabBar> self(this);
         if (const auto callback = reservedSizeChanged) callback();
+        if (!self) return;
         invalidateCarrier(false); update();
     });
     const auto surfaceFrame = [this] { surfaceFrameChanged(); };
@@ -287,7 +294,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         setLaneOffset(lane, qRound(value));
         if (!self) return;
         applyingScrollMotion_ = false;
-        wheelController_.observeRowScroll(layout_, lane, expanded_, placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
+        wheelController_.observeRowScroll(layout_, lane, rowsState_.expanded(), placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
     };
     connect(&scrollbarOpacity_, &QVariantAnimation::valueChanged, this, [this] { update(); refreshScrollInput(); });
     connect(&scrollbarHideTimer_, &QTimer::timeout, this, [this] {
@@ -427,7 +434,7 @@ SurfaceGeometry TabBar::anchorGeometry(QRectF anchor, QRectF visible, bool compa
         : std::abs(anchor.top() - body.bottom()) <= metrics_.outerMargin + 1);
     const bool covered = !vertical() && !adjacent;
     auto values = transitioning ? attachmentValues() : std::pair<qreal, qreal>{adjacent && !compact ? 1 : 0, covered ? 1 : 0};
-    const qreal panel = transitioning ? (columnOverlay ? surfaceJoin_ : rowOverlay ? 1 - rowsReveal_.value() : 1) : 1;
+    const qreal panel = transitioning ? (columnOverlay ? surfaceJoin_ : rowOverlay ? 1 - rowsState_.value() : 1) : 1;
     SurfaceGeometryInput input;
     input.body = body; input.bodyRadius = metrics_.cardRadius;
     input.anchor = anchor; input.visibleAnchor = visible;
@@ -616,7 +623,7 @@ void TabBar::setAppearance(const TabAppearance& appearance, TabBarPlacement plac
     appearance_ = appearance; placement_ = placement;
     if (arrangement) {
         // A new arrangement starts collapsed (when it collapses) and at its start.
-        expanded_ = false; expandedByWheel_ = false; temporaryRowsOverlay_ = false; wheelController_.reset(); rowsReveal_.jump(0); rowsOffset_ = 0;
+        rowsDriver_.stop(); rowsState_.resetArrangement(); wheelController_.reset(); rowsOffset_ = 0;
     }
     if (!vertical()) columnPeek_.setIconsOnly(false);
     updateTitleWidths();
@@ -1053,7 +1060,7 @@ TabStripRows TabBar::rowPolicy() const
 {
     return {appearance_.multiline, appearance_.showAllRows, appearance_.stickyMultiline,
         appearance_.stickyShowAllRows, appearance_.stickyTabsOnSeparateRow, stickyCount_ > 0,
-        expanded_, dragExpanded_, temporaryRowsOverlay_, appearance_.rowExpansion, rowsReveal_.value()};
+        rowsState_.expanded(), rowsState_.dragExpanded(), rowsState_.temporaryOverlay(), appearance_.rowExpansion, rowsState_.value()};
 }
 
 TabStripGeometry TabBar::stripGeometry() const
@@ -1114,7 +1121,7 @@ int TabBar::minimumColumnWidth() const
 
 int TabBar::rowShadowExtent() const
 {
-    return overlayActive() ? qRound(metrics_.shadowBlur * rowsReveal_.value()) : 0;
+    return overlayActive() ? qRound(metrics_.shadowBlur * rowsState_.value()) : 0;
 }
 
 const TabStripRowMeasure& TabBar::measureRows(QSize available) const
@@ -1463,7 +1470,7 @@ bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
         .collapsible = collapsible(),
         .wheelExpandRows = appearance_.wheelExpandRows,
         .collapsed = collapsedNow(),
-        .expanded = expanded_
+        .expanded = rowsState_.expanded()
     };
     const auto decision = wheelController_.route(layout_, local - tabOrigin(), delta, policy, rowWheelClock_.elapsed());
     using Action = TabWheelDecision::Action;
@@ -1483,7 +1490,7 @@ bool TabBar::scrollAt(QPoint local, QPoint delta, bool smooth)
     // A listener of the change may destroy this strip.
     const bool moved = scrollLaneBy(lane, decision.delta, smooth);
     if (!self) return true;
-    wheelController_.observeRowScroll(layout_, lane, expanded_, placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
+    wheelController_.observeRowScroll(layout_, lane, rowsState_.expanded(), placement_ == TabBarPlacement::Bottom, rowWheelClock_.elapsed());
     return moved;
 }
 
@@ -1517,12 +1524,15 @@ bool TabBar::fullyVisible(int index) const
 void TabBar::updateRowPresentation(TabVisualState previous, bool moving, bool revealActive)
 {
     const QPointer<TabBar> self(this);
-    const bool open = expanded_ || dragExpanded_;
-    if (open || moving && rowsReveal_.value() > 0) {
-        if (temporaryRowsOverlay_ || appearance_.rowExpansion == TabRowExpansion::Overlay) qApp->installEventFilter(this);
-    } else qApp->removeEventFilter(this);
-    if (moving) rowsReveal_.animateTo(open ? 1.0 : 0.0, Motion::Reveal, true);
-    else rowsReveal_.jump(open ? 1 : 0);
+    const bool open = rowsState_.open();
+    if (rowsState_.watchesOutsideInput(moving, appearance_.rowExpansion == TabRowExpansion::Overlay)) qApp->installEventFilter(this);
+    else if (!open && !(moving && rowsState_.value() > 0)) qApp->removeEventFilter(this);
+    const bool restart = rowsState_.begin(moving, rowWheelClock_.nsecsElapsed());
+    if (!moving || !rowsState_.needsFrame()) rowsDriver_.stop();
+    else if (restart) {
+        { const QSignalBlocker quiet(&rowsDriver_); rowsDriver_.stop(); rowsDriver_.setCurrentTime(0); }
+        rowsDriver_.start();
+    }
     if (!self) return;
     relayout(false);
     if (!self) return;
@@ -1536,16 +1546,16 @@ void TabBar::updateRowPresentation(TabVisualState previous, bool moving, bool re
 void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
 {
     if (!collapsible()) expanded = false;
-    expandedByWheel_ = expanded && byWheel;
     collapseTimer_.stop();
-    if (expanded_ == expanded) {
-        if (!animate) rowsReveal_.jump(expanded || dragExpanded_ ? 1 : 0);
+    if (rowsState_.expanded() == expanded) {
+        rowsState_.setExpanded(expanded, byWheel);
+        if (!animate) { rowsDriver_.stop(); rowsState_.jumpToTarget(); }
         return;
     }
     const bool moving = animate && isVisible() && animationsEnabled();
     const bool activeWasVisible = fullyVisible(current_);
     auto before = moving ? captureVisualState() : TabVisualState{};
-    expanded_ = expanded;
+    rowsState_.setExpanded(expanded, byWheel);
     wheelController_.reset();
     updateRowPresentation(std::move(before), moving, activeWasVisible);
 }
@@ -1553,13 +1563,11 @@ void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
 void TabBar::setDragExpanded(bool expanded)
 {
     if (!collapsible()) expanded = false;
-    if (dragExpanded_ == expanded) return;
+    if (rowsState_.dragExpanded() == expanded) return;
     const bool moving = isVisible() && animationsEnabled();
     const bool activeWasVisible = fullyVisible(current_);
     auto before = moving ? captureVisualState() : TabVisualState{};
-    dragExpanded_ = expanded;
-    if (expanded && !expanded_) temporaryRowsOverlay_ = true;
-    if (!expanded && (!moving || expanded_)) temporaryRowsOverlay_ = false;
+    rowsState_.setDragExpanded(expanded, moving);
     updateRowPresentation(std::move(before), moving, activeWasVisible);
 }
 
@@ -2032,7 +2040,7 @@ void TabBar::applyPointerDecision(const TabPointerDecision& decision)
     case Action::ActivateTab: {
         const QPointer<TabBar> self(this);
         setCurrentIndex(decision.index);
-        if (self && appearance_.rowExpansion == TabRowExpansion::Overlay && expanded_) setExpanded(false);
+        if (self && appearance_.rowExpansion == TabRowExpansion::Overlay && rowsState_.expanded()) setExpanded(false);
         return;
     }
     case Action::DragTab: {
@@ -2150,7 +2158,7 @@ void TabBar::leaveEvent(QEvent* event)
     actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
     hover_.leave();
     if (!columnManaged_) setColumnHovered(false);
-    if (expandedByWheel_) collapseTimer_.start();
+    if (rowsState_.collapseOnLeave()) collapseTimer_.start();
     update();
     QWidget::leaveEvent(event);
 }
@@ -2168,7 +2176,7 @@ void TabBar::contextMenuEvent(QContextMenuEvent* event)
 
 void TabBar::keyPressEvent(QKeyEvent* event)
 {
-    const auto decision = tabKeyboardDecision(event->key(), current_, count(), vertical(), expanded_);
+    const auto decision = tabKeyboardDecision(event->key(), current_, count(), vertical(), rowsState_.expanded());
     using Action = TabKeyboardDecision::Action;
     if (decision.action == Action::Ignore) { QWidget::keyPressEvent(event); return; }
     event->accept();
@@ -2250,7 +2258,7 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
         return false;
     }
     // An expanded overlay closes on a press elsewhere or Escape.
-    if (expanded_ && appearance_.rowExpansion == TabRowExpansion::Overlay) {
+    if (rowsState_.dismissesOutsideInput(appearance_.rowExpansion == TabRowExpansion::Overlay)) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             const QRect area(mapToGlobal(QPoint()), size());

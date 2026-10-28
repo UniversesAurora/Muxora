@@ -3,6 +3,7 @@
 // Dimensions: every existing curve, 60/144/240 Hz samples, interruption,
 // proportional surface duration, repeated/backward time, disabled and idle.
 #include "style/frame_motion.hpp"
+#include "docking/tab_rows_state.hpp"
 
 #include <QTest>
 #include <array>
@@ -35,6 +36,30 @@ void compareValue(qreal actual, qreal expected)
 class FrameMotionTest final : public QObject {
     Q_OBJECT
 private slots:
+    void rowSession_preservesTheSharedExpansionAcrossInputSources()
+    {
+        TabRowsState rows; const auto duration = ms(motionDuration(Motion::Reveal)), quarter = duration / 4;
+        rows.setExpanded(true, true); QVERIFY(rows.collapseOnLeave());
+        QVERIFY(rows.begin(true, 0)); rows.advance(quarter);
+        const auto displayed = rows.value(); QVERIFY(displayed > 0 && displayed < 1);
+        rows.setDragExpanded(true, true);
+        QVERIFY(!rows.begin(true, quarter)); // The same open target keeps its clock.
+        rows.setExpanded(false, false); QVERIFY(rows.open());
+        QVERIFY(!rows.collapseOnLeave()); QVERIFY(!rows.begin(true, quarter));
+        rows.advance(duration); rows.finish();
+        QCOMPARE(rows.value(), qreal(1)); QVERIFY(!rows.needsFrame());
+        rows.setDragExpanded(false, true); QVERIFY(rows.begin(true, duration + quarter));
+        rows.advance(duration + 2 * quarter); const auto closing = rows.value();
+        rows.setExpanded(true, false); QVERIFY(rows.begin(true, duration + 2 * quarter));
+        QCOMPARE(rows.value(), closing); // Reversal starts at the last sample.
+        rows.resetArrangement(); QVERIFY(!rows.open()); QVERIFY(!rows.needsFrame());
+        rows.setDragExpanded(true, true); QVERIFY(rows.temporaryOverlay());
+        QVERIFY(rows.watchesOutsideInput(true, false));
+        QVERIFY(rows.begin(true, duration + 3 * quarter));
+        rows.setDragExpanded(false, true); rows.begin(true, duration + 3 * quarter);
+        QVERIFY(!rows.needsFrame()); QVERIFY(!rows.temporaryOverlay());
+    }
+
     void sampling_usesTheExistingCurve_data() { motionRows(); }
     void sampling_usesTheExistingCurve()
     {
