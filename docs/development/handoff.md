@@ -63,6 +63,8 @@ Codex 在 Quick 迁移期间删除下列目标时被自动审批拦截，工具�
 | `muxora-wheel-compare-7d0d5c14053143f9895e2bf1a65e7e9a/` | 改前对照时暂存本次 `tab_bar.cpp`、`tab_bar.hpp` 的目录；现行代码已恢复并提交，不能将副本覆盖回源码。删除前检查目录只含这两个诊断副本。 |
 | `muxora-reorder-cost-nwsreiqt/` | 标签换位的改前/改后成本探针和纯整理对照。目录核对时只含 `probe.cpp`、原始/整理/中间布局源码、两个 obj 与三个 exe；没有用户数据。删除请求返回 `blocked by policy`，未绕过。结果见 [换位记录](verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28)；源码现行版本在仓库，不能用临时副本覆盖。 |
 
+| `muxora-doc-amend-buf7nttd/` | 文档提交 amend 的临时材料：`state.json` 保存重放用的文档文本，`edit_todo.py` 指定待修改提交，`commit-message.txt` 是提交说明。清理请求返回 `blocked by policy`，未绕过。删除前核对仅含本次材料，不用于恢复产品源码。 |
+
 完成后移除本清单；目标不存在或不能确认用途时写明实际情况，不将其记为已删除。
 
 ## 2026-10-25 · Claude：标签栏重做（8.20–8.26），测试未全绿
