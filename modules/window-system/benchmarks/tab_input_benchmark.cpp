@@ -115,6 +115,28 @@ int main(int argc, char** argv)
         lifted.insert("layerPaints", paints.count); lifted.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
         cases.append(lifted);
         bar.setLifted({}); bar.setDraggedTab({});
+        QRectF body;
+        switch (placement) {
+        case TabBarPlacement::Top: body = {0, qreal(bar.height()), qreal(bar.width()), 400}; break;
+        case TabBarPlacement::Bottom: body = {0, -400, qreal(bar.width()), 400}; break;
+        case TabBarPlacement::Left: body = {qreal(bar.width() + bar.metrics().columnGap), 0, 400, qreal(bar.height())}; break;
+        case TabBarPlacement::Right: body = {qreal(-400 - bar.metrics().columnGap), 0, 400, qreal(bar.height())}; break;
+        }
+        bar.setCurrentIndex(0); bar.setSurfaceContext(body, 1);
+        int sampled = 0, selected = 0;
+        auto capture = measure([&](int) {
+            const auto frame = bar.captureStripFrame(bar.font(), bar.layoutDirection());
+            sampled = selected = 0;
+            for (const auto& lane : frame->lanes) for (const auto& label : lane.regular) {
+                ++sampled; if (label.label.surface) ++selected;
+            }
+        });
+        if (sampled <= 1 || selected != 1) return 3;
+        capture.insert("basePaint", measure([&](int) { canvas.fill(Qt::white); bar.render(&canvas); }, 180, 30));
+        capture.insert("placement", int(placement)); capture.insert("stripCapture", true);
+        capture.insert("sampledLabels", sampled); capture.insert("selectedSurfaces", selected);
+        capture.insert("dpr", ratio); capture.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
+        cases.append(capture); bar.setSurfaceContext({}, 1);
         TabPainter retirementStyle(TabMetrics::forTheme(defaultTheme(), bar.font()), TabPalette::forTheme(defaultTheme()));
         TabVisualState retired;
         for (int index = 0; index < 12; ++index) {

@@ -12,8 +12,9 @@ std::optional<TabStripLabelSample> TabBar::labelSample(int index, QRect area, co
     const int lane = layout_.lanes.value(index, -1);
     const auto visible = settling ? area : lane < 0 ? QRect{}
         : area.intersected(layout_.laneList.at(lane).viewport.translated(tabOrigin())).intersected(rect());
-    const auto geometry = anchorGeometry(area, visible, state.shape == TabShape::Tile, false);
-    state.surface = state.selected && !visible.isEmpty() ? &geometry : nullptr;
+    std::optional<SurfaceGeometry> geometry;
+    if (state.selected && !visible.isEmpty()) geometry = anchorGeometry(area, visible, state.shape == TabShape::Tile, false);
+    state.surface = geometry ? &*geometry : nullptr;
     state.elevationManaged = !surfaceBody_.isEmpty();
     auto label = TabPainter::captureLabel(partsOf(index, area), state, font, direction);
     label.presence = presenceFor(index, area);

@@ -23,8 +23,9 @@ void TabBar::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
             tab.outerRight = placement_ == TabBarPlacement::Right; tab.preset = tabPreset(index);
             tab.icon = appearance_.showIcons ? tabs_.at(index).icon : QIcon{};
             tab.title = tabs_.at(index).title;
-            const auto geometry = anchorGeometry(area, area.intersected(rect()), false, true);
-            tab.elevationManaged = true; tab.surface = tab.selected ? &geometry : nullptr;
+            std::optional<SurfaceGeometry> geometry;
+            if (tab.selected) geometry = anchorGeometry(area, area.intersected(rect()), false, true);
+            tab.elevationManaged = true; tab.surface = geometry ? &*geometry : nullptr;
             auto label = TabPainter::captureLabel(labelGeometry(area, tab.shape, labelParts(index, false), false, false, false),
                 tab, frame.font, frame.direction);
             frame.carried.append({tabData(index).toUuid(), index, labelContent(index), std::move(label)});

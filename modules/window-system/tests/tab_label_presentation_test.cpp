@@ -139,6 +139,7 @@ private slots:
             for (const auto& lane : frame->lanes) for (const auto& sample : lane.regular) {
                 QCOMPARE(sample.id, bar.tabData(sample.sourceIndex).toUuid());
                 QCOMPARE(sample.label.state.outerRight, side == TabBarPlacement::Right);
+                QCOMPARE(sample.label.surface.has_value(), sample.label.state.selected);
                 if (sample.label.state.selected) { ++active; QCOMPARE(sample.sourceIndex, 3); }
             }
             QCOMPARE(active, 1);

@@ -391,7 +391,7 @@ Qt 事件模拟与离屏渲染用于快速组件检查；真实桌面测试另�
 
 Quick 图元基准 `window-system-quick-frame-benchmark` 还需要开启 Quick 构建目标。`--scene joined-fills` 测接合表面的填充，`--scene body-resize` 测两个卡片主体的填充和保留阴影，`--scene joined-resize` 加入接合轮廓、原接合补片和主体阴影挖空；其他参数与字段见 [源码](../../modules/window-system/benchmarks/quick_frame_benchmark.cpp)。它显示真实窗口，须经桌面隔离并保持屏幕工作；分别记录 GUI 准备、渲染提交墙钟、提交间隔和资源更新。它没有宿主内容、文字或原生输入，不是完整应用的帧率验收。
 
-标签输入基准为可选目标 `window-system-tab-input-benchmark`，参数沿用上述 `--commit` 和 `--out`。它向从未显示的真实标签栏发送 Qt 鼠标、键盘与像素滚轮事件，测标签悬停、竖栏悬停计时接线、未达到起拖阈值的按住移动、首尾导航、直接滚动，以及带编号标签的连续尺寸布局，分别记录各方向的分位数；另有四方向隐藏提起层及退出层绘制项，记录各自预热/采样数和尺寸，提起项还记录真实层的绘制次数。一般输入项不测绘制，提起项包含基础层与提起层，退出项只包含退出层的 CPU 离屏取样与绘制；都不发送原生输入、不测桌面帧率、不注册 CTest。负载见 [源码](../../modules/window-system/benchmarks/tab_input_benchmark.cpp)。
+标签输入基准为可选目标 `window-system-tab-input-benchmark`，参数沿用上述 `--commit` 和 `--out`。它向从未显示的真实标签栏发送 Qt 鼠标、键盘与像素滚轮事件，测标签悬停、竖栏悬停计时接线、未达到起拖阈值的按住移动、首尾导航、直接滚动，以及带编号标签的连续尺寸布局，分别记录各方向的分位数；有相邻内容的条带取样项还报告可见标签和活动表面数，并单独记录基础绘制成本；另有四方向隐藏提起层及退出层绘制项，记录各自预热/采样数和尺寸，提起项还记录真实层的绘制次数。一般输入项不测绘制，提起项包含基础层与提起层，退出项只包含退出层的 CPU 离屏取样与绘制；都不发送原生输入、不测桌面帧率、不注册 CTest。负载见 [源码](../../modules/window-system/benchmarks/tab_input_benchmark.cpp)。
 
 布局规模基准的 `restore` 场景先用模型生成完整标签和内容描述，再通过一次 `restoreLayout()` 创建全部宿主内容、显示窗口并进入事件循环；内存记录的 `workspace` 为 `restore`。它衡量“未显示标签不创建页面视图”，不能和逐个添加并激活的 `create` 场景混为一谈。可用 `pwsh tools/bench.ps1 -Name <名字> -Tabs 1000 -Repeat 1 -Scenario restore` 单独测量；前后比较必须使用同一机器、平台、参数和基准源码。
 
