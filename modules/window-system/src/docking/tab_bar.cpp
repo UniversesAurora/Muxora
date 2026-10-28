@@ -305,8 +305,7 @@ TabBar::~TabBar() { qApp->removeEventFilter(this); delete scrollInput_.data(); d
 
 int TabBar::addTab(const QIcon& icon, const QString& title)
 {
-    Tab tab; tab.icon = icon; tab.title = title;
-    tabs_.append(std::move(tab));
+    tabs_.append(icon, title);
     if (current_ < 0) current_ = 0;
     relayout(true);
     return int(tabs_.size()) - 1;
@@ -332,33 +331,27 @@ void TabBar::removeTab(int index)
     if (wasCurrent || previous != current_) emit currentChanged(current_);
 }
 
-QVariant TabBar::tabData(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).data : QVariant{}; }
+QVariant TabBar::tabData(int index) const { return tabs_.data(index); }
 void TabBar::setTabData(int index, const QVariant& value)
 {
-    if (index < 0 || index >= tabs_.size() || tabs_.at(index).data == value) return;
-    tabs_[index].data = value;
-    invalidateCarrier(true);
+    if (tabs_.setData(index, value)) invalidateCarrier(true);
 }
-QString TabBar::tabText(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).title : QString{}; }
+QString TabBar::tabText(int index) const { return tabs_.title(index); }
 void TabBar::setTabText(int index, const QString& text)
 {
-    if (index < 0 || index >= tabs_.size() || tabs_.at(index).title == text) return;
-    tabs_[index].title = text; tabs_[index].titleWidth = -1; tabs_[index].content.reset();
-    relayout(true);
+    if (tabs_.setTitle(index, text)) relayout(true);
 }
-QIcon TabBar::tabIcon(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).icon : QIcon{}; }
+QIcon TabBar::tabIcon(int index) const { return tabs_.icon(index); }
 void TabBar::setTabIcon(int index, const QIcon& icon)
 {
-    if (index < 0 || index >= tabs_.size()) return;
-    tabs_[index].icon = icon; tabs_[index].content.reset(); relayout(true);
+    if (tabs_.setIcon(index, icon)) relayout(true);
 }
-QString TabBar::tabToolTip(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).tooltip : QString{}; }
-void TabBar::setTabToolTip(int index, const QString& tip) { if (index >= 0 && index < tabs_.size()) tabs_[index].tooltip = tip; }
+QString TabBar::tabToolTip(int index) const { return tabs_.toolTip(index); }
+void TabBar::setTabToolTip(int index, const QString& tip) { tabs_.setToolTip(index, tip); }
 void TabBar::setTabMetadata(int index, const TabRecord& tab)
 {
-    if (index < 0 || index >= tabs_.size()) return;
-    if (tabs_[index].colorId != tab.colorId) tabs_[index].content.reset();
-    tabs_[index].colorId = tab.colorId; invalidateCarrier(true); update();
+    if (!tabs_.setColor(index, tab.colorId)) return;
+    invalidateCarrier(true); update();
 }
 std::shared_ptr<const TabStripLabelStyle> TabBar::labelStyle() const
 {
@@ -370,6 +363,7 @@ std::shared_ptr<const TabStripLabelStyle> TabBar::labelStyle() const
         style->closeIcon = iconFor(QStringLiteral("close"), theme_);
         style->stickyIcon = iconFor(vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
         style->addIcon = iconFor(QStringLiteral("add"), theme_);
+        style->showNumbers = appearance_.showNumbers; style->showIcons = appearance_.showIcons; style->colors = appearance_.colors;
         labelStyle_ = std::move(style);
     }
     return labelStyle_;
@@ -377,22 +371,7 @@ std::shared_ptr<const TabStripLabelStyle> TabBar::labelStyle() const
 
 std::shared_ptr<const TabLabelContent> TabBar::labelContent(int index) const
 {
-    Q_ASSERT(index >= 0 && index < tabs_.size());
-    const auto& tab = tabs_.at(index);
-    const auto style = labelStyle();
-    if (!tab.content || tab.content->style != style || (appearance_.showNumbers && tab.contentIndex != index)) {
-        auto content = std::make_shared<TabLabelContent>();
-        content->style = style; content->title = tab.title;
-        if (appearance_.showNumbers) {
-            content->number = QString::number(index + 1);
-            content->numberExtent = fontMetrics().horizontalAdvance(content->number);
-        }
-        if (appearance_.showIcons) content->icon = tab.icon;
-        if (!tab.colorId.isEmpty())
-            for (const auto& preset : appearance_.colors) if (preset.id == tab.colorId) { content->preset = preset; break; }
-        tab.content = std::move(content); tab.contentIndex = index;
-    }
-    return tab.content;
+    return tabs_.content(index, labelStyle());
 }
 
 const TabColorPreset* TabBar::tabPreset(int index) const
@@ -404,8 +383,7 @@ const TabColorPreset* TabBar::tabPreset(int index) const
 
 int TabBar::indexOf(TabId tab) const
 {
-    for (int index = 0; index < tabs_.size(); ++index) if (tabs_.at(index).data.toUuid() == tab) return index;
-    return -1;
+    return tabs_.indexOf(tab);
 }
 
 void TabBar::setCurrentIndex(int index)
@@ -1056,10 +1034,7 @@ int TabBar::naturalTabWidth(int index) const { return index >= 0 && index < tabs
 void TabBar::updateTitleWidths()
 {
     labelStyle_.reset();
-    for (auto& tab : tabs_) {
-        tab.titleLayout.prepare(tab.title, font(), layoutDirection(), true, this);
-        tab.titleWidth = tab.titleLayout.naturalWidth();
-    }
+    tabs_.measureTitles(font(), layoutDirection(), this, true);
 }
 
 bool TabBar::wrappedRows() const
@@ -1231,10 +1206,7 @@ void TabBar::relayout(bool animate, bool measureChanged)
             before.insert(id, animatedRect(index));
             if (const auto slide = slides_.constFind(id); slide != slides_.cend() && slide->resizeWidth) resizing.insert(id);
         }
-    for (auto& tab : tabs_) if (tab.titleWidth < 0) {
-        tab.titleLayout.prepare(tab.title, font(), layoutDirection(), true, this);
-        tab.titleWidth = tab.titleLayout.naturalWidth();
-    }
+    tabs_.measureTitles(font(), layoutDirection(), this);
     const auto area = tabArea(size());
     // The count shows only while rows are collapsed away; measure without
     // it first, then make room for it.
@@ -2033,7 +2005,7 @@ TabPaintState TabBar::paintState(int index)
     state.number = content->number;
     state.icon = content->icon;
     state.title = content->title;
-    state.titleLayout = &tabs_[index].titleLayout;
+    state.titleLayout = &tabs_.textLayout(index);
     // A sticky tab always shows its action; the others on hover.
     state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == pointer_.pressedAction()
         || (index == fadingAction_ && actionOpacity_.value() > 0))));
@@ -2069,7 +2041,7 @@ void TabBar::paintEvent(QPaintEvent*)
     const auto paintLabel = [&](QPainter& target, const TabStripLabelSample& sample) {
         if (target.hasClipping() && !target.clipBoundingRect().intersects(
             QRectF(sample.label.parts.tab).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
-        painter_.paintLabel(target, sample.label, &tabs_[sample.sourceIndex].titleLayout);
+        painter_.paintLabel(target, sample.label, &tabs_.textLayout(sample.sourceIndex));
     };
     for (const auto& lane : frame->lanes) {
         const auto drawLane = [&](QPainter& target) {
@@ -2113,12 +2085,12 @@ void TabBar::paintLiftedTabs(QPainter& painter)
         incomingPainter_.paint(painter, incoming.visual, &incoming.geometry); painter.restore();
     }
     if (frame->folder) painter_.paintFolderHeader(painter, frame->folder->area, frame->vertical, frame->folder->state);
-    for (const auto& sample : frame->carried) painter_.paintLabel(painter, sample.label, &tabs_[sample.sourceIndex].titleLayout);
+    for (const auto& sample : frame->carried) painter_.paintLabel(painter, sample.label, &tabs_.textLayout(sample.sourceIndex));
     if (frame->folderLine) painter_.paintFolderLine(painter, frame->folderLine->area, frame->folderLine->color);
     for (const auto& sample : frame->settling) {
         if (painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(sample.label.parts.tab)
             .adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) continue;
-        painter_.paintLabel(painter, sample.label, &tabs_[sample.sourceIndex].titleLayout);
+        painter_.paintLabel(painter, sample.label, &tabs_.textLayout(sample.sourceIndex));
     }
 }
 

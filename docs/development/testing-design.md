@@ -179,7 +179,7 @@ python tools/tests/translations-test.py
 | 标签 | 规则 | 运行方式 |
 | --- | --- | --- |
 | `desktop` | 调用 `showWindow`、`show()`／`showMaximized()` 等显示窗口、`qWaitForWindowExposed`、`QTest::mouse*`、`QCursor::setPos` 或 Win32 API（包括 `windows.h` 的进程计数）的套件 | 保留 `RUN_SERIAL TRUE`，一次只运行一个 |
-| `widget` | 创建 `QWidget` 或 `WindowManager`，但不显示窗口 | 可以并行 |
+| `widget` | 创建 `QWidget`／`WindowManager`，或仅用 Qt Gui 准备字体和绘制资源；不显示窗口 | 可以并行 |
 | `model` | 只用布局模型、`CommandRegistry` 或 Lua 运行时，不创建控件 | 可以并行 |
 
 初步分类用下面的命令列出可能属于 `desktop` 的源码，再逐个打开确认（例如 `view-state` 通过 `restorePlacement()` 最大化窗口，命令匹配不到，也属于 `desktop`）：

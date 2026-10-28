@@ -183,6 +183,14 @@ add_test(NAME window-system.tab-carrier-presentation COMMAND window-system-tab-c
     -o ${CMAKE_CURRENT_BINARY_DIR}/tab-carrier-presentation-results.txt,txt)
 set_tests_properties(window-system.tab-carrier-presentation PROPERTIES TIMEOUT 60 LABELS widget)
 
+qt_add_executable(window-system-tab-label-store-test tab_label_store_test.cpp)
+target_link_libraries(window-system-tab-label-store-test PRIVATE WindowSystemSurfaces Qt6::Test)
+target_include_directories(window-system-tab-label-store-test PRIVATE ../src ../include)
+set_target_properties(window-system-tab-label-store-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-label-store COMMAND window-system-tab-label-store-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-label-store-results.txt,txt)
+set_tests_properties(window-system.tab-label-store PROPERTIES TIMEOUT 60 LABELS widget)
+
 foreach(label model widget desktop)
     foreach(suite IN LISTS window_system_${label}_suites)
         window_system_add_suite(${suite} ${label})

@@ -4,6 +4,7 @@
 #include "tab_visual_style.hpp"
 #include <window_system/tab_appearance.hpp>
 #include <QIcon>
+#include <QVector>
 #include <memory>
 #include <optional>
 
@@ -21,6 +22,9 @@ struct TabStripLabelStyle {
     QIcon closeIcon;
     QIcon stickyIcon;
     QIcon addIcon;
+    bool showNumbers = false;
+    bool showIcons = true;
+    QVector<TabColorPreset> colors;
 };
 
 struct TabLabelContent {

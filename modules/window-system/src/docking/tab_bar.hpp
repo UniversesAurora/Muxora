@@ -5,6 +5,7 @@
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
 #include "tab_lift_state.hpp"
+#include "tab_label_store.hpp"
 #include "tab_incoming_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
@@ -310,17 +311,6 @@ private:
     [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
     [[nodiscard]] QRect incomingRectAt(QPoint local) const;
     [[nodiscard]] QRect liftedRectAt(QPoint local) const;
-    struct Tab {
-        QVariant data;
-        QString title;
-        QIcon icon;
-        QString tooltip;
-        QString colorId;
-        TabTitleLayout titleLayout;
-        int titleWidth = -1;
-        mutable std::shared_ptr<const TabLabelContent> content;
-        mutable int contentIndex = -1;
-    };
     [[nodiscard]] TabLayoutInput layoutInput(QSize area, bool collapsed) const;
     [[nodiscard]] QSize tabArea(QSize size) const;
     [[nodiscard]] TabDragArea dragArea() const;
@@ -386,7 +376,7 @@ private:
     mutable std::shared_ptr<const TabStripLabelStyle> labelStyle_;
     TabAppearance appearance_;
     TabBarPlacement placement_ = TabBarPlacement::Top;
-    QVector<Tab> tabs_;
+    TabLabelStore tabs_;
     int current_ = -1;
     int stickyCount_ = 0;
     QVector<TabStripFolder> folders_;
