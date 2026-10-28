@@ -14,6 +14,7 @@
 #include "style/tab_carrier_painter.hpp"
 #include "style/tab_title_layout.hpp"
 #include "style/tab_label_content.hpp"
+#include "style/tab_strip_frame.hpp"
 #include "style/motion.hpp"
 #include "style/elevation.hpp"
 #include <window_system/layout_model.hpp>
@@ -196,6 +197,7 @@ public:
     void setAvailableSize(QSize available);
     [[nodiscard]] QSize availableSize() const { return available_; }
     [[nodiscard]] const TabLayout& tabLayout() const { return layout_; }
+    [[nodiscard]] std::shared_ptr<const TabStripFrame> captureStripFrame(const QFont& font, Qt::LayoutDirection direction);
     // Where tab coordinates of the layout start inside the widget.
     [[nodiscard]] QPoint tabOrigin() const;
     // Displayed and visible: what a click on it hits.
@@ -348,15 +350,13 @@ private:
                                          bool iconOnly, bool action, bool sticky) const;
     [[nodiscard]] QRect animatedRect(int index) const;
     void paintTabAt(QPainter& painter, int index, bool settling = false);
+    [[nodiscard]] std::optional<TabStripLabelSample> labelSample(int index, QRect area, const QFont& font,
+        Qt::LayoutDirection direction, bool settling = false);
     [[nodiscard]] TabPaintState paintState(int index);
     void paintLiftedTabs(QPainter& painter);
     void updateLiftedLayer();
-    void paintLaneDecorations(QPainter& painter);
-    // A lane's folder headers, under its tabs; the folder lines and the
-    // folder outline of its current tab, over them.
-    void paintFolders(QPainter& painter, int lane);
-    void paintFolderLines(QPainter& painter, int lane);
-    void paintFolderOutline(QPainter& painter, int lane);
+    void captureLaneFrame(TabStripLaneFrame& frame, int lane, const QFont& font, Qt::LayoutDirection direction);
+    void captureFolderFrame(TabStripLaneFrame& frame, int lane);
     [[nodiscard]] TabFolderPaintState folderPaintState(int folder) const;
     [[nodiscard]] int laneAt(QPoint local) const;
     [[nodiscard]] std::optional<int> stickyBoundary() const;
@@ -474,6 +474,7 @@ private:
     std::shared_ptr<const TabCarrierLabels> carrierContent_;
     std::shared_ptr<const TabCarrierFrame> carrierFrame_;
     std::array<std::shared_ptr<TabCarrierFrame>, 2> carrierBuffers_;
+    std::array<std::shared_ptr<TabStripFrame>, 2> stripBuffers_;
     bool carrierContentDirty_ = true;
     // Two bounded shape snapshots: attachment probing and displayed shape.
     // Full input keys cover resize, animation, scrolling, and theme metrics.

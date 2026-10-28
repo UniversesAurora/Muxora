@@ -11,6 +11,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QPixmap>
+#include <QScopeGuard>
 #include <QTest>
 
 using namespace window_system;
@@ -30,6 +31,68 @@ TabPainter labelPainter()
 class TabLabelPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
+    void stripFramesOwnTheirLabelsAndKeepFrozenLayersSeparate()
+    {
+        const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(false);
+        const auto restore = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+        auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);
+        TabAppearance policy; policy.stickySizing = StickyTabSizing::Compact;
+        policy.showNewTabButton = false; bar->setAppearance(policy, TabBarPlacement::Top);
+        bar->resize(500, 40); bar->setAvailableSize(bar->size());
+        for (int index = 0; index < 10; ++index) {
+            bar->addTab({}, QStringLiteral("Workspace %1").arg(index)); bar->setTabData(index, QUuid::createUuid());
+        }
+        bar->setStickyCount(2); bar->setCurrentIndex(1);
+        const auto original = bar->captureStripFrame(bar->font(), bar->layoutDirection());
+        QCOMPARE(original->lanes.size(), 1);
+        const auto& lane = original->lanes.first();
+        QCOMPARE(lane.frozen.size(), 2); QCOMPARE(lane.frozen.last().sourceIndex, 1);
+        QVERIFY(lane.frozen.last().label.state.selected);
+        QVERIFY(lane.regularClip.left() > lane.viewport.left());
+        for (const auto& label : lane.regular) {
+            QVERIFY(label.sourceIndex >= 2); QVERIFY(!label.label.state.selected);
+            QVERIFY(label.label.parts.tab.intersects(lane.regularClip));
+        }
+        const auto id = lane.frozen.last().id;
+        bar->setTabText(1, QStringLiteral("Changed")); bar->setCurrentIndex(5);
+        bar->ensureVisible(5);
+        const auto changed = bar->captureStripFrame(bar->font(), bar->layoutDirection());
+        QCOMPARE(changed->lanes.first().regular.last().sourceIndex, 5);
+        QVERIFY(changed->lanes.first().regular.last().label.state.selected);
+        bar->setScrollOffset(bar->maximumScrollOffset());
+        const auto scrolled = bar->captureStripFrame(bar->font(), bar->layoutDirection());
+        QVERIFY(!scrolled->lanes.first().fades.isEmpty());
+        bar.reset();
+        QCOMPARE(lane.frozen.last().id, id);
+        QCOMPARE(lane.frozen.last().label.state.title, QStringLiteral("Workspace 1"));
+        QCOMPARE(lane.frozen.last().content->title, QStringLiteral("Workspace 1"));
+        QCOMPARE(changed->lanes.first().frozen.last().label.state.title, QStringLiteral("Changed"));
+        QVERIFY(!original->style->closeIcon.isNull());
+    }
+
+    void stripFramesDescribeAllSidesWithoutWidgetPainting()
+    {
+        const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(false);
+        const auto restore = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+        for (auto side : {TabBarPlacement::Top, TabBarPlacement::Bottom, TabBarPlacement::Left, TabBarPlacement::Right}) {
+            TabBar bar(defaultTheme(), nullptr); TabAppearance policy;
+            policy.showNewTabButton = false; policy.multiline = true;
+            bar.setAppearance(policy, side); bar.resize(bar.vertical() ? QSize(220, 240) : QSize(500, 140));
+            bar.setAvailableSize(bar.size());
+            for (int index = 0; index < 7; ++index) { bar.addTab({}, QStringLiteral("Workspace %1").arg(index)); bar.setTabData(index, QUuid::createUuid()); }
+            bar.setCurrentIndex(3); bar.setUpdatesEnabled(false);
+            const auto frame = bar.captureStripFrame(bar.font(), bar.layoutDirection());
+            QCOMPARE(frame->vertical, bar.vertical()); QVERIFY(!frame->lanes.isEmpty());
+            int active = 0;
+            for (const auto& lane : frame->lanes) for (const auto& sample : lane.regular) {
+                QCOMPARE(sample.id, bar.tabData(sample.sourceIndex).toUuid());
+                QCOMPARE(sample.label.state.outerRight, side == TabBarPlacement::Right);
+                if (sample.label.state.selected) { ++active; QCOMPARE(sample.sourceIndex, 3); }
+            }
+            QCOMPARE(active, 1);
+        }
+    }
+
     void sharedContentChangesOnlyWithItsSourceAndOutlivesTheBar()
     {
         auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);

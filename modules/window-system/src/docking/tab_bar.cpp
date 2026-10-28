@@ -2098,19 +2098,10 @@ TabPaintState TabBar::paintState(int index)
 
 void TabBar::paintTabAt(QPainter& painter, int index, bool settling)
 {
-    if (!settling && settling_.contains(tabData(index).toUuid())) return;
-    const auto rect = animatedRect(index);
-    if (rect.isEmpty() || painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(rect).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
-    auto state = paintState(index);
-    const int lane = layout_.lanes.value(index, -1);
-    const QRect visible = settling ? rect : lane < 0 ? QRect{}
-        : rect.intersected(layout_.laneList.at(lane).viewport.translated(tabOrigin())).intersected(this->rect());
-    const auto geometry = anchorGeometry(rect, visible, state.shape == TabShape::Tile, false);
-    state.surface = state.selected && !visible.isEmpty() ? &geometry : nullptr;
-    state.elevationManaged = !surfaceBody_.isEmpty();
-    auto label = TabPainter::captureLabel(partsOf(index, rect), state, painter.font(), painter.layoutDirection());
-    label.presence = presenceFor(index, rect);
-    painter_.paintLabel(painter, label, state.titleLayout);
+    const auto area = animatedRect(index);
+    if (painter.hasClipping() && !painter.clipBoundingRect().intersects(QRectF(area).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
+    if (auto sample = labelSample(index, area, painter.font(), painter.layoutDirection(), settling))
+        painter_.paintLabel(painter, sample->label, &tabs_[index].titleLayout);
 }
 
 TabFolderPaintState TabBar::folderPaintState(int folder) const
@@ -2127,185 +2118,46 @@ TabFolderPaintState TabBar::folderPaintState(int folder) const
     state.addIcon = labelStyle()->addIcon;
     return state;
 }
-void TabBar::paintFolders(QPainter& painter, int lane)
-{
-    const auto origin = tabOrigin();
-    for (int folder = 0; folder < folders_.size(); ++folder) {
-        if (folder == draggedFolder_ || layout_.headerLanes.value(folder, -1) != lane) continue;
-        painter_.paintFolderHeader(painter, layout_.headers.at(folder).translated(origin), vertical(), folderPaintState(folder));
-    }
-}
-void TabBar::paintFolderLines(QPainter& painter, int lane)
-{
-    const auto origin = tabOrigin();
-    const bool bottom = placement_ == TabBarPlacement::Bottom;
-    for (int folder = 0; folder < folders_.size(); ++folder) {
-        if (folder == draggedFolder_) continue;
-        const auto state = folderPaintState(folder);
-        const auto& record = folders_.at(folder);
-        const bool headerHere = layout_.headerLanes.value(folder, -1) == lane;
-        // The folder's shown tabs in this lane, row by row.
-        QVector<QRect> rows;
-        if (headerHere) rows.append(layout_.headers.at(folder));
-        for (int index = record.first; index < record.first + record.count && index < tabs_.size(); ++index) {
-            if (index == dragged_ || layout_.lanes.value(index, -1) != lane) continue;
-            const auto rect = layout_.tabs.at(index);
-            auto row = std::find_if(rows.begin(), rows.end(), [&](const QRect& r) { return vertical() || r.top() == rect.top(); });
-            if (row == rows.end()) rows.append(rect); else *row |= rect;
-        }
-        // A collapsed folder showing only its header has no line.
-        if (record.collapsed && rows.size() <= 1 && (rows.isEmpty() || (headerHere && rows.first() == layout_.headers.at(folder)))) continue;
-        for (auto row : rows) {
-            row.translate(origin);
-            if (vertical()) {
-                // A side line in the indent, along the folder's rows.
-                auto span = row;
-                if (headerHere) span.setTop(layout_.headers.at(folder).translated(origin).bottom() + 1 + metrics_.rowGap);
-                if (span.height() <= 0 || record.collapsed) continue;
-                const int x = layout_.headers.value(folder).isNull() ? span.left() : layout_.headers.at(folder).translated(origin).left() + metrics_.folderIndent / 2 - metrics_.folderLine / 2;
-                painter_.paintFolderLine(painter, QRect(x, span.top(), metrics_.folderLine, span.height()), state.color);
-            } else {
-                // A line along the content edge, starting under the chip.
-                const int start = headerHere && row.left() == layout_.headers.at(folder).translated(origin).left()
-                    ? painter_.folderChipRect(layout_.headers.at(folder).translated(origin)).left() : row.left();
-                const int y = bottom ? row.top() : row.bottom() + 1 - metrics_.folderLine;
-                QRect line(start, y, row.right() + 1 - start, metrics_.folderLine);
-                // The current tab opens into the content; its outline meets the line.
-                const auto current = folderOf(current_) == folder && layout_.lanes.value(current_, -1) == lane
-                    ? animatedRect(current_) : QRect{};
-                if (!current.isEmpty() && current.intersects(line.adjusted(0, -1, 0, 1))) {
-                    painter_.paintFolderLine(painter, QRect(line.left(), y, current.left() - line.left(), metrics_.folderLine), state.color);
-                    painter_.paintFolderLine(painter, QRect(current.right() + 1, y, line.right() - current.right(), metrics_.folderLine), state.color);
-                } else painter_.paintFolderLine(painter, line, state.color);
-            }
-        }
-    }
-}
-void TabBar::paintFolderOutline(QPainter& painter, int lane)
-{
-    const int folder = folderOf(current_);
-    if (folder < 0 || folder == draggedFolder_ || current_ == dragged_ || layout_.lanes.value(current_, -1) != lane) return;
-    const auto state = folderPaintState(folder);
-    painter_.paintFolderOutline(painter, animatedRect(current_), shapeOf(current_), state.color);
-}
-void TabBar::paintLaneDecorations(QPainter& painter)
-{
-    const auto origin = tabOrigin();
-    for (int laneIndex = 0; laneIndex < layout_.laneList.size(); ++laneIndex) {
-        const auto& lane = layout_.laneList.at(laneIndex);
-        auto viewport = lane.viewport.translated(origin);
-        if (lane.vertical) viewport.adjust(1, 0, -1, 0);
-        const bool showBar = lane.maximumOffset() > 0 && laneIndex == scrollingLane_ && scrollbarOpacity_.value() > 0;
-        if (showBar) {
-            painter.save(); painter.setOpacity(painter.opacity() * scrollbarOpacity_.value());
-            painter_.paintScrollbar(painter, scrollThumb(laneIndex), laneIndex == scrollDragLane_);
-            painter.restore();
-        }
-    }
-    if (!layout_.separator.isNull()) painter_.paintSeparator(painter, layout_.separator.translated(origin),
-        window()->isActiveWindow(), vertical());
-}
-
 void TabBar::paintEvent(QPaintEvent*)
 {
-    QPainter painter(this);
-    painter.setFont(font());
-    // An overlay's shadow band stays unfilled, so the content shows through.
-    auto background = rect();
-    if (overlayActive() && !vertical()) {
-        if (placement_ == TabBarPlacement::Bottom) background.setTop(rowShadowExtent());
-        else background.setBottom(height() - rowShadowExtent() - 1);
-    }
-    if (overlayActive() && !vertical()) painter.fillRect(background, painter_.palette().strip);
-    const auto origin = tabOrigin();
-    // Short lines between resting tabs of one row.
-    for (int index = 0; index + 1 < tabs_.size(); ++index) {
-        const int next = index + 1;
-        if (vertical() || layout_.lanes.at(index) < 0 || layout_.lanes.at(index) != layout_.lanes.at(next)) continue;
-        if (index == current_ || next == current_ || index == hover_.hit().tab || next == hover_.hit().tab || tabPreset(index) || tabPreset(next)) continue;
-        if (slides_.contains(tabs_.at(index).data.toUuid()) || slides_.contains(tabs_.at(next).data.toUuid())) continue;
-        const auto a = layout_.visibleRect(index), b = layout_.visibleRect(next);
-        if (a.isEmpty() || b.isEmpty() || a.top() != b.top() || a.right() + 1 != b.left()) continue;
-        const int height = metrics_.rowHeight / 2;
-        painter_.paintSeparator(painter, QRect(b.left() + origin.x(), a.top() + origin.y() + (a.height() - height) / 2, metrics_.separator, height));
-    }
-    for (int laneIndex = 0; laneIndex < layout_.laneList.size(); ++laneIndex) {
-        const auto& lane = layout_.laneList.at(laneIndex);
-        QVector<EdgeFade> fades;
-        const auto appendFades = [&](const TabLayoutLane& segment) {
-            const auto viewport = segment.viewport.translated(origin);
-            const int fade = segment.fadeExtent(metrics_.edgeFade);
-            if (segment.offset > 0) fades.append({segment.vertical
-                ? QRect(viewport.left(), viewport.top(), viewport.width(), fade)
-                : QRect(viewport.left() + segment.frozen, viewport.top(), fade, viewport.height()),
-                segment.vertical ? Qt::TopEdge : Qt::LeftEdge});
-            if (segment.offset < segment.maximumOffset()) fades.append({segment.vertical
-                ? QRect(viewport.left(), viewport.bottom() - fade + 1, viewport.width(), fade)
-                : QRect(viewport.right() - fade + 1, viewport.top(), fade, viewport.height()),
-                segment.vertical ? Qt::BottomEdge : Qt::RightEdge});
-        };
-        appendFades(lane);
-        if (layout_.rowScrollLane >= 0 && layout_.rowScrollLane != laneIndex)
-            appendFades(layout_.laneList.at(layout_.rowScrollLane));
-        if (!fades.isEmpty() && layout_.lanes.value(current_, -1) == laneIndex
-            && incomingVisual_.empty() && !liftedPointer_ && liftElevation_.value() <= 0) {
-            const auto area = animatedRect(current_);
-            const auto visible = area.intersected(lane.viewport.translated(origin)).intersected(rect());
-            const auto geometry = anchorGeometry(area, visible, shapeOf(current_) == TabShape::Tile, false);
-            if (geometry.joined) {
-                const auto joint = vertical() ? (placement_ == TabBarPlacement::Left ? Qt::RightEdge : Qt::LeftEdge)
-                    : placement_ == TabBarPlacement::Top ? Qt::BottomEdge : Qt::TopEdge;
-                auto surface = QRectF(area);
-                // Complete the fade before the separately painted connection
-                // leaves this widget. The content itself remains opaque.
-                if (joint == Qt::RightEdge) surface.setRight(width());
-                else if (joint == Qt::LeftEdge) surface.setLeft(0);
-                else if (joint == Qt::BottomEdge) surface.setBottom(height());
-                else surface.setTop(0);
-                for (auto& fade : fades) if (fade.area.intersects(visible)) fade.convergeTo(joint, surface);
+    QPainter painter(this); painter.setFont(font());
+    const auto frame = captureStripFrame(painter.font(), painter.layoutDirection());
+    if (!frame->background.isEmpty()) painter.fillRect(frame->background, frame->style->palette.strip);
+    for (const auto& area : frame->separators) painter_.paintSeparator(painter, area);
+    const auto paintLabel = [&](QPainter& target, const TabStripLabelSample& sample) {
+        if (target.hasClipping() && !target.clipBoundingRect().intersects(
+            QRectF(sample.label.parts.tab).adjusted(-metrics_.controlRadius, 0, metrics_.controlRadius, 0))) return;
+        painter_.paintLabel(target, sample.label, &tabs_[sample.sourceIndex].titleLayout);
+    };
+    for (const auto& lane : frame->lanes) {
+        const auto drawLane = [&](QPainter& target) {
+            target.save(); target.setClipRect(lane.viewport, Qt::IntersectClip);
+            target.save(); target.setClipRect(lane.regularClip, Qt::IntersectClip);
+            for (const auto& folder : lane.folders) painter_.paintFolderHeader(target, folder.area, frame->vertical, folder.state);
+            for (const auto& label : lane.regular) paintLabel(target, label);
+            target.restore();
+            for (const auto& label : lane.frozen) paintLabel(target, label);
+            target.save(); target.setClipRect(lane.regularClip, Qt::IntersectClip);
+            for (const auto& line : lane.folderLines) painter_.paintFolderLine(target, line.area, line.color);
+            if (lane.folderOutline) {
+                const auto& outline = *lane.folderOutline;
+                painter_.paintFolderOutline(target, outline.area, outline.shape, outline.color);
             }
-        }
-        const auto drawLane = [&](QPainter& painter) {
-            painter.save();
-            painter.setClipRect(lane.viewport.translated(origin), Qt::IntersectClip);
-            // Tabs scrolling under a frozen run first, then the run; the current
-            // tab of each part over its neighbors.
-            const auto paintRange = [&](int first, int last, bool clipFrozen) {
-                painter.save();
-                if (clipFrozen && lane.frozen)
-                    painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-                for (int index = first; index < last; ++index)
-                    if (index != current_ && layout_.lanes.at(index) == laneIndex) paintTabAt(painter, index);
-                if (current_ >= first && current_ < last && layout_.lanes.value(current_) == laneIndex) paintTabAt(painter, current_);
-                painter.restore();
-            };
-            // Folders live among the regular tabs, under a frozen run.
-            painter.save();
-            if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-            paintFolders(painter, laneIndex);
-            painter.restore();
-            if (lane.frozen) { paintRange(stickyCount_, count(), true); paintRange(0, stickyCount_, false); }
-            else paintRange(0, count(), false);
-            painter.save();
-            if (lane.frozen) painter.setClipRect(lane.viewport.translated(origin).adjusted(lane.frozen, 0, 0, 0), Qt::IntersectClip);
-            paintFolderLines(painter, laneIndex);
-            paintFolderOutline(painter, laneIndex);
-            painter.restore();
-            painter.restore();
+            target.restore(); target.restore();
         };
-        paintEdgeFades(painter, lane.viewport.translated(origin), fades, drawLane);
+        paintEdgeFades(painter, lane.viewport, lane.fades, drawLane);
     }
-    paintLaneDecorations(painter);
+    for (const auto& scrollbar : frame->scrollbars) {
+        painter.save(); painter.setOpacity(painter.opacity() * scrollbar.opacity);
+        painter_.paintScrollbar(painter, scrollbar.thumb, scrollbar.emphasized); painter.restore();
+    }
+    if (!frame->sectionSeparator.isEmpty())
+        painter_.paintSeparator(painter, frame->sectionSeparator, frame->windowActive, frame->vertical);
     const auto globalOrigin = mapToGlobal(QPoint());
     for (const auto& label : std::as_const(departing_))
         paintRetiredLabel(painter, painter_, label, globalOrigin, 1 - presenceProgress_.value());
-    if (overlayActive() && !vertical()) {
-        // The overlay reads as the strip grown over the content.
-        const bool above = placement_ == TabBarPlacement::Bottom;
-        const int shadow = rowShadowExtent();
-        const QRect band(0, above ? 0 : height() - shadow, width(), shadow);
-        surfaceRenderer_.paintOverlayBand(painter, band, above, painter_.palette().elevation, rowsReveal_.value());
-    }
+    if (!frame->overlayShadow.isEmpty()) surfaceRenderer_.paintOverlayBand(painter, frame->overlayShadow,
+        frame->shadowAbove, frame->style->palette.elevation, frame->shadowOpacity);
 }
 
 void TabBar::paintLiftedTabs(QPainter& painter)
