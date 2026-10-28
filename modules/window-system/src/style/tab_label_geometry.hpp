@@ -2,9 +2,7 @@
 #pragma once
 
 #include <QRect>
-#include <window_system/interface_appearance.hpp>
-#include <QStyle>
-#include <QWidget>
+#include <window_system/ui_scale.hpp>
 #include <algorithm>
 
 namespace window_system {
@@ -36,6 +34,14 @@ inline constexpr int tabBarTrailing = 5;
 inline constexpr int tabBarMinimumWidth = 2 * (tabBarTrailing + tabActionSize);
 // Each end of an auto-hide rail tab.
 inline constexpr int edgeTabPadding = 8;
+// Shared layout bound; an adapter still clips to its actual viewport.
+inline constexpr int tabLabelMaximumExtent = 0x00ffffff;
+
+[[nodiscard]] inline QRect visualTabLabelRect(Qt::LayoutDirection direction, const QRect& bounds, QRect logical)
+{
+    if (direction != Qt::LeftToRight) logical.moveLeft(bounds.left() + bounds.right() - logical.right());
+    return logical;
+}
 
 [[nodiscard]] inline qint64 tabLabelWidth(TabLabelParts parts, int gap = uiPixels(tabLabelGap))
 {
@@ -48,7 +54,7 @@ inline constexpr int edgeTabPadding = 8;
 
 [[nodiscard]] inline int clampedExtent(qint64 extent)
 {
-    return int(std::clamp<qint64>(extent, 0, QWIDGETSIZE_MAX));
+    return int(std::clamp<qint64>(extent, 0, tabLabelMaximumExtent));
 }
 
 // The label between the end spaces, and the reserved action if any.
@@ -72,14 +78,14 @@ inline constexpr int edgeTabPadding = 8;
 {
     const int end = reserveAction ? uiPixels(tabActionGap) + uiPixels(tabActionSize) + uiPixels(tabBarTrailing) : uiPixels(tabBarLeading);
     const QRect logical(tab.left() + uiPixels(tabBarLeading), tab.top(), std::max(0, tab.width() - uiPixels(tabBarLeading) - end), tab.height());
-    return QStyle::visualRect(direction, tab, logical);
+    return visualTabLabelRect(direction, tab, logical);
 }
 
 [[nodiscard]] inline QRect tabBarCloseRect(const QRect& tab, Qt::LayoutDirection direction)
 {
     const QRect logical(tab.right() - uiPixels(tabBarTrailing) - uiPixels(tabActionSize) + 1,
                         tab.top() + (tab.height() - uiPixels(tabActionSize)) / 2, uiPixels(tabActionSize), uiPixels(tabActionSize));
-    return QStyle::visualRect(direction, tab, logical);
+    return visualTabLabelRect(direction, tab, logical);
 }
 
 struct TabLabelRects {
@@ -101,7 +107,7 @@ struct TabLabelRects {
         const auto available = std::max<qint64>(0, end - x);
         const QRect logical(int(x), area.top(), int(std::min<qint64>(width, available)), area.height());
         x += qint64(width) + gap;
-        return QStyle::visualRect(direction, area, logical);
+        return visualTabLabelRect(direction, area, logical);
     };
     result.number = take(parts.number);
     const auto icon = take(parts.icon);

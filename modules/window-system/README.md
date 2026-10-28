@@ -13,7 +13,7 @@
 
 内部 `WindowSystemPresentation` 只依赖 Qt Core，包含纯标签布局、滚轮控制器、拖动限位和按帧取样的动画；Widgets 与开发中的 Quick 目标共同链接它。安装时作为 `WindowSystem::Presentation` 依赖导出，没有供宿主直接调用的公开头文件。它不拥有窗口、输入设备或 GPU 资源。
 
-内部 `WindowSystemSurfaces` 只依赖 Qt Gui，提供共用的接合几何、阴影缓存和有界小图。Widgets 仍按原规则合成；Quick 可保留同一资源与九宫格几何，不链接 Widgets。它随静态库依赖导出为 `WindowSystem::Surfaces`，没有新的宿主头文件。
+内部 `WindowSystemSurfaces` 只依赖 Qt Gui，提供共用的接合几何、阴影缓存、有界小图、标签绘制值和文字缓存。Widgets 仍按原规则合成；Quick 可保留同一资源与九宫格几何，不链接 Widgets。它随静态库依赖导出为 `WindowSystem::Surfaces`，没有新的宿主头文件。
 
 可通过 `add_subdirectory()` 嵌入，也可安装后使用 `find_package(WindowSystem CONFIG REQUIRED)`。独立模块构建不探测 Muxora 或远程业务依赖；安装后接入由 `tests/fixtures/external-host/` 验证，不额外交付示例产品。
 

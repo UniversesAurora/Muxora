@@ -33,7 +33,9 @@ target_include_directories(WindowSystemPresentation PRIVATE src)
 target_link_libraries(WindowSystemPresentation PRIVATE Qt6::Core)
 
 # GUI values and bounded surface resources shared by both drawing adapters.
-add_library(WindowSystemSurfaces STATIC src/style/elevation.cpp src/docking/surface_geometry.cpp)
+add_library(WindowSystemSurfaces STATIC
+    src/style/elevation.cpp src/docking/surface_geometry.cpp
+    src/style/tab_painter.cpp src/style/tab_title_layout.cpp src/style/tab_carrier_painter.cpp)
 set_target_properties(WindowSystemSurfaces PROPERTIES EXPORT_NAME Surfaces)
 target_compile_features(WindowSystemSurfaces PUBLIC cxx_std_20)
 target_include_directories(WindowSystemSurfaces PRIVATE src include)
@@ -72,8 +74,6 @@ add_library(WindowSystemWidgets STATIC
     src/docking/dock_surface.cpp
     src/docking/tab_strip.cpp
     src/docking/tab_bar.cpp
-    src/style/tab_painter.cpp
-    src/style/tab_carrier_painter.cpp
     src/docking/edge_strip.cpp
     src/docking/drag_presentation.cpp
     src/docking/edge_tab_button.cpp
@@ -82,7 +82,6 @@ add_library(WindowSystemWidgets STATIC
     src/style/theme.cpp
     src/style/interface_appearance.cpp
     src/style/tab_appearance.cpp
-    src/style/tab_title_layout.cpp
     src/style/themed_controls.cpp
     src/style/integer_slider.cpp
     src/style/wheel_guard.cpp
