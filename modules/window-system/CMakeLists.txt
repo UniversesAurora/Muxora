@@ -107,12 +107,12 @@ target_include_directories(WindowSystemWidgets PUBLIC
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces)
 
 if(WINDOW_SYSTEM_BUILD_QUICK)
-    find_package(Qt6 6.9 REQUIRED COMPONENTS Quick)
+    find_package(Qt6 6.10 REQUIRED COMPONENTS Quick)
     # Internal until content and native-window interfaces complete the
     # migration. Enabling this does not replace the application renderer.
     add_library(WindowSystemQuick STATIC
         src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp
-        src/quick/body_shadow_item.cpp)
+        src/quick/body_shadow_item.cpp src/quick/anchor_shadow_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PRIVATE src)

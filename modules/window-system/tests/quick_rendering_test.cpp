@@ -4,10 +4,12 @@
 // This is not a visual baseline or a complete application performance test.
 #include "quick/path_item.hpp"
 #include "quick/body_shadow_item.hpp"
+#include "quick/anchor_shadow_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
 
 #include <QGuiApplication>
+#include <QPainter>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSignalSpy>
@@ -41,6 +43,104 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void joinedShadowsPreserveCompositionAndReuseTextures_data()
+    {
+        QTest::addColumn<int>("edge");
+        QTest::addColumn<bool>("incremental");
+        for (auto edge : {SurfaceEdge::Top, SurfaceEdge::Bottom, SurfaceEdge::Left, SurfaceEdge::Right})
+            for (bool incremental : {false, true})
+                QTest::newRow(qPrintable(QStringLiteral("edge-%1-incremental-%2").arg(int(edge)).arg(incremental)))
+                    << int(edge) << incremental;
+    }
+
+    void joinedShadowsPreserveCompositionAndReuseTextures()
+    {
+        QFETCH(int, edge);
+        QFETCH(bool, incremental);
+        QTransform transform;
+        switch (SurfaceEdge(edge)) {
+        case SurfaceEdge::Top: break;
+        case SurfaceEdge::Bottom: transform = QTransform(1, 0, 0, -1, 0, 0); break;
+        case SurfaceEdge::Left: transform = QTransform(0, 1, 1, 0, 0, 0); break;
+        case SurfaceEdge::Right: transform = QTransform(0, 1, -1, 0, 0, 0); break;
+        }
+        SurfaceGeometryInput input;
+        input.body = transform.mapRect(QRectF(0, 40, 260, 130));
+        input.anchor = transform.mapRect(QRectF(90, 12, 80, 28)); input.edge = SurfaceEdge(edge);
+        auto geometry = surfaceGeometry(input);
+        const auto delta = QPointF(48, 40) - geometry.mergedPath.boundingRect().topLeft();
+        geometry = translatedSurfaceGeometry(geometry, delta);
+        QQuickWindow window; prepareWindow(window); window.setColor(Qt::white);
+        window.resize(440, 360);
+        auto* body = new BodyShadowItem(window.contentItem());
+        auto* anchor = new AnchorShadowItem(window.contentItem());
+        const auto bodyProfile = elevationProfile(ElevationLevel::BodyRaised);
+        const auto anchorProfile = elevationProfile(ElevationLevel::AnchorRaised);
+        body->setPosition(geometry.body.topLeft()); body->setSize(geometry.body.size());
+        body->setShadow(geometry.bodyRadius, bodyProfile, {});
+        anchor->setShadow(geometry, bodyProfile, anchorProfile, {}, incremental);
+        anchor->setOpacity(incremental ? 0.5 : 1);
+        body->setExcluded(incremental ? QRectF{} : anchor->patchClip().translated(-geometry.body.topLeft()));
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        const auto image = window.grabWindow(); QVERIFY(!image.isNull());
+        QImage expected(image.size(), QImage::Format_RGB32); expected.fill(Qt::white);
+        expected.setDevicePixelRatio(window.effectiveDevicePixelRatio());
+        ElevationRenderer renderer; QPainter painter(&expected);
+        renderer.paintBody(painter, geometry.body, geometry.bodyRadius, bodyProfile, {}, incremental ? QRectF{} : anchor->patchClip());
+        painter.setOpacity(incremental ? 0.5 : 1);
+        renderer.paintAnchor(painter, geometry, bodyProfile, anchorProfile, {}, incremental); painter.end();
+        // Samples across the connection and both perimeters detect additive
+        // darkening or a missing body segment, independently of fill AA.
+        for (const auto point : {QPointF(83, 36), QPointF(20, 37), QPointF(130, 7),
+                                 QPointF(265, 100), QPointF(130, 175), QPointF(130, 60)}) {
+            const auto at = transform.map(point) + delta;
+            QVERIFY2(qAbs(pixelAt(image, window, at).red() - pixelAt(expected, window, at).red()) <= 2,
+                     qPrintable(QStringLiteral("shadow sample %1,%2").arg(at.x()).arg(at.y())));
+        }
+        const auto warmBody = body->renderStats(), warmAnchor = anchor->renderStats();
+        const auto images = renderer.cacheStats().generatedImages;
+        const auto shift = transform.map(QPointF(5, 0));
+        input.anchor.translate(shift);
+        geometry = translatedSurfaceGeometry(surfaceGeometry(input), delta);
+        anchor->setShadow(geometry, bodyProfile, anchorProfile, {}, incremental);
+        body->setExcluded(incremental ? QRectF{} : anchor->patchClip().translated(-geometry.body.topLeft()));
+        QVERIFY(!window.grabWindow().isNull());
+        QCOMPARE(anchor->renderStats().textureUploads, warmAnchor.textureUploads);
+        QCOMPARE(body->renderStats().textureUploads, warmBody.textureUploads);
+        QCOMPARE(renderer.cacheStats().generatedImages, images);
+        if (!incremental) QVERIFY(body->renderStats().geometryUpdates > warmBody.geometryUpdates);
+        QVERIFY(anchor->renderStats().geometryUpdates > warmAnchor.geometryUpdates);
+    }
+
+    void anchorTexturesRespectCoverageAndWindowOwnership()
+    {
+        QQuickWindow first, second; prepareWindow(first); prepareWindow(second);
+        first.setColor(Qt::white); second.setColor(Qt::white);
+        auto* item = new AnchorShadowItem(first.contentItem());
+        SurfaceGeometryInput input; input.body = {20, 80, 300, 130}; input.anchor = {100, 52, 120, 28};
+        input.covered = true;
+        auto style = ElevationStyle{}; style.highContrast = true; style.contrastBorder = Qt::red;
+        item->setShadow(surfaceGeometry(input), elevationProfile(ElevationLevel::BodyRest),
+            elevationProfile(ElevationLevel::AnchorRaised), style);
+        first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
+        const auto image = first.grabWindow();
+        const auto border = pixelAt(image, first, {160, 52});
+        QVERIFY(border.red() > border.green());
+        QCOMPARE(pixelAt(image, first, {160, 82}), QColor(Qt::white));
+        const auto uploads = item->renderStats().textureUploads;
+        first.hide(); QTRY_VERIFY(!first.isExposed()); first.releaseResources();
+        first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(item->renderStats().textureUploads > uploads);
+        const auto recreated = item->renderStats().textureUploads;
+        item->setParentItem(second.contentItem()); item->setParent(second.contentItem());
+        second.show(); QVERIFY(QTest::qWaitForWindowExposed(&second));
+        const auto movedBorder = pixelAt(second.grabWindow(), second, {160, 52});
+        QVERIFY(movedBorder.red() > movedBorder.green());
+        QCOMPARE(item->renderStats().textureUploads, recreated + 1);
+        QCOMPARE(pixelAt(first.grabWindow(), first, {160, 52}), QColor(Qt::white));
+    }
+
     void bodyShadowsResizeWithoutNewImagesOrUploads()
     {
         QQuickWindow window;

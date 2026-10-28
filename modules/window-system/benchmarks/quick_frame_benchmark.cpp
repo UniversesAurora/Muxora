@@ -4,6 +4,7 @@
 #include "quick/path_item.hpp"
 #include "quick/window_motion.hpp"
 #include "quick/body_shadow_item.hpp"
+#include "quick/anchor_shadow_item.hpp"
 #include "docking/surface_geometry.hpp"
 
 #include <QCommandLineParser>
@@ -54,14 +55,16 @@ int main(int argc, char** argv)
     parser.addOption({"commit", "Measured source revision", "revision"});
     parser.addOption({"out", "Output JSON path", "file"});
     parser.addOption({"frames", "Measured submission intervals after 30 warm-up frames", "count", "240"});
-    parser.addOption({"scene", "Primitive scene: joined-fills or body-resize", "name", "joined-fills"});
+    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize or joined-resize", "name", "joined-fills"});
     parser.process(app);
     bool valid = false;
     const int count = parser.value("frames").toInt(&valid);
     if (!valid || count < 30 || count > 10000 || parser.value("commit").isEmpty()) return 2;
     const auto scene = parser.value("scene");
-    if (scene != "joined-fills" && scene != "body-resize") return 2;
+    if (scene != "joined-fills" && scene != "body-resize" && scene != "joined-resize") return 2;
     const bool bodies = scene == "body-resize";
+    const bool shadows = scene != "joined-fills";
+    const bool anchors = scene == "joined-resize";
 
     // Render-thread callbacks outlive the GUI event loop, so their captured
     // state must also outlive destruction of the QQuickWindow and its graph.
@@ -76,8 +79,10 @@ int main(int argc, char** argv)
     window.setTitle(QStringLiteral("WindowSystem Quick frame benchmark"));
     window.resize(1600, 900);
     window.setColor(QColor("#ded7eb"));
-    auto* leftShadow = bodies ? new BodyShadowItem(window.contentItem()) : nullptr;
-    auto* rightShadow = bodies ? new BodyShadowItem(window.contentItem()) : nullptr;
+    auto* leftShadow = shadows ? new BodyShadowItem(window.contentItem()) : nullptr;
+    auto* rightShadow = shadows ? new BodyShadowItem(window.contentItem()) : nullptr;
+    auto* leftAnchor = anchors ? new AnchorShadowItem(window.contentItem()) : nullptr;
+    auto* rightAnchor = anchors ? new AnchorShadowItem(window.contentItem()) : nullptr;
     auto* left = new PathItem(window.contentItem());
     auto* right = new PathItem(window.contentItem());
     left->setSize(QSizeF(1600, 900)); right->setSize(QSizeF(1600, 900));
@@ -109,7 +114,7 @@ int main(int argc, char** argv)
     bool failed = false;
     ElevationRenderer shadowResources;
     quint64 warmImages = 0;
-    BodyShadowStats warmLeft, warmRight;
+    ShadowRenderStats warmLeft, warmRight, warmLeftAnchor, warmRightAnchor;
     bool warmed = false;
     const auto prepare = [&](qreal value) {
         QElapsedTimer cost; cost.start();
@@ -118,17 +123,27 @@ int main(int argc, char** argv)
         input.body = QRectF(4, 40, split - 8, 856);
         if (!bodies) input.anchor = QRectF(28, 12, 140, 28);
         const auto firstGeometry = surfaceGeometry(input);
-        if (bodies) {
+        if (shadows) {
             leftShadow->setPosition(input.body.topLeft()); leftShadow->setSize(input.body.size());
             leftShadow->setShadow(input.bodyRadius, elevationProfile(ElevationLevel::BodyRest), {});
+        }
+        if (anchors) {
+            leftAnchor->setShadow(firstGeometry, elevationProfile(ElevationLevel::BodyRest),
+                elevationProfile(ElevationLevel::AnchorRaised), {});
+            leftShadow->setExcluded(leftAnchor->patchClip().translated(-input.body.topLeft()));
         }
         const bool first = left->setPath(bodies ? firstGeometry.bodyPath : firstGeometry.mergedPath);
         input.body = QRectF(split + 4, 40, 1596 - split, 856);
         if (!bodies) input.anchor = QRectF(split + 28, 12, 140, 28);
         const auto secondGeometry = surfaceGeometry(input);
-        if (bodies) {
+        if (shadows) {
             rightShadow->setPosition(input.body.topLeft()); rightShadow->setSize(input.body.size());
             rightShadow->setShadow(input.bodyRadius, elevationProfile(ElevationLevel::BodyRest), {});
+        }
+        if (anchors) {
+            rightAnchor->setShadow(secondGeometry, elevationProfile(ElevationLevel::BodyRest),
+                elevationProfile(ElevationLevel::AnchorRaised), {});
+            rightShadow->setExcluded(rightAnchor->patchClip().translated(-input.body.topLeft()));
         }
         const bool second = right->setPath(bodies ? secondGeometry.bodyPath : secondGeometry.mergedPath);
         if (!first || !second) { failed = true; app.exit(3); return; }
@@ -139,8 +154,9 @@ int main(int argc, char** argv)
     QObject::connect(&window, &QQuickWindow::frameSwapped, &window, [&] {
         bool complete, warm;
         { QMutexLocker lock(&samples.mutex); complete = samples.swaps.size() >= count; warm = samples.seen >= 30; }
-        if (bodies && warm && !warmed) {
+        if (shadows && warm && !warmed) {
             warmLeft = leftShadow->renderStats(); warmRight = rightShadow->renderStats();
+            if (anchors) { warmLeftAnchor = leftAnchor->renderStats(); warmRightAnchor = rightAnchor->renderStats(); }
             warmImages = shadowResources.cacheStats().generatedImages; warmed = true;
         }
         // quit() can synchronously close windows and wait for the render
@@ -168,7 +184,8 @@ int main(int argc, char** argv)
         {"commit", parser.value("commit")}, {"qt", qVersion()},
         {"complete", complete},
         {"scene", scene},
-        {"scope", bodies ? "two body fills and retained perimeter shadows; no joined anchors, text, host content or input"
+        {"scope", anchors ? "two joined surface fills and retained composed shadows; no text, host content or input"
+                         : bodies ? "two body fills and retained perimeter shadows; no joined anchors, text, host content or input"
                          : "two joined surface fills only; no text, shadows, host content or input"},
         {"timing", "frameSwapped submission intervals; not compositor presentation or GPU execution time"},
         {"graphicsApi", api.load()}, {"threadedSceneGraph", threaded.load()},
@@ -178,7 +195,7 @@ int main(int argc, char** argv)
         {"renderToFrameEndCpuWall", summary(samples.render)},
         {"meshPreparation", summary(preparation)}, {"overTwoRefreshCycles", qint64(overTwo)}
     };
-    if (bodies) {
+    if (shadows) {
         const auto a = leftShadow->renderStats(), b = rightShadow->renderStats();
         report.insert("shadowResources", QJsonObject{
             {"textureUploads", qint64(a.textureUploads + b.textureUploads)},
@@ -186,6 +203,14 @@ int main(int argc, char** argv)
             {"geometryUpdates", qint64(a.geometryUpdates + b.geometryUpdates)},
             {"warmTextureUploads", qint64(a.textureUploads + b.textureUploads - warmLeft.textureUploads - warmRight.textureUploads)},
             {"warmGeneratedImages", qint64(shadowResources.cacheStats().generatedImages - warmImages)}});
+    }
+    if (anchors) {
+        const auto a = leftAnchor->renderStats(), b = rightAnchor->renderStats();
+        report.insert("anchorShadowResources", QJsonObject{
+            {"textureUploads", qint64(a.textureUploads + b.textureUploads)},
+            {"imageBytesUploaded", qint64(a.imageBytesUploaded + b.imageBytesUploaded)},
+            {"geometryUpdates", qint64(a.geometryUpdates + b.geometryUpdates)},
+            {"warmTextureUploads", qint64(a.textureUploads + b.textureUploads - warmLeftAnchor.textureUploads - warmRightAnchor.textureUploads)}});
     }
     const auto json = QJsonDocument(report).toJson();
     lock.unlock();
