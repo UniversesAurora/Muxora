@@ -14,6 +14,15 @@ add_test(NAME window-system.frame-motion COMMAND window-system-frame-motion-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/frame-motion-results.txt,txt)
 set_tests_properties(window-system.frame-motion PROPERTIES TIMEOUT 60 LABELS model)
 
+qt_add_executable(window-system-tab-position-motion-test tab_position_motion_test.cpp)
+target_link_libraries(window-system-tab-position-motion-test PRIVATE WindowSystemPresentation Qt6::Test)
+target_compile_features(window-system-tab-position-motion-test PRIVATE cxx_std_20)
+target_include_directories(window-system-tab-position-motion-test PRIVATE ../src)
+set_target_properties(window-system-tab-position-motion-test PROPERTIES AUTOMOC ON)
+add_test(NAME window-system.tab-position-motion COMMAND window-system-tab-position-motion-test
+    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-position-motion-results.txt,txt)
+set_tests_properties(window-system.tab-position-motion PROPERTIES TIMEOUT 60 LABELS model)
+
 qt_add_executable(window-system-label-presence-test label_presence_test.cpp)
 target_link_libraries(window-system-label-presence-test PRIVATE WindowSystemPresentation Qt6::Test)
 target_compile_features(window-system-label-presence-test PRIVATE cxx_std_20)

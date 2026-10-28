@@ -70,6 +70,31 @@ class SurfaceBarTest final : public QObject {
 private slots:
     void initTestCase() { TabBar::setAnimationsEnabled(false); }
 
+    void settledLabelsLeaveTheForegroundWhenMotionCompletes_data() { positions(); }
+    void settledLabelsLeaveTheForegroundWhenMotionCompletes()
+    {
+        QFETCH(TabBarPlacement, placement);
+        TabBar::setAnimationsEnabled(true);
+        const auto restore = qScopeGuard([] { TabBar::setAnimationsEnabled(false); });
+        if (!TabBar::animationsAllowed()) QSKIP("System client-area animations are disabled");
+        TabBar bar(defaultTheme(), nullptr); bar.setAppearance(TabAppearance{}, placement);
+        addTabs(bar, 4); bar.setCurrentIndex(1);
+        arrange(bar, bar.vertical() ? QSize(180, 500) : QSize(640, 500));
+        const auto id = bar.tabData(1).toUuid();
+        const auto target = bar.tabLayout().tabs.at(1).translated(bar.tabOrigin());
+        const auto released = target.adjusted(-12, -16, 12, 0);
+        bar.settleFrom({{id, QRect(bar.mapToGlobal(released.topLeft()), released.size())}});
+        const auto frame = bar.captureForegroundFrame(bar.font(), bar.layoutDirection());
+        QCOMPARE(frame->settling.size(), 1); QCOMPARE(frame->settling.first().id, id);
+        QVERIFY((target | released).contains(frame->settling.first().label.parts.tab));
+        const auto anchors = bar.surfaceAnchors(); QCOMPARE(anchors.size(), 1);
+        QVERIFY(frame->settling.first().label.surface);
+        QCOMPARE(anchors.first().geometry.anchor, frame->settling.first().label.surface->anchor);
+        QTRY_VERIFY_WITH_TIMEOUT(bar.captureForegroundFrame(bar.font(), bar.layoutDirection())->settling.isEmpty(), 1000);
+        QCOMPARE(bar.captureStripFrame(bar.font(), bar.layoutDirection())->lanes.first().regular.last().label.parts.tab, target);
+        QVERIFY(!bar.isVisible());
+    }
+
     void surfacePresenceFollowsItsLabelPose_data()
     {
         QTest::addColumn<TabBarPlacement>("placement");

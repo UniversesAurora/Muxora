@@ -7,7 +7,7 @@ namespace window_system {
 std::optional<TabStripLabelSample> TabBar::labelSample(int index, QRect area, const QFont& font,
     Qt::LayoutDirection direction, bool settling)
 {
-    if (area.isEmpty() || (!settling && settling_.contains(tabData(index).toUuid()))) return {};
+    if (area.isEmpty() || (!settling && positions_.isSettling(tabData(index).toUuid()))) return {};
     auto state = paintState(index);
     const int lane = layout_.lanes.value(index, -1);
     const auto visible = settling ? area : lane < 0 ? QRect{}
@@ -154,7 +154,7 @@ std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font
         const int next = index + 1;
         if (vertical() || layout_.lanes.at(index) < 0 || layout_.lanes.at(index) != layout_.lanes.at(next)) continue;
         if (index == current_ || next == current_ || index == hover_.hit().tab || next == hover_.hit().tab || tabPreset(index) || tabPreset(next)) continue;
-        if (slides_.contains(tabs_.at(index).data.toUuid()) || slides_.contains(tabs_.at(next).data.toUuid())) continue;
+        if (positions_.contains(tabs_.at(index).data.toUuid()) || positions_.contains(tabs_.at(next).data.toUuid())) continue;
         const auto a = layout_.visibleRect(index), b = layout_.visibleRect(next);
         if (a.isEmpty() || b.isEmpty() || a.top() != b.top() || a.right() + 1 != b.left()) continue;
         const int height = metrics_.rowHeight / 2;

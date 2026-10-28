@@ -184,6 +184,26 @@ int main(int argc, char** argv)
         });
         layout.insert("placement", int(placement)); layout.insert("numberedLayout", true);
         layout.insert("labels", bar.count()); cases.append(layout);
+        bar.setCurrentIndex(0); bar.ensureVisible(0);
+        TabBar::setAnimationsEnabled(true);
+        if (TabBar::animationsAllowed()) {
+            const auto target = bar.tabLayout().tabs.first().translated(bar.tabOrigin());
+            const auto released = target.adjusted(-12, -16, 12, 0);
+            const LabelPositions positions{{dragged, QRect(bar.mapToGlobal(released.topLeft()), released.size())}};
+            QImage dropCanvas(QSize(qCeil(bar.width() * ratio), qCeil(bar.height() * ratio)), QImage::Format_RGB32);
+            dropCanvas.setDevicePixelRatio(ratio);
+            PaintCounter dropPaints; layer->installEventFilter(&dropPaints);
+            auto dropping = measure([&](int) {
+                bar.settleFrom(positions); dropCanvas.fill(Qt::white); bar.render(&dropCanvas);
+            }, 180, 30);
+            layer->removeEventFilter(&dropPaints);
+            if (dropPaints.count < 210) return 3;
+            dropping.insert("placement", int(placement)); dropping.insert("dropFirstFrame", true);
+            dropping.insert("samples", 180); dropping.insert("warmup", 30); dropping.insert("layerPaints", dropPaints.count);
+            dropping.insert("labels", bar.count()); dropping.insert("dpr", ratio);
+            dropping.insert("logicalSize", QJsonArray{bar.width(), bar.height()}); cases.append(dropping);
+        } else cases.append(QJsonObject{{"placement", int(placement)}, {"dropFirstFrame", true}, {"skipped", true}});
+        TabBar::setAnimationsEnabled(false);
         if (bar.isVisible()) return 3;
     }
     const auto bytes = QJsonDocument(QJsonObject{{"commit", parser.value("commit")},

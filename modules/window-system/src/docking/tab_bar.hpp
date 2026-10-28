@@ -4,6 +4,7 @@
 #include "tab_hover_controller.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
+#include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
 #include "tab_incoming_state.hpp"
@@ -468,18 +469,11 @@ private:
     QPointer<QWidget> trailing_;
     QPointer<QWidget> end_;
     QToolButton* countButton_ = nullptr;
-    // Slides: where each tab was drawn when its position last changed.
-    struct Slide { QRect from; bool resizeWidth = false; };
-    QHash<QUuid, Slide> slides_;
-    QHash<QUuid, int> settling_;
-    QHash<QUuid, QRect> shown_;
-    QElapsedTimer slideClock_;
+    TabPositionMotion positions_;
     ProgressAnimation actionOpacity_{0};
     int fadingAction_ = -1;
     // Since the dragged tab was lifted: its shadow fades in (tab strip design 7).
     QTimer slideTimer_;
-    int slideDuration_ = motionDuration(Motion::Relocate);
-    QEasingCurve slideCurve_ = motionCurve(Motion::Relocate);
     bool planarReflow_ = false;
     [[nodiscard]] bool hasSingleTileRow() const;
     [[nodiscard]] bool usesPlanarReflow(const TabVisualState& previous) const;

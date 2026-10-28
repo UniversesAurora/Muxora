@@ -95,7 +95,7 @@ std::shared_ptr<const TabForegroundFrame> TabBar::captureForegroundFrame(const Q
         if (draggedFolder_ >= 0) captureCarriedFolder(*frame, lifted);
         else frame->carried.append(captureLiftedLabel(lifted, font, direction));
     }
-    for (auto it = settling_.cbegin(); it != settling_.cend(); ++it)
+    for (auto it = positions_.settling().cbegin(); it != positions_.settling().cend(); ++it)
         if (it.value() >= 0 && it.value() < count() && tabData(it.value()).toUuid() == it.key())
             if (auto label = labelSample(it.value(), animatedRect(it.value()), font, direction, true))
                 frame->settling.append(std::move(*label));
