@@ -798,18 +798,18 @@ void TabBar::reconcileColumnHover()
     setColumnHovered(isVisible() && owner && owner->isVisible() && owner->rect().contains(owner->mapFromGlobal(QCursor::pos())));
 }
 
-TabBar::VisualState TabBar::captureVisualState()
+TabVisualState TabBar::captureVisualState()
 {
-    VisualState result;
+    TabVisualState result;
     const auto globalOrigin = mapToGlobal(QPoint());
     for (int index = 0; index < count(); ++index) {
         const auto rect = animatedRect(index);
         if (rect.isEmpty()) continue;
         auto parts = partsOf(index, rect);
         for (auto* part : {&parts.tab, &parts.icon, &parts.number, &parts.title, &parts.action}) part->translate(globalOrigin);
-        std::shared_ptr<RetiredLabel> retired;
+        std::shared_ptr<TabRetiredLabel> retired;
         if (isVisible() && !tabRect(index).isEmpty()) {
-            retired = std::make_shared<RetiredLabel>();
+            retired = std::make_shared<TabRetiredLabel>();
             retired->label = TabPainter::captureLabel(parts, paintState(index), font(), layoutDirection());
             if (retired->label.state.selected) {
                 auto geometry = anchorGeometry(rect, rect.intersected(this->rect()), shapeOf(index) == TabShape::Tile, false);
@@ -817,7 +817,6 @@ TabBar::VisualState TabBar::captureVisualState()
                 geometry.joined = false;
                 retired->label.surface = translatedSurfaceGeometry(geometry, globalOrigin);
             }
-            retired->titleLayout = tabs_.at(index).titleLayout;
             const auto presence = presence_.constFind(tabData(index).toUuid());
             if (presence != presence_.cend() && presence->kind != LabelPresenceEffect::Kind::Planar)
                 retired->visibility = presence->from + (presence->to - presence->from) * presenceProgress_.value();
@@ -829,36 +828,10 @@ TabBar::VisualState TabBar::captureVisualState()
     // width too, so reversing a pin operation does not restart from full size.
     for (auto it = departing_.cbegin(); it != departing_.cend(); ++it) if (it->collapse && it->retired) {
         auto visible = *it;
-        visible.global = LabelPresenceEffect::planarRect(it->global, *it->collapse, 1 - presenceProgress_.value());
+        visible.global = planarLabelRect(it->global, *it->collapse, 1 - presenceProgress_.value());
         if (!visible.global.isEmpty()) result.insert(it.key(), std::move(visible));
     }
     return result;
-}
-
-void TabBar::paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
-                              QPoint globalOrigin, qreal visibility)
-{
-    if (!label.retired) return;
-    auto& retired = *label.retired;
-    auto presentation = retired.label;
-    if (presentation.surface) presentation.surface = translatedSurfaceGeometry(*presentation.surface, -globalOrigin);
-    presentation.state.elevationManaged = false;
-    presentation.bodyElevation = elevationProfile(ElevationLevel::Flat);
-    auto& parts = presentation.parts;
-    parts = label.parts;
-    for (auto* part : {&parts.tab, &parts.icon, &parts.number, &parts.title, &parts.action}) part->translate(-globalOrigin);
-    if (label.collapse) {
-        const auto area = LabelPresenceEffect::planarRect(label.global, *label.collapse, visibility).translated(-globalOrigin);
-        if (!area.isEmpty()) {
-            TabLabelParts sizes; sizes.icon = parts.icon.width();
-            parts = style.parts(area, presentation.state.shape, sizes, true, false, false, Qt::LeftToRight);
-            presentation.surface.reset(); presentation.state.elevationManaged = true; presentation.state.lifted = false;
-            style.paintLabel(painter, presentation, &retired.titleLayout);
-        }
-    } else {
-        presentation.presence = labelPresencePose(parts.tab, visibility * retired.visibility);
-        style.paintLabel(painter, presentation, &retired.titleLayout);
-    }
 }
 
 void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion)
@@ -880,7 +853,7 @@ bool TabBar::hasSingleTileRow() const
     return compactStickyTiles() && stickyCount_ > 0 && layout_.tileColumns >= stickyCount_;
 }
 
-bool TabBar::usesPlanarReflow(const VisualState& previous) const
+bool TabBar::usesPlanarReflow(const TabVisualState& previous) const
 {
     if (!hasSingleTileRow()) return false;
     int oldTiles = 0;
@@ -892,9 +865,9 @@ bool TabBar::usesPlanarReflow(const VisualState& previous) const
     return oldTiles > 0 && (oldTiles != stickyCount_ || reversing);
 }
 
-TabBar::VisualState TabBar::takeSeparateDepartures(VisualState& previous) const
+TabVisualState TabBar::takeSeparateDepartures(TabVisualState& previous) const
 {
-    VisualState separate;
+    TabVisualState separate;
     const bool planar = usesPlanarReflow(previous);
     QHash<QUuid, int> indexes;
     for (int index = 0; index < count(); ++index) indexes.insert(tabData(index).toUuid(), index);
@@ -908,7 +881,7 @@ TabBar::VisualState TabBar::takeSeparateDepartures(VisualState& previous) const
     return separate;
 }
 
-void TabBar::transitionFrom(VisualState previous, Motion motion)
+void TabBar::transitionFrom(TabVisualState previous, Motion motion)
 {
     if (!animationsEnabled() || !isVisible()) return;
     planarReflow_ = usesPlanarReflow(previous);
@@ -1691,7 +1664,7 @@ bool TabBar::fullyVisible(int index) const
         || layout_.laneList.at(layout_.rowScrollLane).readableViewport(metrics_.edgeFade).contains(layout_.tabs.at(index));
 }
 
-void TabBar::updateRowPresentation(VisualState previous, bool moving, bool revealActive)
+void TabBar::updateRowPresentation(TabVisualState previous, bool moving, bool revealActive)
 {
     const QPointer<TabBar> self(this);
     const bool open = expanded_ || dragExpanded_;
@@ -1721,7 +1694,7 @@ void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
     }
     const bool moving = animate && isVisible() && animationsEnabled();
     const bool activeWasVisible = fullyVisible(current_);
-    auto before = moving ? captureVisualState() : VisualState{};
+    auto before = moving ? captureVisualState() : TabVisualState{};
     expanded_ = expanded;
     wheelController_.reset();
     updateRowPresentation(std::move(before), moving, activeWasVisible);
@@ -1733,7 +1706,7 @@ void TabBar::setDragExpanded(bool expanded)
     if (dragExpanded_ == expanded) return;
     const bool moving = isVisible() && animationsEnabled();
     const bool activeWasVisible = fullyVisible(current_);
-    auto before = moving ? captureVisualState() : VisualState{};
+    auto before = moving ? captureVisualState() : TabVisualState{};
     dragExpanded_ = expanded;
     if (expanded && !expanded_) temporaryRowsOverlay_ = true;
     if (!expanded && (!moving || expanded_)) temporaryRowsOverlay_ = false;
@@ -2146,9 +2119,7 @@ void TabBar::paintEvent(QPaintEvent*)
     }
     if (!frame->sectionSeparator.isEmpty())
         painter_.paintSeparator(painter, frame->sectionSeparator, frame->windowActive, frame->vertical);
-    const auto globalOrigin = mapToGlobal(QPoint());
-    for (const auto& label : std::as_const(departing_))
-        paintRetiredLabel(painter, painter_, label, globalOrigin, 1 - presenceProgress_.value());
+    departurePainter_.paint(painter, painter_, frame->departures);
     if (!frame->overlayShadow.isEmpty()) surfaceRenderer_.paintOverlayBand(painter, frame->overlayShadow,
         frame->shadowAbove, frame->style->palette.elevation, frame->shadowOpacity);
 }

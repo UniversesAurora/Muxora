@@ -17,6 +17,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QStackedWidget>
 #include <QStyleOptionSlider>
 #include <QTest>
@@ -43,6 +44,8 @@ private slots:
     void emptyStripsFollowTheToolbarBackgroundAfterThemeChanges();
     void invalidPresentationSettingsLeaveTheLayoutUnchanged();
     void lastClosePublishesTheFinalGeometryBeforeRemoval();
+    void departingFramesSurviveTheirSourceStrip_data();
+    void departingFramesSurviveTheirSourceStrip();
     void singleTabDefaultsFollowWindowKindAndContentCount_data();
     void singleTabDefaultsFollowWindowKindAndContentCount();
     void singleTabPoliciesNeverOverrideExplicitHidingOrEdgeHeaders();
@@ -426,6 +429,41 @@ void TabBarPresentationTest::lastClosePublishesTheFinalGeometryBeforeRemoval()
     QCOMPARE(record.value("x").toInt(), 100); QCOMPARE(record.value("y").toInt(), 120);
     QCOMPARE(record.value("width").toInt(), 640); QCOMPARE(record.value("height").toInt(), 480);
     QVERIFY(manager.model().windows().isEmpty());
+}
+
+void TabBarPresentationTest::departingFramesSurviveTheirSourceStrip_data()
+{
+    QTest::addColumn<TabBarPlacement>("placement");
+    for (const auto side : {TabBarPlacement::Top, TabBarPlacement::Bottom, TabBarPlacement::Left, TabBarPlacement::Right})
+        QTest::newRow(qPrintable(QString::number(int(side)))) << side;
+}
+
+void TabBarPresentationTest::departingFramesSurviveTheirSourceStrip()
+{
+    QFETCH(TabBarPlacement, placement);
+    const bool animations = TabBar::animationsAllowed(); TabBar::setAnimationsEnabled(true);
+    const auto restore = qScopeGuard([=] { TabBar::setAnimationsEnabled(animations); });
+    if (!TabBar::animationsAllowed()) QSKIP("System client-area animations are disabled");
+    auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);
+    bar->setAppearance(TabAppearance{}, placement);
+    bar->resize(bar->vertical() ? QSize(220, 300) : QSize(700, 50)); bar->setAvailableSize(bar->size());
+    const auto removed = QUuid::createUuid();
+    for (int index = 0; index < 2; ++index) {
+        bar->addTab({}, index == 0 ? QStringLiteral("Removed label") : QStringLiteral("Remaining label"));
+        bar->setTabData(index, index == 0 ? removed : QUuid::createUuid());
+    }
+    bar->setCurrentIndex(0); bar->show(); QVERIFY(QTest::qWaitForWindowExposed(bar.get()));
+    auto previous = bar->captureVisualState(); QVERIFY(previous.value(removed).retired);
+    bar->removeTab(0); bar->transitionFrom(std::move(previous));
+    const auto frame = bar->captureStripFrame(bar->font(), bar->layoutDirection());
+    QCOMPARE(frame->departures.size(), 1); QCOMPARE(frame->departures.first().id, removed);
+    const auto& label = frame->departures.first().label;
+    QCOMPARE(label.state.title, QStringLiteral("Removed label"));
+    QVERIFY(label.surface); QVERIFY(!label.surface->joined); QVERIFY(label.surface->body.isEmpty());
+    QVERIFY(!label.state.elevationManaged); QCOMPARE(label.presence.opacity, qreal(1));
+    QTRY_VERIFY_WITH_TIMEOUT(bar->captureStripFrame(bar->font(), bar->layoutDirection())->departures.isEmpty(), 1000);
+    bar.reset();
+    QCOMPARE(label.state.title, QStringLiteral("Removed label")); QVERIFY(!label.parts.title.isEmpty());
 }
 
 void TabBarPresentationTest::singleTabDefaultsFollowWindowKindAndContentCount_data()

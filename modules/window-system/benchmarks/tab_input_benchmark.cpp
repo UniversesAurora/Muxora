@@ -115,6 +115,30 @@ int main(int argc, char** argv)
         lifted.insert("layerPaints", paints.count); lifted.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
         cases.append(lifted);
         bar.setLifted({}); bar.setDraggedTab({});
+        TabPainter retirementStyle(TabMetrics::forTheme(defaultTheme(), bar.font()), TabPalette::forTheme(defaultTheme()));
+        TabVisualState retired;
+        for (int index = 0; index < 12; ++index) {
+            const QRect area = bar.vertical() ? QRect(0, index * 32, 220, 32) : QRect(index * 110, 0, 110, 32);
+            auto source = std::make_shared<TabRetiredLabel>();
+            source->label.parts = retirementStyle.parts(area, bar.vertical() ? TabShape::Row
+                : placement == TabBarPlacement::Bottom ? TabShape::Bottom : TabShape::Top,
+                {0, 0, area.width() - 20}, false, false, false, Qt::LeftToRight);
+            source->label.state.shape = bar.vertical() ? TabShape::Row
+                : placement == TabBarPlacement::Bottom ? TabShape::Bottom : TabShape::Top;
+            source->label.state.title = QStringLiteral("Workspace %1").arg(index);
+            source->label.state.selected = index == 0; source->label.font = bar.font();
+            retired.insert(QUuid::createUuid(), {area, source->label.state.shape, false, index == 0, false, source->label.parts, source});
+        }
+        QVector<TabDepartureSample> retirementSamples; TabDeparturePainter retirementPainter;
+        auto departing = measure([&](int) {
+            canvas.fill(Qt::white); QPainter paint(&canvas);
+            sampleTabDepartures(retired, {}, 0.5, retirementStyle, retirementSamples);
+            retirementPainter.paint(paint, retirementStyle, retirementSamples);
+        }, 180, 30);
+        departing.insert("placement", int(placement)); departing.insert("departingPaint", true);
+        departing.insert("labels", retired.size()); departing.insert("samples", 180); departing.insert("warmup", 30);
+        departing.insert("dpr", ratio); departing.insert("logicalSize", QJsonArray{bar.width(), bar.height()});
+        cases.append(departing);
         policy.showNumbers = true;
         bar.setAppearance(policy, placement);
         for (int index = bar.count(); index < 100; ++index) bar.addTab({}, QStringLiteral("Workspace %1").arg(index));

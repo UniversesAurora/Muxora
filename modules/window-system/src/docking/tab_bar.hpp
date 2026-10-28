@@ -153,30 +153,11 @@ public:
     void refreshScrollInput();
     void refreshPresentationLayers();
     void inheritHover(const TabBar& previous);
-    struct RetiredLabel {
-        TabLabelPresentation label;
-        TabTitleLayout titleLayout;
-        qreal visibility = 1;
-    };
-    struct LabelVisual {
-        QRect global;
-        TabShape shape;
-        bool sticky;
-        bool selected;
-        bool iconOnly;
-        TabParts parts;
-        std::shared_ptr<RetiredLabel> retired;
-        bool singleTileRow = false;
-        std::optional<QRect> collapse;
-    };
-    using VisualState = QHash<QUuid, LabelVisual>;
-    [[nodiscard]] VisualState captureVisualState();
-    void transitionFrom(VisualState state, Motion motion = Motion::Relocate);
-    [[nodiscard]] VisualState takeSeparateDepartures(VisualState& previous) const;
+    [[nodiscard]] TabVisualState captureVisualState();
+    void transitionFrom(TabVisualState state, Motion motion = Motion::Relocate);
+    [[nodiscard]] TabVisualState takeSeparateDepartures(TabVisualState& previous) const;
     [[nodiscard]] LabelPositions captureDropPositions(std::optional<LabelPositions> carrierPositions = {}) const;
     void settleFrom(const LabelPositions& globalPositions);
-    static void paintRetiredLabel(QPainter& painter, const TabPainter& style, const LabelVisual& label,
-                                 QPoint globalOrigin, qreal visibility);
     // Reused by any operation that makes existing labels appear or disappear.
     void animatePresence(const QSet<QUuid>& tabs, bool visible, Motion motion = Motion::Presence);
     // Horizontal: the controls after the last tab (new tab, list, sidebar
@@ -374,7 +355,7 @@ private:
     void applyColumnPeekAction(const TabColumnPeekAction& action);
     [[nodiscard]] int laneOffsetInput(int lane) const;
     void startCollapseTimer();
-    void updateRowPresentation(VisualState previous, bool moving, bool revealActive);
+    void updateRowPresentation(TabVisualState previous, bool moving, bool revealActive);
     struct RowMeasure { QSize available; int closed; int push; int overlay; };
     [[nodiscard]] const RowMeasure& measureRows(QSize available) const;
     [[nodiscard]] int rowShadowExtent() const;
@@ -430,7 +411,8 @@ private:
     ProgressAnimation presenceProgress_{1};
     struct Presence { qreal from; qreal to; LabelPresenceEffect::Kind kind = LabelPresenceEffect::Kind::Lift; };
     QHash<QUuid, Presence> presence_;
-    VisualState departing_;
+    TabVisualState departing_;
+    TabDeparturePainter departurePainter_;
     QSize available_;
     TabLayout layout_;
     // Input for that exact layout; rebuilt with it and adjusted on scrolling.
@@ -511,7 +493,7 @@ private:
     QEasingCurve slideCurve_ = motionCurve(Motion::Relocate);
     bool planarReflow_ = false;
     [[nodiscard]] bool hasSingleTileRow() const;
-    [[nodiscard]] bool usesPlanarReflow(const VisualState& previous) const;
+    [[nodiscard]] bool usesPlanarReflow(const TabVisualState& previous) const;
 };
 
 } // namespace window_system

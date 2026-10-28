@@ -4,6 +4,7 @@
 #include "edge_fade.hpp"
 #include "tab_painter.hpp"
 #include "tab_label_content.hpp"
+#include "tab_departure.hpp"
 #include <QUuid>
 #include <memory>
 
@@ -36,7 +37,7 @@ struct TabStripLaneFrame {
     std::optional<TabStripFolderOutline> folderOutline;
 };
 
-// The strip's base plane, excluding its window-level lifted/departing labels
+// The strip's base plane, excluding its window-level lifted labels
 // and child controls. Published values own data, not widgets or text caches.
 struct TabStripFrame {
     std::shared_ptr<const TabStripLabelStyle> style;
@@ -49,6 +50,7 @@ struct TabStripFrame {
     QVector<TabStripLaneFrame> lanes;
     QVector<TabStripScrollbar> scrollbars;
     QRect sectionSeparator;
+    QVector<TabDepartureSample> departures;
     QRect overlayShadow;
     bool shadowAbove = false;
     qreal shadowOpacity = 0;

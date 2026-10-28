@@ -166,6 +166,7 @@ std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font
             frame->scrollbars.append({scrollThumb(lane), scrollbarOpacity_.value(), lane == scrollDragLane_});
     }
     frame->sectionSeparator = layout_.separator.isNull() ? QRect{} : layout_.separator.translated(origin);
+    sampleTabDepartures(departing_, mapToGlobal(QPoint()), 1 - presenceProgress_.value(), painter_, frame->departures);
     return frame;
 }
 

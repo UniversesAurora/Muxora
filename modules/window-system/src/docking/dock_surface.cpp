@@ -135,7 +135,7 @@ protected:
 // retains only visible label drawing data, never pages, panes or widgets.
 class RetiringLabels final : public QWidget {
 public:
-    RetiringLabels(TabBar::VisualState labels, const Theme& theme, QWidget* parent)
+    RetiringLabels(TabVisualState labels, const Theme& theme, QWidget* parent)
         : QWidget(parent), labels_(std::move(labels)), painter_(TabMetrics::forTheme(theme, font()), TabPalette::forTheme(theme))
     {
         setObjectName("RetiringTabLabels"); setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -158,11 +158,13 @@ protected:
     void paintEvent(QPaintEvent*) override
     {
         QPainter paint(this);
-        for (const auto& label : std::as_const(labels_))
-            TabBar::paintRetiredLabel(paint, painter_, label, origin_, visibility_.value());
+        sampleTabDepartures(labels_, origin_, visibility_.value(), painter_, samples_);
+        departurePainter_.paint(paint, painter_, samples_);
     }
 private:
-    TabBar::VisualState labels_;
+    TabVisualState labels_;
+    QVector<TabDepartureSample> samples_;
+    TabDeparturePainter departurePainter_;
     TabPainter painter_;
     ProgressAnimation visibility_{1};
     QPoint origin_;
@@ -245,7 +247,7 @@ void DockSurface::rebuild(const QHash<TabId, QPointer<TabContent>>& contents)
     invalidateCarrierVisual();
     const QPointer<DockSurface> self(this);
     const bool animate = root_ && isVisible() && !manager_->d->drag->hasStableLayout() && TabBar::animationsAllowed();
-    QHash<GroupId, TabBar::VisualState> previousVisuals;
+    QHash<GroupId, TabVisualState> previousVisuals;
     QSet<GroupId> peekedGroups;
     for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
         if (it.value() && it.value()->tabBar()->peeking()) peekedGroups.insert(it.key());

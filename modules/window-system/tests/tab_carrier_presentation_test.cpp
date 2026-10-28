@@ -6,6 +6,7 @@
 // replacement, multiple pieces, cache removal, explicit clear, painter state.
 #include "docking/tab_drag_visual.hpp"
 #include "style/tab_carrier_painter.hpp"
+#include "style/tab_departure.hpp"
 
 #include <QGuiApplication>
 #include <QImage>
@@ -64,6 +65,62 @@ void paint(TabCarrierPainter& renderer, const TabDragVisual& descriptor, const S
 class TabCarrierPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
+    void departuresOwnDataAndKeepRendererCachesOutsideTheFrame()
+    {
+        const auto id = QUuid::createUuid();
+        TabVisualState transitions;
+        QVector<TabDepartureSample> samples;
+        const QPoint origin(300, 200);
+        {
+            const auto source = labels()->labels.first().label;
+            auto retired = std::make_shared<TabRetiredLabel>();
+            retired->label = source; retired->visibility = 0.8;
+            TabLabelVisual visual{source.parts.tab, TabShape::Row, false, true, false, source.parts, retired};
+            visual.global.translate(origin);
+            for (auto* part : {&visual.parts.tab, &visual.parts.icon, &visual.parts.number, &visual.parts.title, &visual.parts.action})
+                part->translate(origin);
+            transitions.insert(id, visual);
+        }
+        sampleTabDepartures(transitions, origin, 0.5, TabPainter(TabMetrics{}, TabPalette::forTheme(defaultTheme())), samples);
+        QCOMPARE(samples.size(), 1); QCOMPARE(samples.first().id, id);
+        QCOMPARE(samples.first().label.parts.tab, parts().tab);
+        QCOMPARE(samples.first().label.presence.opacity, 0.4);
+        transitions.clear();
+        QCOMPARE(samples.first().label.state.title, QStringLiteral("Carrier title 1"));
+        QImage image(300, 80, QImage::Format_RGB32); image.fill(Qt::white);
+        QPainter painter(&image);
+        TabPainter style(TabMetrics{}, TabPalette::forTheme(defaultTheme()));
+        TabDeparturePainter renderer;
+        renderer.paint(painter, style, samples);
+        QCOMPARE(renderer.retainedLabelCount(), 1);
+        const auto shaped = renderer.shapingCount(); QVERIFY(shaped > 0);
+        samples.first().label.presence = labelPresencePose(parts().tab, 0.3);
+        renderer.paint(painter, style, samples);
+        QCOMPARE(renderer.shapingCount(), shaped);
+        samples.clear(); renderer.paint(painter, style, samples);
+        QCOMPARE(renderer.retainedLabelCount(), 0);
+    }
+
+    void planarDeparturesContractInTheirOwnPlaneWithoutElevation()
+    {
+        TabPainter style(TabMetrics{}, TabPalette::forTheme(defaultTheme()));
+        auto retired = std::make_shared<TabRetiredLabel>();
+        retired->label.parts = {QRect(100, 200, 80, 32), {}, QRect(130, 208, 16, 16), {}, {}};
+        retired->label.state.shape = TabShape::Tile; retired->label.state.lifted = true;
+        retired->label.font = QGuiApplication::font();
+        TabLabelVisual label{retired->label.parts.tab, TabShape::Tile, true, true, true, retired->label.parts, retired};
+        label.collapse = QRect(100, 200, 0, 32);
+        const auto id = QUuid::createUuid(); TabVisualState transitions{{id, label}};
+        QVector<TabDepartureSample> samples;
+        sampleTabDepartures(transitions, {100, 200}, 0.5, style, samples);
+        QCOMPARE(samples.size(), 1); QCOMPARE(samples.first().label.parts.tab, QRect(0, 0, 40, 32));
+        QVERIFY(samples.first().label.presence.complete());
+        QVERIFY(!samples.first().label.surface); QVERIFY(samples.first().label.state.elevationManaged);
+        QVERIFY(!samples.first().label.state.lifted);
+        QCOMPARE(samples.first().label.parts.icon.center(), samples.first().label.parts.tab.center());
+        sampleTabDepartures(transitions, {100, 200}, 0, style, samples); QVERIFY(samples.isEmpty());
+    }
+
     void retainedDescriptor_outlivesTheSourceAndClearReleasesIt()
     {
         TabDragVisual descriptor;
