@@ -86,7 +86,7 @@ add_test(NAME window-system.quick-path COMMAND window-system-quick-path-test
 set_tests_properties(window-system.quick-path PROPERTIES TIMEOUT 60 LABELS model)
 
 if(TARGET WindowSystemQuick)
-    qt_add_executable(window-system-quick-rendering-test quick_rendering_test.cpp ../src/docking/surface_geometry.cpp)
+    qt_add_executable(window-system-quick-rendering-test quick_rendering_test.cpp)
     target_link_libraries(window-system-quick-rendering-test PRIVATE WindowSystemQuick Qt6::Test)
     target_compile_features(window-system-quick-rendering-test PRIVATE cxx_std_20)
     target_include_directories(window-system-quick-rendering-test PRIVATE ../src)
@@ -170,9 +170,8 @@ foreach(label model widget desktop)
     endforeach()
 endforeach()
 # The surface geometry and renderer have no dependency on window management.
-qt_add_executable(window-system-surface-elevation-test surface_elevation_test.cpp
-    ../src/style/elevation.cpp ../src/docking/surface_geometry.cpp)
-target_link_libraries(window-system-surface-elevation-test PRIVATE Qt6::Widgets Qt6::Test)
+qt_add_executable(window-system-surface-elevation-test surface_elevation_test.cpp)
+target_link_libraries(window-system-surface-elevation-test PRIVATE WindowSystemSurfaces Qt6::Test)
 target_include_directories(window-system-surface-elevation-test PRIVATE ../src ../include)
 set_target_properties(window-system-surface-elevation-test PROPERTIES AUTOMOC ON)
 add_test(NAME window-system.surface-elevation COMMAND window-system-surface-elevation-test

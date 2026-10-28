@@ -32,6 +32,13 @@ target_compile_features(WindowSystemPresentation PUBLIC cxx_std_20)
 target_include_directories(WindowSystemPresentation PRIVATE src)
 target_link_libraries(WindowSystemPresentation PRIVATE Qt6::Core)
 
+# GUI values and bounded surface resources shared by both drawing adapters.
+add_library(WindowSystemSurfaces STATIC src/style/elevation.cpp src/docking/surface_geometry.cpp)
+set_target_properties(WindowSystemSurfaces PROPERTIES EXPORT_NAME Surfaces)
+target_compile_features(WindowSystemSurfaces PUBLIC cxx_std_20)
+target_include_directories(WindowSystemSurfaces PRIVATE src include)
+target_link_libraries(WindowSystemSurfaces PUBLIC Qt6::Gui)
+
 add_library(WindowSystemWidgets STATIC
     src/localization/localization.cpp
     src/window_manager.cpp
@@ -67,8 +74,6 @@ add_library(WindowSystemWidgets STATIC
     src/docking/tab_bar.cpp
     src/style/tab_painter.cpp
     src/style/tab_carrier_painter.cpp
-    src/style/elevation.cpp
-    src/docking/surface_geometry.cpp
     src/docking/edge_strip.cpp
     src/docking/drag_presentation.cpp
     src/docking/edge_tab_button.cpp
@@ -99,7 +104,7 @@ target_include_directories(WindowSystemWidgets PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation)
+target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces)
 
 if(WINDOW_SYSTEM_BUILD_QUICK)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Quick)
@@ -110,7 +115,7 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PRIVATE src)
-    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation)
+    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation WindowSystemSurfaces)
 endif()
 
 # Keep editable Qt Linguist sources in version control; compiled catalogs are
@@ -160,7 +165,7 @@ if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp src/platform/windows/font_families.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
-set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemWidgets)
+set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemWidgets)
 if(TARGET WindowSystemQuick)
     list(APPEND window_system_compile_targets WindowSystemQuick)
 endif()
@@ -182,7 +187,7 @@ if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-install(TARGETS WindowSystemModel WindowSystemPresentation WindowSystemWidgets EXPORT WindowSystemTargets
+install(TARGETS WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemWidgets EXPORT WindowSystemTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

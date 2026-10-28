@@ -24,10 +24,7 @@ ElevationLayer mix(const ElevationLayer& from, const ElevationLayer& to, qreal p
             mix(from.opacity, to.opacity, progress)};
 }
 
-struct Patch {
-    QImage image;
-    QRectF bounds;
-    qreal bodyInset = 0;
+struct Patch : ElevationBodyPatch {
     int cost() const { return std::max(1, int((image.sizeInBytes() + 1023) / 1024)); }
 };
 
@@ -303,7 +300,16 @@ void ElevationRenderer::paintBody(QPainter& painter, const QRectF& body, qreal r
         painter.restore();
         return;
     }
-    const qreal ratio = painter.device()->devicePixelRatioF();
+    const auto patch = bodyPatch(radius, elevation, style, painter.device()->devicePixelRatioF());
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    for (const auto& quad : patch.quads(body, radius))
+        painter.drawImage(quad.target, patch.image, quad.sourcePixels);
+    painter.restore();
+}
+
+ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationProfile& elevation,
+                                               const ElevationStyle& style, qreal ratio)
+{
     const QString key = QStringLiteral("body:%1:").arg(radius) + keyFor(elevation, style, ratio);
     const Patch* patch = cache_->patches.object(key);
     std::unique_ptr<Patch> owned;
@@ -317,7 +323,7 @@ void ElevationRenderer::paintBody(QPainter& painter, const QRectF& body, qreal r
         path.addRoundedRect(spriteBody, radius, radius);
         const auto values = coverage(path, bounds, ratio, elevation, style);
         owned = std::make_unique<Patch>();
-        owned->bounds = bounds; owned->bodyInset = spread;
+        owned->bounds = bounds; owned->bodyInset = spread; owned->devicePixelRatio = ratio;
         owned->image = QImage(QSize(qCeil(bounds.width() * ratio), qCeil(bounds.height() * ratio)), QImage::Format_ARGB32_Premultiplied);
         for (int y = 0; y < owned->image.height(); ++y) {
             auto* row = reinterpret_cast<QRgb*>(owned->image.scanLine(y));
@@ -330,20 +336,27 @@ void ElevationRenderer::paintBody(QPainter& painter, const QRectF& body, qreal r
         cache_->generated(owned->image);
         if (owned->cost() <= cacheBudgetKiB) cache_->patches.insert(key, owned.release(), patch->cost());
     }
-    const qreal margin = patch->bodyInset;
+    return *patch;
+}
+
+std::array<ElevationPatchQuad, 8> ElevationBodyPatch::quads(const QRectF& body, qreal radius) const
+{
+    const qreal ratio = devicePixelRatio;
+    const qreal margin = bodyInset;
     const qreal edge = std::min({radius + margin, body.width() / 2, body.height() / 2});
     const qreal sourceEdge = radius + margin;
-    const std::array<qreal, 4> sx{0, margin + sourceEdge, patch->bounds.width() - margin - sourceEdge, patch->bounds.width()};
-    const std::array<qreal, 4> sy{0, margin + sourceEdge, patch->bounds.height() - margin - sourceEdge, patch->bounds.height()};
+    const std::array<qreal, 4> sx{0, margin + sourceEdge, bounds.width() - margin - sourceEdge, bounds.width()};
+    const std::array<qreal, 4> sy{0, margin + sourceEdge, bounds.height() - margin - sourceEdge, bounds.height()};
     const std::array<qreal, 4> dx{body.left() - margin, body.left() + edge, body.right() - edge, body.right() + margin};
     const std::array<qreal, 4> dy{body.top() - margin, body.top() + edge, body.bottom() - edge, body.bottom() + margin};
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    std::array<ElevationPatchQuad, 8> result;
+    int at = 0;
     for (int y = 0; y < 3; ++y) for (int x = 0; x < 3; ++x) {
         if (x == 1 && y == 1) continue;
-        painter.drawImage(QRectF(dx[x], dy[y], dx[x + 1] - dx[x], dy[y + 1] - dy[y]), patch->image,
-                          QRectF(sx[x] * ratio, sy[y] * ratio, (sx[x + 1] - sx[x]) * ratio, (sy[y + 1] - sy[y]) * ratio));
+        result[at++] = {QRectF(dx[x], dy[y], dx[x + 1] - dx[x], dy[y + 1] - dy[y]),
+                       QRectF(sx[x] * ratio, sy[y] * ratio, (sx[x + 1] - sx[x]) * ratio, (sy[y + 1] - sy[y]) * ratio)};
     }
-    painter.restore();
+    return result;
 }
 
 void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& geometry,

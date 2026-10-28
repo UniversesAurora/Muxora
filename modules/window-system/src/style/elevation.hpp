@@ -3,9 +3,11 @@
 
 #include "../docking/surface_geometry.hpp"
 #include <QColor>
+#include <QImage>
 #include <QMarginsF>
 #include <QVector>
 #include <memory>
+#include <array>
 
 class QPainter;
 
@@ -48,6 +50,21 @@ struct ElevatedAnchor {
     ElevationProfile elevation;
 };
 
+struct ElevationPatchQuad {
+    QRectF target;
+    QRectF sourcePixels;
+};
+
+// Shared cold resource, independent of the destination body's dimensions.
+// Renderers retain this value; the image's pixels are implicitly shared.
+struct ElevationBodyPatch {
+    QImage image;
+    QRectF bounds;
+    qreal bodyInset = 0;
+    qreal devicePixelRatio = 1;
+    [[nodiscard]] std::array<ElevationPatchQuad, 8> quads(const QRectF& body, qreal radius) const;
+};
+
 [[nodiscard]] ElevationProfile elevationProfile(ElevationLevel level);
 [[nodiscard]] int elevationStep(qreal progress);
 [[nodiscard]] qreal quantizedElevation(qreal progress);
@@ -67,6 +84,8 @@ public:
     void paintBody(QPainter& painter, const QRectF& body, qreal radius,
                    const ElevationProfile& elevation, const ElevationStyle& style,
                    const QRectF& excluded = {});
+    [[nodiscard]] ElevationBodyPatch bodyPatch(qreal radius, const ElevationProfile& elevation,
+                                             const ElevationStyle& style, qreal devicePixelRatio);
     // When incremental, source-over contributes only the opacity missing
     // above an already painted body shadow, rather than adding two shadows.
     void paintAnchor(QPainter& painter, const SurfaceGeometry& geometry,

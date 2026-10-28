@@ -240,6 +240,32 @@ private slots:
         QCOMPARE(renderer.cacheStats().generatedImages, beforeMove.generatedImages);
         QVERIFY(renderer.cacheStats().bytes <= 16 * 1024 * 1024);
     }
+
+    void bodyResourcesOutliveTheirCacheWithoutCopyingPixels()
+    {
+        for (qreal ratio : {1.0, 1.25, 2.0}) {
+            ElevationBodyPatch retained;
+            {
+                ElevationRenderer renderer;
+                retained = renderer.bodyPatch(8, elevationProfile(ElevationLevel::BodyRaised), {}, ratio);
+                const auto reused = renderer.bodyPatch(8, elevationProfile(ElevationLevel::BodyRaised), {}, ratio);
+                QCOMPARE(retained.image.constBits(), reused.image.constBits());
+                renderer.clear();
+            }
+            QCOMPARE(retained.devicePixelRatio, ratio);
+            QVERIFY(!retained.image.isNull());
+            QVERIFY(retained.image.sizeInBytes() < 200 * 200 * 4);
+            const QRectF body(20, 80, 40000, 30000);
+            QRectF extent;
+            for (const auto& quad : retained.quads(body, 8)) {
+                extent |= quad.target;
+                QVERIFY(QRectF(retained.image.rect()).contains(quad.sourcePixels));
+                QVERIFY(!quad.target.intersects(body.adjusted(80, 80, -80, -80)));
+            }
+            QCOMPARE(extent, body.adjusted(-retained.bodyInset, -retained.bodyInset,
+                                           retained.bodyInset, retained.bodyInset));
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(SurfaceElevationTest)
