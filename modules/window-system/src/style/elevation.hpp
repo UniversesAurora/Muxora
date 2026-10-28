@@ -19,12 +19,14 @@ struct ElevationLayer {
     qreal offset = 0;
     qreal blur = 0;
     qreal opacity = 0;
+    bool operator==(const ElevationLayer&) const = default;
 };
 
 struct ElevationProfile {
     ElevationLayer key;
     ElevationLayer ambient;
     qreal edgeOpacity = 1;
+    bool operator==(const ElevationProfile&) const = default;
 };
 
 struct ElevationStyle {
@@ -36,6 +38,7 @@ struct ElevationStyle {
     bool focused = false;
     QColor contrastBorder;
     QColor focusBorder;
+    bool operator==(const ElevationStyle&) const = default;
 };
 
 struct ElevationCacheStats {

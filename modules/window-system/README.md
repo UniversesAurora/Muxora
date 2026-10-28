@@ -21,7 +21,7 @@
 
 ### 开发中的 Quick 呈现
 
-`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick，默认关闭。它提供保留路径节点和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
+`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick，默认关闭。它提供保留路径节点、主体阴影纹理和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
 
 同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。范围仅为两张接合表面的填充，不含文字、阴影、宿主内容或输入；结果不能与完整 Widgets 窗口直接计算性能提升比例。
 

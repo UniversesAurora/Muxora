@@ -3,6 +3,7 @@
 // resource recreation, frame-paced motion, visibility and window ownership.
 // This is not a visual baseline or a complete application performance test.
 #include "quick/path_item.hpp"
+#include "quick/body_shadow_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
 
@@ -40,6 +41,68 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void bodyShadowsResizeWithoutNewImagesOrUploads()
+    {
+        QQuickWindow window;
+        prepareWindow(window); window.setColor(Qt::white);
+        auto* shadow = new BodyShadowItem(window.contentItem());
+        shadow->setPosition({40, 40}); shadow->setSize({240, 140});
+        const auto profile = elevationProfile(ElevationLevel::BodyRaised);
+        shadow->setShadow(8, profile, {});
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QVERIFY(window.rendererInterface()->graphicsApi() != QSGRendererInterface::Software);
+        auto image = window.grabWindow(); QVERIFY(!image.isNull());
+        const auto below = pixelAt(image, window, {160, 182});
+        QVERIFY(below.red() < 250); QCOMPARE(below.red(), below.green());
+        QCOMPARE(pixelAt(image, window, {160, 100}), QColor(Qt::white));
+        const auto warm = shadow->renderStats();
+        QCOMPARE(warm.textureUploads, 1);
+        QVERIFY(warm.imageBytesUploaded < 200 * 200 * 4);
+        ElevationRenderer cache;
+        const auto images = cache.cacheStats().generatedImages;
+        for (int width : {180, 200, 260, 210}) {
+            shadow->setWidth(width);
+            QVERIFY(!window.grabWindow().isNull());
+        }
+        QCOMPARE(shadow->renderStats().textureUploads, warm.textureUploads);
+        QCOMPARE(shadow->renderStats().imageBytesUploaded, warm.imageBytesUploaded);
+        QVERIFY(shadow->renderStats().geometryUpdates > warm.geometryUpdates);
+        QCOMPARE(cache.cacheStats().generatedImages, images);
+
+        ElevationStyle contrast;
+        contrast.highContrast = true; contrast.contrastBorder = Qt::red;
+        shadow->setShadow(8, profile, contrast);
+        image = window.grabWindow();
+        const auto edge = pixelAt(image, window, {40, 100});
+        QVERIFY(edge.red() > edge.green());
+        QCOMPARE(shadow->renderStats().textureUploads, warm.textureUploads + 1);
+        shadow->setShadow(8, elevationProfile(ElevationLevel::Flat), contrast);
+        QCOMPARE(pixelAt(window.grabWindow(), window, {40, 100}), QColor(Qt::white));
+    }
+
+    void bodyShadowTexturesFollowSceneGraphOwnership()
+    {
+        QQuickWindow first, second;
+        prepareWindow(first); prepareWindow(second);
+        first.setColor(Qt::white); second.setColor(Qt::white);
+        auto* shadow = new BodyShadowItem(first.contentItem());
+        shadow->setPosition({40, 40}); shadow->setSize({240, 140});
+        shadow->setShadow(8, elevationProfile(ElevationLevel::BodyRaised), {});
+        first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QVERIFY(!first.grabWindow().isNull());
+        const auto initial = shadow->renderStats().textureUploads;
+        first.hide(); QTRY_VERIFY(!first.isExposed()); first.releaseResources();
+        first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(shadow->renderStats().textureUploads > initial);
+        const auto recreated = shadow->renderStats().textureUploads;
+        shadow->setParentItem(second.contentItem()); shadow->setParent(second.contentItem());
+        second.show(); QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QVERIFY(pixelAt(second.grabWindow(), second, {160, 182}).red() < 250);
+        QCOMPARE(shadow->renderStats().textureUploads, recreated + 1);
+        QCOMPARE(pixelAt(first.grabWindow(), first, {160, 182}), QColor(Qt::white));
+    }
+
     void multisampleTarget_acceptsPartialJoinsAndShoulderTips()
     {
         QQuickWindow window;

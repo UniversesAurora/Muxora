@@ -310,7 +310,10 @@ void ElevationRenderer::paintBody(QPainter& painter, const QRectF& body, qreal r
 ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationProfile& elevation,
                                                const ElevationStyle& style, qreal ratio)
 {
-    const QString key = QStringLiteral("body:%1:").arg(radius) + keyFor(elevation, style, ratio);
+    const QString key = QStringLiteral("body:%1:%2:%3:").arg(radius)
+        .arg(style.highContrast ? (style.focused ? 2 : 1) : 0)
+        .arg(style.highContrast ? (style.focused ? style.focusBorder : style.contrastBorder).rgba() : 0)
+        + keyFor(elevation, style, ratio);
     const Patch* patch = cache_->patches.object(key);
     std::unique_ptr<Patch> owned;
     if (!patch) {
@@ -321,15 +324,22 @@ ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationPro
         const QRectF bounds(0, 0, spriteBody.width() + 2 * spread, spriteBody.height() + 2 * spread);
         QPainterPath path;
         path.addRoundedRect(spriteBody, radius, radius);
-        const auto values = coverage(path, bounds, ratio, elevation, style);
         owned = std::make_unique<Patch>();
         owned->bounds = bounds; owned->bodyInset = spread; owned->devicePixelRatio = ratio;
         owned->image = QImage(QSize(qCeil(bounds.width() * ratio), qCeil(bounds.height() * ratio)), QImage::Format_ARGB32_Premultiplied);
-        for (int y = 0; y < owned->image.height(); ++y) {
-            auto* row = reinterpret_cast<QRgb*>(owned->image.scanLine(y));
-            for (int x = 0; x < owned->image.width(); ++x) {
-                const int at = y * owned->image.width() + x;
-                row[x] = colored(values.shadow[at] * (1 - values.inside[at]), values.edge[at], style);
+        if (style.highContrast) {
+            owned->image.fill(Qt::transparent);
+            QPainter painter(&owned->image);
+            painter.scale(ratio, ratio);
+            highContrast(painter, path, style);
+        } else {
+            const auto values = coverage(path, bounds, ratio, elevation, style);
+            for (int y = 0; y < owned->image.height(); ++y) {
+                auto* row = reinterpret_cast<QRgb*>(owned->image.scanLine(y));
+                for (int x = 0; x < owned->image.width(); ++x) {
+                    const int at = y * owned->image.width() + x;
+                    row[x] = colored(values.shadow[at] * (1 - values.inside[at]), values.edge[at], style);
+                }
             }
         }
         patch = owned.get();
