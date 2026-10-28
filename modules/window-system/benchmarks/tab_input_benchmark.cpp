@@ -68,6 +68,15 @@ int main(int argc, char** argv)
         });
         keys.insert("placement", int(placement)); keys.insert("keyboard", true);
         cases.append(keys);
+        policy.showNumbers = true;
+        bar.setAppearance(policy, placement);
+        for (int index = bar.count(); index < 100; ++index) bar.addTab({}, QStringLiteral("Workspace %1").arg(index));
+        auto layout = measure([&](int index) {
+            const auto size = QSize((bar.vertical() ? 220 : 1000) + index % 2, bar.height());
+            bar.resize(size); bar.setAvailableSize(size);
+        });
+        layout.insert("placement", int(placement)); layout.insert("numberedLayout", true);
+        layout.insert("labels", bar.count()); cases.append(layout);
         if (bar.isVisible()) return 3;
     }
     const auto bytes = QJsonDocument(QJsonObject{{"commit", parser.value("commit")},

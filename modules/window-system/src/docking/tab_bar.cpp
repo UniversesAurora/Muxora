@@ -348,28 +348,65 @@ QString TabBar::tabText(int index) const { return index >= 0 && index < tabs_.si
 void TabBar::setTabText(int index, const QString& text)
 {
     if (index < 0 || index >= tabs_.size() || tabs_.at(index).title == text) return;
-    tabs_[index].title = text; tabs_[index].titleWidth = -1;
+    tabs_[index].title = text; tabs_[index].titleWidth = -1; tabs_[index].content.reset();
     relayout(true);
 }
 QIcon TabBar::tabIcon(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).icon : QIcon{}; }
 void TabBar::setTabIcon(int index, const QIcon& icon)
 {
     if (index < 0 || index >= tabs_.size()) return;
-    tabs_[index].icon = icon; relayout(true);
+    tabs_[index].icon = icon; tabs_[index].content.reset(); relayout(true);
 }
 QString TabBar::tabToolTip(int index) const { return index >= 0 && index < tabs_.size() ? tabs_.at(index).tooltip : QString{}; }
 void TabBar::setTabToolTip(int index, const QString& tip) { if (index >= 0 && index < tabs_.size()) tabs_[index].tooltip = tip; }
 void TabBar::setTabMetadata(int index, const TabRecord& tab)
 {
     if (index < 0 || index >= tabs_.size()) return;
+    if (tabs_[index].colorId != tab.colorId) tabs_[index].content.reset();
     tabs_[index].colorId = tab.colorId; invalidateCarrier(true); update();
 }
+std::shared_ptr<const TabStripLabelStyle> TabBar::labelStyle() const
+{
+    if (!labelStyle_ || labelStyle_->logicalDpiX != logicalDpiX() || labelStyle_->logicalDpiY != logicalDpiY()) {
+        auto style = std::make_shared<TabStripLabelStyle>();
+        style->metrics = metrics_; style->palette = painter_.palette();
+        style->font = font(); style->direction = layoutDirection();
+        style->logicalDpiX = logicalDpiX(); style->logicalDpiY = logicalDpiY();
+        style->closeIcon = iconFor(QStringLiteral("close"), theme_);
+        style->stickyIcon = iconFor(vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
+        style->addIcon = iconFor(QStringLiteral("add"), theme_);
+        labelStyle_ = std::move(style);
+    }
+    return labelStyle_;
+}
+
+std::shared_ptr<const TabLabelContent> TabBar::labelContent(int index) const
+{
+    Q_ASSERT(index >= 0 && index < tabs_.size());
+    const auto& tab = tabs_.at(index);
+    const auto style = labelStyle();
+    if (!tab.content || tab.content->style != style || (appearance_.showNumbers && tab.contentIndex != index)) {
+        auto content = std::make_shared<TabLabelContent>();
+        content->style = style; content->title = tab.title;
+        if (appearance_.showNumbers) {
+            content->number = QString::number(index + 1);
+            content->numberExtent = fontMetrics().horizontalAdvance(content->number);
+        }
+        if (appearance_.showIcons) content->icon = tab.icon;
+        if (!tab.colorId.isEmpty())
+            for (const auto& preset : appearance_.colors) if (preset.id == tab.colorId) { content->preset = preset; break; }
+        tab.content = std::move(content); tab.contentIndex = index;
+    }
+    return tab.content;
+}
+
 const TabColorPreset* TabBar::tabPreset(int index) const
 {
-    if (index < 0 || index >= tabs_.size() || tabs_.at(index).colorId.isEmpty()) return nullptr;
-    for (const auto& preset : appearance_.colors) if (preset.id == tabs_.at(index).colorId) return &preset;
-    return nullptr;
+    if (index < 0 || index >= tabs_.size()) return nullptr;
+    const auto content = labelContent(index);
+    return content->preset ? &*content->preset : nullptr;
 }
+
 int TabBar::indexOf(TabId tab) const
 {
     for (int index = 0; index < tabs_.size(); ++index) if (tabs_.at(index).data.toUuid() == tab) return index;
@@ -1018,7 +1055,7 @@ TabLabelParts TabBar::labelParts(int index, bool sticky) const
 {
     const auto& tab = tabs_.at(index);
     TabLabelParts parts;
-    parts.number = appearance_.showNumbers ? fontMetrics().horizontalAdvance(QString::number(index + 1)) : 0;
+    parts.number = labelContent(index)->numberExtent;
     parts.icon = appearance_.showIcons && !tab.icon.isNull() ? metrics_.iconSize : 0;
     const int natural = std::max(0, tab.titleWidth);
     if (vertical()) parts.title = natural;
@@ -1055,6 +1092,7 @@ int TabBar::naturalTabWidth(int index) const { return index >= 0 && index < tabs
 
 void TabBar::updateTitleWidths()
 {
+    labelStyle_.reset();
     for (auto& tab : tabs_) {
         tab.titleLayout.prepare(tab.title, font(), layoutDirection(), true, this);
         tab.titleWidth = tab.titleLayout.naturalWidth();
@@ -2026,6 +2064,7 @@ QRect TabBar::scrollThumb(int laneIndex) const
 
 TabPaintState TabBar::paintState(int index)
 {
+    const auto content = labelContent(index);
     TabPaintState state;
     state.shape = shapeOf(index);
     state.selected = index == current_ && incomingVisual_.empty();
@@ -2039,10 +2078,10 @@ TabPaintState TabBar::paintState(int index)
     state.iconOnly = (vertical() && iconsOnly() && columnReveal_ <= 0) || (!vertical() && isCompactSticky(index));
     state.titleOpacity = vertical() && state.shape == TabShape::Row && !state.iconOnly ? columnReveal_ : 1.0;
     state.outerRight = placement_ == TabBarPlacement::Right;
-    state.preset = tabPreset(index);
-    state.number = appearance_.showNumbers ? QString::number(index + 1) : QString{};
-    state.icon = appearance_.showIcons ? tabs_.at(index).icon : QIcon{};
-    state.title = tabs_.at(index).title;
+    state.preset = content->preset ? &*content->preset : nullptr;
+    state.number = content->number;
+    state.icon = content->icon;
+    state.title = content->title;
     state.titleLayout = &tabs_[index].titleLayout;
     // A sticky tab always shows its action; the others on hover.
     state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == pointer_.pressedAction()
@@ -2051,7 +2090,7 @@ TabPaintState TabBar::paintState(int index)
     state.actionPressed = !carriedDisplay_ && index == pointer_.pressedAction();
     state.actionReserved = state.sticky;
     state.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1.0 : actionOpacity_.value();
-    state.actionIcon = iconFor(!state.sticky ? QStringLiteral("close") : vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
+    state.actionIcon = state.sticky ? content->style->stickyIcon : content->style->closeIcon;
     return state;
 }
 
@@ -2083,7 +2122,7 @@ TabFolderPaintState TabBar::folderPaintState(int folder) const
         state.color = preset->groupActive.line;
         state.wash = preset->groupInactive.background; state.washText = preset->groupInactive.text;
     } else { state.color = painter_.palette().accent; state.wash = painter_.palette().hover; state.washText = painter_.palette().text; }
-    state.addIcon = iconFor(QStringLiteral("add"), theme_);
+    state.addIcon = labelStyle()->addIcon;
     return state;
 }
 void TabBar::paintFolders(QPainter& painter, int lane)
@@ -2329,14 +2368,14 @@ void TabBar::paintLiftedTabs(QPainter& painter)
         if (vertical()) state.shape = state.sticky && compactStickyTiles() ? TabShape::Tile : TabShape::Row;
         state.outerRight = placement_ == TabBarPlacement::Right;
         state.preset = tabPreset(dragged_);
-        state.number = appearance_.showNumbers ? QString::number(dragged_ + 1) : QString{};
+        state.number = labelContent(dragged_)->number;
         state.icon = appearance_.showIcons ? tabs_.at(dragged_).icon : QIcon{};
         state.title = tabs_.at(dragged_).title;
         state.titleLayout = &tabs_[dragged_].titleLayout;
         state.iconOnly = state.shape == TabShape::Tile || (vertical() && iconsOnly() && columnReveal_ <= 0)
             || (!vertical() && state.sticky && appearance_.stickySizing == StickyTabSizing::Compact);
         state.actionShown = state.sticky && !state.iconOnly; state.actionReserved = true;
-        state.actionIcon = iconFor(vertical() ? QStringLiteral("sticky-vertical") : QStringLiteral("sticky"), theme_);
+        state.actionIcon = labelStyle()->stickyIcon;
         const auto geometry = anchorGeometry(movingLabel, movingLabel.intersected(rect()), state.shape == TabShape::Tile, true);
         state.surface = &geometry; state.elevationManaged = true; state.bodyElevation = &bodyProfile;
         const auto label = labelParts(dragged_, state.sticky);

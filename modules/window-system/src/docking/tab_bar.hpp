@@ -12,6 +12,7 @@
 #include "style/tab_painter.hpp"
 #include "style/tab_carrier_painter.hpp"
 #include "style/tab_title_layout.hpp"
+#include "style/tab_label_content.hpp"
 #include "style/motion.hpp"
 #include "style/elevation.hpp"
 #include <window_system/layout_model.hpp>
@@ -92,6 +93,7 @@ public:
     void setTabToolTip(int index, const QString& tip);
     void setTabMetadata(int index, const TabRecord& tab);
     [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
+    [[nodiscard]] std::shared_ptr<const TabLabelContent> labelContent(int index) const;
     [[nodiscard]] int currentIndex() const { return current_; }
     void setCurrentIndex(int index);
     [[nodiscard]] QSize iconSize() const { return {metrics_.iconSize, metrics_.iconSize}; }
@@ -325,6 +327,8 @@ private:
         QString colorId;
         TabTitleLayout titleLayout;
         int titleWidth = -1;
+        mutable std::shared_ptr<const TabLabelContent> content;
+        mutable int contentIndex = -1;
     };
     [[nodiscard]] TabLayoutInput layoutInput(QSize area, bool collapsed) const;
     [[nodiscard]] QSize tabArea(QSize size) const;
@@ -380,11 +384,13 @@ private:
     void surfaceFrameChanged();
     [[nodiscard]] qreal selectionWeight(int index) const;
     void updateTitleWidths();
+    [[nodiscard]] std::shared_ptr<const TabStripLabelStyle> labelStyle() const;
     static bool animationsEnabled();
 
     Theme theme_;
     TabMetrics metrics_;
     TabPainter painter_;
+    mutable std::shared_ptr<const TabStripLabelStyle> labelStyle_;
     TabAppearance appearance_;
     TabBarPlacement placement_ = TabBarPlacement::Top;
     QVector<Tab> tabs_;

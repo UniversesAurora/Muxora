@@ -30,6 +30,58 @@ TabPainter labelPainter()
 class TabLabelPresentationTest final : public QObject {
     Q_OBJECT
 private slots:
+    void sharedContentChangesOnlyWithItsSourceAndOutlivesTheBar()
+    {
+        auto bar = std::make_unique<TabBar>(defaultTheme(), nullptr);
+        TabAppearance policy; policy.showNumbers = true;
+        TabColorPreset preset; preset.id = QStringLiteral("custom"); policy.colors = {preset};
+        bar->setAppearance(policy, TabBarPlacement::Top);
+        bar->addTab({}, QStringLiteral("First")); bar->addTab({}, QStringLiteral("Second"));
+        const auto first = bar->labelContent(0), second = bar->labelContent(1);
+        QCOMPARE(bar->labelContent(0), first);
+        bar->setCurrentIndex(1);
+        QCOMPARE(bar->labelContent(0), first);
+        bar->setTabText(0, QStringLiteral("Edited"));
+        const auto edited = bar->labelContent(0);
+        QVERIFY(edited != first); QCOMPARE(first->title, QStringLiteral("First"));
+        QCOMPARE(bar->labelContent(1), second);
+        bar->setTabIcon(0, iconFor(QStringLiteral("files")));
+        QVERIFY(!bar->labelContent(0)->icon.isNull()); QVERIFY(edited->icon.isNull());
+        TabRecord record; record.colorId = preset.id; bar->setTabMetadata(0, record);
+        const auto retained = bar->labelContent(0);
+        QVERIFY(retained->preset); QCOMPARE(retained->preset->id, preset.id);
+        QCOMPARE(bar->tabPreset(0), &*retained->preset);
+        bar.reset();
+        QCOMPARE(retained->title, QStringLiteral("Edited"));
+        QCOMPARE(retained->number, QStringLiteral("1"));
+        QVERIFY(!retained->style->closeIcon.isNull());
+    }
+
+    void contentTracksIndexFontDirectionAndPlacement()
+    {
+        TabBar bar(defaultTheme(), nullptr);
+        TabAppearance policy; policy.showNumbers = true;
+        bar.setAppearance(policy, TabBarPlacement::Top);
+        for (int index = 0; index < 12; ++index) bar.addTab({}, QStringLiteral("Title %1").arg(index));
+        const auto original = bar.labelContent(10);
+        QCOMPARE(original->number, QStringLiteral("11"));
+        bar.removeTab(0);
+        const auto shifted = bar.labelContent(9);
+        QCOMPARE(shifted->title, original->title); QCOMPARE(shifted->number, QStringLiteral("10"));
+        QCOMPARE(shifted->numberExtent, bar.fontMetrics().horizontalAdvance(QStringLiteral("10")));
+        QCOMPARE(original->number, QStringLiteral("11"));
+        auto font = bar.font(); font.setPixelSize(21); bar.setFont(font);
+        const auto resized = bar.labelContent(9);
+        QVERIFY(resized->style != shifted->style); QCOMPARE(resized->style->font, font);
+        QCOMPARE(resized->numberExtent, bar.fontMetrics().horizontalAdvance(QStringLiteral("10")));
+        bar.setLayoutDirection(Qt::RightToLeft);
+        QCOMPARE(bar.labelContent(9)->style->direction, Qt::RightToLeft);
+        bar.setAppearance(policy, TabBarPlacement::Right);
+        QCOMPARE(bar.labelContent(9)->style->stickyIcon.name(), QStringLiteral("sticky-vertical"));
+        policy.showNumbers = false; bar.setAppearance(policy, TabBarPlacement::Right);
+        QVERIFY(bar.labelContent(9)->number.isEmpty()); QCOMPARE(bar.labelContent(9)->numberExtent, 0);
+    }
+
     void sharedGeometryPreservesTheWidgetMirrorAndExtent()
     {
         for (auto direction : {Qt::LeftToRight, Qt::RightToLeft, Qt::LayoutDirectionAuto})
