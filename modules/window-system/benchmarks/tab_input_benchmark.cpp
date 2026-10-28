@@ -7,12 +7,28 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QSaveFile>
 #include <algorithm>
 #include <cstdio>
 
 using namespace window_system;
+
+namespace {
+QJsonObject measure(auto send)
+{
+    QList<double> samples; samples.reserve(2000);
+    for (int index = 0; index < 2200; ++index) {
+        QElapsedTimer timer; timer.start();
+        send(index);
+        const double us = timer.nsecsElapsed() / 1000.0;
+        if (index >= 200) samples.append(us);
+    }
+    std::sort(samples.begin(), samples.end());
+    return {{"p50us", samples[999]}, {"p95us", samples[1899]}};
+}
+}
 
 int main(int argc, char** argv)
 {
@@ -39,18 +55,19 @@ int main(int argc, char** argv)
         };
         for (const bool held : {false, true}) {
             if (held) send(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
-            QList<double> samples; samples.reserve(2000);
-            for (int index = 0; index < 2200; ++index) {
-                QElapsedTimer timer; timer.start();
+            auto result = measure([&](int index) {
                 send(QEvent::MouseMove, point + QPoint(index % 3, 0), Qt::NoButton, held ? Qt::LeftButton : Qt::NoButton);
-                const double us = timer.nsecsElapsed() / 1000.0;
-                if (index >= 200) samples.append(us);
-            }
+            });
             if (held) send(QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
-            std::sort(samples.begin(), samples.end());
-            cases.append(QJsonObject{{"placement", int(placement)}, {"held", held},
-                {"p50us", samples[999]}, {"p95us", samples[1899]}});
+            result.insert("placement", int(placement)); result.insert("held", held);
+            cases.append(result);
         }
+        auto keys = measure([&](int index) {
+            QKeyEvent event(QEvent::KeyPress, index % 2 ? Qt::Key_Home : Qt::Key_End, Qt::NoModifier);
+            QApplication::sendEvent(&bar, &event);
+        });
+        keys.insert("placement", int(placement)); keys.insert("keyboard", true);
+        cases.append(keys);
         if (bar.isVisible()) return 3;
     }
     const auto bytes = QJsonDocument(QJsonObject{{"commit", parser.value("commit")},

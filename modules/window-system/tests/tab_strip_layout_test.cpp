@@ -20,6 +20,7 @@
 
 #include <QAccessible>
 #include <QApplication>
+#include <QKeyEvent>
 #include <QContextMenuEvent>
 #include <QHelpEvent>
 #include <QLabel>
@@ -126,6 +127,7 @@ private slots:
     void displayFlagsChangeActualLabelWidthsAndCreationControls();
     void clippedTitlesKeepTheirFullText();
     void tabColorsFillTheBackgroundOnly();
+    void activationCanDestroyTheStrip_data();
     void activationCanDestroyTheStrip();
     void closeTargetShowsHoverAndPressFeedback();
     void stickyTabsAlwaysShowTheirAction();
@@ -712,17 +714,29 @@ void TabStripLayoutTest::tabColorsFillTheBackgroundOnly()
     QCOMPARE(sample(bar, {bar->displayTabRect(0).left() + 8, bar->displayTabRect(0).center().y()}).rgb(), preset.groupInactive.background.rgb());
 }
 
+void TabStripLayoutTest::activationCanDestroyTheStrip_data()
+{
+    QTest::addColumn<bool>("keyboard");
+    QTest::newRow("pointer") << false;
+    QTest::newRow("keyboard") << true;
+}
 void TabStripLayoutTest::activationCanDestroyTheStrip()
 {
+    QFETCH(bool, keyboard);
     QPointer<TabBar> bar = new TabBar(defaultTheme(), nullptr);
     bar->resize(700, 32); bar->setAvailableSize(bar->size());
     bar->addTab({}, QStringLiteral("First")); bar->addTab({}, QStringLiteral("Second"));
     const auto point = bar->tabRect(1).center();
     QVERIFY(bar->tabRect(1).contains(point));
     QObject::connect(bar, &TabBar::currentChanged, qApp, [view = bar.data()](int) { delete view; });
-    QMouseEvent event(QEvent::MouseButtonPress, point, bar->mapToGlobal(point),
-        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(bar, &event);
+    if (keyboard) {
+        QKeyEvent event(QEvent::KeyPress, Qt::Key_End, Qt::NoModifier);
+        QApplication::sendEvent(bar, &event);
+    } else {
+        QMouseEvent event(QEvent::MouseButtonPress, point, bar->mapToGlobal(point),
+            Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(bar, &event);
+    }
     QVERIFY(!bar);
 }
 

@@ -1,6 +1,7 @@
 #include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
 #include "tab_bar.hpp"
+#include "tab_keyboard_controller.hpp"
 #include "style/compact_tool_button.hpp"
 #include "style/tab_appearance_p.hpp"
 #include "style/edge_fade.hpp"
@@ -2538,18 +2539,17 @@ void TabBar::contextMenuEvent(QContextMenuEvent* event)
 
 void TabBar::keyPressEvent(QKeyEvent* event)
 {
-    const bool backward = event->key() == (vertical() ? Qt::Key_Up : Qt::Key_Left);
-    const bool forward = event->key() == (vertical() ? Qt::Key_Down : Qt::Key_Right);
-    if ((backward || forward) && count()) {
-        const int next = std::clamp(current_ + (forward ? 1 : -1), 0, count() - 1);
-        setCurrentIndex(next); ensureVisible(next); event->accept(); return;
+    const auto decision = tabKeyboardDecision(event->key(), current_, count(), vertical(), expanded_);
+    using Action = TabKeyboardDecision::Action;
+    if (decision.action == Action::Ignore) { QWidget::keyPressEvent(event); return; }
+    event->accept();
+    if (decision.action == Action::ActivateTab) {
+        const QPointer<TabBar> self(this);
+        setCurrentIndex(decision.index);
+        if (self) ensureVisible(decision.index);
+    } else if (decision.action == Action::Collapse) {
+        setExpanded(false);
     }
-    if (event->key() == Qt::Key_Home || event->key() == Qt::Key_End) {
-        if (count()) { const int next = event->key() == Qt::Key_Home ? 0 : count() - 1; setCurrentIndex(next); ensureVisible(next); }
-        event->accept(); return;
-    }
-    if (event->key() == Qt::Key_Escape && expanded_) { setExpanded(false); event->accept(); return; }
-    QWidget::keyPressEvent(event);
 }
 
 void TabBar::resizeEvent(QResizeEvent* event)
