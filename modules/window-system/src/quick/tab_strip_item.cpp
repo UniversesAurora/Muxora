@@ -2,6 +2,7 @@
 #include "tab_strip_item.hpp"
 
 #include "docking/surface_geometry.hpp"
+#include "overlay_band_item.hpp"
 #include "path_item.hpp"
 #include "tab_folder_item.hpp"
 #include "tab_label_item.hpp"
@@ -52,13 +53,15 @@ TabStripItem::TabStripItem(QQuickItem* parent)
     : QQuickItem(parent),
       background_(new PathItem(this)),
       sectionSeparator_(new PathItem(this)),
-      folderOutline_(new PathItem(this))
+      folderOutline_(new PathItem(this)),
+      overlay_(new OverlayBandItem(this))
 {
     background_->setZ(-10);
     sectionSeparator_->setZ(1);
     sectionSeparator_->setVisible(false);
     folderOutline_->setZ(4);
     folderOutline_->setVisible(false);
+    overlay_->setZ(20);
 }
 
 TabStripItem::~TabStripItem() = default;
@@ -188,6 +191,11 @@ void TabStripItem::syncDecorations()
                  stroker.createStroke(painter.folderOutlinePath(outline->area, outline->shape)),
                  outline->color);
     }
+    if (frame_->overlayShadow.isEmpty() || frame_->shadowOpacity <= 0)
+        overlay_->clearBand();
+    else
+        overlay_->setBand(frame_->overlayShadow, frame_->shadowAbove,
+                          frame_->style->palette.elevation, frame_->shadowOpacity);
 }
 
 bool TabStripItem::setFrame(std::shared_ptr<const TabStripFrame> frame)
@@ -286,6 +294,7 @@ void TabStripItem::clearFrame()
     for (auto* item : std::as_const(scrollbars_)) item->setVisible(false);
     for (auto* item : std::as_const(folderLines_)) item->setVisible(false);
     folderOutline_->setVisible(false);
+    overlay_->clearBand();
 }
 
 qsizetype TabStripItem::labelCount() const { return labels_.size() + departures_.size(); }
@@ -297,6 +306,8 @@ qsizetype TabStripItem::folderLineCount() const
     return count;
 }
 bool TabStripItem::folderOutlineVisible() const { return folderOutline_->isVisible(); }
+bool TabStripItem::overlayBandVisible() const { return overlay_->isVisible(); }
+quint64 TabStripItem::overlayTextureUploads() const { return overlay_->textureUploads(); }
 qsizetype TabStripItem::laneCount() const { return lanes_.size(); }
 qsizetype TabStripItem::separatorCount() const { return frame_ ? frame_->separators.size() : 0; }
 qsizetype TabStripItem::scrollbarCount() const { return frame_ ? frame_->scrollbars.size() : 0; }

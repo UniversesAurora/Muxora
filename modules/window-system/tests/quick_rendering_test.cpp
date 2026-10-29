@@ -99,6 +99,9 @@ private slots:
         frame->separators.append(QRect(108, 22, 1, 14));
         frame->sectionSeparator = QRect(6, 52, 328, 1);
         frame->scrollbars.append({QRect(326, 18, 5, 30), 0.7, true});
+        frame->overlayShadow = QRect(0, 0, 340, 10);
+        frame->shadowAbove = true;
+        frame->shadowOpacity = 0.6;
 
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->laneCount(), qsizetype(1));
@@ -109,9 +112,11 @@ private slots:
         QCOMPARE(item->separatorCount(), qsizetype(1));
         QCOMPARE(item->scrollbarCount(), qsizetype(1));
         QVERIFY(item->backgroundVisible());
+        QVERIFY(item->overlayBandVisible());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());
+        QTRY_VERIFY(item->overlayTextureUploads() > 0);
 
         frame->departures.clear();
         QVERIFY(item->setFrame(frame));
@@ -124,6 +129,7 @@ private slots:
         QCOMPARE(item->folderCount(), qsizetype(0));
         QCOMPARE(item->folderLineCount(), qsizetype(0));
         QVERIFY(!item->folderOutlineVisible());
+        QVERIFY(!item->overlayBandVisible());
         QCOMPARE(item->laneCount(), qsizetype(0));
     }
 
