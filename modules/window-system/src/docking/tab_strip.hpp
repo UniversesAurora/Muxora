@@ -1,12 +1,15 @@
 #pragma once
 
 #include "tab_bar.hpp"
+#include "tab_group_motion.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/elevation.hpp"
+#include "style/frame_clock.hpp"
 #include <window_system/layout_model.hpp>
 #include <window_system/theme.hpp>
 #include <window_system/tab_appearance.hpp>
 #include <QFrame>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QSet>
 #include <optional>
@@ -128,6 +131,7 @@ protected:
 private:
     void updateDragProbe(QPoint global) const;
     void layoutChildren();
+    void driveMotion(bool restarted, qint64 timestampNs);
     [[nodiscard]] TabGroupGeometryInput geometryInput() const;
     void updateCardJoin();
     void placeControls();
@@ -149,10 +153,9 @@ private:
     QWidget* footer_ = nullptr;
     QWidget* columnPanel_ = nullptr;
     QVector<QToolButton*> sidebarButtons_;
-    ProgressAnimation columnExpansion_{1};
-    ProgressAnimation peekExpansion_{0};
-    ProgressAnimation surfaceFocus_{0};
-    bool surfaceFocused_ = false;
+    TabGroupMotion motion_;
+    FrameClock motionDriver_;
+    QElapsedTimer motionClock_;
     QWidget* resizeHandle_ = nullptr;
     QWidget* contentPreview_ = nullptr;
     QWidget* card_ = nullptr;

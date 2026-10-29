@@ -33,8 +33,6 @@
 #include <QVariantMap>
 #include <QPixmap>
 #include <QPainterPath>
-#include <QVariantAnimation>
-#include <QEasingCurve>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -337,15 +335,16 @@ GroupTabs::GroupTabs(const Theme& theme, QWidget* parent) : QFrame(parent), them
     bar_ = new TabBar(theme, this);
     bar_->setColumnManaged(true);
     columnPanel_ = new VerticalTabPanel(theme, this); columnPanel_->hide(); columnPanel_->installEventFilter(this);
-    for (auto* motion : {&columnExpansion_, &peekExpansion_})
-    {
-        QObject::connect(motion, &QVariantAnimation::valueChanged, this, [this] { layoutChildren(); });
-        QObject::connect(motion, &QVariantAnimation::finished, this, [this] { layoutChildren(); });
-    }
+    motionClock_.start();
+    motionDriver_.advance = [this](qint64 timestampNs) {
+        const auto changed = motion_.advance(timestampNs);
+        if (!motion_.needsFrame()) motionDriver_.stop();
+        if (changed.layout) layoutChildren();
+        else if (changed.surface) updateCardJoin();
+    };
     bar_->surfaceChanged = [this] {
         const auto callback = surfaceInvalidated; if (callback) callback();
     };
-    QObject::connect(&surfaceFocus_, &QVariantAnimation::valueChanged, this, [this] { updateCardJoin(); });
     bar_->installEventFilter(this);
     const int row = bar_->metrics().rowHeight;
     // Right after the last tab: new tab. At the first row's end, from the
@@ -425,7 +424,7 @@ void GroupTabs::updateCardJoin()
     if (!stack_) return;
     const auto barOrigin = bar_->mapTo(this, QPoint());
     const QRectF body = compactPresentation_ ? QRectF{} : QRectF(stack_->geometry()).translated(-barOrigin);
-    bar_->setSurfaceContext(body, surfaceFocus_.value(), 1 - peekExpansion_.value());
+    bar_->setSurfaceContext(body, motion_.focus(), 1 - motion_.peek());
     const auto callback = surfaceInvalidated; if (callback) callback();
 }
 QRect GroupTabs::surfaceBounds() const
@@ -436,7 +435,7 @@ QRect GroupTabs::surfaceBounds() const
     QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
     if (barVisible_) for (const auto& anchor : bar_->surfaceAnchors(bar_->mapTo(this, QPoint())))
         bounds |= anchor.presence.mapRect(anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation)));
-    if (vertical() && peekExpansion_.value() > 0) {
+    if (vertical() && motion_.peek() > 0) {
         const auto panel = static_cast<VerticalTabPanel*>(columnPanel_);
         bounds |= QRectF(panel->bodyRect().translated(panel->pos())).marginsAdded(
             elevationMargins(elevationProfile(ElevationLevel::ColumnOverlay)));
@@ -458,9 +457,9 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
     if (compactPresentation_ || !stack_ || stack_->isHidden() || !exposed.intersects(surfaceBounds().translated(offset))) return;
     const QRectF body(stack_->geometry());
     const auto profile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
-        elevationProfile(ElevationLevel::BodyRaised), surfaceFocus_.value());
+        elevationProfile(ElevationLevel::BodyRaised), motion_.focus());
     auto style = elevationStyleForTheme(theme_);
-    style.focused = surfaceFocused_;
+    style.focused = motion_.focused();
     const auto anchors = barVisible_ ? bar_->surfaceAnchors(bar_->mapTo(this, QPoint())) : QVector<TabSurfaceAnchor>{};
     painter.save(); painter.translate(offset);
     // The shared backplate never contributes inside the hosted page. Bound
@@ -491,7 +490,7 @@ void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPo
             renderer.paintAnchor(painter, anchor.geometry, profile, anchor.elevation, style, true);
         });
     bar_->paintSurfaceExtension(painter, bar_->mapTo(this, QPoint()));
-    if (vertical() && peekExpansion_.value() > 0) {
+    if (vertical() && motion_.peek() > 0) {
         // The shell can enter shared splitter margins. Paint only its part
         // outside this group here; the live panel paints the rest once.
         QPainterPath outside, group;
@@ -564,7 +563,7 @@ void GroupTabs::placeControls()
         // A labeled new-tab button, or only its icon in a narrow column.
         create->add->setText(QCoreApplication::translate("WindowSystem", "New tab"));
         const auto& metrics = bar_->metrics();
-        const int shownWidth = tabColumnExtent(metrics.verticalIconWidth, columnWidth(), std::max(columnExpansion_.value(), peekExpansion_.value()));
+        const int shownWidth = tabColumnExtent(metrics.verticalIconWidth, columnWidth(), std::max(motion_.expansion(), motion_.peek()));
         const auto controls = layoutTabColumnControls({shownWidth, metrics.verticalInset, row, metrics.newTabWidth,
             iconModeButton_->sizeHint().width(), metrics.typeWidth, metrics.controlGap, uiPixels(tabActionSize),
             int(sidebar.size()), fontMetrics().horizontalAdvance(create->add->text()), icons, compactPresentation_});
@@ -615,8 +614,14 @@ TabGroupGeometryInput GroupTabs::geometryInput() const
     input.columnWidth = vertical() ? columnWidth() : 0; input.iconColumnWidth = metrics.verticalIconWidth;
     input.columnOutset = metrics.columnOverlayOutset; input.verticalInset = metrics.verticalInset;
     input.rowHeight = metrics.rowHeight; input.resizeBand = metrics.resizeBand;
-    input.expansion = columnExpansion_.value(); input.peek = peekExpansion_.value();
+    input.expansion = motion_.expansion(); input.peek = motion_.peek();
     return input;
+}
+
+void GroupTabs::driveMotion(bool restarted, qint64 timestampNs)
+{
+    if (!motion_.needsFrame()) motionDriver_.stop();
+    else if (restarted) motionDriver_.restart(timestampNs, motion_.durationMs());
 }
 
 void GroupTabs::layoutChildren()
@@ -624,13 +629,9 @@ void GroupTabs::layoutChildren()
     if (layingOut_) return;
     QScopedValueRollback guard(layingOut_, true);
     if (vertical()) {
-        const bool animate = isVisible() && !compactPresentation_ && !resizeOrigin_;
-        const auto advance = [&](ProgressAnimation& motion, qreal target) {
-            if (!animate) motion.jump(target);
-            else if (motion.target() != target) motion.animateTo(target, Motion::Reveal, TabBar::animationsAllowed());
-        };
-        advance(columnExpansion_, iconMode_ ? 0.0 : 1.0);
-        advance(peekExpansion_, iconMode_ && bar_->peeking() ? 1.0 : 0.0);
+        const auto timestamp = motionDriver_.now(motionClock_.nsecsElapsed());
+        driveMotion(motion_.syncColumn(iconMode_, bar_->peeking(), isVisible() && !compactPresentation_ && !resizeOrigin_,
+                                      TabBar::animationsAllowed(), timestamp), timestamp);
         if (bar_->parentWidget() != columnPanel_) {
             bar_->setParent(columnPanel_); footer_->setParent(columnPanel_); title_->setParent(columnPanel_);
         }
@@ -652,7 +653,7 @@ void GroupTabs::layoutChildren()
     }
     bar_->show();
     if (vertical()) {
-        bar_->setColumnReveal(std::max(input.expansion, input.peek), columnExpansion_.state() == QAbstractAnimation::Running);
+        bar_->setColumnReveal(std::max(input.expansion, input.peek), motion_.columnRunning());
         bar_->setAvailableSize(tabGroupAvailableSize(input));
         input.columnWidth = columnWidth();
         const auto geometry = layoutTabGroup(input);
@@ -681,7 +682,7 @@ void GroupTabs::layoutChildren()
     if (contentPreview_ && contentPreview_->isVisible()) { contentPreview_->setGeometry(stack_->geometry()); contentPreview_->raise(); card->raise(); bar_->raise(); if (vertical()) columnPanel_->raise(); }
     footer_->raise();
     bar_->refreshPresentationLayers();
-    if (columnExpansion_.state() != QAbstractAnimation::Running && peekExpansion_.state() != QAbstractAnimation::Running && !bar_->rowTransitionRunning())
+    if (!motion_.layoutRunning() && !bar_->rowTransitionRunning())
         updateGeometry();
     const auto callback = hoverGeometryChanged; if (callback) callback();
 }
@@ -967,14 +968,13 @@ void GroupTabs::setStickyCount(int count)
 void GroupTabs::setTabMetadata(int index, const TabRecord& tab) { bar_->setTabMetadata(index, tab); }
 GroupTabs::SurfaceState GroupTabs::captureSurfaceState() const
 {
-    return {surfaceFocus_.value(), surfaceFocused_, bar_->captureSurfaceState()};
+    return {motion_.focus(), motion_.focused(), bar_->captureSurfaceState()};
 }
 
 void GroupTabs::inheritSurface(const SurfaceState& previous, bool animate)
 {
-    surfaceFocused_ = previous.focused;
-    surfaceFocus_.jump(previous.focus);
-    surfaceFocus_.animateTo(surfaceFocused_ ? 1 : 0, surfaceFocused_ ? Motion::SurfaceLift : Motion::SurfaceLower, animate);
+    const auto timestamp = motionDriver_.now(motionClock_.nsecsElapsed());
+    driveMotion(motion_.inheritFocus(previous.focus, previous.focused, animate, timestamp), timestamp);
     bar_->inheritSurface(previous.tabs, animate);
     updateCardJoin();
 }
@@ -984,10 +984,9 @@ void GroupTabs::setGroupFocused(bool focused)
     const QPointer<GroupTabs> retained(this);
     bar_->setGroupFocused(focused);
     if (!retained) return;
-    if (surfaceFocused_ == focused) return;
-    surfaceFocused_ = focused;
-    surfaceFocus_.animateTo(focused ? 1 : 0, focused ? Motion::SurfaceLift : Motion::SurfaceLower,
-                            isVisible() && TabBar::animationsAllowed());
+    if (motion_.focused() == focused) return;
+    const auto timestamp = motionDriver_.now(motionClock_.nsecsElapsed());
+    driveMotion(motion_.setFocused(focused, isVisible() && TabBar::animationsAllowed(), timestamp), timestamp);
     updateCardJoin();
 }
 void GroupTabs::setGroupName(const QString& name)
@@ -1027,7 +1026,7 @@ QRect GroupTabs::stripPanelRectGlobal() const
 void GroupTabs::restoreColumnPeek()
 {
     if (!vertical() || !iconMode_) return;
-    peekExpansion_.jump(1);
+    motion_.restorePeek();
     bar_->restoreColumnPeek(true);
     layoutChildren();
 }
