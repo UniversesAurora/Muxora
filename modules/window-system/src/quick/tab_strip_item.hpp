@@ -14,6 +14,7 @@
 namespace window_system::quick {
 
 class TabLabelItem;
+class TabFolderItem;
 class PathItem;
 
 // Retained labels for one published strip frame. Each lane has independent
@@ -27,6 +28,9 @@ public:
     bool setFrame(std::shared_ptr<const TabStripFrame> frame);
     void clearFrame();
     [[nodiscard]] qsizetype labelCount() const;
+    [[nodiscard]] qsizetype folderCount() const;
+    [[nodiscard]] qsizetype folderLineCount() const;
+    [[nodiscard]] bool folderOutlineVisible() const;
     [[nodiscard]] qsizetype laneCount() const;
     [[nodiscard]] qsizetype separatorCount() const;
     [[nodiscard]] qsizetype scrollbarCount() const;
@@ -41,19 +45,26 @@ private:
     bool syncSamples(const QVector<TabStripLabelSample>& samples, QQuickItem* clip,
                      QRect origin, QSet<QUuid>& active);
     bool syncDepartures(const QVector<TabDepartureSample>& samples, QSet<QUuid>& active);
+    void syncFolders(const QVector<TabStripFolderSample>& samples, QQuickItem* clip,
+                     QRect origin, QSet<QUuid>& active);
     void syncDecorations();
     std::shared_ptr<const TabStripFrame> frame_;
     QVector<LaneNode> lanes_;
     QHash<QUuid, TabLabelItem*> labels_;
+    QHash<QUuid, TabFolderItem*> folders_;
     QHash<QUuid, TabLabelItem*> departures_;
     PathItem* background_ = nullptr;
     PathItem* sectionSeparator_ = nullptr;
     QVector<PathItem*> separators_;
     QVector<PathItem*> scrollbars_;
+    QVector<PathItem*> folderLines_;
+    PathItem* folderOutline_ = nullptr;
     QPainterPath backgroundPath_;
     QPainterPath sectionSeparatorPath_;
     QVector<QPainterPath> separatorPaths_;
     QVector<QPainterPath> scrollbarPaths_;
+    QVector<QPainterPath> folderLinePaths_;
+    QPainterPath folderOutlinePath_;
 };
 
 } // namespace window_system::quick

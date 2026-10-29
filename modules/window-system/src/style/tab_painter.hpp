@@ -71,6 +71,7 @@ public:
     [[nodiscard]] QRect folderChipRect(const QRect& header) const;
     [[nodiscard]] QRect folderAddRect(const QRect& header) const;
     void paintFolderLine(QPainter& painter, const QRect& line, const QColor& color) const;
+    [[nodiscard]] QPainterPath folderOutlinePath(const QRect& tab, TabShape shape) const;
     void paintFolderOutline(QPainter& painter, const QRect& tab, TabShape shape, const QColor& color) const;
     // The text that reads on `background`: white or the palette's text.
     [[nodiscard]] QColor textOn(const QColor& background) const;

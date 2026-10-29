@@ -78,6 +78,21 @@ private slots:
         lane.regularClip = QRect(100, 10, 240, 70);
         lane.frozen.append({QUuid::createUuid(), 0, {}, makeLabel(120, QStringLiteral("Regular"))});
         lane.frozen.append({QUuid::createUuid(), 1, {}, makeLabel(0, QStringLiteral("Frozen"))});
+        TabFolderPaintState folderState;
+        folderState.name = QStringLiteral("Folder");
+        folderState.count = 4;
+        folderState.hovered = true;
+        folderState.addHovered = true;
+        folderState.color = Qt::darkMagenta;
+        folderState.wash = QColor(230, 220, 240);
+        folderState.washText = Qt::black;
+        QPixmap addPixmap(16, 16);
+        addPixmap.fill(Qt::transparent);
+        folderState.addIcon = QIcon(addPixmap);
+        lane.folders.append({QRect(104, 12, 120, 28), folderState, QUuid::createUuid()});
+        lane.folderLines.append({QRect(104, 39, 120, 2), Qt::darkMagenta});
+        lane.folderOutline = TabStripFolderOutline{QRect(120, 20, 110, 28),
+                                                   TabShape::Row, Qt::darkMagenta};
         frame->lanes.append(lane);
         frame->departures.append({QUuid::createUuid(), makeLabel(240, QStringLiteral("Leaving"))});
         frame->background = QRect(0, 10, 340, 90);
@@ -88,6 +103,9 @@ private slots:
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->laneCount(), qsizetype(1));
         QCOMPARE(item->labelCount(), qsizetype(3));
+        QCOMPARE(item->folderCount(), qsizetype(1));
+        QCOMPARE(item->folderLineCount(), qsizetype(1));
+        QVERIFY(item->folderOutlineVisible());
         QCOMPARE(item->separatorCount(), qsizetype(1));
         QCOMPARE(item->scrollbarCount(), qsizetype(1));
         QVERIFY(item->backgroundVisible());
@@ -98,8 +116,14 @@ private slots:
         frame->departures.clear();
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->labelCount(), qsizetype(2));
+        QCOMPARE(item->folderCount(), qsizetype(1));
+        QCOMPARE(item->folderLineCount(), qsizetype(1));
+        QVERIFY(item->folderOutlineVisible());
         item->clearFrame();
         QCOMPARE(item->labelCount(), qsizetype(0));
+        QCOMPARE(item->folderCount(), qsizetype(0));
+        QCOMPARE(item->folderLineCount(), qsizetype(0));
+        QVERIFY(!item->folderOutlineVisible());
         QCOMPARE(item->laneCount(), qsizetype(0));
     }
 

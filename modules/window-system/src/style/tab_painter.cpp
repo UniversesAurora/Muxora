@@ -391,18 +391,14 @@ void TabPainter::paintFolderLine(QPainter& painter, const QRect& line, const QCo
     painter.drawRoundedRect(QRectF(line), radius, radius);
     painter.restore();
 }
-void TabPainter::paintFolderOutline(QPainter& painter, const QRect& tab, TabShape shape, const QColor& color) const
+QPainterPath TabPainter::folderOutlinePath(const QRect& tab, TabShape shape) const
 {
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(color, metrics_.folderOutline, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     const qreal half = metrics_.folderOutline / 2;
     const QRectF rect = QRectF(tab).adjusted(half, shape == TabShape::Top ? half : 0, -half, shape == TabShape::Bottom ? -half : 0);
     if (shape == TabShape::Row || shape == TabShape::Tile) {
-        painter.drawRoundedRect(rect, metrics_.radius, metrics_.radius);
-        painter.restore();
-        return;
+        QPainterPath path;
+        path.addRoundedRect(rect, metrics_.radius, metrics_.radius);
+        return path;
     }
     // The tab's outline without its open edge, flaring into the folder line.
     const bool top = shape == TabShape::Top;
@@ -418,7 +414,15 @@ void TabPainter::paintFolderOutline(QPainter& painter, const QRect& tab, TabShap
     path.quadTo(right, outer, right, outer + toward * radius);
     path.lineTo(right, inner - toward * flare);
     path.quadTo(right, inner, right + flare, inner);
-    painter.drawPath(path);
+    return path;
+}
+void TabPainter::paintFolderOutline(QPainter& painter, const QRect& tab, TabShape shape, const QColor& color) const
+{
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(color, metrics_.folderOutline, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(folderOutlinePath(tab, shape));
     painter.restore();
 }
 void TabPainter::paintControl(QPainter& painter, const QRect& area, bool hovered, bool pressed) const
