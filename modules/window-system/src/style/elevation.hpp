@@ -13,6 +13,8 @@ class QPainter;
 
 namespace window_system {
 
+inline constexpr qsizetype elevationImageBudgetBytes = 16 * 1024 * 1024;
+
 enum class ElevationLevel { Flat, AnchorRest, AnchorRaised, BodyRest, BodyRaised, Lifted, RowsOverlay, ColumnOverlay };
 
 struct ElevationLayer {
@@ -108,6 +110,10 @@ public:
                      const ElevationStyle& style, bool incremental = false);
     void paintAnchors(QPainter& painter, const QVector<ElevatedAnchor>& anchors,
                       const ElevationProfile& bodyElevation, const ElevationStyle& style);
+    // Multiple anchors share merged local bands, preserving the max-alpha
+    // composition without a body-sized image or source-over darkening.
+    [[nodiscard]] QVector<ElevationAnchorPatch> anchorPatches(const QVector<ElevatedAnchor>& anchors,
+        const ElevationProfile& bodyElevation, const ElevationStyle& style, qreal devicePixelRatio);
     void paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
                        const ElevationStyle& style, qreal progress = 1);
     void paintOverlayBand(QPainter& painter, const QRect& band, bool above,

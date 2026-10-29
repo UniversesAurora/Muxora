@@ -11,11 +11,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 
 namespace window_system {
 namespace {
 constexpr int progressSteps = 32;
-constexpr int cacheBudgetKiB = 16 * 1024;
+constexpr int cacheBudgetKiB = int(elevationImageBudgetBytes / 1024);
 
 qreal mix(qreal from, qreal to, qreal progress) { return from + (to - from) * progress; }
 ElevationLayer mix(const ElevationLayer& from, const ElevationLayer& to, qreal progress)
@@ -488,6 +489,19 @@ void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAn
         paintAnchor(painter, anchors.front().geometry, bodyElevation, anchors.front().elevation, style);
         return;
     }
+    for (const auto& patch : anchorPatches(anchors, bodyElevation, style, painter.device()->devicePixelRatioF())) {
+        painter.save(); painter.setClipRect(patch.clip, Qt::IntersectClip);
+        painter.drawImage(patch.bounds.topLeft(), patch.image); painter.restore();
+    }
+}
+
+QVector<ElevationAnchorPatch> ElevationRenderer::anchorPatches(const QVector<ElevatedAnchor>& anchors,
+    const ElevationProfile& bodyElevation, const ElevationStyle& style, qreal ratio)
+{
+    if (anchors.isEmpty()) return {};
+    if (anchors.size() == 1)
+        return {anchorPatch(anchors.front().geometry, bodyElevation, anchors.front().elevation, style, ratio)};
+    QVector<ElevationAnchorPatch> patches;
     // Several simultaneously elevated anchors may cast nearby shadows.
     // Their local patches both contain the same body shadow: source-over
     // would darken it twice. Merge only their disjoint local regions by max.
@@ -501,7 +515,6 @@ void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAn
         const QRect area = surfaceShadowClip(anchor.geometry, extent).toAlignedRect();
         bounds.append(area); regions |= area;
     }
-    const qreal ratio = painter.device()->devicePixelRatioF();
     for (const QRect& band : regions) {
         const QSize pixels(qCeil(band.width() * ratio), qCeil(band.height() * ratio));
         QImage merged(pixels, QImage::Format_ARGB32_Premultiplied);
@@ -521,9 +534,10 @@ void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAn
                     if (qAlpha(input[x]) > qAlpha(output[x])) output[x] = input[x];
             }
         }
-        painter.save(); painter.setClipRect(band, Qt::IntersectClip);
-        painter.drawImage(band.topLeft(), merged); painter.restore();
+        const QRectF naturalBounds(QPointF(band.topLeft()), QSizeF(pixels) / ratio);
+        patches.append({std::move(merged), naturalBounds, QRectF(band)});
     }
+    return patches;
 }
 
 void ElevationRenderer::paintOverlayBand(QPainter& painter, const QRect& band, bool above,

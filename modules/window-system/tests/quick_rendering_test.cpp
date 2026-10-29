@@ -5,6 +5,7 @@
 #include "quick/path_item.hpp"
 #include "quick/body_shadow_item.hpp"
 #include "quick/anchor_shadow_item.hpp"
+#include "quick/group_surface_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
 
@@ -14,6 +15,7 @@
 #include <QSGRendererInterface>
 #include <QSignalSpy>
 #include <QTest>
+#include <limits>
 
 using namespace window_system;
 using namespace window_system::quick;
@@ -43,6 +45,53 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void groupFramesKeepResourcesAcrossRejectedInputAndWindowChanges()
+    {
+        QQuickWindow first, second; prepareWindow(first); prepareWindow(second);
+        auto* item = new GroupSurfaceItem(first.contentItem());
+        item->setSize(first.size());
+        const auto makeFrame = [&] {
+            SurfaceGeometryInput input; input.body = {20, 60, 280, 140}; input.anchor = {80, 32, 120, 28};
+            const auto geometry = surfaceGeometry(input);
+            TabGroupSurfaceFrame frame;
+            frame.groupBounds = QRect(QPoint(), first.size()); frame.body = geometry.body; frame.radius = geometry.bodyRadius;
+            frame.elevation = elevationProfile(ElevationLevel::BodyRest);
+            frame.anchors.append({geometry, elevationProfile(ElevationLevel::AnchorRaised)});
+            prepareTabGroupSurfaceFrame(frame);
+            return frame;
+        };
+        // The source frame dies before the first scene-graph synchronization.
+        QVERIFY(item->setFrame(makeFrame()));
+        first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QTRY_VERIFY(item->renderStats().textureUploads > 0);
+        const auto originalUploads = item->renderStats().textureUploads;
+        auto invalid = makeFrame(); invalid.radius = std::numeric_limits<qreal>::infinity();
+        ElevationRenderer resources;
+        const auto images = resources.cacheStats().generatedImages;
+        QVERIFY(!item->setFrame(invalid));
+        QCOMPARE(resources.cacheStats().generatedImages, images);
+        auto replacement = makeFrame(); replacement.style.shadow = QColor(Qt::blue);
+        // No event processing between rejection and replacement: the old GPU
+        // nodes still exist, so a changed resource must get a new revision.
+        QVERIFY(item->setFrame(replacement));
+        QTRY_VERIFY(item->renderStats().textureUploads > originalUploads);
+        QVERIFY(!item->setFrame(invalid));
+        const auto error = item->geometryError();
+        QVERIFY(error != PathGeometryError::None);
+        item->setParentItem(second.contentItem()); item->setParent(second.contentItem());
+        QCOMPARE(item->geometryError(), error);
+        const auto beforeMove = item->renderStats().textureUploads;
+        QVERIFY(item->setFrame(makeFrame()));
+        second.show(); QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QTRY_VERIFY(item->renderStats().textureUploads > beforeMove);
+        const auto beforeRelease = item->renderStats().textureUploads;
+        QSignalSpy released(&second, &QQuickWindow::sceneGraphInvalidated);
+        second.hide(); QTRY_VERIFY(!second.isExposed()); second.releaseResources();
+        QTRY_VERIFY(!released.isEmpty());
+        second.show(); QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QTRY_VERIFY(item->renderStats().textureUploads > beforeRelease);
+    }
+
     void joinedShadowsPreserveCompositionAndReuseTextures_data()
     {
         QTest::addColumn<int>("edge");
