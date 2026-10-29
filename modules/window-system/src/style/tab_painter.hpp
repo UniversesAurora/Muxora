@@ -76,7 +76,6 @@ public:
     [[nodiscard]] QColor textOn(const QColor& background) const;
 
 private:
-    [[nodiscard]] QColor backgroundOf(const TabLabelPresentation& label) const;
     [[nodiscard]] ElevationRenderer& elevationRenderer() const;
     TabMetrics metrics_;
     TabPalette palette_;

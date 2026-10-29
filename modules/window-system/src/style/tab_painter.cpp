@@ -116,23 +116,6 @@ TabPalette TabPalette::forTheme(const Theme& theme)
     return palette;
 }
 
-QColor TabPainter::backgroundOf(const TabLabelPresentation& label) const
-{
-    const auto& state = label.state;
-    if (label.surface && label.surface->joined && (state.selected || state.lifted)) return palette_.active;
-    if (label.preset) return (state.selected || state.lifted ? label.preset->groupActive : label.preset->groupInactive).background;
-    if (state.shape == TabShape::Tile) {
-        if (state.selected || state.lifted) return palette_.active;
-        if (state.pressed) return palette_.tilePressed.resolve(state.windowActive);
-        if (state.hovered) return palette_.tileHover.resolve(state.windowActive);
-        return {};
-    }
-    if (state.lifted || state.selected) return palette_.active;
-    if (state.pressed) return palette_.pressed;
-    if (state.hovered) return palette_.hover;
-    return {};
-}
-
 QPainterPath TabPainter::outline(const QRectF& tab, TabShape shape, bool selected, bool lifted) const
 {
     if (shape == TabShape::Top || shape == TabShape::Bottom)
@@ -179,7 +162,7 @@ void TabPainter::paintLabel(QPainter& painter, const TabLabelPresentation& label
     if (painter.layoutDirection() != label.direction) painter.setLayoutDirection(label.direction);
     painter.setRenderHint(QPainter::Antialiasing);
     const QRectF tab(parts.tab);
-    const auto background = backgroundOf(label);
+    const auto background = tabLabelBackgroundColor(label, palette_);
     const auto contour = label.surface ? label.surface->anchorPath : outline(tab, state.shape, state.selected, state.lifted);
     if (!state.elevationManaged && (state.lifted || state.selected && state.shape != TabShape::Tile)) {
         painter.save();

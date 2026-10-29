@@ -6,6 +6,7 @@
 #include "quick/body_shadow_item.hpp"
 #include "quick/anchor_shadow_item.hpp"
 #include "quick/group_surface_item.hpp"
+#include "quick/tab_label_item.hpp"
 #include "quick/tab_label_text_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
@@ -46,6 +47,44 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void tabLabelItemCombinesSurfaceAndTextOwnership()
+    {
+        QQuickWindow window;
+        prepareWindow(window);
+        auto* item = new TabLabelItem(window.contentItem());
+        TabLabelPresentation label;
+        label.parts.tab = QRect(24, 30, 180, 28);
+        label.parts.icon = QRect(34, 36, 16, 16);
+        label.parts.title = QRect(60, 30, 110, 28);
+        label.state.shape = TabShape::Row;
+        label.state.selected = true;
+        label.state.title = QStringLiteral("Retained label title");
+        label.naturalWidth = 150;
+        TabStripLabelStyle style;
+        style.metrics.rowHeight = 28;
+        style.palette.active = Qt::white;
+        style.palette.text = Qt::black;
+        style.palette.mutedText = Qt::darkGray;
+
+        QVERIFY(item->setLabel(label, style));
+        QCOMPARE(item->surfaceError(), PathGeometryError::None);
+        QVERIFY(item->surfaceVisible());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QVERIFY(!window.grabWindow().isNull());
+        QTRY_VERIFY(item->textItem()->renderStats().textLayoutBuilds > 0);
+
+        label.state.selected = false;
+        QVERIFY(item->setLabel(label, style));
+        QVERIFY(!item->surfaceVisible());
+        QVERIFY(!window.grabWindow().isNull());
+        QVERIFY(item->textItem()->segmentCount() > 0);
+
+        item->clearLabel();
+        QVERIFY(!item->surfaceVisible());
+        QCOMPARE(item->textItem()->segmentCount(), 0);
+    }
+
     void tabLabelTextKeepsShapingAcrossFadeAndRecreatesSceneResources()
     {
         QQuickWindow first, second;

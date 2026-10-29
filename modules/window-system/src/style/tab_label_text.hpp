@@ -9,6 +9,25 @@
 
 namespace window_system {
 
+[[nodiscard]] inline QColor tabLabelBackgroundColor(const TabLabelPresentation& label,
+                                                     const TabPalette& palette)
+{
+    const auto& state = label.state;
+    if (label.surface && label.surface->joined && (state.selected || state.lifted)) return palette.active;
+    if (label.preset)
+        return (state.selected || state.lifted ? label.preset->groupActive : label.preset->groupInactive).background;
+    if (state.shape == TabShape::Tile) {
+        if (state.selected || state.lifted) return palette.active;
+        if (state.pressed) return palette.tilePressed.resolve(state.windowActive);
+        if (state.hovered) return palette.tileHover.resolve(state.windowActive);
+        return {};
+    }
+    if (state.lifted || state.selected) return palette.active;
+    if (state.pressed) return palette.pressed;
+    if (state.hovered) return palette.hover;
+    return {};
+}
+
 // Text color is shared by raster and scene-graph adapters. Preset colors own
 // the selected/inactive split; otherwise emphasis follows interaction state.
 [[nodiscard]] inline QColor tabLabelTextColor(const TabLabelPresentation& label,
