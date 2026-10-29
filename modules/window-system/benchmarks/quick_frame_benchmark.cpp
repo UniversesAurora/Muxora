@@ -6,6 +6,7 @@
 #include "quick/body_shadow_item.hpp"
 #include "quick/anchor_shadow_item.hpp"
 #include "quick/group_surface_item.hpp"
+#include "quick/tab_strip_item.hpp"
 #include "docking/tab_group_surface.hpp"
 #include "docking/surface_geometry.hpp"
 
@@ -57,15 +58,17 @@ int main(int argc, char** argv)
     parser.addOption({"commit", "Measured source revision", "revision"});
     parser.addOption({"out", "Output JSON path", "file"});
     parser.addOption({"frames", "Measured submission intervals after 30 warm-up frames", "count", "240"});
-    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize or group-peek", "name", "joined-fills"});
+    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize, group-peek or tab-strip", "name", "joined-fills"});
     parser.process(app);
     bool valid = false;
     const int count = parser.value("frames").toInt(&valid);
     if (!valid || count < 30 || count > 10000 || parser.value("commit").isEmpty()) return 2;
     const auto scene = parser.value("scene");
-    if (scene != "joined-fills" && scene != "body-resize" && scene != "joined-resize" && scene != "group-resize" && scene != "group-peek") return 2;
+    if (scene != "joined-fills" && scene != "body-resize" && scene != "joined-resize"
+        && scene != "group-resize" && scene != "group-peek" && scene != "tab-strip") return 2;
+    const bool strip = scene == "tab-strip";
     const bool bodies = scene == "body-resize";
-    const bool shadows = scene != "joined-fills";
+    const bool shadows = !strip && scene != "joined-fills";
     const bool anchors = scene == "joined-resize";
     const bool peeking = scene == "group-peek";
     const bool groups = scene == "group-resize" || peeking;
@@ -89,10 +92,13 @@ int main(int argc, char** argv)
     auto* rightAnchor = anchors ? new AnchorShadowItem(window.contentItem()) : nullptr;
     auto* leftGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
     auto* rightGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
+    auto* tabStrip = strip ? new TabStripItem(window.contentItem()) : nullptr;
+    if (tabStrip) tabStrip->setSize(QSizeF(1600, 900));
     if (groups) { leftGroup->setSize(QSizeF(1600, 900)); rightGroup->setSize(QSizeF(1600, 900)); }
     auto* left = new PathItem(window.contentItem());
     auto* right = new PathItem(window.contentItem());
     left->setSize(QSizeF(1600, 900)); right->setSize(QSizeF(1600, 900));
+    left->setVisible(!strip); right->setVisible(!strip);
     WindowMotion motion;
     motion.setWindow(&window);
     QList<double> preparation; preparation.reserve(count + 60);
@@ -144,8 +150,49 @@ int main(int argc, char** argv)
         if (!accepted) qWarning("Group frame preparation rejected input (%d)", int(item->geometryError()));
         return accepted;
     };
+    auto stripStyle = std::make_shared<TabStripLabelStyle>();
+    stripStyle->metrics.rowHeight = 28;
+    stripStyle->metrics.rowGap = 2;
+    stripStyle->palette.strip = window.color();
+    stripStyle->palette.active = Qt::white;
+    stripStyle->palette.text = QColor("#251b31");
+    stripStyle->palette.mutedText = QColor("#665d70");
+    stripStyle->palette.separator = QColor("#b7a8c9");
+    stripStyle->font = QFont(QStringLiteral("Segoe UI"), 10);
+    QVector<QUuid> stripIds;
+    for (int index = 0; index < 30; ++index) stripIds.append(QUuid::createUuid());
     const auto prepare = [&](qreal value) {
         QElapsedTimer cost; cost.start();
+        if (strip) {
+            auto frame = std::make_shared<TabStripFrame>();
+            frame->style = stripStyle;
+            frame->font = stripStyle->font;
+            TabStripLaneFrame lane;
+            lane.viewport = QRect(0, 0, 1600, 160);
+            lane.regularClip = lane.viewport;
+            const int offset = qRound(value * 24);
+            for (int index = 0; index < stripIds.size(); ++index) {
+                const int column = index % 10;
+                const int row = index / 10;
+                TabLabelPresentation label;
+                label.parts.tab = QRect(8 + column * 158 + offset, 8 + row * 32, 150, 28);
+                label.parts.title = QRect(40 + column * 158 + offset, 8 + row * 32, 108, 28);
+                label.state.shape = TabShape::Row;
+                label.state.selected = index == 0;
+                label.state.title = QStringLiteral("Workspace %1").arg(index + 1);
+                label.font = stripStyle->font;
+                label.naturalWidth = 105;
+                lane.regular.append({stripIds[index], index, {}, label});
+                frame->separators.append(QRect(150 + column * 158 + offset,
+                                               16 + row * 32, 1, 12));
+            }
+            frame->lanes.append(lane);
+            if (!tabStrip->setFrame(frame)) {
+                failed = true; app.exit(3); return;
+            }
+            if (preparation.size() < count + 60) preparation.append(cost.nsecsElapsed() / 1.e6);
+            return;
+        }
         const qreal split = 400 + 600 * value;
         SurfaceGeometryInput input;
         input.body = QRectF(4, 40, split - 8, 856);
@@ -214,7 +261,8 @@ int main(int argc, char** argv)
         {"commit", parser.value("commit")}, {"qt", qVersion()},
         {"complete", complete},
         {"scene", scene},
-        {"scope", peeking ? "two group backplate frames with presence and column opacity; no text, host content or input"
+        {"scope", strip ? "one retained strip frame with 30 native-text labels and surfaces; no host content or input"
+                         : peeking ? "two group backplate frames with presence and column opacity; no text, host content or input"
                          : groups ? "two group backplate frames with retained shadows and clipping; no text, host content or input"
                          : anchors ? "two joined surface fills and retained composed shadows; no text, host content or input"
                          : bodies ? "two body fills and retained perimeter shadows; no joined anchors, text, host content or input"
@@ -244,6 +292,8 @@ int main(int argc, char** argv)
             {"geometryUpdates", qint64(a.geometryUpdates + b.geometryUpdates)},
             {"warmTextureUploads", qint64(a.textureUploads + b.textureUploads - warmLeftAnchor.textureUploads - warmRightAnchor.textureUploads)}});
     }
+    if (strip) report.insert("labelStrip", QJsonObject{{"labels", qint64(tabStrip->labelCount())},
+                                                       {"lanes", qint64(tabStrip->laneCount())}});
     const auto json = QJsonDocument(report).toJson();
     lock.unlock();
     if (parser.value("out").isEmpty()) std::fwrite(json.constData(), 1, json.size(), stdout);
