@@ -70,12 +70,17 @@ struct TabTitleFade {
         return std::clamp((right - x) / fadeLength, 0.0, 1.0);
     }
 
-    [[nodiscard]] qreal coverOpacityAt(qreal x) const
+    [[nodiscard]] qreal coverFactorAt(qreal x) const
     {
-        if (!covering || actionFade <= 0) return 1;
+        if (!covering || actionFade <= 0) return 0;
         const qreal cover = reverse ? (actionEnd + actionFade - x) / actionFade
                                     : (x - actionEnd + actionFade) / actionFade;
-        return 1 - std::clamp(actionOpacity, 0.0, 1.0) * std::clamp(cover, 0.0, 1.0);
+        return std::clamp(cover, 0.0, 1.0);
+    }
+
+    [[nodiscard]] qreal coverOpacityAt(qreal x) const
+    {
+        return 1 - std::clamp(actionOpacity, 0.0, 1.0) * coverFactorAt(x);
     }
 
     [[nodiscard]] qreal opacityAt(qreal x) const
