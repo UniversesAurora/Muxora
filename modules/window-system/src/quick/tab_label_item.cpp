@@ -17,11 +17,13 @@ TabLabelItem::TabLabelItem(QQuickItem* parent)
       surface_(new PathItem(this)),
       actionBackground_(new PathItem(this)),
       text_(new TabLabelTextItem(this)),
+      numberText_(new TabLabelTextItem(this)),
       mainIcon_(new TabIconItem(this)),
       actionIcon_(new TabIconItem(this))
 {
     surface_->setZ(0);
     actionBackground_->setZ(1);
+    numberText_->setZ(2);
     text_->setZ(2);
     mainIcon_->setZ(2);
     actionIcon_->setZ(3);
@@ -46,6 +48,20 @@ bool TabLabelItem::setLabel(const TabLabelPresentation& label, const TabStripLab
     local.presence = {};
     text_->setLabel(local, style);
     text_->setPosition({});
+    if (!local.parts.number.isEmpty() && !local.state.number.isEmpty()) {
+        auto number = local;
+        number.parts.title = local.parts.number;
+        number.parts.number = {};
+        number.parts.icon = {};
+        number.parts.action = {};
+        number.state.title = local.state.number;
+        number.state.iconOnly = false;
+        number.state.actionShown = false;
+        number.state.actionOpacity = 0;
+        number.naturalWidth = number.parts.title.width();
+        numberText_->setLabel(number, style);
+        numberText_->setPosition({});
+    } else numberText_->clearLabel();
     surface_->setPosition({});
     surface_->setSize(local.parts.tab.size());
     const auto tint = tabLabelIconTint(label);
@@ -111,10 +127,12 @@ void TabLabelItem::clearLabel()
     mainIcon_->clearIcon();
     actionIcon_->clearIcon();
     text_->clearLabel();
+    numberText_->clearLabel();
 }
 
 PathGeometryError TabLabelItem::surfaceError() const { return surface_->geometryError(); }
 const TabLabelTextItem* TabLabelItem::textItem() const { return text_; }
+const TabLabelTextItem* TabLabelItem::numberItem() const { return numberText_; }
 bool TabLabelItem::surfaceVisible() const { return surface_->isVisible(); }
 bool TabLabelItem::mainIconVisible() const { return mainIcon_->isVisible(); }
 bool TabLabelItem::actionVisible() const { return actionIcon_->isVisible(); }

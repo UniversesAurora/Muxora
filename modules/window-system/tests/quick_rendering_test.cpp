@@ -54,11 +54,13 @@ private slots:
         auto* item = new TabLabelItem(window.contentItem());
         TabLabelPresentation label;
         label.parts.tab = QRect(24, 30, 180, 28);
-        label.parts.icon = QRect(34, 36, 16, 16);
+        label.parts.number = QRect(28, 30, 12, 28);
+        label.parts.icon = QRect(46, 36, 16, 16);
         label.parts.title = QRect(60, 30, 110, 28);
         label.parts.action = QRect(174, 34, 20, 20);
         label.state.shape = TabShape::Row;
         label.state.selected = true;
+        label.state.number = QStringLiteral("3");
         label.state.title = QStringLiteral("Retained label title");
         QPixmap iconPixmap(16, 16);
         iconPixmap.fill(Qt::transparent);
@@ -83,10 +85,12 @@ private slots:
         QVERIFY(item->surfaceVisible());
         QVERIFY(item->mainIconVisible());
         QVERIFY(item->actionVisible());
+        QVERIFY(item->numberItem());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());
         QTRY_VERIFY(item->textItem()->renderStats().textLayoutBuilds > 0);
+        QTRY_VERIFY(item->numberItem()->renderStats().textLayoutBuilds > 0);
         QTRY_VERIFY(item->iconTextureUploads() >= 2);
 
         label.state.selected = false;
@@ -102,6 +106,7 @@ private slots:
         item->clearLabel();
         QVERIFY(!item->surfaceVisible());
         QCOMPARE(item->textItem()->segmentCount(), 0);
+        QCOMPARE(item->numberItem()->segmentCount(), 0);
     }
 
     void tabLabelTextKeepsShapingAcrossFadeAndRecreatesSceneResources()

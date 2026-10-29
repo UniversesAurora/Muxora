@@ -24,6 +24,7 @@ public:
     void clearLabel();
     [[nodiscard]] PathGeometryError surfaceError() const;
     [[nodiscard]] const TabLabelTextItem* textItem() const;
+    [[nodiscard]] const TabLabelTextItem* numberItem() const;
     [[nodiscard]] bool surfaceVisible() const;
     [[nodiscard]] bool mainIconVisible() const;
     [[nodiscard]] bool actionVisible() const;
@@ -33,6 +34,7 @@ private:
     PathItem* surface_ = nullptr;
     PathItem* actionBackground_ = nullptr;
     TabLabelTextItem* text_ = nullptr;
+    TabLabelTextItem* numberText_ = nullptr;
     TabIconItem* mainIcon_ = nullptr;
     TabIconItem* actionIcon_ = nullptr;
 };
