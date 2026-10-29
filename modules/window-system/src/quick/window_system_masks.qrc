@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/window-system">
+        <file>MaskedLayer.qml</file>
+        <file>PathStroke.qml</file>
+    </qresource>
+</RCC>

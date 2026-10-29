@@ -2,32 +2,21 @@
 #include "tab_folder_item.hpp"
 
 #include "path_item.hpp"
+#include "path_stroke_item.hpp"
 #include "tab_icon_item.hpp"
 #include "tab_label_text_item.hpp"
 
 #include <QFontMetrics>
 #include <QPainterPath>
-#include <QPainterPathStroker>
 #include <algorithm>
 
 namespace window_system::quick {
-namespace {
-
-qreal controlOpacity(const TabFolderPaintState& state, qreal regular)
-{
-    if (state.pressed) return 0.24;
-    if (state.hovered) return regular;
-    return 0;
-}
-
-} // namespace
-
 TabFolderItem::TabFolderItem(QQuickItem* parent)
     : QQuickItem(parent),
       background_(new PathItem(this)),
       dot_(new PathItem(this)),
       addBackground_(new PathItem(this)),
-      chevron_(new PathItem(this)),
+      chevron_(new PathStrokeItem(this)),
       addIcon_(new TabIconItem(this)),
       label_(new TabLabelTextItem(this)),
       name_(new TabLabelTextItem(this)),
@@ -43,13 +32,22 @@ TabFolderItem::TabFolderItem(QQuickItem* parent)
     chevron_->setZ(3);
 }
 
-void TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QString& text,
+const QString& TabFolderItem::elidedText(const QString& source, const QFont& font, int width)
+{
+    if (elisionSource_ != source || elisionFont_ != font || elisionWidth_ != width) {
+        elisionSource_ = source; elisionFont_ = font; elisionWidth_ = width;
+        elisionResult_ = QFontMetrics(font).elidedText(source, Qt::ElideRight, width);
+    }
+    return elisionResult_;
+}
+
+bool TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QString& text,
                             const QFont& font, const QColor& color,
                             const TabStripLabelStyle& style)
 {
     if (area.isEmpty() || text.isEmpty()) {
         item->clearLabel();
-        return;
+        return true;
     }
     auto textStyle = style;
     textStyle.palette.text = color;
@@ -60,10 +58,12 @@ void TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QSt
     label.state.selected = true;
     label.state.title = text;
     label.font = font;
-    label.direction = Qt::LeftToRight;
+    label.direction = style.direction;
     label.naturalWidth = area.width();
-    item->setLabel(label, textStyle);
+    const bool accepted = item->setLabel(label, textStyle, TabTextRole::Literal);
+    item->setVisible(true);
     item->setPosition(area.topLeft());
+    return accepted;
 }
 
 bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLabelStyle& style,
@@ -75,9 +75,9 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
     auto bold = style.font;
     bold.setWeight(QFont::DemiBold);
     const QFontMetrics boldMetrics(bold);
-    label_->clearLabel();
-    name_->clearLabel();
-    count_->clearLabel();
+    label_->setVisible(false);
+    name_->setVisible(false);
+    count_->setVisible(false);
     addIcon_->setVisible(false);
     addBackground_->setVisible(false);
     chevron_->setVisible(false);
@@ -93,7 +93,7 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
             dot_->setPath(path);
             dot_->setFill(state.color);
             dot_->setVisible(true);
-            return true;
+            return dot_->geometryError() == PathGeometryError::None;
         }
         auto fill = state.color;
         if (state.hovered || state.pressed) fill = fill.darker(state.pressed ? 118 : 108);
@@ -108,9 +108,9 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
         const auto text = state.collapsed
             ? (state.name.isEmpty() ? count : state.name + QStringLiteral("  ") + count)
             : state.name;
-        setText(label_, textArea, metrics.elidedText(text, Qt::ElideRight, textArea.width()),
-                style.font, painter.textOn(fill), style);
-        return true;
+        return setText(label_, textArea, elidedText(text, style.font, textArea.width()),
+                style.font, painter.textOn(fill), style)
+            && background_->geometryError() == PathGeometryError::None;
     }
 
     auto wash = state.wash;
@@ -128,8 +128,8 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
     const int end = (state.hovered ? add.left() : chevron.left()) - 4;
     const QString count = QString::number(state.count);
     const int countWidth = metrics.horizontalAdvance(count);
-    const auto name = boldMetrics.elidedText(state.name, Qt::ElideRight,
-                                             std::max(0, end - x - countWidth - 8));
+    const auto name = elidedText(state.name, bold, std::max(0, end - x - countWidth - 8));
+    bool accepted = true;
     if (state.name.isEmpty()) {
         const QRect dot(x, area.center().y() - style.metrics.folderDot / 2,
                         style.metrics.folderDot, style.metrics.folderDot);
@@ -142,13 +142,13 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
     }
     if (!name.isEmpty()) {
         const QRect nameArea(x, area.top(), std::max(0, end - x), area.height());
-        setText(name_, nameArea, name, bold, state.washText, style);
+        accepted = setText(name_, nameArea, name, bold, state.washText, style);
         x += boldMetrics.horizontalAdvance(name) + 8;
     }
-    setText(count_, QRect(x, area.top(), std::max(0, end - x), area.height()), count,
+    accepted = setText(count_, QRect(x, area.top(), std::max(0, end - x), area.height()), count,
             style.font, QColor::fromRgbF(state.washText.redF(), state.washText.greenF(),
                                          state.washText.blueF(), state.washText.alphaF() * 0.6),
-            style);
+            style) && accepted;
 
     if (state.hovered && !state.addIcon.isNull()) {
         const int glyphSize = std::min({style.metrics.iconSize, add.width(), add.height()});
@@ -162,7 +162,7 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
                                    style.metrics.controlRadius);
             addBackground_->setPath(addPath);
             auto washColor = state.washText;
-            washColor.setAlphaF(controlOpacity(state, 0.14));
+            washColor.setAlphaF(washColor.alphaF() * 0.14);
             addBackground_->setFill(washColor);
             addBackground_->setVisible(true);
         }
@@ -179,16 +179,14 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
         arrow.lineTo(center.x(), center.y() + 2);
         arrow.lineTo(center.x() + 4, center.y() - 2);
     }
-    QPainterPathStroker stroker;
-    stroker.setWidth(1.5);
-    stroker.setCapStyle(Qt::RoundCap);
-    stroker.setJoinStyle(Qt::RoundJoin);
-    chevron_->setPath(stroker.createStroke(arrow));
     auto arrowColor = state.washText;
     arrowColor.setAlphaF(arrowColor.alphaF() * 0.75);
-    chevron_->setFill(arrowColor);
+    chevron_->setSize(area.size());
+    accepted = chevron_->setStroke(arrow, arrowColor, 1.5) && accepted;
     chevron_->setVisible(true);
-    return true;
+    for (const auto* path : {background_, dot_, addBackground_})
+        if (path->isVisible() && path->geometryError() != PathGeometryError::None) accepted = false;
+    return accepted;
 }
 
 void TabFolderItem::clearFolder()
@@ -204,6 +202,10 @@ void TabFolderItem::clearFolder()
     count_->clearLabel();
 }
 
-bool TabFolderItem::addButtonVisible() const { return addIcon_->isVisible(); }
+quint64 TabFolderItem::textLayoutBuilds() const
+{
+    return label_->renderStats().textLayoutBuilds + name_->renderStats().textLayoutBuilds
+        + count_->renderStats().textLayoutBuilds;
+}
 
 } // namespace window_system::quick

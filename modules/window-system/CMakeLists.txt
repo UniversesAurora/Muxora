@@ -112,7 +112,7 @@ target_include_directories(WindowSystemWidgets PUBLIC
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces)
 
 if(WINDOW_SYSTEM_BUILD_QUICK)
-    find_package(Qt6 6.10 REQUIRED COMPONENTS Quick)
+    find_package(Qt6 6.10 REQUIRED COMPONENTS Quick QuickShapes ShaderTools)
     # Internal until content and native-window interfaces complete the
     # migration. Enabling this does not replace the application renderer.
     add_library(WindowSystemQuick STATIC
@@ -121,11 +121,17 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/group_surface_item.cpp src/quick/tab_label_text_item.cpp
         src/quick/tab_icon_item.cpp src/quick/tab_label_item.cpp
         src/quick/tab_folder_item.cpp src/quick/overlay_band_item.cpp
-        src/quick/edge_fade_item.cpp src/quick/tab_strip_item.cpp)
+        src/quick/tab_strip_item.cpp
+        src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
+        src/quick/path_stroke_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
     target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation WindowSystemSurfaces)
+    qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
+    target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
+    qt_add_shaders(WindowSystemQuick window_system_mask_shaders
+        PREFIX /window-system/shaders BASE src/quick FILES src/quick/alpha_mask.frag)
 endif()
 
 # Keep editable Qt Linguist sources in version control; compiled catalogs are

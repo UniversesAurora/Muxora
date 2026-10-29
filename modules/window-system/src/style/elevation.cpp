@@ -552,11 +552,11 @@ void ElevationRenderer::paintOverlayBand(QPainter& painter, const QRect& band, b
     painter.fillRect(band, shade);
 }
 
-void ElevationRenderer::paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
-                                      const ElevationStyle& style, qreal progress)
+std::optional<QLinearGradient> anchorCoverageGradient(const SurfaceGeometry& geometry,
+    const ElevationStyle& style, qreal progress)
 {
     if (!geometry.covered || style.highContrast || progress <= 0
-        || (geometry.edge != SurfaceEdge::Top && geometry.edge != SurfaceEdge::Bottom)) return;
+        || (geometry.edge != SurfaceEdge::Top && geometry.edge != SurfaceEdge::Bottom)) return {};
     const bool upperCover = geometry.edge == SurfaceEdge::Bottom;
     const qreal depth = upperCover ? 3 : 2;
     const qreal opacity = (upperCover ? 0.10 : 0.05) * style.shadowMultiplier * geometry.coveredProgress
@@ -571,8 +571,16 @@ void ElevationRenderer::paintCoverage(QPainter& painter, const SurfaceGeometry& 
         color.setAlphaF(step == progressSteps ? 0 : std::min(qreal(0.5), opacity * std::exp(-8 * distance * distance)));
         gradient.setColorAt(distance, color);
     }
+    return gradient;
+}
+
+void ElevationRenderer::paintCoverage(QPainter& painter, const SurfaceGeometry& geometry,
+                                      const ElevationStyle& style, qreal progress)
+{
+    const auto gradient = anchorCoverageGradient(geometry, style, progress);
+    if (!gradient) return;
     painter.save(); painter.setClipPath(geometry.anchorPath, Qt::IntersectClip);
-    painter.fillRect(rect, gradient); painter.restore();
+    painter.fillRect(geometry.anchor, *gradient); painter.restore();
 }
 
 } // namespace window_system

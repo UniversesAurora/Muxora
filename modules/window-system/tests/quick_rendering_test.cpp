@@ -43,12 +43,19 @@ void prepareWindow(QQuickWindow& window)
     window.setPersistentGraphics(false);
     window.setPersistentSceneGraph(false);
 }
+
+bool renderFrame(QQuickWindow& window)
+{
+    QSignalSpy frames(&window, &QQuickWindow::frameSwapped);
+    window.requestUpdate();
+    return !frames.isEmpty() || frames.wait();
+}
 } // namespace
 
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
-    void tabStripItemKeepsLabelsInIndependentlyClippedLanes()
+    void tabStripItemKeepsPublishedResources()
     {
         QQuickWindow window;
         prepareWindow(window);
@@ -77,7 +84,7 @@ private slots:
         lane.viewport = QRect(0, 10, 300, 70);
         lane.regularClip = QRect(100, 10, 240, 70);
         lane.fades.append({QRect(100, 10, 16, 70), Qt::LeftEdge, {}});
-        lane.frozen.append({QUuid::createUuid(), 0, {}, makeLabel(120, QStringLiteral("Regular"))});
+        lane.regular.append({QUuid::createUuid(), 0, {}, makeLabel(120, QStringLiteral("Regular"))});
         lane.frozen.append({QUuid::createUuid(), 1, {}, makeLabel(0, QStringLiteral("Frozen"))});
         TabFolderPaintState folderState;
         folderState.name = QStringLiteral("Folder");
@@ -110,10 +117,10 @@ private slots:
         QCOMPARE(item->folderCount(), qsizetype(1));
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
-        QVERIFY(!window.grabWindow().isNull());
+        QVERIFY(renderFrame(window));
         QTRY_VERIFY(item->overlayTextureUploads() > 0);
-        QTRY_VERIFY(item->edgeFadeTextureUploads() > 0);
 
+        frame = std::make_shared<TabStripFrame>(*frame);
         frame->departures.clear();
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->labelCount(), qsizetype(2));
@@ -161,7 +168,7 @@ private slots:
         QVERIFY(item->numberItem());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
-        QVERIFY(!window.grabWindow().isNull());
+        QVERIFY(renderFrame(window));
         QTRY_VERIFY(item->textItem()->renderStats().textLayoutBuilds > 0);
         QTRY_VERIFY(item->numberItem()->renderStats().textLayoutBuilds > 0);
         QTRY_VERIFY(item->iconTextureUploads() >= 2);
@@ -170,7 +177,7 @@ private slots:
         label.state.actionShown = false;
         label.state.actionOpacity = 0;
         QVERIFY(item->setLabel(label, style));
-        QVERIFY(!window.grabWindow().isNull());
+        QVERIFY(renderFrame(window));
         QVERIFY(item->textItem()->segmentCount() > 0);
 
         item->clearLabel();
@@ -203,41 +210,41 @@ private slots:
         QVERIFY(item->segmentCount() <= 40);
         first.show();
         QVERIFY(QTest::qWaitForWindowExposed(&first));
-        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(renderFrame(first));
         QTRY_VERIFY(item->renderStats().textLayoutBuilds > 0);
         const auto initialBuilds = item->renderStats().textLayoutBuilds;
 
         label.state.actionOpacity = 0.5;
         QVERIFY(item->setLabel(label, style));
-        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(renderFrame(first));
         QCOMPARE(item->renderStats().textLayoutBuilds, initialBuilds);
         QVERIFY(item->renderStats().clipUpdates > 0);
 
         label.state.title = QStringLiteral("Changed source keeps the same bounds");
         QVERIFY(item->setLabel(label, style));
-        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(renderFrame(first));
         QVERIFY(item->renderStats().textLayoutBuilds > initialBuilds);
-        const auto changedBuilds = item->renderStats().textLayoutBuilds;
+        const auto changedBuilds = item->renderStats().sceneGraphBuilds;
 
         item->setParentItem(second.contentItem());
         item->setParent(second.contentItem());
         second.show();
         QVERIFY(QTest::qWaitForWindowExposed(&second));
-        QVERIFY(!second.grabWindow().isNull());
-        QTRY_VERIFY(item->renderStats().textLayoutBuilds > changedBuilds);
-        const auto movedBuilds = item->renderStats().textLayoutBuilds;
+        QVERIFY(renderFrame(second));
+        QTRY_VERIFY(item->renderStats().sceneGraphBuilds > changedBuilds);
+        const auto movedBuilds = item->renderStats().sceneGraphBuilds;
 
         second.hide();
         QTRY_VERIFY(!second.isExposed());
         second.releaseResources();
         second.show();
         QVERIFY(QTest::qWaitForWindowExposed(&second));
-        QVERIFY(!second.grabWindow().isNull());
-        QTRY_VERIFY(item->renderStats().textLayoutBuilds > movedBuilds);
+        QVERIFY(renderFrame(second));
+        QTRY_VERIFY(item->renderStats().sceneGraphBuilds > movedBuilds);
 
         item->clearLabel();
         QCOMPARE(item->segmentCount(), 0);
-        QVERIFY(!second.grabWindow().isNull());
+        QVERIFY(renderFrame(second));
     }
 
     void groupFramesKeepResourcesAcrossRejectedInputAndWindowChanges()

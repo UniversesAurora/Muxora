@@ -31,6 +31,13 @@ bool PathItem::setPath(const QPainterPath& path)
     return accepted;
 }
 
+void PathItem::setAntialiasingMode(PathAntialiasing mode)
+{
+    if (antialiasing_ == mode) return;
+    antialiasing_ = mode;
+    prepare(path_);
+}
+
 void PathItem::setFill(const QColor& fill)
 {
     if (fill_ == fill) return;

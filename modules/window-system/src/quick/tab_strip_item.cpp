@@ -2,14 +2,14 @@
 #include "tab_strip_item.hpp"
 
 #include "docking/surface_geometry.hpp"
-#include "edge_fade_item.hpp"
+#include "masked_item.hpp"
 #include "overlay_band_item.hpp"
 #include "path_item.hpp"
+#include "path_stroke_item.hpp"
 #include "tab_folder_item.hpp"
 #include "tab_label_item.hpp"
 
 #include <QPainterPath>
-#include <QPainterPathStroker>
 #include <QSet>
 #include <algorithm>
 #include <utility>
@@ -24,14 +24,17 @@ TabLabelPresentation localized(TabLabelPresentation label, QPoint origin)
     label.parts.icon.translate(-origin);
     label.parts.title.translate(-origin);
     label.parts.action.translate(-origin);
+    label.presence = label.presence.translated(-origin);
     if (label.surface) label.surface = translatedSurfaceGeometry(*label.surface, -origin);
     return label;
 }
 
-void ensurePaths(QVector<PathItem*>& items, qsizetype count, QQuickItem* parent, int z)
+void ensurePaths(QVector<PathItem*>& items, qsizetype count, QQuickItem* parent, int z,
+                 PathAntialiasing mode = PathAntialiasing::Coverage)
 {
+    while (items.size() > count) delete items.takeLast();
     while (items.size() < count) {
-        auto* item = new PathItem(parent);
+        auto* item = new PathItem(parent, mode);
         item->setZ(z);
         items.append(item);
     }
@@ -39,29 +42,27 @@ void ensurePaths(QVector<PathItem*>& items, qsizetype count, QQuickItem* parent,
         items[index]->setVisible(index < count);
 }
 
-void syncPath(PathItem* item, QPainterPath& cached, const QPainterPath& path, const QColor& fill)
+bool syncPath(PathItem* item, QPainterPath& cached, const QPainterPath& path, const QColor& fill)
 {
     if (cached != path) {
         cached = path;
         item->setPath(path);
     }
     item->setFill(fill);
+    return item->geometryError() == PathGeometryError::None;
 }
 
 } // namespace
 
 TabStripItem::TabStripItem(QQuickItem* parent)
     : QQuickItem(parent),
-      background_(new PathItem(this)),
-      sectionSeparator_(new PathItem(this)),
-      folderOutline_(new PathItem(this)),
+      background_(new PathItem(this, PathAntialiasing::Multisample)),
+      sectionSeparator_(new PathItem(this, PathAntialiasing::Multisample)),
       overlay_(new OverlayBandItem(this))
 {
     background_->setZ(-10);
-    sectionSeparator_->setZ(1);
+    sectionSeparator_->setZ(6);
     sectionSeparator_->setVisible(false);
-    folderOutline_->setZ(4);
-    folderOutline_->setVisible(false);
     overlay_->setZ(20);
 }
 
@@ -70,8 +71,7 @@ TabStripItem::~TabStripItem() = default;
 void TabStripItem::clearLanes()
 {
     for (const auto& lane : std::as_const(lanes_)) {
-        delete lane.regular;
-        delete lane.frozen;
+        delete lane.root;
     }
     lanes_.clear();
 }
@@ -84,7 +84,7 @@ bool TabStripItem::syncSamples(const QVector<TabStripLabelSample>& samples, QQui
         const auto& sample = samples[index];
         auto* item = labels_.value(sample.id);
         if (!item) {
-            item = new TabLabelItem;
+            item = new TabLabelItem(this);
             labels_.insert(sample.id, item);
         }
         item->setParentItem(clip);
@@ -113,36 +113,40 @@ bool TabStripItem::syncDepartures(const QVector<TabDepartureSample>& samples, QS
     return accepted;
 }
 
-void TabStripItem::syncFolders(const QVector<TabStripFolderSample>& samples, QQuickItem* clip,
+bool TabStripItem::syncFolders(const QVector<TabStripFolderSample>& samples, QQuickItem* clip,
                                QRect origin, QSet<QUuid>& active)
 {
+    bool accepted = true;
     for (const auto& sample : samples) {
         auto* item = folders_.value(sample.id);
         if (!item) {
-            item = new TabFolderItem;
+            item = new TabFolderItem(this);
+            item->setZ(-1);
             folders_.insert(sample.id, item);
         }
         item->setParentItem(clip);
         item->setPosition(sample.area.topLeft() - origin.topLeft());
         item->setSize(sample.area.size());
-        item->setFolder(sample.state, *frame_->style, frame_->vertical);
+        accepted = item->setFolder(sample.state, *frame_->style, frame_->vertical) && accepted;
         active.insert(sample.id);
     }
+    return accepted;
 }
 
-void TabStripItem::syncDecorations()
+bool TabStripItem::syncDecorations()
 {
+    bool accepted = true;
     QPainterPath background;
     if (!frame_->background.isEmpty()) background.addRect(frame_->background);
-    syncPath(background_, backgroundPath_, background, frame_->style->palette.strip);
+    accepted = syncPath(background_, backgroundPath_, background, frame_->style->palette.strip) && accepted;
     background_->setVisible(!frame_->background.isEmpty());
 
-    ensurePaths(separators_, frame_->separators.size(), this, 0);
+    ensurePaths(separators_, frame_->separators.size(), this, 0, PathAntialiasing::Multisample);
     separatorPaths_.resize(separators_.size());
     for (qsizetype index = 0; index < frame_->separators.size(); ++index) {
         QPainterPath path;
         path.addRect(frame_->separators[index]);
-        syncPath(separators_[index], separatorPaths_[index], path, frame_->style->palette.separator);
+        accepted = syncPath(separators_[index], separatorPaths_[index], path, frame_->style->palette.separator) && accepted;
     }
 
     const bool showSection = !frame_->sectionSeparator.isEmpty();
@@ -150,8 +154,9 @@ void TabStripItem::syncDecorations()
     if (showSection) {
         QPainterPath path;
         path.addRect(frame_->sectionSeparator);
-        syncPath(sectionSeparator_, sectionSeparatorPath_, path,
-                 frame_->style->palette.sectionSeparator.resolve(frame_->windowActive));
+        accepted = syncPath(sectionSeparator_, sectionSeparatorPath_, path,
+                 frame_->vertical ? frame_->style->palette.sectionSeparator.resolve(frame_->windowActive)
+                                  : frame_->style->palette.separator) && accepted;
     }
 
     ensurePaths(scrollbars_, frame_->scrollbars.size(), this, 5);
@@ -162,54 +167,48 @@ void TabStripItem::syncDecorations()
         QPainterPath path;
         path.addRoundedRect(QRectF(source.thumb), radius, radius);
         auto color = frame_->style->palette.text;
-        color.setAlphaF(source.emphasized ? 0.38 : 0.22);
-        syncPath(scrollbars_[index], scrollbarPaths_[index], path, color);
+        color.setAlphaF(color.alphaF() * (source.emphasized ? 0.38 : 0.22));
+        accepted = syncPath(scrollbars_[index], scrollbarPaths_[index], path, color) && accepted;
         scrollbars_[index]->setOpacity(source.opacity);
     }
 
-    QVector<TabStripFolderLine> lines;
-    std::optional<TabStripFolderOutline> outline;
-    for (const auto& lane : std::as_const(frame_->lanes)) {
-        lines += lane.folderLines;
-        if (lane.folderOutline) outline = lane.folderOutline;
-    }
-    ensurePaths(folderLines_, lines.size(), this, 4);
-    folderLinePaths_.resize(folderLines_.size());
-    for (qsizetype index = 0; index < lines.size(); ++index) {
-        const qreal radius = std::min(lines[index].area.width(), lines[index].area.height()) / 2.0;
-        QPainterPath path;
-        path.addRoundedRect(QRectF(lines[index].area), radius, radius);
-        syncPath(folderLines_[index], folderLinePaths_[index], path, lines[index].color);
-    }
-    folderOutline_->setVisible(bool(outline));
-    if (outline) {
-        const TabPainter painter(frame_->style->metrics, frame_->style->palette);
-        QPainterPathStroker stroker;
-        stroker.setWidth(frame_->style->metrics.folderOutline);
-        stroker.setCapStyle(Qt::RoundCap);
-        stroker.setJoinStyle(Qt::RoundJoin);
-        syncPath(folderOutline_, folderOutlinePath_,
-                 stroker.createStroke(painter.folderOutlinePath(outline->area, outline->shape)),
-                 outline->color);
-    }
     if (frame_->overlayShadow.isEmpty() || frame_->shadowOpacity <= 0)
         overlay_->clearBand();
     else
         overlay_->setBand(frame_->overlayShadow, frame_->shadowAbove,
                           frame_->style->palette.elevation, frame_->shadowOpacity);
 
-    QVector<EdgeFade> fades;
-    for (const auto& lane : std::as_const(frame_->lanes)) fades += lane.fades;
-    while (edgeFades_.size() < fades.size()) {
-        auto* item = new EdgeFadeItem(this);
-        item->setZ(4.5);
-        edgeFades_.append(item);
+    return accepted;
+}
+
+bool TabStripItem::syncLaneDecorations(LaneNode& lane, const TabStripLaneFrame& source)
+{
+    bool accepted = true;
+    const auto origin = source.regularClip.topLeft();
+    ensurePaths(lane.lines, source.folderLines.size(), lane.decoration, 0);
+    lane.linePaths.resize(lane.lines.size());
+    for (qsizetype index = 0; index < source.folderLines.size(); ++index) {
+        const auto& line = source.folderLines[index];
+        const qreal radius = std::min(line.area.width(), line.area.height()) / 2.0;
+        QPainterPath path;
+        path.addRoundedRect(QRectF(line.area.translated(-origin)), radius, radius);
+        accepted = syncPath(lane.lines[index], lane.linePaths[index], path, line.color) && accepted;
     }
-    for (qsizetype index = 0; index < edgeFades_.size(); ++index) {
-        if (index < fades.size())
-            edgeFades_[index]->setFade(fades[index], frame_->style->palette.strip);
-        else edgeFades_[index]->setVisible(false);
+    lane.outline->setVisible(bool(source.folderOutline));
+    if (source.folderOutline) {
+        const auto& outline = *source.folderOutline;
+        const TabPainter painter(frame_->style->metrics, frame_->style->palette);
+        lane.outline->setSize(source.regularClip.size());
+        accepted = lane.outline->setStroke(
+            painter.folderOutlinePath(outline.area.translated(-origin), outline.shape),
+            outline.color, frame_->style->metrics.folderOutline);
     }
+    auto fades = source.fades;
+    for (auto& fade : fades) {
+        fade.area.translate(-source.viewport.topLeft());
+        if (!fade.opacityRamp.isNull()) fade.opacityRamp.translate(-source.viewport.topLeft());
+    }
+    return lane.root->setFades(fades) && accepted;
 }
 
 bool TabStripItem::setFrame(std::shared_ptr<const TabStripFrame> frame)
@@ -219,37 +218,53 @@ bool TabStripItem::setFrame(std::shared_ptr<const TabStripFrame> frame)
         return true;
     }
     frame_ = std::move(frame);
-    syncDecorations();
+    bool accepted = syncDecorations();
     while (lanes_.size() > frame_->lanes.size()) {
         auto lane = lanes_.takeLast();
-        delete lane.regular;
-        delete lane.frozen;
+        // Preserve the same-window scene resources while the clipping parent
+        // disappears. QObject ownership belongs to the strip, not the lane.
+        for (auto* parent : {lane.regular, lane.frozen})
+            for (auto* child : parent->childItems()) child->setParentItem(this);
+        delete lane.root;
     }
     while (lanes_.size() < frame_->lanes.size()) {
         LaneNode lane;
-        lane.regular = new QQuickItem(this);
+        lane.root = new MaskedItem(this);
+        lane.root->setZ(1);
+        lane.root->setClip(true);
+        lane.regular = new QQuickItem(lane.root->contentItem());
         lane.regular->setClip(true);
-        lane.frozen = new QQuickItem(this);
+        lane.frozen = new QQuickItem(lane.root->contentItem());
+        lane.frozen->setZ(1);
         lane.frozen->setClip(true);
+        lane.decoration = new QQuickItem(lane.root->contentItem());
+        lane.decoration->setZ(2);
+        lane.decoration->setClip(true);
+        lane.outline = new PathStrokeItem(lane.decoration);
+        lane.outline->setZ(1);
         lanes_.append(lane);
     }
 
     QSet<QUuid> live;
     QSet<QUuid> folderLive;
     QSet<QUuid> departing;
-    bool accepted = true;
     for (qsizetype index = 0; index < frame_->lanes.size(); ++index) {
         const auto& source = frame_->lanes[index];
         auto& lane = lanes_[index];
-        lane.regular->setPosition(source.regularClip.topLeft());
+        lane.root->setPosition(source.viewport.topLeft());
+        lane.root->setSize(source.viewport.size());
+        lane.regular->setPosition(source.regularClip.topLeft() - source.viewport.topLeft());
         lane.regular->setSize(source.regularClip.size());
         lane.regular->setVisible(!source.regularClip.isEmpty());
-        lane.frozen->setPosition(source.viewport.topLeft());
+        lane.frozen->setPosition({});
         lane.frozen->setSize(source.viewport.size());
         lane.frozen->setVisible(!source.viewport.isEmpty());
+        lane.decoration->setPosition(lane.regular->position());
+        lane.decoration->setSize(lane.regular->size());
+        accepted = syncLaneDecorations(lane, source) && accepted;
         accepted = syncSamples(source.regular, lane.regular, source.regularClip, live) && accepted;
         accepted = syncSamples(source.frozen, lane.frozen, source.viewport, live) && accepted;
-        syncFolders(source.folders, lane.regular, source.regularClip, folderLive);
+        accepted = syncFolders(source.folders, lane.regular, source.regularClip, folderLive) && accepted;
     }
     accepted = syncDepartures(frame_->departures, departing) && accepted;
 
@@ -306,38 +321,12 @@ void TabStripItem::clearFrame()
     sectionSeparator_->setVisible(false);
     for (auto* item : std::as_const(separators_)) item->setVisible(false);
     for (auto* item : std::as_const(scrollbars_)) item->setVisible(false);
-    for (auto* item : std::as_const(folderLines_)) item->setVisible(false);
-    for (auto* item : std::as_const(edgeFades_)) item->setVisible(false);
-    folderOutline_->setVisible(false);
     overlay_->clearBand();
 }
 
 qsizetype TabStripItem::labelCount() const { return labels_.size() + departures_.size(); }
 qsizetype TabStripItem::folderCount() const { return folders_.size(); }
-qsizetype TabStripItem::folderLineCount() const
-{
-    qsizetype count = 0;
-    if (frame_) for (const auto& lane : frame_->lanes) count += lane.folderLines.size();
-    return count;
-}
-bool TabStripItem::folderOutlineVisible() const { return folderOutline_->isVisible(); }
-bool TabStripItem::overlayBandVisible() const { return overlay_->isVisible(); }
 quint64 TabStripItem::overlayTextureUploads() const { return overlay_->textureUploads(); }
-qsizetype TabStripItem::edgeFadeCount() const
-{
-    qsizetype count = 0;
-    if (frame_) for (const auto& lane : frame_->lanes) count += lane.fades.size();
-    return count;
-}
-quint64 TabStripItem::edgeFadeTextureUploads() const
-{
-    quint64 count = 0;
-    for (const auto* item : edgeFades_) count += item->textureUploads();
-    return count;
-}
 qsizetype TabStripItem::laneCount() const { return lanes_.size(); }
-qsizetype TabStripItem::separatorCount() const { return frame_ ? frame_->separators.size() : 0; }
-qsizetype TabStripItem::scrollbarCount() const { return frame_ ? frame_->scrollbars.size() : 0; }
-bool TabStripItem::backgroundVisible() const { return background_->isVisible(); }
 
 } // namespace window_system::quick

@@ -4,10 +4,12 @@
 #include "../docking/surface_geometry.hpp"
 #include <QColor>
 #include <QImage>
+#include <QLinearGradient>
 #include <QMarginsF>
 #include <QVector>
 #include <memory>
 #include <array>
+#include <optional>
 
 class QPainter;
 
@@ -84,6 +86,8 @@ struct ElevationAnchorPatch {
 [[nodiscard]] ElevationProfile interpolateElevation(const ElevationProfile& from,
                                                     const ElevationProfile& to, qreal progress);
 [[nodiscard]] QMarginsF elevationMargins(const ElevationProfile& profile);
+[[nodiscard]] std::optional<QLinearGradient> anchorCoverageGradient(const SurfaceGeometry& geometry,
+    const ElevationStyle& style, qreal progress = 1);
 
 // Small rounded-rectangle sprites are stretched as nine patches. Joined
 // anchors use a bounded local image, never a body-sized intermediate.

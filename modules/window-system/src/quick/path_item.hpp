@@ -19,6 +19,7 @@ public:
     // creation. It is explicit: a rejected coverage mesh never changes mode.
     explicit PathItem(QQuickItem* parent = nullptr, PathAntialiasing mode = PathAntialiasing::Coverage);
     bool setPath(const QPainterPath& path);
+    void setAntialiasingMode(PathAntialiasing mode);
     void setFill(const QColor& fill);
     [[nodiscard]] PathGeometryError geometryError() const { return cache_.geometry().error; }
 

@@ -14,7 +14,7 @@ namespace {
 
 class OverlayNode final : public QSGSimpleTextureNode {
 public:
-    bool sync(QQuickWindow& window, const QImage& image, const QSizeF& size, quint64 revision)
+    bool sync(QQuickWindow& window, const QImage& image, quint64 revision)
     {
         if (revision_ == revision) return false;
         auto* next = window.createTextureFromImage(image);
@@ -22,7 +22,6 @@ public:
         next->setFiltering(QSGTexture::Linear);
         setOwnsTexture(true);
         setTexture(next);
-        setRect(QRectF(QPointF(), size));
         setSourceRect(QRectF(QPointF(), image.size()));
         revision_ = revision;
         return true;
@@ -91,9 +90,17 @@ void OverlayBandItem::clearBand()
 }
 
 quint64 OverlayBandItem::textureUploads() const { return textureUploads_.load(std::memory_order_relaxed); }
+quint64 OverlayBandItem::geometryUpdates() const { return geometryUpdates_.load(std::memory_order_relaxed); }
 
-void OverlayBandItem::itemChange(ItemChange change, const ItemChangeData&)
+void OverlayBandItem::geometryChange(const QRectF& current, const QRectF& previous)
 {
+    QQuickItem::geometryChange(current, previous);
+    if (current.size() != previous.size()) update();
+}
+
+void OverlayBandItem::itemChange(ItemChange change, const ItemChangeData& data)
+{
+    QQuickItem::itemChange(change, data);
     if (change == ItemDevicePixelRatioHasChanged) update();
 }
 
@@ -104,8 +111,13 @@ QSGNode* OverlayBandItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeData
         return nullptr;
     }
     auto* node = previous ? static_cast<OverlayNode*>(previous) : new OverlayNode;
-    if (node->sync(*window(), prepared_->image, size(), prepared_->resourceRevision))
+    if (node->sync(*window(), prepared_->image, prepared_->resourceRevision))
         textureUploads_.fetch_add(1, std::memory_order_relaxed);
+    const QRectF target(QPointF(), size());
+    if (node->rect() != target) {
+        node->setRect(target);
+        geometryUpdates_.fetch_add(1, std::memory_order_relaxed);
+    }
     return node;
 }
 

@@ -13,7 +13,7 @@ namespace {
 
 class IconNode final : public QSGSimpleTextureNode {
 public:
-    bool sync(QQuickWindow& window, const QImage& image, const QSize& logicalSize, quint64 revision)
+    bool sync(QQuickWindow& window, const QImage& image, const QRectF& target, quint64 revision)
     {
         if (revision_ == revision) return false;
         auto* next = window.createTextureFromImage(image);
@@ -21,7 +21,7 @@ public:
         next->setFiltering(QSGTexture::Linear);
         setOwnsTexture(true);
         setTexture(next);
-        setRect(QRectF(QPointF(), logicalSize));
+        setRect(target);
         setSourceRect(QRectF(QPointF(), image.size()));
         revision_ = revision;
         return true;
@@ -35,6 +35,7 @@ private:
 
 struct TabIconItem::Prepared {
     QImage image;
+    QRectF target;
     quint64 resourceRevision = 0;
 };
 
@@ -54,9 +55,12 @@ void TabIconItem::prepare()
         return;
     }
     const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1;
-    auto pixmap = icon_.pixmap(logicalSize_, ratio,
-        enabled_ ? QIcon::Normal : QIcon::Disabled,
-        selected_ ? QIcon::On : QIcon::Off);
+    const auto mode = tint_.isValid() || enabled_ ? QIcon::Normal : QIcon::Disabled;
+    const auto state = !tint_.isValid() && selected_ ? QIcon::On : QIcon::Off;
+    const auto actual = tint_.isValid() ? logicalSize_ : icon_.actualSize(logicalSize_, mode, state);
+    prepared_->target = QRectF(QPoint((logicalSize_.width() - actual.width()) / 2,
+                                      (logicalSize_.height() - actual.height()) / 2), actual);
+    auto pixmap = icon_.pixmap(actual, ratio, mode, state);
     if (tint_.isValid() && !pixmap.isNull()) {
         QPainter painter(&pixmap);
         painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
@@ -64,7 +68,6 @@ void TabIconItem::prepare()
     }
     if (!pixmap.isNull()) {
         prepared_->image = pixmap.toImage();
-        prepared_->image.setDevicePixelRatio(ratio);
     }
     prepared_->resourceRevision = ++resourceRevision_;
     update();
@@ -88,6 +91,7 @@ bool TabIconItem::setIcon(QIcon icon, QSize logicalSize, QColor tint, bool enabl
 
 void TabIconItem::clearIcon()
 {
+    if (icon_.isNull() && prepared_->image.isNull()) return;
     icon_ = {};
     logicalSize_ = {};
     tint_ = {};
@@ -96,8 +100,9 @@ void TabIconItem::clearIcon()
 
 quint64 TabIconItem::textureUploads() const { return textureUploads_.load(std::memory_order_relaxed); }
 
-void TabIconItem::itemChange(ItemChange change, const ItemChangeData&)
+void TabIconItem::itemChange(ItemChange change, const ItemChangeData& data)
 {
+    QQuickItem::itemChange(change, data);
     if (change == ItemSceneChange || change == ItemDevicePixelRatioHasChanged) prepare();
 }
 
@@ -108,7 +113,7 @@ QSGNode* TabIconItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeData*)
         return nullptr;
     }
     auto* node = previous ? static_cast<IconNode*>(previous) : new IconNode;
-    if (node->sync(*window(), prepared_->image, logicalSize_, prepared_->resourceRevision))
+    if (node->sync(*window(), prepared_->image, prepared_->target, prepared_->resourceRevision))
         textureUploads_.fetch_add(1, std::memory_order_relaxed);
     return node;
 }

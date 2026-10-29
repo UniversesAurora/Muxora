@@ -20,10 +20,12 @@ public:
     void setBand(const QRect& band, bool above, const ElevationStyle& style, qreal progress);
     void clearBand();
     [[nodiscard]] quint64 textureUploads() const;
+    [[nodiscard]] quint64 geometryUpdates() const;
 
 protected:
     QSGNode* updatePaintNode(QSGNode* previous, UpdatePaintNodeData*) override;
     void itemChange(ItemChange change, const ItemChangeData& data) override;
+    void geometryChange(const QRectF& current, const QRectF& previous) override;
 
 private:
     struct Prepared;
@@ -33,6 +35,7 @@ private:
     quint64 resourceRevision_ = 0;
     std::unique_ptr<Prepared> prepared_;
     std::atomic<quint64> textureUploads_{0};
+    std::atomic<quint64> geometryUpdates_{0};
 };
 
 } // namespace window_system::quick
