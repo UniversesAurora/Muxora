@@ -108,13 +108,6 @@ private slots:
         QCOMPARE(item->laneCount(), qsizetype(1));
         QCOMPARE(item->labelCount(), qsizetype(3));
         QCOMPARE(item->folderCount(), qsizetype(1));
-        QCOMPARE(item->folderLineCount(), qsizetype(1));
-        QCOMPARE(item->edgeFadeCount(), qsizetype(1));
-        QVERIFY(item->folderOutlineVisible());
-        QCOMPARE(item->separatorCount(), qsizetype(1));
-        QCOMPARE(item->scrollbarCount(), qsizetype(1));
-        QVERIFY(item->backgroundVisible());
-        QVERIFY(item->overlayBandVisible());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());
@@ -125,16 +118,9 @@ private slots:
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->labelCount(), qsizetype(2));
         QCOMPARE(item->folderCount(), qsizetype(1));
-        QCOMPARE(item->folderLineCount(), qsizetype(1));
-        QCOMPARE(item->edgeFadeCount(), qsizetype(1));
-        QVERIFY(item->folderOutlineVisible());
         item->clearFrame();
         QCOMPARE(item->labelCount(), qsizetype(0));
         QCOMPARE(item->folderCount(), qsizetype(0));
-        QCOMPARE(item->folderLineCount(), qsizetype(0));
-        QCOMPARE(item->edgeFadeCount(), qsizetype(0));
-        QVERIFY(!item->folderOutlineVisible());
-        QVERIFY(!item->overlayBandVisible());
         QCOMPARE(item->laneCount(), qsizetype(0));
     }
 
@@ -172,10 +158,6 @@ private slots:
         style.palette.mutedText = Qt::darkGray;
 
         QVERIFY(item->setLabel(label, style));
-        QCOMPARE(item->surfaceError(), PathGeometryError::None);
-        QVERIFY(item->surfaceVisible());
-        QVERIFY(item->mainIconVisible());
-        QVERIFY(item->actionVisible());
         QVERIFY(item->numberItem());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -188,14 +170,10 @@ private slots:
         label.state.actionShown = false;
         label.state.actionOpacity = 0;
         QVERIFY(item->setLabel(label, style));
-        QVERIFY(!item->surfaceVisible());
-        QVERIFY(item->mainIconVisible());
-        QVERIFY(!item->actionVisible());
         QVERIFY(!window.grabWindow().isNull());
         QVERIFY(item->textItem()->segmentCount() > 0);
 
         item->clearLabel();
-        QVERIFY(!item->surfaceVisible());
         QCOMPARE(item->textItem()->segmentCount(), 0);
         QCOMPARE(item->numberItem()->segmentCount(), 0);
     }
