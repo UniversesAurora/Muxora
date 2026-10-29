@@ -6,6 +6,7 @@
 #include "quick/body_shadow_item.hpp"
 #include "quick/anchor_shadow_item.hpp"
 #include "quick/group_surface_item.hpp"
+#include "quick/tab_label_text_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
 
@@ -45,6 +46,68 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void tabLabelTextKeepsShapingAcrossFadeAndRecreatesSceneResources()
+    {
+        QQuickWindow first, second;
+        prepareWindow(first);
+        prepareWindow(second);
+        auto* item = new TabLabelTextItem(first.contentItem());
+
+        TabLabelPresentation label;
+        label.parts.tab = QRect(20, 20, 240, 28);
+        label.parts.title = QRect(60, 20, 150, 28);
+        label.parts.action = QRect(24, 24, 20, 20);
+        label.state.shape = TabShape::Top;
+        label.state.title = QStringLiteral("A long tab title that is clipped");
+        label.state.actionShown = true;
+        label.naturalWidth = 360;
+        TabStripLabelStyle style;
+        style.metrics.rowHeight = 28;
+        style.palette.text = Qt::black;
+        style.palette.mutedText = Qt::darkGray;
+
+        QVERIFY(item->setLabel(label, style));
+        QVERIFY(item->segmentCount() > 1);
+        QVERIFY(item->segmentCount() <= 40);
+        first.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QVERIFY(!first.grabWindow().isNull());
+        QTRY_VERIFY(item->renderStats().textLayoutBuilds > 0);
+        const auto initialBuilds = item->renderStats().textLayoutBuilds;
+
+        label.state.actionOpacity = 0.5;
+        QVERIFY(item->setLabel(label, style));
+        QVERIFY(!first.grabWindow().isNull());
+        QCOMPARE(item->renderStats().textLayoutBuilds, initialBuilds);
+        QVERIFY(item->renderStats().clipUpdates > 0);
+
+        label.state.title = QStringLiteral("Changed source keeps the same bounds");
+        QVERIFY(item->setLabel(label, style));
+        QVERIFY(!first.grabWindow().isNull());
+        QVERIFY(item->renderStats().textLayoutBuilds > initialBuilds);
+        const auto changedBuilds = item->renderStats().textLayoutBuilds;
+
+        item->setParentItem(second.contentItem());
+        item->setParent(second.contentItem());
+        second.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QVERIFY(!second.grabWindow().isNull());
+        QTRY_VERIFY(item->renderStats().textLayoutBuilds > changedBuilds);
+        const auto movedBuilds = item->renderStats().textLayoutBuilds;
+
+        second.hide();
+        QTRY_VERIFY(!second.isExposed());
+        second.releaseResources();
+        second.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QVERIFY(!second.grabWindow().isNull());
+        QTRY_VERIFY(item->renderStats().textLayoutBuilds > movedBuilds);
+
+        item->clearLabel();
+        QCOMPARE(item->segmentCount(), 0);
+        QVERIFY(!second.grabWindow().isNull());
+    }
+
     void groupFramesKeepResourcesAcrossRejectedInputAndWindowChanges()
     {
         QQuickWindow first, second; prepareWindow(first); prepareWindow(second);

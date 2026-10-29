@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "tab_painter.hpp"
+#include "tab_label_text.hpp"
 #include <window_system/interface_appearance.hpp>
 
 #include <QFontMetrics>
@@ -132,13 +133,6 @@ QColor TabPainter::backgroundOf(const TabLabelPresentation& label) const
     return {};
 }
 
-QColor TabPainter::textOf(const TabLabelPresentation& label) const
-{
-    const auto& state = label.state;
-    if (label.preset) return (state.selected ? label.preset->groupActive : label.preset->groupInactive).text;
-    return state.selected || state.hovered || state.lifted ? palette_.text : palette_.mutedText;
-}
-
 QPainterPath TabPainter::outline(const QRectF& tab, TabShape shape, bool selected, bool lifted) const
 {
     if (shape == TabShape::Top || shape == TabShape::Bottom)
@@ -158,6 +152,8 @@ TabLabelPresentation TabPainter::captureLabel(const TabParts& parts, const TabPa
     label.state = state;
     label.font = font;
     label.direction = direction;
+    label.naturalWidth = state.titleLayout ? state.titleLayout->naturalWidth()
+        : QFontMetrics(font).horizontalAdvance(state.title);
     if (state.surface) label.surface = *state.surface;
     if (state.bodyElevation) label.bodyElevation = *state.bodyElevation;
     if (state.preset) label.preset = *state.preset;
@@ -227,7 +223,7 @@ void TabPainter::paintLabel(QPainter& painter, const TabLabelPresentation& label
     // A tab's color is its background alone; lines belong to tab folders.
     const auto* colors = label.preset ? (state.selected ? &label.preset->groupActive : &label.preset->groupInactive) : nullptr;
     painter.setRenderHint(QPainter::Antialiasing, false);
-    const QColor text = textOf(label);
+    const QColor text = tabLabelTextColor(label, palette_);
     if (!parts.number.isEmpty()) {
         painter.save(); painter.setOpacity(painter.opacity() * state.titleOpacity);
         painter.setPen(text);
@@ -245,35 +241,20 @@ void TabPainter::paintLabel(QPainter& painter, const TabLabelPresentation& label
             painter.setPen(text);
             painter.drawText(parts.title, Qt::AlignCenter | Qt::TextSingleLine, state.title.left(1).toUpper());
         } else if (widgetCache) {
-            const bool cut = widgetCache->naturalWidth() > parts.title.width();
-            const int fadeLength = state.shape == TabShape::Row
-                ? std::min(metrics_.titleFade, std::max(0, parts.title.width() - (metrics_.rowHeight - uiPixels(10)))) : metrics_.titleFade;
-            const bool covering = state.actionShown && !state.actionReserved && !parts.action.isEmpty()
-                && state.actionOpacity > 0;
-            if ((cut && fadeLength > 0) || covering) {
-                const qreal left = parts.title.left(), end = parts.title.right() + 1;
-                const bool reverse = parts.action.left() < parts.tab.center().x();
-                const qreal actionEnd = reverse ? parts.action.right() + 1 : parts.action.left();
-                const qreal actionFade = std::max(1, metrics_.edgeFade);
-                const auto opacityAt = [&](qreal x) {
-                    qreal opacity = cut && fadeLength > 0 ? std::clamp((end - x) / fadeLength, 0.0, 1.0) : 1.0;
-                    if (covering) {
-                        const qreal cover = reverse ? (actionEnd + actionFade - x) / actionFade
-                            : (x - actionEnd + actionFade) / actionFade;
-                        opacity *= 1 - std::clamp(state.actionOpacity, 0.0, 1.0) * std::clamp(cover, 0.0, 1.0);
-                    }
-                    return opacity;
-                };
+            const auto fade = tabLabelTitleFade(label, metrics_);
+            if (fade.active()) {
+                const qreal left = fade.left, end = fade.right;
                 QVector<qreal> stops{left, end};
-                if (cut) for (int step = 0; step <= fadeLength; ++step)
+                if (fade.cut) for (int step = 0; step <= fade.fadeLength; ++step)
                     stops.append(std::clamp(end - step, left, end));
-                if (covering) for (int step = 0; step <= metrics_.edgeFade; ++step)
-                    stops.append(std::clamp(actionEnd + (reverse ? step : -step), left, end));
+                if (fade.covering) for (int step = 0; step <= metrics_.edgeFade; ++step)
+                    stops.append(std::clamp(fade.actionEnd + (fade.reverse ? step : -step), left, end));
                 std::sort(stops.begin(), stops.end());
                 stops.erase(std::unique(stops.begin(), stops.end()), stops.end());
-                QLinearGradient fade(left, 0, end, 0);
-                for (const auto x : stops) fade.setColorAt((x - left) / (end - left), withAlpha(text, opacityAt(x)));
-                painter.setPen(QPen(QBrush(fade), 1));
+                QLinearGradient gradient(left, 0, end, 0);
+                for (const auto x : stops)
+                    gradient.setColorAt((x - left) / (end - left), withAlpha(text, fade.opacityAt(x)));
+                painter.setPen(QPen(QBrush(gradient), 1));
             } else painter.setPen(text);
             widgetCache->draw(painter, parts.title);
         }

@@ -54,6 +54,7 @@ struct TabLabelPresentation {
     TabLabelState state;
     QFont font;
     Qt::LayoutDirection direction = Qt::LeftToRight;
+    int naturalWidth = 0;
     LabelPresencePose presence;
     std::optional<SurfaceGeometry> surface;
     std::optional<ElevationProfile> bodyElevation;

@@ -23,6 +23,7 @@ void TabBar::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
             tab.outerRight = placement_ == TabBarPlacement::Right; tab.preset = tabPreset(index);
             tab.icon = appearance_.showIcons ? tabs_.at(index).icon : QIcon{};
             tab.title = tabs_.at(index).title;
+            tab.titleLayout = &tabs_.textLayout(index);
             std::optional<SurfaceGeometry> geometry;
             if (tab.selected) geometry = anchorGeometry(area, area.intersected(rect()), false, true);
             tab.elevationManaged = true; tab.surface = geometry ? &*geometry : nullptr;
@@ -56,6 +57,7 @@ TabStripLabelSample TabBar::captureLiftedLabel(QRect area, const QFont& font, Qt
     state.number = labelContent(dragged_)->number;
     state.icon = appearance_.showIcons ? tabs_.at(dragged_).icon : QIcon{};
     state.title = tabs_.at(dragged_).title;
+    state.titleLayout = &tabs_.textLayout(dragged_);
     state.iconOnly = state.shape == TabShape::Tile || (vertical() && iconsOnly() && columnReveal_ <= 0)
         || (!vertical() && state.sticky && appearance_.stickySizing == StickyTabSizing::Compact);
     state.actionShown = state.sticky && !state.iconOnly; state.actionReserved = true;
