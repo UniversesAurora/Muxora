@@ -16,6 +16,7 @@
 #include "tab_incoming_state.hpp"
 #include "tab_drag_visual.hpp"
 #include "tab_foreground_frame.hpp"
+#include "tab_presentation_frame.hpp"
 
 #include "style/smooth_scroll.hpp"
 #include "style/frame_clock.hpp"
@@ -185,6 +186,10 @@ public:
     [[nodiscard]] const TabLayout& tabLayout() const { return layout_; }
     [[nodiscard]] std::shared_ptr<const TabStripFrame> captureStripFrame(const QFont& font, Qt::LayoutDirection direction);
     [[nodiscard]] std::shared_ptr<const TabForegroundFrame> captureForegroundFrame(const QFont& font, Qt::LayoutDirection direction);
+    // State publication is independent of QWidget painting and opt-in. The
+    // notification only marks data dirty; consumers capture once when needed.
+    void setPresentationPublishing(bool enabled);
+    [[nodiscard]] std::shared_ptr<const TabPresentationFrame> presentationFrame();
     // Where tab coordinates of the layout start inside the widget.
     [[nodiscard]] QPoint tabOrigin() const;
     // Displayed and visible: what a click on it hits.
@@ -289,6 +294,7 @@ signals:
     void scrollInputStarted();
     // State notifications still run while a carried HWND stops painting.
     void carrierInvalidated();
+    void presentationInvalidated();
 
 protected:
     bool event(QEvent* event) override;
@@ -307,6 +313,8 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    void invalidatePresentation();
+    void requestRepaint();
     void invalidateCarrier(bool content);
     [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
     [[nodiscard]] QRect incomingRectAt(QPoint local) const;
@@ -447,6 +455,11 @@ private:
     std::array<std::shared_ptr<TabCarrierFrame>, 2> carrierBuffers_;
     std::array<std::shared_ptr<TabStripFrame>, 2> stripBuffers_;
     std::array<std::shared_ptr<TabForegroundFrame>, 2> foregroundBuffers_;
+    std::shared_ptr<const TabPresentationFrame> presentationFrame_;
+    std::array<std::shared_ptr<TabPresentationFrame>, 2> presentationBuffers_;
+    quint64 presentationGeneration_ = 0;
+    bool presentationPublishing_ = false;
+    bool presentationPending_ = false;
     bool carrierContentDirty_ = true;
     // Two bounded shape snapshots: attachment probing and displayed shape.
     // Full input keys cover resize, animation, scrolling, and theme metrics.

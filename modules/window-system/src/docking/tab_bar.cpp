@@ -253,7 +253,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         const bool finished = !actionMotion_.needsFrame();
         if (finished) { actionDriver_.stop(); actionMotion_.finish(); }
         if (changed || finished) invalidateCarrier(finished);
-        if (changed) update();
+        if (changed) requestRepaint();
     };
     presenceDriver_.advance = [this](qint64 timestampNs) {
         const bool changed = presence_.advance(timestampNs);
@@ -267,7 +267,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         const QPointer<TabBar> self(this);
         if (const auto callback = reservedSizeChanged) callback();
         if (!self) return;
-        relayoutTrailing(); refreshScrollInput(); update();
+        relayoutTrailing(); refreshScrollInput(); requestRepaint();
     };
     connect(&rowsDriver_, &QAbstractAnimation::finished, this, [this] {
         rowsState_.finish();
@@ -275,7 +275,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         const QPointer<TabBar> self(this);
         if (const auto callback = reservedSizeChanged) callback();
         if (!self) return;
-        invalidateCarrier(false); update();
+        invalidateCarrier(false); requestRepaint();
     });
     surfaceDriver_.advance = [this](qint64 timestampNs) {
         const bool changed = surfaceMotion_.advance(timestampNs);
@@ -299,7 +299,7 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     scrollbarDriver_.advance = [this](qint64 timestampNs) {
         const bool changed = scrollbars_.advance(timestampNs);
         if (!scrollbars_.needsFrame()) scrollbarDriver_.stop();
-        if (changed) { update(); refreshScrollInput(); }
+        if (changed) { requestRepaint(); refreshScrollInput(); }
     };
     connect(&scrollbarHideTimer_, &QTimer::timeout, this, [this] {
         if (!scrollbars_.dragging()) showScrollbar(false);
@@ -360,7 +360,7 @@ void TabBar::setTabToolTip(int index, const QString& tip) { tabs_.setToolTip(ind
 void TabBar::setTabMetadata(int index, const TabRecord& tab)
 {
     if (!tabs_.setColor(index, tab.colorId)) return;
-    invalidateCarrier(true); update();
+    invalidateCarrier(true); requestRepaint();
 }
 std::shared_ptr<const TabStripLabelStyle> TabBar::labelStyle() const
 {
@@ -508,7 +508,7 @@ void TabBar::syncAttachment()
 void TabBar::surfaceFrameChanged()
 {
     invalidateCarrier(false);
-    update(); updateLiftedLayer();
+    requestRepaint(); updateLiftedLayer();
     if (const auto callback = surfaceChanged) callback();
 }
 
@@ -687,7 +687,7 @@ int TabBar::folderHeaderExtent(const TabStripFolder& folder) const
 void TabBar::setGroupFocused(bool focused)
 {
     if (groupFocused_ == focused) return;
-    groupFocused_ = focused; invalidateCarrier(true); update();
+    groupFocused_ = focused; invalidateCarrier(true); requestRepaint();
 }
 
 void TabBar::setIconMode(bool iconMode)
@@ -706,7 +706,7 @@ void TabBar::setColumnReveal(qreal reveal, bool modeTransition)
     if (columnReveal_ == reveal && columnModeTransition_ == modeTransition) return;
     const bool iconOnlyChanged = (columnReveal_ > 0) != (reveal > 0);
     columnReveal_ = reveal; columnModeTransition_ = modeTransition;
-    invalidateCarrier(iconOnlyChanged); update();
+    invalidateCarrier(iconOnlyChanged); requestRepaint();
 }
 
 void TabBar::applyColumnPeekAction(const TabColumnPeekAction& action)
@@ -899,6 +899,7 @@ void TabBar::transitionFrom(TabVisualState previous, Motion motion)
     if (!positions_.isEmpty()) { positions_.start(rowWheelClock_.nsecsElapsed()); slideTimer_.start(); }
     if (planarReflow_ || !appeared.isEmpty() || !departing_.isEmpty()) animatePresence(appeared, true, motion);
     presence_.setPlanar(planarEntries);
+    invalidatePresentation();
 }
 
 LabelPositions TabBar::captureDropPositions(std::optional<LabelPositions> carrierPositions) const
@@ -946,6 +947,7 @@ void TabBar::settleFrom(const LabelPositions& globalPositions)
             }
         } else if (positions_.contains(id)) positions_.setFrom(id, animatedRect(index));
     }
+    invalidatePresentation();
     if (positions_.settling().isEmpty()) return;
     planarReflow_ = false;
     positions_.setMotion(Motion::SurfaceLower);
@@ -1225,7 +1227,7 @@ void TabBar::setCarriedDisplay(bool carried)
     invalidateCarrier(true);
     if (!carried) { setCarriedTileColumns(0); setCarriedPresentation({}); }
     if (!carried) { carrierContent_.reset(); carrierFrame_.reset(); carrierBuffers_ = {}; }
-    update();
+    requestRepaint();
 }
 
 void TabBar::setCarriedPresentation(std::optional<VerticalPresentation> presentation)
@@ -1437,7 +1439,7 @@ void TabBar::showScrollbar(bool shown)
     const auto timestamp = scrollbarDriver_.now(rowWheelClock_.nsecsElapsed());
     if (!scrollbars_.show(shown, animationsEnabled(), timestamp)) return;
     if (scrollbars_.needsFrame()) scrollbarDriver_.restart(timestamp, scrollbars_.durationMs());
-    else { scrollbarDriver_.stop(); update(); refreshScrollInput(); }
+    else { scrollbarDriver_.stop(); requestRepaint(); refreshScrollInput(); }
 }
 
 QRect TabBar::scrollbarHitRect() const
@@ -1545,7 +1547,12 @@ void TabBar::setExpanded(bool expanded, bool byWheel, bool animate)
     collapseTimer_.stop();
     if (rowsState_.expanded() == expanded) {
         rowsState_.setExpanded(expanded, byWheel);
-        if (!animate) { rowsDriver_.stop(); rowsState_.jumpToTarget(); }
+        if (!animate) {
+            rowsDriver_.stop();
+            const auto before = rowsState_.value();
+            rowsState_.jumpToTarget();
+            if (rowsState_.value() != before) invalidatePresentation();
+        }
         return;
     }
     const bool moving = animate && isVisible() && animationsEnabled();
@@ -1662,6 +1669,7 @@ void TabBar::updateLiftedLayer()
 
 void TabBar::refreshPresentationLayers()
 {
+    invalidatePresentation();
     updateLiftedLayer();
     refreshScrollInput();
 }
@@ -1681,6 +1689,7 @@ QRect TabBar::carrierBounds() const
 
 void TabBar::invalidateCarrier(bool content)
 {
+    invalidatePresentation();
     const bool observed = bool(carrierContent_) || bool(carrierFrame_);
     carrierContentDirty_ = carrierContentDirty_ || content;
     carrierFrame_.reset();
@@ -1978,7 +1987,7 @@ void TabBar::inheritHover(const TabBar& previous)
     if (!previous.hover_.hasSession() || !rect().contains(mapFromGlobal(QCursor::pos()))) return;
     hover_.beginSession();
     updateHover(mapFromGlobal(QCursor::pos()));
-    if (hover_.hit().tab >= 0) { applyActionFade(TabHoverTransition::Fade::Show, hover_.hit().tab); update(); }
+    if (hover_.hit().tab >= 0) { applyActionFade(TabHoverTransition::Fade::Show, hover_.hit().tab); requestRepaint(); }
 }
 
 void TabBar::applyActionFade(TabHoverTransition::Fade fade, int index)
@@ -2002,7 +2011,7 @@ void TabBar::updateHover(QPoint local)
     hit.folderAdd = hit.folder >= 0 && vertical() && painter_.folderAddRect(folderHeaderRect(hit.folder)).contains(local);
     const auto transition = hover_.move(hit);
     applyActionFade(transition.fade, hit.tab);
-    if (transition.changed) update();
+    if (transition.changed) requestRepaint();
 }
 
 TabPointerHit TabBar::pointerHit(QPoint local, bool releasing) const
@@ -2035,7 +2044,7 @@ void TabBar::applyPointerDecision(const TabPointerDecision& decision)
         return;
     }
     case Action::DragFolder: {
-        update();
+        requestRepaint();
         const auto callback = folderDrag;
         if (callback) callback(decision.index, decision.start);
         return;
@@ -2067,6 +2076,7 @@ void TabBar::mousePressEvent(QMouseEvent* event)
         if (!self || laneIndex >= layout_.laneList.size()) return;
         wheelController_.reset();
         scrollbars_.beginDrag(laneIndex, point, layout_.laneList.at(laneIndex).offset);
+        invalidatePresentation();
         revealScrollbar(laneIndex);
         event->accept(); return;
     }
@@ -2075,7 +2085,8 @@ void TabBar::mousePressEvent(QMouseEvent* event)
         : hit.tab >= 0 ? animatedRect(hit.tab) : QRect(point, QSize(1, 1));
     const auto start = DragStart::capture(event->globalPosition().toPoint(), point, label);
     const auto decision = pointer_.press(event->button(), hit, start);
-    if (hit.folder >= 0 || hit.action >= 0) update();
+    invalidatePresentation();
+    if (hit.folder >= 0 || hit.action >= 0) requestRepaint();
     event->accept();
     applyPointerDecision(decision);
 }
@@ -2089,7 +2100,9 @@ void TabBar::mouseMoveEvent(QMouseEvent* event)
         return;
     }
     updateHover(point);
-    applyPointerDecision(pointer_.move(event->buttons(), event->globalPosition().toPoint(), QApplication::startDragDistance()));
+    const auto decision = pointer_.move(event->buttons(), event->globalPosition().toPoint(), QApplication::startDragDistance());
+    if (decision.action != TabPointerDecision::Action::None) invalidatePresentation();
+    applyPointerDecision(decision);
 }
 
 void TabBar::mouseReleaseEvent(QMouseEvent* event)
@@ -2100,11 +2113,13 @@ void TabBar::mouseReleaseEvent(QMouseEvent* event)
         applyPointerDecision(pointer_.release(event->button(), {tabAt(point)}, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose)));
         return;
     }
-    if (scrollbars_.endDrag()) { wheelController_.reset(); scrollbarHideTimer_.start(); reconcileColumnHover(); update(); return; }
+    if (scrollbars_.endDrag()) { wheelController_.reset(); scrollbarHideTimer_.start(); reconcileColumnHover(); requestRepaint(); return; }
     const auto hit = pointerHit(point, true);
     const bool repaint = pointer_.pressedFolder() >= 0 || pointer_.pressedAction() >= 0;
+    const bool changed = repaint || pointer_.pressedTab() >= 0;
     const auto decision = pointer_.release(event->button(), hit, stickyCount_, guardsMiddleClick(appearance_.preventStickyClose));
-    if (repaint) update();
+    if (changed) invalidatePresentation();
+    if (repaint) requestRepaint();
     applyPointerDecision(decision);
 }
 
@@ -2135,7 +2150,7 @@ void TabBar::leaveEvent(QEvent* event)
     hover_.leave();
     if (!columnManaged_) setColumnHovered(false);
     if (rowsState_.collapseOnLeave()) collapseTimer_.start();
-    update();
+    requestRepaint();
     QWidget::leaveEvent(event);
 }
 
@@ -2169,7 +2184,7 @@ void TabBar::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
     if (!vertical() && rowTransitionRunning() && event->oldSize().width() == event->size().width()) {
-        relayoutTrailing(); updateLiftedLayer(); refreshScrollInput(); update(); return;
+        relayoutTrailing(); updateLiftedLayer(); refreshScrollInput(); requestRepaint(); return;
     }
     relayout(vertical() && columnModeTransition_ && stickyCount_ > 1
         && appearance_.stickySizing == StickyTabSizing::Compact);
@@ -2179,7 +2194,7 @@ void TabBar::changeEvent(QEvent* event)
 {
     if (event->type() == QEvent::ActivationChange) {
         invalidateCarrier(true);
-        update();
+        requestRepaint();
         if (liftedLayer_) liftedLayer_->update();
     }
     if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange || event->type() == QEvent::LayoutDirectionChange) {
@@ -2249,6 +2264,9 @@ bool TabBar::eventFilter(QObject* watched, QEvent* event)
 
 bool TabBar::event(QEvent* event)
 {
+    if (event->type() == QEvent::Show || event->type() == QEvent::Move
+        || event->type() == QEvent::ParentChange || event->type() == QEvent::ScreenChangeInternal
+        || event->type() == QEvent::DevicePixelRatioChange) invalidatePresentation();
     if (event->type() == QEvent::Hide) { scrollMotion_.stop(); smoothLane_ = -1; }
     if (event->type() == QEvent::Hide && scrollInput_) scrollInput_->hide();
     if (event->type() == QEvent::Show || event->type() == QEvent::Move)
