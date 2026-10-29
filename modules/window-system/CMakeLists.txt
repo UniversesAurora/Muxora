@@ -119,7 +119,8 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp
         src/quick/body_shadow_item.cpp src/quick/anchor_shadow_item.cpp
         src/quick/group_surface_item.cpp src/quick/tab_label_text_item.cpp
-        src/quick/tab_icon_item.cpp src/quick/tab_label_item.cpp)
+        src/quick/tab_icon_item.cpp src/quick/tab_label_item.cpp
+        src/quick/tab_strip_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)

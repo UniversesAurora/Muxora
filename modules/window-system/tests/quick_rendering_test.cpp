@@ -8,6 +8,7 @@
 #include "quick/group_surface_item.hpp"
 #include "quick/tab_label_item.hpp"
 #include "quick/tab_label_text_item.hpp"
+#include "quick/tab_strip_item.hpp"
 #include "quick/window_motion.hpp"
 #include "docking/surface_geometry.hpp"
 
@@ -47,6 +48,53 @@ void prepareWindow(QQuickWindow& window)
 class QuickRenderingTest final : public QObject {
     Q_OBJECT
 private slots:
+    void tabStripItemKeepsLabelsInIndependentlyClippedLanes()
+    {
+        QQuickWindow window;
+        prepareWindow(window);
+        auto* item = new TabStripItem(window.contentItem());
+        item->setSize(window.size());
+        auto frame = std::make_shared<TabStripFrame>();
+        auto style = std::make_shared<TabStripLabelStyle>();
+        style->metrics.rowHeight = 28;
+        style->palette.active = Qt::white;
+        style->palette.text = Qt::black;
+        style->palette.mutedText = Qt::darkGray;
+        frame->style = style;
+
+        const auto makeLabel = [](int x, const QString& title) {
+            TabLabelPresentation label;
+            label.parts.tab = QRect(x, 20, 110, 28);
+            label.parts.title = QRect(x + 30, 20, 72, 28);
+            label.state.shape = TabShape::Row;
+            label.state.selected = true;
+            label.state.title = title;
+            label.naturalWidth = 120;
+            return label;
+        };
+        TabStripLaneFrame lane;
+        lane.viewport = QRect(0, 10, 300, 70);
+        lane.regularClip = QRect(100, 10, 240, 70);
+        lane.frozen.append({QUuid::createUuid(), 0, {}, makeLabel(120, QStringLiteral("Regular"))});
+        lane.frozen.append({QUuid::createUuid(), 1, {}, makeLabel(0, QStringLiteral("Frozen"))});
+        frame->lanes.append(lane);
+        frame->departures.append({QUuid::createUuid(), makeLabel(240, QStringLiteral("Leaving"))});
+
+        QVERIFY(item->setFrame(frame));
+        QCOMPARE(item->laneCount(), qsizetype(1));
+        QCOMPARE(item->labelCount(), qsizetype(3));
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QVERIFY(!window.grabWindow().isNull());
+
+        frame->departures.clear();
+        QVERIFY(item->setFrame(frame));
+        QCOMPARE(item->labelCount(), qsizetype(2));
+        item->clearFrame();
+        QCOMPARE(item->labelCount(), qsizetype(0));
+        QCOMPARE(item->laneCount(), qsizetype(0));
+    }
+
     void tabLabelItemCombinesSurfaceAndTextOwnership()
     {
         QQuickWindow window;
