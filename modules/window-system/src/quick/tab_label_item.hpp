@@ -10,6 +10,7 @@
 namespace window_system::quick {
 
 class PathItem;
+class TabIconItem;
 class TabLabelTextItem;
 
 // One retained Quick label: its filled surface and native title share the
@@ -24,10 +25,16 @@ public:
     [[nodiscard]] PathGeometryError surfaceError() const;
     [[nodiscard]] const TabLabelTextItem* textItem() const;
     [[nodiscard]] bool surfaceVisible() const;
+    [[nodiscard]] bool mainIconVisible() const;
+    [[nodiscard]] bool actionVisible() const;
+    [[nodiscard]] quint64 iconTextureUploads() const;
 
 private:
     PathItem* surface_ = nullptr;
+    PathItem* actionBackground_ = nullptr;
     TabLabelTextItem* text_ = nullptr;
+    TabIconItem* mainIcon_ = nullptr;
+    TabIconItem* actionIcon_ = nullptr;
 };
 
 } // namespace window_system::quick

@@ -56,9 +56,21 @@ private slots:
         label.parts.tab = QRect(24, 30, 180, 28);
         label.parts.icon = QRect(34, 36, 16, 16);
         label.parts.title = QRect(60, 30, 110, 28);
+        label.parts.action = QRect(174, 34, 20, 20);
         label.state.shape = TabShape::Row;
         label.state.selected = true;
         label.state.title = QStringLiteral("Retained label title");
+        QPixmap iconPixmap(16, 16);
+        iconPixmap.fill(Qt::transparent);
+        {
+            QPainter painter(&iconPixmap);
+            painter.fillRect(QRect(2, 3, 12, 10), Qt::darkGray);
+        }
+        label.state.icon = QIcon(iconPixmap);
+        label.state.actionIcon = QIcon(iconPixmap);
+        label.state.actionShown = true;
+        label.state.actionOpacity = 1;
+        label.state.actionHovered = true;
         label.naturalWidth = 150;
         TabStripLabelStyle style;
         style.metrics.rowHeight = 28;
@@ -69,14 +81,21 @@ private slots:
         QVERIFY(item->setLabel(label, style));
         QCOMPARE(item->surfaceError(), PathGeometryError::None);
         QVERIFY(item->surfaceVisible());
+        QVERIFY(item->mainIconVisible());
+        QVERIFY(item->actionVisible());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());
         QTRY_VERIFY(item->textItem()->renderStats().textLayoutBuilds > 0);
+        QTRY_VERIFY(item->iconTextureUploads() >= 2);
 
         label.state.selected = false;
+        label.state.actionShown = false;
+        label.state.actionOpacity = 0;
         QVERIFY(item->setLabel(label, style));
         QVERIFY(!item->surfaceVisible());
+        QVERIFY(item->mainIconVisible());
+        QVERIFY(!item->actionVisible());
         QVERIFY(!window.grabWindow().isNull());
         QVERIFY(item->textItem()->segmentCount() > 0);
 

@@ -39,6 +39,12 @@ namespace window_system {
     return state.selected || state.hovered || state.lifted ? palette.text : palette.mutedText;
 }
 
+[[nodiscard]] inline QColor tabLabelIconTint(const TabLabelPresentation& label)
+{
+    if (!label.preset) return {};
+    return (label.state.selected ? label.preset->groupActive : label.preset->groupInactive).icon;
+}
+
 // The title keeps its complete shaped source and is clipped horizontally.
 // Opacity is split into the static cut fade and the action-cover fade so a
 // retained renderer can animate the latter without reshaping the text.
