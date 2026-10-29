@@ -2,6 +2,7 @@
 #pragma once
 #include "tab_pointer_controller.hpp"
 #include "tab_hover_controller.hpp"
+#include "tab_action_motion.hpp"
 #include "tab_column_peek.hpp"
 #include "tab_presence_state.hpp"
 #include "tab_rows_state.hpp"
@@ -374,6 +375,7 @@ private:
     [[nodiscard]] std::pair<qreal, qreal> attachmentValues() const;
     void syncAttachment();
     void driveSurfaceMotion(bool restarted, qint64 timestampNs);
+    void applyActionFade(TabHoverTransition::Fade fade, int index = -1);
     [[nodiscard]] std::optional<QUuid> currentLabelId() const;
     void surfaceFrameChanged();
     [[nodiscard]] qreal selectionWeight(int index) const;
@@ -408,8 +410,8 @@ private:
     QPointer<QMenu> columnPopup_;
     QMetaObject::Connection popupHidden_;
     QMetaObject::Connection popupDestroyed_;
-    ProgressAnimation presenceProgress_{1};
     TabPresenceState presence_;
+    FrameClock presenceDriver_;
     TabVisualState departing_;
     TabDeparturePainter departurePainter_;
     QSize available_;
@@ -468,9 +470,9 @@ private:
     QPointer<QWidget> end_;
     QToolButton* countButton_ = nullptr;
     TabPositionMotion positions_;
-    ProgressAnimation actionOpacity_{0};
-    int fadingAction_ = -1;
-    // Since the dragged tab was lifted: its shadow fades in (tab strip design 7).
+    TabActionMotion actionMotion_;
+    FrameClock actionDriver_;
+    // Widgets cadence adapter for the shared reorder and settling state.
     QTimer slideTimer_;
     bool planarReflow_ = false;
     [[nodiscard]] bool hasSingleTileRow() const;

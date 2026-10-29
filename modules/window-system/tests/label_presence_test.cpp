@@ -13,21 +13,27 @@ private slots:
         TabPresenceState state;
         const auto first = QUuid::createUuid(), second = QUuid::createUuid();
         const QRect area(0, 0, 200, 32);
-        state.retarget({first}, true, 1);
-        QCOMPARE(state.pose(first, area, 0.4).opacity, 0.4);
-        state.retarget({second}, true, 0.4);
-        QCOMPARE(state.pose(first, area, 0).opacity, 0.4);
-        QCOMPARE(state.pose(second, area, 0).opacity, 0.0);
-        QCOMPARE(state.pose(first, area, 0.5).opacity, 0.7);
-        state.retarget({first}, false, 0.5);
-        QCOMPARE(state.pose(first, area, 0).opacity, 0.7);
-        QCOMPARE(state.pose(second, area, 0).opacity, 0.5);
-        QCOMPARE(state.capturedVisibility(first, 0), 0.7);
-        QCOMPARE(state.pose(first, area, 1).opacity, 0.0);
+        state.begin({first}, true, Motion::Presence, true, 0);
+        state.advance(50'000'000);
+        const auto firstDisplayed = state.pose(first, area).opacity;
+        QVERIFY(firstDisplayed > 0 && firstDisplayed < 1);
+        state.begin({second}, true, Motion::Presence, true, 50'000'000);
+        QCOMPARE(state.pose(first, area).opacity, firstDisplayed);
+        QCOMPARE(state.pose(second, area).opacity, 0.0);
+        state.advance(110'000'000);
+        const auto firstBeforeClosing = state.pose(first, area).opacity;
+        const auto secondBeforeClosing = state.pose(second, area).opacity;
+        state.begin({first}, false, Motion::Presence, true, 110'000'000);
+        QCOMPARE(state.pose(first, area).opacity, firstBeforeClosing);
+        QCOMPARE(state.pose(second, area).opacity, secondBeforeClosing);
+        QCOMPARE(state.capturedVisibility(first), firstBeforeClosing);
+        state.advance(1'000'000'000);
+        QCOMPARE(state.pose(first, area).opacity, 0.0);
         state.finish();
-        QVERIFY(state.pose(second, area, 0).complete());
-        QCOMPARE(state.pose(first, area, 1).opacity, 0.0);
-        state.remove(first); QVERIFY(state.pose(first, area, 0).complete());
+        QVERIFY(!state.needsFrame());
+        QVERIFY(state.pose(second, area).complete());
+        QCOMPARE(state.pose(first, area).opacity, 0.0);
+        state.remove(first); QVERIFY(state.pose(first, area).complete());
     }
 
     void planarEntriesCaptureWidthWithoutApplyingAnotherFade()
@@ -35,13 +41,14 @@ private slots:
         TabPresenceState state;
         const auto id = QUuid::createUuid(), absent = QUuid::createUuid();
         const QRect area(100, 200, 40, 32);
-        state.retarget({id}, true, 1); state.setPlanar({id, absent});
-        QCOMPARE(state.pose(id, area, 0).opacity, 0.0);
-        const auto shown = state.pose(id, area, 0.25);
-        QVERIFY(shown.complete()); QCOMPARE(shown.mapRect(area), QRectF(area));
-        QCOMPARE(state.capturedVisibility(id, 0.25), 1.0);
-        QVERIFY(state.pose(absent, area, 0).complete());
-        state.finish(); QVERIFY(state.pose(id, area, 0).complete());
+        state.begin({id}, true, Motion::Presence, true, 0); state.setPlanar({id, absent});
+        QCOMPARE(state.pose(id, area).opacity, 0.0);
+        state.advance(45'000'000);
+        QVERIFY(state.pose(id, area).complete());
+        QCOMPARE(state.capturedVisibility(id), 1.0);
+        QVERIFY(state.pose(absent, area).complete());
+        state.advance(1'000'000'000);
+        state.finish(); QVERIFY(state.pose(id, area).complete());
     }
 
 };

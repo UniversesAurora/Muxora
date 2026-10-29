@@ -243,22 +243,24 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
     slideTimer_.setInterval(15);
     connect(&slideTimer_, &QTimer::timeout, this, [this] {
         positions_.advance(rowWheelClock_.nsecsElapsed());
-        if (!positions_.needsFrame() && (!planarReflow_ || presenceProgress_.state() != QAbstractAnimation::Running)) {
+        if (!positions_.needsFrame() && (!planarReflow_ || !presence_.needsFrame())) {
             positions_.clear(); planarReflow_ = false; slideTimer_.stop();
         }
         syncAttachment(); surfaceFrameChanged();
     });
-    connect(&actionOpacity_, &QVariantAnimation::valueChanged, this, [this] { invalidateCarrier(false); update(); });
-    connect(&actionOpacity_, &QVariantAnimation::finished, this, [this] {
-        if (actionOpacity_.value() == 0) fadingAction_ = -1;
-        invalidateCarrier(true);
-    });
-    connect(&presenceProgress_, &QVariantAnimation::valueChanged, this, [this] { surfaceFrameChanged(); });
-    connect(&presenceProgress_, &QVariantAnimation::finished, this, [this] {
-        departing_.clear();
-        presence_.finish();
-        surfaceFrameChanged();
-    });
+    actionDriver_.advance = [this](qint64 timestampNs) {
+        const bool changed = actionMotion_.advance(timestampNs);
+        const bool finished = !actionMotion_.needsFrame();
+        if (finished) { actionDriver_.stop(); actionMotion_.finish(); }
+        if (changed || finished) invalidateCarrier(finished);
+        if (changed) update();
+    };
+    presenceDriver_.advance = [this](qint64 timestampNs) {
+        const bool changed = presence_.advance(timestampNs);
+        const bool finished = !presence_.needsFrame();
+        if (finished) { presenceDriver_.stop(); departing_.clear(); presence_.finish(); }
+        if (changed || finished) surfaceFrameChanged();
+    };
     rowsDriver_.advance = [this](qint64 timestampNs) {
         if (!rowsState_.advance(timestampNs)) return;
         invalidateCarrier(false);
@@ -325,7 +327,7 @@ void TabBar::removeTab(int index)
     if (index < stickyCount_) --stickyCount_;
     if (dragged_ == index) dragged_ = -1; else if (dragged_ > index) --dragged_;
     hover_.removedTab(index);
-    if (fadingAction_ == index) fadingAction_ = -1; else if (fadingAction_ > index) --fadingAction_;
+    actionMotion_.removedTab(index);
     pointer_.cancelTabs();
     const int previous = current_;
     if (tabs_.isEmpty()) current_ = -1;
@@ -535,7 +537,7 @@ LabelPresencePose TabBar::labelPresence(int index) const
 LabelPresencePose TabBar::presenceFor(int index, QRect area) const
 {
     if (index < 0 || index >= count()) return {};
-    return presence_.pose(tabs_.at(index).data.toUuid(), area, presenceProgress_.value());
+    return presence_.pose(tabs_.at(index).data.toUuid(), area);
 }
 
 QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
@@ -782,7 +784,7 @@ TabVisualState TabBar::captureVisualState()
                 geometry.joined = false;
                 retired->label.surface = translatedSurfaceGeometry(geometry, globalOrigin);
             }
-            retired->visibility = presence_.capturedVisibility(tabData(index).toUuid(), presenceProgress_.value());
+            retired->visibility = presence_.capturedVisibility(tabData(index).toUuid());
         }
         result.insert(tabData(index).toUuid(), {rect.translated(globalOrigin), shapeOf(index),
             index < stickyCount_, index == current_, iconsOnly() || shapeOf(index) == TabShape::Tile, parts, std::move(retired), hasSingleTileRow()});
@@ -791,7 +793,7 @@ TabVisualState TabBar::captureVisualState()
     // width too, so reversing a pin operation does not restart from full size.
     for (auto it = departing_.cbegin(); it != departing_.cend(); ++it) if (it->collapse && it->retired) {
         auto visible = *it;
-        visible.global = planarLabelRect(it->global, *it->collapse, 1 - presenceProgress_.value());
+        visible.global = planarLabelRect(it->global, *it->collapse, 1 - presence_.progress());
         if (!visible.global.isEmpty()) result.insert(it.key(), std::move(visible));
     }
     return result;
@@ -799,9 +801,10 @@ TabVisualState TabBar::captureVisualState()
 
 void TabBar::animatePresence(const QSet<QUuid>& ids, bool visible, Motion motion)
 {
-    presence_.retarget(ids, visible, presenceProgress_.value());
-    presenceProgress_.jump(0);
-    presenceProgress_.animateTo(1, motion, animationsEnabled());
+    const auto timestamp = presenceDriver_.now(rowWheelClock_.nsecsElapsed());
+    if (presence_.begin(ids, visible, motion, animationsEnabled(), timestamp))
+        presenceDriver_.restart(timestamp, presence_.durationMs());
+    else presenceDriver_.stop();
     if (!animationsEnabled()) { departing_.clear(); if (visible) for (const auto& id : ids) presence_.remove(id); }
     surfaceFrameChanged();
 }
@@ -1304,7 +1307,7 @@ QRect TabBar::animatedRect(int index) const
         && appearance_.stickySizing == StickyTabSizing::Compact;
     return positions_.rect(tabs_.at(index).data.toUuid(), target,
         {vertical() && columnManaged_, columnModeTransition_, rearrangingTiles},
-        planarReflow_ ? std::optional(presenceProgress_.value()) : std::nullopt);
+        planarReflow_ ? std::optional(presence_.progress()) : std::nullopt);
 }
 
 int TabBar::scrollOffset() const
@@ -1717,7 +1720,7 @@ std::shared_ptr<const TabCarrierFrame> TabBar::carrierFrame()
         sample.parts = partsOf(index, animatedRect(index));
         const auto& state = carrierContent_->labels.at(at).label.state;
         sample.titleOpacity = vertical() && state.shape == TabShape::Row && !state.iconOnly ? columnReveal_ : 1;
-        sample.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1 : actionOpacity_.value();
+        sample.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1 : actionMotion_.opacity();
     }
     carrierFrame_ = *available;
     return carrierFrame_;
@@ -1885,11 +1888,11 @@ TabPaintState TabBar::paintState(int index)
     state.titleLayout = &tabs_.textLayout(index);
     // A sticky tab always shows its action; the others on hover.
     state.actionShown = hasLabelAction(index) && (state.sticky || (!carriedDisplay_ && (index == pointer_.pressedAction()
-        || (index == fadingAction_ && actionOpacity_.value() > 0))));
+        || (index == actionMotion_.index() && actionMotion_.opacity() > 0))));
     state.actionHovered = !carriedDisplay_ && index == hover_.hit().tab && hover_.hit().action;
     state.actionPressed = !carriedDisplay_ && index == pointer_.pressedAction();
     state.actionReserved = state.sticky;
-    state.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1.0 : actionOpacity_.value();
+    state.actionOpacity = state.sticky || index == pointer_.pressedAction() ? 1.0 : actionMotion_.opacity();
     state.actionIcon = state.sticky ? content->style->stickyIcon : content->style->closeIcon;
     return state;
 }
@@ -1978,7 +1981,17 @@ void TabBar::inheritHover(const TabBar& previous)
     if (!previous.hover_.hasSession() || !rect().contains(mapFromGlobal(QCursor::pos()))) return;
     hover_.beginSession();
     updateHover(mapFromGlobal(QCursor::pos()));
-    if (hover_.hit().tab >= 0) { fadingAction_ = hover_.hit().tab; actionOpacity_.jump(1); update(); }
+    if (hover_.hit().tab >= 0) { applyActionFade(TabHoverTransition::Fade::Show, hover_.hit().tab); update(); }
+}
+
+void TabBar::applyActionFade(TabHoverTransition::Fade fade, int index)
+{
+    if (fade == TabHoverTransition::Fade::None) return;
+    const auto timestamp = actionDriver_.now(rowWheelClock_.nsecsElapsed());
+    const bool restarted = actionMotion_.apply(fade, index, animationsEnabled(), timestamp);
+    if (!actionMotion_.needsFrame()) { actionDriver_.stop(); actionMotion_.finish(); }
+    else if (restarted) actionDriver_.restart(timestamp, actionMotion_.durationMs());
+    invalidateCarrier(false);
 }
 
 void TabBar::updateHover(QPoint local)
@@ -1991,12 +2004,7 @@ void TabBar::updateHover(QPoint local)
     hit.folder = rect().contains(local) ? folderAt(local) : -1;
     hit.folderAdd = hit.folder >= 0 && vertical() && painter_.folderAddRect(folderHeaderRect(hit.folder)).contains(local);
     const auto transition = hover_.move(hit);
-    using Fade = TabHoverTransition::Fade;
-    if (transition.fade == Fade::In || transition.fade == Fade::Show) {
-        fadingAction_ = hit.tab;
-        if (transition.fade == Fade::Show) actionOpacity_.jump(1);
-        else actionOpacity_.animateTo(1, Motion::Hover, animationsEnabled());
-    } else if (transition.fade == Fade::Out) actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
+    applyActionFade(transition.fade, hit.tab);
     if (transition.changed) update();
 }
 
@@ -2126,7 +2134,7 @@ void TabBar::enterEvent(QEnterEvent* event)
 
 void TabBar::leaveEvent(QEvent* event)
 {
-    actionOpacity_.animateTo(0, Motion::Hover, animationsEnabled());
+    applyActionFade(TabHoverTransition::Fade::Out);
     hover_.leave();
     if (!columnManaged_) setColumnHovered(false);
     if (rowsState_.collapseOnLeave()) collapseTimer_.start();
