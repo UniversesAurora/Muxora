@@ -275,10 +275,11 @@ TabBar::TabBar(const Theme& theme, QWidget* parent)
         if (!self) return;
         invalidateCarrier(false); update();
     });
-    const auto surfaceFrame = [this] { surfaceFrameChanged(); };
-    connect(&attachment_, &QVariantAnimation::valueChanged, this, surfaceFrame);
-    connect(&selection_, &QVariantAnimation::valueChanged, this, surfaceFrame);
-    connect(&liftElevation_, &QVariantAnimation::valueChanged, this, surfaceFrame);
+    surfaceDriver_.advance = [this](qint64 timestampNs) {
+        const bool changed = surfaceMotion_.advance(timestampNs);
+        if (!surfaceMotion_.needsFrame()) surfaceDriver_.stop();
+        if (changed) surfaceFrameChanged();
+    };
     scrollbarHideTimer_.setSingleShot(true); scrollbarHideTimer_.setInterval(TabScrollbarState::hideDelayMs);
     scrollMotion_.applyValue = [this](qreal value) {
         if (smoothLane_ < 0 || smoothLane_ >= layout_.laneList.size()) return;
@@ -309,6 +310,7 @@ int TabBar::addTab(const QIcon& icon, const QString& title)
 {
     tabs_.append(icon, title);
     if (current_ < 0) current_ = 0;
+    surfaceMotion_.bindCurrent(currentLabelId());
     relayout(true);
     return int(tabs_.size()) - 1;
 }
@@ -329,6 +331,7 @@ void TabBar::removeTab(int index)
     if (tabs_.isEmpty()) current_ = -1;
     else if (index < current_) --current_;
     else if (wasCurrent) current_ = std::min(index, int(tabs_.size()) - 1);
+    surfaceMotion_.bindCurrent(currentLabelId());
     relayout(true);
     if (wasCurrent || previous != current_) emit currentChanged(current_);
 }
@@ -336,7 +339,9 @@ void TabBar::removeTab(int index)
 QVariant TabBar::tabData(int index) const { return tabs_.data(index); }
 void TabBar::setTabData(int index, const QVariant& value)
 {
-    if (tabs_.setData(index, value)) invalidateCarrier(true);
+    if (!tabs_.setData(index, value)) return;
+    if (index == current_) surfaceMotion_.bindCurrent(currentLabelId());
+    invalidateCarrier(true);
 }
 QString TabBar::tabText(int index) const { return tabs_.title(index); }
 void TabBar::setTabText(int index, const QString& text)
@@ -392,9 +397,8 @@ void TabBar::setCurrentIndex(int index)
 {
     if (index < -1 || index >= tabs_.size() || index == current_) return;
     current_ = index;
-    selectionStart_ = 0;
-    selection_.jump(0);
-    selection_.animateTo(1, Motion::SurfaceChangeLift, isVisible() && animationsEnabled());
+    const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+    driveSurfaceMotion(surfaceMotion_.select(currentLabelId(), isVisible() && animationsEnabled(), timestamp), timestamp);
     // The current row may change while collapsed.
     relayout(false);
     emit currentChanged(index);
@@ -403,14 +407,20 @@ void TabBar::setCurrentIndex(int index)
 qreal TabBar::selectionWeight(int index) const
 {
     if (index < 0 || index != current_ || index >= count() || !incoming_.visual().empty()) return 0;
-    return selectionStart_ + (1 - selectionStart_) * selection_.value();
+    return surfaceMotion_.selectionWeight();
 }
 
-std::pair<qreal, qreal> TabBar::attachmentValues() const
+std::optional<QUuid> TabBar::currentLabelId() const
 {
-    const auto progress = attachment_.value();
-    return {attachmentFrom_.first + (attachmentTo_.first - attachmentFrom_.first) * progress,
-            attachmentFrom_.second + (attachmentTo_.second - attachmentFrom_.second) * progress};
+    return current_ < 0 ? std::nullopt : std::optional(tabData(current_).toUuid());
+}
+
+std::pair<qreal, qreal> TabBar::attachmentValues() const { return surfaceMotion_.attachmentValues(); }
+
+void TabBar::driveSurfaceMotion(bool restarted, qint64 timestampNs)
+{
+    if (!surfaceMotion_.needsFrame()) surfaceDriver_.stop();
+    else if (restarted) surfaceDriver_.restart(timestampNs, surfaceMotion_.durationMs());
 }
 
 SurfaceGeometry TabBar::anchorGeometry(QRectF anchor, QRectF visible, bool compact, bool lifted, bool transitioning) const
@@ -489,18 +499,8 @@ void TabBar::syncAttachment()
         !incoming_.visual().empty() || lifted_.active(), false);
     const std::pair<qreal, qreal> target{geometry.joinProgress, geometry.coveredProgress};
     const auto owner = !incoming_.visual().empty() ? incoming_.visual().identity : tabData(current_).toUuid();
-    if (!attachmentInitialized_ || attachmentOwner_ != owner) {
-        attachmentInitialized_ = true; attachmentOwner_ = owner;
-        attachmentFrom_ = attachmentTo_ = target; attachment_.jump(1);
-        return;
-    }
-    if (attachmentTo_ == target) return;
-    attachmentFrom_ = attachmentValues(); attachmentTo_ = target;
-    const auto distance = std::max(std::abs(attachmentTo_.first - attachmentFrom_.first),
-                                   std::abs(attachmentTo_.second - attachmentFrom_.second));
-    attachment_.jump(0);
-    attachment_.animateTo(1, target.first > attachmentFrom_.first ? Motion::SurfaceChangeLift : Motion::SurfaceChangeLower,
-                          isVisible() && animationsEnabled(), distance);
+    const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+    driveSurfaceMotion(surfaceMotion_.syncAttachment(owner, target, isVisible() && animationsEnabled(), timestamp), timestamp);
 }
 
 void TabBar::surfaceFrameChanged()
@@ -510,24 +510,12 @@ void TabBar::surfaceFrameChanged()
     if (const auto callback = surfaceChanged) callback();
 }
 
-TabBar::SurfaceState TabBar::captureSurfaceState() const
-{
-    SurfaceState state{{}, tabData(current_).toUuid(), liftElevation_.value(), !incoming_.visual().empty()};
-    for (int index = 0; index < count(); ++index) {
-        const auto weight = selectionWeight(index);
-        if (weight > 0) state.selection.insert(tabData(index).toUuid(), weight);
-    }
-    return state;
-}
+TabBar::SurfaceState TabBar::captureSurfaceState() const { return surfaceMotion_.capture(); }
 
 void TabBar::inheritSurface(const SurfaceState& previous, bool animate)
 {
-    selectionStart_ = previous.incoming ? 1 : previous.selection.value(tabData(current_).toUuid());
-    selection_.jump(0);
-    selection_.animateTo(1, Motion::SurfaceChangeLift, animate, 1 - selectionStart_);
-    const bool sameTab = previous.current == tabData(current_).toUuid();
-    liftElevation_.jump(sameTab || previous.incoming ? previous.lift : 0);
-    liftElevation_.animateTo(0, Motion::SurfaceLower, animate);
+    const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+    driveSurfaceMotion(surfaceMotion_.inherit(previous, currentLabelId(), animate, timestamp), timestamp);
     surfaceFrameChanged();
 }
 
@@ -562,7 +550,7 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
         const auto geometry = anchorGeometry(anchor, anchor.intersected(rect()), compact, true);
         if (!geometry.anchorPath.isEmpty()) anchors.append({translatedSurfaceGeometry(geometry, offset),
             interpolateElevation(!incoming_.visual().empty() ? rest : interpolateElevation(elevationProfile(ElevationLevel::Flat), rest, selectionWeight(current_)),
-                elevationProfile(ElevationLevel::Lifted), liftElevation_.value()), true,
+                elevationProfile(ElevationLevel::Lifted), surfaceMotion_.liftProgress()), true,
                 overlayActive() || vertical() && surfaceJoin_ < 1});
         return anchors;
     }
@@ -580,9 +568,9 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
         const auto geometry = anchorGeometry(area, visible, compact, false, index == current_);
         if (geometry.anchorPath.isEmpty() || compact) return anchors;
         auto profile = interpolateElevation(elevationProfile(ElevationLevel::Flat), rest, weight);
-        if (index == current_ && liftElevation_.value() > 0)
-            profile = interpolateElevation(profile, elevationProfile(ElevationLevel::Lifted), liftElevation_.value());
-        anchors.append({translatedSurfaceGeometry(geometry, offset), profile, liftElevation_.value() > 0 || settling,
+        if (index == current_ && surfaceMotion_.liftProgress() > 0)
+            profile = interpolateElevation(profile, elevationProfile(ElevationLevel::Lifted), surfaceMotion_.liftProgress());
+        anchors.append({translatedSurfaceGeometry(geometry, offset), profile, surfaceMotion_.liftProgress() > 0 || settling,
             overlayActive() || vertical() && surfaceJoin_ < 1, presence.translated(offset)});
     }
     return anchors;
@@ -1585,7 +1573,11 @@ void TabBar::setDraggedTab(TabId tab)
     if (index == dragged_) return;
     initialStickyBoundary_ = index >= 0 ? stickyBoundary() : std::nullopt;
     dragged_ = index;
-    if (index < 0) { lifted_.clear(); liftElevation_.animateTo(0, Motion::SurfaceLower, animationsEnabled()); }
+    if (index < 0) {
+        lifted_.clear();
+        const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+        driveSurfaceMotion(surfaceMotion_.setLifted(false, animationsEnabled(), timestamp), timestamp);
+    }
     relayout(true);
 }
 
@@ -1609,7 +1601,8 @@ void TabBar::setLiftedWithAnchor(QPoint local, const DragAnchor& grab)
     if (change == TabLiftState::Change::None) return;
     if (change == TabLiftState::Change::Lift || change == TabLiftState::Change::Lower) {
         const bool lifting = change == TabLiftState::Change::Lift;
-        liftElevation_.animateTo(lifting ? 1 : 0, lifting ? Motion::SurfaceLift : Motion::SurfaceLower, animationsEnabled());
+        const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+        driveSurfaceMotion(surfaceMotion_.setLifted(lifting, animationsEnabled(), timestamp), timestamp);
     }
     syncAttachment(); surfaceFrameChanged();
 }
@@ -1620,7 +1613,7 @@ void TabBar::updateLiftedLayer()
     // inherit a narrow column's resting mask or stop at the strip's edge.
     auto* owner = window();
     const bool shown = !positions_.settling().isEmpty() || (lifted_.active() && (dragged_ >= 0 || draggedFolder_ >= 0)) || !incoming_.visual().empty()
-        || (current_ >= 0 && (liftElevation_.value() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
+        || (current_ >= 0 && (surfaceMotion_.liftProgress() > 0 || overlayActive() || vertical() && surfaceJoin_ < 1));
     QRegion current;
     if (shown) {
         const auto origin = mapTo(owner, QPoint());
@@ -1743,8 +1736,8 @@ void TabBar::setIncomingVisual(TabDragVisual visual, QPoint local)
     if (change == TabIncomingState::Change::Leave) incomingPainter_.clear();
     if (change == TabIncomingState::Change::Enter || change == TabIncomingState::Change::Leave) {
         const bool entering = change == TabIncomingState::Change::Enter;
-        liftElevation_.animateTo(entering ? 1 : 0,
-            entering ? Motion::SurfaceLift : Motion::SurfaceLower, animationsEnabled());
+        const auto timestamp = surfaceDriver_.now(rowWheelClock_.nsecsElapsed());
+        driveSurfaceMotion(surfaceMotion_.setIncoming(entering, animationsEnabled(), timestamp), timestamp);
     }
     syncAttachment(); surfaceFrameChanged();
 }
@@ -1978,7 +1971,7 @@ void TabBar::paintLiftedTabs(QPainter& painter)
     }
 }
 
-qreal TabBar::liftProgress() const { return liftElevation_.value(); }
+qreal TabBar::liftProgress() const { return surfaceMotion_.liftProgress(); }
 
 void TabBar::inheritHover(const TabBar& previous)
 {

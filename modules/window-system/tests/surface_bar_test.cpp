@@ -287,17 +287,20 @@ private slots:
         addTabs(before, 3); before.setCurrentIndex(1);
         const auto selected = before.tabData(1);
         const auto snapshot = before.captureSurfaceState();
-        QCOMPARE(snapshot.selection.value(selected.toUuid()), 1.0);
+        QCOMPARE(snapshot.current, std::optional(selected.toUuid()));
+        QCOMPARE(snapshot.selection, 1.0);
         while (before.count()) before.removeTab(0);
         TabBar after(defaultTheme(), nullptr);
         addTabs(after, 2); after.setTabData(0, selected);
         after.setCurrentIndex(0);
         after.inheritSurface(snapshot, true);
-        QCOMPARE(after.captureSurfaceState().selection.value(selected.toUuid()), 1.0);
+        QCOMPARE(after.captureSurfaceState().current, snapshot.current);
+        QCOMPARE(after.captureSurfaceState().selection, 1.0);
         after.setCurrentIndex(1);
         const auto switched = after.captureSurfaceState();
-        QCOMPARE(switched.selection.value(selected.toUuid()), 0.0);
-        QCOMPARE(switched.selection.value(after.tabData(1).toUuid()), 1.0);
+        QVERIFY(switched.current != snapshot.current);
+        QCOMPARE(switched.current, std::optional(after.tabData(1).toUuid()));
+        QCOMPARE(switched.selection, 1.0);
     }
 
 

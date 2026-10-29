@@ -6,6 +6,7 @@
 #include "tab_presence_state.hpp"
 #include "tab_rows_state.hpp"
 #include "tab_scrollbar_state.hpp"
+#include "tab_surface_motion.hpp"
 #include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
@@ -130,7 +131,7 @@ public:
     [[nodiscard]] const TabColorPreset* folderPreset(int folder) const;
     void setGroupFocused(bool focused);
     void setSurfaceContext(QRectF bodyInBar, qreal focusProgress, qreal joinProgress = 1);
-    struct SurfaceState { QHash<QUuid, qreal> selection; QUuid current; qreal lift; bool incoming; };
+    using SurfaceState = TabSurfaceSnapshot;
     [[nodiscard]] SurfaceState captureSurfaceState() const;
     void inheritSurface(const SurfaceState& previous, bool animate);
     [[nodiscard]] QVector<TabSurfaceAnchor> surfaceAnchors(QPointF offset = {}) const;
@@ -372,6 +373,8 @@ private:
     [[nodiscard]] QRect activeDragRect() const;
     [[nodiscard]] std::pair<qreal, qreal> attachmentValues() const;
     void syncAttachment();
+    void driveSurfaceMotion(bool restarted, qint64 timestampNs);
+    [[nodiscard]] std::optional<QUuid> currentLabelId() const;
     void surfaceFrameChanged();
     [[nodiscard]] qreal selectionWeight(int index) const;
     void updateTitleWidths();
@@ -392,14 +395,8 @@ private:
     QRectF surfaceBody_;
     qreal surfaceFocus_ = 0;
     qreal surfaceJoin_ = 1;
-    ProgressAnimation attachment_{1};
-    std::pair<qreal, qreal> attachmentFrom_{1, 0};
-    std::pair<qreal, qreal> attachmentTo_{1, 0};
-    QUuid attachmentOwner_;
-    bool attachmentInitialized_ = false;
-    ProgressAnimation selection_{1};
-    qreal selectionStart_ = 1;
-    ProgressAnimation liftElevation_{0};
+    TabSurfaceMotion surfaceMotion_;
+    FrameClock surfaceDriver_;
     mutable ElevationRenderer surfaceRenderer_;
     bool carriedDisplay_ = false;
     int carriedTileColumns_ = 0;

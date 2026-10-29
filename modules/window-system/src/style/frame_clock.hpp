@@ -36,7 +36,7 @@ public:
 protected:
     void updateCurrentTime(int elapsedMs) override
     {
-        if (preparing_) return;
+        if (preparing_ || elapsedMs == 0) return;
         const auto sample = advance;
         if (sample) sample(originNs_ + qint64(elapsedMs) * 1'000'000);
     }
