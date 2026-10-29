@@ -21,7 +21,7 @@
 
 ### 开发中的 Quick 呈现
 
-`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
+`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
 
 同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。可选择填充、保留阴影、标签组背板缩放或展开场景；参数见 [测试要求](../../docs/development/testing-design.md#8-性能压力与内存)。不含文字、宿主内容或原生输入，不能与完整 Widgets 窗口直接计算性能提升比例。
 

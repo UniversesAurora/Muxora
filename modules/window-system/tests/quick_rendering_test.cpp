@@ -57,6 +57,7 @@ private slots:
         auto frame = std::make_shared<TabStripFrame>();
         auto style = std::make_shared<TabStripLabelStyle>();
         style->metrics.rowHeight = 28;
+        style->palette.strip = Qt::lightGray;
         style->palette.active = Qt::white;
         style->palette.text = Qt::black;
         style->palette.mutedText = Qt::darkGray;
@@ -79,10 +80,17 @@ private slots:
         lane.frozen.append({QUuid::createUuid(), 1, {}, makeLabel(0, QStringLiteral("Frozen"))});
         frame->lanes.append(lane);
         frame->departures.append({QUuid::createUuid(), makeLabel(240, QStringLiteral("Leaving"))});
+        frame->background = QRect(0, 10, 340, 90);
+        frame->separators.append(QRect(108, 22, 1, 14));
+        frame->sectionSeparator = QRect(6, 52, 328, 1);
+        frame->scrollbars.append({QRect(326, 18, 5, 30), 0.7, true});
 
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->laneCount(), qsizetype(1));
         QCOMPARE(item->labelCount(), qsizetype(3));
+        QCOMPARE(item->separatorCount(), qsizetype(1));
+        QCOMPARE(item->scrollbarCount(), qsizetype(1));
+        QVERIFY(item->backgroundVisible());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());

@@ -4,6 +4,7 @@
 #include "style/tab_strip_frame.hpp"
 
 #include <QHash>
+#include <QPainterPath>
 #include <QQuickItem>
 #include <QSet>
 #include <QUuid>
@@ -13,6 +14,7 @@
 namespace window_system::quick {
 
 class TabLabelItem;
+class PathItem;
 
 // Retained labels for one published strip frame. Each lane has independent
 // rectangular clipping for its regular and frozen runs; label items remain
@@ -26,6 +28,9 @@ public:
     void clearFrame();
     [[nodiscard]] qsizetype labelCount() const;
     [[nodiscard]] qsizetype laneCount() const;
+    [[nodiscard]] qsizetype separatorCount() const;
+    [[nodiscard]] qsizetype scrollbarCount() const;
+    [[nodiscard]] bool backgroundVisible() const;
 
 private:
     struct LaneNode {
@@ -36,10 +41,19 @@ private:
     bool syncSamples(const QVector<TabStripLabelSample>& samples, QQuickItem* clip,
                      QRect origin, QSet<QUuid>& active);
     bool syncDepartures(const QVector<TabDepartureSample>& samples, QSet<QUuid>& active);
+    void syncDecorations();
     std::shared_ptr<const TabStripFrame> frame_;
     QVector<LaneNode> lanes_;
     QHash<QUuid, TabLabelItem*> labels_;
     QHash<QUuid, TabLabelItem*> departures_;
+    PathItem* background_ = nullptr;
+    PathItem* sectionSeparator_ = nullptr;
+    QVector<PathItem*> separators_;
+    QVector<PathItem*> scrollbars_;
+    QPainterPath backgroundPath_;
+    QPainterPath sectionSeparatorPath_;
+    QVector<QPainterPath> separatorPaths_;
+    QVector<QPainterPath> scrollbarPaths_;
 };
 
 } // namespace window_system::quick
