@@ -2,6 +2,7 @@
 #include "tab_carrier_painter.hpp"
 
 #include "docking/tab_drag_visual.hpp"
+#include "tab_carrier_label.hpp"
 #include "tab_painter.hpp"
 #include <QHash>
 #include <QPainter>
@@ -52,13 +53,7 @@ void TabCarrierPainter::paint(QPainter& painter, const TabDragVisual& visual, co
         for (qsizetype index = 0; index < count; ++index) {
             const auto& source = content.labels.at(index);
             const auto& sample = frame.samples.at(index);
-            auto label = source.label;
-            label.parts = sample.parts;
-            label.state.titleOpacity = sample.titleOpacity;
-            label.state.actionOpacity = sample.actionOpacity;
-            label.state.lifted = geometry != nullptr;
-            label.state.elevationManaged = true;
-            label.surface = label.state.selected && geometry ? std::optional{localGeometry} : std::nullopt;
+            const auto label = carrierLabelPresentation(source, sample, geometry ? &localGeometry : nullptr);
             auto& text = cache_->texts[source.id];
             text.used = cache_->pass;
             text.layout.prepare(label.state.title, label.font, label.direction, true, painter.device());

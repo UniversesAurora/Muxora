@@ -112,7 +112,7 @@ add_test(NAME window-system.quick-path COMMAND window-system-quick-path-test
 set_tests_properties(window-system.quick-path PROPERTIES TIMEOUT 60 LABELS model)
 
 if(TARGET WindowSystemQuick)
-    foreach(contract IN ITEMS text label)
+    foreach(contract IN ITEMS text label carrier foreground)
         qt_add_executable(window-system-quick-${contract}-resources-test quick_${contract}_resources_test.cpp)
         target_link_libraries(window-system-quick-${contract}-resources-test PRIVATE WindowSystemQuick Qt6::Test)
         target_include_directories(window-system-quick-${contract}-resources-test PRIVATE ../src)

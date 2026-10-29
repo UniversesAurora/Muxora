@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 // A scene-graph primitive benchmark, not a replacement Muxora application.
-// Measures submission cadence and GUI mesh preparation, not display photons.
+// Measures submission cadence and GUI frame preparation, not display photons.
 #include "quick/path_item.hpp"
 #include "quick/window_motion.hpp"
 #include "quick/body_shadow_item.hpp"
 #include "quick/anchor_shadow_item.hpp"
 #include "quick/group_surface_item.hpp"
 #include "quick/tab_strip_item.hpp"
+#include "quick/tab_foreground_item.hpp"
 #include "docking/tab_group_surface.hpp"
 #include "docking/surface_geometry.hpp"
+#include "tab_frame_scenes.hpp"
 
 #include <QCommandLineParser>
 #include <QElapsedTimer>
@@ -30,6 +32,7 @@
 
 using namespace window_system;
 using namespace window_system::quick;
+using window_system::benchmarks::TabBenchmarkFrames;
 
 namespace {
 QJsonObject summary(QList<double> values)
@@ -58,17 +61,20 @@ int main(int argc, char** argv)
     parser.addOption({"commit", "Measured source revision", "revision"});
     parser.addOption({"out", "Output JSON path", "file"});
     parser.addOption({"frames", "Measured submission intervals after 30 warm-up frames", "count", "240"});
-    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize, group-peek or tab-strip", "name", "joined-fills"});
+    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize, group-peek, tab-strip or tab-foreground", "name", "joined-fills"});
     parser.process(app);
     bool valid = false;
     const int count = parser.value("frames").toInt(&valid);
     if (!valid || count < 30 || count > 10000 || parser.value("commit").isEmpty()) return 2;
     const auto scene = parser.value("scene");
     if (scene != "joined-fills" && scene != "body-resize" && scene != "joined-resize"
-        && scene != "group-resize" && scene != "group-peek" && scene != "tab-strip") return 2;
+        && scene != "group-resize" && scene != "group-peek" && scene != "tab-strip"
+        && scene != "tab-foreground") return 2;
     const bool strip = scene == "tab-strip";
+    const bool foreground = scene == "tab-foreground";
+    const bool tabs = strip || foreground;
     const bool bodies = scene == "body-resize";
-    const bool shadows = !strip && scene != "joined-fills";
+    const bool shadows = !tabs && scene != "joined-fills";
     const bool anchors = scene == "joined-resize";
     const bool peeking = scene == "group-peek";
     const bool groups = scene == "group-resize" || peeking;
@@ -83,6 +89,11 @@ int main(int argc, char** argv)
     std::atomic<int> api = 0;
     auto* guiThread = app.thread();
     QQuickWindow window;
+    if (foreground) {
+        auto format = window.format();
+        format.setSamples(4);
+        window.setFormat(format);
+    }
     window.setTitle(QStringLiteral("WindowSystem Quick frame benchmark"));
     window.resize(1600, 900);
     window.setColor(QColor("#ded7eb"));
@@ -93,12 +104,14 @@ int main(int argc, char** argv)
     auto* leftGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
     auto* rightGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
     auto* tabStrip = strip ? new TabStripItem(window.contentItem()) : nullptr;
+    auto* tabForeground = foreground ? new TabForegroundItem(window.contentItem()) : nullptr;
     if (tabStrip) tabStrip->setSize(QSizeF(1600, 900));
+    if (tabForeground) tabForeground->setSize(QSizeF(1600, 900));
     if (groups) { leftGroup->setSize(QSizeF(1600, 900)); rightGroup->setSize(QSizeF(1600, 900)); }
     auto* left = new PathItem(window.contentItem());
     auto* right = new PathItem(window.contentItem());
     left->setSize(QSizeF(1600, 900)); right->setSize(QSizeF(1600, 900));
-    left->setVisible(!strip); right->setVisible(!strip);
+    left->setVisible(!tabs); right->setVisible(!tabs);
     WindowMotion motion;
     motion.setWindow(&window);
     QList<double> preparation; preparation.reserve(count + 60);
@@ -128,6 +141,7 @@ int main(int argc, char** argv)
     ElevationRenderer shadowResources;
     quint64 warmImages = 0;
     ShadowRenderStats warmLeft, warmRight, warmLeftAnchor, warmRightAnchor;
+    ShadowRenderStats warmForeground;
     bool warmed = false;
     const auto leftResources = [&] { return groups ? leftGroup->renderStats() : leftShadow->renderStats(); };
     const auto rightResources = [&] { return groups ? rightGroup->renderStats() : rightShadow->renderStats(); };
@@ -150,44 +164,14 @@ int main(int argc, char** argv)
         if (!accepted) qWarning("Group frame preparation rejected input (%d)", int(item->geometryError()));
         return accepted;
     };
-    auto stripStyle = std::make_shared<TabStripLabelStyle>();
-    stripStyle->metrics.rowHeight = 28;
-    stripStyle->metrics.rowGap = 2;
-    stripStyle->palette.strip = window.color();
-    stripStyle->palette.active = Qt::white;
-    stripStyle->palette.text = QColor("#251b31");
-    stripStyle->palette.mutedText = QColor("#665d70");
-    stripStyle->palette.separator = QColor("#b7a8c9");
-    stripStyle->font = QFont(QStringLiteral("Segoe UI"), 10);
-    QVector<QUuid> stripIds;
-    for (int index = 0; index < 30; ++index) stripIds.append(QUuid::createUuid());
+    auto tabFrames = tabs ? std::make_unique<TabBenchmarkFrames>(window.color(),
+        strip ? TabBenchmarkFrames::Scene::Strip : TabBenchmarkFrames::Scene::Foreground) : nullptr;
     const auto prepare = [&](qreal value) {
         QElapsedTimer cost; cost.start();
-        if (strip) {
-            auto frame = std::make_shared<TabStripFrame>();
-            frame->style = stripStyle;
-            frame->font = stripStyle->font;
-            TabStripLaneFrame lane;
-            lane.viewport = QRect(0, 0, 1600, 160);
-            lane.regularClip = lane.viewport;
-            const int offset = qRound(value * 24);
-            for (int index = 0; index < stripIds.size(); ++index) {
-                const int column = index % 10;
-                const int row = index / 10;
-                TabLabelPresentation label;
-                label.parts.tab = QRect(8 + column * 158 + offset, 8 + row * 32, 150, 28);
-                label.parts.title = QRect(40 + column * 158 + offset, 8 + row * 32, 108, 28);
-                label.state.shape = TabShape::Row;
-                label.state.selected = index == 0;
-                label.state.title = QStringLiteral("Workspace %1").arg(index + 1);
-                label.font = stripStyle->font;
-                label.naturalWidth = 105;
-                lane.regular.append({stripIds[index], index, {}, label});
-                frame->separators.append(QRect(150 + column * 158 + offset,
-                                               16 + row * 32, 1, 12));
-            }
-            frame->lanes.append(lane);
-            if (!tabStrip->setFrame(frame)) {
+        if (tabs) {
+            const bool accepted = strip ? tabStrip->setFrame(tabFrames->stripFrame(value))
+                                        : tabForeground->setFrame(tabFrames->foregroundFrame(value));
+            if (!accepted) {
                 failed = true; app.exit(3); return;
             }
             if (preparation.size() < count + 60) preparation.append(cost.nsecsElapsed() / 1.e6);
@@ -231,10 +215,14 @@ int main(int argc, char** argv)
     QObject::connect(&window, &QQuickWindow::frameSwapped, &window, [&] {
         bool complete, warm;
         { QMutexLocker lock(&samples.mutex); complete = samples.swaps.size() >= count; warm = samples.seen >= 30; }
-        if (shadows && warm && !warmed) {
-            warmLeft = leftResources(); warmRight = rightResources();
-            if (anchors) { warmLeftAnchor = leftAnchor->renderStats(); warmRightAnchor = rightAnchor->renderStats(); }
-            warmImages = shadowResources.cacheStats().generatedImages; warmed = true;
+        if ((shadows || foreground) && warm && !warmed) {
+            if (foreground) warmForeground = tabForeground->shadowStats();
+            else {
+                warmLeft = leftResources(); warmRight = rightResources();
+                if (anchors) { warmLeftAnchor = leftAnchor->renderStats(); warmRightAnchor = rightAnchor->renderStats(); }
+                warmImages = shadowResources.cacheStats().generatedImages;
+            }
+            warmed = true;
         }
         // quit() can synchronously close windows and wait for the render
         // thread. Never call it while holding a lock used by that thread.
@@ -261,7 +249,8 @@ int main(int argc, char** argv)
         {"commit", parser.value("commit")}, {"qt", qVersion()},
         {"complete", complete},
         {"scene", scene},
-        {"scope", strip ? "one retained strip frame with 30 native-text labels and surfaces; no host content or input"
+        {"scope", foreground ? "one retained foreground frame with 28 labels, two incoming pieces, carried and settling planes, one folder and three detached shadows; no icons, host content or input"
+                         : strip ? "one retained strip frame with 30 native-text labels and surfaces; no host content or input"
                          : peeking ? "two group backplate frames with presence and column opacity; no text, host content or input"
                          : groups ? "two group backplate frames with retained shadows and clipping; no text, host content or input"
                          : anchors ? "two joined surface fills and retained composed shadows; no text, host content or input"
@@ -269,6 +258,7 @@ int main(int argc, char** argv)
                          : "two joined surface fills only; no text, shadows, host content or input"},
         {"timing", "frameSwapped submission intervals; not compositor presentation or GPU execution time"},
         {"graphicsApi", api.load()}, {"threadedSceneGraph", threaded.load()},
+        {"requestedSamples", window.format().samples()},
         {"refreshHz", refresh}, {"dpr", window.effectiveDevicePixelRatio()},
         {"logicalSize", QJsonArray{window.width(), window.height()}},
         {"submissionInterval", summary(samples.swaps)},
@@ -294,6 +284,19 @@ int main(int argc, char** argv)
     }
     if (strip) report.insert("labelStrip", QJsonObject{{"labels", qint64(tabStrip->labelCount())},
                                                        {"lanes", qint64(tabStrip->laneCount())}});
+    if (tabs) report.insert("preparationScope", "snapshot mutation and retained-item sync; static text and font metadata is cached");
+    if (foreground) {
+        const auto stats = tabForeground->shadowStats();
+        report.insert("labelForeground", QJsonObject{
+            {"configuredLabels", TabBenchmarkFrames::foregroundLabels},
+            {"incomingPieces", TabBenchmarkFrames::incomingPieces}, {"shadows", 3}});
+        report.insert("foregroundShadowResources", QJsonObject{
+            {"textureUploads", qint64(stats.textureUploads)},
+            {"imageBytesUploaded", qint64(stats.imageBytesUploaded)},
+            {"geometryUpdates", qint64(stats.geometryUpdates)},
+            {"warmTextureUploads", qint64(stats.textureUploads - warmForeground.textureUploads)},
+            {"warmImageBytesUploaded", qint64(stats.imageBytesUploaded - warmForeground.imageBytesUploaded)}});
+    }
     const auto json = QJsonDocument(report).toJson();
     lock.unlock();
     if (parser.value("out").isEmpty()) std::fwrite(json.constData(), 1, json.size(), stdout);

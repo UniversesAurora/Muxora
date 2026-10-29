@@ -21,9 +21,9 @@
 
 ### 开发中的 Quick 呈现
 
-`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick、Qt Quick Shapes 及构建期 Qt ShaderTools，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。文字超过资源预算时明确拒绝，横向可见字形子集尚未实现。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
+`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick、Qt Quick Shapes 及构建期 Qt ShaderTools，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影、外部载荷与窗口级拖动前景和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。文字超过资源预算时明确拒绝，横向可见字形子集尚未实现。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
 
-同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。可选择填充、保留阴影、标签组背板缩放、展开或 30 标签整栏场景；参数见 [测试要求](../../docs/development/testing-design.md#8-性能压力与内存)。`tab-strip` 含文字和基础表面，但仍不含宿主内容、输入或完整窗口交互，不能与完整 Widgets 窗口直接计算性能提升比例。
+同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。可选择填充、保留阴影、标签组背板缩放、展开、30 标签整栏或 28 标签拖动前景场景；参数见 [测试要求](../../docs/development/testing-design.md#8-性能压力与内存)。`tab-strip` 含文字和基础表面；`tab-foreground` 含外部载荷、提起/落位、文件夹及独立阴影，显式请求四样本 MSAA。两者仍不含宿主内容、输入或完整窗口交互，不能与完整 Widgets 窗口直接计算性能提升比例。
 
 ## 公开 API
 

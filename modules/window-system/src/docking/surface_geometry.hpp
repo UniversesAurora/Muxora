@@ -52,6 +52,7 @@ struct SurfaceGeometry {
     bool covered = false;
     qreal coveredProgress = 0;
     bool compact = false;
+    bool operator==(const SurfaceGeometry&) const = default;
 };
 
 [[nodiscard]] SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input);
