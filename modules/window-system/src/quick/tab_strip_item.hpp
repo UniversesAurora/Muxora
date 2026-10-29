@@ -16,6 +16,7 @@ namespace window_system::quick {
 class TabLabelItem;
 class TabFolderItem;
 class OverlayBandItem;
+class EdgeFadeItem;
 class PathItem;
 
 // Retained labels for one published strip frame. Each lane has independent
@@ -34,6 +35,8 @@ public:
     [[nodiscard]] bool folderOutlineVisible() const;
     [[nodiscard]] bool overlayBandVisible() const;
     [[nodiscard]] quint64 overlayTextureUploads() const;
+    [[nodiscard]] qsizetype edgeFadeCount() const;
+    [[nodiscard]] quint64 edgeFadeTextureUploads() const;
     [[nodiscard]] qsizetype laneCount() const;
     [[nodiscard]] qsizetype separatorCount() const;
     [[nodiscard]] qsizetype scrollbarCount() const;
@@ -63,6 +66,7 @@ private:
     QVector<PathItem*> folderLines_;
     PathItem* folderOutline_ = nullptr;
     OverlayBandItem* overlay_ = nullptr;
+    QVector<EdgeFadeItem*> edgeFades_;
     QPainterPath backgroundPath_;
     QPainterPath sectionSeparatorPath_;
     QVector<QPainterPath> separatorPaths_;

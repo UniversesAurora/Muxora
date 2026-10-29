@@ -76,6 +76,7 @@ private slots:
         TabStripLaneFrame lane;
         lane.viewport = QRect(0, 10, 300, 70);
         lane.regularClip = QRect(100, 10, 240, 70);
+        lane.fades.append({QRect(100, 10, 16, 70), Qt::LeftEdge, {}});
         lane.frozen.append({QUuid::createUuid(), 0, {}, makeLabel(120, QStringLiteral("Regular"))});
         lane.frozen.append({QUuid::createUuid(), 1, {}, makeLabel(0, QStringLiteral("Frozen"))});
         TabFolderPaintState folderState;
@@ -108,6 +109,7 @@ private slots:
         QCOMPARE(item->labelCount(), qsizetype(3));
         QCOMPARE(item->folderCount(), qsizetype(1));
         QCOMPARE(item->folderLineCount(), qsizetype(1));
+        QCOMPARE(item->edgeFadeCount(), qsizetype(1));
         QVERIFY(item->folderOutlineVisible());
         QCOMPARE(item->separatorCount(), qsizetype(1));
         QCOMPARE(item->scrollbarCount(), qsizetype(1));
@@ -117,17 +119,20 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QVERIFY(!window.grabWindow().isNull());
         QTRY_VERIFY(item->overlayTextureUploads() > 0);
+        QTRY_VERIFY(item->edgeFadeTextureUploads() > 0);
 
         frame->departures.clear();
         QVERIFY(item->setFrame(frame));
         QCOMPARE(item->labelCount(), qsizetype(2));
         QCOMPARE(item->folderCount(), qsizetype(1));
         QCOMPARE(item->folderLineCount(), qsizetype(1));
+        QCOMPARE(item->edgeFadeCount(), qsizetype(1));
         QVERIFY(item->folderOutlineVisible());
         item->clearFrame();
         QCOMPARE(item->labelCount(), qsizetype(0));
         QCOMPARE(item->folderCount(), qsizetype(0));
         QCOMPARE(item->folderLineCount(), qsizetype(0));
+        QCOMPARE(item->edgeFadeCount(), qsizetype(0));
         QVERIFY(!item->folderOutlineVisible());
         QVERIFY(!item->overlayBandVisible());
         QCOMPARE(item->laneCount(), qsizetype(0));

@@ -2,6 +2,7 @@
 #include "tab_strip_item.hpp"
 
 #include "docking/surface_geometry.hpp"
+#include "edge_fade_item.hpp"
 #include "overlay_band_item.hpp"
 #include "path_item.hpp"
 #include "tab_folder_item.hpp"
@@ -196,6 +197,19 @@ void TabStripItem::syncDecorations()
     else
         overlay_->setBand(frame_->overlayShadow, frame_->shadowAbove,
                           frame_->style->palette.elevation, frame_->shadowOpacity);
+
+    QVector<EdgeFade> fades;
+    for (const auto& lane : std::as_const(frame_->lanes)) fades += lane.fades;
+    while (edgeFades_.size() < fades.size()) {
+        auto* item = new EdgeFadeItem(this);
+        item->setZ(4.5);
+        edgeFades_.append(item);
+    }
+    for (qsizetype index = 0; index < edgeFades_.size(); ++index) {
+        if (index < fades.size())
+            edgeFades_[index]->setFade(fades[index], frame_->style->palette.strip);
+        else edgeFades_[index]->setVisible(false);
+    }
 }
 
 bool TabStripItem::setFrame(std::shared_ptr<const TabStripFrame> frame)
@@ -293,6 +307,7 @@ void TabStripItem::clearFrame()
     for (auto* item : std::as_const(separators_)) item->setVisible(false);
     for (auto* item : std::as_const(scrollbars_)) item->setVisible(false);
     for (auto* item : std::as_const(folderLines_)) item->setVisible(false);
+    for (auto* item : std::as_const(edgeFades_)) item->setVisible(false);
     folderOutline_->setVisible(false);
     overlay_->clearBand();
 }
@@ -308,6 +323,18 @@ qsizetype TabStripItem::folderLineCount() const
 bool TabStripItem::folderOutlineVisible() const { return folderOutline_->isVisible(); }
 bool TabStripItem::overlayBandVisible() const { return overlay_->isVisible(); }
 quint64 TabStripItem::overlayTextureUploads() const { return overlay_->textureUploads(); }
+qsizetype TabStripItem::edgeFadeCount() const
+{
+    qsizetype count = 0;
+    if (frame_) for (const auto& lane : frame_->lanes) count += lane.fades.size();
+    return count;
+}
+quint64 TabStripItem::edgeFadeTextureUploads() const
+{
+    quint64 count = 0;
+    for (const auto* item : edgeFades_) count += item->textureUploads();
+    return count;
+}
 qsizetype TabStripItem::laneCount() const { return lanes_.size(); }
 qsizetype TabStripItem::separatorCount() const { return frame_ ? frame_->separators.size() : 0; }
 qsizetype TabStripItem::scrollbarCount() const { return frame_ ? frame_->scrollbars.size() : 0; }
