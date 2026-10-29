@@ -8,6 +8,7 @@
 #include "tab_rows_state.hpp"
 #include "tab_scrollbar_state.hpp"
 #include "tab_surface_motion.hpp"
+#include "tab_group_surface.hpp"
 #include "tab_position_motion.hpp"
 #include "tab_lift_state.hpp"
 #include "tab_label_store.hpp"
@@ -63,14 +64,6 @@ struct CarriedLabel {
 };
 
 using LabelPositions = QHash<QUuid, QRect>;
-
-struct TabSurfaceAnchor {
-    SurfaceGeometry geometry;
-    ElevationProfile elevation;
-    bool lifted = false;
-    bool foreground = false;
-    LabelPresencePose presence;
-};
 
 // A tab folder as a strip shows it: a run of `count` tabs from `first`
 // (tab strip design 12).
@@ -137,7 +130,7 @@ public:
     void inheritSurface(const SurfaceState& previous, bool animate);
     [[nodiscard]] QVector<TabSurfaceAnchor> surfaceAnchors(QPointF offset = {}) const;
     [[nodiscard]] LabelPresencePose labelPresence(int index) const;
-    void paintSurfaceExtension(QPainter& painter, QPointF offset = {}) const;
+    [[nodiscard]] TabSurfaceExtension surfaceExtension(QPointF offset = {}) const;
     std::function<void()> surfaceChanged;
     void setCarriedDisplay(bool carried);
     void setCarriedTileColumns(int columns);

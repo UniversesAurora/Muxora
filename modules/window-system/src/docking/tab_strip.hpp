@@ -2,6 +2,7 @@
 
 #include "tab_bar.hpp"
 #include "tab_group_motion.hpp"
+#include "tab_group_surface.hpp"
 #include "tab_viewport_state.hpp"
 #include "style/elevation.hpp"
 #include "style/frame_clock.hpp"
@@ -134,6 +135,7 @@ private:
     void driveMotion(bool restarted, qint64 timestampNs);
     [[nodiscard]] TabGroupGeometryInput geometryInput() const;
     void updateCardJoin();
+    [[nodiscard]] TabGroupSurfaceFrame surfaceFrame() const;
     void placeControls();
     void showTabList();
     void showNewTabMenu();

@@ -578,22 +578,19 @@ QVector<TabSurfaceAnchor> TabBar::surfaceAnchors(QPointF offset) const
     return anchors;
 }
 
-void TabBar::paintSurfaceExtension(QPainter& painter, QPointF offset) const
+TabSurfaceExtension TabBar::surfaceExtension(QPointF offset) const
 {
-    if (surfaceBody_.isEmpty() || current_ < 0 || current_ >= count()) return;
+    if (surfaceBody_.isEmpty() || current_ < 0 || current_ >= count()) return {};
     const bool moving = !incoming_.visual().empty() || (lifted_.active() && (dragged_ == current_ || draggedFolder_ >= 0));
     const QRect area = moving ? activeDragRect() : animatedRect(current_);
     const bool compact = moving ? dropSticky_ && compactStickyTiles() : shapeOf(current_) == TabShape::Tile;
     const auto geometry = translatedSurfaceGeometry(anchorGeometry(area, area.intersected(rect()), compact, moving), offset);
-    if (!geometry.joined) return;
+    if (!geometry.joined) return {};
     const auto presence = moving ? LabelPresencePose{} : presenceFor(current_, area).translated(offset);
-    if (presence.opacity <= 0) return;
+    if (presence.opacity <= 0) return {};
     QPainterPath widget; widget.addRect(QRectF(rect()).translated(offset));
-    painter.save(); painter.setRenderHint(QPainter::Antialiasing);
-    painter.setOpacity(painter.opacity() * presence.opacity);
     QTransform transform; transform.translate(presence.offset.x(), presence.offset.y()); transform.scale(presence.scale, presence.scale);
-    painter.fillPath(transform.map(geometry.anchorPath).subtracted(widget), theme_.surface);
-    painter.restore();
+    return {transform.map(geometry.anchorPath).subtracted(widget), theme_.surface, presence.opacity};
 }
 
 void TabBar::setTheme(const Theme& theme)

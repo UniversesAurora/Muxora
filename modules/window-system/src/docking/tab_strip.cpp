@@ -65,11 +65,11 @@ public:
 // shadow patches are shared by every animation frame, never a full snapshot.
 class VerticalTabPanel final : public QWidget {
 public:
-    VerticalTabPanel(const Theme& theme, QWidget* parent) : QWidget(parent), theme_(theme), painter_(panelMetrics(), TabPalette::forTheme(theme))
+    VerticalTabPanel(const Theme& theme, QWidget* parent) : QWidget(parent), theme_(theme), palette_(TabPalette::forTheme(theme))
     {
         setObjectName("VerticalTabPanel"); setMouseTracking(true);
     }
-    void setTheme(const Theme& theme) { theme_ = theme; painter_ = TabPainter(panelMetrics(), TabPalette::forTheme(theme)); update(); }
+    void setTheme(const Theme& theme) { theme_ = theme; palette_ = TabPalette::forTheme(theme); update(); }
     void setSurface(QRect body, qreal overlay, int verticalOutset)
     {
         const bool changed = body_ != body || (overlay_ > 0) != (overlay > 0);
@@ -79,22 +79,15 @@ public:
         if (changed) { if (overlay > 0) clearMask(); else setMask(QRegion(body.adjusted(-uiPixels(TabMetrics{}.columnGap), 0, uiPixels(TabMetrics{}.columnGap), 0))); }
         update();
     }
-    [[nodiscard]] QRect bodyRect() const { return body_; }
     [[nodiscard]] QRect contentRect() const { return content_; }
-    void paintShell(QPainter& paint, QPoint offset = {}) const
+    [[nodiscard]] TabColumnSurface surface(QPoint offset = {}) const
     {
-        if (overlay_ <= 0) return;
-        paint.save(); paint.translate(offset); paint.setRenderHint(QPainter::Antialiasing);
-        const QRectF body(body_);
-        QPainterPath outline; outline.addRoundedRect(body, uiPixelsF(8), uiPixelsF(8));
-        QPainterPath outside; outside.addRect(rect());
-        paint.save(); paint.setClipPath(outside.subtracted(outline), Qt::IntersectClip);
-        paint.setOpacity(overlay_); painter_.paintPanelShadow(paint, body, uiPixelsF(8), true); paint.restore();
-        paint.setBrush(theme_.headerBackground);
-        auto line = painter_.palette().tileBorder.resolve(window()->isActiveWindow()); line.setAlphaF(line.alphaF() * overlay_);
-        paint.setPen(QPen(line, 1)); paint.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), uiPixelsF(8), uiPixelsF(8));
-        paint.restore();
+        auto line = palette_.tileBorder.resolve(window()->isActiveWindow());
+        line.setAlphaF(line.alphaF() * overlay_);
+        return {rect().translated(offset), QRectF(body_).translated(offset), uiPixelsF(8), overlay_,
+                theme_.headerBackground, line, palette_.elevation};
     }
+
 protected:
     void changeEvent(QEvent* event) override
     {
@@ -103,15 +96,12 @@ protected:
     }
     void paintEvent(QPaintEvent*) override
     {
-        QPainter paint(this); paintShell(paint);
+        QPainter paint(this); paintTabColumnSurface(paint, renderer_, surface());
     }
 private:
-    TabMetrics panelMetrics() const
-    {
-        return TabMetrics::forTheme(theme_, font());
-    }
     Theme theme_;
-    TabPainter painter_;
+    TabPalette palette_;
+    ElevationRenderer renderer_;
     QRect body_;
     QRect content_;
     qreal overlay_ = 0;
@@ -427,80 +417,33 @@ void GroupTabs::updateCardJoin()
     bar_->setSurfaceContext(body, motion_.focus(), 1 - motion_.peek());
     const auto callback = surfaceInvalidated; if (callback) callback();
 }
-QRect GroupTabs::surfaceBounds() const
+TabGroupSurfaceFrame GroupTabs::surfaceFrame() const
 {
-    if (compactPresentation_ || contentEdgeToEdge_ || !stack_ || stack_->isHidden()) return {};
-    const auto profile = elevationProfile(ElevationLevel::BodyRaised);
-    const auto margins = elevationMargins(profile);
-    QRectF bounds = QRectF(stack_->geometry()).marginsAdded(margins);
-    if (barVisible_) for (const auto& anchor : bar_->surfaceAnchors(bar_->mapTo(this, QPoint())))
-        bounds |= anchor.presence.mapRect(anchor.geometry.anchorPath.boundingRect().marginsAdded(elevationMargins(anchor.elevation)));
+    TabGroupSurfaceFrame frame;
+    if (compactPresentation_ || contentEdgeToEdge_ || !stack_ || stack_->isHidden()) return frame;
+    frame.groupBounds = rect(); frame.body = stack_->geometry(); frame.radius = bar_->metrics().cardRadius;
+    frame.elevation = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
+        elevationProfile(ElevationLevel::BodyRaised), motion_.focus());
+    frame.style = elevationStyleForTheme(theme_); frame.style.focused = motion_.focused();
+    const auto barOrigin = bar_->mapTo(this, QPoint());
+    if (barVisible_) frame.anchors = bar_->surfaceAnchors(barOrigin);
     if (vertical() && motion_.peek() > 0) {
         const auto panel = static_cast<VerticalTabPanel*>(columnPanel_);
-        bounds |= QRectF(panel->bodyRect().translated(panel->pos())).marginsAdded(
-            elevationMargins(elevationProfile(ElevationLevel::ColumnOverlay)));
+        frame.column = panel->surface(panel->pos());
     }
-    return bounds.toAlignedRect();
+    prepareTabGroupSurfaceFrame(frame);
+    return frame;
 }
-QRegion GroupTabs::surfacePaintRegion() const
-{
-    if (compactPresentation_ || contentEdgeToEdge_ || !stack_ || stack_->isHidden()) return {};
-    // Elevation changes affect the perimeter, never the hosted content.
-    // Keep the corners and every anchor, including a lifted outer row.
-    const int inset = qCeil(bar_->metrics().cardRadius) + 1;
-    QRegion region(surfaceBounds());
-    region -= stack_->geometry().adjusted(inset, inset, -inset, -inset);
-    return region;
-}
+QRect GroupTabs::surfaceBounds() const { return surfaceFrame().bounds; }
+QRegion GroupTabs::surfacePaintRegion() const { return surfaceFrame().paintRegion; }
 void GroupTabs::paintSurface(QPainter& painter, ElevationRenderer& renderer, QPoint offset, const QRegion& exposed) const
 {
-    if (compactPresentation_ || !stack_ || stack_->isHidden() || !exposed.intersects(surfaceBounds().translated(offset))) return;
-    const QRectF body(stack_->geometry());
-    const auto profile = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),
-        elevationProfile(ElevationLevel::BodyRaised), motion_.focus());
-    auto style = elevationStyleForTheme(theme_);
-    style.focused = motion_.focused();
-    const auto anchors = barVisible_ ? bar_->surfaceAnchors(bar_->mapTo(this, QPoint())) : QVector<TabSurfaceAnchor>{};
-    painter.save(); painter.translate(offset);
-    // The shared backplate never contributes inside the hosted page. Bound
-    // raster clipping to the same perimeter used for surface invalidation,
-    // rather than processing a card-sized antialiased clip on every resize.
-    painter.setClipRegion(surfacePaintRegion(), Qt::IntersectClip);
-    painter.save();
-    QPainterPath bodyRegion; bodyRegion.addRect(surfaceBounds());
-    const auto bodyMargins = elevationMargins(profile);
-    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && anchor.presence.complete()) {
-        const auto margins = elevationMargins(anchor.elevation);
-        const qreal extent = std::ceil(std::max({margins.left(), margins.top(), margins.bottom(),
-            bodyMargins.left(), bodyMargins.top(), bodyMargins.bottom()})) + 1;
-        QPainterPath local; local.addRect(surfaceShadowClip(anchor.geometry, extent));
-        bodyRegion = bodyRegion.subtracted(local);
-    }
-    painter.setClipPath(bodyRegion, Qt::IntersectClip);
-    renderer.paintBody(painter, body, bar_->metrics().cardRadius, profile, style);
-    painter.restore();
-    QVector<ElevatedAnchor> shadows;
-    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && anchor.presence.complete())
-        shadows.append({anchor.geometry, anchor.elevation});
-    renderer.paintAnchors(painter, shadows, profile, style);
-    for (const auto& anchor : anchors) if (!anchor.lifted && !anchor.foreground && !anchor.geometry.compact && !anchor.presence.complete())
-        LabelPresenceEffect::paint(painter, anchor.presence, [&] {
-            // Keep the body in place. Transform only the cached additional
-            // anchor contribution, avoiding new blur images at each scale.
-            renderer.paintAnchor(painter, anchor.geometry, profile, anchor.elevation, style, true);
-        });
-    bar_->paintSurfaceExtension(painter, bar_->mapTo(this, QPoint()));
-    if (vertical() && motion_.peek() > 0) {
-        // The shell can enter shared splitter margins. Paint only its part
-        // outside this group here; the live panel paints the rest once.
-        QPainterPath outside, group;
-        outside.addRect(surfaceBounds()); group.addRect(rect());
-        painter.save(); painter.setClipPath(outside.subtracted(group), Qt::IntersectClip);
-        static_cast<VerticalTabPanel*>(columnPanel_)->paintShell(painter, columnPanel_->pos());
-        painter.restore();
-    }
-    painter.restore();
+    auto frame = surfaceFrame();
+    if (!exposed.intersects(frame.bounds.translated(offset))) return;
+    frame.extension = bar_->surfaceExtension(bar_->mapTo(this, QPoint()));
+    paintTabGroupSurface(painter, renderer, frame, offset, exposed);
 }
+
 void GroupTabs::invalidateSurfaceCorners(const QRect& area)
 {
     if (card_ && card_->isVisible())
