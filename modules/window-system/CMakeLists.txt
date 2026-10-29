@@ -26,10 +26,11 @@ target_link_libraries(WindowSystemModel PUBLIC Qt6::Core)
 # target has no widget, scene graph or platform-window dependency.
 add_library(WindowSystemPresentation STATIC
     src/docking/tab_layout.cpp src/docking/tab_wheel_controller.cpp
-    src/docking/tab_drag_geometry.cpp src/style/frame_motion.cpp src/style/scroll_motion_state.cpp)
+    src/docking/tab_drag_geometry.cpp src/style/frame_motion.cpp src/style/scroll_motion_state.cpp
+    src/panes/split_tree_layout.cpp)
 set_target_properties(WindowSystemPresentation PROPERTIES EXPORT_NAME Presentation)
 target_compile_features(WindowSystemPresentation PUBLIC cxx_std_20)
-target_include_directories(WindowSystemPresentation PRIVATE src)
+target_include_directories(WindowSystemPresentation PRIVATE src include)
 target_link_libraries(WindowSystemPresentation PRIVATE Qt6::Core)
 
 # GUI values and bounded surface resources shared by both drawing adapters.
@@ -125,6 +126,7 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/tab_strip_item.cpp src/quick/tab_carrier_item.cpp src/quick/tab_foreground_item.cpp
         src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
         src/quick/path_stroke_item.cpp)
+    target_sources(WindowSystemQuick PRIVATE src/quick/split_tree_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)

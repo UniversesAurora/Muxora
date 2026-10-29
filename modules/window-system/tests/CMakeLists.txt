@@ -112,6 +112,13 @@ add_test(NAME window-system.quick-path COMMAND window-system-quick-path-test
 set_tests_properties(window-system.quick-path PROPERTIES TIMEOUT 60 LABELS model)
 
 if(TARGET WindowSystemQuick)
+    qt_add_executable(window-system-quick-split-tree-test quick_split_tree_test.cpp)
+    target_link_libraries(window-system-quick-split-tree-test PRIVATE WindowSystemQuick WindowSystem::Model Qt6::Test)
+    target_include_directories(window-system-quick-split-tree-test PRIVATE ../src)
+    set_target_properties(window-system-quick-split-tree-test PROPERTIES AUTOMOC ON)
+    add_test(NAME window-system.quick-split-tree COMMAND window-system-quick-split-tree-test
+        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-split-tree-results.txt,txt)
+    set_tests_properties(window-system.quick-split-tree PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
     qt_add_executable(window-system-quick-tab-presentation-test quick_tab_presentation_test.cpp)
     target_link_libraries(window-system-quick-tab-presentation-test PRIVATE WindowSystemQuick WindowSystem::Widgets Qt6::Test)
     target_include_directories(window-system-quick-tab-presentation-test PRIVATE ../src)

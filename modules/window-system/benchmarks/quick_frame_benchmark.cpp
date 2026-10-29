@@ -8,6 +8,7 @@
 #include "quick/group_surface_item.hpp"
 #include "quick/tab_strip_item.hpp"
 #include "quick/tab_foreground_item.hpp"
+#include "quick/split_tree_item.hpp"
 #include "docking/tab_group_surface.hpp"
 #include "docking/surface_geometry.hpp"
 #include "tab_frame_scenes.hpp"
@@ -61,7 +62,7 @@ int main(int argc, char** argv)
     parser.addOption({"commit", "Measured source revision", "revision"});
     parser.addOption({"out", "Output JSON path", "file"});
     parser.addOption({"frames", "Measured submission intervals after 30 warm-up frames", "count", "240"});
-    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize, group-peek, tab-strip or tab-foreground", "name", "joined-fills"});
+    parser.addOption({"scene", "Primitive scene: joined-fills, body-resize, joined-resize, group-resize, group-peek, split-resize, tab-strip or tab-foreground", "name", "joined-fills"});
     parser.process(app);
     bool valid = false;
     const int count = parser.value("frames").toInt(&valid);
@@ -69,7 +70,7 @@ int main(int argc, char** argv)
     const auto scene = parser.value("scene");
     if (scene != "joined-fills" && scene != "body-resize" && scene != "joined-resize"
         && scene != "group-resize" && scene != "group-peek" && scene != "tab-strip"
-        && scene != "tab-foreground") return 2;
+        && scene != "tab-foreground" && scene != "split-resize") return 2;
     const bool strip = scene == "tab-strip";
     const bool foreground = scene == "tab-foreground";
     const bool tabs = strip || foreground;
@@ -77,7 +78,8 @@ int main(int argc, char** argv)
     const bool shadows = !tabs && scene != "joined-fills";
     const bool anchors = scene == "joined-resize";
     const bool peeking = scene == "group-peek";
-    const bool groups = scene == "group-resize" || peeking;
+    const bool splitting = scene == "split-resize";
+    const bool groups = scene == "group-resize" || peeking || splitting;
 
     // Render-thread callbacks outlive the GUI event loop, so their captured
     // state must also outlive destruction of the QQuickWindow and its graph.
@@ -89,7 +91,7 @@ int main(int argc, char** argv)
     std::atomic<int> api = 0;
     auto* guiThread = app.thread();
     QQuickWindow window;
-    if (foreground) {
+    if (foreground || splitting) {
         auto format = window.format();
         format.setSamples(4);
         window.setFormat(format);
@@ -103,15 +105,31 @@ int main(int argc, char** argv)
     auto* rightAnchor = anchors ? new AnchorShadowItem(window.contentItem()) : nullptr;
     auto* leftGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
     auto* rightGroup = groups ? new GroupSurfaceItem(window.contentItem()) : nullptr;
+    LayoutModel splitModel;
+    WindowId splitWindow;
+    QUuid splitNode;
+    auto* splitTree = splitting ? new SplitTreeItem(window.contentItem()) : nullptr;
+    if (splitTree) {
+        splitWindow = splitModel.createWindow();
+        const auto first = splitModel.addTab(splitWindow, QStringLiteral("First"));
+        const auto firstGroup = splitModel.groupForTab(first);
+        const auto second = splitModel.addTabToNewGroup(splitWindow, QStringLiteral("Second"), firstGroup, Placement::Right);
+        const auto secondGroup = splitModel.groupForTab(second);
+        splitNode = splitModel.window(splitWindow)->central->id;
+        splitTree->setSize({1600, 900});
+        splitTree->setMinimumSizes({{firstGroup, QSize(200, 120)}, {secondGroup, QSize(200, 120)}});
+        splitTree->setLeafItems({{firstGroup, leftGroup}, {secondGroup, rightGroup}});
+        splitTree->setTree(splitModel.window(splitWindow)->central);
+    }
     auto* tabStrip = strip ? new TabStripItem(window.contentItem()) : nullptr;
     auto* tabForeground = foreground ? new TabForegroundItem(window.contentItem()) : nullptr;
     if (tabStrip) tabStrip->setSize(QSizeF(1600, 900));
     if (tabForeground) tabForeground->setSize(QSizeF(1600, 900));
-    if (groups) { leftGroup->setSize(QSizeF(1600, 900)); rightGroup->setSize(QSizeF(1600, 900)); }
+    if (groups && !splitting) { leftGroup->setSize(QSizeF(1600, 900)); rightGroup->setSize(QSizeF(1600, 900)); }
     auto* left = new PathItem(window.contentItem());
     auto* right = new PathItem(window.contentItem());
     left->setSize(QSizeF(1600, 900)); right->setSize(QSizeF(1600, 900));
-    left->setVisible(!tabs); right->setVisible(!tabs);
+    left->setVisible(!tabs && !splitting); right->setVisible(!tabs && !splitting);
     WindowMotion motion;
     motion.setWindow(&window);
     QList<double> preparation; preparation.reserve(count + 60);
@@ -174,6 +192,20 @@ int main(int argc, char** argv)
             if (!accepted) {
                 failed = true; app.exit(3); return;
             }
+            if (preparation.size() < count + 60) preparation.append(cost.nsecsElapsed() / 1.e6);
+            return;
+        }
+        if (splitting) {
+            const auto committed = splitModel.setSplitRatio(splitNode, .25 + .375 * value);
+            splitTree->setTree(splitModel.window(splitWindow)->central);
+            bool accepted = bool(committed);
+            for (auto* item : {leftGroup, rightGroup}) {
+                SurfaceGeometryInput input;
+                input.body = QRectF(4, 40, item->width() - 8, item->height() - 44);
+                input.anchor = QRectF(28, 12, 140, 28);
+                accepted = prepareGroup(item, surfaceGeometry(input), QRect(QPoint(), item->size().toSize()), value) && accepted;
+            }
+            if (!accepted) { failed = true; app.exit(3); return; }
             if (preparation.size() < count + 60) preparation.append(cost.nsecsElapsed() / 1.e6);
             return;
         }
@@ -249,7 +281,8 @@ int main(int argc, char** argv)
         {"commit", parser.value("commit")}, {"qt", qVersion()},
         {"complete", complete},
         {"scene", scene},
-        {"scope", foreground ? "one retained foreground frame with 28 labels, two incoming pieces, carried and settling planes, one folder and three detached shadows; no icons, host content or input"
+        {"scope", splitting ? "real LayoutModel ratio commits and SplitTreeItem layout for two retained group backplates; no labels, host content or input"
+                         : foreground ? "one retained foreground frame with 28 labels, two incoming pieces, carried and settling planes, one folder and three detached shadows; no icons, host content or input"
                          : strip ? "one retained strip frame with 30 native-text labels and surfaces; no host content or input"
                          : peeking ? "two group backplate frames with presence and column opacity; no text, host content or input"
                          : groups ? "two group backplate frames with retained shadows and clipping; no text, host content or input"
@@ -267,12 +300,13 @@ int main(int argc, char** argv)
     };
     if (shadows) {
         const auto a = leftResources(), b = rightResources();
-        report.insert("shadowResources", QJsonObject{
+        QJsonObject resources{
             {"textureUploads", qint64(a.textureUploads + b.textureUploads)},
             {"imageBytesUploaded", qint64(a.imageBytesUploaded + b.imageBytesUploaded)},
             {"geometryUpdates", qint64(a.geometryUpdates + b.geometryUpdates)},
-            {"warmTextureUploads", qint64(a.textureUploads + b.textureUploads - warmLeft.textureUploads - warmRight.textureUploads)},
-            {"warmGeneratedImages", qint64(shadowResources.cacheStats().generatedImages - warmImages)}});
+            {"warmTextureUploads", qint64(a.textureUploads + b.textureUploads - warmLeft.textureUploads - warmRight.textureUploads)}};
+        if (!groups) resources.insert("warmGeneratedImages", qint64(shadowResources.cacheStats().generatedImages - warmImages));
+        report.insert("shadowResources", resources);
     }
     if (anchors) {
         const auto a = leftAnchor->renderStats(), b = rightAnchor->renderStats();
@@ -285,6 +319,7 @@ int main(int argc, char** argv)
     if (strip) report.insert("labelStrip", QJsonObject{{"labels", qint64(tabStrip->labelCount())},
                                                        {"lanes", qint64(tabStrip->laneCount())}});
     if (tabs) report.insert("preparationScope", "snapshot mutation and retained-item sync; static text and font metadata is cached");
+    if (splitting) report.insert("preparationScope", "LayoutModel ratio commit, compiled split-tree layout and retained backplate resource preparation");
     if (foreground) {
         const auto stats = tabForeground->shadowStats();
         report.insert("labelForeground", QJsonObject{

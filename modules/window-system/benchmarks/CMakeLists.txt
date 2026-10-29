@@ -28,7 +28,7 @@ target_compile_features(window-system-tab-input-benchmark PRIVATE cxx_std_20)
 if(TARGET WindowSystemQuick)
     qt_add_executable(window-system-quick-frame-benchmark quick_frame_benchmark.cpp tab_frame_scenes.cpp
         ../src/docking/surface_geometry.cpp)
-    target_link_libraries(window-system-quick-frame-benchmark PRIVATE WindowSystemQuick)
+    target_link_libraries(window-system-quick-frame-benchmark PRIVATE WindowSystemQuick WindowSystem::Model)
     target_include_directories(window-system-quick-frame-benchmark PRIVATE ../src)
     target_compile_features(window-system-quick-frame-benchmark PRIVATE cxx_std_20)
 endif()
