@@ -95,8 +95,10 @@ void QuickWorkspace::sync()
         auto& window = d->windows[id];
         if (!window) {
             window = new WorkspaceQuickWindow(d->manager, id);
+            const auto options = d->manager.windowOptions(id);
             window->setColor(theme.headerBackground);
-            window->resize(1280, 800);
+            window->setTitle(options.title);
+            window->resize(options.size);
             window->dock = new quick::DockSurfaceItem(d->manager, d->host, id, window->contentItem());
             window->dock->setSize(window->size());
             window->show();

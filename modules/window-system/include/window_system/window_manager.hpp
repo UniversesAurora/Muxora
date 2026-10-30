@@ -181,6 +181,8 @@ public:
     void showGroupMenu(GroupId group, QPoint globalPosition);
     void showTabFolderMenu(FolderId folder, QPoint globalPosition);
     [[nodiscard]] TabOptions tabOptions(TabId tab) const;
+    // The title, size and bar choices a window was created or restored with.
+    [[nodiscard]] WindowOptions windowOptions(WindowId window) const;
     PaneId splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement);
     bool closeTab(TabId tab);
     bool renameTab(TabId tab, QString title);

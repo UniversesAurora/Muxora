@@ -446,6 +446,8 @@ bool WindowManager::setPaneBar(PaneId pane, QWidget* bar, bool top)
     }
     refresh(); return true;
 }
+WindowOptions WindowManager::windowOptions(WindowId window) const { return d->options.value(window); }
+
 TabOptions WindowManager::tabOptions(TabId tab) const
 {
     const auto* record = d->model.tab(tab);
