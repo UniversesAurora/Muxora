@@ -18,13 +18,18 @@
 namespace window_system::quick {
 namespace {
 
-// QSGTextNode's viewport only culls lines vertically. Until it can consume
-// visible shaped glyph runs, cap its complete input and the multiplied slice
-// costs explicitly instead of assuming that a narrow clip bounds resources.
+// Titles come from outside (a remote shell sets them). Shaping stops after
+// this many UTF-16 units; the rest of such a title is never on screen.
 constexpr qsizetype maximumSourceUnits = 16384;
+// QSGTextNode's viewport only culls lines vertically, and every fade slice
+// carries its own glyph nodes. The visible cut keeps this far from reach;
+// only pathological text (thousands of zero-width marks) can exceed it.
 constexpr qsizetype maximumGlyphInstances = 128 * 1024;
-constexpr qreal maximumGlyphPixels = 8 * 1024 * 1024;
-constexpr int maximumFadeSteps = 1024;
+// A title this wide or wider is drawn from a visible cut, not whole.
+constexpr qreal minimumCutCoverage = 2048;
+// Extra graphemes on each side of a cut keep shaping context (kerning,
+// joining) at its edges identical to the complete title.
+constexpr int cutContext = 8;
 
 bool nearlyEqual(qreal a, qreal b) { return qAbs(a - b) < 0.0001; }
 
@@ -42,8 +47,58 @@ struct TextVariant {
     qreal ascent = 0;
     qreal capHeight = 0;
     qsizetype glyphCount = 0;
-    qreal glyphArea = 0;
 };
+
+qsizetype glyphCount(const QTextLayout& layout)
+{
+    qsizetype count = 0;
+    for (const auto& run : layout.glyphRuns()) count += run.glyphIndexes().size();
+    return count;
+}
+
+// The single-line part of `source` between two x positions, shaped alone
+// and placed where that part is in the complete layout.
+struct TextCut {
+    std::shared_ptr<QTextLayout> layout;
+    qreal offset = 0;
+    qreal begin = 0;
+    qreal end = 0;
+    qsizetype glyphCount = 0;
+};
+
+TextCut cutText(const QTextLayout& source, qreal begin, qreal end)
+{
+    const auto line = source.lineAt(0);
+    int first = line.xToCursor(begin), last = line.xToCursor(end);
+    if (first > last) std::swap(first, last);
+    for (int step = 0; step < cutContext; ++step) {
+        first = source.previousCursorPosition(first);
+        last = source.nextCursorPosition(last);
+    }
+    QList<QTextLayout::FormatRange> formats;
+    for (auto format : source.formats()) {
+        const int from = std::max(format.start, first), to = std::min(format.start + format.length, last);
+        if (from >= to) continue;
+        format.start = from - first; format.length = to - from;
+        formats.append(format);
+    }
+    TextCut cut;
+    cut.layout = std::make_shared<QTextLayout>(source.text().mid(first, last - first), source.font());
+    cut.layout->setTextOption(source.textOption());
+    cut.layout->setFormats(formats);
+    cut.layout->setCacheEnabled(true);
+    cut.layout->beginLayout();
+    auto cutLine = cut.layout->createLine();
+    cutLine.setLineWidth(0x01000000);
+    cutLine.setPosition(line.position());
+    cut.layout->endLayout();
+    const qreal a = line.cursorToX(first), b = line.cursorToX(last);
+    cut.offset = std::min(a, b);
+    cut.begin = cut.offset;
+    cut.end = std::max(a, b);
+    cut.glyphCount = glyphCount(*cut.layout);
+    return cut;
+}
 
 struct ShapedText {
     std::vector<TextVariant> variants;
@@ -54,7 +109,7 @@ std::shared_ptr<ShapedText> shapeText(const TabLabelPresentation& label, TabText
 {
     auto result = std::make_shared<ShapedText>();
     QString source = initialOnly(label, role)
-        ? label.state.title.left(1).toUpper() : label.state.title;
+        ? label.state.title.left(1).toUpper() : label.state.title.left(maximumSourceUnits);
     source.replace(QLatin1Char('\r'), QLatin1Char(' '));
     source.replace(QLatin1Char('\n'), QLatin1Char(' '));
     source.replace(QLatin1Char('\t'), QLatin1Char(' '));
@@ -108,16 +163,7 @@ std::shared_ptr<ShapedText> shapeText(const TabLabelPresentation& label, TabText
         }
         shaped.layout->endLayout();
         shaped.height = shaped.layout->lineCount() ? height : metrics.height();
-        for (const auto& run : shaped.layout->glyphRuns()) {
-            const auto font = run.rawFont();
-            const auto glyphs = run.glyphIndexes();
-            shaped.glyphCount += glyphs.size();
-            for (const auto glyph : glyphs) {
-                const auto bounds = font.boundingRect(glyph);
-                shaped.glyphArea += (std::ceil(bounds.width()) + 2)
-                    * (std::ceil(bounds.height()) + 2);
-            }
-        }
+        shaped.glyphCount = glyphCount(*shaped.layout);
         result->variants.push_back(std::move(shaped));
     }
     return result;
@@ -256,8 +302,27 @@ struct TabLabelTextItem::Prepared {
     QVector<TextSegment> segments;
     std::shared_ptr<ShapedText> shaped;
     qsizetype variant = 0;
+    // Empty while the whole variant is drawn.
+    TextCut cut;
     quint64 resourceRevision = 0;
 };
+
+namespace {
+// Where the layout's x = 0 is drawn, in item coordinates.
+QPointF textOrigin(const TabLabelPresentation& label, TabTextRole role, const TextVariant& shaped)
+{
+    const auto title = QRectF(label.parts.title.translated(-label.parts.tab.topLeft()));
+    const bool centered = initialOnly(label, role);
+    const qreal x = centered ? (title.width() - shaped.advance) / 2.0
+        : role == TabTextRole::Title && label.direction == Qt::RightToLeft
+            ? title.width() - shaped.advance : 0;
+    // Match Qt's 26.6 truncation and the numbered-tab cap-height baseline.
+    const qreal y = role == TabTextRole::Number
+        ? (title.height() + shaped.capHeight) / 2.0 - shaped.ascent
+        : (title.height() - shaped.height) / 2.0;
+    return {title.left() + qreal(qint64(x * 64)) / 64, title.top() + qreal(qint64(y * 64)) / 64};
+}
+} // namespace
 
 TabLabelTextItem::TabLabelTextItem(QQuickItem* parent)
     : QQuickItem(parent), prepared_(std::make_unique<Prepared>())
@@ -266,17 +331,12 @@ TabLabelTextItem::TabLabelTextItem(QQuickItem* parent)
 }
 TabLabelTextItem::~TabLabelTextItem() = default;
 
-bool TabLabelTextItem::setLabel(const TabLabelPresentation& label, const TabStripLabelStyle& style,
+void TabLabelTextItem::setLabel(const TabLabelPresentation& label, const TabStripLabelStyle& style,
                                TabTextRole role)
 {
     if (label.parts.tab.isEmpty() || label.parts.title.isEmpty() || label.state.title.isEmpty()) {
         clearLabel();
-        return true;
-    }
-    if (label.state.title.size() > maximumSourceUnits) {
-        clearLabel();
-        error_ = TabTextError::SourceBudgetExceeded;
-        return false;
+        return;
     }
     auto& next = *prepared_;
     const bool sourceChanged = !hasFrame_ || !sameSource(next.label, label, next.role, role,
@@ -293,28 +353,10 @@ bool TabLabelTextItem::setLabel(const TabLabelPresentation& label, const TabStri
     // only update opacity, never create another complete set of glyph nodes.
     if (role == TabTextRole::Title && !initialOnly(label, role))
         fade.covering = label.state.actionShown && !label.state.actionReserved && !label.parts.action.isEmpty();
-    if ((fade.cut && fade.fadeLength > maximumFadeSteps)
-        || (fade.covering && fade.actionFade > maximumFadeSteps)) {
-        clearLabel();
-        error_ = TabTextError::SliceBudgetExceeded;
-        return false;
-    }
     const bool clipChanged = !hasFrame_ || !sameFadeGeometry(next.fade, fade)
         || next.label.parts.title.translated(-next.label.parts.tab.topLeft())
             != label.parts.title.translated(-label.parts.tab.topLeft());
     auto segments = clipChanged ? titleSegments(label, fade) : next.segments;
-    const auto& active = shaped->variants[variant];
-    const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1;
-    TabTextError error = TabTextError::None;
-    if (active.glyphCount * segments.size() > maximumGlyphInstances)
-        error = TabTextError::GlyphBudgetExceeded;
-    else if (active.glyphArea * ratio * ratio * segments.size() > maximumGlyphPixels)
-        error = TabTextError::PixelBudgetExceeded;
-    if (error != TabTextError::None) {
-        clearLabel();
-        error_ = error;
-        return false;
-    }
     const auto color = tabLabelTextColor(label, style.palette);
     const bool changed = sourceChanged || clipChanged || next.variant != variant || next.color != color
         || next.label.parts.tab.size() != label.parts.tab.size()
@@ -322,9 +364,10 @@ bool TabLabelTextItem::setLabel(const TabLabelPresentation& label, const TabStri
         || next.label.presence.scale != label.presence.scale || next.label.presence.offset != label.presence.offset
         || next.label.state.titleOpacity != label.state.titleOpacity
         || next.fade.actionOpacity != fade.actionOpacity;
-    if (!changed) return true;
-    if (sourceChanged) {
+    if (!changed) return;
+    if (sourceChanged || next.variant != variant) {
         next.resourceRevision = ++resourceRevision_;
+        next.cut = {};
     }
     next.label = label;
     next.role = role;
@@ -334,10 +377,38 @@ bool TabLabelTextItem::setLabel(const TabLabelPresentation& label, const TabStri
     next.shaped = std::move(shaped);
     next.variant = variant;
     hasFrame_ = true;
-    error_ = TabTextError::None;
     setSize(label.parts.tab.size());
+    selectVisibleText();
+    // Positions settle during this frame; check the cut again before syncing.
+    polish();
+}
+
+void TabLabelTextItem::selectVisibleText()
+{
+    auto& data = *prepared_;
+    const auto& shaped = data.shaped->variants[data.variant];
+    auto visible = QRectF(data.label.parts.title.translated(-data.label.parts.tab.topLeft()));
+    qreal margin = minimumCutCoverage / 2;
+    if (const auto* target = window()) {
+        visible &= mapRectFromScene(QRectF(QPointF(), target->size()));
+        margin = std::max(margin, qreal(target->width()) / 2);
+    }
+    const qreal originX = textOrigin(data.label, data.role, shaped).x();
+    const qreal begin = std::max(qreal(0), visible.left() - originX);
+    const qreal end = std::min(shaped.advance, visible.right() - originX);
+    if (shaped.layout->lineCount() != 1 || shaped.advance < std::max(minimumCutCoverage, 4 * margin)) data.cut = {};
+    else if (!data.cut.layout || (end > begin && (begin < data.cut.begin || end > data.cut.end))) {
+        data.cut = cutText(*shaped.layout, std::max(qreal(0), begin - margin), std::min(shaped.advance, end + margin));
+        data.resourceRevision = ++resourceRevision_;
+    }
+    const auto glyphs = data.cut.layout ? data.cut.glyphCount : shaped.glyphCount;
+    error_ = glyphs * data.segments.size() > maximumGlyphInstances ? TabTextError::GlyphBudgetExceeded : TabTextError::None;
     update();
-    return true;
+}
+
+void TabLabelTextItem::updatePolish()
+{
+    if (hasFrame_) selectVisibleText();
 }
 
 void TabLabelTextItem::clearLabel()
@@ -358,32 +429,27 @@ TabLabelTextStats TabLabelTextItem::renderStats() const
 qsizetype TabLabelTextItem::segmentCount() const { return prepared_->segments.size(); }
 qsizetype TabLabelTextItem::retainedGlyphInstances() const
 {
-    return hasFrame_ ? prepared_->shaped->variants[prepared_->variant].glyphCount * prepared_->segments.size() : 0;
+    if (!hasFrame_ || error_ != TabTextError::None) return 0;
+    const auto& data = *prepared_;
+    const auto glyphs = data.cut.layout ? data.cut.glyphCount : data.shaped->variants[data.variant].glyphCount;
+    return glyphs * data.segments.size();
 }
 
 void TabLabelTextItem::itemChange(ItemChange change, const ItemChangeData& data)
 {
     QQuickItem::itemChange(change, data);
     if (change == ItemSceneChange || change == ItemDevicePixelRatioHasChanged) {
-        if (hasFrame_) {
-            if (change == ItemDevicePixelRatioHasChanged)
-                prepared_->resourceRevision = ++resourceRevision_;
-            // Recheck the retained resource budget at the target DPR. The
-            // source shaping is independent of scene-graph resource ownership.
-            const auto& active = prepared_->shaped->variants[prepared_->variant];
-            const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1;
-            if (active.glyphArea * ratio * ratio * prepared_->segments.size() > maximumGlyphPixels) {
-                clearLabel();
-                error_ = TabTextError::PixelBudgetExceeded;
-            }
-        }
+        if (hasFrame_ && change == ItemDevicePixelRatioHasChanged)
+            prepared_->resourceRevision = ++resourceRevision_;
+        // Another window has another width and position: recheck the cut.
+        if (hasFrame_) polish();
         update();
     }
 }
 
 QSGNode* TabLabelTextItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeData*)
 {
-    if (!hasFrame_ || !window()) {
+    if (!hasFrame_ || !window() || error_ != TabTextError::None) {
         delete previous;
         return nullptr;
     }
@@ -396,18 +462,9 @@ QSGNode* TabLabelTextItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeDat
     presence.scale(float(label.presence.scale));
     if (root->matrix() != presence) root->setMatrix(presence);
     root->opacity.setOpacity(label.presence.opacity * label.state.titleOpacity);
-    const auto title = QRectF(label.parts.title.translated(-label.parts.tab.topLeft()));
     const auto& shaped = data.shaped->variants[data.variant];
-    const bool centered = initialOnly(label, data.role);
-    const qreal x = centered ? (title.width() - shaped.advance) / 2.0
-        : data.role == TabTextRole::Title && label.direction == Qt::RightToLeft
-            ? title.width() - shaped.advance : 0;
-    // Match Qt's 26.6 truncation and the numbered-tab cap-height baseline.
-    const qreal y = data.role == TabTextRole::Number
-        ? (title.height() + shaped.capHeight) / 2.0 - shaped.ascent
-        : (title.height() - shaped.height) / 2.0;
-    const QPointF origin(title.left() + qreal(qint64(x * 64)) / 64,
-                         title.top() + qreal(qint64(y * 64)) / 64);
+    const auto origin = textOrigin(label, data.role, shaped) + QPointF(data.cut.offset, 0);
+    auto* layout = data.cut.layout ? data.cut.layout.get() : shaped.layout.get();
     while (root->segments.size() > data.segments.size()) {
         auto* node = root->segments.takeLast();
         root->opacity.removeChildNode(node);
@@ -435,7 +492,7 @@ QSGNode* TabLabelTextItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeDat
             node->text->clear();
             node->text->setColor(data.color);
             node->text->setViewport(QRectF(QPointF(), label.parts.tab.size()));
-            node->text->addTextLayout(origin, shaped.layout.get());
+            node->text->addTextLayout(origin, layout);
             nativeTextBuilds_.fetch_add(1, std::memory_order_relaxed);
             node->textRevision = data.resourceRevision;
             node->variant = data.variant;

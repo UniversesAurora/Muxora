@@ -23,7 +23,7 @@
 
 ### 开发中的 Quick 呈现
 
-`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick、Qt Quick Shapes 及构建期 Qt ShaderTools，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影、外部载荷与窗口级拖动前景、组/窗格分割布局和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。文字超过资源预算时明确拒绝，横向可见字形子集尚未实现。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
+`-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick、Qt Quick Shapes 及构建期 Qt ShaderTools，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影、外部载荷与窗口级拖动前景、组/窗格分割布局和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。很长的标题只把可见部分交给文字节点。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
 
 内部 `TabBarItem` 将 Quick 输入和窗口帧时钟直接交给共用控制器；`ContentHost` 按 PaneId 持有真实 QQuickItem，换窗挂载保留内容身份和焦点。两者仍未接入完整应用窗口。
 

@@ -24,7 +24,7 @@ public:
     [[nodiscard]] quint64 textLayoutBuilds() const;
 
 private:
-    bool setText(TabLabelTextItem* item, const QRect& area, const QString& text,
+    void setText(TabLabelTextItem* item, const QRect& area, const QString& text,
                  const QFont& font, const QColor& color, const TabStripLabelStyle& style);
     const QString& elidedText(const QString& source, const QFont& font, int width);
     QString elisionSource_;

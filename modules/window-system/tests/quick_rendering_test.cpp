@@ -205,7 +205,7 @@ private slots:
         style.palette.text = Qt::black;
         style.palette.mutedText = Qt::darkGray;
 
-        QVERIFY(item->setLabel(label, style));
+        item->setLabel(label, style);
         QVERIFY(item->segmentCount() > 1);
         QVERIFY(item->segmentCount() <= 40);
         first.show();
@@ -215,13 +215,13 @@ private slots:
         const auto initialBuilds = item->renderStats().textLayoutBuilds;
 
         label.state.actionOpacity = 0.5;
-        QVERIFY(item->setLabel(label, style));
+        item->setLabel(label, style);
         QVERIFY(renderFrame(first));
         QCOMPARE(item->renderStats().textLayoutBuilds, initialBuilds);
         QVERIFY(item->renderStats().clipUpdates > 0);
 
         label.state.title = QStringLiteral("Changed source keeps the same bounds");
-        QVERIFY(item->setLabel(label, style));
+        item->setLabel(label, style);
         QVERIFY(renderFrame(first));
         QVERIFY(item->renderStats().textLayoutBuilds > initialBuilds);
         const auto changedBuilds = item->renderStats().sceneGraphBuilds;

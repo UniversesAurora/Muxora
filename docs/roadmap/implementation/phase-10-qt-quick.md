@@ -15,7 +15,7 @@
 
 **状态**：进行中。标签栏的状态、布局、输入和动画已集中到 Gui 层的 `TabStripController`，Widgets 的 `TabBar` 和 Quick 的 `TabBarItem` 只做适配，见 [控制器记录](../../development/verification-log/2026-10.md#标签状态与-widgets-门面分离2026-10-30)。Quick 已有标签表面、标题、图标、编号、文件夹头、条带装饰、边缘渐隐和拖动前景的保留绘制组件，基础层与前景层经统一帧发布接到控制器，见 [统一发布](../../development/verification-log/2026-10.md#标签栏基础与前景的统一发布2026-10-29) 和 [审查记录](../../development/verification-log/2026-10.md#gpt-审查-deepseek-提交标签合成与运行段资源2026-10-29)。
 
-未完成：横向长标题的可见字形子集（目前超出文字预算的标题不绘制）、尾部控件和完整应用窗口接线；离屏合成时的字体外观待用户试用。各子步的改动和验证按日期记在 [验证日志](../../development/verification-log/2026-10.md)。
+未完成：尾部控件和完整应用窗口接线；离屏合成时的字体外观待用户试用。各子步的改动和验证按日期记在 [验证日志](../../development/verification-log/2026-10.md)。
 
 - 从 `TabBar` 分离输入、滚动、展开、拖拽与动画状态，保留已有布局计算；Widgets 和 Quick 读取同一份呈现数据，不复制规则。
 - 把 `TabDragVisual` 中的 QPainter 回调改成有界渲染描述，明确资源所属窗口。

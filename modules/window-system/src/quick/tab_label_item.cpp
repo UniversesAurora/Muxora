@@ -136,7 +136,8 @@ bool TabLabelItem::setLabel(const TabLabelPresentation& label, const TabStripLab
     for (auto* part : {&local.parts.number, &local.parts.icon, &local.parts.title, &local.parts.action})
         part->translate(-label.parts.tab.topLeft());
     local.presence = {};
-    bool accepted = text_->setLabel(local, style);
+    text_->setLabel(local, style);
+    bool accepted = true;
     text_->setPosition({});
     if (!local.parts.number.isEmpty() && !local.state.number.isEmpty()) {
         auto number = local;
@@ -149,7 +150,7 @@ bool TabLabelItem::setLabel(const TabLabelPresentation& label, const TabStripLab
         number.state.actionShown = false;
         number.state.actionOpacity = 0;
         number.naturalWidth = number.parts.title.width();
-        accepted = numberText_->setLabel(number, style, TabTextRole::Number) && accepted;
+        numberText_->setLabel(number, style, TabTextRole::Number);
         numberText_->setPosition({});
     } else numberText_->clearLabel();
     surface_->setPosition({});

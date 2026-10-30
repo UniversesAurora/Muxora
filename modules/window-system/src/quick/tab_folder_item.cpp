@@ -41,13 +41,13 @@ const QString& TabFolderItem::elidedText(const QString& source, const QFont& fon
     return elisionResult_;
 }
 
-bool TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QString& text,
+void TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QString& text,
                             const QFont& font, const QColor& color,
                             const TabStripLabelStyle& style)
 {
     if (area.isEmpty() || text.isEmpty()) {
         item->clearLabel();
-        return true;
+        return;
     }
     auto textStyle = style;
     textStyle.palette.text = color;
@@ -60,10 +60,9 @@ bool TabFolderItem::setText(TabLabelTextItem* item, const QRect& area, const QSt
     label.font = font;
     label.direction = style.direction;
     label.naturalWidth = area.width();
-    const bool accepted = item->setLabel(label, textStyle, TabTextRole::Literal);
+    item->setLabel(label, textStyle, TabTextRole::Literal);
     item->setVisible(true);
     item->setPosition(area.topLeft());
-    return accepted;
 }
 
 bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLabelStyle& style,
@@ -108,9 +107,9 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
         const auto text = state.collapsed
             ? (state.name.isEmpty() ? count : state.name + QStringLiteral("  ") + count)
             : state.name;
-        return setText(label_, textArea, elidedText(text, style.font, textArea.width()),
-                style.font, painter.textOn(fill), style)
-            && background_->geometryError() == PathGeometryError::None;
+        setText(label_, textArea, elidedText(text, style.font, textArea.width()),
+                style.font, painter.textOn(fill), style);
+        return background_->geometryError() == PathGeometryError::None;
     }
 
     auto wash = state.wash;
@@ -142,13 +141,13 @@ bool TabFolderItem::setFolder(const TabFolderPaintState& state, const TabStripLa
     }
     if (!name.isEmpty()) {
         const QRect nameArea(x, area.top(), std::max(0, end - x), area.height());
-        accepted = setText(name_, nameArea, name, bold, state.washText, style);
+        setText(name_, nameArea, name, bold, state.washText, style);
         x += boldMetrics.horizontalAdvance(name) + 8;
     }
-    accepted = setText(count_, QRect(x, area.top(), std::max(0, end - x), area.height()), count,
+    setText(count_, QRect(x, area.top(), std::max(0, end - x), area.height()), count,
             style.font, QColor::fromRgbF(state.washText.redF(), state.washText.greenF(),
                                          state.washText.blueF(), state.washText.alphaF() * 0.6),
-            style) && accepted;
+            style);
 
     if (state.hovered && !state.addIcon.isNull()) {
         const int glyphSize = std::min({style.metrics.iconSize, add.width(), add.height()});
