@@ -67,6 +67,22 @@ struct StripAxis {
     [[nodiscard]] int value() const { return scroll ? scroll->value() : bar->scrollOffset(); }
     [[nodiscard]] int maximum() const { return scroll ? scroll->maximum() : bar->maximumScrollOffset(); }
     void setValue(int value) const { if (scroll) scroll->setValue(value); else bar->setScrollOffset(value); }
+    // Where a rebuilt strip settles from `original`: the same offset, or the
+    // least scrolling that shows a partly hidden active tab in full (tab
+    // strip design 3.5). Tearing the active tab out activates a neighbor.
+    [[nodiscard]] int restoredFrom(int original) const
+    {
+        if (scroll) return std::min(original, scroll->maximum());
+        const auto& layout = bar->tabLayout();
+        const int index = bar->currentIndex(), laneIndex = layout.lanes.value(index, -1);
+        if (laneIndex < 0) return std::min(original, maximum());
+        auto lane = layout.laneList.at(laneIndex);
+        const int shift = lane.offset - std::clamp(original, 0, lane.maximumOffset());
+        auto tab = layout.tabs.at(index);
+        if (lane.vertical) tab.translate(0, shift); else tab.translate(shift, 0);
+        lane.offset -= shift;
+        return lane.offsetToReveal(tab, bar->metrics().edgeFade);
+    }
 };
 
 GroupTabs* groupView(QWidget* window, GroupId id)
@@ -397,6 +413,7 @@ void StripDragTest::capturedWheelMayDestroyTheManager()
     QVector<TabId> tabs;
     for (int index = 0; index < 18; ++index) tabs.append(manager->addTab(id, new QLabel("Content"), {QString("Long title %1").arg(index), {}, {}}));
     QPointer<WorkspaceWindow> window = static_cast<WorkspaceWindow*>(manager->windowWidget(id));
+    setSmoothScrollingEnabled(window, false);
     manager->showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
     auto* group = groupView(window, manager->model().groupForTab(tabs.first())); QVERIFY(group);
     auto* bar = group->tabBar();
@@ -435,12 +452,12 @@ void StripDragTest::tearOutPreservesSourceScroll()
     QCOMPARE(fixture.scrollBar()->value(), offset);
     sendMouse(actor, QEvent::MouseMove, fixture.outside());
     actor = QWidget::mouseGrabber(); QVERIFY(actor); QVERIFY(actor != fixture.window);
-    QTRY_COMPARE(fixture.scrollBar()->value(), std::min(offset, fixture.scrollBar()->maximum()));
+    QTRY_COMPARE(fixture.scrollBar()->value(), fixture.scrollBar()->restoredFrom(offset));
     const int detachedOffset = fixture.scrollBar()->value(); QVERIFY(detachedOffset > 0);
     QCOMPARE(fixture.manager.paneWidget(pane), content.data());
     QTest::keyClick(actor, Qt::Key_Escape);
     QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
-    QTRY_COMPARE(fixture.scrollBar()->value(), detachedOffset);
+    QTRY_COMPARE(fixture.scrollBar()->value(), fixture.scrollBar()->restoredFrom(detachedOffset));
     QCOMPARE(fixture.manager.paneWidget(pane), content.data());
     // View reconstruction preserves scrolling; explicit navigation still
     // reveals the chosen tab rather than leaving keyboard selection offscreen.
@@ -491,10 +508,11 @@ void StripDragTest::capturedDragWheelScrollsTheHoveredStrip()
     QCOMPARE(fixture.manager.context(fixture.id).tab, active);
     sendMouse(actor, QEvent::MouseMove, fixture.outside());
     actor = QWidget::mouseGrabber(); QVERIFY(actor);
-    QTRY_COMPARE(fixture.scrollBar()->value(), initial + 17);
+    // A tab already torn out activates nothing now: the offset stays put.
+    QTRY_COMPARE(fixture.scrollBar()->value(), detached ? initial + 17 : fixture.scrollBar()->restoredFrom(initial + 17));
     QTest::keyClick(actor, Qt::Key_Escape);
     QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
-    QTRY_COMPARE(fixture.scrollBar()->value(), initial + 17);
+    QTRY_COMPARE(fixture.scrollBar()->value(), fixture.scrollBar()->restoredFrom(initial + 17));
 }
 
 void StripDragTest::leavingAnAutoScrolledStripKeepsItsViewport_data() { addStripRows(); }
@@ -511,11 +529,12 @@ void StripDragTest::leavingAnAutoScrolledStripKeepsItsViewport()
     const int offset = fixture.scrollBar()->value();
     sendMouse(actor, QEvent::MouseMove, fixture.outside());
     actor = QWidget::mouseGrabber(); QVERIFY(actor); QVERIFY(actor != fixture.window);
-    QTRY_COMPARE(fixture.scrollBar()->value(), offset);
-    QTest::qWait(100); QCOMPARE(fixture.scrollBar()->value(), offset);
+    QTRY_COMPARE(fixture.scrollBar()->value(), fixture.scrollBar()->restoredFrom(offset));
+    const int detachedOffset = fixture.scrollBar()->value();
+    QTest::qWait(100); QCOMPARE(fixture.scrollBar()->value(), detachedOffset);
     QTest::keyClick(actor, Qt::Key_Escape);
     QTRY_COMPARE(fixture.manager.model().windows().size(), 1);
-    QTRY_COMPARE(fixture.scrollBar()->value(), offset);
+    QTRY_COMPARE(fixture.scrollBar()->value(), fixture.scrollBar()->restoredFrom(detachedOffset));
 }
 
 void StripDragTest::liveContentStaysInPlaceUntilFirstExit_data()

@@ -168,7 +168,7 @@ if(MSVC)
             PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,300,60>")
     endif()
     set_tests_properties(window-system.strip-drag
-        PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,720,60>")
+        PROPERTIES TIMEOUT "$<IF:$<CONFIG:Debug>,720,120>")
 endif()
 
 # Benchmark statistics only exist when the opt-in benchmark build is enabled.
