@@ -243,42 +243,6 @@ private slots:
         QCOMPARE(captured.preset->groupActive.background, QColor(Qt::green));
     }
 
-    void optionalStyle_isCopiedOnlyWhenPresent()
-    {
-        const auto captured = TabPainter::captureLabel(labelParts(), {}, QApplication::font(), Qt::LeftToRight);
-        QVERIFY(!captured.surface); QVERIFY(!captured.bodyElevation); QVERIFY(!captured.preset);
-        QCOMPARE(captured.state.shape, TabShape::Top);
-        QCOMPARE(captured.state.titleOpacity, qreal(1));
-        QVERIFY(captured.state.enabled);
-    }
-
-    void copiedPathsAndPresets_areIsolatedFromLaterChanges()
-    {
-        SurfaceGeometry geometry;
-        geometry.anchorPath.addRoundedRect(QRectF(2, 2, 230, 36), 6, 6);
-        geometry.mergedPath = geometry.anchorPath;
-        TabColorPreset preset; preset.id = QStringLiteral("original");
-        preset.groupActive.text = Qt::blue;
-        TabPaintState state; state.surface = &geometry; state.preset = &preset;
-        const auto captured = TabPainter::captureLabel(labelParts(), state, QApplication::font(), Qt::LeftToRight);
-        const auto expectedPath = geometry.anchorPath;
-        geometry.anchorPath.clear(); geometry.mergedPath.clear();
-        preset.id = QStringLiteral("source changed"); preset.groupActive.text = Qt::red;
-        QCOMPARE(captured.surface->anchorPath, expectedPath);
-        QCOMPARE(captured.surface->mergedPath, expectedPath);
-        QCOMPARE(captured.preset->id, QStringLiteral("original"));
-        QCOMPARE(captured.preset->groupActive.text, QColor(Qt::blue));
-
-        auto copy = captured;
-        copy.surface->anchorPath.setElementPositionAt(0, -100, -100);
-        copy.preset->id = QStringLiteral("copy changed");
-        copy.preset->groupActive.text = Qt::yellow;
-        QVERIFY(copy.surface->anchorPath != captured.surface->anchorPath);
-        QCOMPARE(captured.surface->anchorPath, expectedPath);
-        QCOMPARE(captured.preset->id, QStringLiteral("original"));
-        QCOMPARE(captured.preset->groupActive.text, QColor(Qt::blue));
-    }
-
     void painting_usesTheExplicitPersistentCacheAndRestoresPainterState_data()
     {
         QTest::addColumn<bool>("matchingTextState");

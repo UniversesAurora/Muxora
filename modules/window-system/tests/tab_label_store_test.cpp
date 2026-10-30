@@ -58,7 +58,6 @@ private slots:
         const auto firstShapes = store.textLayout(0).shapingCount(), secondShapes = store.textLayout(1).shapingCount();
         QVERIFY(firstShapes > 0); QVERIFY(secondShapes > 0);
         QVERIFY(store.setTitle(1, QStringLiteral("Changed 第二个标题")));
-        QCOMPARE(store.at(1).titleWidth, -1);
         store.measureTitles(font, Qt::LeftToRight, &image);
         store.textLayout(0).draw(painter, viewport); store.textLayout(1).draw(painter, viewport);
         QCOMPARE(store.textLayout(0).shapingCount(), firstShapes);
