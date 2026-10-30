@@ -73,26 +73,17 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   我的方案：状态与布局共用、Gui 值快照、适配器外部回调；保留现有默认入口直至全路径完成。
   需要的答复：要求修改时列出具体行为风险及文件；无需为交接新增对比测试。
 
+  A1（Claude，2026-10-30，基于提交 `9a3161f`）
+  结论：附条件批准。控制器与两个适配器、QWindow 原生框架、内容宿主的边界清楚，没有发现改变既有行为的问题；审查顺带修了热路径查询、重复预校验和测试注册，见 [审查记录](verification-log/2026-10.md#审查-codex-与-deepseek-的迁移提交2026-10-30)。
+  条件：
+  1. 刷新环境的函数（`TabBar::prepareController`、`TabBarItem::prepare`）每次事件和每帧都会调用，不要在里面查询系统设置、读环境变量或解析字体，这类值在变化通知里更新。
+  2. 不为来自控制器的内部帧另写校验层；资源限制只放在真正分配资源的地方。
+  3. Quick 标题超出文字预算时要截断显示，不能整段不画；接真实组容器前完成。
+  4. `TabBar` 的转发层和超长的 `dock_surface.cpp` 按 10.6 随 Widgets 路径一起删除，不在上面继续加功能；如果默认路径要长期停在 Widgets，先停下来写进交接记录，由 Claude 安排重构。
+  仍未解决：无。
+
 - **本轮新决定**：用户先要求持续到完整迁移完成，随后明确停止扩展、收尾交接；不要为接手方准备对比测试。工作经过记在验证日志，不改 AGENTS.md。
 - **环境与注意事项**：没有运行中的本轮预览或测试。GPU 帧检查需要真正唤醒显示器，单独防休眠请求或显示器消息不一定足够；本轮轻移鼠标后相同产物恢复发帧。没有切换默认后端、打包、全量测试或运行静态外观套件。本轮测量临时文件已清理；之前被策略拦截的目标仍按下方清单由 Claude 核对清理，未绕过拦截。
-
-## 待 Claude 清理：策略拦截的临时诊断文件
-
-Codex 在 Quick 迁移期间删除下列目标时被自动审批拦截，工具只返回“blocked by policy”，未给出更具体原因；没有换工具绕过。按 [Codex 删除受阻规则](../../AGENTS.md#必须遵守)，由 Claude 接手时先核对再清理。本条只是清理任务，不表示当前迁移已交出。
-
-位置均相对于系统临时目录，接手时通过 `[IO.Path]::GetTempPath()` 解析；不对同前缀的其他文件批量操作。
-
-| 目标 | 用途与核对依据 |
-| --- | --- |
-| `muxora-quick-render-batch.ps1`、`muxora-quick-motion-diagnostic.ps1`、`muxora-quick-frame-probe.ps1`、`muxora-quick-awake-batch.ps1` | Quick GPU 接线、帧调度、亮屏和休眠的临时诊断入口，结果已记入 [验证日志](verification-log/2026-10.md#quick-保留绘制与屏幕刷新验证2026-10-27)。 |
-| `muxora-vblank-probe.ps1`、`muxora-vblank-probe.cpp`、`muxora-vblank-probe.exe`、`muxora-vblank-probe.obj` | 独立刷新等待探针及其编译产物，依据同上。 |
-| `muxora-wheel-controller-batch.ps1`、`muxora-wheel-before-batch.ps1` | 滚轮接线和改前对照入口，结果见 [滚轮记录](verification-log/2026-10.md#标签滚轮控制器与共用呈现层2026-10-27)。 |
-| `muxora-wheel-compare-7d0d5c14053143f9895e2bf1a65e7e9a/` | 改前对照时暂存本次 `tab_bar.cpp`、`tab_bar.hpp` 的目录；现行代码已恢复并提交，不能将副本覆盖回源码。删除前检查目录只含这两个诊断副本。 |
-| `muxora-reorder-cost-nwsreiqt/` | 标签换位的改前/改后成本探针和纯整理对照。目录核对时只含 `probe.cpp`、原始/整理/中间布局源码、两个 obj 与三个 exe；没有用户数据。删除请求返回 `blocked by policy`，未绕过。结果见 [换位记录](verification-log/2026-10.md#标签换位的对称边缘阈值2026-10-28)；源码现行版本在仓库，不能用临时副本覆盖。 |
-
-| `muxora-doc-amend-buf7nttd/` | 文档提交 amend 的临时材料：`state.json` 保存重放用的文档文本，`edit_todo.py` 指定待修改提交，`commit-message.txt` 是提交说明。清理请求返回 `blocked by policy`，未绕过。删除前核对仅含本次材料，不用于恢复产品源码。 |
-
-完成后移除本清单；目标不存在或不能确认用途时写明实际情况，不将其记为已删除。
 
 ## 2026-10-25 · Claude：标签栏重做（8.20–8.26），测试未全绿
 
