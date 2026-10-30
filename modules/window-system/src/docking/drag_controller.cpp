@@ -447,15 +447,15 @@ void DragController::start(QPoint global)
 }
 WindowId DragController::candidateAt(QPoint global) const
 {
-    if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_) { return forcedWindow_; }
+    if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_) return forcedWindow_;
 #ifdef Q_OS_WIN
-    if (!capture_ || !capture_->windowHandle()) { return {}; }
+    if (!capture_ || !capture_->windowHandle()) return {};
     // Resolve the same queued event in Qt and native coordinates. Do not sample
     // GetCursorPos, which can already point at a later mouse event.
     const auto local = capture_->windowHandle()->mapFromGlobal(QPointF(global));
     const auto ratio = capture_->devicePixelRatioF();
     POINT nativePoint{qRound(local.x() * ratio), qRound(local.y() * ratio)};
-    if (!ClientToScreen(reinterpret_cast<HWND>(capture_->winId()), &nativePoint)) { return {}; }
+    if (!ClientToScreen(reinterpret_cast<HWND>(capture_->winId()), &nativePoint)) return {};
     for (HWND handle = GetTopWindow(nullptr); handle; handle = GetWindow(handle, GW_HWNDNEXT)) {
         if (!IsWindowVisible(handle) || IsIconic(handle)) continue;
         const auto extendedStyle = GetWindowLongPtr(handle, GWL_EXSTYLE);
@@ -467,14 +467,14 @@ WindowId DragController::candidateAt(QPoint global) const
         if (overlay_ && handle == reinterpret_cast<HWND>(overlay_->winId())) continue;
         if (capture_ && handle == reinterpret_cast<HWND>(capture_->winId())) continue;
         DWORD process = 0; GetWindowThreadProcessId(handle, &process);
-        if (process != GetCurrentProcessId()) { return {}; }
+        if (process != GetCurrentProcessId()) return {};
         for (const auto id : manager_->model().windowOrder()) {
             if (id == movingWindow_) continue;
             auto* widget = manager_->windowWidget(id);
             if (widget && reinterpret_cast<HWND>(widget->winId()) == handle &&
-                widget->rect().contains(widget->mapFromGlobal(global))) { return id; }
+                widget->rect().contains(widget->mapFromGlobal(global))) return id;
         }
-        }
+    }
 #else
     const auto order = manager_->model().windowOrder();
     for (auto it = order.crbegin(); it != order.crend(); ++it) {
