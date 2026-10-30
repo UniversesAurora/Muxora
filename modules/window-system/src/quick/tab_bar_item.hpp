@@ -22,6 +22,14 @@ public:
     [[nodiscard]] TabStripController& controller() { return controller_; }
     [[nodiscard]] const TabStripController& controller() const { return controller_; }
     void synchronize();
+    // Changes the strip in one batch: the environment is refreshed first,
+    // notifications are applied after, as with the Widgets bar.
+    template <class Apply> void edit(Apply&& apply)
+    {
+        prepare();
+        apply();
+        synchronize();
+    }
     void setForegroundLayer(QQuickItem* layer);
     void setControls(TabStripControls controls);
     void setPopupOpen(bool open);
