@@ -3,7 +3,7 @@
 #include <QAbstractButton>
 #include <QFontMetrics>
 #include <window_system/tab_appearance.hpp>
-#include "style/tab_label_geometry.hpp"
+#include "style/edge_tab_label.hpp"
 #include "style/tab_title_layout.hpp"
 #include "drag_start.hpp"
 #include <functional>
@@ -11,19 +11,6 @@
 #include <algorithm>
 
 namespace window_system {
-inline constexpr int edgeTabIconSize = 16;
-// The rail label: ordinal, icon and title along the rail's text direction.
-inline TabLabelParts edgeTabParts(const QFontMetrics& metrics, int natural, bool icon, int number,
-                                  bool clipTitles = false, int maximumTitleWidth = defaultTabTitleWidth)
-{
-    return {number > 0 ? metrics.horizontalAdvance(QString::number(number)) : 0, icon ? uiPixels(edgeTabIconSize) : 0,
-            clipTitles ? std::min(natural, uiPixels(maximumTitleWidth)) : natural};
-}
-inline int edgeTabExtent(const QFontMetrics& metrics, int natural, bool icon, int number, int thickness,
-                         bool clipTitles = false, int maximumTitleWidth = defaultTabTitleWidth)
-{
-    return edgeTabExtent(edgeTabParts(metrics, natural, icon, number, clipTitles, maximumTitleWidth), thickness);
-}
 // The same label renderer is used by the rail and its transient drag view.
 class EdgeTabButton final : public QAbstractButton {
 public:
