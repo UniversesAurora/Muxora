@@ -23,7 +23,7 @@
 
 ## 10.3 Quick 窗口、内容与原生交互
 
-**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。`QuickWorkspace` 已能按模型建窗口、中央停靠区和窗格内容，见 [工作区记录](../../development/verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)；Muxora 可用 `--quick` 启动，占位页由编译好的 QML 组件显示，快捷键可用；固定区域、侧栏、整窗框架和拖动还没有接通。
+**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。`QuickWorkspace` 已能按模型建窗口、中央停靠区和窗格内容，见 [工作区记录](../../development/verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)；Muxora 可用 `--quick` 启动，占位页由编译好的 QML 组件显示，快捷键和固定区域可用；侧栏、整窗框架和拖动还没有接通。
 
 用户 2026-10-30 明确：整个界面必须完全迁移到 Quick，Widgets 路径在 10.6 删除。迁移期间两个后端共存，按下面的结构过渡。
 
@@ -40,7 +40,7 @@
 
 0. 已完成：Widgets 路径上交出时已失败的用例已修好，36 个相关套件通过，见 [记录](../../development/verification-log/2026-10.md#修复交出时已失败的-widgets-用例2026-10-31)。标签组规则已移到共用的 `TabGroupController`。
 1. 已完成（`0b7ab5f`）：标签组容器 `GroupItem`，与 Widgets 版截图对照一致；卡片圆角处暂用停靠区底色，Widgets 会在那里重绘底板（含几个阴影像素），留到 10.5。原计划：`TabBarItem`、`GroupSurfaceItem`、内容区和竖栏尾部，布局用 `layoutTabGroup`，表面与焦点动画用共用帧状态；组按 `GroupId` 复用，内容由 `ContentHost` 挂载。
-2. 进行中：停靠表面 `DockSurfaceItem`。中央分割树已完成，组和标签页按 ID 复用，标签增删时只重建该组的标签项，改名和颜色原地更新。固定区域的分割树、侧栏轨道、悬停展开面板未做。
+2. 进行中：停靠表面 `DockSurfaceItem`。中央分割树和四边固定区域已完成，组和标签页按 ID 复用，标签增删时只重建该组的标签项，改名和颜色原地更新。固定区域按组保存的宽度排在中央四周，窗口变大时只有中央变大，拖动分隔条保存新宽度。侧栏轨道、悬停展开面板未做。
 3. 整窗 `WorkspaceQuickWindow`：`QQuickWindow` 加原生框架、标题栏、工具栏占位与状态栏；最大化、全屏、Snap、DPI 和窗口族规则与现有窗口一致。
 4. 进行中：管理器的 `External` 模式与不带控件的 `addTab`／`splitPane` 已完成（`5d38cef`）；`QuickWorkspace` 按模型建窗口、按窗格建内容，关闭窗口经管理器决定。Muxora `--quick` 能打开并显示初始布局（冒烟启动和截图）；切换、分割、关闭标签和关闭窗口由 `quick-workspace` 用例覆盖，应用里没有试用；`--quick` 不恢复也不保存布局（布局文件仍描述 Widgets 窗口，恢复要求控件内容）。快捷键（含续键）经管理器同一套分发在 Quick 窗口里生效，按键先到窗口再到焦点项。
 5. 拖动：栏内换位、拖出成浮窗、跨窗口停靠、拖入侧栏，全部经 `QWindow` 完成。

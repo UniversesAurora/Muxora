@@ -3,6 +3,7 @@
 // manager's notifications. Every model window gets a Quick window, the
 // active tab's panes show their content, and pane content keeps its identity
 // while its tab moves between windows.
+#include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
@@ -107,6 +108,52 @@ private slots:
         QCOMPARE(workspace.content(pane), content.data());
         QCOMPARE(groupOf(workspace.window(first))->count(), 1);
         QCOMPARE(groupOf(workspace.window(second))->count(), 2);
+    }
+
+    void pinnedRegionsSitAroundTheCenterAndKeepTheirExtent()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto center = manager.addTab(window, named(QStringLiteral("Center")));
+        const auto left = manager.addTab(window, named(QStringLiteral("Left")));
+        const auto bottom = manager.addTab(window, named(QStringLiteral("Bottom")));
+        QVERIFY(manager.moveTabToEdge(left, Edge::Left, true));
+        QVERIFY(manager.moveTabToEdge(bottom, Edge::Bottom, true));
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+        auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(dock);
+        const auto& model = manager.model();
+        const auto leftGroup = model.groupForTab(left), bottomGroup = model.groupForTab(bottom);
+        const auto centerGroup = model.groupForTab(center);
+        QTRY_VERIFY(!dock->groupRect(leftGroup).isEmpty());
+        const auto leftRect = dock->groupRect(leftGroup);
+        const auto centerRect = dock->groupRect(centerGroup);
+        const auto bottomRect = dock->groupRect(bottomGroup);
+        // The bottom region spans the window; the left one sits beside the center.
+        QCOMPARE(leftRect.width(), model.group(leftGroup)->edgeExtent);
+        QCOMPARE(bottomRect.height(), model.group(bottomGroup)->edgeExtent);
+        QVERIFY(leftRect.right() < centerRect.left());
+        QCOMPARE(leftRect.top(), centerRect.top());
+        QVERIFY(bottomRect.top() > centerRect.bottom());
+        QCOMPARE(bottomRect.left(), leftRect.left());
+        QVERIFY(bottomRect.right() >= centerRect.right());
+
+        // A wider window gives every extra pixel to the center.
+        quickWindow->resize(quickWindow->width() + 120, quickWindow->height());
+        QTRY_COMPARE(dock->groupRect(centerGroup).width(), centerRect.width() + 120);
+        QCOMPARE(dock->groupRect(leftGroup).width(), leftRect.width());
+
+        // Dragging the divider saves the region's new extent.
+        const QPoint grab((leftRect.right() + dock->groupRect(centerGroup).left()) / 2, centerRect.center().y());
+        QTest::mousePress(quickWindow, Qt::LeftButton, Qt::NoModifier, grab);
+        QTest::mouseMove(quickWindow, grab + QPoint(60, 0));
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, Qt::NoModifier, grab + QPoint(60, 0));
+        QTRY_COMPARE(model.group(leftGroup)->edgeExtent, leftRect.width() + 60);
+        QTRY_COMPARE(dock->groupRect(leftGroup).width(), leftRect.width() + 60);
     }
 
     void shortcutsRunInTheirQuickWindow()
