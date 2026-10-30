@@ -64,14 +64,25 @@ class WindowManager final : public QObject {
 public:
     using ContentFactory = std::function<QWidget*(const TabOptions&, PaneId)>;
     using CloseGuard = std::function<bool(const QVector<TabId>&)>;
+    // Widgets builds the manager's own windows. External builds no views:
+    // the model, commands and notifications work as usual, and a separate
+    // presentation (the Quick workspace) builds windows from layoutChanged.
+    enum class Presentation { Widgets, External };
 
     explicit WindowManager(QObject* parent = nullptr);
+    explicit WindowManager(Presentation presentation, QObject* parent = nullptr);
     ~WindowManager() override;
+    [[nodiscard]] Presentation presentation() const;
 
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           const WindowOptions& options = {}, WindowId owner = {});
     TabId addTab(WindowId window, QWidget* content, const TabOptions& options,
                  GroupId group = {}, int insertionIndex = -1);
+    // External presentation only: the presentation creates the pane's
+    // content from paneOptions(). Fails in the Widgets presentation.
+    TabId addTab(WindowId window, const TabOptions& options, GroupId group = {}, int insertionIndex = -1);
+    PaneId splitPane(TabId tab, PaneId pane, Placement placement);
+    [[nodiscard]] TabOptions paneOptions(PaneId pane) const;
     // Creates the sibling group without activating a temporary tab in the
     // original group. Preparation failure returns null without adopting any
     // surviving content or changing the model. Once committed, the stable ID
@@ -297,6 +308,10 @@ private:
     struct Private;
     std::unique_ptr<Private> d;
     void refresh(bool preserveDrag = false);
+    void refreshModelState();
+    void finishRefresh();
+    bool activateWithoutViews(TabId tab, PaneId pane);
+    TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.
     QJsonObject saveViewLayout() const;

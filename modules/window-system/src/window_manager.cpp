@@ -48,10 +48,16 @@ QVector<WindowManager::Private::BindingCandidate> WindowManager::Private::shortc
     }
     return bindingIndex.value(first.toCombined());
 }
-WindowManager::WindowManager(QObject* parent) : QObject(parent), d(std::make_unique<Private>())
+WindowManager::WindowManager(QObject* parent) : WindowManager(Presentation::Widgets, parent) {}
+
+WindowManager::WindowManager(Presentation presentation, QObject* parent) : QObject(parent), d(std::make_unique<Private>())
 {
+    d->presentation = presentation;
     Q_ASSERT(qApp);
-    d->storage = new QWidget; d->storage->setObjectName("WindowSystemStorage"); d->storage->hide();
+    // Widget content and bars wait here while no view shows them.
+    if (presentation == Presentation::Widgets) {
+        d->storage = new QWidget; d->storage->setObjectName("WindowSystemStorage"); d->storage->hide();
+    }
     d->drag = new DragController(this);
     d->keyTimer = new QTimer(this); d->keyTimer->setSingleShot(true);
     d->keyTimer->setObjectName(QStringLiteral("CommandChordTimer"));
@@ -100,7 +106,7 @@ WindowManager::~WindowManager()
         // can be released by a synchronous host callback.
         if (d->geometryUpdateDepth) window->deleteLater(); else delete window;
     }
-    if (d->geometryUpdateDepth) d->storage->deleteLater(); else delete d->storage;
+    if (d->geometryUpdateDepth && d->storage) d->storage->deleteLater(); else delete d->storage;
 }
 WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& options, WindowId owner)
 {
@@ -125,10 +131,31 @@ WindowId WindowManager::createWindow(WindowKind kind, const WindowOptions& optio
     d->windowVisibility[id].insert(kind, preferredBarVisibility(id));
     refresh(); return id;
 }
+WindowManager::Presentation WindowManager::presentation() const { return d->presentation; }
+
 TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions& options, GroupId group, int insertionIndex)
 {
-    if (!content || content->property("windowSystemManaged").toBool()
-        || (options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
+    if (d->presentation != Presentation::Widgets || !content || content->property("windowSystemManaged").toBool()) return {};
+    const auto id = addTabRecord(window, options, group, insertionIndex);
+    if (id.isNull()) return {};
+    const auto pane = d->model.tab(id)->activePane;
+    content->setProperty("windowSystemManaged", true); content->setProperty("paneId", pane);
+    if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
+    content->setParent(d->storage); d->panes.insert(pane, content);
+    refresh(); activateTab(id); return id;
+}
+TabId WindowManager::addTab(WindowId window, const TabOptions& options, GroupId group, int insertionIndex)
+{
+    if (d->presentation != Presentation::External) return {};
+    const auto id = addTabRecord(window, options, group, insertionIndex);
+    if (id.isNull()) return {};
+    refresh(); activateTab(id); return id;
+}
+TabOptions WindowManager::paneOptions(PaneId pane) const { return d->descriptors.value(pane); }
+// Adds the tab to the model with its descriptor; the caller supplies content.
+TabId WindowManager::addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex)
+{
+    if ((options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
         || (options.bottomBarSharing != PaneBarSharing::Shared && options.bottomBarSharing != PaneBarSharing::PerPane)) return {};
     const auto* owner = d->model.window(window);
     if (!owner || insertionIndex < -1) return {};
@@ -156,11 +183,8 @@ TabId WindowManager::addTab(WindowId window, QWidget* content, const TabOptions&
     }
     const auto id = d->model.addTab(window, options.title, target == owner->activeGroup && group.isNull() ? GroupId{} : target, insertionIndex, folder);
     if (id.isNull()) return {};
-    const auto pane = d->model.tab(id)->activePane;
-    content->setProperty("windowSystemManaged", true); content->setProperty("paneId", pane);
-    if (content->focusPolicy() == Qt::NoFocus) content->setFocusPolicy(Qt::StrongFocus);
-    content->setParent(d->storage); d->panes.insert(pane, content); d->descriptors.insert(pane, options);
-    refresh(); activateTab(id); return id;
+    d->descriptors.insert(d->model.tab(id)->activePane, options);
+    return id;
 }
 void WindowManager::setContentFactory(ContentFactory factory) { d->factory = std::move(factory); }
 void WindowManager::setContentVisibilityHandler(
@@ -172,6 +196,8 @@ void WindowManager::setContentVisibilityHandler(
 }
 void WindowManager::scheduleContentVisibilityNotification()
 {
+    // The External presentation's content host reports what it shows.
+    if (d->presentation == Presentation::External) return;
     if (!d->contentVisibilityHandler || d->contentVisibilityNotificationPending || d->destroying) return;
     d->contentVisibilityNotificationPending = true;
     QTimer::singleShot(0, this, [this] {
@@ -225,7 +251,7 @@ TabId WindowManager::addTabToNewGroup(WindowId window, QWidget* content, const T
 {
     const QPointer<WindowManager> self(this);
     const QPointer<QWidget> observed(content);
-    if (!observed) return {};
+    if (d->presentation != Presentation::Widgets || !observed) return {};
     const auto previousManaged = content->property("windowSystemManaged");
     if (!self || !observed || previousManaged.toBool()
         || (options.topBarSharing != PaneBarSharing::Shared && options.topBarSharing != PaneBarSharing::PerPane)
@@ -373,7 +399,7 @@ bool WindowManager::setTabTopBar(TabId tab, QWidget* bar) { return setTabBar(tab
 bool WindowManager::setTabBottomBar(TabId tab, QWidget* bar) { return setTabBar(tab, bar, false); }
 bool WindowManager::setTabBar(TabId tab, QWidget* bar, bool top)
 {
-    if (!d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
+    if (d->presentation != Presentation::Widgets || !d->model.tab(tab) || (bar && bar->property("windowSystemManaged").toBool())) return false;
     if (bar) bar->setProperty("windowSystemManaged", true);
     if (auto view = d->tabs.value(tab)) {
         top ? view->setTopBar(bar) : view->setBottomBar(bar);
@@ -433,9 +459,17 @@ bool WindowManager::setTabIconVisible(TabId tab, bool visible)
     for (const auto pane : d->model.panes(tab)) d->descriptors[pane].showIcon = visible;
     refresh(); return true;
 }
+PaneId WindowManager::splitPane(TabId tab, PaneId pane, Placement placement)
+{
+    if (d->presentation != Presentation::External) return {};
+    const auto id = d->model.splitPane(tab, pane, placement);
+    if (id.isNull()) return {};
+    auto descriptor = d->descriptors.value(pane); descriptor.title = d->model.tab(tab)->title;
+    d->descriptors.insert(id, descriptor); refresh(); focusPane(tab, id); return id;
+}
 PaneId WindowManager::splitPane(TabId tab, PaneId pane, QWidget* content, Placement placement)
 {
-    if (!content || content->property("windowSystemManaged").toBool()) return {};
+    if (d->presentation != Presentation::Widgets || !content || content->property("windowSystemManaged").toBool()) return {};
     const auto id = d->model.splitPane(tab, pane, placement);
     if (id.isNull()) return {};
     content->setProperty("windowSystemManaged", true); content->setProperty("paneId", id);
@@ -753,6 +787,7 @@ bool WindowManager::activateWindow(WindowId window)
 bool WindowManager::activateTab(TabId tab)
 {
     if (!d->model.tab(tab)) return false;
+    if (d->presentation == Presentation::External) return activateWithoutViews(tab, {});
     const QPointer<WindowManager> self(this);
     if (!ensureTabView(tab)) return false;
     if (!self) return false;
@@ -772,9 +807,22 @@ bool WindowManager::activateTab(TabId tab)
     if (focused) scheduleContentVisibilityNotification();
     return focused;
 }
+// The External presentation focuses content itself after layoutChanged.
+bool WindowManager::activateWithoutViews(TabId tab, PaneId pane)
+{
+    const QPointer<WindowManager> self(this);
+    leaveFocusScopeFor(tab, pane);
+    if (!self) return false;
+    if (pane.isNull() ? !d->model.activateTab(tab) : !d->model.activatePane(tab, pane)) return false;
+    if (!d->directionalNavigation) d->navigationAnchor.reset();
+    d->activeWindow = d->model.group(d->model.groupForTab(tab))->windowId;
+    emit layoutChanged();
+    return true;
+}
 bool WindowManager::focusPane(TabId tab, PaneId pane)
 {
     if (!d->model.panes(tab).contains(pane)) return false;
+    if (d->presentation == Presentation::External) return activateWithoutViews(tab, pane);
     const QPointer<WindowManager> self(this);
     if (!ensureTabView(tab)) return false;
     if (!self) return false;
@@ -939,10 +987,33 @@ bool WindowManager::applyResult(const OperationResult& result)
     if (!result) { emit commandFailed(result.error); return false; }
     refresh(); return true;
 }
+void WindowManager::refreshModelState()
+{
+    // The External presentation keeps the manager's own state current; the
+    // presentation builds its views from the layoutChanged that follows.
+    d->refreshing = true;
+    d->inputMethods.synchronize(d->model);
+    QSet<PaneId> livePanes;
+    for (auto it = d->model.tabs().cbegin(); it != d->model.tabs().cend(); ++it)
+        for (const auto pane : d->model.panes(it.key())) livePanes.insert(pane);
+    for (auto it = d->descriptors.begin(); it != d->descriptors.end();)
+        it = livePanes.contains(it.key()) ? std::next(it) : d->descriptors.erase(it);
+    for (const auto id : d->options.keys()) if (!d->model.window(id)) {
+        d->options.remove(id); d->viewStates.remove(id);
+        d->windowVisibility.remove(id); d->visibilityKinds.remove(id);
+    }
+    for (const auto id : d->model.windowOrder()) { syncVisibilityKind(id); reconcileWindowViewState(id); }
+    d->refreshing = false;
+}
 void WindowManager::refresh(bool preserveDrag)
 {
     d->navigationAnchor.reset();
     if (d->refreshing || d->destroying) return;
+    if (d->presentation == Presentation::External) {
+        refreshModelState();
+        finishRefresh();
+        return;
+    }
     const QPointer<WindowManager> self(this);
     d->inputMethods.synchronize(d->model);
     const QPointer<QWidget> previousFocus = QApplication::focusWidget();
@@ -1101,6 +1172,11 @@ void WindowManager::refresh(bool preserveDrag)
         if (!active.pane.isNull()) focusPane(active.tab, active.pane);
     }
     if (!self) return;
+    finishRefresh();
+}
+void WindowManager::finishRefresh()
+{
+    const QPointer<WindowManager> self(this);
     const bool emptyAtNotification = d->model.windows().isEmpty();
     const auto notificationRevision = d->model.revision();
     emit layoutChanged();

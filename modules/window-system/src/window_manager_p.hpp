@@ -13,6 +13,7 @@
 
 namespace window_system {
 struct WindowManager::Private {
+    Presentation presentation = Presentation::Widgets;
     LayoutModel model;
     QHash<WindowId, QPointer<WorkspaceWindow>> windows;
     QHash<WindowId, WindowOptions> options;
