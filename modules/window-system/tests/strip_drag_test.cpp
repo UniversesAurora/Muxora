@@ -5,6 +5,7 @@
 #include "docking/tab_strip.hpp"
 #include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
+#include <window_system/scrolling.hpp>
 #include <window_system/window_manager.hpp>
 
 #include <QAbstractButton>
@@ -153,6 +154,9 @@ struct Fixture {
         }
         sourceGroup = manager.model().groupForTab(tabs[0]);
         window = static_cast<WorkspaceWindow*>(manager.windowWidget(id));
+        // Offsets are read right after each step; interpolation has its own
+        // suite (smooth-scroll).
+        setSmoothScrollingEnabled(window, false);
         window->setWindowFlag(Qt::WindowStaysOnTopHint, true);
         window->move(available.topLeft() + QPoint(12, 12));
         manager.showWindow(id); window->raise();
