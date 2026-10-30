@@ -3,11 +3,13 @@
 // manager's notifications. Every model window gets a Quick window, the
 // active tab's panes show their content, and pane content keeps its identity
 // while its tab moves between windows.
+#include "quick/button_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include "quick/peek_item.hpp"
 #include "quick/rail_button_item.hpp"
 #include "quick/rail_item.hpp"
+#include "quick/window_chrome_item.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 
@@ -224,6 +226,45 @@ private slots:
         QTRY_COMPARE(dock->rail(Edge::Bottom)->buttons().size(), 1);
         QVERIFY(manager.pinTab(first, true));
         QTRY_VERIFY(!dock->rail(Edge::Bottom));
+    }
+
+    void theHeaderRowControlsItsWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto kept = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Kept"), QSize(640, 420)});
+        manager.addTab(kept, named(QStringLiteral("Kept")));
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Header"), QSize(640, 420)});
+        manager.addTab(window, named(QStringLiteral("Only")));
+        QTRY_VERIFY(workspace.window(window));
+        QPointer<QQuickWindow> quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow.data()));
+        QCOMPARE(quickWindow->title(), QStringLiteral("Header"));
+        auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
+        auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(chrome && dock);
+        QCOMPARE(int(chrome->height()), quick::WindowChromeItem::rowHeight());
+        QCOMPARE(int(dock->y()), quick::WindowChromeItem::rowHeight());
+        QCOMPARE(int(dock->height()), quickWindow->height() - quick::WindowChromeItem::rowHeight());
+        // The buttons sit at the right edge: minimize, maximize, close.
+        const QPointF row(quickWindow->width() - 1, chrome->height() / 2);
+        auto* close = chrome->captionButtonAt(row - QPointF(4, 0));
+        auto* maximize = chrome->captionButtonAt(row - QPointF(4 + close->width(), 0));
+        QVERIFY(close && maximize && close != maximize);
+        QVERIFY(!chrome->captionButtonAt(QPointF(quickWindow->width() / 2, row.y())));
+        const auto click = [&](const QQuickItem* item) {
+            QTest::mouseClick(quickWindow, Qt::LeftButton, Qt::NoModifier, item->mapToScene(item->boundingRect().center()).toPoint());
+        };
+        click(maximize);
+        QTRY_VERIFY(quickWindow->windowStates() & Qt::WindowMaximized);
+        QTRY_COMPARE(int(dock->height()), quickWindow->height() - quick::WindowChromeItem::rowHeight());
+        click(maximize);
+        QTRY_VERIFY(!(quickWindow->windowStates() & Qt::WindowMaximized));
+        click(close);
+        QTRY_VERIFY(!manager.model().window(window));
+        QTRY_VERIFY(!quickWindow);
+        QVERIFY(workspace.window(kept));
     }
 
     void shortcutsRunInTheirQuickWindow()

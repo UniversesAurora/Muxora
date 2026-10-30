@@ -1,22 +1,60 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
+#include "button_item.hpp"
 #include "content_host.hpp"
 #include "dock_surface_item.hpp"
+#include "window_chrome_item.hpp"
+#ifdef Q_OS_WIN
+#include "platform/windows/window_frame.hpp"
+#endif
 
 #include <QPointer>
 #include <QSet>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <algorithm>
 #include <utility>
 
 namespace window_system {
 namespace {
 
-// A workspace window: closing asks the manager, which may refuse.
+// A workspace window: the header row above the dock, in a native frame
+// without the system caption. Closing asks the manager, which may refuse.
 class WorkspaceQuickWindow final : public QQuickWindow {
 public:
-    WorkspaceQuickWindow(WindowManager& manager, WindowId id) : manager_(manager), id_(id) {}
+    WorkspaceQuickWindow(WindowManager& manager, quick::ContentHost& host, WindowId id) : manager_(manager), id_(id)
+    {
+        const auto options = manager.windowOptions(id);
+        const auto theme = manager.interfaceTheme();
+        setFlags(Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
+        // The manager's shortcut dispatch finds the window by this.
+        setProperty("windowId", id);
+        setColor(theme.headerBackground);
+        setTitle(options.title);
+        resize(options.size);
+        chrome_ = new quick::WindowChromeItem(theme, contentItem());
+        chrome_->setTitle(options.title);
+        chrome_->setButtonOrder(manager.behavior().captionButtonOrder);
+        chrome_->minimizeRequested = [this] { showMinimized(); };
+        chrome_->maximizeRequested = [this] { windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen) ? showNormal() : showMaximized(); };
+        chrome_->closeRequested = [this] { close(); };
+        dock = new quick::DockSurfaceItem(manager, host, id, contentItem());
+        connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {
+            chrome_->setExpanded(state == Qt::WindowMaximized || state == Qt::WindowFullScreen);
+        });
+#ifdef Q_OS_WIN
+        NativeFrameClient client;
+        client.minimumSize = [this] { return dock->minimumSize() + QSize(0, quick::WindowChromeItem::rowHeight()); };
+        client.captionButtonAt = [this](QPointF position) -> QObject* { return chrome_->captionButtonAt(position); };
+        client.setCaptionHovered = [](QObject* button, bool hovered, QPointF) { static_cast<quick::ButtonItem*>(button)->setHovered(hovered); };
+        client.setCaptionPressed = [](QObject* button, bool pressed) { static_cast<quick::ButtonItem*>(button)->setPressed(pressed); };
+        client.activateCaption = [](QObject* button) { static_cast<quick::ButtonItem*>(button)->click(); };
+        setNativeFrameClient(this, std::move(client));
+        applyNativeFrame(this);
+#endif
+        layoutChildren();
+    }
     quick::DockSurfaceItem* dock = nullptr;
 
 protected:
@@ -28,13 +66,28 @@ protected:
             manager_.requestCloseWindow(id_);
             return true;
         }
-        if (event->type() == QEvent::Resize && dock) dock->setSize(size());
+        if (event->type() == QEvent::Resize) layoutChildren();
         return QQuickWindow::event(event);
     }
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray& type, void* message, qintptr* result) override
+    {
+        if (handleNativeFrame(this, message, result)) return true;
+        return QQuickWindow::nativeEvent(type, message, result);
+    }
+#endif
 
 private:
+    void layoutChildren()
+    {
+        const int header = quick::WindowChromeItem::rowHeight();
+        chrome_->setSize(QSizeF(width(), header));
+        dock->setPosition(QPointF(0, header));
+        dock->setSize(QSizeF(width(), std::max(0, height() - header)));
+    }
     WindowManager& manager_;
     WindowId id_;
+    quick::WindowChromeItem* chrome_;
 };
 
 } // namespace
@@ -90,19 +143,10 @@ void QuickWorkspace::sync()
         delete it.value().data();
         it = d->windows.erase(it);
     }
-    const auto theme = d->manager.interfaceTheme();
     for (const auto id : model.windowOrder()) {
         auto& window = d->windows[id];
         if (!window) {
-            window = new WorkspaceQuickWindow(d->manager, id);
-            // The manager's shortcut dispatch finds the window by this.
-            window->setProperty("windowId", id);
-            const auto options = d->manager.windowOptions(id);
-            window->setColor(theme.headerBackground);
-            window->setTitle(options.title);
-            window->resize(options.size);
-            window->dock = new quick::DockSurfaceItem(d->manager, d->host, id, window->contentItem());
-            window->dock->setSize(window->size());
+            window = new WorkspaceQuickWindow(d->manager, d->host, id);
             window->show();
         }
         window->dock->sync();

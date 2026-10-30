@@ -17,7 +17,7 @@ constexpr qreal splitRadius = 6;
 QPainterPath outline(QRectF area, ButtonItem::Shape shape, qreal radius)
 {
     QPainterPath path;
-    if (shape == ButtonItem::Shape::Tool || radius <= 0) { path.addRect(area); return path; }
+    if (shape == ButtonItem::Shape::Tool || shape == ButtonItem::Shape::Caption || radius <= 0) { path.addRect(area); return path; }
     // Rounded only on the outer side; the side facing the other part is square.
     const bool start = shape == ButtonItem::Shape::SplitStart;
     radius = std::min({radius, area.width() / 2, area.height() / 2});
@@ -54,6 +54,14 @@ ButtonItem::ButtonItem(const Theme& theme, QQuickItem* parent)
 void ButtonItem::setTheme(const Theme& theme) { theme_ = theme; refresh(); }
 void ButtonItem::setShape(Shape shape) { if (shape_ != shape) { shape_ = shape; refresh(); } }
 void ButtonItem::setIcon(const QIcon& icon) { iconSource_ = icon; refresh(); }
+void ButtonItem::setActiveIcon(const QIcon& icon) { activeIcon_ = icon; refresh(); }
+void ButtonItem::setDestructive(bool destructive) { if (destructive_ != destructive) { destructive_ = destructive; refresh(); } }
+void ButtonItem::setHovered(bool hovered)
+{
+    if (hovered_ == hovered) return;
+    hovered_ = hovered; refresh(); emit hoveredChanged(hovered);
+}
+void ButtonItem::setPressed(bool pressed) { if (pressed_ != pressed) { pressed_ = pressed; refresh(); } }
 void ButtonItem::setText(const QString& text, const QFont& font)
 {
     if (label_ == text && font_ == font) return;
@@ -78,9 +86,11 @@ void ButtonItem::refresh()
 {
     const QRectF area(QPointF(), size());
     const bool pressed = (pressed_ && hovered_) || down_ || checked_;
-    const bool split = shape_ != Shape::Tool;
+    const bool caption = shape_ == Shape::Caption;
+    const bool split = shape_ == Shape::SplitStart || shape_ == Shape::SplitEnd;
     QColor fill;
-    if (split) fill = pressed ? theme_.selection : emphasized_ || hovered_ ? theme_.buttonHover : theme_.raisedSurface;
+    if (caption) { if (pressed || hovered_) fill = destructive_ ? theme_.danger : theme_.buttonHover; }
+    else if (split) fill = pressed ? theme_.selection : emphasized_ || hovered_ ? theme_.buttonHover : theme_.raisedSurface;
     else if (pressed) fill = theme_.selection;
     else if (hovered_) fill = theme_.buttonHover;
     fill_->setVisible(fill.isValid() && !area.isEmpty());
@@ -89,7 +99,7 @@ void ButtonItem::refresh()
         fill_->setPath(outline(area, shape_, uiPixelsF(splitRadius)));
     }
     // Tool buttons show a one-pixel accent frame while hovered or pressed.
-    const bool framed = !split && (pressed || hovered_) && area.width() > 2 && area.height() > 2;
+    const bool framed = shape_ == Shape::Tool && (pressed || hovered_) && area.width() > 2 && area.height() > 2;
     border_->setVisible(framed);
     if (framed) {
         QPainterPath frame;
@@ -99,7 +109,7 @@ void ButtonItem::refresh()
         frame.addRect(QRectF(area.width() - 1, 1, 1, area.height() - 2));
         border_->setSize(size()); border_->setFill(theme_.accent); border_->setPath(frame);
     }
-    const int extent = std::max(1, std::min({uiPixels(14), int(area.width()) - uiPixels(2), int(area.height()) - uiPixels(2)}));
+    const int extent = std::max(1, std::min({uiPixels(caption ? 16 : 14), int(area.width()) - uiPixels(2), int(area.height()) - uiPixels(2)}));
     const QSize iconSize(extent, extent);
     QRect glyph;
     if (iconRail_) {
@@ -110,10 +120,11 @@ void ButtonItem::refresh()
     } else {
         glyph = QRect(uiPixels(4), (int(area.height()) - extent) / 2, extent, extent);
     }
-    icon_->setVisible(!iconSource_.isNull());
-    if (!iconSource_.isNull()) {
+    const auto& icon = (pressed || hovered_) && !activeIcon_.isNull() ? activeIcon_ : iconSource_;
+    icon_->setVisible(!icon.isNull());
+    if (!icon.isNull()) {
         icon_->setPosition(glyph.topLeft());
-        icon_->setIcon(iconSource_, iconSize, {}, isEnabled(), checked_);
+        icon_->setIcon(icon, iconSize, {}, isEnabled(), checked_);
     }
     if (label_.isEmpty() || area.isEmpty()) { text_->clearLabel(); return; }
     const bool right = iconRail_ && iconEdge_ == Qt::RightEdge;
