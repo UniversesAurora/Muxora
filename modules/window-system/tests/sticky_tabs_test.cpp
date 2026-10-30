@@ -252,7 +252,7 @@ void StickyTabsTest::sizedStickyTabsStayInViewWhileOthersScroll()
     normal.resize(500, 200); normal.show(); QVERIFY(QTest::qWaitForWindowExposed(&normal));
     normal.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(normal.scrollOffset() > 0);
     QCOMPARE(normal.tabBar()->frozenExtent(), 0);
-    QVERIFY(normal.tabBar()->displayTabRect(0).isEmpty());
+    QTRY_VERIFY(normal.tabBar()->displayTabRect(0).isEmpty());
     auto multiline = sized(StickyTabSizing::Compact); multiline.multiline = true; multiline.stickyMultiline = true;
     GroupTabs rows(defaultTheme(), nullptr); populate(rows, 20, 2, multiline);
     rows.resize(500, 300); rows.show(); QVERIFY(QTest::qWaitForWindowExposed(&rows));
@@ -347,7 +347,7 @@ void StickyTabsTest::separateRowHoldsStickyTabsAboveTheOthers()
     tabs.scrollByWheel(QPoint(0, -600)); QTRY_VERIFY(tabs.scrollOffset() > 0);
     QCOMPARE(bar->displayTabRect(0).left(), bar->scrollViewport().left());
     QCOMPARE(bar->displayTabRect(1).left(), bar->displayTabRect(0).right() + 1);
-    QVERIFY(bar->displayTabRect(3).isEmpty());
+    QTRY_VERIFY(bar->displayTabRect(3).isEmpty());
     // Each row is its own drop target; right after the sticky tabs is both.
     const auto sticky = [bar](int x) { return bar->insertionAt(QPoint(x, bar->displayTabRect(0).center().y())); };
     const auto other = [bar, row](int x) { return bar->insertionAt(QPoint(x, bar->displayTabRect(0).center().y() + row)); };

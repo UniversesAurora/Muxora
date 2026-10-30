@@ -218,7 +218,10 @@ void TabStripController::setGroupFocused(bool focused)
 
 void TabStripController::refreshTrailing()
 {
-    relayout(false);
+    // Only the controls were remeasured. Their room changes the rows, but
+    // the tabs are as they were: a wheel scroll in progress continues.
+    rowMeasure_.reset();
+    relayout(false, false);
     changes_.reservedSize = true;
 }
 
