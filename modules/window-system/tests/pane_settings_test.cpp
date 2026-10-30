@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "translation_checks.hpp"
+#include <window_system/scrolling.hpp>
 #include <window_system/window_manager.hpp>
 #include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
@@ -1266,6 +1267,8 @@ void PaneSettingsTest::wheelOverValueControlsScrollsThePageWithoutEditing()
     manager.windowWidget(window)->resize(780, 480);
     manager.showWindow(window);
     QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    // The page offset is read right after each step (interpolation: smooth-scroll).
+    setSmoothScrollingEnabled(manager.windowWidget(window), false);
     QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
     auto* zen = page->findChild<QComboBox*>(QStringLiteral("ZenFullscreenMode")); QVERIFY(zen);
     auto* delay = page->findChild<QSpinBox*>(QStringLiteral("RevealDelayMs")); QVERIFY(delay);
@@ -1309,6 +1312,7 @@ void PaneSettingsTest::wheelNeverEditsAnyValueControl()
     for (QWidget* widget : std::initializer_list<QWidget*>{combo, editable, spin, real, time, slider, bar}) column->addWidget(widget);
     column->addSpacing(1200);
     area.setWidget(content); area.show();
+    setSmoothScrollingEnabled(&area, false);
     QVERIFY(QTest::qWaitForWindowExposed(&area));
     // Qt only gives wheel focus inside the active window, as for the user.
     area.activateWindow();

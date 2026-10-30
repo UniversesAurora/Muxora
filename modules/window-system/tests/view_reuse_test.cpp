@@ -739,13 +739,12 @@ void ViewReuseTest::reusedStripFollowsMetadataAndTheme()
     QVERIFY(manager.closeTab(layout.secondTabs[2]));
     settle();
     QCOMPARE(stripOf(manager, layout.window, layout.first), strip.data());
-    // A new theme reaches every strip at the next refresh.
+    // A new theme reaches every strip at the next refresh, applied in place.
     auto theme = manager.theme();
     theme.metrics.iconSize += 4;
     manager.setTheme(theme);
     QVERIFY(manager.closeTab(layout.secondTabs[1]));
     settle();
-    QVERIFY(stripOf(manager, layout.window, layout.first) != strip.data());
     auto* bar = stripOf(manager, layout.window, layout.first)->findChild<TabBar*>();
     QCOMPARE(bar->iconSize(), QSize(theme.metrics.iconSize, theme.metrics.iconSize));
 }
