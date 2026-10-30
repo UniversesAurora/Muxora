@@ -47,11 +47,13 @@ QPoint tabPoint(TabBar* bar, TabId tab)
         if (bar->tabData(i).toUuid() == tab) return bar->mapToGlobal(bar->tabRect(i).center());
     return {};
 }
+// Tears the tab out: the first move already passes the zone in which a
+// lifted tab stays in its strip (tab strip design 6.2, a tab height).
 void startTabDrag(QWidget* window, TabBar* bar, TabId tab)
 {
     const auto point = tabPoint(bar, tab);
     mouse(bar, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
-    mouse(bar, QEvent::MouseMove, point + QPoint(20, 20), Qt::NoButton, Qt::LeftButton);
+    mouse(bar, QEvent::MouseMove, point + QPoint(20, 3 * bar->metrics().rowHeight), Qt::NoButton, Qt::LeftButton);
     Q_UNUSED(window)
 }
 QAbstractButton* edgeTabButton(QWidget* window, TabId tab)
@@ -249,7 +251,7 @@ void DragInteractionTest::tearOffIsVisibleBeforeReleaseAndCollapsesTheEmptyGroup
     rootWindow->move(20, 30); manager.showWindow(root);
     QVERIFY(QTest::qWaitForWindowExposed(rootWindow));
     auto* bar = tabBar(rootWindow, b); QVERIFY(bar);
-    const auto start = tabPoint(bar, b) + QPoint(20, 20);
+    const auto start = tabPoint(bar, b) + QPoint(20, 3 * bar->metrics().rowHeight);
     startTabDrag(rootWindow, bar, b);
     QCOMPARE(manager.model().windows().size(), 2);
     QVERIFY(!manager.model().group(sourceGroup));
@@ -628,14 +630,16 @@ void DragInteractionTest::pinnedGroupAcceptsDirectionalDrops()
     QVERIFY(!manager.model().window(moving));
     QTRY_VERIFY(!groupRect(second, createdGroup).isEmpty());
     const auto movedBounds = groupRect(second, createdGroup), retainedBounds = groupRect(second, targetGroup);
+    // The seam between groups (window interaction design, group cards).
+    const int gap = manager.interfaceTheme().metrics.groupSplitterWidth;
     if (placement == Placement::Left || placement == Placement::Right) {
         QCOMPARE(movedBounds.top(), retainedBounds.top()); QCOMPARE(movedBounds.bottom(), retainedBounds.bottom());
-        if (placement == Placement::Left) QCOMPARE(retainedBounds.left() - movedBounds.right() - 1, 2);
-        else QCOMPARE(movedBounds.left() - retainedBounds.right() - 1, 2);
+        if (placement == Placement::Left) QCOMPARE(retainedBounds.left() - movedBounds.right() - 1, gap);
+        else QCOMPARE(movedBounds.left() - retainedBounds.right() - 1, gap);
     } else {
         QCOMPARE(movedBounds.left(), retainedBounds.left()); QCOMPARE(movedBounds.right(), retainedBounds.right());
-        if (placement == Placement::Top) QCOMPARE(retainedBounds.top() - movedBounds.bottom() - 1, 2);
-        else QCOMPARE(movedBounds.top() - retainedBounds.bottom() - 1, 2);
+        if (placement == Placement::Top) QCOMPARE(retainedBounds.top() - movedBounds.bottom() - 1, gap);
+        else QCOMPARE(movedBounds.top() - retainedBounds.bottom() - 1, gap);
     }
     QVERIFY(stableContent); QCOMPARE(manager.paneWidget(pane), content);
     QCOMPARE(manager.model().tab(a)->activePane, pane); QCOMPARE(content->window(), second);
@@ -716,7 +720,9 @@ void DragInteractionTest::sideBarDragReordersAcrossInternalGroups()
     const auto actorId = manager.model().group(manager.model().groupForTab(a))->windowId;
     auto* actor = manager.windowWidget(actorId); QVERIFY(actor); QVERIFY(actor->isVisible());
     auto* target = edgeTabButton(window, c); QVERIFY(target);
-    const auto offset = edge == int(Edge::Left) || edge == int(Edge::Right) ? QPoint(0, 8) : QPoint(8, 0);
+    // Past c: a label moves only once the carried one passes its center
+    // (tab strip design 6.1, reordering at label edges).
+    const auto offset = edge == int(Edge::Left) || edge == int(Edge::Right) ? QPoint(0, target->height()) : QPoint(target->width(), 0);
     const auto point = target->mapToGlobal(target->rect().center() + offset);
     mouse(actor, QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton);
     mouse(actor, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton);
