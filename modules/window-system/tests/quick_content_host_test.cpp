@@ -151,7 +151,7 @@ private slots:
         InputMethodScopes scopes(std::move(backend));
         scopes.synchronize(model);
         scopes.focus(model, firstPane, &first);
-        observed->state = 17;
+        observed->state = 77;
         QVERIFY(model.moveTabToWindow(firstTab, destination));
         scopes.synchronize(model);
         scopes.focus(model, firstPane, &second);
