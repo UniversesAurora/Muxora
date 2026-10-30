@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "dock_surface_item.hpp"
 #include "content_host.hpp"
+#include "button_item.hpp"
 #include "group_item.hpp"
+#include "peek_item.hpp"
+#include "rail_button_item.hpp"
+#include "rail_item.hpp"
 #include "split_tree_item.hpp"
 #include "tab_bar_item.hpp"
 #include "tab_content_item.hpp"
@@ -9,6 +13,10 @@
 #include <window_system/ui_scale.hpp>
 #include <window_system/window_manager.hpp>
 
+#include <QCoreApplication>
+#include <QGuiApplication>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QQuickWindow>
 
 namespace window_system::quick {
@@ -35,12 +43,174 @@ void DockSurfaceItem::geometryChange(const QRectF& now, const QRectF& previous)
 
 void DockSurfaceItem::layoutCenter()
 {
+    // As the Widgets surface's grid: the bottom rail owns both lower corners,
+    // the side rails the upper ones. Only perpendicular rails are separated;
+    // the workspace stays flush with each rail.
+    const auto shown = [this](Edge edge) { const auto& rail = rails_[size_t(edge)]; return rail && rail->isVisible(); };
+    const auto thickness = [&](Edge edge) { return shown(edge) ? rails_[size_t(edge)]->thickness() : 0; };
+    const int w = int(width()), h = int(height());
+    const int left = thickness(Edge::Left), right = thickness(Edge::Right);
+    const int top = thickness(Edge::Top), bottom = thickness(Edge::Bottom);
+    const int sideHeight = h - (shown(Edge::Bottom) ? bottom + (shown(Edge::Left) || shown(Edge::Right) ? 2 : 0) : 0);
+    if (shown(Edge::Left)) { rails_[size_t(Edge::Left)]->setPosition({}); rails_[size_t(Edge::Left)]->setSize(QSizeF(left, sideHeight)); }
+    if (shown(Edge::Right)) {
+        rails_[size_t(Edge::Right)]->setPosition(QPointF(w - right, 0));
+        rails_[size_t(Edge::Right)]->setSize(QSizeF(right, sideHeight));
+    }
+    if (shown(Edge::Top)) {
+        const int first = shown(Edge::Left) ? left + 2 : 0, last = shown(Edge::Right) ? w - right - 2 : w;
+        rails_[size_t(Edge::Top)]->setPosition(QPointF(first, 0));
+        rails_[size_t(Edge::Top)]->setSize(QSizeF(std::max(0, last - first), top));
+    }
+    if (shown(Edge::Bottom)) {
+        rails_[size_t(Edge::Bottom)]->setPosition(QPointF(0, h - bottom));
+        rails_[size_t(Edge::Bottom)]->setSize(QSizeF(w, bottom));
+    }
+    inner_ = QRect(left, top, std::max(0, w - left - right), std::max(0, h - top - bottom));
     const int margin = uiPixels(surfaceOuterMargin);
-    const QSize area(std::max(0, int(width()) - 2 * margin), std::max(0, int(height()) - 2 * margin));
+    const QSize area(std::max(0, inner_.width() - 2 * margin), std::max(0, inner_.height() - 2 * margin));
     center_->setTree(composedTree(area));
-    center_->setPosition(QPointF(margin, margin));
+    center_->setPosition(inner_.topLeft() + QPointF(margin, margin));
     center_->setSize(area);
     foreground_->setSize(size());
+    placePeek();
+}
+
+void DockSurfaceItem::syncRails()
+{
+    const auto& model = manager_.model();
+    const auto* window = model.window(window_);
+    const auto theme = manager_.interfaceTheme();
+    const auto appearance = manager_.tabAppearance();
+    const bool shown = manager_.sideBarsVisible(window_);
+    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
+        QVector<QPair<TabId, QString>> tabs;
+        QHash<TabId, GroupId> groups;
+        for (const auto id : window->edgeGroups)
+            if (const auto* group = model.group(id); group && group->edge == edge && group->location == GroupLocation::AutoHide)
+                for (const auto tab : group->tabs) { tabs.append({tab, model.tab(tab)->title}); groups.insert(tab, id); }
+        auto& rail = rails_[size_t(edge)];
+        if (tabs != railTabs_[size_t(edge)]) {
+            // Buttons keep no state worth carrying; the scroll position does.
+            std::optional<RailItem::ScrollAnchor> anchor;
+            if (rail) { anchor = rail->scrollAnchor(); delete rail.data(); }
+            railTabs_[size_t(edge)] = tabs;
+            if (!tabs.isEmpty()) {
+                rail = new RailItem(edge, theme, this);
+                for (const auto& [tab, title] : tabs) {
+                    auto* button = new RailButtonItem(theme, tab, title, rail->vertical(), theme.metrics.edgeThickness, rail);
+                    button->clicked = [this, tab, group = groups.value(tab)] {
+                        if (peekTab_ == tab) closePeek(); else showPeek(group, tab);
+                    };
+                    // Context menus arrive with the Quick menus (10.4).
+                    button->close = [this, tab] { manager_.closeTab(tab); };
+                    rail->addButton(button);
+                }
+                auto* pinAll = new ButtonItem(theme, rail);
+                pinAll->setIcon(iconFor(QStringLiteral("pin-all"), theme));
+                pinAll->setToolTip(QCoreApplication::translate("WindowSystem", "Pin all sidebar tabs"));
+                connect(pinAll, &ButtonItem::clicked, this, [this, edge] { manager_.pinEdge(window_, edge, true); });
+                rail->setTail(pinAll);
+                rail->thicknessChanged = [this] { layoutCenter(); };
+                rail->hoverGeometryChanged = [this] { placePeek(); };
+                if (anchor) rail->restoreScrollAnchor(*anchor);
+            }
+        }
+        if (!rail) continue;
+        rail->setVisible(shown);
+        int ordinal = 0;
+        for (auto* button : rail->buttons()) {
+            const auto tab = button->tab();
+            button->setPreset(manager_.tabColorPreset(model.tab(tab)->colorId));
+            button->setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
+            ++ordinal;
+            button->setPresentation(appearance.showSidebarIcons && manager_.tabOptions(tab).showIcon
+                ? iconFor(QStringLiteral("window"), theme) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
+            button->setChecked(tab == peekTab_);
+        }
+    }
+}
+
+void DockSurfaceItem::showPeek(GroupId group, TabId tab)
+{
+    closePeek();
+    const auto* record = manager_.model().tab(tab);
+    if (!record) return;
+    peekGroup_ = group; peekTab_ = tab;
+    auto* panel = new PeekItem(manager_.interfaceTheme(), this);
+    panel->setZ(5);
+    panel->setTitle(record->title, QGuiApplication::font());
+    panel->setPage(page(tab));
+    panel->pinRequested = [this, tab] { manager_.pinTab(tab, true); };
+    panel->closeRequested = [this, tab] { manager_.closeTab(tab); };
+    peek_ = panel;
+    if (window()) window()->installEventFilter(this);
+    for (const auto& rail : rails_)
+        if (rail) for (auto* button : rail->buttons()) button->setChecked(button->tab() == tab);
+    placePeek();
+    manager_.activateTab(tab);
+}
+
+void DockSurfaceItem::closePeek()
+{
+    if (!peek_) return;
+    if (auto* page = peek_->page()) { page->setVisible(false); page->setParentItem(nullptr); }
+    delete peek_.data();
+    if (window()) window()->removeEventFilter(this);
+    peekGroup_ = {}; peekTab_ = {};
+    for (const auto& rail : rails_)
+        if (rail) for (auto* button : rail->buttons()) button->setChecked(false);
+}
+
+// The Widgets panel's size and placement: a requested or default extent
+// across the edge, following its own rail button along it.
+void DockSurfaceItem::placePeek()
+{
+    if (!peek_) return;
+    const auto* group = manager_.model().group(peekGroup_);
+    if (!group) return;
+    const auto edge = group->edge;
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    const auto requested = manager_.peekSizePolicy(peekTab_, edge);
+    const auto available = inner_;
+    const int h = std::min(available.height(), requested.height.value_or(vertical ? available.height() : 170));
+    const int w = std::min(available.width(), requested.width.value_or(vertical ? 250 : available.width()));
+    QPoint origin = available.topLeft();
+    if (const auto& rail = rails_[size_t(edge)]; rail && rail->isVisible())
+        for (auto* button : rail->buttons()) {
+            if (button->tab() != peekTab_) continue;
+            const auto trigger = button->mapRectToItem(this, button->boundingRect()).toRect();
+            if (vertical) origin.setY(std::clamp(trigger.top(), available.top(), std::max(available.top(), available.bottom() - h + 1)));
+            else origin.setX(std::clamp(trigger.left(), available.left(), std::max(available.left(), available.right() - w + 1)));
+            break;
+        }
+    switch (edge) {
+    case Edge::Left: peek_->setPosition(QPointF(available.x(), origin.y())); break;
+    case Edge::Right: peek_->setPosition(QPointF(available.right() - w + 1, origin.y())); break;
+    case Edge::Top: peek_->setPosition(QPointF(origin.x(), available.y())); break;
+    case Edge::Bottom: peek_->setPosition(QPointF(origin.x(), available.bottom() - h + 1)); break;
+    }
+    peek_->setSize(QSizeF(w, h));
+}
+
+bool DockSurfaceItem::eventFilter(QObject* watched, QEvent* event)
+{
+    if (peek_ && watched == window()) {
+        if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+            closePeek();
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto point = mapFromScene(static_cast<QMouseEvent*>(event)->scenePosition());
+            const auto inside = [&point](const QQuickItem* item) {
+                return item && item->isVisible() && QRectF(item->position(), item->size()).contains(point);
+            };
+            bool onRail = false;
+            for (const auto& rail : rails_) onRail = onRail || inside(rail);
+            if (!inside(peek_) && !onRail) closePeek();
+        }
+    }
+    return QQuickItem::eventFilter(watched, event);
 }
 
 // As the Widgets surface nests its splitters: the top and bottom regions
@@ -222,6 +392,13 @@ void DockSurfaceItem::sync()
     }
     for (const auto id : groups_.keys())
         if (!leaves.contains(id)) releaseGroup(id);
+    syncRails();
+    // A panel closes when its tab leaves this window's sidebar.
+    if (peek_) {
+        const auto* group = model.group(model.groupForTab(peekTab_));
+        if (!group || group->id != peekGroup_ || group->windowId != window_ || group->location != GroupLocation::AutoHide) closePeek();
+        else peek_->setTitle(model.tab(peekTab_)->title, QGuiApplication::font());
+    }
     // Pages of tabs that left this window or closed release their content.
     for (auto it = pages_.begin(); it != pages_.end();) {
         const auto* group = manager_.model().group(manager_.model().groupForTab(it.key()));
@@ -236,13 +413,20 @@ void DockSurfaceItem::sync()
 }
 
 GroupItem* DockSurfaceItem::group(GroupId id) const { return groups_.value(id); }
+RailItem* DockSurfaceItem::rail(Edge edge) const { return rails_[size_t(edge)]; }
+PeekItem* DockSurfaceItem::peek() const { return peek_; }
 
 QRect DockSurfaceItem::groupRect(GroupId id) const { return center_->leafRect(id).translated(center_->position().toPoint()); }
 
 QSize DockSurfaceItem::minimumSize() const
 {
     const int margin = uiPixels(surfaceOuterMargin);
-    return center_->minimumSize() + QSize(2 * margin, 2 * margin);
+    const auto thickness = [this](Edge edge) {
+        const auto& rail = rails_[size_t(edge)];
+        return rail && rail->isVisible() ? rail->thickness() : 0;
+    };
+    return center_->minimumSize() + QSize(2 * margin + thickness(Edge::Left) + thickness(Edge::Right),
+                                          2 * margin + thickness(Edge::Top) + thickness(Edge::Bottom));
 }
 
 } // namespace window_system::quick

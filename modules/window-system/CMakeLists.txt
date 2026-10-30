@@ -137,7 +137,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
     src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp
-    src/quick/tab_content_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
+    src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
     include/window_system/quick_workspace.hpp)
 add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
 set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)

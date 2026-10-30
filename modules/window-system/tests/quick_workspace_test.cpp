@@ -5,6 +5,9 @@
 // while its tab moves between windows.
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
+#include "quick/peek_item.hpp"
+#include "quick/rail_button_item.hpp"
+#include "quick/rail_item.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 
@@ -154,6 +157,73 @@ private slots:
         QTest::mouseRelease(quickWindow, Qt::LeftButton, Qt::NoModifier, grab + QPoint(60, 0));
         QTRY_COMPARE(model.group(leftGroup)->edgeExtent, leftRect.width() + 60);
         QTRY_COMPARE(dock->groupRect(leftGroup).width(), leftRect.width() + 60);
+    }
+
+    void sidebarTabsOpenInAPanelOverTheWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto center = manager.addTab(window, named(QStringLiteral("Center")));
+        const auto first = manager.addTab(window, named(QStringLiteral("First")));
+        const auto second = manager.addTab(window, named(QStringLiteral("Second")));
+        QVERIFY(manager.moveTabToEdge(first, Edge::Bottom));
+        QVERIFY(manager.moveTabToEdge(second, Edge::Bottom));
+        manager.activateTab(center);
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+        auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(dock);
+        QTRY_VERIFY(dock->rail(Edge::Bottom));
+        auto* rail = dock->rail(Edge::Bottom);
+        QCOMPARE(rail->buttons().size(), 2);
+        QVERIFY(!dock->rail(Edge::Left));
+        // The rail spans the bottom; the groups end above it.
+        QCOMPARE(int(rail->y() + rail->height()), int(dock->height()));
+        QCOMPARE(int(rail->width()), int(dock->width()));
+        QVERIFY(dock->groupRect(manager.model().groupForTab(center)).bottom() < rail->y());
+
+        const auto click = [&](const QQuickItem* item) {
+            QTest::mouseClick(quickWindow, Qt::LeftButton, Qt::NoModifier,
+                              item->mapToScene(item->boundingRect().center()).toPoint());
+        };
+        auto* button = rail->buttons().at(1);
+        QCOMPARE(button->tab(), second);
+        click(button);
+        QTRY_VERIFY(dock->peek());
+        QCOMPARE(dock->peekTab(), second);
+        QVERIFY(button->isChecked());
+        QTRY_COMPARE(manager.model().group(manager.model().groupForTab(second))->activeTab, second);
+        // The panel rests on the rail, across the window, with the tab's content.
+        auto* peek = dock->peek();
+        QCOMPARE(int(peek->y() + peek->height()), int(rail->y()));
+        QCOMPARE(int(peek->width()), int(dock->width()));
+        QPointer<QQuickItem> content = workspace.content(manager.model().tab(second)->activePane);
+        QTRY_VERIFY(shownIn(content, quickWindow));
+        QVERIFY(content->mapRectToItem(dock, content->boundingRect()).bottom() <= rail->y());
+
+        QTest::keyClick(quickWindow, Qt::Key_Escape);
+        QVERIFY(!dock->peek());
+        QVERIFY(!button->isChecked());
+        QVERIFY(!shownIn(content, quickWindow));
+
+        // A click elsewhere closes the panel; clicking its button toggles it.
+        click(button);
+        QTRY_VERIFY(dock->peek());
+        click(dock->group(manager.model().groupForTab(center)));
+        QVERIFY(!dock->peek());
+        click(button);
+        QTRY_VERIFY(dock->peek());
+        click(button);
+        QVERIFY(!dock->peek());
+
+        // Pinning the tab takes it off the rail; the last one removes the rail.
+        QVERIFY(manager.pinTab(second, true));
+        QTRY_COMPARE(dock->rail(Edge::Bottom)->buttons().size(), 1);
+        QVERIFY(manager.pinTab(first, true));
+        QTRY_VERIFY(!dock->rail(Edge::Bottom));
     }
 
     void shortcutsRunInTheirQuickWindow()
