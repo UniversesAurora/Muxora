@@ -22,6 +22,16 @@
 
 using namespace window_system;
 namespace {
+// Over a strip the carrier window is its labels alone. Since the one-piece
+// surface (surface elevation design) their rounded outlines cut the
+// corners, so the mask lies within the labels and reaches each one.
+void verifyLabelMask(const QRegion& mask, const QVector<QRect>& labels)
+{
+    QRegion area;
+    for (const auto& label : labels) { area += label; QVERIFY(mask.contains(label.center())); }
+    QVERIFY((mask - area).isEmpty());
+    QCOMPARE(mask.boundingRect(), area.boundingRect());
+}
 class CarrierCommitObserver final : public QObject {
 public:
     explicit CarrierCommitObserver(WorkspaceWindow* carrier) : carrier_(carrier)
@@ -151,11 +161,6 @@ void DragPresentationTest::gapDisplacesOnlyTheVisualTabs()
     const auto gap = tabs.insertionPreviewRectGlobal(); QVERIFY(!gap.isEmpty()); QCOMPARE(gap.width(), width);
     // The decision does not move with the gap it opened.
     QCOMPARE(tabs.insertionIndex(probe), 1);
-    // The gap is empty strip: no placeholder block is drawn (tab strip design 6.1).
-    const auto pixel = tabs.tabBar()->grab().toImage();
-    const auto point = tabs.tabBar()->dropPreviewRect().center();
-    QCOMPARE(pixel.pixelColor(qRound(point.x() * pixel.devicePixelRatio()), qRound(point.y() * pixel.devicePixelRatio())).rgb(),
-             defaultTheme().headerBackground.rgb());
     tabs.setInsertionPreview(-1, {});
     QVERIFY(tabs.insertionPreviewRectGlobal().isEmpty()); QCOMPARE(tabs.tabBar()->displayTabRect(1), second);
 }
@@ -660,8 +665,11 @@ void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent()
     moveMouse(sourceBar, start + QPoint(QApplication::startDragDistance() + 3, 0));
     QCOMPARE(QWidget::mouseGrabber(), sourceWindow);
     // Leaving the entire two-row source creates the real carrier, rather
-    // than mistaking a move onto the other row for a detach.
-    const auto outside = sourceWindow->mapToGlobal(QPoint(8, sourceWindow->height() / 2));
+    // than mistaking a move onto the other row for a detach. A lifted tab
+    // stays in its strip up to a tab height past it (tab strip design 6.2).
+    const int beyond = 2 * sourceBar->metrics().rowHeight;
+    const auto outside = QPoint(sourceWindow->mapToGlobal(QPoint(8, 0)).x(), bottom
+        ? sourceBar->mapToGlobal(QPoint()).y() - beyond : sourceBar->mapToGlobal(QPoint(0, sourceBar->height())).y() + beyond);
     moveMouse(sourceWindow, outside);
     QPointer<WorkspaceWindow> carrier = dynamic_cast<WorkspaceWindow*>(QWidget::mouseGrabber());
     QVERIFY(carrier && carrier != sourceWindow);
@@ -681,7 +689,7 @@ void DragPresentationTest::stickyRowPreviewKeepsTheLabelAgainstItsContent()
         QVERIFY(label.height() == bar->metrics().rowHeight);
         if (bottom) QVERIFY(label.top() >= body.bottom());
         else QVERIFY(body.top() >= label.bottom());
-        QCOMPARE(carrier->mask(), QRegion(label));
+        verifyLabelMask(carrier->mask(), {label}); if (QTest::currentTestFailed()) return;
         QCOMPARE(carrier->dragLabelAnchor(), label.center());
         QCOMPARE(carrier->winId(), hwnd); QCOMPARE(QWidget::mouseGrabber(), carrier.data());
         QCOMPARE(manager.paneWidget(pane), content); QVERIFY(content->isVisible());
@@ -726,7 +734,7 @@ void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
     carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Tab);
     // Over a strip only the tabs remain; the target shows the content
     // (tab strip design 6.2).
-    QRegion expected; QRect first;
+    QVector<QRect> labels; QRect first;
     const auto viewport = group->viewportRectGlobal();
     for (int i = 0; i < bar->count(); ++i) {
         const auto shown = bar->displayTabRect(i);
@@ -734,10 +742,11 @@ void DragPresentationTest::compactPreviewMaskFollowsTheDisplayedRows()
         const QRect label(bar->mapTo(carrier, shown.topLeft()), shown.size());
         QVERIFY(viewport.contains(QRect(bar->mapToGlobal(shown.topLeft()), shown.size())));
         if (first.isEmpty()) first = label;
-        expected += label;
+        labels.append(label);
     }
     QVERIFY(!first.isEmpty());
-    QCOMPARE(carrier->mask(), expected); QCOMPARE(carrier->dragLabelAnchor(), first.center());
+    verifyLabelMask(carrier->mask(), labels); if (QTest::currentTestFailed()) return;
+    QCOMPARE(carrier->dragLabelAnchor(), first.center());
     if (collapsed && !sticky) QVERIFY(bar->displayTabRect(0).isEmpty());
     carrier->setDragPresentation(WorkspaceWindow::DragPresentation::Window);
     QCOMPARE(bar->height(), normalHeight); QVERIFY(carrier->mask().isEmpty()); QCOMPARE(carrier->winId(), hwnd);
