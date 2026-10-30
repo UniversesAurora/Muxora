@@ -138,7 +138,8 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/tab_strip_item.cpp src/quick/tab_carrier_item.cpp src/quick/tab_foreground_item.cpp
         src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
         src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
-        src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp)
+        src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
+        src/quick/rail_button_item.cpp src/quick/rail_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
