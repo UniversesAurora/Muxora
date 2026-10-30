@@ -171,16 +171,6 @@ void detachFromSplitter(QWidget* widget)
     const int index = splitter ? splitter->indexOf(widget) : -1;
     if (index >= 0) splitter->replaceWidget(index, new QWidget);
 }
-int pinnedExtent(LayoutTree tree, const LayoutModel& model, Qt::Orientation axis, int gap) {
-    if (!tree) return 0;
-    if (tree->isLeaf()) {
-        const auto* group = model.group(tree->itemId);
-        return group ? group->edgeExtent : 0;
-    }
-    const int first = pinnedExtent(tree->first, model, axis, gap);
-    const int second = pinnedExtent(tree->second, model, axis, gap);
-    return tree->orientation == axis ? first + second + gap : qMax(first, second);
-}
 } // namespace
 
 void DockSurface::refreshInterfaceMetrics()
