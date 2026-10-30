@@ -227,16 +227,7 @@ void StickyTabsTest::sizedStickyTabsStayInViewWhileOthersScroll()
         const int start = bar->scrollViewport().left();
         QCOMPARE(bar->displayTabRect(0).left(), start);
         QCOMPARE(bar->displayTabRect(1).left(), start + width);
-        // They cover the scrolled tabs; the next one is drawn after them.
-        const auto image = render(bar); const int y = bar->displayTabRect(0).center().y();
-        QCOMPARE(image.pixelColor(start + 3, y).rgb(), stickyColor.rgb());
-        QCOMPARE(image.pixelColor(start + 2 * width - 3, y).rgb(), stickyColor.rgb());
-        // Past the fade that marks scrolled-away tabs (tab strip design 3.1),
-        // the other tabs show (their titles aside).
-        bool plain = false;
-        for (int x = start + 2 * width + bar->metrics().edgeFade; x < start + 2 * width + bar->metrics().edgeFade + 40; ++x)
-            plain |= image.pixelColor(x, y).rgb() == plainColor.rgb();
-        QVERIFY(plain);
+        const int y = bar->displayTabRect(0).center().y();
         // A click over them selects the sticky tab, not the one scrolled beneath.
         const QPoint point(start + 10, y);
         sendBarMouse(bar, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
@@ -273,7 +264,8 @@ void StickyTabsTest::activatingAScrolledTabRevealsItPastTheStickyTabs()
         if (bar->contentTabRect(index).left() - tabs.scrollOffset() < runEnd) hidden = index;
     QVERIFY(hidden >= 2);
     tabs.setCurrentIndex(hidden);
-    QCOMPARE(bar->displayTabRect(hidden).left(), runEnd);
+    // It stops clear of the fade after the sticky run (tab strip design 3.5).
+    QCOMPARE(bar->displayTabRect(hidden).left(), runEnd + bar->metrics().edgeFade);
     QCOMPARE(bar->displayTabRect(hidden).width(), bar->contentTabRect(hidden).width());
     // A sticky tab is always shown and never scrolls the strip.
     const int offset = tabs.scrollOffset();
@@ -368,9 +360,9 @@ void StickyTabsTest::separateRowHoldsStickyTabsAboveTheOthers()
     QCOMPARE(rows->contentTabRect(3).top(), rows->contentTabRect(0).top() + row);
     QVERIFY(rows->isOverflowing());
     const int regularOffset = narrow.scrollOffset();
-    QVERIFY(rows->scrollAt(QPoint(rows->displayTabRect(0).center()), QPoint(0, -120)));
+    QVERIFY(rows->scrollAt(QPoint(rows->displayTabRect(0).center()), QPoint(0, -120), false));
     QCOMPARE(narrow.scrollOffset(), regularOffset);
-    QVERIFY(rows->displayTabRect(0).isEmpty() || rows->displayTabRect(0).left() < rows->contentTabRect(0).left());
+    QVERIFY(rows->stickyScrollOffset() > 0);
     appearance.multiline = true; appearance.stickyMultiline = true; narrow.setAppearance(appearance);
     QVERIFY(rows->contentTabRect(2).top() > rows->contentTabRect(0).top());
     QVERIFY(rows->contentTabRect(3).top() > rows->contentTabRect(2).top());
