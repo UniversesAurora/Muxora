@@ -398,6 +398,12 @@ bool GroupSurfaceItem::prepareFrame()
     }
     PathGeometryOptions options; options.devicePixelRatio = out.ratio;
     out.extension.update(frame_.extension.path, options);
+    // A vertical strip bridges a one-pixel gap to the card: too thin for an
+    // inset antialiasing band. Drawn aliased it covers the same pixels.
+    if (out.extension.geometry().error == PathGeometryError::AntialiasingTopology) {
+        auto aliased = options; aliased.antialiasing = false;
+        out.extension.update(frame_.extension.path, aliased);
+    }
     if (!out.extension.geometry().valid()) { out.error = out.extension.geometry().error; return false; }
     if (frame_.column && frame_.column->opacity > 0) {
         const auto& column = *frame_.column;

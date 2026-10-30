@@ -247,6 +247,28 @@ private slots:
         QVERIFY(renderFrame(second));
     }
 
+    // A vertical strip's active row bridges the one-pixel gap to its card.
+    // That sliver is too thin for an inset antialiasing band; it must not
+    // take the group's shadows and joint with it.
+    void verticalJointSliverKeepsTheGroupSurface()
+    {
+        QQuickWindow window; prepareWindow(window);
+        auto* item = new GroupSurfaceItem(window.contentItem());
+        item->setSize(window.size());
+        TabGroupSurfaceFrame frame;
+        frame.groupBounds = QRect(QPoint(), window.size()); frame.body = QRectF(223, 0, 120, 200); frame.radius = 8;
+        frame.elevation = elevationProfile(ElevationLevel::BodyRest);
+        prepareTabGroupSurfaceFrame(frame);
+        QPainterPath sliver;
+        sliver.moveTo(223, 28); sliver.lineTo(222.556, 30.222); sliver.lineTo(222, 30.778); sliver.lineTo(222, 61.222);
+        sliver.lineTo(222.556, 61.778); sliver.lineTo(223, 64); sliver.closeSubpath();
+        frame.extension = {sliver, Qt::white, 1};
+        QVERIFY(item->setFrame(frame));
+        QCOMPARE(item->geometryError(), PathGeometryError::None);
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTRY_VERIFY(item->renderStats().textureUploads > 0);
+    }
+
     void groupFramesKeepResourcesAcrossReplacementAndWindowChanges()
     {
         QQuickWindow first, second; prepareWindow(first); prepareWindow(second);
