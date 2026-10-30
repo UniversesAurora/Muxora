@@ -537,7 +537,11 @@ void TabStripLayoutTest::wheelExpandedRowsSurviveRebuildsUntilCollapsed()
         QCOMPARE(manager.model().tab(ids[index])->activePane, panes[index]);
         QCOMPARE(manager.paneWidget(panes[index]), contents[index].data());
     }
-    view->scrollByWheel({0, 120}); QTRY_VERIFY(!view->tabBar()->expanded());
+    // Scrolled expanded rows first return to their end; after a pause the
+    // next wheel step collapses them (tab strip design 3.4).
+    view->scrollByWheel({0, 120}); QTRY_COMPARE(view->tabBar()->rowScrollOffset(), 0);
+    if (view->tabBar()->expanded()) { QTest::qWait(300); view->scrollByWheel({0, 120}); }
+    QTRY_VERIFY(!view->tabBar()->expanded());
     const auto collapsedTab = manager.addTab(window, new QLabel("Created while collapsed"), {"MMMM final tab", "label", {}}, group);
     QVERIFY(!collapsedTab.isNull()); view = groupView(manager.windowWidget(window), group); QVERIFY(view);
     QVERIFY(!view->tabBar()->expanded()); QVERIFY(view->tabBar()->hiddenTabs() > 0);
