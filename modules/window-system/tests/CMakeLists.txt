@@ -5,174 +5,53 @@ add_test(NAME window-system.model COMMAND window-system-model-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/model-results.txt,txt)
 set_tests_properties(window-system.model PROPERTIES LABELS model)
 
-qt_add_executable(window-system-frame-motion-test frame_motion_test.cpp)
-target_link_libraries(window-system-frame-motion-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-frame-motion-test PRIVATE cxx_std_20)
-target_include_directories(window-system-frame-motion-test PRIVATE ../src)
-set_target_properties(window-system-frame-motion-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.frame-motion COMMAND window-system-frame-motion-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/frame-motion-results.txt,txt)
-set_tests_properties(window-system.frame-motion PROPERTIES TIMEOUT 60 LABELS model)
+# One test executable per suite: <suite>_test.cpp, its label from
+# docs/development/testing-design.md (desktop suites run serially). LINK
+# defaults to the Widgets library; SOURCES adds sources compiled into it.
+function(window_system_add_suite suite label)
+    cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "LINK;SOURCES")
+    if(NOT arg_LINK)
+        set(arg_LINK WindowSystem::Widgets)
+    endif()
+    string(REPLACE "-" "_" source_name ${suite})
+    qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp ${arg_SOURCES})
+    target_link_libraries(window-system-${suite}-test PRIVATE ${arg_LINK} Qt6::Test)
+    target_compile_features(window-system-${suite}-test PRIVATE cxx_std_20)
+    target_include_directories(window-system-${suite}-test PRIVATE ../src ../include)
+    set_target_properties(window-system-${suite}-test PROPERTIES AUTOMOC ON)
+    add_test(NAME window-system.${suite} COMMAND window-system-${suite}-test
+        -o ${CMAKE_CURRENT_BINARY_DIR}/${suite}-results.txt,txt)
+    set_tests_properties(window-system.${suite} PROPERTIES TIMEOUT 60 LABELS ${label})
+    if(label STREQUAL "desktop")
+        set_tests_properties(window-system.${suite} PROPERTIES RUN_SERIAL TRUE)
+    endif()
+endfunction()
 
-qt_add_executable(window-system-tab-position-motion-test tab_position_motion_test.cpp)
-target_link_libraries(window-system-tab-position-motion-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-position-motion-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-position-motion-test PRIVATE ../src)
-set_target_properties(window-system-tab-position-motion-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-position-motion COMMAND window-system-tab-position-motion-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-position-motion-results.txt,txt)
-set_tests_properties(window-system.tab-position-motion PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-label-presence-test label_presence_test.cpp)
-target_link_libraries(window-system-label-presence-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-label-presence-test PRIVATE cxx_std_20)
-target_include_directories(window-system-label-presence-test PRIVATE ../src)
-set_target_properties(window-system-label-presence-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.label-presence COMMAND window-system-label-presence-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/label-presence-results.txt,txt)
-set_tests_properties(window-system.label-presence PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-label-geometry-test tab_label_geometry_test.cpp)
-target_link_libraries(window-system-tab-label-geometry-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-label-geometry-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-label-geometry-test PRIVATE ../src ../include)
-set_target_properties(window-system-tab-label-geometry-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-label-geometry COMMAND window-system-tab-label-geometry-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-label-geometry-results.txt,txt)
-set_tests_properties(window-system.tab-label-geometry PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-reorder-test tab_reorder_test.cpp)
-target_link_libraries(window-system-tab-reorder-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-reorder-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-reorder-test PRIVATE ../src)
-set_target_properties(window-system-tab-reorder-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-reorder COMMAND window-system-tab-reorder-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-reorder-results.txt,txt)
-set_tests_properties(window-system.tab-reorder PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-pointer-controller-test tab_pointer_controller_test.cpp)
-target_link_libraries(window-system-tab-pointer-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-pointer-controller-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-pointer-controller-test PRIVATE ../src)
-set_target_properties(window-system-tab-pointer-controller-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-pointer-controller COMMAND window-system-tab-pointer-controller-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-pointer-controller-results.txt,txt)
-set_tests_properties(window-system.tab-pointer-controller PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-hover-controller-test tab_hover_controller_test.cpp)
-target_link_libraries(window-system-tab-hover-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_include_directories(window-system-tab-hover-controller-test PRIVATE ../src)
-set_target_properties(window-system-tab-hover-controller-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-hover-controller COMMAND window-system-tab-hover-controller-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-hover-controller-results.txt,txt)
-set_tests_properties(window-system.tab-hover-controller PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-keyboard-controller-test tab_keyboard_controller_test.cpp)
-target_link_libraries(window-system-tab-keyboard-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_include_directories(window-system-tab-keyboard-controller-test PRIVATE ../src)
-set_target_properties(window-system-tab-keyboard-controller-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-keyboard-controller COMMAND window-system-tab-keyboard-controller-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-keyboard-controller-results.txt,txt)
-set_tests_properties(window-system.tab-keyboard-controller PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-viewport-reflow-test tab_viewport_reflow_test.cpp)
-target_link_libraries(window-system-tab-viewport-reflow-test PRIVATE WindowSystem::Model Qt6::Test)
-target_include_directories(window-system-tab-viewport-reflow-test PRIVATE ../src)
-set_target_properties(window-system-tab-viewport-reflow-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-viewport-reflow COMMAND window-system-tab-viewport-reflow-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-viewport-reflow-results.txt,txt)
-set_tests_properties(window-system.tab-viewport-reflow PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-wheel-controller-test tab_wheel_controller_test.cpp)
-target_link_libraries(window-system-tab-wheel-controller-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-wheel-controller-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-wheel-controller-test PRIVATE ../src)
-set_target_properties(window-system-tab-wheel-controller-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-wheel-controller COMMAND window-system-tab-wheel-controller-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-wheel-controller-results.txt,txt)
-set_tests_properties(window-system.tab-wheel-controller PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-tab-drag-geometry-test tab_drag_geometry_test.cpp)
-target_link_libraries(window-system-tab-drag-geometry-test PRIVATE WindowSystemPresentation Qt6::Test)
-target_compile_features(window-system-tab-drag-geometry-test PRIVATE cxx_std_20)
-target_include_directories(window-system-tab-drag-geometry-test PRIVATE ../src)
-set_target_properties(window-system-tab-drag-geometry-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-drag-geometry COMMAND window-system-tab-drag-geometry-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-drag-geometry-results.txt,txt)
-set_tests_properties(window-system.tab-drag-geometry PROPERTIES TIMEOUT 60 LABELS model)
-
-qt_add_executable(window-system-quick-path-test quick_path_test.cpp
-    ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)
-target_link_libraries(window-system-quick-path-test PRIVATE Qt6::Gui Qt6::Test)
-target_compile_features(window-system-quick-path-test PRIVATE cxx_std_20)
-target_include_directories(window-system-quick-path-test PRIVATE ../src)
-set_target_properties(window-system-quick-path-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.quick-path COMMAND window-system-quick-path-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/quick-path-results.txt,txt)
-set_tests_properties(window-system.quick-path PROPERTIES TIMEOUT 60 LABELS model)
+foreach(suite IN ITEMS frame-motion tab-position-motion label-presence tab-label-geometry tab-reorder
+        tab-pointer-controller tab-hover-controller tab-keyboard-controller tab-wheel-controller tab-drag-geometry)
+    window_system_add_suite(${suite} model LINK WindowSystemPresentation)
+endforeach()
+window_system_add_suite(tab-viewport-reflow model LINK WindowSystem::Model)
+window_system_add_suite(dock-guides-geometry model LINK WindowSystem::Model)
+window_system_add_suite(quick-path model LINK Qt6::Gui
+    SOURCES ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)
+# The surface geometry, renderer and shared raster resources link without
+# Widgets, just as the Quick adapter prepares GUI-thread resources.
+foreach(suite IN ITEMS surface-elevation tab-carrier-presentation tab-label-store tab-strip-arrangement)
+    window_system_add_suite(${suite} widget LINK WindowSystemSurfaces)
+endforeach()
 
 if(TARGET WindowSystemQuick)
-    qt_add_executable(window-system-quick-tab-bar-input-test quick_tab_bar_input_test.cpp)
-    target_link_libraries(window-system-quick-tab-bar-input-test PRIVATE WindowSystemQuick Qt6::Test)
-    target_include_directories(window-system-quick-tab-bar-input-test PRIVATE ../src)
-    set_target_properties(window-system-quick-tab-bar-input-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-tab-bar-input COMMAND window-system-quick-tab-bar-input-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-tab-bar-input-results.txt,txt)
-    set_tests_properties(window-system.quick-tab-bar-input PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
-    qt_add_executable(window-system-quick-content-host-test quick_content_host_test.cpp)
-    target_link_libraries(window-system-quick-content-host-test PRIVATE WindowSystemQuick WindowSystemPlatform WindowSystem::Model Qt6::Test)
-    target_include_directories(window-system-quick-content-host-test PRIVATE ../src)
-    set_target_properties(window-system-quick-content-host-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-content-host COMMAND window-system-quick-content-host-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-content-host-results.txt,txt)
-    set_tests_properties(window-system.quick-content-host PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
-    if(WIN32)
-        qt_add_executable(window-system-quick-native-frame-test quick_native_frame_test.cpp)
-        target_link_libraries(window-system-quick-native-frame-test PRIVATE WindowSystemQuick WindowSystemPlatform Qt6::Test user32)
-        target_include_directories(window-system-quick-native-frame-test PRIVATE ../src)
-        set_target_properties(window-system-quick-native-frame-test PROPERTIES AUTOMOC ON)
-        add_test(NAME window-system.quick-native-frame COMMAND window-system-quick-native-frame-test
-            -o ${CMAKE_CURRENT_BINARY_DIR}/quick-native-frame-results.txt,txt)
-        set_tests_properties(window-system.quick-native-frame PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
-    endif()
-    qt_add_executable(window-system-quick-split-tree-test quick_split_tree_test.cpp)
-    target_link_libraries(window-system-quick-split-tree-test PRIVATE WindowSystemQuick WindowSystem::Model Qt6::Test)
-    target_include_directories(window-system-quick-split-tree-test PRIVATE ../src)
-    set_target_properties(window-system-quick-split-tree-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-split-tree COMMAND window-system-quick-split-tree-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-split-tree-results.txt,txt)
-    set_tests_properties(window-system.quick-split-tree PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
-    qt_add_executable(window-system-quick-tab-presentation-test quick_tab_presentation_test.cpp)
-    target_link_libraries(window-system-quick-tab-presentation-test PRIVATE WindowSystemQuick WindowSystem::Widgets Qt6::Test)
-    target_include_directories(window-system-quick-tab-presentation-test PRIVATE ../src)
-    set_target_properties(window-system-quick-tab-presentation-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-tab-presentation COMMAND window-system-quick-tab-presentation-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-tab-presentation-results.txt,txt)
-    set_tests_properties(window-system.quick-tab-presentation PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
-    foreach(contract IN ITEMS text label carrier foreground)
-        qt_add_executable(window-system-quick-${contract}-resources-test quick_${contract}_resources_test.cpp)
-        target_link_libraries(window-system-quick-${contract}-resources-test PRIVATE WindowSystemQuick Qt6::Test)
-        target_include_directories(window-system-quick-${contract}-resources-test PRIVATE ../src)
-        set_target_properties(window-system-quick-${contract}-resources-test PROPERTIES AUTOMOC ON)
-        add_test(NAME window-system.quick-${contract}-resources COMMAND window-system-quick-${contract}-resources-test
-            -o ${CMAKE_CURRENT_BINARY_DIR}/quick-${contract}-resources-results.txt,txt)
-        set_tests_properties(window-system.quick-${contract}-resources PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
+    foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-resources quick-carrier-resources
+            quick-foreground-resources quick-strip-resources quick-rendering)
+        window_system_add_suite(${suite} desktop LINK WindowSystemQuick)
     endforeach()
-    qt_add_executable(window-system-quick-strip-resources-test quick_strip_resources_test.cpp)
-    target_link_libraries(window-system-quick-strip-resources-test PRIVATE WindowSystemQuick Qt6::Test)
-    target_include_directories(window-system-quick-strip-resources-test PRIVATE ../src)
-    set_target_properties(window-system-quick-strip-resources-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-strip-resources COMMAND window-system-quick-strip-resources-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-strip-resources-results.txt,txt)
-    set_tests_properties(window-system.quick-strip-resources PROPERTIES RUN_SERIAL TRUE LABELS desktop)
-    qt_add_executable(window-system-quick-rendering-test quick_rendering_test.cpp)
-    target_link_libraries(window-system-quick-rendering-test PRIVATE WindowSystemQuick Qt6::Test)
-    target_compile_features(window-system-quick-rendering-test PRIVATE cxx_std_20)
-    target_include_directories(window-system-quick-rendering-test PRIVATE ../src)
-    set_target_properties(window-system-quick-rendering-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.quick-rendering COMMAND window-system-quick-rendering-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/quick-rendering-results.txt,txt)
-    set_tests_properties(window-system.quick-rendering PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
+    window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)
+    window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
+    window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
+    if(WIN32)
+        window_system_add_suite(quick-native-frame desktop LINK WindowSystemQuick WindowSystemPlatform user32)
+    endif()
 endif()
 
 qt_add_executable(window-system-widget-test workspace_test.cpp)
@@ -218,72 +97,19 @@ add_dependencies(window-system-drag-test window-system-overlay-fixture)
 # windows or drive native input and run serially; model and widget suites
 # create no visible window and may run in parallel.
 set(window_system_model_suites pinned-layout pinned-positions tab-layout)
-set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixed-tab-rows hierarchy-conversion visibility-profile tab-appearance tab-title-layout shortcut-settings localization input-method-scope)
-set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse)
-list(APPEND window_system_widget_suites interface-appearance)
-list(APPEND window_system_widget_suites tab-label-presentation)
-list(APPEND window_system_widget_suites tab-carrier-source)
-list(APPEND window_system_widget_suites tab-presentation-source)
-list(APPEND window_system_widget_suites tab-reorder-wiring)
-list(APPEND window_system_widget_suites edge-reorder)
-list(APPEND window_system_desktop_suites integer-slider)
-list(APPEND window_system_desktop_suites input-method-native)
+set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixed-tab-rows hierarchy-conversion visibility-profile tab-appearance tab-title-layout shortcut-settings localization input-method-scope
+    interface-appearance tab-label-presentation tab-carrier-source tab-presentation-source tab-reorder-wiring edge-reorder)
+set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure view-state focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse
+    integer-slider input-method-native)
 if(WIN32)
     list(APPEND window_system_desktop_suites native-drag)
 endif()
-function(window_system_add_suite suite label)
-    string(REPLACE "-" "_" source_name ${suite})
-    qt_add_executable(window-system-${suite}-test ${source_name}_test.cpp)
-    target_link_libraries(window-system-${suite}-test PRIVATE WindowSystem::Widgets Qt6::Test)
-    target_include_directories(window-system-${suite}-test PRIVATE ../src)
-    set_target_properties(window-system-${suite}-test PROPERTIES AUTOMOC ON)
-    add_test(NAME window-system.${suite} COMMAND window-system-${suite}-test
-        -o ${CMAKE_CURRENT_BINARY_DIR}/${suite}-results.txt,txt)
-    set_tests_properties(window-system.${suite} PROPERTIES TIMEOUT 60 LABELS ${label})
-    if(label STREQUAL "desktop")
-        set_tests_properties(window-system.${suite} PROPERTIES RUN_SERIAL TRUE)
-    endif()
-endfunction()
-
-# The shared raster resource adapter must link without Widgets, just as it
-# will when the Quick adapter prepares GUI-thread resources.
-qt_add_executable(window-system-tab-carrier-presentation-test tab_carrier_presentation_test.cpp)
-target_link_libraries(window-system-tab-carrier-presentation-test PRIVATE WindowSystemSurfaces Qt6::Test)
-target_include_directories(window-system-tab-carrier-presentation-test PRIVATE ../src ../include)
-set_target_properties(window-system-tab-carrier-presentation-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-carrier-presentation COMMAND window-system-tab-carrier-presentation-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-carrier-presentation-results.txt,txt)
-set_tests_properties(window-system.tab-carrier-presentation PROPERTIES TIMEOUT 60 LABELS widget)
-
-qt_add_executable(window-system-tab-label-store-test tab_label_store_test.cpp)
-target_link_libraries(window-system-tab-label-store-test PRIVATE WindowSystemSurfaces Qt6::Test)
-target_include_directories(window-system-tab-label-store-test PRIVATE ../src ../include)
-set_target_properties(window-system-tab-label-store-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-label-store COMMAND window-system-tab-label-store-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-label-store-results.txt,txt)
-set_tests_properties(window-system.tab-label-store PROPERTIES TIMEOUT 60 LABELS widget)
-
-qt_add_executable(window-system-tab-strip-arrangement-test tab_strip_arrangement_test.cpp)
-target_link_libraries(window-system-tab-strip-arrangement-test PRIVATE WindowSystemSurfaces Qt6::Test)
-target_include_directories(window-system-tab-strip-arrangement-test PRIVATE ../src ../include)
-set_target_properties(window-system-tab-strip-arrangement-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.tab-strip-arrangement COMMAND window-system-tab-strip-arrangement-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/tab-strip-arrangement-results.txt,txt)
-set_tests_properties(window-system.tab-strip-arrangement PROPERTIES TIMEOUT 60 LABELS widget)
 
 foreach(label model widget desktop)
     foreach(suite IN LISTS window_system_${label}_suites)
         window_system_add_suite(${suite} ${label})
     endforeach()
 endforeach()
-# The surface geometry and renderer have no dependency on window management.
-qt_add_executable(window-system-surface-elevation-test surface_elevation_test.cpp)
-target_link_libraries(window-system-surface-elevation-test PRIVATE WindowSystemSurfaces Qt6::Test)
-target_include_directories(window-system-surface-elevation-test PRIVATE ../src ../include)
-set_target_properties(window-system-surface-elevation-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.surface-elevation COMMAND window-system-surface-elevation-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/surface-elevation-results.txt,txt)
-set_tests_properties(window-system.surface-elevation PROPERTIES LABELS widget TIMEOUT 60)
 # Screen-edge pixels at a second, fractional scale: QT_SCALE_FACTOR=0.75 turns
 # a 200 % monitor into 1.5 (the last physical column maps to x.33 instead of
 # x.5), as on a 150 % laptop panel.
@@ -292,14 +118,6 @@ add_test(NAME window-system.caption-strip-scaled COMMAND window-system-caption-s
     -o ${CMAKE_CURRENT_BINARY_DIR}/caption-strip-scaled-results.txt,txt)
 set_tests_properties(window-system.caption-strip-scaled PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS desktop
     ENVIRONMENT QT_SCALE_FACTOR=0.75)
-qt_add_executable(window-system-dock-guides-geometry-test dock_guides_geometry_test.cpp)
-target_link_libraries(window-system-dock-guides-geometry-test PRIVATE WindowSystem::Model Qt6::Test)
-target_include_directories(window-system-dock-guides-geometry-test PRIVATE ../src)
-set_target_properties(window-system-dock-guides-geometry-test PROPERTIES AUTOMOC ON)
-add_test(NAME window-system.dock-guides-geometry COMMAND window-system-dock-guides-geometry-test
-    -o ${CMAKE_CURRENT_BINARY_DIR}/dock-guides-geometry-results.txt,txt)
-set_tests_properties(window-system.dock-guides-geometry PROPERTIES TIMEOUT 60 LABELS model)
-
 qt_add_executable(window-system-tab-ordering-model-test tab_ordering_model_test.cpp)
 target_link_libraries(window-system-tab-ordering-model-test PRIVATE WindowSystem::Model Qt6::Test)
 set_target_properties(window-system-tab-ordering-model-test PROPERTIES AUTOMOC ON)
