@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <window_system/interface_appearance.hpp>
 #include "dock_surface.hpp"
+#include "dock_values.hpp"
 #include "edge_strip.hpp"
 #include "edge_tab_button.hpp"
 #include "peek_metrics.hpp"
@@ -33,26 +34,6 @@
 #include <utility>
 
 namespace window_system {
-namespace {
-constexpr int surfaceOuterMargin = 4;
-
-// A group's tab folders as its strip shows them, in strip order.
-QVector<TabStripFolder> stripFolders(const LayoutModel& model, const GroupRecord& group)
-{
-    QVector<TabStripFolder> result;
-    for (int index = 0; index < group.tabs.size(); ++index) {
-        const auto* tab = model.tab(group.tabs.at(index));
-        if (!tab || tab->folder.isNull()) continue;
-        if (!result.isEmpty() && result.last().id == tab->folder) { ++result.last().count; continue; }
-        const auto* folder = model.folder(tab->folder);
-        if (!folder) continue;
-        result.append({folder->id, folder->name, folder->colorId, folder->collapsed, index, 1});
-    }
-    return result;
-}
-
-
-}
 namespace {
 class PeekHeader final : public QWidget {
 public:
