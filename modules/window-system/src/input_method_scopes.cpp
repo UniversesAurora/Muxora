@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "input_method_scopes.hpp"
-#include <QWidget>
+#include <QWindow>
 #include <array>
 
 namespace window_system {
@@ -55,24 +55,6 @@ QUuid InputMethodScopes::key(const LayoutModel& model, PaneId pane) const
     return {};
 }
 
-QUuid InputMethodScopes::widgetKey(const LayoutModel& model, QWidget* widget) const
-{
-    if (!widget) return {};
-    // Popup/dialog windows can have a pane as QObject parent. Stop at the
-    // actual top-level so they never become a remembered content range.
-    auto* top = widget->window();
-    const auto* window = model.window(top->property("windowId").toUuid());
-    if (!window) return {};
-    for (auto* current = widget; current; current = current->parentWidget()) {
-        const auto pane = current->property("paneId").toUuid();
-        if (!pane.isNull()) return key(model, pane);
-        if (current == top) break;
-    }
-    const auto* group = model.group(window->activeGroup);
-    const auto* tab = group ? model.tab(group->activeTab) : nullptr;
-    return tab ? key(model, tab->activePane) : QUuid{};
-}
-
 void InputMethodScopes::synchronize(const LayoutModel& model)
 {
     if (modelState_ == model.stateId()) return;
@@ -96,25 +78,34 @@ void InputMethodScopes::synchronize(const LayoutModel& model)
     if (live.isEmpty()) { active_ = {}; focus_.clear(); }
 }
 
-void InputMethodScopes::focus(const LayoutModel& model, QWidget* widget)
+void InputMethodScopes::focus(const LayoutModel& model, PaneId pane, QWindow* window)
 {
-    const auto next = widgetKey(model, widget);
+    const auto next = key(model, pane);
     if (next.isNull()) return; // Temporary UI and other applications do not switch ranges.
-    if (next == active_) { focus_ = widget; return; }
+    if (next == active_) {
+        // One logical range can move to a different native input context.
+        // Preserve its live state even though its model identity is unchanged.
+        if (focus_ != window && window) {
+            if (focus_) states_[next] = backend_->capture(focus_);
+            if (states_.contains(next)) backend_->restore(states_.value(next), window);
+        }
+        focus_ = window;
+        return;
+    }
     if (!active_.isNull() && states_.contains(active_))
         states_[active_] = backend_->capture(focus_);
     if (active_.isNull()) {
         // First entry (including returning after deletion/reset) starts from
         // the actual system state rather than restoring a startup snapshot.
-        if (!states_.contains(next)) states_.insert(next, backend_->capture(widget));
-        else if (!focus_) states_[next] = backend_->capture(widget);
+        if (!states_.contains(next)) states_.insert(next, backend_->capture(window));
+        else if (!focus_) states_[next] = backend_->capture(window);
     } else if (states_.contains(next)) {
-        backend_->restore(states_.value(next), widget);
+        backend_->restore(states_.value(next), window);
     } else {
         states_.insert(next, states_.value(active_));
     }
     active_ = next;
-    focus_ = widget;
+    focus_ = window;
 }
 
 } // namespace window_system

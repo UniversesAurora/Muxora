@@ -15,8 +15,8 @@ public:
     int current = 1;
     int reads = 0;
     QVector<int> restored;
-    InputMethodState capture(QWidget*) override { ++reads; return current; }
-    void restore(const InputMethodState& value, QWidget*) override {
+    InputMethodState capture(QWindow*) override { ++reads; return current; }
+    void restore(const InputMethodState& value, QWindow*) override {
         current = std::any_cast<int>(value); restored.append(current);
     }
 };

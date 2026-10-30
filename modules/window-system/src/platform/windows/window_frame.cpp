@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: MIT
 #include "window_frame.hpp"
 
-#include <QAbstractButton>
-#include <QApplication>
-#include <QEnterEvent>
+#include <QCoreApplication>
 #include <QEvent>
-#include <QMoveEvent>
+#include <QPlatformSurfaceEvent>
 #include <QPointer>
 #include <QScopeGuard>
 #include <QVariant>
-#include <QWidget>
 #include <QWindow>
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -28,6 +26,12 @@ namespace window_system {
 namespace {
 
 constexpr auto frameStateName = "_windowSystemNativeFrameState";
+
+WId existingWinId(const QWindow* window)
+{
+    return window && window->handle() ? window->winId() : WId(0);
+}
+
 // UxTheme's internal caption/frame paint notifications, also guarded by
 // FramelessHelper's Windows backend. These are not public Win32 API contracts:
 // https://github.com/wangwenx190/framelesshelper/blob/main/src/core/framelesshelper_win.cpp#L1247-L1285
@@ -45,15 +49,12 @@ bool isFullScreenStyle(DWORD style)
     return (style & WS_POPUP) && !(style & WS_THICKFRAME);
 }
 
-bool fullScreenRequested(QWidget* window)
+bool fullScreenRequested(QWindow* window)
 {
-    // QWindow is updated before QWidget receives WindowStateChange. Consult
-    // both while Qt is applying a full-screen transition to the native style.
-    if (window->isFullScreen() || (window->windowHandle()
-        && window->windowHandle()->windowStates().testFlag(Qt::WindowFullScreen))) return true;
+    if (window->windowStates().testFlag(Qt::WindowFullScreen)) return true;
     // Qt flushes queued state events in the middle of that transition, so
     // both can briefly report an earlier state. The native style cannot.
-    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto handle = reinterpret_cast<HWND>(existingWinId(window));
     return handle && isFullScreenStyle(DWORD(GetWindowLongPtrW(handle, GWL_STYLE)));
 }
 
@@ -73,40 +74,47 @@ DWORD normalFrameStyle(DWORD style, bool compact = false)
 
 class NativeFrameState final : public QObject {
 public:
-    explicit NativeFrameState(QWidget* window) : QObject(window), window_(window)
+    explicit NativeFrameState(QWindow* window) : QObject(window), window_(window)
     {
         setObjectName(QString::fromLatin1(frameStateName));
         window->installEventFilter(this);
     }
 
-    void setHovered(QAbstractButton* button, const QPoint& clientPosition = {})
+    void setHovered(QObject* button, const QPointF& position = {})
     {
         if (hovered == button) return;
-        if (hovered) {
-            hovered->setAttribute(Qt::WA_UnderMouse, false);
-            QEvent leave(QEvent::Leave);
-            QApplication::sendEvent(hovered, &leave);
-            if (hovered) hovered->update();
-        }
-        hovered = button;
-        if (hovered && window_) {
-            const QPoint local = hovered->mapFrom(window_, clientPosition);
-            const QPoint global = window_->mapToGlobal(clientPosition);
-            hovered->setAttribute(Qt::WA_UnderMouse, true);
-            QEnterEvent enter{QPointF(local), QPointF(clientPosition), QPointF(global)};
-            QApplication::sendEvent(hovered, &enter);
-            if (hovered) hovered->update();
-        }
+        const QPointer<NativeFrameState> self(this);
+        const QPointer<QObject> next(button);
+        const QPointer<QObject> previous = hovered;
+        hovered.clear();
+        const auto callback = client.setCaptionHovered;
+        if (previous && callback) callback(previous, false, {});
+        if (!self || !next) return;
+        hovered = next;
+        if (callback) callback(next, true, position);
     }
 
     void cancelPress()
     {
-        if (pressed) pressed->setDown(false);
+        const QPointer<NativeFrameState> self(this);
+        const auto connection = std::exchange(pressedDestroyed, QMetaObject::Connection{});
+        const bool capturedPress = bool(connection);
+        QObject::disconnect(connection);
+        const QPointer<QObject> previous = pressed;
         pressed.clear();
+        const auto callback = client.setCaptionPressed;
+        if (capturedPress && window_) {
+            const auto handle = reinterpret_cast<HWND>(existingWinId(window_));
+            if (handle && GetCapture() == handle) ReleaseCapture();
+        }
+        if (!self) return;
+        if (previous && callback) callback(previous, false);
     }
 
-    QPointer<QAbstractButton> hovered;
-    QPointer<QAbstractButton> pressed;
+    NativeFrameClient client;
+    QPointer<QObject> hovered;
+    QPointer<QObject> pressed;
+    QMetaObject::Connection pressedDestroyed;
     bool trackingNonClient = false;
     HWND configuredHandle = nullptr;
     HWND recalculatedHandle = nullptr;
@@ -122,30 +130,36 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == window_ && event->type() == QEvent::WinIdChange) {
-            // Invalidate even for a zero handle. Windows can recycle the same
-            // numeric HWND after Qt changes flags, so identity alone is not a
-            // sufficient cache key across a destroy/create pair.
+        const QPointer<NativeFrameState> self(this);
+        if (watched == window_ && event->type() == QEvent::PlatformSurface) {
+            const auto kind = static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType();
             configuredHandle = nullptr;
             recalculatedHandle = nullptr;
             attributesReady = false;
-            // Window flag changes may replace the HWND. Do not wait for a
-            // later showEvent to make the replacement eligible for transitions.
-            if (window_ && window_->testAttribute(Qt::WA_WState_Created) && window_->effectiveWinId())
+            trackingNonClient = false;
+            if (kind == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+                cancelPress();
+                if (self) setHovered(nullptr);
+            }
+            if (!self) return true;
+            if (kind == QPlatformSurfaceEvent::SurfaceCreated && window_)
                 applyNativeFrame(window_);
         }
+        if (!self) return true;
         if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::WindowStateChange) {
             cancelPress();
-            setHovered(nullptr);
+            if (self) setHovered(nullptr);
+            if (self && window_ && event->type() == QEvent::WindowStateChange)
+                applyNativeFrame(window_);
         }
-        return QObject::eventFilter(watched, event);
+        return self ? QObject::eventFilter(watched, event) : true;
     }
 
 private:
-    QPointer<QWidget> window_;
+    QPointer<QWindow> window_;
 };
 
-NativeFrameState* findFrameState(QWidget* window)
+NativeFrameState* findFrameState(QWindow* window)
 {
     for (auto* child : window->children()) {
         // Runs for every native message; compare without allocating.
@@ -156,13 +170,13 @@ NativeFrameState* findFrameState(QWidget* window)
     return nullptr;
 }
 
-NativeFrameState* frameState(QWidget* window)
+NativeFrameState* frameState(QWindow* window)
 {
     if (auto* state = findFrameState(window)) return state;
     return new NativeFrameState(window);
 }
 
-UINT windowDpi(HWND handle, QWidget* window)
+UINT windowDpi(HWND handle, QWindow* window)
 {
     // Resolve the per-window APIs so this source does not impose a newer SDK
     // import requirement. The fallback still uses this window's Qt screen.
@@ -173,10 +187,10 @@ UINT windowDpi(HWND handle, QWidget* window)
         const UINT dpi = dpiForWindow(handle);
         if (dpi) return dpi;
     }
-    return UINT(std::max(96, qRound(window->devicePixelRatioF() * 96.0)));
+    return UINT(std::max(96, qRound(window->devicePixelRatio() * 96.0)));
 }
 
-int resizeBorder(HWND handle, QWidget* window)
+int resizeBorder(HWND handle, QWindow* window)
 {
     using MetricFunction = int(WINAPI*)(int, UINT);
     static const auto metricsForDpi = std::bit_cast<MetricFunction>(
@@ -185,13 +199,13 @@ int resizeBorder(HWND handle, QWidget* window)
     if (metricsForDpi) {
         return std::max(1, metricsForDpi(SM_CXSIZEFRAME, dpi) + metricsForDpi(SM_CXPADDEDBORDER, dpi));
     }
-    return std::max(1, qRound(6.0 * window->devicePixelRatioF()));
+    return std::max(1, qRound(6.0 * window->devicePixelRatio()));
 }
 
 // The frame WM_NCCALCSIZE keeps outside a normal window's client: Windows'
 // own left, right and bottom border for this style and DPI. The custom
 // caption replaces the top.
-RECT sizingFrame(HWND handle, QWidget* window)
+RECT sizingFrame(HWND handle, QWindow* window)
 {
     // A shaped preview has no usable sizing border. Its complete HWND is
     // client content, so the compositor cannot draw a rectangular frame
@@ -223,55 +237,18 @@ POINT screenPosition(LPARAM position)
     return {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
 }
 
-// Maximized or full screen, the client reaches the screen edge, but at a
-// fractional scale its last physical column or row maps past the last whole
-// logical pixel: 3839 / 2 = 1919.5 at 200 %, 3839 / 1.5 = 2559.33 at 150 %.
-// Qt then finds no child at that position and delivers the event to the
-// window itself, so a caption button or toolbar against the right or bottom
-// edge misses the pixel the pointer stops at. Move such a client mouse
-// position inward until it maps to the last whole logical pixel or before.
-void keepEdgePointerInside(QWidget* window, MSG* msg)
-{
-    if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) return;
-    const qreal ratio = std::max<qreal>(1.0, window->devicePixelRatioF());
-    int x = GET_X_LPARAM(msg->lParam);
-    int y = GET_Y_LPARAM(msg->lParam);
-    const int originalX = x, originalY = y;
-    while (x > 0 && x / ratio > window->width() - 1) --x;
-    while (y > 0 && y / ratio > window->height() - 1) --y;
-    if (x != originalX || y != originalY) msg->lParam = MAKELPARAM(x, y);
-}
-
-QPoint logicalClientPosition(QWidget* window, HWND handle, POINT point, bool fromScreen)
+QPointF logicalClientPosition(QWindow* window, HWND handle, POINT point, bool fromScreen)
 {
     if (fromScreen) ScreenToClient(handle, &point);
-    const qreal ratio = std::max<qreal>(1.0, window->devicePixelRatioF());
-    return {qFloor(point.x / ratio), qFloor(point.y / ratio)};
+    const qreal ratio = std::max<qreal>(1.0, window->devicePixelRatio());
+    return {point.x / ratio, point.y / ratio};
 }
 
-QAbstractButton* nativeCaptionButtonAt(QWidget* window, const QPoint& position)
+QObject* nativeCaptionButtonAt(QWindow* window, const QPointF& position)
 {
     if (fullScreenRequested(window) || window->property("windowSystemDragPresentation").toBool()) return nullptr;
-    for (auto* child = window->childAt(position); child && child != window; child = child->parentWidget()) {
-        if (child->objectName() != QStringLiteral("CaptionButton")) continue;
-        const auto role = child->property("role").toString();
-        // Only maximize/restore is a native caption hit, in every state: the
-        // system needs HTMAXBUTTON for the Win11 Snap flyout. Minimize and
-        // close stay ordinary Qt buttons. A native HTMINBUTTON/HTCLOSE would
-        // make Windows track the hover itself and show its classic caption
-        // tooltip next to Qt's. Maximized, the client area already reaches
-        // the screen edge, so the edge pixels still belong to the Qt buttons.
-        if (role != QStringLiteral("maximize") && role != QStringLiteral("restore")) return nullptr;
-        auto* button = qobject_cast<QAbstractButton*>(child);
-        return button && button->isVisible() && button->isEnabled() ? button : nullptr;
-    }
-    return nullptr;
-}
-
-LRESULT captionHit(const QAbstractButton* button)
-{
-    const auto role = button->property("role").toString();
-    return role == QStringLiteral("close") ? HTCLOSE : role == QStringLiteral("minimize") ? HTMINBUTTON : HTMAXBUTTON;
+    const auto callback = frameState(window)->client.captionButtonAt;
+    return callback ? callback(position) : nullptr;
 }
 
 // Drops the axes a fixed window size cannot change from a native sizing hit.
@@ -294,13 +271,12 @@ bool isCaptionHit(WPARAM hit)
     return hit == HTMAXBUTTON || hit == HTMINBUTTON || hit == HTCLOSE;
 }
 
-void extendFrame(QWidget* window, HWND handle, bool force = false)
+void extendFrame(QWindow* window, HWND handle, bool force = false)
 {
     auto* state = frameState(window);
     const bool compact = window->property("windowSystemDragPresentation").toBool();
     const bool fullscreen = fullScreenRequested(window);
-    const bool expanded = fullscreen || IsZoomed(handle) || window->isMaximized()
-        || (window->windowHandle() && window->windowHandle()->windowStates().testFlag(Qt::WindowMaximized));
+    const bool expanded = fullscreen || IsZoomed(handle) || window->windowStates().testFlag(Qt::WindowMaximized);
     if (state->extending) return;
     if (!force && state->attributesReady && state->configuredHandle == handle && state->configuration.compact == compact
         && state->configuration.expanded == expanded && state->configuration.fullscreen == fullscreen) {
@@ -349,36 +325,63 @@ void extendFrame(QWidget* window, HWND handle, bool force = false)
     state->attributesReady = SUCCEEDED(policyResult) && SUCCEEDED(transitionResult) && SUCCEEDED(marginsResult);
 }
 
-bool finishCaptionClick(QWidget* window, MSG* message, NativeFrameState* state, qintptr* result, bool fromScreen)
+bool finishCaptionClick(QWindow* window, MSG* message, NativeFrameState* state, qintptr* result, bool fromScreen)
 {
     if (!state->pressed) return false;
-    const QPointer<QAbstractButton> button = state->pressed;
+    const QPointer<QObject> button = state->pressed;
+    const QPointer<QWindow> retainedWindow(window);
+    const QPointer<NativeFrameState> retainedState(state);
+    const auto callback = state->client.activateCaption;
     const POINT nativePoint = screenPosition(message->lParam);
-    const QPoint position = logicalClientPosition(window, message->hwnd, nativePoint, fromScreen);
+    const QPointF position = logicalClientPosition(window, message->hwnd, nativePoint, fromScreen);
     const bool activate = nativeCaptionButtonAt(window, position) == button;
+    if (!retainedWindow || !retainedState) { *result = 0; return true; }
     state->cancelPress();
-    if (GetCapture() == message->hwnd) ReleaseCapture();
     *result = 0;
     // Call the real accessible Qt button once, rather than bypassing its slot
     // with a second native SC_MAXIMIZE/SC_RESTORE transition.
-    if (activate && button && button->isEnabled()) button->click();
+    if (retainedWindow && activate && button && callback) callback(button);
     return true;
 }
 
 } // namespace
 #endif
 
-void applyNativeFrame(QWidget* window)
+void setNativeFrameClient(QWindow* window, NativeFrameClient client)
 {
 #ifdef Q_OS_WIN
-    if (!window || !window->isWindow()) return;
+    Q_ASSERT(window);
+    const QPointer<NativeFrameState> state(frameState(window));
+    state->cancelPress();
+    if (!state) return;
+    state->setHovered(nullptr);
+    if (state) state->client = std::move(client);
+#else
+    Q_UNUSED(window)
+    Q_UNUSED(client)
+#endif
+}
+
+void setNativeFrameCompact(QWindow* window, bool compact)
+{
+    Q_ASSERT(window);
+    if (window->property("windowSystemDragPresentation").toBool() == compact) return;
+    const QPointer<QWindow> retained(window);
+    window->setProperty("windowSystemDragPresentation", compact);
+    if (retained && window->handle()) applyNativeFrame(window);
+}
+
+void applyNativeFrame(QWindow* window)
+{
+#ifdef Q_OS_WIN
+    if (!window || !window->isTopLevel()) return;
     // Applying the frame opts the window in: handleNativeFrame() serves only
     // windows that have this state. Create it to observe HWND creation and
     // replacement before requesting the handle.
     auto* state = frameState(window);
     if (state->configuring) return;
     const QPointer<NativeFrameState> retained(state);
-    const QPointer<QWidget> observed(window);
+    const QPointer<QWindow> observed(window);
     state->configuring = true;
     const auto reset = qScopeGuard([retained] { if (retained) retained->configuring = false; });
     const auto handle = reinterpret_cast<HWND>(window->winId());
@@ -417,19 +420,13 @@ void applyNativeFrame(QWidget* window)
                 outer.right - outer.left, outer.bottom - outer.top, flags);
             if (!observed) return;
             if (recalculated) {
-                // QWidget caches its frame offset and refreshes it only when
-                // the window reports a move or resize. The client stayed in
-                // place, so report the unchanged position: Qt then reads the
-                // new margins instead of keeping its creation caption's.
-                if (auto* qtWindow = window->windowHandle()) {
-                    QMoveEvent moved(qtWindow->position(), qtWindow->position());
-                    QCoreApplication::sendEvent(qtWindow, &moved);
-                    if (!observed) return;
-                }
+                const auto callback = state->client.frameMarginsChanged;
+                if (callback) callback();
+                if (!observed || !retained) return;
                 state->recalculatedHandle = handle; state->recalculatedCompact = compact;
                 ++state->paintGuards.clientRecalculations;
             } else state->recalculatedHandle = nullptr;
-            window->update(); // Repaint the custom client, with no basic caption pass.
+            window->requestUpdate();
         }
     }
 #else
@@ -437,46 +434,48 @@ void applyNativeFrame(QWidget* window)
 #endif
 }
 
-void setNativeDropCommit(QWidget* window, bool committing)
+void setNativeDropCommit(QWindow* window, bool committing)
 {
 #ifdef Q_OS_WIN
-    if (!window || !window->isWindow()) return;
-    auto* state = frameState(window);
+    if (!window || !window->isTopLevel()) return;
+    const QPointer<NativeFrameState> state(frameState(window));
     state->dropCommit = committing;
-    const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
+    const auto handle = reinterpret_cast<HWND>(existingWinId(window));
     if (!handle) return;
     const BOOL disabled = committing ? TRUE : FALSE;
     const HRESULT result = DwmSetWindowAttribute(handle, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
-    state->transitions = {true, qint32(result), committing};
+    if (state) state->transitions = {true, qint32(result), committing};
 #else
     Q_UNUSED(window)
     Q_UNUSED(committing)
 #endif
 }
 
-NativeTransitionConfiguration nativeTransitionConfiguration(QWidget* window)
+NativeTransitionConfiguration nativeTransitionConfiguration(QWindow* window)
 {
 #ifdef Q_OS_WIN
     if (window) if (const auto* state = findFrameState(window))
-        if (state->configuredHandle == reinterpret_cast<HWND>(window->effectiveWinId())) return state->transitions;
+        if (const auto handle = reinterpret_cast<HWND>(existingWinId(window)); handle && state->configuredHandle == handle)
+            return state->transitions;
 #else
     Q_UNUSED(window)
 #endif
     return {};
 }
 
-NativeFrameConfiguration nativeFrameConfiguration(QWidget* window)
+NativeFrameConfiguration nativeFrameConfiguration(QWindow* window)
 {
 #ifdef Q_OS_WIN
     if (window) if (const auto* state = findFrameState(window))
-        if (state->configuredHandle == reinterpret_cast<HWND>(window->effectiveWinId())) return state->configuration;
+        if (const auto handle = reinterpret_cast<HWND>(existingWinId(window)); handle && state->configuredHandle == handle)
+            return state->configuration;
 #else
     Q_UNUSED(window)
 #endif
     return {};
 }
 
-NativePaintGuardActivity nativePaintGuardActivity(QWidget* window)
+NativePaintGuardActivity nativePaintGuardActivity(QWindow* window)
 {
 #ifdef Q_OS_WIN
     if (window) if (const auto* state = findFrameState(window)) return state->paintGuards;
@@ -486,10 +485,10 @@ NativePaintGuardActivity nativePaintGuardActivity(QWidget* window)
     return {};
 }
 
-bool hasNormalNativePlacement(const QWidget* window)
+bool hasNormalNativePlacement(const QWindow* window)
 {
 #ifdef Q_OS_WIN
-    const auto handle = window ? reinterpret_cast<HWND>(window->effectiveWinId()) : nullptr;
+    const auto handle = window ? reinterpret_cast<HWND>(existingWinId(window)) : nullptr;
     return !handle || (!IsZoomed(handle) && !IsIconic(handle));
 #else
     Q_UNUSED(window)
@@ -497,15 +496,11 @@ bool hasNormalNativePlacement(const QWidget* window)
 #endif
 }
 
-bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
+bool handleNativeFrame(QWindow* window, void* message, qintptr* result)
 {
 #ifdef Q_OS_WIN
-    if (!window || !message || !result || !window->isWindow() || !findFrameState(window)) return false;
+    if (!window || !message || !result || !window->isTopLevel() || !findFrameState(window)) return false;
     auto* msg = static_cast<MSG*>(message);
-    // Client mouse messages carry client coordinates; the wheel messages carry
-    // screen coordinates. Qt goes on to translate this same message.
-    if (msg->message >= WM_MOUSEFIRST && msg->message <= WM_MOUSELAST
-        && msg->message != WM_MOUSEWHEEL && msg->message != WM_MOUSEHWHEEL) keepEdgePointerInside(window, msg);
     switch (msg->message) {
     case WM_STYLECHANGING:
         if (msg->wParam == WPARAM(GWL_STYLE) && msg->lParam) {
@@ -532,7 +527,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 const int border = resizeBorder(msg->hwnd, window);
                 sizes->ptMaxPosition = {monitor.rcWork.left - monitor.rcMonitor.left - border,
                                         monitor.rcWork.top - monitor.rcMonitor.top - border};
-                const qreal ratio = window->devicePixelRatioF();
+                const qreal ratio = window->devicePixelRatio();
                 const auto nativeSize = [ratio](int logical, bool minimum) {
                     const double scaled = logical * ratio;
                     const double rounded = minimum ? std::ceil(scaled) : std::floor(scaled);
@@ -540,15 +535,17 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 };
                 auto minimum = window->minimumSize();
                 auto maximum = window->maximumSize();
-                if (auto* qtWindow = window->windowHandle()) {
-                    minimum = minimum.expandedTo(qtWindow->minimumSize());
-                    maximum = maximum.boundedTo(qtWindow->maximumSize());
-                }
+                const QPointer<QWindow> retained(window);
+                const auto minimumSize = frameState(window)->client.minimumSize;
+                const auto maximumSize = frameState(window)->client.maximumSize;
+                if (minimumSize) minimum = minimum.expandedTo(minimumSize());
+                if (!retained) { *result = 0; return true; }
+                if (maximumSize) maximum = maximum.boundedTo(maximumSize());
+                if (!retained) { *result = 0; return true; }
                 sizes->ptMinTrackSize = {nativeSize(minimum.width(), true), nativeSize(minimum.height(), true)};
                 const LONG maximumClientWidth = std::max(sizes->ptMinTrackSize.x, nativeSize(maximum.width(), false));
                 const LONG maximumClientHeight = std::max(sizes->ptMinTrackSize.y, nativeSize(maximum.height(), false));
-                const bool maximized = IsZoomed(msg->hwnd) || window->isMaximized()
-                    || (window->windowHandle() && window->windowHandle()->windowStates().testFlag(Qt::WindowMaximized));
+                const bool maximized = IsZoomed(msg->hwnd) || window->windowStates().testFlag(Qt::WindowMaximized);
                 const auto framed = [](LONG extent, int extra) {
                     return LONG(std::min<qint64>(std::numeric_limits<LONG>::max(), qint64(extent) + extra));
                 };
@@ -585,7 +582,7 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
                 && position->cy == monitor.rcWork.bottom - monitor.rcWork.top) {
                 // Only recognize Qt's exact corrective work-area request.
                 // Preserve proposed moves to another monitor or DPI rectangle.
-                const QPointer<QWidget> observed(window);
+                const QPointer<QWindow> observed(window);
                 MINMAXINFO hints{};
                 SendMessageW(msg->hwnd, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&hints));
                 if (!observed || !IsWindow(msg->hwnd)) { *result = 0; return true; }
@@ -666,12 +663,15 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         const POINT point = screenPosition(msg->lParam);
         RECT bounds{};
         if (!GetWindowRect(msg->hwnd, &bounds)) return false;
-        const QPoint position = logicalClientPosition(window, msg->hwnd, point, true);
+        const QPointF position = logicalClientPosition(window, msg->hwnd, point, true);
         // Caption controls sit against the top edge. Their visible rectangle
         // owns the hit before the resize rim, so its upper pixels also expose
         // the native Snap affordance in a restored window. The rest of every
         // edge/corner retains its ordinary resize hit.
-        if (const auto* button = nativeCaptionButtonAt(window, position)) { *result = captionHit(button); return true; }
+        const QPointer<QWindow> retained(window);
+        const auto* button = nativeCaptionButtonAt(window, position);
+        if (!retained) { *result = 0; return true; }
+        if (button) { *result = HTMAXBUTTON; return true; }
         if (!IsZoomed(msg->hwnd) && !fullScreenRequested(window)) {
             const bool resizeX = window->minimumWidth() < window->maximumWidth();
             const bool resizeY = window->minimumHeight() < window->maximumHeight();
@@ -694,14 +694,17 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return true;
     }
     case WM_NCMOUSEMOVE: {
-        auto* state = frameState(window);
+        const QPointer<NativeFrameState> state(frameState(window));
         if (!isCaptionHit(msg->wParam)) {
             state->setHovered(nullptr);
+            if (!state) { *result = 0; return true; }
             return false;
         }
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), true);
-        auto* button = nativeCaptionButtonAt(window, position);
+        const QPointer<QObject> button(nativeCaptionButtonAt(window, position));
+        if (!state) { *result = 0; return true; }
         state->setHovered(button, position);
+        if (!state) { *result = 0; return true; }
         if (!button) return false;
         if (!state->trackingNonClient) {
             TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_NONCLIENT | TME_LEAVE, msg->hwnd, 0};
@@ -714,20 +717,29 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         return true;
     }
     case WM_NCMOUSELEAVE: {
-        auto* state = frameState(window);
+        const QPointer<NativeFrameState> state(frameState(window));
         state->trackingNonClient = false;
         state->setHovered(nullptr);
+        if (!state) { *result = 0; return true; }
         return false;
     }
     case WM_NCLBUTTONDOWN:
     case WM_NCLBUTTONDBLCLK: {
         if (!isCaptionHit(msg->wParam)) return false;
-        auto* state = frameState(window);
+        const QPointer<NativeFrameState> state(frameState(window));
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), true);
-        if (auto* button = nativeCaptionButtonAt(window, position)) {
+        const QPointer<QObject> button(nativeCaptionButtonAt(window, position));
+        if (!state) { *result = 0; return true; }
+        if (button) {
+            state->cancelPress();
+            if (!state || !button) { *result = 0; return true; }
             state->pressed = button;
-            button->setDown(true);
-            SetCapture(msg->hwnd);
+            state->pressedDestroyed = QObject::connect(button, &QObject::destroyed, state,
+                [state] { if (state) state->cancelPress(); });
+            const auto callback = state->client.setCaptionPressed;
+            if (callback) callback(button, true);
+            if (!state) { *result = 0; return true; }
+            if (state->pressed) SetCapture(msg->hwnd);
             *result = 0;
             return true;
         }
@@ -738,13 +750,18 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
     case WM_LBUTTONUP:
         return finishCaptionClick(window, msg, frameState(window), result, false);
     case WM_MOUSEMOVE: {
-        auto* state = frameState(window);
+        const QPointer<NativeFrameState> state(frameState(window));
         if (!state->pressed) {
             state->setHovered(nullptr);
+            if (!state) { *result = 0; return true; }
             return false;
         }
         const auto position = logicalClientPosition(window, msg->hwnd, screenPosition(msg->lParam), false);
-        state->pressed->setDown(nativeCaptionButtonAt(window, position) == state->pressed);
+        const QPointer<QObject> pressed = state->pressed;
+        const auto callback = state->client.setCaptionPressed;
+        const bool inside = nativeCaptionButtonAt(window, position) == pressed;
+        if (!state) { *result = 0; return true; }
+        if (pressed && callback) callback(pressed, inside);
         *result = 0;
         return true;
     }
@@ -752,9 +769,12 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
         RemovePropW(msg->hwnd, frameAppliedProperty);
         return false;
     case WM_CANCELMODE:
-    case WM_CAPTURECHANGED:
-        frameState(window)->cancelPress();
+    case WM_CAPTURECHANGED: {
+        const QPointer<NativeFrameState> state(frameState(window));
+        state->cancelPress();
+        if (!state) { *result = 0; return true; }
         return false;
+    }
     case WM_SYSKEYDOWN:
         if (msg->wParam == VK_SPACE) {
             showNativeSystemMenu(window, quintptr(msg->hwnd));
@@ -768,12 +788,18 @@ bool handleNativeFrame(QWidget* window, void* message, qintptr* result)
             return true;
         }
         return false;
-    case WM_ACTIVATE:
+    case WM_ACTIVATE: {
+        const QPointer<QWindow> retained(window);
         extendFrame(window, msg->hwnd);
+        if (!retained) { *result = 0; return true; }
         return false;
-    case WM_DWMCOMPOSITIONCHANGED:
+    }
+    case WM_DWMCOMPOSITIONCHANGED: {
+        const QPointer<QWindow> retained(window);
         extendFrame(window, msg->hwnd, true);
+        if (!retained) { *result = 0; return true; }
         return false;
+    }
     default:
         // In particular, Qt retains WM_GETMINMAXINFO / WM_DPICHANGED handling
         // for live size constraints and per-monitor logical geometry changes.

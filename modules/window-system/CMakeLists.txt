@@ -50,11 +50,21 @@ target_compile_features(WindowSystemSurfaces PUBLIC cxx_std_20)
 target_include_directories(WindowSystemSurfaces PRIVATE src include)
 target_link_libraries(WindowSystemSurfaces PUBLIC Qt6::Gui PRIVATE WindowSystemPresentation)
 
+add_library(WindowSystemPlatform STATIC
+    src/input_method_scopes.cpp src/platform/input_method_state.cpp)
+set_target_properties(WindowSystemPlatform PROPERTIES EXPORT_NAME Platform)
+target_compile_features(WindowSystemPlatform PUBLIC cxx_std_20)
+target_include_directories(WindowSystemPlatform PRIVATE src include)
+target_link_libraries(WindowSystemPlatform PUBLIC Qt6::Gui PRIVATE WindowSystem::Model)
+if(WIN32)
+    target_sources(WindowSystemPlatform PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp)
+    target_link_libraries(WindowSystemPlatform PRIVATE dwmapi user32 imm32 ole32 uuid)
+endif()
+
 add_library(WindowSystemWidgets STATIC
     src/localization/localization.cpp
     src/window_manager.cpp
-    src/input_method_scopes.cpp
-    src/platform/input_method_state.cpp
+    src/input_method_scopes_widgets.cpp
     src/view_state.cpp
     src/navigation/workspace_navigation.cpp
     src/layout_persistence.cpp
@@ -113,7 +123,7 @@ target_include_directories(WindowSystemWidgets PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces)
+target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 
 if(WINDOW_SYSTEM_BUILD_QUICK)
     find_package(Qt6 6.10 REQUIRED COMPONENTS Quick QuickShapes ShaderTools)
@@ -129,10 +139,12 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
         src/quick/path_stroke_item.cpp)
     target_sources(WindowSystemQuick PRIVATE src/quick/split_tree_item.cpp)
+    target_sources(WindowSystemQuick PRIVATE src/quick/content_host.cpp)
+    target_sources(WindowSystemQuick PRIVATE src/quick/tab_bar_item.cpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
-    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation WindowSystemSurfaces)
+    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
     qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
     target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
     qt_add_shaders(WindowSystemQuick window_system_mask_shaders
@@ -183,10 +195,10 @@ qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     TS_FILES ${window_system_translation_sources}
     LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 if(WIN32)
-    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame.cpp src/platform/windows/window_menu.cpp src/platform/windows/font_families.cpp)
+    target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame_widgets.cpp src/platform/windows/window_menu_widgets.cpp src/platform/windows/font_families.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
-set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemWidgets)
+set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform WindowSystemWidgets)
 if(TARGET WindowSystemQuick)
     list(APPEND window_system_compile_targets WindowSystemQuick)
 endif()
@@ -208,7 +220,7 @@ if(WINDOW_SYSTEM_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-install(TARGETS WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemWidgets EXPORT WindowSystemTargets
+install(TARGETS WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform WindowSystemWidgets EXPORT WindowSystemTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -15,6 +15,8 @@
 
 内部 `WindowSystemSurfaces` 使用 Qt Gui 和上述呈现层，提供共用的接合几何、阴影缓存、有界小图、标签绘制值、外部载荷状态、标签数据/测量存储、条带布局与控件占位编排、标签组外壳/内容/底栏布局、背板/竖栏外壳自有帧及栅格适配、文字缓存、默认主题与矢量图标。Widgets 仍按原规则合成；Quick 可保留同一主体九宫格和接合处局部图像及裁剪范围，不链接 Widgets。静态标签内容与样式用不可变值共享，活动、悬停和几何单独取样；栏内基础层、退出层与窗口级拖动前景使用自有分层帧，文字缓存归各绘制适配器持有。`TabStripController` 持有真实标签状态与帧，按外部单调时间推进；Widgets 门面只适配平台输入、控件及通知，不再保留另一份状态。它随静态库依赖导出为 `WindowSystem::Surfaces`，没有新的宿主头文件。
 
+内部 `WindowSystemPlatform` 以 Qt Gui 和模型身份承载 QWindow 原生框架、系统菜单与输入法状态，Widgets 只保留桥接；安装时随静态依赖导出，不提供新的宿主头文件。内容和输入法值类型集中在 `content_options.hpp`，现有 WindowManager 头继续包含它。
+
 可通过 `add_subdirectory()` 嵌入，也可安装后使用 `find_package(WindowSystem CONFIG REQUIRED)`。独立模块构建不探测 Muxora 或远程业务依赖；安装后接入由 `tests/fixtures/external-host/` 验证，不额外交付示例产品。
 
 从源码构建需要 Qt 的 LinguistTools；翻译目录在构建时编译并嵌入静态库，已安装的模块消费者不需要翻译工具或 SDK 目录中的 `.qm` 文件。
@@ -22,6 +24,8 @@
 ### 开发中的 Quick 呈现
 
 `-DWINDOW_SYSTEM_BUILD_QUICK=ON` 构建内部 `WindowSystemQuick` 目标，额外依赖 Qt Quick、Qt Quick Shapes 及构建期 Qt ShaderTools，默认关闭。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影、外部载荷与窗口级拖动前景、组/窗格分割布局和窗口帧驱动，不创建另一套窗口管理器，不替换现有应用入口，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。文字超过资源预算时明确拒绝，横向可见字形子集尚未实现。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。
+
+内部 `TabBarItem` 将 Quick 输入和窗口帧时钟直接交给共用控制器；`ContentHost` 按 PaneId 持有真实 QQuickItem，换窗挂载保留内容身份和焦点。两者仍未接入完整应用窗口。
 
 内部 `TabBar::setPresentationPublishing()` 启用按需状态通知，`presentationFrame()` 在 GUI 线程捕获基础与前景两个只读层；不依赖 QWidget 绘制，不在渲染线程回调来源。`TabStripItem` 与 `TabForegroundItem` 分别消费两层，前景由调用方放到窗口级层序。该接线仍在迁移中，不是新的宿主公开接口。
 

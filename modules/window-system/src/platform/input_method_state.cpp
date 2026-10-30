@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "input_method_state.hpp"
-#include <QWidget>
+#include <QWindow>
 
 #ifdef Q_OS_WIN
 #define WIN32_LEAN_AND_MEAN
@@ -104,16 +104,16 @@ bool writeCompartment(TsfSession& session, REFGUID guid, LONG value)
     return written;
 }
 
-// Use the existing native top-level input window. Calling effectiveWinId() on
-// an alien editor would create a child HWND and change input and hit testing.
-HWND inputWindow(QWidget* widget)
+// Never materialize a native window just to remember an IME state. Both
+// adapters pass their existing top-level QWindow; no content HWND is needed.
+HWND inputWindow(QWindow* window)
 {
-    return widget ? reinterpret_cast<HWND>(widget->window()->effectiveWinId()) : GetFocus();
+    return window && window->handle() ? reinterpret_cast<HWND>(window->winId()) : GetFocus();
 }
 
 class NativeBackend final : public InputMethodBackend {
 public:
-    InputMethodState capture(QWidget* focus) override
+    InputMethodState capture(QWindow* focus) override
     {
         NativeState state;
         state.layout = GetKeyboardLayout(0);
@@ -143,7 +143,7 @@ public:
         return state;
     }
 
-    void restore(const InputMethodState& value, QWidget* focus) override
+    void restore(const InputMethodState& value, QWindow* focus) override
     {
         const auto* state = std::any_cast<NativeState>(&value);
         if (!state || !state->layout) return;
@@ -191,8 +191,8 @@ private:
 #else
 class NativeBackend final : public InputMethodBackend {
 public:
-    InputMethodState capture(QWidget*) override { return {}; }
-    void restore(const InputMethodState&, QWidget*) override {}
+    InputMethodState capture(QWindow*) override { return {}; }
+    void restore(const InputMethodState&, QWindow*) override {}
 };
 #endif
 } // namespace

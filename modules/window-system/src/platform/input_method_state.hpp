@@ -5,6 +5,7 @@
 #include <memory>
 
 class QWidget;
+class QWindow;
 
 namespace window_system {
 
@@ -14,8 +15,10 @@ using InputMethodState = std::any;
 class InputMethodBackend {
 public:
     virtual ~InputMethodBackend() = default;
-    virtual InputMethodState capture(QWidget* focus) = 0;
-    virtual void restore(const InputMethodState& state, QWidget* focus) = 0;
+    virtual InputMethodState capture(QWindow* window) = 0;
+    virtual void restore(const InputMethodState& state, QWindow* window) = 0;
+    InputMethodState capture(QWidget* focus);
+    void restore(const InputMethodState& state, QWidget* focus);
 };
 
 std::unique_ptr<InputMethodBackend> createInputMethodBackend();

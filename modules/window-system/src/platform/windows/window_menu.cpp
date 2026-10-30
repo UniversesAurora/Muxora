@@ -5,7 +5,7 @@
 #include <QPointer>
 #include <QScopeGuard>
 #include <QString>
-#include <QWidget>
+#include <QWindow>
 
 #include <qt_windows.h>
 
@@ -78,14 +78,14 @@ struct NativeMenu final {
 
 class NativeMenuStore final : public QObject {
 public:
-    explicit NativeMenuStore(QWidget* window) : QObject(window), menu(std::make_shared<NativeMenu>())
+    explicit NativeMenuStore(QWindow* window) : QObject(window), menu(std::make_shared<NativeMenu>())
     { setObjectName(QString::fromLatin1(menuStoreName)); }
     // TrackPopupMenu runs a nested native loop. The active call retains the
-    // resource if the widget is deleted there; there is no ownership cycle.
+    // resource if the window is deleted there; there is no ownership cycle.
     std::shared_ptr<NativeMenu> menu;
 };
 
-std::shared_ptr<NativeMenu> menuFor(QWidget* window)
+std::shared_ptr<NativeMenu> menuFor(QWindow* window)
 {
     for (auto* child : window->children())
         if (child->objectName() == QString::fromLatin1(menuStoreName))
@@ -93,7 +93,7 @@ std::shared_ptr<NativeMenu> menuFor(QWidget* window)
     return (new NativeMenuStore(window))->menu;
 }
 
-void refreshCommands(QWidget* window, HMENU menu, HWND handle)
+void refreshCommands(QWindow* window, HMENU menu, HWND handle)
 {
     const bool maximized = IsZoomed(handle), minimized = IsIconic(handle);
     const auto style = GetWindowLongPtrW(handle, GWL_STYLE);
@@ -111,30 +111,30 @@ void refreshCommands(QWidget* window, HMENU menu, HWND handle)
 
 } // namespace
 
-quintptr nativeSystemMenuHandle(QWidget* window)
+quintptr nativeSystemMenuHandle(QWindow* window)
 {
-    if (!window || !window->isWindow() || !window->effectiveWinId()) return 0;
+    if (!window || !window->isTopLevel() || !window->handle()) return 0;
     const auto menu = menuFor(window);
-    if (menu->handle) refreshCommands(window, menu->handle, reinterpret_cast<HWND>(window->effectiveWinId()));
+    if (menu->handle) refreshCommands(window, menu->handle, reinterpret_cast<HWND>(window->winId()));
     return quintptr(menu->handle);
 }
 
-void showNativeSystemMenu(QWidget* window, quintptr nativeWindow)
+void showNativeSystemMenu(QWindow* window, quintptr nativeWindow)
 {
     const auto handle = reinterpret_cast<HWND>(nativeWindow);
     if (!window || !IsWindow(handle)) return;
-    const QPointer<QWidget> retainedWindow(window);
+    const QPointer<QWindow> retainedWindow(window);
     const auto menu = menuFor(window);
     if (!menu->handle) return;
     refreshCommands(window, menu->handle, handle);
     // The client is the visible window; the sizing border lies outside it.
     POINT origin{};
     if (!ClientToScreen(handle, &origin)) return;
-    const int inset = std::max(1, qRound(8 * window->devicePixelRatioF()));
-    const int titleHeight = std::max(1, qRound(32 * window->devicePixelRatioF()));
+    const int inset = std::max(1, qRound(8 * window->devicePixelRatio()));
+    const int titleHeight = std::max(1, qRound(32 * window->devicePixelRatio()));
     const UINT command = TrackPopupMenuEx(menu->handle, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_RIGHTBUTTON,
         origin.x + inset, origin.y + titleHeight, handle, nullptr);
-    if (!retainedWindow || retainedWindow->effectiveWinId() != WId(nativeWindow) || !IsWindow(handle)) return;
+    if (!retainedWindow || !retainedWindow->handle() || retainedWindow->winId() != WId(nativeWindow) || !IsWindow(handle)) return;
     if (command) PostMessageW(handle, WM_SYSCOMMAND, command, 0);
 }
 
