@@ -10,10 +10,16 @@ function(muxora_use_utf8_process_manifest target)
     target_link_options(${target} PRIVATE /MANIFEST:NO /MANIFESTUAC:NO)
 endfunction()
 
+find_package(Qt6 6.10 REQUIRED COMPONENTS Qml Quick)
 qt_add_executable(muxora WIN32 main.cpp layout_file.cpp layout_file.hpp state_paths.cpp user_preferences.cpp
     scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp
-    ../workspace_host/placeholder_content.cpp)
+    ../workspace_host/placeholder_content.cpp ../workspace_host/quick_placeholder.cpp ../workspace_host/quick_placeholder.hpp)
 muxora_use_utf8_process_manifest(muxora)
+set_target_properties(muxora PROPERTIES AUTOMOC ON)
+# Placeholder pages of the Quick workspace, compiled ahead of time.
+set_source_files_properties(../workspace_host/qml/PlaceholderPage.qml PROPERTIES QT_RESOURCE_ALIAS PlaceholderPage.qml)
+qt_add_qml_module(muxora URI Muxora.WorkspaceHost VERSION 1.0 RESOURCE_PREFIX /qt/qml
+    QML_FILES ../workspace_host/qml/PlaceholderPage.qml)
 qt_add_lrelease(TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     QM_FILES_OUTPUT_VARIABLE muxora_translation_files LRELEASE_TARGET muxora_lrelease OPTIONS -nounfinished)
 qt_add_resources(muxora muxora_translations PREFIX "/muxora/i18n"
@@ -25,14 +31,13 @@ list(FILTER muxora_i18n_sources EXCLUDE REGEX "/tests/")
 qt_add_lupdate(SOURCE_TARGETS muxora SOURCES ${muxora_i18n_sources}
     TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete -locations none -source-language en)
-target_link_libraries(muxora PRIVATE WindowSystemLua::Host)
+target_link_libraries(muxora PRIVATE WindowSystemLua::Host WindowSystem::Quick Qt6::Qml)
 if(WIN32)
     target_link_libraries(muxora PRIVATE winmm)
 endif()
 target_compile_features(muxora PRIVATE cxx_std_20)
 target_include_directories(muxora PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set_target_properties(muxora PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set_target_properties(muxora PROPERTIES AUTOMOC ON)
 if(MSVC)
     target_compile_options(muxora PRIVATE /utf-8)
 endif()

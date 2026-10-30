@@ -1,8 +1,10 @@
 #include <QCoreApplication>
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <window_system/localization.hpp>
 #include <lua_runtime/script_runtime.hpp>
 #include "workspace_host/placeholder_content.hpp"
+#include "workspace_host/quick_placeholder.hpp"
 #include "state_paths.hpp"
 #include "user_preferences.hpp"
 #include "layout_file.hpp"
@@ -14,10 +16,13 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QMessageBox>
+#include <QQmlEngine>
+#include <QQuickWindow>
 #include <QSaveFile>
 #include <QSignalBlocker>
 #include <QScopedValueRollback>
 #include <QTimer>
+#include <optional>
 
 int main(int argc, char* argv[])
 {
@@ -53,23 +58,36 @@ int main(int argc, char* argv[])
     parser.addOption({"smoke", QCoreApplication::translate("Muxora", "Exit automatically after the startup check")});
     parser.addOption({"screenshot", QCoreApplication::translate("Muxora", "Save a window screenshot after startup"), "path"});
     parser.addOption({"command", QCoreApplication::translate("Muxora", "Run a registered command after startup"), "id"});
-    parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "Use a separate layout state directory"), "path"}); parser.process(app);
-    window_system::WindowManager windows;
+    parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "Use a separate layout state directory"), "path"});
+    parser.addOption({"quick", QCoreApplication::translate("Muxora", "Show the windows with Qt Quick (in development; the layout is neither restored nor saved)")});
+    parser.process(app);
+    // Until 10.6 the Quick windows are opt-in. They do not touch the saved
+    // layout, which keeps describing the Widgets windows.
+    const bool quick = parser.isSet("quick");
+    window_system::WindowManager windows(quick ? window_system::WindowManager::Presentation::External
+                                               : window_system::WindowManager::Presentation::Widgets);
+    QQmlEngine qml;
+    std::optional<window_system::QuickWorkspace> workspace;
     QObject::connect(&interfaceAppearance, &window_system::InterfaceAppearanceController::appearanceChanged, &app, [&] {
         if (!preferences.saveInterfaceAppearance(interfaceAppearance.appearance())) {
             qWarning().noquote() << preferences.diagnostic();
             windows.setStatus(windows.context().window, preferences.diagnostic());
         }
     });
-    windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
-        return muxora::createPlaceholder(options, &windows);
-    });
+    if (quick) {
+        workspace.emplace(windows);
+        workspace->setContentFactory(muxora::quickPlaceholderFactory(windows, qml));
+    } else {
+        windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
+            return muxora::createPlaceholder(options, &windows);
+        });
+    }
     QObject::connect(&windows, &window_system::WindowManager::allWindowsClosed, &app, [&] {
         QTimer::singleShot(0, &app, [&] { if (windows.model().windows().isEmpty()) app.quit(); });
     });
     const auto stateFile = stateRoot + "/window-layout.json";
     auto save = [&] {
-        if (windows.model().windows().isEmpty()) return true;
+        if (quick || windows.model().windows().isEmpty()) return true;
         QDir().mkpath(stateRoot); QSaveFile file(stateFile);
         if (!file.open(QIODevice::WriteOnly)) return false;
         if (file.write(QJsonDocument(windows.saveLayout()).toJson()) < 0) return false;
@@ -78,10 +96,8 @@ int main(int argc, char* argv[])
     int count = 1;
     windows.commands().add({"host.newTab", QCoreApplication::translate("Muxora", "New workspace tab"), "file", QKeySequence("Ctrl+T"), {},
         [&windows, &count](const window_system::CommandContext& ctx) {
-            window_system::TabOptions options{QCoreApplication::translate("Muxora", "Workspace %1").arg(++count), "notes", {}};
-            auto* content = muxora::createPlaceholder(options, &windows);
-            const auto id = windows.addTab(ctx.window, content, options, ctx.group);
-            if (id.isNull()) { delete content; return false; } return true;
+            const window_system::TabOptions options{QCoreApplication::translate("Muxora", "Workspace %1").arg(++count), "notes", {}};
+            return !muxora::addPlaceholderTab(windows, ctx.window, options, ctx.group).isNull();
         }, {"file", "newTab"}, 10});
     struct TabKind { const char* command; const char* type; const char* title; };
     const TabKind previewKinds[] = {
@@ -95,11 +111,7 @@ int main(int argc, char* argv[])
         const auto type = QString::fromLatin1(kind.type);
         windows.commands().add({kind.command, QCoreApplication::translate("Muxora", "New %1 tab").arg(title), "file", {}, {},
             [&windows, title, type](const window_system::CommandContext& ctx) {
-                const window_system::TabOptions options{title, type, {}};
-                auto* content = muxora::createPlaceholder(options, &windows);
-                if (!windows.addTab(ctx.window, content, options, ctx.group).isNull()) return true;
-                delete content;
-                return false;
+                return !muxora::addPlaceholderTab(windows, ctx.window, {title, type, {}}, ctx.group).isNull();
             }, {"file", "newTab"}, creationOrder++});
     }
     windows.setTabCreationCommands("host.newTab",
@@ -141,7 +153,7 @@ int main(int argc, char* argv[])
         });
     QObject::connect(&windows, &window_system::WindowManager::commandFailed, &windows, [&windows](const QString& text) { windows.setStatus(windows.context().window, text); });
     muxora::LayoutFileRestore restore;
-    if (!parser.isSet("fresh")) restore = muxora::restoreLayoutFile(windows, stateFile);
+    if (!parser.isSet("fresh") && !quick) restore = muxora::restoreLayoutFile(windows, stateFile);
     if (!restore.restored || windows.model().windows().isEmpty()) {
         const auto window = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
         muxora::populateInitialWorkspace(windows, window); windows.showWindow(window);
@@ -162,8 +174,13 @@ int main(int argc, char* argv[])
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);
     persistTimer.start();
     if (parser.isSet("screenshot")) QTimer::singleShot(700, &app, [&] {
-        auto* widget = windows.windowWidget(windows.context().window);
-        if (widget && !widget->grab().save(parser.value("screenshot"))) app.exit(2);
+        const auto window = windows.context().window;
+        if (workspace) {
+            auto* quickWindow = workspace->window(window);
+            if (quickWindow && !quickWindow->grabWindow().save(parser.value("screenshot"))) app.exit(2);
+        } else if (auto* widget = windows.windowWidget(window); widget && !widget->grab().save(parser.value("screenshot"))) {
+            app.exit(2);
+        }
     });
     if (parser.isSet("smoke")) QTimer::singleShot(1300, &app, [&] {
         const auto valid = windows.model().validate(); app.exit(valid.ok && !windows.model().windows().isEmpty() ? 0 : 3);

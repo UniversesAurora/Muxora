@@ -80,6 +80,9 @@ try {
                 # preview does not use yet (GPU terminal rendering arrives in 7.2).
                 '--no-system-dxc-compiler',
                 '--skip-plugin-types', 'imageformats,iconengines,networkinformation,tls',
+                # QML imports of the Quick windows (QtQuick, QtQuick.Shapes).
+                '--qmldir', (Join-Path $taskRepository 'src/workspace_host/qml'),
+                '--qmldir', (Join-Path $taskRepository 'modules/window-system/src/quick'),
                 ('--' + $Configuration.ToLowerInvariant()), $taskPackagedExe)
             Copy-Item -LiteralPath (Join-Path $taskRepository 'LICENSE') -Destination $taskPackageDirectory -Force
             if (Test-Path -LiteralPath (Join-Path $taskRepository 'THIRD_PARTY_NOTICES.md')) {

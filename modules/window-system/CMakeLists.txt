@@ -8,7 +8,7 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TESTING})
 option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
-option(WINDOW_SYSTEM_BUILD_QUICK "Build the in-progress Quick rendering layer" OFF)
+option(WINDOW_SYSTEM_BUILD_QUICK "Build the in-progress Quick rendering layer" ON)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
@@ -142,6 +142,7 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/rail_button_item.cpp src/quick/rail_item.cpp
         src/quick/tab_content_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
         include/window_system/quick_workspace.hpp)
+    add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
