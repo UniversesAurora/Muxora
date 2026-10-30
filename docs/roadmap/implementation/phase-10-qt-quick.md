@@ -37,7 +37,7 @@
 
 **子步**（按顺序，每步可单独构建和验证）
 
-0. 先修好 Widgets 路径上已有的失败：交出时 7 个套件 20 个用例失败（拖出、侧栏拖放、视口锚定、置顶等），清单见 [记录](../../development/verification-log/2026-10.md#标签组规则移到共用控制器发现已有的-widgets-失败2026-10-30)。标签组规则已移到共用的 `TabGroupController`。
+0. 已完成：Widgets 路径上交出时已失败的用例已修好，36 个相关套件通过，见 [记录](../../development/verification-log/2026-10.md#修复交出时已失败的-widgets-用例2026-10-31)。标签组规则已移到共用的 `TabGroupController`。
 1. 标签组容器 `GroupItem`：`TabBarItem`、`GroupSurfaceItem`、内容区和竖栏尾部，布局用 `layoutTabGroup`，表面与焦点动画用共用帧状态；组按 `GroupId` 复用，内容由 `ContentHost` 挂载。
 2. 停靠表面 `DockSurfaceItem`：中央与固定区域的分割树、侧栏轨道、悬停展开面板，按模型重建并保留未变的组。
 3. 整窗 `WorkspaceQuickWindow`：`QQuickWindow` 加原生框架、标题栏、工具栏占位与状态栏；最大化、全屏、Snap、DPI 和窗口族规则与现有窗口一致。
