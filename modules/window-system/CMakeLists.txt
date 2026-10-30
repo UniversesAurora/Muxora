@@ -41,7 +41,7 @@ add_library(WindowSystemSurfaces STATIC
     src/style/tab_appearance_values.cpp
     src/docking/tab_incoming_state.cpp src/docking/tab_label_store.cpp
     src/docking/tab_strip_arrangement.cpp src/docking/tab_group_geometry.cpp
-    src/docking/tab_group_surface.cpp
+    src/docking/tab_group_surface.cpp src/docking/tab_group_controller.cpp
     src/docking/tab_strip_controller.cpp src/docking/tab_strip_controller_layout.cpp
     src/docking/tab_strip_controller_input.cpp src/docking/tab_strip_controller_motion.cpp
     src/docking/tab_strip_frame.cpp src/docking/tab_foreground_frame.cpp)

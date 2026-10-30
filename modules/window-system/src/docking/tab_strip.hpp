@@ -1,9 +1,7 @@
 #pragma once
 
 #include "tab_bar.hpp"
-#include "tab_group_motion.hpp"
-#include "tab_group_surface.hpp"
-#include "tab_viewport_state.hpp"
+#include "tab_group_controller.hpp"
 #include "style/elevation.hpp"
 #include "style/frame_clock.hpp"
 #include <window_system/layout_model.hpp>
@@ -13,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QPointer>
 #include <QSet>
+#include <memory>
 #include <optional>
 
 class QLabel;
@@ -23,7 +22,6 @@ class QTimer;
 
 namespace window_system {
 
-struct TabGroupGeometryInput;
 
 // A tab group: its strip (TabBar) beside its pages. The strip goes above,
 // below, left or right of the pages; a vertical strip has a footer with the
@@ -115,7 +113,7 @@ public:
     void setAppearance(const TabAppearance& appearance, bool pinned = false);
     void setTabMetadata(int index, const TabRecord& tab);
     void setGroupFocused(bool focused);
-    struct SurfaceState { qreal focus; bool focused; TabBar::SurfaceState tabs; };
+    using SurfaceState = TabGroupController::SurfaceState;
     [[nodiscard]] SurfaceState captureSurfaceState() const;
     void inheritSurface(const SurfaceState& previous, bool animate);
     // A vertical strip's own width (0: the appearance default) and icon mode.
@@ -130,32 +128,25 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
 private:
-    void updateDragProbe(QPoint global) const;
+    // Changes the group's state between the strip's prepare and synchronize
+    // steps, then applies what the controller asks for.
+    template <class Apply> void edit(Apply&& apply);
+    void prepareGroup();
+    void applyGroupChanges();
     void layoutChildren();
-    void driveMotion(bool restarted, qint64 timestampNs);
-    [[nodiscard]] TabGroupGeometryInput geometryInput() const;
-    void updateCardJoin();
     [[nodiscard]] TabGroupSurfaceFrame surfaceFrame() const;
     void placeControls();
     void showTabList();
     void showNewTabMenu();
-    void applyPendingScrollOffset();
-    void queueViewportReflow();
-    bool applyPendingViewportState();
-    void cancelViewportReflow();
-    [[nodiscard]] TabViewportState currentViewportState() const;
     void resolvePage(TabId tab);
-    [[nodiscard]] int stickyInset(int index) const;
     [[nodiscard]] bool vertical() const;
-    [[nodiscard]] int columnWidth() const;
-    [[nodiscard]] int maximumColumnWidth() const;
     TabBar* bar_ = nullptr;
+    std::unique_ptr<TabGroupController> group_;
     QWidget* trailing_ = nullptr;
     QWidget* end_ = nullptr;
     QWidget* footer_ = nullptr;
     QWidget* columnPanel_ = nullptr;
     QVector<QToolButton*> sidebarButtons_;
-    TabGroupMotion motion_;
     FrameClock motionDriver_;
     QElapsedTimer motionClock_;
     QWidget* resizeHandle_ = nullptr;
@@ -164,7 +155,6 @@ private:
     QLabel* name_ = nullptr;
     // A vertical strip's title: the group's name above its column.
     QLabel* title_ = nullptr;
-    QString groupName_;
     QWidget* createButtons_ = nullptr;
     QToolButton* list_ = nullptr;
     QToolButton* iconModeButton_ = nullptr;
@@ -177,36 +167,8 @@ private:
     QPointer<QMenu> newTabMenu_;
     QPointer<QWidget> viewportWindow_;
     QPoint scrollDirection_;
-    mutable QPoint dragProbe_;
-    bool lifting_ = false;
-    QPoint liftedGlobal_;
-    DragAnchor liftedGrab_;
-    bool dragHovered_ = false;
-    std::optional<int> pendingScrollOffset_;
-    std::optional<TabViewportState> settledViewport_;
-    std::optional<TabViewportState> pendingViewportState_;
     bool viewportReflowQueued_ = false;
-    bool applyingViewportState_ = false;
     bool layingOut_ = false;
-    TabAppearance appearance_;
-    bool pinned_ = false;
-    bool compactPresentation_ = false;
-    bool contentEdgeToEdge_ = false;
-    struct DragStyle {
-        TabAppearance appearance;
-        TabBarPlacement placement;
-        int width;
-        bool iconMode;
-        int stickyCount;
-    };
-    std::optional<DragStyle> normalDragStyle_;
-    QSize dragTabArea_;
-    bool barVisible_ = true;
-    int verticalWidth_ = 0;
-    bool iconMode_ = false;
-    // Dragging the vertical strip's edge.
-    std::optional<int> resizeOrigin_;
-    int resizeStartWidth_ = 0;
 };
 
 } // namespace window_system

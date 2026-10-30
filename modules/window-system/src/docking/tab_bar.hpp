@@ -213,6 +213,17 @@ public:
     // The space the group keeps for the strip changed.
     std::function<void()> reservedSizeChanged;
 
+    // A group view changes the strip through its controller in one batch:
+    // the environment is refreshed first, notifications are applied after.
+    template <class Apply> void edit(Apply&& apply)
+    {
+        prepareController();
+        apply();
+        synchronizeController();
+    }
+    [[nodiscard]] TabStripController& controller() { return controller_; }
+    [[nodiscard]] const TabStripController& controller() const { return controller_; }
+
     // Tests switch animations off; Windows' animation setting is honored.
     static void setAnimationsEnabled(bool enabled);
     [[nodiscard]] static bool animationsAllowed() { return animationsEnabled(); }
