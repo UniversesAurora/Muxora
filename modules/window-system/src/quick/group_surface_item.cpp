@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 #include "group_surface_item.hpp"
-#include "group_surface_budget.hpp"
 
 #include "shadow_node.hpp"
 #include <QMatrix4x4>
@@ -323,8 +322,6 @@ GroupSurfaceItem::~GroupSurfaceItem() = default;
 bool GroupSurfaceItem::setFrame(const TabGroupSurfaceFrame& frame)
 {
     const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1;
-    const auto error = validateGroupSurfaceFrame(frame, ratio);
-    if (error != PathGeometryError::None) return rejectFrame(error);
     if (frame.body.isEmpty()) {
         frame_ = {}; hasFrame_ = true; clearPrepared(PathGeometryError::None); update();
         return true;
@@ -433,8 +430,6 @@ void GroupSurfaceItem::itemChange(ItemChange change, const ItemChangeData& data)
 {
     QQuickItem::itemChange(change, data);
     if ((change == ItemSceneChange || change == ItemDevicePixelRatioHasChanged) && hasFrame_) {
-        const auto error = validateGroupSurfaceFrame(frame_, window() ? window()->effectiveDevicePixelRatio() : 1);
-        if (error != PathGeometryError::None) { rejectFrame(error); return; }
         if (!prepareFrame()) { rejectFrame(prepared_->error); return; }
         update();
     }

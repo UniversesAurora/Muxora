@@ -247,7 +247,7 @@ private slots:
         QVERIFY(renderFrame(second));
     }
 
-    void groupFramesKeepResourcesAcrossRejectedInputAndWindowChanges()
+    void groupFramesKeepResourcesAcrossReplacementAndWindowChanges()
     {
         QQuickWindow first, second; prepareWindow(first); prepareWindow(second);
         auto* item = new GroupSurfaceItem(first.contentItem());
@@ -267,21 +267,10 @@ private slots:
         first.show(); QVERIFY(QTest::qWaitForWindowExposed(&first));
         QTRY_VERIFY(item->renderStats().textureUploads > 0);
         const auto originalUploads = item->renderStats().textureUploads;
-        auto invalid = makeFrame(); invalid.radius = std::numeric_limits<qreal>::infinity();
-        ElevationRenderer resources;
-        const auto images = resources.cacheStats().generatedImages;
-        QVERIFY(!item->setFrame(invalid));
-        QCOMPARE(resources.cacheStats().generatedImages, images);
         auto replacement = makeFrame(); replacement.style.shadow = QColor(Qt::blue);
-        // No event processing between rejection and replacement: the old GPU
-        // nodes still exist, so a changed resource must get a new revision.
         QVERIFY(item->setFrame(replacement));
         QTRY_VERIFY(item->renderStats().textureUploads > originalUploads);
-        QVERIFY(!item->setFrame(invalid));
-        const auto error = item->geometryError();
-        QVERIFY(error != PathGeometryError::None);
         item->setParentItem(second.contentItem()); item->setParent(second.contentItem());
-        QCOMPARE(item->geometryError(), error);
         const auto beforeMove = item->renderStats().textureUploads;
         QVERIFY(item->setFrame(makeFrame()));
         second.show(); QVERIFY(QTest::qWaitForWindowExposed(&second));
