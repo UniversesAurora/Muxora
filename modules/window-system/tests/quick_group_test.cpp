@@ -67,6 +67,22 @@ private slots:
         QCOMPARE(created, 1);
     }
 
+    void aLazyPageIsCreatedWhenItsTabIsAlreadyCurrent()
+    {
+        // The workspace re-adds a group's tabs with lazy pages; the current
+        // one must show without a switch.
+        QQuickWindow window;
+        auto* group = new GroupItem(defaultTheme(), window.contentItem());
+        group->setSize({400, 240});
+        QPointer<QQuickItem> page = new QQuickItem;
+        group->pageRequested = [&](TabId) { return page.data(); };
+        group->addTab(nullptr, {}, QStringLiteral("Only"), QUuid::createUuid());
+        QCOMPARE(group->currentIndex(), 0);
+        QVERIFY(page->parentItem()); QVERIFY(page->isVisible());
+        delete group;
+        delete page.data();
+    }
+
     void removedPagesAreHandedBackAlive()
     {
         QQuickWindow window;

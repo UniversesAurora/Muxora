@@ -260,7 +260,6 @@ QQuickItem* GroupItem::takePage(TabId id)
 void GroupItem::setCurrentIndex(int index, bool reveal)
 {
     edit([&] { group_->setCurrentIndex(index, reveal); });
-    if (index >= 0 && index < count()) resolvePage(bar_->controller().tabData(index).toUuid());
     showCurrentPage();
 }
 
@@ -280,7 +279,9 @@ void GroupItem::resolvePage(TabId tab)
 void GroupItem::showCurrentPage()
 {
     const int index = currentIndex();
-    QQuickItem* page = index >= 0 ? pages_.value(bar_->controller().tabData(index).toUuid()).data() : nullptr;
+    const TabId tab = index >= 0 ? bar_->controller().tabData(index).toUuid() : TabId{};
+    if (!tab.isNull()) resolvePage(tab);
+    QQuickItem* page = pages_.value(tab).data();
     if (page == shownPage_) return;
     if (shownPage_) shownPage_->setVisible(false);
     shownPage_ = page;
@@ -565,12 +566,12 @@ void GroupItem::syncCard(const TabGroupGeometry& geometry)
     // Pages are clipped to the card's rectangle; the dock's color covers
     // what lies outside its rounded corners.
     QPainterPath corners;
-    const qreal d = 2 * radius;
+    const qreal diameter = 2 * radius;
     const auto corner = [&](QPointF square, qreal start) {
         QPainterPath piece;
         piece.moveTo(square);
-        piece.arcTo(QRectF(start == 90 || start == 180 ? body.left() : body.right() - d,
-                           start == 90 || start == 0 ? body.top() : body.bottom() - d, d, d), start, 90);
+        piece.arcTo(QRectF(start == 90 || start == 180 ? body.left() : body.right() - diameter,
+                           start == 90 || start == 0 ? body.top() : body.bottom() - diameter, diameter, diameter), start, 90);
         piece.closeSubpath();
         corners.addPath(piece);
     };
