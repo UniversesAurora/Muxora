@@ -278,7 +278,7 @@ private:
 void TabContent::updatePaneVeils()
 {
     const bool several = frames_.size() > 1;
-    auto veil = manager_->interfaceTheme().text; veil.setAlphaF(0.05);
+    auto veil = manager_->interfaceTheme().text; veil.setAlphaF(0.05f);
     for (auto* frame : std::as_const(frames_)) {
         if (!frame) continue;
         auto* existing = frame->findChild<QWidget*>("PaneVeil", Qt::FindDirectChildrenOnly);
