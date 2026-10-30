@@ -139,11 +139,14 @@ if(WINDOW_SYSTEM_BUILD_QUICK)
         src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
         src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
         src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
-        src/quick/rail_button_item.cpp src/quick/rail_item.cpp)
+        src/quick/rail_button_item.cpp src/quick/rail_item.cpp
+        src/quick/tab_content_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
+        include/window_system/quick_workspace.hpp)
     set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
     target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
     target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
-    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
+    # WindowManager still lives in the Widgets library; 10.6 moves it out.
+    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
     qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
     target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
     qt_add_shaders(WindowSystemQuick window_system_mask_shaders

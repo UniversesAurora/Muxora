@@ -23,7 +23,7 @@
 
 ## 10.3 Quick 窗口、内容与原生交互
 
-**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。组容器、整窗和内容提供者还没有接通。
+**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。`QuickWorkspace` 已能按模型建窗口、中央停靠区和窗格内容，见 [工作区记录](../../development/verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)；固定区域、侧栏、整窗框架、拖动和 Muxora 入口还没有接通。
 
 用户 2026-10-30 明确：整个界面必须完全迁移到 Quick，Widgets 路径在 10.6 删除。迁移期间两个后端共存，按下面的结构过渡。
 
@@ -33,16 +33,16 @@
 - 新增 `QuickWorkspace`：监听管理器，为每个模型窗口建 Quick 窗口，按模型搭建停靠表面（`GroupItem`、`RailItem`、分割树），用户操作调用管理器现有的公开接口（关闭、激活、移动、设比例等），不复制命令或布局规则。
 - 拖动的判断（命中、停靠引导、插入位置）先从 `DragController` 抽成不依赖控件的共用部分，Widgets 和 Quick 各自只做输入与原生移动的适配；原生移动用 `QWindow`。
 - 宿主内容：`External` 模式下 `addTab`、`splitPane` 不带 QWidget，内容由 `QuickWorkspace` 的内容工厂按窗格 ID 和描述创建，挂在 `ContentHost`；栏位同理。Muxora 用启动参数 `--quick` 选择 Quick，默认仍是 Widgets，直到 10.6。
-- 10.6 删除 Widgets 时，管理器里的视图代码整块删除，`External` 成为唯一模式，不留抽象层。
+- 10.6 删除 Widgets 时，管理器里的视图代码整块删除，`External` 成为唯一模式，不留抽象层；`WindowManager` 随之移出 Widgets 库（在此之前 Quick 库经它链接 Widgets）。
 - 不在 Quick 窗口里嵌 QWidget，也不用原生子窗口遮挡 Quick 浮层。
 
 **子步**（按顺序，每步可单独构建和验证）
 
 0. 已完成：Widgets 路径上交出时已失败的用例已修好，36 个相关套件通过，见 [记录](../../development/verification-log/2026-10.md#修复交出时已失败的-widgets-用例2026-10-31)。标签组规则已移到共用的 `TabGroupController`。
 1. 已完成（`0b7ab5f`）：标签组容器 `GroupItem`，与 Widgets 版截图对照一致；卡片圆角处暂用停靠区底色，Widgets 会在那里重绘底板（含几个阴影像素），留到 10.5。原计划：`TabBarItem`、`GroupSurfaceItem`、内容区和竖栏尾部，布局用 `layoutTabGroup`，表面与焦点动画用共用帧状态；组按 `GroupId` 复用，内容由 `ContentHost` 挂载。
-2. 停靠表面 `DockSurfaceItem`：中央与固定区域的分割树、侧栏轨道、悬停展开面板，按模型重建并保留未变的组。
+2. 进行中：停靠表面 `DockSurfaceItem`。中央分割树已完成，组和标签页按 ID 复用，标签增删时只重建该组的标签项，改名和颜色原地更新。固定区域的分割树、侧栏轨道、悬停展开面板未做。
 3. 整窗 `WorkspaceQuickWindow`：`QQuickWindow` 加原生框架、标题栏、工具栏占位与状态栏；最大化、全屏、Snap、DPI 和窗口族规则与现有窗口一致。
-4. 管理器的 `External` 模式与不带控件的 `addTab`／`splitPane`；`QuickWorkspace` 按模型建窗口；Muxora `--quick` 能打开、关闭、切换标签和分割。
+4. 进行中：管理器的 `External` 模式与不带控件的 `addTab`／`splitPane` 已完成（`5d38cef`）；`QuickWorkspace` 按模型建窗口、按窗格建内容，关闭窗口经管理器决定。Muxora `--quick` 未做。
 5. 拖动：栏内换位、拖出成浮窗、跨窗口停靠、拖入侧栏，全部经 `QWindow` 完成。
 6. 宿主内容和栏位的 Quick 接口，Muxora 占位内容迁移；输入法、焦点、显隐通知与按需创建保持。
 7. 完成条件：`--quick` 下两个组、窗格、分隔条和标签跨窗口移动都能完整使用；缺项不切换默认。
