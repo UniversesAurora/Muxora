@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "tab_bar.hpp"
+#include "tab_strip_controller.hpp"
 
 namespace window_system {
 
-void TabBar::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
+void TabStripController::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
 {
     const auto& folder = folders_.at(draggedFolder_);
     const auto state = folderPaintState(draggedFolder_);
@@ -13,7 +13,7 @@ void TabBar::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
     frame.folder = TabStripFolderSample{header, state, folder.id};
     int x = header.right() + 1, y = header.top() + pitch;
     const int count = folder.collapsed ? 0 : folder.count;
-    const QRect windowArea(mapFrom(window(), QPoint()), window()->size());
+    const auto& windowArea = environment_.windowArea;
     for (int index = folder.first; index < folder.first + count && index < tabs_.size(); ++index) {
         const QRect area = vertical() ? QRect(lifted.left() + metrics_.folderIndent, y, lifted.width() - metrics_.folderIndent, metrics_.rowHeight)
             : QRect(x, lifted.top(), tabExtent(index, false), metrics_.rowHeight);
@@ -44,7 +44,7 @@ void TabBar::captureCarriedFolder(TabForegroundFrame& frame, QRect lifted)
     }
 }
 
-TabStripLabelSample TabBar::captureLiftedLabel(QRect area, const QFont& font, Qt::LayoutDirection direction)
+TabStripLabelSample TabStripController::captureLiftedLabel(QRect area, const QFont& font, Qt::LayoutDirection direction)
 {
     TabPaintState state;
     state.shape = shapeOf(dragged_);
@@ -71,7 +71,7 @@ TabStripLabelSample TabBar::captureLiftedLabel(QRect area, const QFont& font, Qt
     return {tabData(dragged_).toUuid(), dragged_, labelContent(dragged_), std::move(label)};
 }
 
-std::shared_ptr<const TabForegroundFrame> TabBar::captureForegroundFrame(const QFont& font, Qt::LayoutDirection direction)
+std::shared_ptr<const TabForegroundFrame> TabStripController::captureForegroundFrame(const QFont& font, Qt::LayoutDirection direction)
 {
     std::shared_ptr<TabForegroundFrame> frame;
     for (auto& buffer : foregroundBuffers_) if (!buffer || buffer.use_count() == 1) {
@@ -81,7 +81,7 @@ std::shared_ptr<const TabForegroundFrame> TabBar::captureForegroundFrame(const Q
     if (!frame) frame = std::make_shared<TabForegroundFrame>();
     frame->style = labelStyle(); frame->font = font; frame->direction = direction; frame->vertical = vertical();
     frame->elevation = painter_.palette().elevation;
-    frame->elevation.focused = groupFocused_ && window()->isActiveWindow();
+    frame->elevation.focused = groupFocused_ && environment_.windowActive;
     frame->shadows.clear(); frame->incoming.reset(); frame->folder.reset(); frame->folderLine.reset();
     frame->carried.clear(); frame->settling.clear();
     const auto body = interpolateElevation(elevationProfile(ElevationLevel::BodyRest),

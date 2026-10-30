@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-#include "tab_bar.hpp"
+#include "tab_strip_controller.hpp"
 #include <algorithm>
 
 namespace window_system {
 
-std::optional<TabStripLabelSample> TabBar::labelSample(int index, QRect area, const QFont& font,
+std::optional<TabStripLabelSample> TabStripController::labelSample(int index, QRect area, const QFont& font,
     Qt::LayoutDirection direction, bool settling)
 {
     if (area.isEmpty() || (!settling && positions_.isSettling(tabData(index).toUuid()))) return {};
@@ -21,7 +21,7 @@ std::optional<TabStripLabelSample> TabBar::labelSample(int index, QRect area, co
     return TabStripLabelSample{tabData(index).toUuid(), index, labelContent(index), std::move(label)};
 }
 
-void TabBar::captureLaneFrame(TabStripLaneFrame& frame, int laneIndex, const QFont& font, Qt::LayoutDirection direction)
+void TabStripController::captureLaneFrame(TabStripLaneFrame& frame, int laneIndex, const QFont& font, Qt::LayoutDirection direction)
 {
     const auto& lane = layout_.laneList.at(laneIndex);
     const auto origin = tabOrigin();
@@ -76,7 +76,7 @@ void TabBar::captureLaneFrame(TabStripLaneFrame& frame, int laneIndex, const QFo
     captureFolderFrame(frame, laneIndex);
 }
 
-void TabBar::captureFolderFrame(TabStripLaneFrame& frame, int laneIndex)
+void TabStripController::captureFolderFrame(TabStripLaneFrame& frame, int laneIndex)
 {
     const auto origin = tabOrigin();
     const bool bottom = placement_ == TabBarPlacement::Bottom;
@@ -129,7 +129,7 @@ void TabBar::captureFolderFrame(TabStripLaneFrame& frame, int laneIndex)
     }
 }
 
-std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font, Qt::LayoutDirection direction)
+std::shared_ptr<const TabStripFrame> TabStripController::captureStripFrame(const QFont& font, Qt::LayoutDirection direction)
 {
     std::shared_ptr<TabStripFrame> frame;
     for (auto& buffer : stripBuffers_) if (!buffer || buffer.use_count() == 1) {
@@ -138,7 +138,7 @@ std::shared_ptr<const TabStripFrame> TabBar::captureStripFrame(const QFont& font
     }
     if (!frame) frame = std::make_shared<TabStripFrame>();
     frame->style = labelStyle(); frame->font = font; frame->direction = direction;
-    frame->vertical = vertical(); frame->windowActive = window()->isActiveWindow();
+    frame->vertical = vertical(); frame->windowActive = environment_.windowActive;
     frame->background = {}; frame->separators.clear(); frame->scrollbars.clear(); frame->overlayShadow = {};
     if (overlayActive() && !vertical()) {
         frame->background = rect();

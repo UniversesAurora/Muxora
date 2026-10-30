@@ -1,86 +1,22 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include "tab_pointer_controller.hpp"
-#include "tab_hover_controller.hpp"
-#include "tab_action_motion.hpp"
-#include "tab_column_peek.hpp"
-#include "tab_presence_state.hpp"
-#include "tab_rows_state.hpp"
-#include "tab_scrollbar_state.hpp"
-#include "tab_surface_motion.hpp"
-#include "tab_group_surface.hpp"
-#include "tab_position_motion.hpp"
-#include "tab_lift_state.hpp"
-#include "tab_label_store.hpp"
-#include "tab_strip_arrangement.hpp"
-#include "tab_incoming_state.hpp"
-#include "tab_drag_visual.hpp"
-#include "tab_foreground_frame.hpp"
-#include "tab_presentation_frame.hpp"
 
-#include "style/smooth_scroll.hpp"
+#include "tab_strip_controller.hpp"
 #include "style/frame_clock.hpp"
-
-#include "tab_layout.hpp"
-#include "tab_drag_geometry.hpp"
-#include "tab_wheel_controller.hpp"
-#include "style/tab_painter.hpp"
 #include "style/tab_carrier_painter.hpp"
-#include "style/tab_title_layout.hpp"
-#include "style/tab_label_content.hpp"
-#include "style/tab_strip_frame.hpp"
-#include "style/motion.hpp"
-#include "style/elevation.hpp"
-#include <window_system/layout_model.hpp>
-#include <window_system/tab_appearance.hpp>
-#include <window_system/theme.hpp>
-
 #include <QElapsedTimer>
-#include <QHash>
-#include <QIcon>
 #include <QPointer>
-#include <QRegion>
-#include <QSet>
 #include <QTimer>
-#include <QVariant>
 #include <QWidget>
 #include <functional>
-#include <array>
-#include <optional>
-#include <memory>
 
 class QToolButton;
 class QMenu;
 
 namespace window_system {
 
-// A tab being carried onto a strip, measured by the strip it would join; or
-// the header of a carried tab folder (`title` its name).
-struct CarriedLabel {
-    QString title;
-    bool icon = false;
-    bool folderHeader = false;
-    bool collapsed = false;
-    int count = 0;
-};
-
-using LabelPositions = QHash<QUuid, QRect>;
-
-// A tab folder as a strip shows it: a run of `count` tabs from `first`
-// (tab strip design 12).
-struct TabStripFolder {
-    QUuid id;
-    QString name;
-    QString colorId;
-    bool collapsed = false;
-    int first = 0;
-    int count = 0;
-    bool operator==(const TabStripFolder&) const = default;
-};
-
-// One tab strip: its tabs, their arrangement and input. It reads the pure
-// layout (tab_layout.hpp) and paints through TabPainter; it never computes a
-// position of its own (docs/design/tab-strip-design.md, ADR 0011).
+// Widgets view of the shared strip controller. Input and native controls are
+// adapted here; the model, arrangement and immutable frames belong to it.
 class TabBar final : public QWidget {
     Q_OBJECT
 public:
@@ -90,7 +26,7 @@ public:
     // Tabs. A tab's data is its TabId; hosts read it with toUuid().
     int addTab(const QIcon& icon, const QString& title);
     void removeTab(int index);
-    [[nodiscard]] int count() const { return int(tabs_.size()); }
+    [[nodiscard]] int count() const { return controller_.count(); }
     [[nodiscard]] QVariant tabData(int index) const;
     void setTabData(int index, const QVariant& data);
     [[nodiscard]] QString tabText(int index) const;
@@ -102,22 +38,22 @@ public:
     void setTabMetadata(int index, const TabRecord& tab);
     [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
     [[nodiscard]] std::shared_ptr<const TabLabelContent> labelContent(int index) const;
-    [[nodiscard]] int currentIndex() const { return current_; }
+    [[nodiscard]] int currentIndex() const { return controller_.currentIndex(); }
     void setCurrentIndex(int index);
-    [[nodiscard]] QSize iconSize() const { return {metrics_.iconSize, metrics_.iconSize}; }
+    [[nodiscard]] QSize iconSize() const { return controller_.iconSize(); }
     [[nodiscard]] int indexOf(TabId tab) const;
 
     void setTheme(const Theme& theme);
     void setAppearance(const TabAppearance& appearance, TabBarPlacement placement);
-    [[nodiscard]] TabBarPlacement placement() const { return placement_; }
-    [[nodiscard]] bool vertical() const { return placement_ == TabBarPlacement::Left || placement_ == TabBarPlacement::Right; }
-    [[nodiscard]] const TabAppearance& appearance() const { return appearance_; }
-    [[nodiscard]] const TabMetrics& metrics() const { return metrics_; }
+    [[nodiscard]] TabBarPlacement placement() const { return controller_.placement(); }
+    [[nodiscard]] bool vertical() const { return controller_.vertical(); }
+    [[nodiscard]] const TabAppearance& appearance() const { return controller_.appearance(); }
+    [[nodiscard]] const TabMetrics& metrics() const { return controller_.metrics(); }
     void setStickyCount(int count);
-    [[nodiscard]] int stickyCount() const { return stickyCount_; }
+    [[nodiscard]] int stickyCount() const { return controller_.stickyCount(); }
     // Tab folders, in strip order.
     void setFolders(QVector<TabStripFolder> folders);
-    [[nodiscard]] const QVector<TabStripFolder>& folders() const { return folders_; }
+    [[nodiscard]] const QVector<TabStripFolder>& folders() const { return controller_.folders(); }
     // The folder holding a tab, or -1.
     [[nodiscard]] int folderOf(int index) const;
     [[nodiscard]] QRect folderHeaderRect(int folder) const;
@@ -135,23 +71,18 @@ public:
     std::function<void()> surfaceChanged;
     void setCarriedDisplay(bool carried);
     void setCarriedTileColumns(int columns);
-    [[nodiscard]] int carriedTileColumns() const { return carriedTileColumns_; }
+    [[nodiscard]] int carriedTileColumns() const { return controller_.carriedTileColumns(); }
     // Vertical: only icons in a narrow column; hovering peeks at full width.
     void setIconMode(bool iconMode);
-    [[nodiscard]] bool iconMode() const { return columnPeek_.iconsOnly(); }
-    [[nodiscard]] bool peeking() const { return columnPeek_.expanded(); }
-    enum class VerticalPresentation { Icons, Rows, Tiles };
-    [[nodiscard]] VerticalPresentation verticalPresentation() const
-    {
-        if (carriedPresentation_) return *carriedPresentation_;
-        if (iconMode()) return peeking() ? VerticalPresentation::Rows : VerticalPresentation::Icons;
-        return appearance_.stickySizing == StickyTabSizing::Compact ? VerticalPresentation::Tiles : VerticalPresentation::Rows;
-    }
+    [[nodiscard]] bool iconMode() const { return controller_.iconMode(); }
+    [[nodiscard]] bool peeking() const { return controller_.peeking(); }
+    using VerticalPresentation = TabStripController::VerticalPresentation;
+    [[nodiscard]] VerticalPresentation verticalPresentation() const { return controller_.verticalPresentation(); }
     void setCarriedPresentation(std::optional<VerticalPresentation> presentation);
-    [[nodiscard]] bool iconsOnly() const { return vertical() && verticalPresentation() == VerticalPresentation::Icons; }
-    [[nodiscard]] bool compactStickyTiles() const { return vertical() && verticalPresentation() == VerticalPresentation::Tiles; }
+    [[nodiscard]] bool iconsOnly() const { return controller_.iconsOnly(); }
+    [[nodiscard]] bool compactStickyTiles() const { return controller_.compactStickyTiles(); }
     void setColumnReveal(qreal reveal, bool modeTransition = false);
-    void setColumnManaged(bool managed) { columnManaged_ = managed; }
+    void setColumnManaged(bool managed) { controller_.setColumnManaged(managed); }
     void setColumnHovered(bool hovered);
     void restoreColumnPeek(bool peeked);
     void showColumnPopup(std::function<void()> open);
@@ -182,8 +113,8 @@ public:
     // The size to show: larger than reserved while an overlay is open.
     [[nodiscard]] QSize displaySize(QSize available) const;
     void setAvailableSize(QSize available);
-    [[nodiscard]] QSize availableSize() const { return available_; }
-    [[nodiscard]] const TabLayout& tabLayout() const { return layout_; }
+    [[nodiscard]] QSize availableSize() const { return controller_.availableSize(); }
+    [[nodiscard]] const TabLayout& tabLayout() const { return controller_.tabLayout(); }
     [[nodiscard]] std::shared_ptr<const TabStripFrame> captureStripFrame(const QFont& font, Qt::LayoutDirection direction);
     [[nodiscard]] std::shared_ptr<const TabForegroundFrame> captureForegroundFrame(const QFont& font, Qt::LayoutDirection direction);
     // State publication is independent of QWidget painting and opt-in. The
@@ -196,7 +127,7 @@ public:
     [[nodiscard]] QRect tabRect(int index) const;
     // The painted contour, clipped to the displayed part of the tab.
     [[nodiscard]] QRegion tabRegion(int index) const;
-    [[nodiscard]] QRect displayTabRect(int index) const { return tabRect(index); }
+    [[nodiscard]] QRect displayTabRect(int index) const { return controller_.displayTabRect(index); }
     [[nodiscard]] int tabAt(QPoint local) const;
     // The title slot, for an inline editor (8.5) and tests.
     [[nodiscard]] QRect titleRect(int index) const;
@@ -205,8 +136,8 @@ public:
     // that keep shown tabs in place when the strip changes size.
     [[nodiscard]] int scrollOffset() const;
     void setScrollOffset(int offset);
-    [[nodiscard]] int stickyScrollOffset() const { return stickyOffset_; }
-    [[nodiscard]] int rowScrollOffset() const { return rowsOffset_; }
+    [[nodiscard]] int stickyScrollOffset() const { return controller_.stickyScrollOffset(); }
+    [[nodiscard]] int rowScrollOffset() const { return controller_.rowScrollOffset(); }
     void restoreScrollOffsets(int regular, int sticky, int rows);
     [[nodiscard]] int maximumScrollOffset() const;
     [[nodiscard]] QRect scrollViewport() const;
@@ -223,20 +154,20 @@ public:
 
     // Collapsed rows (tab strip design 3.4).
     [[nodiscard]] bool collapsible() const;
-    [[nodiscard]] bool expanded() const { return rowsState_.expanded(); }
+    [[nodiscard]] bool expanded() const { return controller_.expanded(); }
     void setExpanded(bool expanded, bool byWheel = false, bool animate = true);
     [[nodiscard]] bool wrappedRows() const;
-    [[nodiscard]] bool rowTransitionRunning() const { return rowsState_.needsFrame(); }
+    [[nodiscard]] bool rowTransitionRunning() const { return controller_.rowTransitionRunning(); }
     [[nodiscard]] QRect scrollViewportAt(QPoint local) const;
     [[nodiscard]] bool scrollsHorizontallyAt(QPoint local) const;
-    [[nodiscard]] int hiddenTabs() const { return layout_.hidden; }
+    [[nodiscard]] int hiddenTabs() const { return controller_.hiddenTabs(); }
     // Dragging over a collapsed strip shows all rows as an overlay.
     void setDragExpanded(bool expanded);
     [[nodiscard]] bool overlayActive() const;
 
     // Drag (tab strip design 6).
     void setDraggedTab(TabId tab);
-    [[nodiscard]] int draggedIndex() const { return dragged_; }
+    [[nodiscard]] int draggedIndex() const { return controller_.draggedIndex(); }
     // The dragged tab drawn lifted under the pointer, `grab` being where in
     // the tab it was taken (tab strip design 6.1). A null point ends it.
     void setLifted(QPoint local, QPoint grab = {});
@@ -252,12 +183,12 @@ public:
                                            TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
     // `folder` is the folder the block joins, -1 for none.
     void setDropPreview(int index, bool sticky, QVector<int> block, int folder = -1);
-    [[nodiscard]] int dropIndex() const { return dropIndex_; }
-    [[nodiscard]] bool dropSticky() const { return dropSticky_; }
-    [[nodiscard]] int dropFolder() const { return dropFolder_; }
+    [[nodiscard]] int dropIndex() const { return controller_.dropIndex(); }
+    [[nodiscard]] bool dropSticky() const { return controller_.dropSticky(); }
+    [[nodiscard]] int dropFolder() const { return controller_.dropFolder(); }
     // A whole folder being carried: its header and tabs leave the strip.
     void setDraggedFolder(QUuid folder);
-    [[nodiscard]] int draggedFolder() const { return draggedFolder_; }
+    [[nodiscard]] int draggedFolder() const { return controller_.draggedFolder(); }
     // A folder header's width in this strip (tab strip design 12).
     [[nodiscard]] int folderHeaderExtent(const TabStripFolder& folder) const;
     [[nodiscard]] QRect dropPreviewRect() const;
@@ -313,176 +244,41 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    [[nodiscard]] TabStripEnvironment controllerEnvironment() const;
+    void prepareController(bool measureEnvironment = false);
+    void synchronizeController();
+    void scheduleController();
+    void applyControlState();
     void invalidatePresentation();
     void requestRepaint();
-    void invalidateCarrier(bool content);
-    [[nodiscard]] LabelPresencePose presenceFor(int index, QRect area) const;
-    [[nodiscard]] QRect incomingRectAt(QPoint local) const;
-    [[nodiscard]] QRect liftedRectAt(QPoint local) const;
-    [[nodiscard]] TabStripRows rowPolicy() const;
-    [[nodiscard]] TabStripGeometry stripGeometry() const;
-    [[nodiscard]] TabStripControls stripControls() const;
-    [[nodiscard]] TabStripArrangementInput arrangementInput() const;
-    [[nodiscard]] TabDragArea dragArea() const;
-    [[nodiscard]] TabDragConstraint incomingConstraint() const;
-    [[nodiscard]] std::optional<TabLiftTarget> liftTarget() const;
-    [[nodiscard]] bool collapsedNow() const;
-    void relayout(bool animate, bool measureChanged = true);
-    void relayoutTrailing();
-    void applyControlRects(const TabStripControlRects& controls);
-    [[nodiscard]] TabLabelParts labelParts(int index, bool sticky) const;
-    [[nodiscard]] bool isCompactSticky(int index) const;
-    [[nodiscard]] bool rowShape() const;
-    [[nodiscard]] TabShape shapeOf(int index) const;
-    [[nodiscard]] TabParts partsOf(int index, const QRect& rect) const;
-    [[nodiscard]] TabParts labelGeometry(const QRect& rect, TabShape shape, TabLabelParts label,
-                                         bool iconOnly, bool action, bool sticky) const;
-    [[nodiscard]] QRect animatedRect(int index) const;
-    [[nodiscard]] std::optional<TabStripLabelSample> labelSample(int index, QRect area, const QFont& font,
-        Qt::LayoutDirection direction, bool settling = false);
-    [[nodiscard]] TabPaintState paintState(int index);
-    void paintLiftedTabs(QPainter& painter);
     void updateLiftedLayer();
-    void captureLaneFrame(TabStripLaneFrame& frame, int lane, const QFont& font, Qt::LayoutDirection direction);
-    void captureFolderFrame(TabStripLaneFrame& frame, int lane);
-    void captureCarriedFolder(TabForegroundFrame& frame, QRect area);
-    [[nodiscard]] TabStripLabelSample captureLiftedLabel(QRect area, const QFont& font, Qt::LayoutDirection direction);
-    [[nodiscard]] TabFolderPaintState folderPaintState(int folder) const;
-    [[nodiscard]] int laneAt(QPoint local) const;
-    [[nodiscard]] std::optional<int> stickyBoundary() const;
-    [[nodiscard]] QRect scrollThumb(int lane) const;
-    [[nodiscard]] TabScrollbarMetrics scrollbarMetrics() const;
-    void showScrollbar(bool shown);
-    void setLaneOffset(int lane, int offset);
-    bool scrollLaneBy(int lane, int delta, bool smooth);
-    void revealScrollbar(int lane);
-    [[nodiscard]] QRect scrollbarHitRect() const;
+    void paintLiftedTabs(QPainter& painter);
     void trackColumnPopup();
     void reconcileColumnHover();
-    void applyColumnPeekAction(const TabColumnPeekAction& action);
-    [[nodiscard]] int laneOffsetInput(int lane) const;
-    void startCollapseTimer();
-    void updateRowPresentation(TabVisualState previous, bool moving, bool revealActive);
-    [[nodiscard]] const TabStripRowMeasure& measureRows(QSize available) const;
-    [[nodiscard]] int rowShadowExtent() const;
-    mutable std::optional<TabStripRowMeasure> rowMeasure_;
-    [[nodiscard]] bool hasLabelAction(int index) const;
-    void updateHover(QPoint local);
-    [[nodiscard]] TabPointerHit pointerHit(QPoint local, bool releasing) const;
     void applyPointerDecision(const TabPointerDecision& decision);
-    [[nodiscard]] qreal liftProgress() const;
-    [[nodiscard]] SurfaceGeometry anchorGeometry(QRectF anchor, QRectF visible, bool compact, bool lifted, bool transitioning = true) const;
-    [[nodiscard]] QRect activeDragRect() const;
-    [[nodiscard]] std::pair<qreal, qreal> attachmentValues() const;
-    void syncAttachment();
-    void driveSurfaceMotion(bool restarted, qint64 timestampNs);
-    void applyActionFade(TabHoverTransition::Fade fade, int index = -1);
-    [[nodiscard]] std::optional<QUuid> currentLabelId() const;
-    void surfaceFrameChanged();
-    [[nodiscard]] qreal selectionWeight(int index) const;
-    void updateTitleWidths();
-    [[nodiscard]] std::shared_ptr<const TabStripLabelStyle> labelStyle() const;
     static bool animationsEnabled();
 
-    Theme theme_;
-    TabMetrics metrics_;
-    TabPainter painter_;
-    mutable std::shared_ptr<const TabStripLabelStyle> labelStyle_;
-    TabAppearance appearance_;
-    TabBarPlacement placement_ = TabBarPlacement::Top;
-    TabLabelStore tabs_;
-    int current_ = -1;
-    int stickyCount_ = 0;
-    QVector<TabStripFolder> folders_;
-    bool groupFocused_ = false;
-    QRectF surfaceBody_;
-    qreal surfaceFocus_ = 0;
-    qreal surfaceJoin_ = 1;
-    TabSurfaceMotion surfaceMotion_;
-    FrameClock surfaceDriver_;
-    mutable ElevationRenderer surfaceRenderer_;
-    bool carriedDisplay_ = false;
-    int carriedTileColumns_ = 0;
-    std::optional<VerticalPresentation> carriedPresentation_;
-    TabColumnPeek columnPeek_;
-    qreal columnReveal_ = 1.0;
-    bool columnModeTransition_ = false;
-    bool columnManaged_ = false;
+    TabStripController controller_;
+    QElapsedTimer controllerClock_;
+    FrameClock frameDriver_;
+    QTimer wakeTimer_;
+    bool synchronizing_ = false;
+    bool ready_ = false;
     QPointer<QMenu> columnPopup_;
     QMetaObject::Connection popupHidden_;
     QMetaObject::Connection popupDestroyed_;
-    TabPresenceState presence_;
-    FrameClock presenceDriver_;
-    TabVisualState departing_;
-    TabDeparturePainter departurePainter_;
-    QSize available_;
-    TabLayout layout_;
-    // Input for that exact layout; rebuilt with it and adjusted on scrolling.
-    // Pointer queries do not remeasure titles or allocate extent arrays.
-    TabLayoutInput arrangedInput_;
-    // Offsets of the sticky and regular lanes (horizontal single rows or
-    // vertical sections) and of wrapped rows.
-    int stickyOffset_ = 0;
-    int regularOffset_ = 0;
-    int rowsOffset_ = 0;
-    SmoothScrollAnimation scrollMotion_;
-    int smoothLane_ = -1;
-    bool applyingScrollMotion_ = false;
-    int collapsedStickyRow_ = 0;
-    int collapsedRegularRow_ = 0;
-    TabRowsState rowsState_;
-    QTimer collapseTimer_;
-    QTimer peekTimer_;
-    TabWheelController wheelController_;
-    QElapsedTimer rowWheelClock_;
-    FrameClock rowsDriver_;
-    TabScrollbarState scrollbars_;
-    FrameClock scrollbarDriver_;
-    QTimer scrollbarHideTimer_;
-    QPointer<QWidget> scrollInput_;
-    // Drag.
-    int dragged_ = -1;
-    int dropIndex_ = -1;
-    TabLiftState lifted_;
-    std::optional<int> initialStickyBoundary_;
-    QPointer<QWidget> liftedLayer_;
-    QRegion liftedPaintRegion_;
-    TabIncomingState incoming_;
-    TabCarrierPainter incomingPainter_;
-    mutable std::optional<QRect> carrierBounds_;
-    std::shared_ptr<const TabCarrierLabels> carrierContent_;
-    std::shared_ptr<const TabCarrierFrame> carrierFrame_;
-    std::array<std::shared_ptr<TabCarrierFrame>, 2> carrierBuffers_;
-    std::array<std::shared_ptr<TabStripFrame>, 2> stripBuffers_;
-    std::array<std::shared_ptr<TabForegroundFrame>, 2> foregroundBuffers_;
-    std::shared_ptr<const TabPresentationFrame> presentationFrame_;
-    std::array<std::shared_ptr<TabPresentationFrame>, 2> presentationBuffers_;
-    quint64 presentationGeneration_ = 0;
-    bool presentationPublishing_ = false;
-    bool presentationPending_ = false;
-    bool carrierContentDirty_ = true;
-    // Two bounded shape snapshots: attachment probing and displayed shape.
-    // Full input keys cover resize, animation, scrolling, and theme metrics.
-    mutable std::array<std::optional<std::pair<SurfaceGeometryInput, SurfaceGeometry>>, 2> anchorGeometryCache_;
-    mutable QVector<int> carrierTabs_;
-    bool dropSticky_ = false;
-    QVector<int> dropBlock_;
-    int dropFolder_ = -1;
-    int draggedFolder_ = -1;
-    // Input.
-    TabPointerController pointer_;
-    TabHoverController hover_;
     QPointer<QWidget> trailing_;
     QPointer<QWidget> end_;
     QToolButton* countButton_ = nullptr;
-    TabPositionMotion positions_;
-    TabActionMotion actionMotion_;
-    FrameClock actionDriver_;
-    // Widgets cadence adapter for the shared reorder and settling state.
-    QTimer slideTimer_;
-    bool planarReflow_ = false;
-    [[nodiscard]] bool hasSingleTileRow() const;
-    [[nodiscard]] bool usesPlanarReflow(const TabVisualState& previous) const;
+    QPointer<QWidget> scrollInput_;
+    QPointer<QWidget> liftedLayer_;
+    QRegion liftedPaintRegion_;
+    mutable ElevationRenderer surfaceRenderer_;
+    TabCarrierPainter incomingPainter_;
+    TabDeparturePainter departurePainter_;
+    quint64 presentationGeneration_ = 0;
+    bool presentationPublishing_ = false;
+    bool presentationPending_ = false;
 };
 
 } // namespace window_system
