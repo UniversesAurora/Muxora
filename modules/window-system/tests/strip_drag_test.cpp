@@ -5,6 +5,7 @@
 #include "docking/tab_strip.hpp"
 #include "docking/tab_bar.hpp"
 #include "authored_mouse_input.hpp"
+#include "tab_reveal.hpp"
 #include <window_system/scrolling.hpp>
 #include <window_system/window_manager.hpp>
 
@@ -72,16 +73,7 @@ struct StripAxis {
     // strip design 3.5). Tearing the active tab out activates a neighbor.
     [[nodiscard]] int restoredFrom(int original) const
     {
-        if (scroll) return std::min(original, scroll->maximum());
-        const auto& layout = bar->tabLayout();
-        const int index = bar->currentIndex(), laneIndex = layout.lanes.value(index, -1);
-        if (laneIndex < 0) return std::min(original, maximum());
-        auto lane = layout.laneList.at(laneIndex);
-        const int shift = lane.offset - std::clamp(original, 0, lane.maximumOffset());
-        auto tab = layout.tabs.at(index);
-        if (lane.vertical) tab.translate(0, shift); else tab.translate(shift, 0);
-        lane.offset -= shift;
-        return lane.offsetToReveal(tab, bar->metrics().edgeFade);
+        return scroll ? std::min(original, scroll->maximum()) : tab_reveal::offsetFrom(*bar, bar->currentIndex(), original);
     }
 };
 

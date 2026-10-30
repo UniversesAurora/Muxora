@@ -2,6 +2,8 @@
 #include "chrome/workspace_window.hpp"
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
+#include "tab_reveal.hpp"
+#include <window_system/scrolling.hpp>
 #include <window_system/window_manager.hpp>
 
 #include <QApplication>
@@ -143,7 +145,7 @@ void TabViewportTest::localResizePreservesTheVisibleAnchor()
     if (direction >= 2) QCOMPARE(current.offset, old.offset);
     else if (visible) {
         const int candidate=old.offset + current.bounds.left()-old.bounds.left();
-        QCOMPARE(current.offset,qBound(area.right()-current.bounds.width()+1,candidate,area.left()));
+        QCOMPARE(current.offset, tab_reveal::offsetFrom(*tabs.tabBar(), active, candidate));
         QVERIFY(current.activeFullyVisible);
     } else {
         QCOMPARE(current.bounds.left() - current.offset, old.bounds.left() - old.offset);
@@ -268,13 +270,16 @@ void TabViewportTest::lastActiveTabNeverManufacturesTrailingSpace()
 {
     QWidget root; auto* row = new QVBoxLayout(&root); row->setContentsMargins(0, 0, 0, 0);
     GroupTabs tabs(defaultTheme(), &root); row->addWidget(&tabs); populate(tabs, 12);
+    // Offsets are read right after each wheel step (interpolation: smooth-scroll).
+    setSmoothScrollingEnabled(&root, false);
     root.resize(700, 320); applyTheme(&root); root.show();
     QVERIFY(QTest::qWaitForWindowExposed(&root)); settle();
     tabs.setCurrentIndex(11); settle(); const auto old = tabs.captureViewportState(); QVERIFY(old.activeFullyVisible);
-    const auto active=tabs.tabBar()->contentTabRect(11); const int naturalWidth = contentWidth(&tabs);
+    const int naturalWidth = contentWidth(&tabs);
     root.resize(340, 320); settle();
-    // The active tab ends where the viewport ends, controls after it scrolled away.
-    QCOMPARE(tabs.scrollOffset(),active.right()-viewportWidth(&tabs)+1);
+    // The least scrolling that shows the active tab: it ends just clear of
+    // the trailing fade, with the controls after it scrolled away.
+    QCOMPARE(tabs.scrollOffset(), tab_reveal::offsetFrom(*tabs.tabBar(), 11, 0));
     QCOMPARE(contentWidth(&tabs),naturalWidth);
     for (int width : {540, 380, 620, 340}) {
         root.resize(width, 320); settle();
@@ -397,6 +402,7 @@ void TabViewportTest::realWindowResizePreservesTheUnchangedSide()
             {QString("Workspace tab %1").arg(index), "label", {}}));
     const int active = visible ? 8 : 0; QVERIFY(manager.activateTab(ids[active])); manager.showWindow(id);
     auto* window = manager.windowWidget(id); QVERIFY(QTest::qWaitForWindowExposed(window)); settle();
+    setSmoothScrollingEnabled(window, false);
     const auto groupId = manager.model().groupForTab(ids[active]); auto* group = groupView(manager, id, groupId); QVERIFY(group);
     const auto area = group->tabBar()->contentTabRect(active); const int viewportWidth = group->captureViewportState().bounds.width();
     axis(group).setValue(!visible ? 500 : left ? area.left() - 20 : area.right() - viewportWidth + 21);
@@ -408,7 +414,7 @@ void TabViewportTest::realWindowResizePreservesTheUnchangedSide()
     QCOMPARE(window->width(), oldGeometry.width() - shrink);
     if (visible) {
         const int candidate=old.offset+current.bounds.left()-old.bounds.left()+window->geometry().left()-oldGeometry.left();
-        QCOMPARE(current.offset,qBound(area.right()-current.bounds.width()+1,candidate,area.left()));
+        QCOMPARE(current.offset, tab_reveal::offsetFrom(*group->tabBar(), active, candidate));
         QVERIFY(current.activeFullyVisible);
     } else {
         QCOMPARE(current.windowClientBounds.left() + current.bounds.left() - current.offset,
