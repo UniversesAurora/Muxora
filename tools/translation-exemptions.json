@@ -50,5 +50,8 @@
   {"file": "modules/window-system/src/settings/settings_interface_appearance.cpp", "text": "Segoe UI, Microsoft YaHei, sans-serif", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
   {"file": "modules/window-system/src/style/interface_appearance.cpp", "text": "Segoe UI", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
   {"file": "modules/window-system/src/style/interface_appearance.cpp", "text": "Microsoft YaHei", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
-  {"file": "src/workspace_host/placeholder_content.cpp", "text": "Microsoft YaHei", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."}
+  {"file": "src/workspace_host/placeholder_content.cpp", "text": "Microsoft YaHei", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
+  {"file": "modules/window-system/src/quick/masked_item.cpp", "text": "Cannot create Quick alpha mask: %s", "count": 1, "reason": "Developer-only qFatal diagnostic for a broken build (missing compiled QML), not a recoverable application error."},
+  {"file": "modules/window-system/src/quick/path_stroke_item.cpp", "text": "Cannot create Quick path stroke: %s", "count": 1, "reason": "Developer-only qFatal diagnostic for a broken build (missing compiled QML), not a recoverable application error."},
+  {"file": "modules/window-system/src/quick/qml_scene_component.cpp", "text": "Cannot load Quick scene component: %s", "count": 1, "reason": "Developer-only qFatal diagnostic for a broken build (missing compiled QML), not a recoverable application error."}
 ]
