@@ -109,6 +109,25 @@ private slots:
         QCOMPARE(groupOf(workspace.window(second))->count(), 2);
     }
 
+    void shortcutsRunInTheirQuickWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        manager.addTab(window, named(QStringLiteral("Only")));
+        WindowId ran;
+        manager.commands().add({QStringLiteral("test.shortcut"), QStringLiteral("Run"), QStringLiteral("test"),
+            QKeySequence(QStringLiteral("Ctrl+Shift+F7")), {},
+            [&ran](const CommandContext& context) { ran = context.window; return true; }});
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        quickWindow->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(quickWindow));
+        QTest::keyClick(quickWindow, Qt::Key_F7, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(ran, window);
+    }
+
     void closingAWindowAsksTheManager()
     {
         WindowManager manager(WindowManager::Presentation::External);

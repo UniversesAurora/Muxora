@@ -13,6 +13,7 @@
 #include <QSize>
 #include <memory>
 
+class QKeyEvent;
 class QWidget;
 class QMenu;
 
@@ -342,6 +343,7 @@ private:
     void resizeActive(Placement direction, bool panes, const CommandContext& target);
     void focusWindowCycle(bool forward, const QString& scope);
     void cancelPendingShortcut();
+    bool dispatchShortcutKey(QKeyEvent* key, WindowId window, QObject* receiver);
     void beginTabDrag(TabId tab, QPoint globalPosition);
     void beginTabFolderDrag(FolderId folder, QPoint globalPosition);
     WindowId detachTabImpl(TabId tab, WindowKind kind, const std::function<void(QWidget*)>& beforeShow, bool preserveDrag = false);

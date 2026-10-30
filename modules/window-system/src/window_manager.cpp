@@ -32,6 +32,7 @@
 #include <QSet>
 #include <QStyle>
 #include <QTimer>
+#include <QWindow>
 #include <algorithm>
 #include <limits>
 
@@ -1282,8 +1283,8 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     if (!d->pendingKeys.isEmpty()
         && (event->type() == QEvent::ApplicationDeactivate || event->type() == QEvent::MouseButtonPress
             || event->type() == QEvent::InputMethod
-            || (event->type() == QEvent::WindowDeactivate && widget
-                && widget->window()->property("windowId").toUuid() == d->keyWindow)
+            || (event->type() == QEvent::WindowDeactivate
+                && (widget ? widget->window() : watched)->property("windowId").toUuid() == d->keyWindow)
             || (event->type() == QEvent::FocusOut && widget == d->keyFocus))) cancelChord();
     if (widget && (event->type() == QEvent::Move || event->type() == QEvent::Resize)
         && d->navigationAnchor && widget->property("windowId").toUuid() == d->navigationAnchor->window)
@@ -1324,20 +1325,34 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
             break;
         }
     }
-    if ((event->type() != QEvent::KeyPress && event->type() != QEvent::ShortcutOverride)
-        || d->drag->isActive() || !widget) return false;
-    for (auto* current = widget; current; current = current->parentWidget()) if (qobject_cast<QKeySequenceEdit*>(current)) {
-        cancelChord(); return false;
+    if ((event->type() != QEvent::KeyPress && event->type() != QEvent::ShortcutOverride) || d->drag->isActive()) return false;
+    QObject* receiver = widget;
+    WindowId windowId;
+    if (widget) {
+        for (auto* current = widget; current; current = current->parentWidget()) if (qobject_cast<QKeySequenceEdit*>(current)) {
+            cancelChord(); return false;
+        }
+        windowId = widget->window()->property("windowId").toUuid();
+    } else if (auto* window = qobject_cast<QWindow*>(watched); window && d->presentation == Presentation::External) {
+        // A Quick window sees its keys before the focused item does.
+        receiver = window;
+        windowId = window->property("windowId").toUuid();
+    } else {
+        return false;
     }
-    const auto windowId = widget->window()->property("windowId").toUuid();
     if (windowId.isNull()) { cancelChord(); return false; } // Dialogs retain their native input handling.
+    return dispatchShortcutKey(static_cast<QKeyEvent*>(event), windowId, receiver);
+}
+
+bool WindowManager::dispatchShortcutKey(QKeyEvent* key, WindowId windowId, QObject* receiver)
+{
+    const auto cancelChord = [this] { cancelPendingShortcut(); };
     if (!d->pendingKeys.isEmpty() && d->keyWindow != windowId) cancelChord();
-    auto* key = static_cast<QKeyEvent*>(event);
     if (key->key() == Qt::Key_Control || key->key() == Qt::Key_Shift || key->key() == Qt::Key_Alt
         || key->key() == Qt::Key_Meta || key->key() == Qt::Key_AltGr || !key->key() || key->key() == Qt::Key_unknown) return false;
     if (!d->pendingKeys.isEmpty() && key->key() == Qt::Key_Escape) {
         key->accept();
-        if (event->type() == QEvent::KeyPress) cancelChord();
+        if (key->type() == QEvent::KeyPress) cancelChord();
         return true;
     }
     if (!d->pendingKeys.isEmpty() && key->isAutoRepeat()) { key->accept(); return true; }
@@ -1354,7 +1369,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     // enabled callbacks alive even if one of them changes the registry.
     const auto candidates = d->shortcutCandidates(combinations.first());
     const QPointer<WindowManager> self(this);
-    const QPointer<QWidget> receiver(widget);
+    const QPointer<QObject> alive(receiver);
     const auto bindingRevision = d->bindingsRevision;
     QString exact;
     QVariantMap exactArgs;
@@ -1364,10 +1379,10 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         if (match == QKeySequence::NoMatch) continue;
         auto target = ctx; target.args = candidate.args;
         const bool enabled = !candidate.enabled || candidate.enabled(target);
-        if (!self || !receiver) return true;
+        if (!self || !alive) return true;
         if (bindingRevision != d->bindingsRevision) { key->accept(); return true; }
         if (!enabled) continue;
-        if (event->type() == QEvent::ShortcutOverride) { key->accept(); return true; }
+        if (key->type() == QEvent::ShortcutOverride) { key->accept(); return true; }
         if (match == QKeySequence::ExactMatch) {
             exact = candidate.command; exactArgs = candidate.args; break;
         }
@@ -1375,7 +1390,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
     }
     // Override events reserve only the input. Advancing the chord here would
     // process the same physical stroke twice when KeyPress follows it.
-    if (event->type() == QEvent::ShortcutOverride) {
+    if (key->type() == QEvent::ShortcutOverride) {
         if (continuing) { key->accept(); return true; }
         return false;
     }
@@ -1389,7 +1404,7 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     if (partial && validCommandContext(ctx)) {
-        d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = widget; d->keyContext = ctx;
+        d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = receiver; d->keyContext = ctx;
         d->keyTimer->start(1500); key->accept();
         if (auto window = d->windows.value(windowId)) window->setTransientStatus(
             QCoreApplication::translate("WindowSystem", "Waiting for next key: %1").arg(sequence.toString()));

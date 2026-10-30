@@ -62,7 +62,7 @@ struct WindowManager::Private {
     // the close-tab shortcut from a menu or palette this way.
     bool dispatchingShortcut = false;
     WindowId keyWindow;
-    QPointer<QWidget> keyFocus;
+    QPointer<QObject> keyFocus;
     CommandContext keyContext;
     quint64 bindingsRevision = 0;
     // Keyboard dispatch reads candidates by first stroke instead of copying the

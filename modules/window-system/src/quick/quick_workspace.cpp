@@ -95,6 +95,8 @@ void QuickWorkspace::sync()
         auto& window = d->windows[id];
         if (!window) {
             window = new WorkspaceQuickWindow(d->manager, id);
+            // The manager's shortcut dispatch finds the window by this.
+            window->setProperty("windowId", id);
             const auto options = d->manager.windowOptions(id);
             window->setColor(theme.headerBackground);
             window->setTitle(options.title);
