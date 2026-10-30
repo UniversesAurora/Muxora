@@ -41,17 +41,15 @@ foreach(suite IN ITEMS surface-elevation tab-carrier-presentation tab-label-stor
     window_system_add_suite(${suite} widget LINK WindowSystemSurfaces)
 endforeach()
 
-if(TARGET WindowSystemQuick)
-    foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-resources quick-carrier-resources
-            quick-foreground-resources quick-strip-resources quick-rendering quick-group quick-rail quick-workspace)
-        window_system_add_suite(${suite} desktop LINK WindowSystemQuick)
-    endforeach()
-    window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)
-    window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
-    window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
-    if(WIN32)
-        window_system_add_suite(quick-native-frame desktop LINK WindowSystemQuick WindowSystemPlatform user32)
-    endif()
+foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-resources quick-carrier-resources
+        quick-foreground-resources quick-strip-resources quick-rendering quick-group quick-rail quick-workspace)
+    window_system_add_suite(${suite} desktop LINK WindowSystemQuick)
+endforeach()
+window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)
+window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
+window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
+if(WIN32)
+    window_system_add_suite(quick-native-frame desktop LINK WindowSystemQuick WindowSystemPlatform user32)
 endif()
 
 qt_add_executable(window-system-widget-test workspace_test.cpp)

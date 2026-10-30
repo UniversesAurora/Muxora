@@ -8,7 +8,6 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TESTING})
 option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
-option(WINDOW_SYSTEM_BUILD_QUICK "Build the in-progress Quick rendering layer" ON)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
 
@@ -125,34 +124,31 @@ target_include_directories(WindowSystemWidgets PUBLIC
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 
-if(WINDOW_SYSTEM_BUILD_QUICK)
-    find_package(Qt6 6.10 REQUIRED COMPONENTS Quick QuickShapes ShaderTools)
-    # Internal until content and native-window interfaces complete the
-    # migration. Enabling this does not replace the application renderer.
-    add_library(WindowSystemQuick STATIC
-        src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp
-        src/quick/body_shadow_item.cpp src/quick/anchor_shadow_item.cpp
-        src/quick/group_surface_item.cpp src/quick/tab_label_text_item.cpp
-        src/quick/tab_icon_item.cpp src/quick/tab_label_item.cpp
-        src/quick/tab_folder_item.cpp src/quick/overlay_band_item.cpp
-        src/quick/tab_strip_item.cpp src/quick/tab_carrier_item.cpp src/quick/tab_foreground_item.cpp
-        src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
-        src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
-        src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
-        src/quick/rail_button_item.cpp src/quick/rail_item.cpp
-        src/quick/tab_content_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
-        include/window_system/quick_workspace.hpp)
-    add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
-    set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
-    target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
-    target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
-    # WindowManager still lives in the Widgets library; 10.6 moves it out.
-    target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
-    qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
-    target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
-    qt_add_shaders(WindowSystemQuick window_system_mask_shaders
-        PREFIX /window-system/shaders BASE src/quick FILES src/quick/alpha_mask.frag)
-endif()
+find_package(Qt6 6.10 REQUIRED COMPONENTS Quick QuickShapes ShaderTools)
+# The Quick presentation; it replaces the Widgets views by 10.6.
+add_library(WindowSystemQuick STATIC
+    src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp
+    src/quick/body_shadow_item.cpp src/quick/anchor_shadow_item.cpp
+    src/quick/group_surface_item.cpp src/quick/tab_label_text_item.cpp
+    src/quick/tab_icon_item.cpp src/quick/tab_label_item.cpp
+    src/quick/tab_folder_item.cpp src/quick/overlay_band_item.cpp
+    src/quick/tab_strip_item.cpp src/quick/tab_carrier_item.cpp src/quick/tab_foreground_item.cpp
+    src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
+    src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
+    src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
+    src/quick/rail_button_item.cpp src/quick/rail_item.cpp
+    src/quick/tab_content_item.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
+    include/window_system/quick_workspace.hpp)
+add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
+set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
+target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
+target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
+# WindowManager still lives in the Widgets library; 10.6 moves it out.
+target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
+qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
+target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
+qt_add_shaders(WindowSystemQuick window_system_mask_shaders
+    PREFIX /window-system/shaders BASE src/quick FILES src/quick/alpha_mask.frag)
 
 # Keep editable Qt Linguist sources in version control; compiled catalogs are
 # generated and embedded for SDK-independent deployment and module consumers.
@@ -201,10 +197,8 @@ if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame_widgets.cpp src/platform/windows/window_menu_widgets.cpp src/platform/windows/font_families.cpp)
     target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
 endif()
-set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform WindowSystemWidgets)
-if(TARGET WindowSystemQuick)
-    list(APPEND window_system_compile_targets WindowSystemQuick)
-endif()
+set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform WindowSystemWidgets
+    WindowSystemQuick)
 foreach(target IN LISTS window_system_compile_targets)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
