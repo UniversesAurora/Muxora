@@ -27,12 +27,13 @@
 
 用户 2026-10-30 明确：整个界面必须完全迁移到 Quick，Widgets 路径在 10.6 删除。迁移期间两个后端共存，按下面的结构过渡。
 
-**过渡结构**
+**过渡结构**（2026-10-31 由 Claude 调整：原定从管理器抽出窗口与停靠表面两个接口，改为下面的监听方式，避免先大改 1300 多行的管理器视图代码、到 10.6 再删掉一半）
 
-- `WindowManager`、`LayoutModel`、命令、布局事务和 `DragController` 的判断规则只有一份。它们目前直接调用 `WorkspaceWindow`、`DockSurface` 和 `GroupTabs`；先把这些调用收拢成两个内部接口：窗口（标题栏、拖动形态、放置）和停靠表面（重建、命中矩形、插入预览、提起与落位）。Widgets 和 Quick 各实现一份，10.6 删除 Widgets 实现时接口随之并回 Quick 类，不保留抽象层。
-- 拖动和原生移动改用 `QWindow`：两种后端的顶层窗口都有 `QWindow`，捕获、`startSystemMove()`、坐标换算只依赖它。
-- 后端在创建 `WindowManager` 时选定，整个进程只用一种。Muxora 用启动参数 `--quick` 选择 Quick，默认仍是 Widgets，直到 10.6。
-- 宿主内容：`ContentFactory` 和 `addTab`、`splitPane` 增加 `QQuickItem` 版本，Quick 后端只接受这一种；栏位（`setTabTopBar` 等）同样。Muxora 的占位内容改写为 Quick 项。
+- `WindowManager`、`LayoutModel`、命令和布局事务只有一份。管理器构造时选择呈现方式：`Widgets`（默认，现有窗口）或 `External`（不建任何 Widgets 视图；模型、命令、焦点状态和 `layoutChanged` 通知照常）。所有修改都经 `refresh()` 发出 `layoutChanged`，这是 Quick 视图的唯一更新来源。
+- 新增 `QuickWorkspace`：监听管理器，为每个模型窗口建 Quick 窗口，按模型搭建停靠表面（`GroupItem`、`RailItem`、分割树），用户操作调用管理器现有的公开接口（关闭、激活、移动、设比例等），不复制命令或布局规则。
+- 拖动的判断（命中、停靠引导、插入位置）先从 `DragController` 抽成不依赖控件的共用部分，Widgets 和 Quick 各自只做输入与原生移动的适配；原生移动用 `QWindow`。
+- 宿主内容：`External` 模式下 `addTab`、`splitPane` 不带 QWidget，内容由 `QuickWorkspace` 的内容工厂按窗格 ID 和描述创建，挂在 `ContentHost`；栏位同理。Muxora 用启动参数 `--quick` 选择 Quick，默认仍是 Widgets，直到 10.6。
+- 10.6 删除 Widgets 时，管理器里的视图代码整块删除，`External` 成为唯一模式，不留抽象层。
 - 不在 Quick 窗口里嵌 QWidget，也不用原生子窗口遮挡 Quick 浮层。
 
 **子步**（按顺序，每步可单独构建和验证）
@@ -41,7 +42,7 @@
 1. 已完成（`0b7ab5f`）：标签组容器 `GroupItem`，与 Widgets 版截图对照一致；卡片圆角处暂用停靠区底色，Widgets 会在那里重绘底板（含几个阴影像素），留到 10.5。原计划：`TabBarItem`、`GroupSurfaceItem`、内容区和竖栏尾部，布局用 `layoutTabGroup`，表面与焦点动画用共用帧状态；组按 `GroupId` 复用，内容由 `ContentHost` 挂载。
 2. 停靠表面 `DockSurfaceItem`：中央与固定区域的分割树、侧栏轨道、悬停展开面板，按模型重建并保留未变的组。
 3. 整窗 `WorkspaceQuickWindow`：`QQuickWindow` 加原生框架、标题栏、工具栏占位与状态栏；最大化、全屏、Snap、DPI 和窗口族规则与现有窗口一致。
-4. 抽出两个内部接口，`WindowManager` 按选定后端创建窗口；Muxora `--quick` 能打开、关闭、切换标签和分割。
+4. 管理器的 `External` 模式与不带控件的 `addTab`／`splitPane`；`QuickWorkspace` 按模型建窗口；Muxora `--quick` 能打开、关闭、切换标签和分割。
 5. 拖动：栏内换位、拖出成浮窗、跨窗口停靠、拖入侧栏，全部经 `QWindow` 完成。
 6. 宿主内容和栏位的 Quick 接口，Muxora 占位内容迁移；输入法、焦点、显隐通知与按需创建保持。
 7. 完成条件：`--quick` 下两个组、窗格、分隔条和标签跨窗口移动都能完整使用；缺项不切换默认。
