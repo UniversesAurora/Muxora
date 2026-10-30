@@ -1,10 +1,47 @@
 // SPDX-License-Identifier: MIT
 #include "frame_motion.hpp"
 
+#include <QAbstractNativeEventFilter>
+#include <QCoreApplication>
 #include <algorithm>
 #include <cmath>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace window_system {
+
+#ifdef Q_OS_WIN
+namespace {
+bool readClientAreaAnimation()
+{
+    BOOL enabled = TRUE;
+    return !SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) || enabled;
+}
+
+class AnimationSetting final : public QAbstractNativeEventFilter {
+public:
+    AnimationSetting() { QCoreApplication::instance()->installNativeEventFilter(this); }
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override
+    {
+        const auto* msg = static_cast<const MSG*>(message);
+        if (msg->message == WM_SETTINGCHANGE && msg->wParam == SPI_SETCLIENTAREAANIMATION) enabled = readClientAreaAnimation();
+        return false;
+    }
+    bool enabled = readClientAreaAnimation();
+};
+} // namespace
+#endif
+
+bool motionAnimationsEnabled()
+{
+#ifdef Q_OS_WIN
+    static const auto* setting = new AnimationSetting;
+    return setting->enabled;
+#else
+    return true;
+#endif
+}
 
 qint64 FrameMotion::monotonicTime(qint64 timestampNs)
 {

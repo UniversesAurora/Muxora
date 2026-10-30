@@ -6,6 +6,10 @@
 
 namespace window_system {
 
+// Windows' "show animations" setting. Read once and again only when the system
+// broadcasts a settings change, so pointer and frame paths may ask freely.
+[[nodiscard]] bool motionAnimationsEnabled();
+
 // The owning window supplies a monotonic nanosecond clock at its frame cadence.
 // This value owns no timer, QObject or render-thread resource. Retargeting starts
 // at the last displayed sample rather than evaluating an unpresented old frame.

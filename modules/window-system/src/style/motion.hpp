@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "frame_motion.hpp"
 #include "motion_curve.hpp"
 #include "label_presence.hpp"
 #include <QPainter>
@@ -8,21 +9,8 @@
 #include <QVariantAnimation>
 #include <algorithm>
 #include <utility>
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#endif
 
 namespace window_system {
-
-[[nodiscard]] inline bool motionAnimationsEnabled()
-{
-    if (qEnvironmentVariable("WINDOW_SYSTEM_ANIMATIONS") == QLatin1StringView("0")) return false;
-#ifdef Q_OS_WIN
-    BOOL enabled = TRUE;
-    if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) && !enabled) return false;
-#endif
-    return true;
-}
 
 // Retarget from the displayed value, including a reversal halfway through.
 // The owner supplies animation availability; this utility has no platform or
