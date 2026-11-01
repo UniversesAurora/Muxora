@@ -76,9 +76,15 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
     const bool flushLeft = std::abs(visible.left() - body.left()) < 0.01;
     const bool flushRight = std::abs(visible.right() - body.right()) < 0.01;
     qreal leftShoulder = 0, rightShoulder = 0;
+    // A flush side covers the body's rounded corner below it. Only that
+    // corner: the other side still meets the body's edge with a shoulder.
+    QPainterPath flushPieces;
     if (result.joined) {
-        const qreal overlap = flushLeft || flushRight ? result.bodyRadius : 0;
-        anchor.setBottom(visible.bottom() + (body.top() + overlap - visible.bottom()) * result.joinProgress);
+        anchor.setBottom(visible.bottom() + (body.top() - visible.bottom()) * result.joinProgress);
+        const qreal depth = visible.bottom() + (body.top() + result.bodyRadius - visible.bottom()) * result.joinProgress;
+        const qreal width = std::min(result.bodyRadius, visible.width());
+        if (flushLeft) flushPieces.addRect(QRectF(visible.left(), visible.top(), width, depth - visible.top()));
+        if (flushRight) flushPieces.addRect(QRectF(visible.right() - width, visible.top(), width, depth - visible.top()));
         const qreal shoulder = input.shoulderRadius * result.joinProgress;
         if (!clippedLeft && visible.left() - shoulder >= body.left() + result.bodyRadius)
             leftShoulder = shoulder;
@@ -162,6 +168,12 @@ SurfaceGeometry surfaceGeometry(const SurfaceGeometryInput& input)
         extension.lineTo(bounds.left(), std::min(leftTop, rightTop) - 0.01);
         extension.closeSubpath();
         outline = outline.intersected(allowed.united(extension));
+    }
+    if (!flushPieces.isEmpty()) {
+        // Below the anchor's rounded top, so its outer corners stay round.
+        QPainterPath below;
+        below.addRect(QRectF(visible.left(), visible.top() + input.anchorRadius, visible.width(), body.height() + visible.height()));
+        outline = outline.united(flushPieces.intersected(below));
     }
     result.anchorPath = inverse.map(outline.united(cornerBridges));
     if (result.joined) {

@@ -231,6 +231,43 @@ private slots:
             QCOMPARE(meshContains(result.fill, transform.map(sample)), geometry.mergedPath.contains(transform.map(sample)));
     }
 
+    void flushAnchorsKeepTheShoulderOnTheirOtherSide_data()
+    {
+        QTest::addColumn<int>("edge"); QTest::addColumn<bool>("leading");
+        for (int edge = 0; edge < 4; ++edge) for (const bool leading : {true, false})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(edge).arg(leading ? "leading" : "trailing"))) << edge << leading;
+    }
+
+    void flushAnchorsKeepTheShoulderOnTheirOtherSide()
+    {
+        // An anchor flush with one side of the body covers that rounded
+        // corner, and meets the body's edge with a shoulder on its other side.
+        QFETCH(int, edge); QFETCH(bool, leading);
+        QTransform transform;
+        switch (SurfaceEdge(edge)) {
+        case SurfaceEdge::Top: break;
+        case SurfaceEdge::Bottom: transform = QTransform(1, 0, 0, -1, 0, 0); break;
+        case SurfaceEdge::Left: transform = QTransform(0, 1, 1, 0, 0, 0); break;
+        case SurfaceEdge::Right: transform = QTransform(0, 1, -1, 0, 0, 0); break;
+        }
+        SurfaceGeometryInput input;
+        input.body = QRectF(20, 80, 220, 140); input.anchor = QRectF(20, 52, 100, 28);
+        input.bodyRadius = 8; input.shoulderRadius = 4;
+        if (!leading) input.anchor.moveRight(240);
+        const qreal flush = leading ? 20 : 240, free = leading ? 120 : 140, outward = leading ? 1 : -1;
+        const auto geometry = surfaceGeometry({transform.mapRect(input.body), input.bodyRadius, transform.mapRect(input.anchor), {},
+            SurfaceEdge(edge), input.anchorRadius, input.shoulderRadius});
+        const auto inAnchor = [&](QPointF point) { return geometry.anchorPath.contains(transform.map(point)); };
+        // The body's corner under the flush side is filled.
+        QVERIFY(inAnchor(QPointF(flush + outward * 0.5, 80.5)));
+        // The shoulder fills the inner corner beside the free side, above
+        // the body's edge, where a square join would leave background.
+        QVERIFY(inAnchor(QPointF(free + outward * 0.5, 79.5)));
+        QVERIFY(!inAnchor(QPointF(free + outward * 3.5, 76.5)));
+        // Nothing beyond the free side reaches into the body.
+        QVERIFY(!inAnchor(QPointF(free + outward * 2, 85)));
+    }
+
     void surfaceContoursAndOptionalCoverage_data()
     {
         QTest::addColumn<int>("edge"); QTest::addColumn<qreal>("ratio");
