@@ -5,6 +5,7 @@
 #include "dock_guides.hpp"
 #include "tab_layout.hpp"
 
+#include <QColor>
 #include <QHash>
 #include <QRect>
 #include <QVector>
@@ -68,6 +69,26 @@ struct DropQuery {
     const DropTarget* shown = nullptr;
     int edgeThickness = 0;
 };
+
+// The guide overlay's look, shared by the Widgets and Quick overlays.
+namespace dock_overlay {
+inline constexpr QRgb previewFill = qRgba(138, 82, 199, 62);
+inline constexpr QRgb accent = qRgb(0x8A, 0x52, 0xC7);
+inline constexpr QRgb guideBorder = qRgb(0x72, 0x55, 0x91);
+inline constexpr QRgb guideFill = qRgb(0xFA, 0xF8, 0xFD);
+inline constexpr QRgb selectedFill = qRgb(0xD9, 0xBD, 0xF5);
+inline constexpr QRgb labelFill = qRgb(0x4D, 0x35, 0x6E);
+inline constexpr int previewBorder = 2;
+inline constexpr int guideRadius = 2;
+} // namespace dock_overlay
+
+// Whether the target is the guide's own operation.
+[[nodiscard]] bool selectsGuide(const DropTarget& target, const DockGuide& guide);
+// The mark inside a guide square that shows where the content goes.
+[[nodiscard]] QRect guideMark(const DockGuide& guide);
+// The caption over an accepted target's preview; `count` tabs are carried,
+// `whole` when a window is carried with its groups.
+[[nodiscard]] QString dropCaption(const DropTarget& target, int count, bool whole);
 
 // The drop target under a point of one window's surface; `window` stays
 // for the caller to fill. Not accepted over content without a guide.

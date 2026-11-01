@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 #include "drop_target.hpp"
 
+#include <QCoreApplication>
+#include <algorithm>
+
 namespace window_system {
 namespace {
 template <typename Key>
@@ -90,6 +93,43 @@ DropTarget dropTargetAt(const DropSurface& surface, const LayoutModel& model, co
         }
     }
     return result;
+}
+
+bool selectsGuide(const DropTarget& target, const DockGuide& guide)
+{
+    return target.accepted && target.insertionIndex < 0 && target.toEdge == guide.toEdge
+        && (guide.toEdge ? target.edge == guide.edge && target.pinned == guide.pinned : target.placement == guide.placement);
+}
+
+QRect guideMark(const DockGuide& guide)
+{
+    const auto square = guide.rect;
+    const int padding = std::clamp(square.width() / 5, 2, 6);
+    auto inner = square.adjusted(padding, padding, -padding, -padding);
+    if (guide.toEdge) {
+        const int thickness = guide.pinned ? 8 : 3;
+        if (guide.edge == Edge::Left) inner.setWidth(thickness);
+        if (guide.edge == Edge::Right) inner.setLeft(inner.right() - thickness);
+        if (guide.edge == Edge::Top) inner.setHeight(thickness);
+        if (guide.edge == Edge::Bottom) inner.setTop(inner.bottom() - thickness);
+    } else {
+        if (guide.placement == Placement::Left) inner.setWidth(inner.width() / 2);
+        if (guide.placement == Placement::Right) inner.setLeft(inner.center().x());
+        if (guide.placement == Placement::Top) inner.setHeight(inner.height() / 2);
+        if (guide.placement == Placement::Bottom) inner.setTop(inner.center().y());
+    }
+    return inner;
+}
+
+QString dropCaption(const DropTarget& target, int count, bool whole)
+{
+    if (target.toEdgeBar) return QCoreApplication::translate("WindowSystem", "Insert %n sidebar tabs", nullptr, count);
+    if (target.toEdge) return target.pinned ? QCoreApplication::translate("WindowSystem", "Pin in sidebar")
+                                            : QCoreApplication::translate("WindowSystem", "Auto-hide on sidebar");
+    if (target.insertionIndex >= 0) return QCoreApplication::translate("WindowSystem", "Insert %n tabs", nullptr, count);
+    if (target.placement == Placement::Center) return QCoreApplication::translate("WindowSystem", "Merge %n tabs", nullptr, count);
+    return whole ? QCoreApplication::translate("WindowSystem", "Dock while preserving tab groups")
+                 : QCoreApplication::translate("WindowSystem", "Create adjacent tab group");
 }
 
 } // namespace window_system

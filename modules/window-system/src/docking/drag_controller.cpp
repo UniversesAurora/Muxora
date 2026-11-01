@@ -59,40 +59,20 @@ protected:
         const auto origin = geometry().topLeft();
         if (target.accepted) {
             const auto preview = target.preview.translated(-origin);
-            p.fillRect(preview, QColor(138, 82, 199, 62));
-            p.setPen(QPen(QColor("#8A52C7"), 2)); p.drawRect(preview.adjusted(1, 1, -1, -1));
+            p.fillRect(preview, QColor::fromRgba(dock_overlay::previewFill));
+            p.setPen(QPen(QColor(dock_overlay::accent), dock_overlay::previewBorder)); p.drawRect(preview.adjusted(1, 1, -1, -1));
         }
         for (const auto& guide : target.guides) {
-            const auto square = guide.rect.translated(-origin);
-            const bool selected = target.accepted && target.insertionIndex < 0 && target.toEdge == guide.toEdge &&
-                (guide.toEdge ? target.edge == guide.edge && target.pinned == guide.pinned : target.placement == guide.placement);
-            p.setPen(QPen(QColor("#725591"), 1));
-            p.setBrush(selected ? QColor("#D9BDF5") : QColor("#FAF8FD"));
-            p.drawRoundedRect(square, 2, 2);
-            const int padding = std::clamp(square.width() / 5, 2, 6);
-            auto inner = square.adjusted(padding, padding, -padding, -padding);
-            if (guide.toEdge) {
-                if (guide.edge == Edge::Left) inner.setWidth(guide.pinned ? 8 : 3);
-                if (guide.edge == Edge::Right) inner.setLeft(inner.right() - (guide.pinned ? 8 : 3));
-                if (guide.edge == Edge::Top) inner.setHeight(guide.pinned ? 8 : 3);
-                if (guide.edge == Edge::Bottom) inner.setTop(inner.bottom() - (guide.pinned ? 8 : 3));
-            } else {
-                if (guide.placement == Placement::Left) inner.setWidth(inner.width() / 2);
-                if (guide.placement == Placement::Right) inner.setLeft(inner.center().x());
-                if (guide.placement == Placement::Top) inner.setHeight(inner.height() / 2);
-                if (guide.placement == Placement::Bottom) inner.setTop(inner.center().y());
-            }
-            p.fillRect(inner, QColor("#8A52C7"));
+            p.setPen(QPen(QColor(dock_overlay::guideBorder), 1));
+            p.setBrush(QColor(selectsGuide(target, guide) ? dock_overlay::selectedFill : dock_overlay::guideFill));
+            p.drawRoundedRect(guide.rect.translated(-origin), dock_overlay::guideRadius, dock_overlay::guideRadius);
+            p.fillRect(guideMark(guide).translated(-origin), QColor(dock_overlay::accent));
         }
         if (!target.accepted) return;
-        const auto text = target.toEdgeBar ? QCoreApplication::translate("WindowSystem", "Insert %n sidebar tabs", nullptr, count)
-            : target.toEdge ? (target.pinned ? QCoreApplication::translate("WindowSystem", "Pin in sidebar") : QCoreApplication::translate("WindowSystem", "Auto-hide on sidebar"))
-            : target.insertionIndex >= 0 ? QCoreApplication::translate("WindowSystem", "Insert %n tabs", nullptr, count)
-            : target.placement == Placement::Center ? QCoreApplication::translate("WindowSystem", "Merge %n tabs", nullptr, count)
-            : whole ? QCoreApplication::translate("WindowSystem", "Dock while preserving tab groups") : QCoreApplication::translate("WindowSystem", "Create adjacent tab group");
+        const auto text = dropCaption(target, count, whole);
         const auto preview = target.preview.translated(-origin);
         const QRect label(preview.topLeft() + QPoint(8, 8), QSize(qMax(180, fontMetrics().horizontalAdvance(text) + 20), 28));
-        p.fillRect(label, QColor("#4D356E")); p.setPen(Qt::white); p.drawText(label, Qt::AlignCenter, text);
+        p.fillRect(label, QColor(dock_overlay::labelFill)); p.setPen(Qt::white); p.drawText(label, Qt::AlignCenter, text);
     }
 };
 
