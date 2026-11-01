@@ -6,6 +6,8 @@ param(
     # CTest label regex for -Test: model, widget, desktop or a combination such as 'model|widget'.
     [string]$TestLabel,
     [switch]$Run,
+    # Passed to Muxora by -Run, for example '--quick'.
+    [string[]]$RunArguments,
     [switch]$Package,
     [string]$PackageDirectory
 )
@@ -110,7 +112,11 @@ try {
             $taskExecutable = $taskPackagedExe
             Write-DeploymentInventory $taskPackageDirectory
         }
-        if ($Run) { Start-Process -FilePath $taskExecutable -WorkingDirectory (Split-Path -Parent $taskExecutable) }
+        if ($Run) {
+            $taskStart = @{ FilePath = $taskExecutable; WorkingDirectory = (Split-Path -Parent $taskExecutable) }
+            if ($RunArguments) { $taskStart.ArgumentList = $RunArguments }
+            Start-Process @taskStart
+        }
         Write-Host "Ready: $taskExecutable"
     } finally { Pop-Location }
 } finally { Exit-Toolchain $taskToolchain }

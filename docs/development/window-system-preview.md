@@ -27,6 +27,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot <Qt 安装目录>/6.12.0/msv
 | `-Test` | 构建后运行自动化测试；包含桌面层时按下文经 `quiet-desktop.ps1 -Elevate` 运行 |
 | `-TestLabel <regex>` | 与 `-Test` 一起使用，只运行指定层：`model`、`widget`、`desktop` 或 `model\|widget` |
 | `-Run` | 构建后启动 Muxora |
+| `-RunArguments <参数>` | 与 `-Run` 一起使用，把参数传给 Muxora，例如 `-RunArguments --quick` 打开 Quick 窗口。构建目录里的 `muxora.exe` 不带 Qt 运行库，直接双击或在普通终端运行会报找不到 Qt 文件，要经 `-Run` 启动 |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
 
 下列全量及完整验证命令须先按 [测试范围规则](testing-design.md#1-必须遵守的规则) 取得单独授权。桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复。
