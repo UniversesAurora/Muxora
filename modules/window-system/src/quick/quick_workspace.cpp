@@ -101,10 +101,13 @@ private:
 } // namespace
 
 struct QuickWorkspace::Private {
-    explicit Private(WindowManager& owner)
+    Private(QuickWorkspace& workspace, WindowManager& owner)
         : manager(owner), drag(owner, [this](WindowId id) -> quick::DockSurfaceItem* {
               const auto window = windows.value(id);
               return window ? window->dock : nullptr;
+          }, [this, &workspace](WindowId id) -> QQuickWindow* {
+              workspace.sync();
+              return windows.value(id);
           }) {}
     WindowManager& manager;
     quick::ContentHost host;
@@ -115,7 +118,7 @@ struct QuickWorkspace::Private {
 };
 
 QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
-    : QObject(parent), d(std::make_unique<Private>(manager))
+    : QObject(parent), d(std::make_unique<Private>(*this, manager))
 {
     Q_ASSERT(manager.presentation() == WindowManager::Presentation::External);
     // Model changes often come from a strip's own input handler; rebuilding
@@ -154,7 +157,8 @@ void QuickWorkspace::sync()
         }
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (model.window(it.key())) { ++it; continue; }
-        delete it.value().data();
+        // A drag can empty a window while that window delivers its event.
+        if (it.value()) { it.value()->hide(); it.value()->deleteLater(); }
         it = d->windows.erase(it);
     }
     for (const auto id : model.windowOrder()) {

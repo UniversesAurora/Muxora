@@ -2,18 +2,25 @@
 #include "tab_drag.hpp"
 #include "dock_surface_item.hpp"
 #include "group_item.hpp"
+#include "window_chrome_item.hpp"
+#include "platform/window_order.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QPointer>
-#include <QWindow>
+#include <QQuickWindow>
 
 namespace window_system::quick {
 
-TabDrag::TabDrag(WindowManager& manager, SurfaceLookup surfaces, QObject* parent)
-    : QObject(parent), manager_(manager), surfaces_(std::move(surfaces)) {}
+namespace {
+// Over a strip the torn-out window lets the strip's gap show through; the
+// tab-shaped carrier of the Widgets drag comes with the system move.
+constexpr qreal overStripOpacity = 0.4;
+} // namespace
+
+TabDrag::TabDrag(WindowManager& manager, SurfaceLookup surfaces, Realize realize, QObject* parent)
+    : QObject(parent), manager_(manager), surfaces_(std::move(surfaces)), realize_(std::move(realize)) {}
 
 TabDrag::~TabDrag() { if (active_) stop(); }
 
@@ -39,6 +46,8 @@ void TabDrag::begin(WindowId window, GroupId group, const DragStart& start)
     auto* view = surface ? surface->group(group) : nullptr;
     if (!view) return;
     sourceWindow_ = window; sourceGroup_ = group;
+    sourceIndex_ = tab_.isNull() ? -1 : int(manager_.model().group(group)->tabs.indexOf(tab_));
+    detached_ = false; movingWindow_ = {}; moving_ = nullptr;
     grab_ = start.anchor;
     if (!grab_.sourceSize.isValid())
         grab_ = folder_.isNull() ? view->tabGrabAnchor(tab_, start.pressGlobal) : view->folderGrabAnchor(folder_, start.pressGlobal);
@@ -51,7 +60,17 @@ void TabDrag::begin(WindowId window, GroupId group, const DragStart& start)
 
 void TabDrag::cancel()
 {
-    if (active_) stop();
+    if (!active_) return;
+    const bool detached = detached_;
+    const auto tab = tab_;
+    stop();
+    if (!detached || !manager_.model().tab(tab)) return;
+    // The torn-out window closes once its tab is back.
+    if (manager_.model().group(sourceGroup_)) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
+    else if (manager_.model().window(sourceWindow_)) manager_.moveTabToWindow(tab, sourceWindow_);
+    else return;
+    manager_.showWindow(sourceWindow_);
+    manager_.activateTab(tab);
 }
 
 void TabDrag::stop()
@@ -61,8 +80,28 @@ void TabDrag::stop()
     QGuiApplication::restoreOverrideCursor();
     for (const auto id : manager_.model().windowOrder())
         if (auto* surface = surfaces_(id)) surface->clearDragPresentation();
+    if (moving_) {
+        moving_->setOpacity(1);
+        moving_->setMouseGrabEnabled(false);
+    }
     lifted_ = false;
     target_ = {};
+}
+
+// As the Widgets drag: the tab moves into a new floating window, which then
+// follows the pointer by its title. Nothing else changes in the model.
+bool TabDrag::detach(QPoint global)
+{
+    if (auto* source = surfaces_(sourceWindow_)) source->clearDragPresentation();
+    lifted_ = false;
+    const auto id = manager_.detachTab(tab_, WindowKind::Floating);
+    auto* window = id.isNull() ? nullptr : realize_(id);
+    if (!window) return false;
+    detached_ = true; movingWindow_ = id; moving_ = window;
+    offset_ = QPoint(window->width() / 2, WindowChromeItem::rowHeight() / 2);
+    window->setPosition(global - offset_);
+    window->setMouseGrabEnabled(true);
+    return true;
 }
 
 bool TabDrag::carriedExists() const
@@ -83,7 +122,11 @@ bool TabDrag::overSourceStrip(QPoint global) const
 
 DropTarget TabDrag::hit(QPoint global) const
 {
-    auto* top = QGuiApplication::topLevelAt(global);
+    // The moving window is under the pointer; the target is below it.
+    const auto* moving = moving_.data();
+    auto* top = stackedWindowAt(global, [this, moving](const QWindow* candidate) {
+        return candidate != moving && surfaces_(candidate->property("windowId").toUuid());
+    });
     const auto window = top ? top->property("windowId").toUuid() : WindowId{};
     const auto* surface = surfaces_(window);
     if (!surface) return {};
@@ -102,16 +145,25 @@ DropTarget TabDrag::hit(QPoint global) const
 
 void TabDrag::update(QPoint global)
 {
+    if (!carriedExists()) return cancel();
     auto* source = surfaces_(sourceWindow_);
     auto* sourceView = source ? source->group(sourceGroup_) : nullptr;
-    if (!sourceView || !carriedExists()) return cancel();
-    if (overSourceStrip(global)) {
+    if (detached_) {
+        if (!moving_ || !manager_.model().window(movingWindow_)) return cancel();
+        moving_->setPosition(global - offset_);
+        target_ = hit(global);
+    } else if (!sourceView) {
+        return cancel();
+    } else if (overSourceStrip(global)) {
         sourceView->setLiftedTab(global, grab_);
         lifted_ = true;
         target_ = {};
         target_.window = sourceWindow_; target_.group = sourceGroup_; target_.accepted = true;
         target_.windowRect = source->globalRect();
         target_.insertionIndex = sourceView->insertionIndex(global, carried());
+    } else if (!tab_.isNull()) {
+        if (!detach(global)) return cancel();
+        target_ = hit(global);
     } else {
         if (std::exchange(lifted_, false)) sourceView->clearLiftedTab();
         target_ = hit(global);
@@ -131,6 +183,7 @@ void TabDrag::update(QPoint global)
         if (here && !insertion) surface->showGuides(target_, carriedCount(), false);
         else surface->clearGuides();
     }
+    if (moving_) moving_->setOpacity(insertion ? overStripOpacity : 1);
 }
 
 void TabDrag::finish(QPoint global)
@@ -139,9 +192,14 @@ void TabDrag::finish(QPoint global)
     if (!active_) return;
     const auto target = target_;
     const auto tab = tab_, folder = folder_;
-    const auto source = sourceWindow_;
+    // Commands run in the window that holds the tab now.
+    const auto source = detached_ ? movingWindow_ : sourceWindow_;
+    const bool detached = detached_;
     stop();
-    if (!target.accepted) return;
+    if (!target.accepted) {
+        if (detached && manager_.behavior().dragOutsideKind == WindowKind::Workbench) manager_.promoteWindow(source);
+        return;
+    }
     bool success = false;
     const bool inserting = target.insertionIndex >= 0;
     if (!folder.isNull()) success = manager_.moveTabFolderToGroup(folder, target.group, target.insertionIndex);

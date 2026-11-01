@@ -340,26 +340,33 @@ private slots:
         QCOMPARE(tabs(second), (QVector<TabId>{c, a}));
         QCOMPARE(tabs(first), QVector<TabId>{b});
 
-        // Over a group's content the guides show; the lower one docks the
-        // tab in a new group below it.
-        const auto content = dock->groupContentRect(second);
+        // Torn out of its strip, the tab's window follows the pointer. Its
+        // group was the only other one, so the remaining group fills the
+        // window; over its content the guides show, and the lower one docks
+        // the tab in a new group below it.
+        const int leftEdge = dock->groupRect(first).left();
+        from = tabPoint(dock->group(first), b);
+        const auto lifted = from + QPoint(0, 120);
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
+        moveHeld(quickWindow, from, lifted);
+        QVERIFY(!manager.model().group(first));
+        QTRY_COMPARE(dock->groupRect(second).left(), leftEdge);
         DropQuery query;
-        query.global = content.center();
+        query.global = dock->groupContentRect(second).center();
         const auto guides = dropTargetAt(*dock, manager.model(), query).guides;
         const auto below = std::find_if(guides.cbegin(), guides.cend(),
             [](const DockGuide& guide) { return !guide.toEdge && guide.placement == Placement::Bottom; });
         QVERIFY(below != guides.cend());
-        from = tabPoint(dock->group(first), b);
         to = quickWindow->mapFromGlobal(below->rect.center());
-        QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
-        moveHeld(quickWindow, from, to);
+        moveHeld(quickWindow, lifted, to);
         auto* overlay = dock->findChild<quick::DockGuideItem*>();
         QVERIFY(overlay);
         const auto shown = overlay->childItems();
         QVERIFY(std::any_of(shown.cbegin(), shown.cend(), [](const QQuickItem* item) { return item->isVisible(); }));
         QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
-        QTRY_VERIFY(manager.model().groupForTab(b) != first && manager.model().groupForTab(b) != second);
+        QTRY_COMPARE(manager.model().group(manager.model().groupForTab(b))->windowId, window);
         const auto third = manager.model().groupForTab(b);
+        QVERIFY(third != second);
         QTRY_VERIFY(dock->group(third));
         QTRY_VERIFY(dock->groupRect(third).top() > dock->groupRect(second).top());
         QCOMPARE(dock->groupRect(third).left(), dock->groupRect(second).left());
@@ -405,6 +412,62 @@ private slots:
         QTRY_COMPARE(manager.model().group(targetGroup)->tabs, (QVector<TabId>{other, moving}));
         QCOMPARE(manager.model().group(sourceGroup)->tabs, QVector<TabId>{staying});
         QTRY_COMPARE(targetDock->group(targetGroup)->count(), 2);
+    }
+
+    void aTabDraggedOutBecomesAFloatingWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto source = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Source"), QSize(520, 380)});
+        const auto moving = manager.addTab(source, named(QStringLiteral("Moving")));
+        const auto staying = manager.addTab(source, named(QStringLiteral("Staying")));
+        QTRY_VERIFY(workspace.window(source));
+        auto* from = workspace.window(source);
+        QVERIFY(QTest::qWaitForWindowExposed(from));
+        auto* dock = from->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto group = manager.model().groupForTab(moving);
+        QTRY_VERIFY(dock->group(group) && dock->group(group)->count() == 2);
+        const auto windowsBefore = manager.model().windowOrder();
+        const auto windowOf = [&](TabId tab) { return manager.model().group(manager.model().groupForTab(tab))->windowId; };
+
+        // Past the strip the tab moves into a new window that follows the
+        // pointer by its title; released beside the source window, it stays.
+        const auto start = tabPoint(dock->group(group), moving);
+        const auto end = from->mapFromGlobal(from->frameGeometry().topRight() + QPoint(300, 120));
+        const QRegularExpression outside(QStringLiteral("occurs outside target window"));
+        QTest::mousePress(from, Qt::LeftButton, {}, start);
+        for (int step = 1; step <= 8; ++step)
+            if (!from->geometry().contains(from->mapToGlobal(start + (end - start) * step / 8)))
+                QTest::ignoreMessage(QtWarningMsg, outside);
+        moveHeld(from, start, end);
+        const auto created = windowOf(moving);
+        QVERIFY(!windowsBefore.contains(created));
+        QCOMPARE(manager.model().window(created)->kind, WindowKind::Floating);
+        auto* torn = workspace.window(created);
+        QVERIFY(torn && torn->isVisible());
+        const QPoint title(torn->width() / 2, quick::WindowChromeItem::rowHeight() / 2);
+        QCOMPARE(torn->mapToGlobal(title), from->mapToGlobal(end));
+        QTest::ignoreMessage(QtWarningMsg, outside);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, end);
+        QTest::qWait(50);
+        QCOMPARE(windowOf(moving), created);
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{staying});
+        QCOMPARE(torn->opacity(), 1.0);
+
+        // Escape after tearing out puts the tab back in its window.
+        QTRY_VERIFY(dock->group(group) && dock->group(group)->count() == 1);
+        const auto again = tabPoint(dock->group(group), staying);
+        const auto away = again + QPoint(0, 160);
+        QTest::mousePress(from, Qt::LeftButton, {}, again);
+        moveHeld(from, again, away);
+        const auto second = windowOf(staying);
+        QVERIFY(second != source && second != created);
+        QTest::keyClick(from, Qt::Key_Escape);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, away);
+        QTRY_COMPARE(windowOf(staying), source);
+        QTRY_VERIFY(!manager.model().window(second));
+        QTRY_VERIFY(!workspace.window(second));
     }
 
     void shortcutsRunInTheirQuickWindow()

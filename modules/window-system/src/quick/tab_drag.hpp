@@ -6,7 +6,10 @@
 #include "docking/tab_strip_controller.hpp"
 
 #include <QObject>
+#include <QPointer>
 #include <functional>
+
+class QQuickWindow;
 
 namespace window_system {
 class WindowManager;
@@ -16,31 +19,38 @@ namespace window_system::quick {
 
 class DockSurfaceItem;
 
-// A tab or folder carried with the mouse across the Quick windows. Within
-// its own strip the tab is lifted and follows the pointer; elsewhere the
-// strips show the insertion gap and the dock shows its guides. Targets come
-// from the shared dropTargetAt(), and the drop goes through the manager as
-// with the Widgets DragController. Nothing changes in the model before the
-// drop. Tearing out into a new window and the sidebars come later (10.3,
-// sub-step 5): a release outside every target leaves the tab where it was.
+// A tab or folder carried with the mouse across the Quick windows, with the
+// Widgets DragController's rules. Within its own strip the tab is lifted and
+// follows the pointer. Leaving the strip tears it out into a floating window
+// that follows the pointer; over a strip the window turns translucent and
+// the strip opens its gap, over content the dock shows its guides. Targets
+// come from the shared dropTargetAt() and drops go through the manager.
+// Released elsewhere, the tab stays in its new window; Escape puts it back.
+// Folders do not tear out yet, and the window is moved here rather than by
+// the system's move loop (10.3, sub-step 5).
 class TabDrag final : public QObject {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
-    TabDrag(WindowManager& manager, SurfaceLookup surfaces, QObject* parent = nullptr);
+    // Builds the Quick windows the model has now and returns this one's.
+    using Realize = std::function<QQuickWindow*(WindowId)>;
+    TabDrag(WindowManager& manager, SurfaceLookup surfaces, Realize realize, QObject* parent = nullptr);
     ~TabDrag() override;
     void beginTab(WindowId window, GroupId group, TabId tab, const DragStart& start);
     void beginFolder(WindowId window, GroupId group, FolderId folder, const DragStart& start);
     void cancel();
     [[nodiscard]] bool active() const { return active_; }
     [[nodiscard]] const DropTarget& target() const { return target_; }
+    // The torn-out window while it follows the pointer.
+    [[nodiscard]] WindowId movingWindow() const { return detached_ ? movingWindow_ : WindowId{}; }
 
 protected:
-    // Mouse moves and the release reach the window under the system's
-    // capture; they are read there, before any item.
+    // Mouse moves and the release reach the window holding the mouse; they
+    // are read there, before any item.
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void begin(WindowId window, GroupId group, const DragStart& start);
+    bool detach(QPoint global);
     void update(QPoint global);
     void finish(QPoint global);
     void stop();
@@ -53,14 +63,21 @@ private:
 
     WindowManager& manager_;
     SurfaceLookup surfaces_;
+    Realize realize_;
     TabId tab_;
     FolderId folder_;
     WindowId sourceWindow_;
     GroupId sourceGroup_;
+    int sourceIndex_ = -1;
     DragAnchor grab_;
     bool sticky_ = false;
     bool lifted_ = false;
     bool active_ = false;
+    bool detached_ = false;
+    WindowId movingWindow_;
+    QPointer<QQuickWindow> moving_;
+    // The pointer's place in the moving window.
+    QPoint offset_;
     DropTarget target_;
 };
 
