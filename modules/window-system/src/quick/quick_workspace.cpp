@@ -4,6 +4,7 @@
 #include "button_item.hpp"
 #include "content_host.hpp"
 #include "dock_surface_item.hpp"
+#include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
@@ -23,7 +24,8 @@ namespace {
 // without the system caption. Closing asks the manager, which may refuse.
 class WorkspaceQuickWindow final : public QQuickWindow {
 public:
-    WorkspaceQuickWindow(WindowManager& manager, quick::ContentHost& host, WindowId id) : manager_(manager), id_(id)
+    WorkspaceQuickWindow(WindowManager& manager, quick::ContentHost& host, quick::TabDrag& drag, WindowId id)
+        : manager_(manager), id_(id)
     {
         const auto options = manager.windowOptions(id);
         const auto theme = manager.interfaceTheme();
@@ -45,6 +47,7 @@ public:
         chrome_->maximizeRequested = [this] { windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen) ? showNormal() : showMaximized(); };
         chrome_->closeRequested = [this] { close(); };
         dock = new quick::DockSurfaceItem(manager, host, id, contentItem());
+        dock->setTabDrag(&drag);
         connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {
             chrome_->setExpanded(state == Qt::WindowMaximized || state == Qt::WindowFullScreen);
         });
@@ -98,10 +101,15 @@ private:
 } // namespace
 
 struct QuickWorkspace::Private {
-    explicit Private(WindowManager& owner) : manager(owner) {}
+    explicit Private(WindowManager& owner)
+        : manager(owner), drag(owner, [this](WindowId id) -> quick::DockSurfaceItem* {
+              const auto window = windows.value(id);
+              return window ? window->dock : nullptr;
+          }) {}
     WindowManager& manager;
     quick::ContentHost host;
     QHash<WindowId, QPointer<WorkspaceQuickWindow>> windows;
+    quick::TabDrag drag;
     QSet<PaneId> panes;
     bool syncPending = false;
 };
@@ -121,6 +129,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
 
 QuickWorkspace::~QuickWorkspace()
 {
+    d->drag.cancel();
     for (const auto& window : std::as_const(d->windows)) delete window.data();
 }
 
@@ -151,7 +160,7 @@ void QuickWorkspace::sync()
     for (const auto id : model.windowOrder()) {
         auto& window = d->windows[id];
         if (!window) {
-            window = new WorkspaceQuickWindow(d->manager, d->host, id);
+            window = new WorkspaceQuickWindow(d->manager, d->host, d->drag, id);
             window->show();
         }
         window->dock->sync();

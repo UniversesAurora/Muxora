@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 #include "dock_surface_item.hpp"
 #include "content_host.hpp"
+#include "dock_guide_item.hpp"
 #include "button_item.hpp"
 #include "group_item.hpp"
 #include "peek_item.hpp"
 #include "rail_button_item.hpp"
 #include "rail_item.hpp"
 #include "split_tree_item.hpp"
+#include "tab_drag.hpp"
 #include "tab_bar_item.hpp"
 #include "tab_content_item.hpp"
 #include "docking/dock_values.hpp"
@@ -23,9 +25,10 @@ namespace window_system::quick {
 
 DockSurfaceItem::DockSurfaceItem(WindowManager& manager, ContentHost& host, WindowId window, QQuickItem* parent)
     : QQuickItem(parent), manager_(manager), host_(host), window_(window),
-      center_(new SplitTreeItem(this)), foreground_(new QQuickItem(this))
+      center_(new SplitTreeItem(this)), foreground_(new QQuickItem(this)), guides_(new DockGuideItem(this))
 {
     foreground_->setZ(10);
+    guides_->setZ(20);
     divider_ = std::max(1, manager.interfaceTheme().metrics.groupSplitterWidth);
     center_->setDividerMetrics(divider_, TabMetrics{}.resizeBand);
     connect(center_, &SplitTreeItem::ratioRequested, this, [this](QUuid node, double ratio) {
@@ -73,6 +76,7 @@ void DockSurfaceItem::layoutCenter()
     center_->setPosition(inner_.topLeft() + QPointF(margin, margin));
     center_->setSize(area);
     foreground_->setSize(size());
+    guides_->setSize(size());
     placePeek();
 }
 
@@ -323,7 +327,9 @@ GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)
             }
             break;
         case Action::AddTabToFolder: manager_.requestNewTab(window_, id, {}, folderId(decision.index)); break;
-        default: break; // Dragging arrives with the Quick drag (10.3, sub-step 5).
+        case Action::DragTab: if (drag_) drag_->beginTab(window_, id, tabAt(decision.index), decision.start); break;
+        case Action::DragFolder: if (drag_) drag_->beginFolder(window_, id, folderId(decision.index), decision.start); break;
+        default: break;
         }
     };
     view->newTabRequested = [this, id] { manager_.requestNewTab(window_, id); };
@@ -410,6 +416,100 @@ void DockSurfaceItem::sync()
     center_->setMinimumSizes(minima);
     layoutCenter();
     syncing_ = false;
+}
+
+QRect DockSurfaceItem::globalRect() const { return QRect(mapToGlobal(QPointF()).toPoint(), size().toSize()); }
+
+QHash<GroupId, QRect> DockSurfaceItem::groupRects() const
+{
+    QHash<GroupId, QRect> result;
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value() && it.value()->isVisible())
+            result.insert(it.key(), QRect(it.value()->mapToGlobal(QPointF()).toPoint(), it.value()->size().toSize()));
+    return result;
+}
+
+QRect DockSurfaceItem::groupContentRect(GroupId group) const
+{
+    const auto view = groups_.value(group);
+    return view ? view->contentRectGlobal() : QRect{};
+}
+
+QRect DockSurfaceItem::centralRectGlobal() const
+{
+    return QRect(center_->mapToGlobal(QPointF()).toPoint(), center_->size().toSize());
+}
+
+QHash<GroupId, QRect> DockSurfaceItem::tabBarRects() const
+{
+    QHash<GroupId, QRect> result;
+    for (auto it = groups_.cbegin(); it != groups_.cend(); ++it)
+        if (it.value() && it.value()->isVisible())
+            if (const auto strip = it.value()->stripRectGlobal(); !strip.isEmpty()) result.insert(it.key(), strip);
+    return result;
+}
+
+QVector<DockStrip> DockSurfaceItem::dockStrips() const
+{
+    QVector<DockStrip> result;
+    for (const auto& view : groups_)
+        if (view && view->isVisible())
+            if (const auto panel = view->stripPanelRectGlobal(); !panel.isEmpty()) result.append({panel, view->stripEdge()});
+    return result;
+}
+
+int DockSurfaceItem::tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried) const
+{
+    const auto view = groups_.value(group);
+    return view ? view->insertionIndex(global, carried) : -1;
+}
+
+std::optional<bool> DockSurfaceItem::tabInsertionRow(GroupId, QPoint) const { return std::nullopt; }
+
+QHash<Edge, QRect> DockSurfaceItem::edgeBarRects() const
+{
+    QHash<Edge, QRect> result;
+    for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom})
+        if (const auto& rail = rails_[size_t(edge)]; rail && rail->isVisible())
+            result.insert(edge, QRect(rail->mapToGlobal(QPointF()).toPoint(), rail->size().toSize()));
+    return result;
+}
+
+// Inserting among a rail's buttons comes with the sidebar drag; until then a
+// drop on a rail appends to it and the whole rail is the preview.
+int DockSurfaceItem::edgeTabInsertionIndex(Edge, QPoint, QRect) const { return -1; }
+QRect DockSurfaceItem::edgeTabInsertionRect(Edge edge, int) const { return edgeBarRects().value(edge); }
+
+void DockSurfaceItem::setDraggedTab(TabId tab)
+{
+    for (const auto& view : groups_) if (view) view->setDraggedTab(tab);
+}
+
+void DockSurfaceItem::setDraggedFolder(FolderId folder)
+{
+    for (const auto& view : groups_) if (view) view->setDraggedFolder(folder);
+}
+
+void DockSurfaceItem::showInsertion(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky,
+                                    TabLayoutInput::Carried kind)
+{
+    if (insertionGroup_ != group)
+        if (const auto previous = groups_.value(std::exchange(insertionGroup_, group))) previous->setInsertionPreview(-1, {}, false, kind);
+    if (const auto view = groups_.value(group)) view->setInsertionPreview(index, carried, carriedSticky, kind);
+}
+
+void DockSurfaceItem::showGuides(const DropTarget& target, int count, bool whole) { guides_->setTarget(target, count, whole); }
+void DockSurfaceItem::clearGuides() { guides_->clear(); }
+
+void DockSurfaceItem::clearDragPresentation()
+{
+    showInsertion({}, -1, {}, false, TabLayoutInput::Carried::Tab);
+    clearGuides();
+    for (const auto& view : groups_) if (view) {
+        view->clearLiftedTab();
+        view->setDraggedTab({});
+        view->setDraggedFolder({});
+    }
 }
 
 GroupItem* DockSurfaceItem::group(GroupId id) const { return groups_.value(id); }

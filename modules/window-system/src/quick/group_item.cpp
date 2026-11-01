@@ -369,6 +369,85 @@ QRect GroupItem::stripRect() const
     return QRect(bar_->position().toPoint(), bar_->size().toSize());
 }
 
+QRect GroupItem::contentRectGlobal() const
+{
+    const auto content = contentRect();
+    return QRect(mapToGlobal(QPointF(content.topLeft())).toPoint(), content.size());
+}
+
+QRect GroupItem::stripRectGlobal() const
+{
+    const auto strip = stripRect();
+    return strip.isEmpty() ? QRect{} : QRect(mapToGlobal(QPointF(strip.topLeft())).toPoint(), strip.size());
+}
+
+QRect GroupItem::stripPanelRectGlobal() const
+{
+    if (stripRect().isEmpty() || !vertical()) return stripRectGlobal();
+    const auto& geometry = group_->placement().geometry;
+    const auto body = geometry.panelBody.translated(geometry.panel.topLeft());
+    return QRect(mapToGlobal(QPointF(body.topLeft())).toPoint(), body.size());
+}
+
+Edge GroupItem::stripEdge() const
+{
+    switch (bar_->controller().placement()) {
+    case TabBarPlacement::Top: return Edge::Top;
+    case TabBarPlacement::Bottom: return Edge::Bottom;
+    case TabBarPlacement::Left: return Edge::Left;
+    case TabBarPlacement::Right: return Edge::Right;
+    }
+    return Edge::Top;
+}
+
+DragAnchor GroupItem::tabGrabAnchor(TabId tab, QPoint global) const
+{
+    const auto& strip = bar_->controller();
+    const int index = strip.indexOf(tab);
+    if (index < 0) return {};
+    return DragAnchor::capture(bar_->mapFromGlobal(QPointF(global)).toPoint(), strip.tabLayout().tabs.at(index).translated(strip.tabOrigin()));
+}
+
+DragAnchor GroupItem::folderGrabAnchor(FolderId folder, QPoint global)
+{
+    DragAnchor anchor;
+    bar_->edit([&] { anchor = group_->folderGrabAnchor(folder, global); });
+    return anchor;
+}
+
+int GroupItem::insertionIndex(QPoint global, TabLayoutInput::Carried carried)
+{
+    int index = -1;
+    bar_->edit([&] { index = group_->insertionIndex(global, carried); });
+    return index;
+}
+
+void GroupItem::setDraggedTab(TabId tab) { bar_->edit([&] { bar_->controller().setDraggedTab(tab); }); }
+void GroupItem::setDraggedFolder(FolderId folder) { bar_->edit([&] { bar_->controller().setDraggedFolder(folder); }); }
+void GroupItem::setLiftedTab(QPoint global, const DragAnchor& grab) { edit([&] { group_->setLiftedTab(global, grab); }); }
+void GroupItem::clearLiftedTab() { edit([&] { group_->clearLiftedTab(); }); }
+
+void GroupItem::setInsertionPreview(int index, const QVector<CarriedLabel>& carried, bool carriedSticky, TabLayoutInput::Carried kind)
+{
+    edit([&] { group_->setInsertionPreview(index, carried, carriedSticky, kind); });
+}
+
+bool GroupItem::insertionSticky() const { return bar_->controller().dropSticky(); }
+
+FolderId GroupItem::insertionFolder() const
+{
+    const auto& strip = bar_->controller();
+    const int folder = strip.dropFolder();
+    return folder >= 0 && folder < strip.folders().size() ? strip.folders().at(folder).id : FolderId{};
+}
+
+QRect GroupItem::insertionPreviewRectGlobal() const
+{
+    const auto area = bar_->controller().dropPreviewRect();
+    if (area.isEmpty()) return {};
+    return QRect(bar_->mapToGlobal(QPointF(area.topLeft())).toPoint(), area.size()).intersected(stripRectGlobal());
+}
+
 void GroupItem::geometryChange(const QRectF& now, const QRectF& previous)
 {
     QQuickItem::geometryChange(now, previous);

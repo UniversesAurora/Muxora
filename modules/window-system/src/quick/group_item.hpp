@@ -65,6 +65,24 @@ public:
     [[nodiscard]] QRect contentRect() const;
     [[nodiscard]] QRect stripRect() const;
 
+    // Dragging, in global coordinates, as the Widgets GroupTabs.
+    [[nodiscard]] QRect contentRectGlobal() const;
+    [[nodiscard]] QRect stripRectGlobal() const;
+    // A column's panel body; the strip otherwise.
+    [[nodiscard]] QRect stripPanelRectGlobal() const;
+    [[nodiscard]] Edge stripEdge() const;
+    [[nodiscard]] DragAnchor tabGrabAnchor(TabId tab, QPoint global) const;
+    [[nodiscard]] DragAnchor folderGrabAnchor(FolderId folder, QPoint global);
+    [[nodiscard]] int insertionIndex(QPoint global, TabLayoutInput::Carried carried);
+    void setDraggedTab(TabId tab);
+    void setDraggedFolder(FolderId folder);
+    void setLiftedTab(QPoint global, const DragAnchor& grab);
+    void clearLiftedTab();
+    void setInsertionPreview(int index, const QVector<CarriedLabel>& carried, bool carriedSticky, TabLayoutInput::Carried kind);
+    [[nodiscard]] bool insertionSticky() const;
+    [[nodiscard]] FolderId insertionFolder() const;
+    [[nodiscard]] QRect insertionPreviewRectGlobal() const;
+
     std::function<QQuickItem*(TabId)> pageRequested;
     std::function<void(int)> currentChanged;
     // Close, unstick, drag and folder actions decided by the strip.

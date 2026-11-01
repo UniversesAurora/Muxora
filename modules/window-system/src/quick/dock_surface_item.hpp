@@ -2,6 +2,8 @@
 #pragma once
 
 #include <window_system/layout_model.hpp>
+#include "docking/drop_target.hpp"
+#include "docking/tab_strip_controller.hpp"
 
 #include <QHash>
 #include <QPointer>
@@ -16,18 +18,21 @@ class WindowManager;
 namespace window_system::quick {
 
 class ContentHost;
+class DockGuideItem;
 class GroupItem;
 class PeekItem;
 class RailItem;
 class SplitTreeItem;
 class TabContentItem;
+class TabDrag;
 
 // One window's docking area in Quick, built from the model on every
 // layoutChanged: the central tree of tab groups, the pinned regions around
 // it and the auto-hide rails at the window's edges, whose tabs open in a
 // panel over the rest. Groups and pages keep their identity across
-// rebuilds; user actions go through the manager's API.
-class DockSurfaceItem final : public QQuickItem {
+// rebuilds; user actions go through the manager's API. Drags read it through
+// the shared drop-target queries, in global coordinates.
+class DockSurfaceItem final : public QQuickItem, public DropSurface {
     Q_OBJECT
 public:
     DockSurfaceItem(WindowManager& manager, ContentHost& host, WindowId window, QQuickItem* parent = nullptr);
@@ -44,6 +49,30 @@ public:
     [[nodiscard]] TabId peekTab() const { return peekTab_; }
     void showPeek(GroupId group, TabId tab);
     void closePeek();
+    // The workspace's drag, which the strips start.
+    void setTabDrag(TabDrag* drag) { drag_ = drag; }
+
+    [[nodiscard]] QRect globalRect() const override;
+    [[nodiscard]] QHash<GroupId, QRect> groupRects() const override;
+    [[nodiscard]] QRect groupContentRect(GroupId group) const override;
+    [[nodiscard]] QRect centralRectGlobal() const override;
+    [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const override;
+    [[nodiscard]] QVector<DockStrip> dockStrips() const override;
+    [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried) const override;
+    [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint global) const override;
+    [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const override;
+    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global, QRect carriedGlobal) const override;
+    [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const override;
+
+    // The drag's presentation.
+    void setDraggedTab(TabId tab);
+    void setDraggedFolder(FolderId folder);
+    // The gap in one group's strip; a null group closes the gap.
+    void showInsertion(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky,
+                       TabLayoutInput::Carried kind);
+    void showGuides(const DropTarget& target, int count, bool whole);
+    void clearGuides();
+    void clearDragPresentation();
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;
@@ -76,6 +105,9 @@ private:
     WindowId window_;
     SplitTreeItem* center_;
     QQuickItem* foreground_;
+    DockGuideItem* guides_;
+    TabDrag* drag_ = nullptr;
+    GroupId insertionGroup_;
     int divider_ = 1;
     LayoutTree central_;
     std::array<PinnedRegion, 4> pinned_;
