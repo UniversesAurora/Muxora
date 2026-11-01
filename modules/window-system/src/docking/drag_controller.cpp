@@ -5,6 +5,7 @@
 #include "dock_guides.hpp"
 #include "drag_presentation.hpp"
 #include "commands/popup_menu.hpp"
+#include "platform/window_order.hpp"
 #include "platform/windows/window_frame.hpp"
 #include <QApplication>
 #include <QCursor>
@@ -21,7 +22,6 @@
 #include <utility>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
-#include <dwmapi.h>
 #endif
 
 namespace window_system {
@@ -428,42 +428,19 @@ void DragController::start(QPoint global)
 WindowId DragController::candidateAt(QPoint global) const
 {
     if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_) return forcedWindow_;
-#ifdef Q_OS_WIN
     if (!capture_ || !capture_->windowHandle()) return {};
-    // Resolve the same queued event in Qt and native coordinates. Do not sample
-    // GetCursorPos, which can already point at a later mouse event.
-    const auto local = capture_->windowHandle()->mapFromGlobal(QPointF(global));
-    const auto ratio = capture_->devicePixelRatioF();
-    POINT nativePoint{qRound(local.x() * ratio), qRound(local.y() * ratio)};
-    if (!ClientToScreen(reinterpret_cast<HWND>(capture_->winId()), &nativePoint)) return {};
-    for (HWND handle = GetTopWindow(nullptr); handle; handle = GetWindow(handle, GW_HWNDNEXT)) {
-        if (!IsWindowVisible(handle) || IsIconic(handle)) continue;
-        const auto extendedStyle = GetWindowLongPtr(handle, GWL_EXSTYLE);
-        if ((extendedStyle & WS_EX_LAYERED) && (extendedStyle & WS_EX_TRANSPARENT)) continue;
-        DWORD cloaked = 0;
-        if (SUCCEEDED(DwmGetWindowAttribute(handle, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked) continue;
-        RECT rect{}; GetWindowRect(handle, &rect);
-        if (!PtInRect(&rect, nativePoint)) continue;
-        if (overlay_ && handle == reinterpret_cast<HWND>(overlay_->winId())) continue;
-        if (capture_ && handle == reinterpret_cast<HWND>(capture_->winId())) continue;
-        DWORD process = 0; GetWindowThreadProcessId(handle, &process);
-        if (process != GetCurrentProcessId()) return {};
+    const auto* capture = capture_->windowHandle();
+    const auto* overlay = overlay_ ? overlay_->windowHandle() : nullptr;
+    WindowId found;
+    (void)stackedWindowAt(global, [&](const QWindow* candidate) {
+        if (candidate == capture || candidate == overlay) return false;
         for (const auto id : manager_->model().windowOrder()) {
             if (id == movingWindow_) continue;
-            auto* widget = manager_->windowWidget(id);
-            if (widget && reinterpret_cast<HWND>(widget->winId()) == handle &&
-                widget->rect().contains(widget->mapFromGlobal(global))) return id;
+            if (auto* widget = manager_->windowWidget(id); widget && widget->windowHandle() == candidate) { found = id; return true; }
         }
-    }
-#else
-    const auto order = manager_->model().windowOrder();
-    for (auto it = order.crbegin(); it != order.crend(); ++it) {
-        if (*it == movingWindow_) continue;
-        auto* widget = manager_->windowWidget(*it);
-        if (widget && widget->isVisible() && !widget->isMinimized() && widget->geometry().contains(global)) return *it;
-    }
-#endif
-    return {};
+        return false;
+    });
+    return found;
 }
 QRect DragController::carriedEdgeRect(QPoint global, Edge edge) const
 {
