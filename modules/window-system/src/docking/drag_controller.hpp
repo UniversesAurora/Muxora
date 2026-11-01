@@ -1,6 +1,6 @@
 #pragma once
 #include <window_system/window_manager.hpp>
-#include "dock_guides.hpp"
+#include "drop_target.hpp"
 #include "tab_bar.hpp"
 #include <QObject>
 #include <QPointer>
@@ -15,28 +15,6 @@ class DockOverlay;
 class DragLabelPreview;
 class NativeMoveWatcher;
 class DockSurface;
-struct DropTarget {
-    WindowId window;
-    GroupId group;
-    Placement placement = Placement::Center;
-    bool toEdge = false;
-    bool toEdgeBar = false;
-    bool pinned = false;
-    bool accepted = false;
-    bool splitGroup = true;
-    Edge edge = Edge::Left;
-    QRect preview;
-    QRect groupRect;
-    QRect windowRect;
-    int insertionIndex = -1;
-    // Whether the strip showed the insertion among its sticky tabs.
-    bool insertionSticky = false;
-    // Whether the pointer is over the strip's own row of sticky tabs.
-    std::optional<bool> insertionRow;
-    // The tab folder a dropped tab joins; null for none.
-    FolderId insertionFolder;
-    QVector<DockGuide> guides;
-};
 class DragController final : public QObject {
 public:
     explicit DragController(WindowManager* manager);

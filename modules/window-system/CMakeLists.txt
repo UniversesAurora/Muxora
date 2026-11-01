@@ -43,11 +43,11 @@ add_library(WindowSystemSurfaces STATIC
     src/docking/tab_group_surface.cpp src/docking/tab_group_controller.cpp
     src/docking/tab_strip_controller.cpp src/docking/tab_strip_controller_layout.cpp
     src/docking/tab_strip_controller_input.cpp src/docking/tab_strip_controller_motion.cpp
-    src/docking/tab_strip_frame.cpp src/docking/tab_foreground_frame.cpp)
+    src/docking/tab_strip_frame.cpp src/docking/tab_foreground_frame.cpp src/docking/drop_target.cpp)
 set_target_properties(WindowSystemSurfaces PROPERTIES EXPORT_NAME Surfaces)
 target_compile_features(WindowSystemSurfaces PUBLIC cxx_std_20)
 target_include_directories(WindowSystemSurfaces PRIVATE src include)
-target_link_libraries(WindowSystemSurfaces PUBLIC Qt6::Gui PRIVATE WindowSystemPresentation)
+target_link_libraries(WindowSystemSurfaces PUBLIC Qt6::Gui PRIVATE WindowSystem::Model WindowSystemPresentation)
 
 add_library(WindowSystemPlatform STATIC
     src/input_method_scopes.cpp src/platform/input_method_state.cpp)

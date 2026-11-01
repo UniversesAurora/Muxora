@@ -5,6 +5,7 @@
 #include "panes/focus_projection.hpp"
 #include "edge_strip.hpp"
 #include "dock_guides.hpp"
+#include "drop_target.hpp"
 #include "tab_layout.hpp"
 #include "drag_start.hpp"
 #include "tab_drag_visual.hpp"
@@ -23,7 +24,7 @@ struct CarriedLabel;
 struct TabDragVisual;
 class EdgeTabButton;
 class GroupTabs;
-class DockSurface final : public QFrame {
+class DockSurface final : public QFrame, public DropSurface {
     Q_OBJECT
 public:
     DockSurface(WindowManager* manager, WindowId window, QWidget* parent);
@@ -42,13 +43,13 @@ public:
     // Uses surface coordinates, including when replayed beneath a card's
     // rounded corner. Never renders QWidget contents or calls itself.
     void paintBackplate(QPainter& painter, const QRegion& exposed);
-    [[nodiscard]] QHash<GroupId, QRect> groupRects() const;
-    [[nodiscard]] QRect groupContentRect(GroupId group) const;
+    [[nodiscard]] QRect globalRect() const override;
+    [[nodiscard]] QHash<GroupId, QRect> groupRects() const override;
+    [[nodiscard]] QRect groupContentRect(GroupId group) const override;
     [[nodiscard]] GroupId groupAt(QPoint global) const;
-    [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const;
-    [[nodiscard]] QVector<DockStrip> dockStrips() const;
-    [[nodiscard]] GroupId tabBarAt(QPoint global) const;
-    [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const;
+    [[nodiscard]] QHash<GroupId, QRect> tabBarRects() const override;
+    [[nodiscard]] QVector<DockStrip> dockStrips() const override;
+    [[nodiscard]] int tabInsertionIndex(GroupId group, QPoint global, TabLayoutInput::Carried carried = TabLayoutInput::Carried::Tab) const override;
     [[nodiscard]] int dragLabelExtent(TabId tab, bool edge) const;
     [[nodiscard]] QPixmap dragLabelPixmap(TabId tab) const;
     void setDraggedTab(TabId tab);
@@ -63,9 +64,9 @@ public:
     [[nodiscard]] QPixmap activeContentPicture() const;
     // Where in its tab a drag took hold of it.
     [[nodiscard]] DragAnchor tabGrabAnchor(TabId tab, QPoint global) const;
-    [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const;
-    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global, QRect carriedGlobal = {}) const;
-    [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const;
+    [[nodiscard]] QHash<Edge, QRect> edgeBarRects() const override;
+    [[nodiscard]] int edgeTabInsertionIndex(Edge edge, QPoint global, QRect carriedGlobal = {}) const override;
+    [[nodiscard]] QRect edgeTabInsertionRect(Edge edge, int index) const override;
     void setDragHover(QPoint global);
     void clearDragHover(QPoint global);
     void setInsertionPreview(GroupId group, int index, const QVector<CarriedLabel>& carried, bool carriedSticky = false,
@@ -76,7 +77,7 @@ public:
     void setDraggedFolder(FolderId folder);
     [[nodiscard]] DragAnchor folderGrabAnchor(FolderId folder, QPoint global) const;
     // Whether a point is over the group's row of sticky tabs; empty without one.
-    [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint point) const;
+    [[nodiscard]] std::optional<bool> tabInsertionRow(GroupId group, QPoint point) const override;
     // Whether a drop at the group's insertion preview makes the tab sticky.
     [[nodiscard]] bool insertionSticky(GroupId group) const;
     void setEdgeInsertionPreview(Edge edge, int index, int extent);
@@ -99,7 +100,7 @@ public:
     void setTabBarsVisible(bool visible);
     void setSideBarsVisible(bool visible);
     void setFocusScope(const WindowViewState& state);
-    [[nodiscard]] QRect centralRectGlobal() const;
+    [[nodiscard]] QRect centralRectGlobal() const override;
     // The splitter built for a central or pinned tree split node, or null.
     [[nodiscard]] QSplitter* splitterFor(QUuid node) const;
 signals:

@@ -985,6 +985,7 @@ void DockSurface::restorePinnedExtents()
     // Nested pinned splitters retain their own ratios. Resizing the outer
     // region must not reset an independent inner boundary to leaf extents.
 }
+QRect DockSurface::globalRect() const { return QRect(mapToGlobal(QPoint()), size()); }
 QHash<GroupId, QRect> DockSurface::groupRects() const
 {
     QHash<GroupId, QRect> result;
@@ -1029,12 +1030,6 @@ QVector<DockStrip> DockSurface::dockStrips() const
         result.append({rect, edge});
     }
     return result;
-}
-GroupId DockSurface::tabBarAt(QPoint point) const
-{
-    const auto rects = tabBarRects();
-    for (auto it = rects.cbegin(); it != rects.cend(); ++it) if (it.value().contains(point)) return it.key();
-    return {};
 }
 int DockSurface::tabInsertionIndex(GroupId group, QPoint point, TabLayoutInput::Carried carried) const
 {
