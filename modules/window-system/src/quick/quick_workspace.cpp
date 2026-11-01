@@ -28,6 +28,11 @@ public:
         const auto options = manager.windowOptions(id);
         const auto theme = manager.interfaceTheme();
         setFlags(Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
+        // Joined tab shapes and shoulders meet edges in cusps; they are drawn
+        // aliased and rely on multisampling, which is fixed at creation.
+        auto surfaceFormat = format();
+        surfaceFormat.setSamples(4);
+        setFormat(surfaceFormat);
         // The manager's shortcut dispatch finds the window by this.
         setProperty("windowId", id);
         setColor(theme.headerBackground);

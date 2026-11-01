@@ -398,8 +398,9 @@ bool GroupSurfaceItem::prepareFrame()
     }
     PathGeometryOptions options; options.devicePixelRatio = out.ratio;
     out.extension.update(frame_.extension.path, options);
-    // A vertical strip bridges a one-pixel gap to the card: too thin for an
-    // inset antialiasing band. Drawn aliased it covers the same pixels.
+    // A vertical strip bridges a one-pixel gap to the card, and a shoulder
+    // meets the card's edge in a cusp: neither has room for an inset
+    // antialiasing band. Drawn aliased, the window's multisampling smooths it.
     if (out.extension.geometry().error == PathGeometryError::AntialiasingTopology) {
         auto aliased = options; aliased.antialiasing = false;
         out.extension.update(frame_.extension.path, aliased);

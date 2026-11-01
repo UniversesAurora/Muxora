@@ -241,6 +241,8 @@ private slots:
         QPointer<QQuickWindow> quickWindow = workspace.window(window);
         QVERIFY(QTest::qWaitForWindowExposed(quickWindow.data()));
         QCOMPARE(quickWindow->title(), QStringLiteral("Header"));
+        // Joined tab shapes are drawn aliased and rely on multisampling.
+        QCOMPARE(quickWindow->format().samples(), 4);
         auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
         auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
         QVERIFY(chrome && dock);
