@@ -170,7 +170,7 @@ void WindowManager::registerTabFolderCommands()
         const auto* group = d->model.group(d->model.groupForFolder(folderOf(c)));
         if (!group) return false;
         DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
-        for (const auto id : d->model.windowOrder()) if (id != group->windowId) menu.addAction(windowWidget(id)->windowTitle())->setData(id);
+        for (const auto id : d->model.windowOrder()) if (id != group->windowId) menu.addAction(windowCaption(id))->setData(id);
         const QPointer<WindowManager> self(this); const auto* action = menu.exec(QCursor::pos());
         return self && action && moveTabFolderToWindow(folderOf(c), action->data().toUuid());
     }, hasWindow);

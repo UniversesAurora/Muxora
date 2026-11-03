@@ -2,6 +2,8 @@
 #include "window_manager_p.hpp"
 #include "view_state_p.hpp"
 
+#include <QCoreApplication>
+
 namespace window_system {
 namespace {
 
@@ -55,6 +57,15 @@ WindowViewState WindowManager::windowViewState(WindowId window) const
 bool WindowManager::presented(WindowId window) const
 {
     return d->presentation == Presentation::External || d->windows.value(window);
+}
+
+QString WindowManager::windowCaption(WindowId window) const
+{
+    const auto* record = d->model.window(window);
+    if (!record) return {};
+    const auto* tab = d->model.tab(context(window).tab);
+    return (tab ? tab->title + QStringLiteral(" — ") : QString()) + d->options.value(window).title
+        + (record->kind == WindowKind::Floating ? QCoreApplication::translate("WindowSystem", " · Floating window") : QString());
 }
 
 bool WindowManager::singleTabHidesTabBar(WindowId window) const

@@ -59,7 +59,7 @@ void WindowManager::registerWindowCommands()
         picker.setObjectName(QStringLiteral("ContentWindowPicker"));
         applyTheme(&picker, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != source) {
-            auto* action = picker.addAction(windowWidget(id)->windowTitle());
+            auto* action = picker.addAction(windowCaption(id));
             action->setData(id);
         }
         if (picker.actions().isEmpty()) return {};
@@ -273,7 +273,7 @@ void WindowManager::registerWindowCommands()
         DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) {
             if (id == c.window || d->model.window(id)->kind != WindowKind::Workbench) continue;
-            auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id);
+            auto* action = menu.addAction(windowCaption(id)); action->setData(id);
         }
         if (auto* action = menu.exec(QCursor::pos())) return action->data().toUuid();
         return {};
@@ -314,7 +314,7 @@ void WindowManager::registerWindowCommands()
             auto target = c.args.value("targetWindow").toUuid();
             if (target.isNull()) {
                 DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, interfaceTheme());
-                for (const auto id : d->model.windowOrder()) if (id != source) { auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id); }
+                for (const auto id : d->model.windowOrder()) if (id != source) { auto* action = menu.addAction(windowCaption(id)); action->setData(id); }
                 if (auto* action = menu.exec(QCursor::pos())) target = action->data().toUuid();
             }
             if (target.isNull()) return false;
@@ -362,7 +362,7 @@ void WindowManager::registerWindowCommands()
                 applyTheme(&picker, interfaceTheme());
                 for (const auto window : d->model.windowOrder())
                     for (const auto tab : d->model.orderedTabs(window)) if (tab != sourceTab) {
-                        auto* action = picker.addAction(QStringLiteral("%1 — %2").arg(d->model.tab(tab)->title, windowWidget(window)->windowTitle()));
+                        auto* action = picker.addAction(QStringLiteral("%1 — %2").arg(d->model.tab(tab)->title, windowCaption(window)));
                         action->setData(tab);
                     }
                 if (picker.actions().isEmpty()) return false;

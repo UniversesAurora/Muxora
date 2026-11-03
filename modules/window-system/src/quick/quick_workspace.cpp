@@ -110,14 +110,10 @@ public:
     // a floating window says so, also in its header.
     void updateCaption()
     {
-        const auto* tab = manager_.model().tab(manager_.context(id_).tab);
         const auto* record = manager_.model().window(id_);
-        const bool floating = record && record->kind == WindowKind::Floating;
-        const auto own = manager_.windowOptions(id_).title;
-        const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + own
-            + (floating ? QCoreApplication::translate("WindowSystem", " · Floating window") : QString());
+        const auto title = manager_.windowCaption(id_);
         if (this->title() != title) setTitle(title);
-        chrome_->setTitle(floating ? title : own);
+        chrome_->setTitle(record && record->kind == WindowKind::Floating ? title : manager_.windowOptions(id_).title);
     }
 
     void applyViewState()

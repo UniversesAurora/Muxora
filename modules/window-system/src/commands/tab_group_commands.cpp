@@ -190,7 +190,7 @@ void WindowManager::registerTabGroupCommands()
         if (c.args.contains("targetWindow")) return moveGroupToWindow(c.group, c.args.value("targetWindow").toUuid());
         DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != c.window) {
-            auto* action = menu.addAction(windowWidget(id)->windowTitle()); action->setData(id);
+            auto* action = menu.addAction(windowCaption(id)); action->setData(id);
         }
         const QPointer<WindowManager> self(this); const auto* action = menu.exec(QCursor::pos());
         return self && action && moveGroupToWindow(c.group, action->data().toUuid());

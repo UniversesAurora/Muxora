@@ -92,6 +92,9 @@ public:
     [[nodiscard]] Presentation presentation() const;
     // External only; null removes it.
     void setPresenter(WindowPresenter* presenter);
+    // A window's system title: its active tab before its own title, and a
+    // floating window says so. Empty for an unknown window.
+    [[nodiscard]] QString windowCaption(WindowId window) const;
     // The behavior hides a window's central tab bars while it holds one tab.
     [[nodiscard]] bool singleTabHidesTabBar(WindowId window) const;
 

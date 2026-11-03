@@ -659,8 +659,7 @@ void WorkspaceWindow::updateCaption()
     if (!manager_) return;
     const auto ctx = manager_->context(id_);
     const auto* tab = manager_->model().tab(ctx.tab);
-    const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + options_.title;
-    setWindowTitle(title + (kind_ == WindowKind::Floating ? QCoreApplication::translate("WindowSystem", " · Floating window") : QString()));
+    setWindowTitle(manager_->windowCaption(id_));
     if (status_) static_cast<WorkspaceStatusBar*>(status_.data())->setWorkspace(
         tab ? tab->title : QString(), manager_->model().orderedTabs(id_).size());
     if (caption_) {
