@@ -2,6 +2,31 @@
 
 上游：[ADR 0013](../../adr/0013-qt-quick-rendering.md)、[Quick 呈现设计](../../design/quick-rendering-design.md)。本阶段按用户要求优先推进，原有未完成步骤保留。
 
+## 剩余工作与分工（2026-11-04 起）
+
+2026-11-04 起 Muxora 只用 Quick 启动（见 10.3 的切换决定）。还要做的是把 Widgets 才有的功能在 Quick 里补齐，然后删除 Widgets 代码。顺序和分工如下，每一项的要求写在对应子步里。分工按 [AGENTS.md](../../../AGENTS.md#轮流开发与交接)：新界面组件和新外观由 Claude 做，执行者（目前是 Codex）做不涉及新外观的步骤；执行者做到需要新组件或新外观的地方就停下，写进交接记录。
+
+| 顺序 | 工作 | 位置 | 负责 |
+| --- | --- | --- | --- |
+| 1 | 删除 Widgets 占位内容 | 10.6 删除单元 1 | 执行者 |
+| 2 | 窗格与标签的上下栏、输入法与焦点接到 Quick | 10.3 子步 6 | 执行者（Muxora 文件标签的两条栏的外观由 Claude 做） |
+| 3 | 命令菜单改为与呈现无关的数据描述 | 10.4a | 执行者 |
+| 4 | 工具栏排布规则抽成不依赖控件的模块 | 10.4e 前半 | 执行者 |
+| 5 | `quiet-desktop.ps1` 运行期间唤醒并保持屏幕亮着 | 10.5 工具 | 执行者 |
+| 6 | Quick 弹出菜单组件、右键菜单、菜单栏 | 10.4b–d | Claude |
+| 7 | 工具栏、状态栏的 Quick 渲染 | 10.4e 后半、10.4f | Claude |
+| 8 | 命令面板、窗口选择器、拖动中按 Tab 选目标 | 10.4g | Claude |
+| 9 | 设置页与快捷键页：Claude 先做 Quick 表单控件和第一页样板，执行者按样板迁移其余分区 | 10.4h | Claude，然后执行者 |
+| 10 | 对话框（改名、侧栏面板尺寸、关于、脚本输入框） | 10.4i | Claude |
+| 11 | 无障碍 | 10.4j | 执行者 |
+| 12 | 帧成本测量与调优 | 10.5 | 执行者测量，Claude 定优化 |
+| 13 | 管理器去掉 Widgets 呈现，删除其余 Widgets 代码和测试 | 10.6 删除单元 3–5 | Claude 拆步，执行者执行 |
+| 14 | 用户试用、经授权的全量测试、部署依赖和文档收尾 | 10.6 收尾 | Claude |
+
+1–5 互不依赖，可以按顺序交给执行者；6 以后多数要等 Claude 先做出组件。每完成一块 Quick 版，就在同一轮删掉被替代的 Widgets 代码和只测它的用例（10.6 列出了对应关系），不留到最后。
+
+**测试**：Widgets 版不再维护，它的套件不再运行；改到 Widgets 代码时只要求能编译，删除时连同用例一起删。例外是 10.4a 和 10.4e 前半这类把规则从 Widgets 抽出来的重构，对应的 Widgets 套件是行为不变的依据，要跑。Quick 和共用逻辑按 [测试要求](../../development/testing-design.md) 只跑相关套件，桌面套件经 `quiet-desktop.ps1 -Elevate`；依赖帧推进的断言（动画结束、帧数）要先唤醒屏幕，原因见 [Qt Quick 经验](../../development/lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)。对比原版用 `out/package/muxora-widgets-reference/`（`widgets-reference` 标签的 Release 包）。
+
 ## 10.1 基线、帧动画和保留绘制基础
 
 **状态**：绘制与帧基础已实现并定向验证，尚未接入默认应用。主体阴影的冷资源、保留纹理与尺寸顶点更新已定向验证；接合阴影的 [自有冷资源](../../development/verification-log/2026-10.md#接合阴影的自有冷资源2026-10-28) 已分离，主体与单接合补片的 [GPU 合成](../../development/verification-log/2026-10.md#quick-接合阴影的保留合成2026-10-28) 已定向验证，文字和完整应用的呈现测量未完成，继续 10.2；不能据此视为整体高刷新验收。结果见 [基线记录](../../development/verification-log/2026-10.md#按窗口帧取样的动画值与迁移前基线2026-10-27)、[阴影资源](../../development/verification-log/2026-10.md#主体阴影资源与绘制后端分离2026-10-28)、[主体阴影 GPU 记录](../../development/verification-log/2026-10.md#quick-主体阴影保留纹理与连续缩放2026-10-28) 和 [GPU 记录](../../development/verification-log/2026-10.md#quick-保留绘制与屏幕刷新验证2026-10-27)。
@@ -15,7 +40,7 @@
 
 **状态**：进行中。标签栏的状态、布局、输入和动画已集中到 Gui 层的 `TabStripController`，Widgets 的 `TabBar` 和 Quick 的 `TabBarItem` 只做适配，见 [控制器记录](../../development/verification-log/2026-10.md#标签状态与-widgets-门面分离2026-10-30)。Quick 已有标签表面、标题、图标、编号、文件夹头、条带装饰、边缘渐隐和拖动前景的保留绘制组件，基础层与前景层经统一帧发布接到控制器，见 [统一发布](../../development/verification-log/2026-10.md#标签栏基础与前景的统一发布2026-10-29) 和 [审查记录](../../development/verification-log/2026-10.md#gpt-审查-deepseek-提交标签合成与运行段资源2026-10-29)。
 
-未完成：尾部控件和完整应用窗口接线；离屏合成时的字体外观待用户试用。各子步的改动和验证按日期记在 [验证日志](../../development/verification-log/2026-10.md)。
+尾部控件（新建、类型、标签列表、计数、图标模式、侧栏按钮）和应用窗口接线已随 10.3 完成；离屏合成时的字体外观待用户试用。各子步的改动和验证按日期记在 [验证日志](../../development/verification-log/2026-10.md)。
 
 - 从 `TabBar` 分离输入、滚动、展开、拖拽与动画状态，保留已有布局计算；Widgets 和 Quick 读取同一份呈现数据，不复制规则。
 - 把 `TabDragVisual` 中的 QPainter 回调改成有界渲染描述，明确资源所属窗口。
@@ -50,30 +75,48 @@
    - Quick 一侧另写输入适配：标签栏的 `TabPointerDecision` 拖动动作开始拖动，指针移动时调用共用命中函数，放下时调用管理器现有的 `moveTab`、`moveTabToEdge`、`moveTabToEdgeBar`、`moveTabToWindow`；停靠引导和插入预览画在 `DockSurfaceItem` 的前景层。
    - 拖出成浮窗：管理器在 `External` 下建模型窗口，`QuickWorkspace` 建它的 Quick 窗口，之后用 `QWindow::startSystemMove()` 交给系统移动，回到标签栏上方时收回鼠标，与 Widgets 的原生移动规则相同。
    - 顺序：先抽共用命中并验证 Widgets，再做栏内换位与跨组移动，再做拖出浮窗和侧栏。
-6. 宿主内容和栏位的 Quick 接口，Muxora 占位内容迁移；输入法、焦点、显隐通知与按需创建保持。
+6. 未开始（执行者）：宿主内容和栏位的 Quick 接口。宿主内容已由内容工厂按描述创建（子步 4），显隐通知由 `ContentHost` 发出。剩下：
+   - **上下栏**：`QuickWorkspace` 增加 `setTabBar(TabId, QQuickItem*, bool top)` 和 `setPaneBar(PaneId, QQuickItem*, bool top)`，传空指针移除；工作区接管所有权，标签或窗格关闭时删除，在组间、窗口间移动时保持同一个项（和窗格内容一样按 ID 保存）。排布照 Widgets 的 `panes/tab_content.cpp`：`TabOptions::topBarSharing`／`bottomBarSharing` 为 `Shared` 时一条栏横跨整个标签，`PerPane` 时每个窗格各有一条；栏高取项的隐含高度；栏计入最小尺寸；禅模式隐藏全部栏（`windowViewState().zen`）；窗格全屏时只排那个窗格的栏。用 `quick-workspace` 用例覆盖两种共享方式、移动后身份不变、关闭时删除、禅模式隐藏，用普通 `QQuickItem` 当栏，不做新外观。
+   - **输入法与焦点**：Quick 内容获得焦点时，管理器的当前窗格跟着变（相当于 `WindowManager::eventFilter` 里 Widgets 的 `FocusIn` 分支），输入法按 [8.16](phase-8-ui-quality.md#816-按层级保存输入法状态) 的作用域保存和恢复；Widgets 版在 `input_method_scopes_widgets.cpp`。
+   - **Muxora**：文件标签的地址栏和信息栏（Widgets 版见 `placeholder_content.cpp` 的 `populateInitialWorkspace`）需要两个 QML 栏组件，属于新外观，由 Claude 做；执行者只做接口。
+7. 完成条件：两个组、窗格、分隔条和标签跨窗口移动都能完整使用。原定“缺项不切换默认”由用户 2026-11-04 的决定取代：先切换，缺的在 Quick 里补。子步 6 完成、用户试用过 Quick 版的拖动与布局后，10.3 才算完成。
 7. 完成条件：两个组、窗格、分隔条和标签跨窗口移动都能完整使用。原定“缺项不切换默认”由用户 2026-11-04 的决定取代：先切换，缺的在 Quick 里补。
 
 ## 10.4 工具栏、侧栏、菜单与设置
 
-**状态**：未开始，需 10.3。弹出菜单、命令面板和设置页同样改为 Quick 窗口，不保留 `QMenu` 或 QWidget 对话框。
+**状态**：未开始。切换后 Quick 版还没有菜单栏、右键菜单、工具栏、状态栏、设置页、命令面板、快捷键编辑器、窗口选择器和各种对话框；有些命令仍会弹出 Widgets 的菜单或对话框（独立的顶层窗口，能用但外观不同），按下面各项替换。外观照现有 Widgets 版和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。每项完成时删掉被替代的 Widgets 代码和只测它的用例（10.6 删除单元 2）。
 
-- 迁移剩余 chrome、侧栏浮层、命令面板、设置与快捷键页，复用命令、颜色、尺寸和已有外观。
-- 保留工具栏弹性/压缩/重置、分层菜单、状态项、布局保存及主窗口和浮窗设置区分。
-- 迁移可访问性、键盘与 IME 接线，保留平台菜单和窗口系统行为。
-- 拖动中按 Tab 弹出窗口列表、选中的窗口作为目标（Widgets `DragController::selectTarget`），从 10.3 子步 5 移来。
+- **10.4a 命令菜单数据模型（执行者）**：`commands/command_menus.cpp` 现在一边决定菜单内容一边建 `QMenu`。拆成与呈现无关的菜单描述：条目的命令 ID、标题、快捷键文字、能否勾选与是否勾选、可用、可见、分隔、子菜单，以及动态部分（窗口列表、标签颜色、新建标签类型、贡献菜单）。应用菜单、浮窗菜单和各处右键菜单都先生成描述，`QMenu` 只按描述生成，行为不变。`menu-structure` 改为检查描述，保留现有断言。完成标准：描述不依赖 Qt Widgets，`QMenu` 一侧只剩生成代码；`menu-structure`、`popup-menu`、`sidebar-menu` 通过（这一步仍要跑这几个 Widgets 套件，因为它们是行为不变的依据）。
+- **10.4b Quick 弹出菜单（Claude）**：独立顶层 Quick 窗口，按 10.4a 的描述绘制；支持多级子菜单、键盘导航、勾选、快捷键文字、分隔、禁用、超出屏幕时翻转、点外面关闭，原生弹出窗口的行为照 `popup_menu.cpp`。
+- **10.4c 右键菜单（Claude，接线可交给执行者）**：标签、标签夹、标签栏空白处、标签组、窗格内容、侧栏按钮、展开面板、新建标签下拉、标签列表。`GroupItem::stripMenuRequested`、`groupMenuRequested`、`RailButtonItem::menu` 等回调已留好。完成后欢迎页“右键标签或浮窗标题栏……”这句提示才成立。
+- **10.4d 菜单栏（Claude）**：工作台在标题行显示文件／视图／布局／窗口／工具／帮助，浮窗显示自己的浮窗菜单；含窗口列表。
+- **10.4e 工具栏（前半执行者，后半 Claude）**：前半把 `chrome/command_strip.cpp` 里的排布规则（行与区域、弹性与按内容、压缩、最小宽度、重置、锁定、保存格式）抽成不依赖控件的模块，Widgets 改用它，`toolbar-*`、`multirow-toolbar` 通过；后半由 Claude 做 Quick 渲染、拖动换位和选项菜单，宿主和 Lua 的自定义工具栏随之显示。保存格式不变；做完后去掉管理器里为 Quick 原样保留工具栏布局的 `keptStrips`。
+- **10.4f 状态栏（Claude）**：工作区信息、临时消息、宿主和 Lua 的状态项、右键隐藏状态项，照 `chrome/status_bar.cpp`。
+- **10.4g 浮动面板（Claude）**：命令面板、窗口选择器（`floating_panel.cpp`、`command_dialogs.cpp`），以及拖动中按 Tab 弹出窗口列表选目标（Widgets `DragController::selectTarget`）。
+- **10.4h 设置页与快捷键页（Claude 后执行者）**：Claude 先做 Quick 表单控件（开关、下拉、数值、滑块、列表、快捷键录入，类型选择按 [设置设计 §3](../../design/settings-and-commands-design.md#3-全局设置与编辑)）和第一个分区的样板；执行者照样板迁移其余分区和快捷键页，遇到样板里没有的控件停下。
+- **10.4i 对话框（Claude）**：重命名标签／组／标签夹（现用 `QInputDialog`）、侧栏面板尺寸（`peek_size_command.cpp`）、关于、Lua 的输入框（`src/app/scripting_setup.cpp`）、Lua 父窗口查询（`src/app/script_services.cpp`）。宿主的关闭确认由宿主提供，Muxora 的那个也一起换。
+- **10.4j 无障碍（执行者）**：Quick 的标签栏、标签组、侧栏按钮、按钮和标题行提供无障碍角色、名称和状态，照 Widgets 的 `TabBarAccessible`；键盘焦点顺序与 Widgets 一致。
 
 ## 10.5 帧成本与资源调优
 
 **状态**：整体调优未开始；各前置步骤发现的局部成本当步处理。分隔条尺寸更新与实际比例提交的定向对照已完成，见 [测量记录](../../development/verification-log/2026-10.md#分隔条比例提交路径的成本2026-10-28)。多标签的无效接合轮廓计算已减少，单标签组分隔条卡顿仍待后续迁移，见 [取样与分隔条对照](../../development/verification-log/2026-10.md#标签接合轮廓只为使用者生成2026-10-28)。Quick 基准已加入 30 标签整栏场景，三轮 p95 为 7.43–8.01 ms，仍高于 144 Hz 单周期预算，见 [整栏基准](../../development/verification-log/2026-10.md#quick-三十标签整栏基准2026-10-29)；该场景不含宿主内容和输入，不能代表完整应用。
 
-- 对照基线测量分隔条、标签拖动/切换、多行展开、侧栏展开及多窗口。
-- 优化节点保留、局部更新、批次、文字/阴影缓存和上传；在目标刷新周期内控制 CPU、GPU 与同步成本，不停用视觉效果换取成绩。
-- 检查高刷新、多屏混合刷新/DPI、隐藏恢复及反复关闭后的资源回落，性能结论按实际运行记录。
+- **工具（执行者）**：`tools/tests/quiet-desktop.ps1` 在测试会话期间唤醒屏幕并保持亮着，结束（包括失败）时撤销；做法和原因见 [Qt Quick 经验](../../development/lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)。改动遵守 [测试要求 §3](../../development/testing-design.md#3-工具与统一入口)，同时更新 `quiet-desktop-test.ps1`。
+- 对照基线测量分隔条、标签拖动/切换、多行展开、侧栏展开、拖动中的系统移动及多窗口（执行者用 `tools/bench.ps1` 测，数字写进验证日志；优化方案由 Claude 定）。
+- 优化节点保留、局部更新、批次、文字/阴影缓存和上传；在目标刷新周期内控制 CPU、GPU 与同步成本，不停用视觉效果换取成绩。拖到标签栏上时整窗截图（`GroupItem::pagePicture`）的代价也在这里测。
+- 检查高刷新、多屏混合刷新/DPI、隐藏恢复及反复关闭后的资源回落，性能结论按实际运行记录。混合 DPI 要两块缩放不同的显示器，没有条件时如实记录。
+- 偶发问题：`quick-native-drag` 在整批运行中偶尔超时于“system loop again”（离开标签栏后没能回到系统移动），见 [验证日志](../../development/verification-log/2026-10.md#quick-展开面板的尺寸手柄和标题拖动2026-11-04)。执行者再遇到时先查 `TabDrag::queueSystemMove` 到 `enterSystemMove` 之间的条件。
 
-## 10.6 等价验收与默认切换
+## 10.6 分块删除 Widgets 与收尾
 
-**状态**：未开始，需 10.2–10.5。
+**状态**：进行中。Widgets 不再是默认，按下面的单元分块删除，不等到最后一次删光；删除前确认 Quick 一侧已有等价行为和用例，缺的用例补到 `quick-*` 套件（按 [测试的分量](../../development/testing-design.md#测试的分量)，不逐条照搬）。
 
-- 核对全部既有行为清单、相关套件和用户试用，全量测试先取得单独授权。
-- 部署依赖与发行许可跟随真正使用的模块更新，固定预览不依赖开发 SDK。
-- 完成后切换默认呈现，删除被替换的重复绘制和过渡入口。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
+| 单元 | 删除内容 | 时机 |
+| --- | --- | --- |
+| 1 | Muxora 的 Widgets 占位内容：`createPlaceholder` 和它的控件代码、`addPlaceholderTab`／`populateInitialWorkspace` 里的 Widgets 分支；`src/app/tests/localization_test.cpp` 改为检查文字函数（`notesText()` 等）和 QML 占位页，保留现有译文断言 | 现在（执行者） |
+| 2 | 随 10.4 各项删除：`commands/popup_menu.cpp` 和 `command_menus.cpp` 的 `QMenu` 部分、`chrome/status_bar.cpp`、`chrome/command_strip.cpp`、`floating_panel.cpp`、`commands/command_dialogs.cpp`、`settings/*`、`peek_size_command.cpp` 的对话框，以及只测它们的 Widgets 套件 | 每项完成时 |
+| 3 | 管理器去掉 Widgets 呈现：删除 `Presentation` 里的 Widgets 和 `refresh()` 的建视图部分；公开接口去掉 `QWidget`（`addTab(QWidget*)`、`addTabToNewGroup(QWidget*)`、`splitPane(…, QWidget*, …)`、`setTab*Bar(QWidget*)`／`setPane*Bar(QWidget*)`、`windowWidget`、`paneWidget`、`QWidget` 内容工厂）；`WindowManager` 移出 `WindowSystemWidgets`，只依赖 Qt Gui。Lua 模块（`window-system-lua/src/window_api.cpp`）和 Muxora 跟着改 | 10.4 完成后，Claude 先拆成可单独提交的步骤 |
+| 4 | Widgets 停靠区与窗口：`docking/dock_surface`、`tab_strip`、`tab_bar`、`edge_strip`、`edge_tab_button`、`drag_controller`、`drag_presentation`、`panes/tab_content`、`chrome/workspace_window`、`workspace_view`、`style` 里只给控件用的部分（`themed_controls`、`integer_slider`、`wheel_guard`、`smooth_scroll`、`tooltip_layout`、`applyTheme`）、`input_method_scopes_widgets.cpp`，以及剩下的 Widgets 套件 | 单元 3 之后 |
+| 5 | 构建与部署：模块和应用不再链接 Qt Widgets（应用改用 `QGuiApplication`），`deployment-files.json` 和 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 去掉 Widgets 的文件和插件 | 单元 4 之后 |
+
+收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

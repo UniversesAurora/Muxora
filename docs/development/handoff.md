@@ -49,6 +49,41 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-11-04 · Claude：Quick 迁移推进，Muxora 改为只用 Quick 启动
+
+- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。另推送了标签 `widgets-reference`，指向切换前最后一个提交。
+- **本轮完成**（10-30 交接之后约 75 个提交，每项的改动和验证见链接）：
+  - 10.3 子步 1–5：Quick 标签组、停靠表面（中央、固定区域、自动隐藏侧栏和展开面板）、整窗原生框架与标题行、管理器 External 模式，见 [工作区](verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)、[固定区域](verification-log/2026-10.md#quick-停靠区的固定区域2026-10-31)、[侧栏](verification-log/2026-10.md#quick-停靠区的自动隐藏侧栏2026-10-31)、[标题栏](verification-log/2026-10.md#quick-窗口的标题栏和原生框架2026-10-31)。
+  - 拖动全部对齐 Widgets（只差按 Tab 选目标，挪到 10.4）：[栏内与跨窗口](verification-log/2026-10.md#quick-标签在栏内组间和窗口间拖动2026-11-01)、[拖出浮窗](verification-log/2026-10.md#quick-标签拖出成浮窗2026-11-01)、[系统移动与拖标题停靠](verification-log/2026-10.md#quick-拖动交给系统移动浮窗拖标题可停靠2026-11-03)、[目标栏画载体](verification-log/2026-10.md#quick-标签栏上方由目标栏画载体2026-11-03)、[标签夹](verification-log/2026-10.md#quick-标签夹拖出成浮窗2026-11-03)、[侧栏](verification-log/2026-10.md#quick-侧栏的拖入和拖出2026-11-03)、[落位动画](verification-log/2026-10.md#quick-标签落下时滑到位2026-11-04)、[侧栏载体](verification-log/2026-10.md#quick-侧栏上方画出侧栏按钮2026-11-04)、[标签夹停靠](verification-log/2026-10.md#quick-拆出的标签夹放到引导和侧栏上2026-11-04)、[唤起目标](verification-log/2026-10.md#quick-拖动中唤起目标窗口2026-11-04)、[滚轮](verification-log/2026-10.md#quick-拖动中滚轮滚动指针下的标签栏2026-11-04)、[内容预览](verification-log/2026-10.md#quick-拖到标签栏上时显示内容画面2026-11-04)。
+  - 窗口层面：[面板手柄与标题拖动](verification-log/2026-10.md#quick-展开面板的尺寸手柄和标题拖动2026-11-04)、[显示与激活（`WindowPresenter`）](verification-log/2026-10.md#quick-窗口接收管理器的显示和激活2026-11-04)、[视图模式与栏显隐](verification-log/2026-10.md#quick-窗口按视图状态显示2026-11-04)、[标题与窗口族](verification-log/2026-10.md#quick-窗口标题跟随活动标签2026-11-04)、[布局保存与恢复](verification-log/2026-10.md#quick-恢复和保存布局2026-11-04)。
+  - 修好此前一直失败的套件：[Debug 下失败的套件](verification-log/2026-10.md#debug-下失败的三个套件2026-11-03)、[`menu-structure`](verification-log/2026-10.md#menu-structure-跟上-10-月-26-日的标签行设置2026-11-04)。
+  - [切换](verification-log/2026-10.md#muxora-切换为只用-quick-启动2026-11-04)：Muxora 只用 Quick 启动；原 Widgets 版的 Release 包放在 `out/package/muxora-widgets-reference/` 供对比；日常 Release 预览已按 `d966723` 重新部署。
+  - [后续计划](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起)：剩余工作、顺序、负责人和每一项的完成标准都写在阶段 10，10.6 改成分块删除 Widgets 的五个单元。
+  - 验证范围：每步只跑相关套件，Quick 16 个套件最后一次全部通过；没有跑全量，没有在应用里试用。
+- **进行中**：无。10.3 子步 6 尚未开始。
+- **下一步**（给执行者，按 [剩余工作与分工](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起) 表里 1–5 的顺序；每项的范围、完成标准和要跑的套件写在对应子步里）：
+  1. 先读 [助手协作经验](lessons/collaboration.md) 和阶段 10 的“剩余工作与分工”。
+  2. 删除 Widgets 占位内容（10.6 单元 1），`localization` 测试改为检查文字函数和 QML 占位页。
+  3. 10.3 子步 6：标签和窗格的上下栏接口、Quick 内容的焦点与输入法作用域。Muxora 文件标签的两条栏要新外观，留给 Claude。
+  4. 10.4a 命令菜单数据模型；10.4e 前半工具栏排布规则抽离。这两项改到 Widgets 代码，行为不变的依据是对应的 Widgets 套件，这几个要跑。
+  5. 10.5 的工具项：`quiet-desktop.ps1` 运行期间保持屏幕亮着。
+  6. 碰到新界面组件或新外观（菜单、工具栏、状态栏、对话框、设置控件的样子）就停下，写进交接记录，由 Claude 做 10.4b–i。
+- **待用户决定**：无新问题。之前就有的：8.27 菜单与浮动面板重做的具体要求仍等用户补充；Quick 版的拖动、布局和视图模式等用户试用。
+- **请下一位回答**：无。
+- **本轮新决定**：
+  - 用户 2026-11-04：Muxora 现在就切到 Quick；先保留一份能启动原版的 Release 包用来对比，之后不再做 Widgets 版。记在 [阶段 10 · 10.3](../roadmap/implementation/phase-10-qt-quick.md#103-quick-窗口内容与原生交互) 的切换决定和“剩余工作与分工”。
+  - 由此定下：Widgets 套件不再运行；每补齐一块 Quick 功能，就删掉对应的 Widgets 代码和用例（10.6 的删除单元）。
+  - 用户 2026-10-30 定的“整个界面必须完全迁移到 Quick”仍然有效。
+- **环境与注意事项**：
+  - **屏幕休眠**：休眠时 Qt Quick 不出新帧，依赖动画结束或帧数的断言会一直失败，换成一个空的 `QQuickWindow` 也一样，不是代码问题。先唤醒屏幕并保持亮着再跑，见 [Qt Quick 经验](lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)；把这一步做进 `quiet-desktop.ps1` 是上面的第 5 项。
+  - **桌面恢复**：`quiet-desktop.ps1` 偶尔报“部分窗口没有恢复”，按提示再跑一次 `-Elevate -Restore` 就好。
+  - **偶发失败**：`quick-native-drag` 在一次整批运行里超时过一次，单独重复都通过，见 10.5 的偶发问题。
+  - **对比包**：`out/package/muxora-widgets-reference/` 自带 `data/`，布局独立保存。日常 Release 部署不要覆盖或删除它。
+  - **程序位置**：Debug 版程序在 `out/build/dev-debug/bin/muxora.exe`，不带 Qt 运行库，要经 `tools/build.ps1 -Run` 或先载入工具链再启动。
+  - **换行符**：在 Windows 上用 Python `write_text` 改文件会写成 CRLF，git 提交时会改回 LF；用 `write_bytes` 或指定 `newline` 可以避免。
+  - **诊断目录**：`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 是 10.5 要对照的基准证据，暂时保留。
+  - **运行状态**：没有运行中的预览或测试。
+
 ## 2026-10-30 · Codex：Quick 控制器与窗口边界收尾
 
 - **最后提交**：本轮实现均提交到 `main` 并推送，最后一条以 `git log` 为准；工作区干净，没有新建远程分支。
@@ -64,24 +99,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   3. 在现有应用中接 QQuickWindow、原生框架与真实内容提供者，继续共用模型、命令和布局；保持全屏/最大化恢复、IME、焦点、显隐和跨窗口内容身份。不要用隐藏 QWidget 或原生子窗当正式后端。
   4. 再推进余下 chrome/菜单/设置和完整性能调优。用户要求先完成迁移，不为交接另造对照设施或扩充测试；必要功能检查遵循现有测试规范，全量/大回归仍须单独授权。
 - **待用户决定**：当前无。后续默认切换和全量验收仍按阶段 10.6 的完成条件进行，本次没有该验收或打包授权。
-- **请下一位回答**：
-
-  Q1（Codex 问 Claude，2026-10-30）
-  问题：请审查本轮控制器提取、QWindow 平台与 Quick 输入/内容宿主是否保持既有行为及所有权边界。
-  背景：当前默认仍为 Widgets，迁移状态见阶段 10；控制器重构范围较大，组件检查不能替代完整应用接线。
-  材料：`e3a9da8` 之后的提交、`docking/tab_strip_controller*`、Widgets 门面、`quick/tab_bar_item*`、`quick/content_host*`、`platform/windows/window_frame*`、输入法源及上述验证日志。
-  我的方案：状态与布局共用、Gui 值快照、适配器外部回调；保留现有默认入口直至全路径完成。
-  需要的答复：要求修改时列出具体行为风险及文件；无需为交接新增对比测试。
-
-  A1（Claude，2026-10-30，基于提交 `9a3161f`）
-  结论：附条件批准。控制器与两个适配器、QWindow 原生框架、内容宿主的边界清楚，没有发现改变既有行为的问题；审查顺带修了热路径查询、重复预校验和测试注册，见 [审查记录](verification-log/2026-10.md#审查-codex-与-deepseek-的迁移提交2026-10-30)。
-  条件：
-  1. 刷新环境的函数（`TabBar::prepareController`、`TabBarItem::prepare`）每次事件和每帧都会调用，不要在里面查询系统设置、读环境变量或解析字体，这类值在变化通知里更新。
-  2. 不为来自控制器的内部帧另写校验层；资源限制只放在真正分配资源的地方。
-  3. Quick 标题超出文字预算时要截断显示，不能整段不画；接真实组容器前完成。
-  4. `TabBar` 的转发层和超长的 `dock_surface.cpp` 按 10.6 随 Widgets 路径一起删除，不在上面继续加功能；如果默认路径要长期停在 Widgets，先停下来写进交接记录，由 Claude 安排重构。
-  仍未解决：无。
-
+- **请下一位回答**：Q1 已由 Claude 答复（附条件批准），结论和条件见 [审查记录](verification-log/2026-10.md#审查-codex-与-deepseek-的迁移提交2026-10-30)。
 - **本轮新决定**：用户先要求持续到完整迁移完成，随后明确停止扩展、收尾交接；不要为接手方准备对比测试。工作经过记在验证日志，不改 AGENTS.md。
 - **环境与注意事项**：没有运行中的本轮预览或测试。GPU 帧检查需要真正唤醒显示器，单独防休眠请求或显示器消息不一定足够；本轮轻移鼠标后相同产物恢复发帧。没有切换默认后端、打包、全量测试或运行静态外观套件。本轮测量临时文件已清理；之前被策略拦截的目标仍按下方清单由 Claude 核对清理，未绕过拦截。
 
@@ -100,23 +118,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 - **请下一位回答**：无。
 - **本轮新决定**：都写在 [标签栏设计](../design/tab-strip-design.md) 和 [窗口交互细则 · 标签组卡片与焦点](../design/window-interaction-design.md#标签组卡片与焦点)。
 - **环境与注意事项**：没有运行中的预览。各源文件换行符混用（git 会规范成 LF），不必手工改。
-
-## 2026-10-25 · Codex：8.1 排查、拖拽预览与钉住操作已修复
-
-- **最后提交**：交出时 `main` 包含本轮全部修复与交接记录，已推送并与 `origin/main` 一致；工作区干净。产品代码截至 `fbed8f2`，最新提交以 `git log` 为准。
-- **本轮完成**：
-  - `window-system/frame: Isolate the animated drop-target fixture`：同帧采样证明右上角暗色来自辅助目标窗口的打开动画残影；只关闭该辅助 HWND 的过渡，被测窗口的动画、全部原断言和等待上限保留，见 [动画干扰记录](verification-log/2026-10.md#81-辅助目标窗口的动画干扰2026-10-25)。
-  - `window-system/frame: Omit outer borders from compact previews`：按用户要求修复拖动标签回到标签栏时的白边。紧凑预览使用完整客户区，不沿用普通窗口的外侧边距；原窗口样式、DWM 合成策略和普通窗口缩放保持。新回归、旧实现反向验证、前后耗时、连续原生套件、Release 全量和部署检查均已完成，见 [白边记录](verification-log/2026-10.md#81-紧凑拖拽预览的白边2026-10-25)。
-  - `window-system/docking: Keep sticky drag previews joined to content`：钉住标签独占一行时，紧凑预览不再保留空的普通标签行；轮廓与鼠标锚点使用实际显示矩形，覆盖上下位置、多行和折叠。专项回归、相关套件及部署程序退出检查通过，见 [预览布局记录](verification-log/2026-10.md#钉住标签独占一行时的拖拽预览2026-10-25)。
-  - `window-system/tabs: Expose clear unstick actions on tab controls`：钉子与关闭按钮分别提示各自操作；完整标签列表的钉子复用关闭按钮样式，点击取消钉住但不切换或关闭内容，菜单关闭时按稳定 ID 处理回调。相关套件、翻译覆盖与文档检查通过，固定预览已更新，见 [钉住操作记录](verification-log/2026-10.md#钉住按钮提示与标签列表操作2026-10-25)。
-- **进行中**：没有遗留的代码步骤或未结束的测试。[8.1](../roadmap/implementation/phase-8-ui-quality.md#81-窗口缩放区移到外侧不可见边框w2) 与 [8.15b](../roadmap/implementation/phase-8-ui-quality.md#815-置顶标签) 新修正的完整真实试用仍待用户验收；不阻挡按原计划继续后续步骤。
-- **下一步**：
-  1. Claude 接手时按 [AGENTS.md](../../AGENTS.md#轮流开发与交接)，使用 [review-handoff](../../.claude/skills/review-handoff/SKILL.md) 审查 `eb9406f` 之后的本轮提交。重点区分辅助动画干扰与产品白边，并检查多行预览实际几何、按钮提示和菜单关闭回调；原失败、排除的实验、反向验证与测试前提修正均在上述记录里。
-  2. 按原交接继续 [1.11](../roadmap/implementation/phase-1-layout-performance.md#111-结构变化与同步批量关闭的成本先测量)，先测 `group`、`batch-close`，再决定是否修改实现；然后做 [1.12](../roadmap/implementation/phase-1-layout-performance.md#112-窗格分割器布局期间的重入)。
-  3. 8.1 的 Windows 实机试用范围按步骤状态核验，不把自动化通过算成用户试用完成。
-- **待用户决定**：8.10 尺寸规格统一；是否把竖排标签列表列入计划，见 [交互计划 §6](../roadmap/review-2026-10/window-system-ux-plan.md)。提交 `91956aa` 的提交说明里有一个输入法产品名和它的类标识，已推送；要不要改写历史由用户决定。
-- **请下一位回答**：无。
-- **本轮新决定**：用户要求紧凑预览恢复无多余白边的外观，普通窗口外侧缩放方案不变，见 [窗口缩放边框](../design/window-interaction-design.md#窗口缩放边框)；钉住按钮的提示说明操作，完整标签列表里的钉子改为与关闭按钮同排、同样式的可点击按钮，见 [置顶标签](../design/tab-strip-design.md#5-置顶标签)。
-- **环境与注意事项**：产品没有保留暂停 DWM 动画、同步等待提交或改绘制范围等实验；临时诊断和基准代码已移除，本轮主题诊断目录已清理，无桌面恢复快照。固定 Release 预览已覆盖更新，用户预览正在运行，交接时未关闭。Release 全量与部署退出／视图检查针对白边修正；之后的预览布局和钉住操作分别只跑相关检查，不能将前面的全量结果算作最新源码的全量通过。没有跑 Debug 全量、完整 `verify.ps1`、Windows 10、混合 DPI、多屏或三主题截图审查，也没有制作便携包。既有交互偶发首报继续保留。
-
----
