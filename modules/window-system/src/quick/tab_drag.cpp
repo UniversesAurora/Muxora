@@ -29,10 +29,34 @@ bool buttonHeld()
     return false;
 #endif
 }
+
+// Above every other window, without taking the focus.
+void bringToFront(QWindow& window)
+{
+#ifdef Q_OS_WIN
+    SetWindowPos(reinterpret_cast<HWND>(window.winId()), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+#else
+    window.raise();
+#endif
+}
 } // namespace
 
 TabDrag::TabDrag(WindowManager& manager, SurfaceLookup surfaces, Realize realize, QObject* parent)
-    : QObject(parent), manager_(manager), surfaces_(std::move(surfaces)), realize_(std::move(realize)) {}
+    : QObject(parent), manager_(manager), surfaces_(std::move(surfaces)), realize_(std::move(realize))
+{
+    // As the Widgets drag: the target comes forward and the carried window
+    // stays above it.
+    revealTimer_.setSingleShot(true);
+    connect(&revealTimer_, &QTimer::timeout, this, [this] {
+        auto* surface = surfaces_(revealCandidate_);
+        auto* target = surface ? surface->window() : nullptr;
+        if (!active_ || !target || target->visibility() == QWindow::Minimized) return;
+        bringToFront(*target);
+        revealedWindow_ = revealCandidate_;
+        if (moving_) bringToFront(*moving_);
+        update(lastGlobal_);
+    });
+}
 
 TabDrag::~TabDrag() { if (active_) stop(); }
 
@@ -238,6 +262,8 @@ void TabDrag::stop(bool restoreCarrier)
     // A drag ended from elsewhere also ends the system's move loop.
     if (std::exchange(systemMoving_, false)) ReleaseCapture();
 #endif
+    revealTimer_.stop();
+    revealCandidate_ = revealedWindow_ = {};
     qApp->removeNativeEventFilter(this);
     qApp->removeEventFilter(this);
     QGuiApplication::restoreOverrideCursor();
@@ -316,6 +342,7 @@ DropTarget TabDrag::hit(QPoint global) const
 
 void TabDrag::update(QPoint global)
 {
+    lastGlobal_ = global;
     if (!carriedExists()) return cancel();
     auto* source = surfaces_(sourceWindow_);
     auto* sourceView = source ? source->group(sourceGroup_) : nullptr;
@@ -381,6 +408,11 @@ void TabDrag::update(QPoint global)
     // window again.
     carrierHidden_ = !incoming.empty() || (detached_ && railInsertion);
     if (moving_) moving_->setOpacity(carrierHidden_ ? 0 : 1);
+    if (manager_.behavior().revealDuringDrag && target_.window != revealCandidate_) {
+        revealTimer_.stop(); revealCandidate_ = target_.window;
+        if (!revealCandidate_.isNull() && revealCandidate_ != movingWindow_ && revealCandidate_ != revealedWindow_)
+            revealTimer_.start(manager_.behavior().revealDelayMs);
+    }
     if (placing && systemMoving_) leaveSystemMove();
     else if (!placing && detached_ && !systemMoving_) queueSystemMove();
 }

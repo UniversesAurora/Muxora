@@ -13,6 +13,7 @@
 #include "quick/rail_item.hpp"
 #include "quick/tab_bar_item.hpp"
 #include "quick/window_chrome_item.hpp"
+#include "platform/window_order.hpp"
 #include "style/frame_motion.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
@@ -401,9 +402,20 @@ private slots:
         const auto targetGroup = manager.model().groupForTab(other);
         QTRY_VERIFY(sourceDock->group(sourceGroup) && targetDock->group(targetGroup));
         QTRY_COMPARE(to->position(), from->frameGeometry().topRight() + QPoint(40, 0));
+        // Another window covers the target's right half.
+        auto behavior = manager.behavior(); behavior.revealDelayMs = 50; manager.setBehavior(behavior);
+        QWindow cover;
+        cover.setFlags(Qt::FramelessWindowHint);
+        cover.setGeometry(QRect(to->geometry().center(), to->size() / 2));
+        cover.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&cover));
+        const auto covered = to->geometry().center() + QPoint(20, 20);
+        const auto front = [&] { return stackedWindowAt(covered, [&](const QWindow* window) { return window == to || window == &cover; }); };
+        QTRY_COMPARE(front(), &cover);
 
         // The source window holds the mouse, as under the system's capture,
         // while the pointer crosses into the target; QTest notes each such event.
+        // Resting on the target brings it to the front.
         const QRegularExpression outside(QStringLiteral("occurs outside target window"));
         const auto start = tabPoint(sourceDock->group(sourceGroup), moving);
         const auto end = from->mapFromGlobal(to->mapToGlobal(tabPoint(targetDock->group(targetGroup), other) + QPoint(30, 0)));
@@ -412,6 +424,7 @@ private slots:
             if (!from->geometry().contains(from->mapToGlobal(start + (end - start) * step / 8)))
                 QTest::ignoreMessage(QtWarningMsg, outside);
         moveHeld(from, start, end);
+        QTRY_COMPARE(front(), to);
         QTest::ignoreMessage(QtWarningMsg, outside);
         QTest::mouseRelease(from, Qt::LeftButton, {}, end);
         QTRY_COMPARE(manager.model().group(targetGroup)->tabs, (QVector<TabId>{other, moving}));

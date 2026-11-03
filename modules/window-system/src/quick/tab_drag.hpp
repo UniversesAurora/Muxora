@@ -9,6 +9,7 @@
 #include <QAbstractNativeEventFilter>
 #include <QObject>
 #include <QPointer>
+#include <QTimer>
 #include <functional>
 #include <optional>
 
@@ -25,16 +26,17 @@ class DockSurfaceItem;
 // A tab or folder carried with the mouse across the Quick windows, with the
 // Widgets DragController's rules. Within its own strip the tab is lifted and
 // follows the pointer. Leaving the strip tears it out into a floating window
-// that follows the pointer; over a strip the window turns translucent and
-// the strip opens its gap, over content the dock shows its guides. Targets
-// come from the shared dropTargetAt() and drops go through the manager.
-// Released elsewhere, the tab stays in its new window; Escape puts it back.
-// A floating window dragged by its title is carried the same way, with all
-// its tabs. With the real mouse the carried window moves in the system's
-// move loop, as a title drag does, and targets follow the moves it reports.
-// Over a strip the window hides, the strip paints its tabs at the pointer,
-// and the drag takes the mouse back from the loop until the pointer leaves.
-// A folder tears out with its tabs and drops only into strips.
+// that follows the pointer; over a strip or rail the target opens its gap,
+// over content the dock shows its guides. Targets come from the shared
+// dropTargetAt() and drops go through the manager. Released elsewhere, the
+// tab stays in its new window; Escape puts it back. A floating window
+// dragged by its title is carried the same way, with all its tabs, and so
+// is a folder once torn out. With the real mouse the carried window moves
+// in the system's move loop, as a title drag does, and targets follow the
+// moves it reports. Over a strip or rail the window hides, the target
+// paints its tabs at the pointer, and the drag takes the mouse back from
+// the loop until the pointer leaves. A target the pointer rests on comes
+// to the front after the behavior's delay.
 class TabDrag final : public QObject, public QAbstractNativeEventFilter {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
@@ -117,6 +119,12 @@ private:
     // Over a strip or a rail the target paints the tabs; the window hides.
     bool carrierHidden_ = false;
     bool updateQueued_ = false;
+    // The target window waiting to come to the front, and the last one that
+    // did; a window comes forward once per stay.
+    QTimer revealTimer_;
+    WindowId revealCandidate_;
+    WindowId revealedWindow_;
+    QPoint lastGlobal_;
     quintptr movingHandle_ = 0;
     // Ends queued by one move loop are ignored by the next drag.
     quint64 moveGeneration_ = 0;
