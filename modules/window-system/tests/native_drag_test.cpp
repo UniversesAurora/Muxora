@@ -80,6 +80,12 @@ void NativeDragTest::realDragKeepsFollowingAcrossNativeMoveAndStripCapture()
     int stage = 0; bool done = false; QString error; QRect firstGap;
     QTimer drive; drive.setInterval(10); drive.setSingleShot(true); QElapsedTimer clock; clock.start();
     const auto moveTo = [&](QPoint global) { native_input::mouse(host, host->mapFromGlobal(global)); };
+    // Over a strip the target strip paints the carried label at the pointer
+    // while the carrier hides in place (tab strip design 6.2).
+    const auto labelFollows = [&] {
+        auto* bar = targetView->tabBar();
+        return bar->incomingRect().contains(bar->mapFromGlobal(QCursor::pos()));
+    };
     const auto finish = [&] {
         drive.stop(); native_input::leftButton(host, false); done = true;
     };
@@ -120,7 +126,7 @@ void NativeDragTest::realDragKeepsFollowingAcrossNativeMoveAndStripCapture()
             if (firstGap.isEmpty()) { error = "Reentering the strip has no gap"; finish(); return; }
             ++stage; moveTo(atLast); break;
         case 5:
-            if (carrier->mapToGlobal(carrier->dragLabelAnchor()) != QCursor::pos()) return;
+            if (!labelFollows()) return;
             if (targetView->insertionPreviewRectGlobal() == firstGap) { error = "The gap stopped following the pointer"; finish(); return; }
             ++stage; moveTo(outside); break;
         case 6:
@@ -131,7 +137,7 @@ void NativeDragTest::realDragKeepsFollowingAcrossNativeMoveAndStripCapture()
                 || inSystemMove() || QWidget::mouseGrabber() != carrier) return;
             ++stage; moveTo(atLast); break;
         case 8:
-            if (carrier->mapToGlobal(carrier->dragLabelAnchor()) != QCursor::pos()) return;
+            if (!labelFollows()) return;
             if (targetView->insertionPreviewRectGlobal().isEmpty()) { error = "The second reentry lost its gap"; finish(); return; }
             finish(); break;
         }
