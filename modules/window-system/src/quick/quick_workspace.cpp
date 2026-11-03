@@ -10,6 +10,7 @@
 #include "platform/windows/window_frame.hpp"
 #endif
 
+#include <QCoreApplication>
 #include <QPointer>
 #include <QSet>
 #include <QQuickItem>
@@ -39,10 +40,9 @@ public:
         // The manager's shortcut dispatch finds the window by this.
         setProperty("windowId", id);
         setColor(theme.headerBackground);
-        setTitle(options.title);
         resize(options.size);
         chrome_ = new quick::WindowChromeItem(theme, contentItem());
-        chrome_->setTitle(options.title);
+        updateCaption();
         chrome_->setButtonOrder(manager.behavior().captionButtonOrder);
         chrome_->minimizeRequested = [this] { showMinimized(); };
         chrome_->maximizeRequested = [this] { windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen) ? showNormal() : showMaximized(); };
@@ -87,6 +87,20 @@ public:
     // As the Widgets window applies its view state: any view mode is full
     // screen, and the header row, which holds the toolbars there, follows
     // the toolbars' visibility.
+    // As the Widgets window: the active tab before the window's title, and
+    // a floating window says so, also in its header.
+    void updateCaption()
+    {
+        const auto* tab = manager_.model().tab(manager_.context(id_).tab);
+        const auto* record = manager_.model().window(id_);
+        const bool floating = record && record->kind == WindowKind::Floating;
+        const auto own = manager_.windowOptions(id_).title;
+        const auto title = (tab ? tab->title + QStringLiteral(" — ") : QString()) + own
+            + (floating ? QCoreApplication::translate("WindowSystem", " · Floating window") : QString());
+        if (this->title() != title) setTitle(title);
+        chrome_->setTitle(floating ? title : own);
+    }
+
     void applyViewState()
     {
         const auto state = manager_.windowViewState(id_);
@@ -230,6 +244,7 @@ void QuickWorkspace::sync()
             window->show();
         }
         window->dock->sync();
+        window->updateCaption();
         window->applyViewState();
     }
     for (auto it = d->panes.begin(); it != d->panes.end();) {

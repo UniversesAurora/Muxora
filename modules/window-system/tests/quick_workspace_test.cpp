@@ -291,7 +291,8 @@ private slots:
         QTRY_VERIFY(workspace.window(window));
         QPointer<QQuickWindow> quickWindow = workspace.window(window);
         QVERIFY(QTest::qWaitForWindowExposed(quickWindow.data()));
-        QCOMPARE(quickWindow->title(), QStringLiteral("Header"));
+        // As the Widgets window: the system title leads with the active tab.
+        QTRY_COMPARE(quickWindow->title(), QStringLiteral("Only — Header"));
         // Joined tab shapes are drawn aliased and rely on multisampling.
         QCOMPARE(quickWindow->format().samples(), 4);
         auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
@@ -971,6 +972,13 @@ private slots:
         auto* floatingDock = workspace.window(floating)->contentItem()->findChild<quick::DockSurfaceItem*>();
         QTRY_VERIFY(floatingDock->group(manager.model().groupForTab(single)));
         QTRY_VERIFY(floatingDock->group(manager.model().groupForTab(single))->stripRect().isEmpty());
+
+        // Titles name the active tab, and a floating window says what it is.
+        QTRY_COMPARE(workspace.window(floating)->title(), QStringLiteral("Single — Single · Floating window"));
+        QVERIFY(manager.renameTab(single, QStringLiteral("Renamed")));
+        QTRY_COMPARE(workspace.window(floating)->title(), QStringLiteral("Renamed — Single · Floating window"));
+        QVERIFY(manager.activateTab(a));
+        QTRY_COMPARE(quickWindow->title(), QStringLiteral("A — View"));
     }
 
     void shortcutsRunInTheirQuickWindow()
