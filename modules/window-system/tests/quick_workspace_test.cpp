@@ -244,6 +244,34 @@ private slots:
         click(button);
         QVERIFY(!dock->peek());
 
+        // The handle on its free side resizes the panel, and the tab keeps
+        // that size.
+        click(button);
+        QTRY_VERIFY(dock->peek());
+        peek = dock->peek();
+        auto* handle = peek->findChild<QQuickItem*>(QStringLiteral("PeekResizeHandle"));
+        QVERIFY(handle);
+        const int height = int(peek->height());
+        const auto grip = handle->mapToScene(handle->boundingRect().center()).toPoint();
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, grip);
+        moveHeld(quickWindow, grip, grip - QPoint(0, 40));
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, grip - QPoint(0, 40));
+        QTRY_COMPARE(int(dock->peek()->height()), height + 40);
+        QCOMPARE(int(dock->peek()->y() + dock->peek()->height()), int(rail->y()));
+        QCOMPARE(manager.peekSizePolicy(second, Edge::Bottom).height, std::optional<int>(height + 40));
+
+        // Its title drags the tab out as the rail button does; Escape puts
+        // it back on the rail.
+        const auto title = peek->mapToScene(QPointF(peek->width() / 4, 6)).toPoint();
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, title);
+        moveHeld(quickWindow, title, title - QPoint(0, 120));
+        QVERIFY(!dock->peek());
+        QVERIFY(manager.model().group(manager.model().groupForTab(second))->windowId != window);
+        QTest::keyClick(quickWindow, Qt::Key_Escape);
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, title - QPoint(0, 120));
+        QTRY_COMPARE(manager.model().autoHiddenTabs(window, Edge::Bottom), (QVector<TabId>{first, second}));
+        QTRY_VERIFY(dock->rail(Edge::Bottom) && dock->rail(Edge::Bottom)->buttons().size() == 2);
+
         // Pinning the tab takes it off the rail; the last one removes the rail.
         QVERIFY(manager.pinTab(second, true));
         QTRY_COMPARE(dock->rail(Edge::Bottom)->buttons().size(), 1);

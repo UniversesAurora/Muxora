@@ -152,6 +152,17 @@ void DockSurfaceItem::showPeek(GroupId group, TabId tab)
     panel->setPage(page(tab));
     panel->pinRequested = [this, tab] { manager_.pinTab(tab, true); };
     panel->closeRequested = [this, tab] { manager_.closeTab(tab); };
+    if (const auto* owner = manager_.model().group(group)) {
+        const auto edge = owner->edge;
+        panel->setEdge(edge);
+        panel->requestedSize = [this, tab, edge] { return manager_.peekSizePolicy(tab, edge); };
+        panel->resizeRequested = [this, tab, edge](PeekSizePolicy size) {
+            if (manager_.setPeekSizePolicy(tab, edge, size)) placePeek();
+        };
+        // As the Widgets panel header: the title drags the tab, as its rail
+        // button does.
+        panel->dragRequested = [this, tab, edge](DragStart start) { if (drag_) drag_->beginRailTab(window_, edge, tab, start); };
+    }
     peek_ = panel;
     if (window()) window()->installEventFilter(this);
     for (const auto& rail : rails_)

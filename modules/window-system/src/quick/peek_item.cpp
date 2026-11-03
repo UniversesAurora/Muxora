@@ -7,11 +7,61 @@
 #include <window_system/ui_scale.hpp>
 
 #include <QCoreApplication>
+#include <QCursor>
 #include <QFontMetrics>
+#include <QGuiApplication>
+#include <QMouseEvent>
 #include <QPainterPath>
+#include <QStyleHints>
 #include <algorithm>
 
 namespace window_system::quick {
+namespace {
+
+// As the Widgets PeekResizeHandle: the panel's size follows the pointer
+// from the press, no smaller than 140 by 100.
+class ResizeHandle final : public QQuickItem {
+public:
+    ResizeHandle(PeekItem& panel, Qt::Edges edges) : QQuickItem(&panel), panel_(panel), edges_(edges)
+    {
+        setAcceptedMouseButtons(Qt::LeftButton);
+        setZ(3);
+        const bool across = edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge);
+        const bool along = edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge);
+        setCursor(across && along ? (edges.testFlag(Qt::LeftEdge) == edges.testFlag(Qt::TopEdge)
+            ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor) : across ? Qt::SizeHorCursor : Qt::SizeVerCursor);
+    }
+    [[nodiscard]] Qt::Edges edges() const { return edges_; }
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        start_ = event->globalPosition().toPoint();
+        initial_ = panel_.size().toSize();
+        initialPolicy_ = panel_.requestedSize ? panel_.requestedSize() : PeekSizePolicy{};
+        event->accept();
+    }
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        const auto delta = event->globalPosition().toPoint() - start_;
+        auto size = initialPolicy_;
+        if (edges_.testFlag(Qt::LeftEdge) || edges_.testFlag(Qt::RightEdge))
+            size.width = std::max(140, initial_.width() + (edges_.testFlag(Qt::RightEdge) ? delta.x() : -delta.x()));
+        if (edges_.testFlag(Qt::TopEdge) || edges_.testFlag(Qt::BottomEdge))
+            size.height = std::max(100, initial_.height() + (edges_.testFlag(Qt::BottomEdge) ? delta.y() : -delta.y()));
+        event->accept();
+        if (const auto resize = panel_.resizeRequested) resize(size);
+    }
+
+private:
+    PeekItem& panel_;
+    Qt::Edges edges_;
+    QPoint start_;
+    QSize initial_;
+    PeekSizePolicy initialPolicy_;
+};
+
+} // namespace
 
 PeekItem::PeekItem(const Theme& theme, QQuickItem* parent)
     : QQuickItem(parent), theme_(theme), surface_(new PathItem(this)), frame_(new PathItem(this)), title_(new TabLabelTextItem(this)),
@@ -42,6 +92,55 @@ void PeekItem::setPage(QQuickItem* page)
     relayout();
 }
 
+void PeekItem::setEdge(Edge edge)
+{
+    if (edge_ == edge) return;
+    edge_ = edge;
+    qDeleteAll(handles_); handles_.clear();
+    const bool vertical = edge == Edge::Left || edge == Edge::Right;
+    const Qt::Edges inner = edge == Edge::Left ? Qt::RightEdge : edge == Edge::Right ? Qt::LeftEdge
+        : edge == Edge::Top ? Qt::BottomEdge : Qt::TopEdge;
+    const Qt::Edges along = vertical ? Qt::BottomEdge : Qt::RightEdge;
+    for (const auto edges : {inner, along, inner | along}) {
+        auto* handle = new ResizeHandle(*this, edges);
+        handle->setObjectName(edges == inner ? QStringLiteral("PeekResizeHandle")
+            : edges == along ? QStringLiteral("PeekAlongResizeHandle") : QStringLiteral("PeekCornerResizeHandle"));
+        handles_.append(handle);
+    }
+    relayout();
+}
+
+int PeekItem::headerHeight() const
+{
+    return std::max(uiPixels(peekHeaderHeight), QFontMetrics(font_).height() + uiPixels(2));
+}
+
+void PeekItem::mousePressEvent(QMouseEvent* event)
+{
+    event->accept();
+    const auto local = event->position().toPoint();
+    if (event->button() != Qt::LeftButton || local.y() > headerHeight()) return;
+    pressed_ = true;
+    start_ = DragStart::capture(event->globalPosition().toPoint(), local, QRect(0, 0, int(width()), headerHeight() + 1));
+}
+
+void PeekItem::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!pressed_ || !(event->buttons() & Qt::LeftButton)) return;
+    const auto global = event->globalPosition().toPoint();
+    if (!start_.crossedThreshold(global, QGuiApplication::styleHints()->startDragDistance())) return;
+    pressed_ = false;
+    // Tearing the tab out closes this panel; Qt then must not give it the grab.
+    const QPointer<PeekItem> alive(this);
+    if (const auto callback = dragRequested) callback(start_.movedTo(global));
+    if (!alive) event->ignore();
+}
+
+void PeekItem::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) pressed_ = false;
+}
+
 void PeekItem::geometryChange(const QRectF& now, const QRectF& previous)
 {
     QQuickItem::geometryChange(now, previous);
@@ -61,7 +160,7 @@ void PeekItem::relayout()
     fill.addRect(area.adjusted(1, 1, -1, -1));
     surface_->setSize(size()); surface_->setFill(theme_.surface); surface_->setPath(fill);
 
-    const int header = std::max(uiPixels(peekHeaderHeight), QFontMetrics(font_).height() + uiPixels(2));
+    const int header = headerHeight();
     const int button = uiPixels(peekButtonExtent);
     const int top = 1 + (header - button) / 2;
     close_->setSize(QSizeF(button, button));
@@ -84,6 +183,18 @@ void PeekItem::relayout()
     if (page_) {
         page_->setPosition(QPointF(1, 1 + header));
         page_->setSize(QSizeF(std::max(0.0, width() - 2), std::max(0.0, height() - 2 - header)));
+    }
+    // The Widgets handles: four pixels inside the frame.
+    const qreal w = width(), h = height();
+    for (auto* item : std::as_const(handles_)) {
+        const auto edges = static_cast<ResizeHandle*>(item)->edges();
+        QRectF rect;
+        if ((edges & (Qt::LeftEdge | Qt::RightEdge)) && (edges & (Qt::TopEdge | Qt::BottomEdge)))
+            rect = QRectF(edges.testFlag(Qt::LeftEdge) ? 1 : w - 5, edges.testFlag(Qt::TopEdge) ? 1 : h - 5, 4, 4);
+        else if (edges & (Qt::LeftEdge | Qt::RightEdge))
+            rect = QRectF(edges.testFlag(Qt::LeftEdge) ? 1 : w - 5, 1, 4, h - 2);
+        else rect = QRectF(1, edges.testFlag(Qt::TopEdge) ? 1 : h - 5, w - 2, 4);
+        item->setPosition(rect.topLeft()); item->setSize(rect.size());
     }
 }
 
