@@ -28,10 +28,6 @@
         <translation>Use a separate layout state directory</translation>
     </message>
     <message>
-        <source>Show the windows with Qt Quick (in development)</source>
-        <translation>Show the windows with Qt Quick (in development)</translation>
-    </message>
-    <message>
         <source>New workspace tab</source>
         <translation>New workspace tab</translation>
     </message>

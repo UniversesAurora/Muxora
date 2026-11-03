@@ -23,16 +23,18 @@
 
 ## 10.3 Quick 窗口、内容与原生交互
 
-**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。`QuickWorkspace` 已能按模型建窗口、中央停靠区和窗格内容，见 [工作区记录](../../development/verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)；Muxora 可用 `--quick` 启动，占位页由编译好的 QML 组件显示，快捷键、固定区域、自动隐藏侧栏、窗口标题栏，以及标签在栏内、组间、窗口间的拖动、拖出成浮窗和浮窗拖标题停靠可用；菜单、工具栏和状态栏还没有接通。
+**状态**：进行中，2026-10-30 起由 Claude 负责。已有部件：共用分割布局与 `SplitTreeItem`、`GroupSurfaceItem` 背板、接到控制器的 `TabBarItem`、`ContentHost` 内容宿主、以 QWindow 为核心的原生框架与系统菜单，见 [分割记录](../../development/verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29) 和 [收尾记录](../../development/verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。`QuickWorkspace` 已能按模型建窗口、中央停靠区和窗格内容，见 [工作区记录](../../development/verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)；Muxora 2026-11-04 起只用 Quick 启动，占位页由编译好的 QML 组件显示，快捷键、固定区域、自动隐藏侧栏、窗口标题栏，以及标签在栏内、组间、窗口间的拖动、拖出成浮窗和浮窗拖标题停靠可用；菜单、工具栏和状态栏还没有接通。
 
 用户 2026-10-30 明确：整个界面必须完全迁移到 Quick，Widgets 路径在 10.6 删除。迁移期间两个后端共存，按下面的结构过渡。
+
+用户 2026-11-04 决定提前切换：Muxora 立即只用 Quick 启动，Widgets 版不再维护、不再跑它的测试。切换前用当时的代码（`widgets-reference` 标签）打一份 Release 包，单独放在 `out/package/muxora-widgets-reference/`，只用来启动原版对比，日常 Release 不覆盖它。菜单、工具栏、状态栏、设置等在 Quick 里重做（10.4），每做完一块就删掉对应的 Widgets 代码和测试，不等到最后一次删；在此之前这些入口在 Quick 里暂时没有。下面的过渡结构据此只保留到 Widgets 代码删完。
 
 **过渡结构**（2026-10-31 由 Claude 调整：原定从管理器抽出窗口与停靠表面两个接口，改为下面的监听方式，避免先大改 1300 多行的管理器视图代码、到 10.6 再删掉一半）
 
 - `WindowManager`、`LayoutModel`、命令和布局事务只有一份。管理器构造时选择呈现方式：`Widgets`（默认，现有窗口）或 `External`（不建任何 Widgets 视图；模型、命令、焦点状态和 `layoutChanged` 通知照常）。所有修改都经 `refresh()` 发出 `layoutChanged`，这是 Quick 视图的唯一更新来源。
 - 新增 `QuickWorkspace`：监听管理器，为每个模型窗口建 Quick 窗口，按模型搭建停靠表面（`GroupItem`、`RailItem`、分割树），用户操作调用管理器现有的公开接口（关闭、激活、移动、设比例等），不复制命令或布局规则。
 - 拖动的判断（命中、停靠引导、插入位置）先从 `DragController` 抽成不依赖控件的共用部分，Widgets 和 Quick 各自只做输入与原生移动的适配；原生移动用 `QWindow`。
-- 宿主内容：`External` 模式下 `addTab`、`splitPane` 不带 QWidget，内容由 `QuickWorkspace` 的内容工厂按窗格 ID 和描述创建，挂在 `ContentHost`；栏位同理。Muxora 用启动参数 `--quick` 选择 Quick，默认仍是 Widgets，直到 10.6。
+- 宿主内容：`External` 模式下 `addTab`、`splitPane` 不带 QWidget，内容由 `QuickWorkspace` 的内容工厂按窗格 ID 和描述创建，挂在 `ContentHost`；栏位同理。Muxora 原来用 `--quick` 选择 Quick，2026-11-04 起只用 Quick，见上面的切换决定。
 - 10.6 删除 Widgets 时，管理器里的视图代码整块删除，`External` 成为唯一模式，不留抽象层；`WindowManager` 随之移出 Widgets 库（在此之前 Quick 库经它链接 Widgets）。
 - 不在 Quick 窗口里嵌 QWidget，也不用原生子窗口遮挡 Quick 浮层。
 
@@ -49,7 +51,7 @@
    - 拖出成浮窗：管理器在 `External` 下建模型窗口，`QuickWorkspace` 建它的 Quick 窗口，之后用 `QWindow::startSystemMove()` 交给系统移动，回到标签栏上方时收回鼠标，与 Widgets 的原生移动规则相同。
    - 顺序：先抽共用命中并验证 Widgets，再做栏内换位与跨组移动，再做拖出浮窗和侧栏。
 6. 宿主内容和栏位的 Quick 接口，Muxora 占位内容迁移；输入法、焦点、显隐通知与按需创建保持。
-7. 完成条件：`--quick` 下两个组、窗格、分隔条和标签跨窗口移动都能完整使用；缺项不切换默认。
+7. 完成条件：两个组、窗格、分隔条和标签跨窗口移动都能完整使用。原定“缺项不切换默认”由用户 2026-11-04 的决定取代：先切换，缺的在 Quick 里补。
 
 ## 10.4 工具栏、侧栏、菜单与设置
 

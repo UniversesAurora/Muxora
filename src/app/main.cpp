@@ -22,7 +22,6 @@
 #include <QSignalBlocker>
 #include <QScopedValueRollback>
 #include <QTimer>
-#include <optional>
 
 int main(int argc, char* argv[])
 {
@@ -59,29 +58,19 @@ int main(int argc, char* argv[])
     parser.addOption({"screenshot", QCoreApplication::translate("Muxora", "Save a window screenshot after startup"), "path"});
     parser.addOption({"command", QCoreApplication::translate("Muxora", "Run a registered command after startup"), "id"});
     parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "Use a separate layout state directory"), "path"});
-    parser.addOption({"quick", QCoreApplication::translate("Muxora", "Show the windows with Qt Quick (in development)")});
     parser.process(app);
-    // Until 10.6 the Quick windows are opt-in. Both read and write the same
-    // layout file; Quick keeps the toolbar layouts it does not show yet.
-    const bool quick = parser.isSet("quick");
-    window_system::WindowManager windows(quick ? window_system::WindowManager::Presentation::External
-                                               : window_system::WindowManager::Presentation::Widgets);
+    // The windows are Qt Quick windows (phase 10). The layout file keeps the
+    // toolbar layouts they do not show yet.
+    window_system::WindowManager windows(window_system::WindowManager::Presentation::External);
     QQmlEngine qml;
-    std::optional<window_system::QuickWorkspace> workspace;
+    window_system::QuickWorkspace workspace(windows);
+    workspace.setContentFactory(muxora::quickPlaceholderFactory(windows, qml));
     QObject::connect(&interfaceAppearance, &window_system::InterfaceAppearanceController::appearanceChanged, &app, [&] {
         if (!preferences.saveInterfaceAppearance(interfaceAppearance.appearance())) {
             qWarning().noquote() << preferences.diagnostic();
             windows.setStatus(windows.context().window, preferences.diagnostic());
         }
     });
-    if (quick) {
-        workspace.emplace(windows);
-        workspace->setContentFactory(muxora::quickPlaceholderFactory(windows, qml));
-    } else {
-        windows.setContentFactory([&windows](const window_system::TabOptions& options, window_system::PaneId) {
-            return muxora::createPlaceholder(options, &windows);
-        });
-    }
     QObject::connect(&windows, &window_system::WindowManager::allWindowsClosed, &app, [&] {
         QTimer::singleShot(0, &app, [&] { if (windows.model().windows().isEmpty()) app.quit(); });
     });
@@ -174,13 +163,8 @@ int main(int argc, char* argv[])
     QObject::connect(&persistTimer, &QTimer::timeout, &app, save);
     persistTimer.start();
     if (parser.isSet("screenshot")) QTimer::singleShot(700, &app, [&] {
-        const auto window = windows.context().window;
-        if (workspace) {
-            auto* quickWindow = workspace->window(window);
-            if (quickWindow && !quickWindow->grabWindow().save(parser.value("screenshot"))) app.exit(2);
-        } else if (auto* widget = windows.windowWidget(window); widget && !widget->grab().save(parser.value("screenshot"))) {
-            app.exit(2);
-        }
+        auto* quickWindow = workspace.window(windows.context().window);
+        if (quickWindow && !quickWindow->grabWindow().save(parser.value("screenshot"))) app.exit(2);
     });
     if (parser.isSet("smoke")) QTimer::singleShot(1300, &app, [&] {
         const auto valid = windows.model().validate(); app.exit(valid.ok && !windows.model().windows().isEmpty() ? 0 : 3);

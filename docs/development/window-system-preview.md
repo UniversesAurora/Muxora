@@ -8,7 +8,7 @@
 
 ## 开发环境
 
-首个预览针对 Windows x64，采用 C++20、Qt 6.12 Widgets，使用 Qt 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](../adr/0009-msvc-toolchain.md)）。脚本自动载入 Visual Studio 的编译环境，并检查编译器不低于 Qt 套件构建时的版本。`-QtRoot` 指向具体套件，例如 `<Qt 安装目录>/6.12.0/msvc2022_64`。
+首个预览针对 Windows x64，采用 C++20、Qt 6.12（界面 2026-11-04 起用 Qt Quick），使用 Qt 的 MSVC 2022 64-bit 套件和本机 Visual Studio 2022 的 MSVC 编译器（[ADR 0009](../adr/0009-msvc-toolchain.md)）。脚本自动载入 Visual Studio 的编译环境，并检查编译器不低于 Qt 套件构建时的版本。`-QtRoot` 指向具体套件，例如 `<Qt 安装目录>/6.12.0/msvc2022_64`。
 
 ```powershell
 pwsh ./tools/build.ps1 -Configuration Debug -Run
@@ -27,7 +27,7 @@ pwsh ./tools/build.ps1 -Configuration Debug -QtRoot <Qt 安装目录>/6.12.0/msv
 | `-Test` | 构建后运行自动化测试；包含桌面层时按下文经 `quiet-desktop.ps1 -Elevate` 运行 |
 | `-TestLabel <regex>` | 与 `-Test` 一起使用，只运行指定层：`model`、`widget`、`desktop` 或 `model\|widget` |
 | `-Run` | 构建后启动 Muxora |
-| `-RunArguments <参数>` | 与 `-Run` 一起使用，把参数传给 Muxora，例如 `-RunArguments --quick` 打开 Quick 窗口。构建目录里的 `muxora.exe` 不带 Qt 运行库，直接双击或在普通终端运行会报找不到 Qt 文件，要经 `-Run` 启动 |
+| `-RunArguments <参数>` | 与 `-Run` 一起使用，把参数传给 Muxora，例如 `-RunArguments --fresh` 从初始布局开始。构建目录里的 `muxora.exe` 不带 Qt 运行库，直接双击或在普通终端运行会报找不到 Qt 文件，要经 `-Run` 启动 |
 | `-Package` | 收集 Muxora 所需运行文件到本地部署目录 |
 
 下列全量及完整验证命令须先按 [测试范围规则](testing-design.md#1-必须遵守的规则) 取得单独授权。桌面层会显示窗口并发送真实输入，所以经桌面隔离脚本运行：先收起其他应用窗口，测完再恢复。
@@ -146,7 +146,7 @@ Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持�
 | 界面语言 | 跟随系统、简体中文、English；Qt 翻译随程序嵌入，选择保存在 `User/settings.json`，重启后生效 |
 | Lua | 官方 Lua 5.5.1 随程序编译；用户启动脚本、命令与快捷键、工具条和状态项、窗口操作、事件和计时器。独立线程提供完整标准库、标准语义的 `require` 与协程宿主调用，模块顶层可直接调用 `muxora.*`；没有执行预算，保留显式停止和有界传输／队列。阻塞标准调用返回前不能中断，退出时限时等待；`os.exit` 走正常保存关闭流程，中文路径由 UTF-8 清单支持。范围见 [ADR 0008](../adr/0008-full-standard-library-for-local-scripts.md) 与 [Lua 指南](lua-guide.md) |
 | 保存恢复 | 只恢复当前格式的严格 JSON 布局，由宿主通过 `QSaveFile` 原子写入；行为设置、正常几何和最大化状态、两种窗口各自的工具条布局及四栏偏好随布局保存；关闭最后一个窗口前同步保存；显式标题和标签配色原样恢复。恢复大量标签时只物化当前可见组，切换标签再创建对应页面视图 |
-| 启动参数 | `--fresh` 从初始布局开始，`--state-dir <path>` 使用独立状态目录，`--command <id>` 执行已注册命令（例如 `muxora.exe --command window.settings`）；`--quick` 用开发中的 Qt Quick 窗口启动，有标题栏、中央和固定区域的标签组、自动隐藏侧栏、切换、分割、快捷键，以及标签在栏内、组间、窗口间的拖动、停靠引导、拖出成浮窗和拖浮窗标题停靠，落下时标签从指针处滑到位，拖到标签栏上时目标组显示被拖内容的画面；菜单、工具栏和状态栏尚未接入；布局与 Widgets 窗口读写同一个文件，进度见 [阶段 10.3](../roadmap/implementation/phase-10-qt-quick.md#103-quick-窗口内容与原生交互) |
+| 启动参数 | `--fresh` 从初始布局开始，`--state-dir <path>` 使用独立状态目录，`--command <id>` 执行已注册命令（例如 `muxora.exe --command window.settings`）。窗口是 Qt Quick 窗口（2026-11-04 起），有标题栏、中央和固定区域的标签组、自动隐藏侧栏、切换、分割、快捷键、全屏与禅模式，以及标签在栏内、组间、窗口间的拖动、停靠引导、拖出成浮窗和拖浮窗标题停靠；菜单、右键菜单、工具栏、状态栏、设置页和命令面板还没有 Quick 版本，在 10.4 重做，进度见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md)。对比原来的 Widgets 版用 `out/package/muxora-widgets-reference/muxora.exe`（`widgets-reference` 标签的 Release 包，自带 `data/` 独立保存布局；日常 Release 不覆盖它） |
 
 占位内容（工作区、文件浏览、会话和传输区域）只用于试用布局，不代表真实连接。
 
