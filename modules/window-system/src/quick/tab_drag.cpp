@@ -6,17 +6,32 @@
 #include "platform/window_order.hpp"
 #include <window_system/window_manager.hpp>
 
+#include <QCursor>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQuickWindow>
+#include <QTimer>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace window_system::quick {
 
 namespace {
-// Over a strip the torn-out window lets the strip's gap show through; the
-// tab-shaped carrier of the Widgets drag comes with the system move.
+// Over a strip the torn-out window lets the strip's gap show through, until
+// it turns into a tab as the Widgets carrier does.
 constexpr qreal overStripOpacity = 0.4;
+
+// The real primary button, which only real input holds.
+bool buttonHeld()
+{
+#ifdef Q_OS_WIN
+    return GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) & 0x8000;
+#else
+    return false;
+#endif
+}
 } // namespace
 
 TabDrag::TabDrag(WindowManager& manager, SurfaceLookup surfaces, Realize realize, QObject* parent)
@@ -51,11 +66,96 @@ void TabDrag::begin(WindowId window, GroupId group, const DragStart& start)
     grab_ = start.anchor;
     if (!grab_.sourceSize.isValid())
         grab_ = folder_.isNull() ? view->tabGrabAnchor(tab_, start.pressGlobal) : view->folderGrabAnchor(folder_, start.pressGlobal);
-    active_ = true; lifted_ = false; target_ = {};
     if (folder_.isNull()) surface->setDraggedTab(tab_); else surface->setDraggedFolder(folder_);
+    track(start.currentGlobal);
+}
+
+// As the Widgets drag: the window keeps its place under the pointer, or a
+// maximized one restores under it.
+void TabDrag::beginWindow(WindowId window, QPoint pressGlobal)
+{
+    const auto* record = manager_.model().window(window);
+    auto* surface = surfaces_(window);
+    auto* quickWindow = surface ? surface->window() : nullptr;
+    if (active_ || !record || record->kind != WindowKind::Floating || !quickWindow) return;
+    tab_ = {}; folder_ = {}; sticky_ = false;
+    sourceWindow_ = window; sourceGroup_ = {}; sourceIndex_ = -1;
+    detached_ = true; movingWindow_ = window; moving_ = quickWindow;
+    grab_ = {};
+    originalPosition_ = quickWindow->position();
+    originalMaximized_ = quickWindow->windowStates() & Qt::WindowMaximized;
+    offset_ = pressGlobal - quickWindow->position();
+    if (originalMaximized_) {
+        quickWindow->showNormal();
+        offset_ = QPoint(quickWindow->width() / 2, WindowChromeItem::rowHeight() / 2);
+    }
+    quickWindow->setMouseGrabEnabled(true);
+    track(pressGlobal);
+    queueSystemMove();
+}
+
+void TabDrag::track(QPoint global)
+{
+    active_ = true; lifted_ = false; target_ = {};
+    realInput_ = buttonHeld();
     qApp->installEventFilter(this);
     QGuiApplication::setOverrideCursor(Qt::ClosedHandCursor);
-    update(start.currentGlobal);
+    update(global);
+}
+
+// Entered on the next event-loop turn, outside the handler of the press or
+// move that started it.
+void TabDrag::queueSystemMove()
+{
+    QTimer::singleShot(0, this, [this, generation = moveGeneration_] {
+        if (generation == moveGeneration_) enterSystemMove();
+    });
+}
+
+void TabDrag::enterSystemMove()
+{
+    if (!active_ || !detached_ || !moving_ || systemMoving_ || !realInput_ || !buttonHeld()) return;
+    // The loop keeps the window where it is relative to the pointer, which
+    // may have moved on since the last event.
+    moving_->setPosition(QCursor::pos() - offset_);
+    moving_->setMouseGrabEnabled(false);
+    movingHandle_ = quintptr(moving_->winId());
+    qApp->installNativeEventFilter(this);
+    systemMoving_ = moving_->startSystemMove();
+    if (systemMoving_) return;
+    qApp->removeNativeEventFilter(this);
+    moving_->setMouseGrabEnabled(true);
+}
+
+void TabDrag::systemMoveEnded(quint64 generation)
+{
+    if (generation != moveGeneration_ || !active_) return;
+    systemMoving_ = false;
+    qApp->removeNativeEventFilter(this);
+    // The loop ends with the button still held only when Escape ended it.
+    if (buttonHeld()) cancel();
+    else finish(QCursor::pos());
+}
+
+bool TabDrag::nativeEventFilter(const QByteArray&, void* message, qintptr*)
+{
+#ifdef Q_OS_WIN
+    const auto* msg = static_cast<const MSG*>(message);
+    if (!systemMoving_ || quintptr(msg->hwnd) != movingHandle_) return false;
+    if (msg->message == WM_MOVING || msg->message == WM_MOVE) {
+        // Targets and their presentation change outside the system's handler.
+        if (std::exchange(updateQueued_, true)) return false;
+        QTimer::singleShot(0, this, [this, generation = moveGeneration_] {
+            updateQueued_ = false;
+            if (generation == moveGeneration_ && active_) update(QCursor::pos());
+        });
+    } else if (msg->message == WM_EXITSIZEMOVE) {
+        QTimer::singleShot(0, this, [this, generation = moveGeneration_] { systemMoveEnded(generation); });
+    }
+#else
+    Q_UNUSED(message);
+#endif
+    return false;
 }
 
 void TabDrag::cancel()
@@ -64,6 +164,12 @@ void TabDrag::cancel()
     const bool detached = detached_;
     const auto tab = tab_;
     stop();
+    if (detached && carried() == TabLayoutInput::Carried::Tabs) {
+        // A carried window goes back where it was.
+        if (!moving_) return;
+        if (originalMaximized_) moving_->showMaximized(); else moving_->setPosition(originalPosition_);
+        return;
+    }
     if (!detached || !manager_.model().tab(tab)) return;
     // The torn-out window closes once its tab is back.
     if (manager_.model().group(sourceGroup_)) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
@@ -76,6 +182,13 @@ void TabDrag::cancel()
 void TabDrag::stop()
 {
     active_ = false;
+    ++moveGeneration_;
+    updateQueued_ = false;
+#ifdef Q_OS_WIN
+    // A drag ended from elsewhere also ends the system's move loop.
+    if (std::exchange(systemMoving_, false)) ReleaseCapture();
+#endif
+    qApp->removeNativeEventFilter(this);
     qApp->removeEventFilter(this);
     QGuiApplication::restoreOverrideCursor();
     for (const auto id : manager_.model().windowOrder())
@@ -101,12 +214,14 @@ bool TabDrag::detach(QPoint global)
     offset_ = QPoint(window->width() / 2, WindowChromeItem::rowHeight() / 2);
     window->setPosition(global - offset_);
     window->setMouseGrabEnabled(true);
+    queueSystemMove();
     return true;
 }
 
 bool TabDrag::carriedExists() const
 {
-    return folder_.isNull() ? manager_.model().tab(tab_) != nullptr : manager_.model().folder(folder_) != nullptr;
+    if (!folder_.isNull()) return manager_.model().folder(folder_) != nullptr;
+    return tab_.isNull() ? manager_.model().window(movingWindow_) != nullptr : manager_.model().tab(tab_) != nullptr;
 }
 
 // As the Widgets drag: the tab leaves its strip only some way past it, a
@@ -150,7 +265,7 @@ void TabDrag::update(QPoint global)
     auto* sourceView = source ? source->group(sourceGroup_) : nullptr;
     if (detached_) {
         if (!moving_ || !manager_.model().window(movingWindow_)) return cancel();
-        moving_->setPosition(global - offset_);
+        if (!systemMoving_) moving_->setPosition(global - offset_);
         target_ = hit(global);
     } else if (!sourceView) {
         return cancel();
@@ -180,7 +295,7 @@ void TabDrag::update(QPoint global)
             target_.insertionFolder = view->insertionFolder();
             target_.preview = view->insertionPreviewRectGlobal();
         }
-        if (here && !insertion) surface->showGuides(target_, carriedCount(), false);
+        if (here && !insertion) surface->showGuides(target_, carriedCount(), carried() == TabLayoutInput::Carried::Tabs);
         else surface->clearGuides();
     }
     if (moving_) moving_->setOpacity(insertion ? overStripOpacity : 1);
@@ -197,12 +312,25 @@ void TabDrag::finish(QPoint global)
     const bool detached = detached_;
     stop();
     if (!target.accepted) {
-        if (detached && manager_.behavior().dragOutsideKind == WindowKind::Workbench) manager_.promoteWindow(source);
+        if (detached && !tab.isNull() && manager_.behavior().dragOutsideKind == WindowKind::Workbench) manager_.promoteWindow(source);
         return;
     }
     bool success = false;
     const bool inserting = target.insertionIndex >= 0;
     if (!folder.isNull()) success = manager_.moveTabFolderToGroup(folder, target.group, target.insertionIndex);
+    else if (tab.isNull()) {
+        // A carried window: all its tabs go.
+        if (target.toEdgeBar) success = manager_.execute(QStringLiteral("window.moveAllToEdgeBar"),
+            {{"source", source}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, source);
+        else if (target.toEdge) success = manager_.execute(QStringLiteral("window.moveAllToEdge"),
+            {{"source", source}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"pinned", target.pinned}}, source);
+        else {
+            QVariantMap args{{"source", source}, {"targetWindow", target.window}, {"group", target.group},
+                             {"placement", int(target.placement)}, {"index", target.insertionIndex}};
+            if (inserting) args.insert("sticky", target.insertionSticky);
+            success = manager_.execute(QStringLiteral("window.moveAllTabs"), args, source);
+        }
+    }
     else if (target.toEdgeBar)
         success = manager_.execute(QStringLiteral("workspace.moveTabToEdgeBar"),
             {{"tab", tab}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, source);
@@ -227,7 +355,9 @@ bool TabDrag::eventFilter(QObject* watched, QEvent* event)
     if (!active_ || !qobject_cast<QWindow*>(watched)) return QObject::eventFilter(watched, event);
     switch (event->type()) {
     case QEvent::MouseMove:
-        update(static_cast<QMouseEvent*>(event)->globalPosition().toPoint());
+        // Qt places a move through its window as the window is now. A
+        // carried window has moved since, so real input reads the pointer.
+        update(realInput_ ? QCursor::pos() : static_cast<QMouseEvent*>(event)->globalPosition().toPoint());
         return true;
     case QEvent::MouseButtonRelease:
         // The strip still sees the release and forgets its press.
@@ -246,7 +376,7 @@ bool TabDrag::eventFilter(QObject* watched, QEvent* event)
 QVector<CarriedLabel> TabDrag::carriedLabels() const
 {
     QVector<CarriedLabel> labels;
-    auto tabs = QVector<TabId>{tab_};
+    auto tabs = tab_.isNull() ? manager_.model().orderedTabs(movingWindow_) : QVector<TabId>{tab_};
     if (const auto* folder = manager_.model().folder(folder_)) {
         // A folder: its header, then its tabs while open.
         tabs = manager_.model().folderTabs(folder_);
@@ -260,12 +390,14 @@ QVector<CarriedLabel> TabDrag::carriedLabels() const
 
 TabLayoutInput::Carried TabDrag::carried() const
 {
-    return folder_.isNull() ? TabLayoutInput::Carried::Tab : TabLayoutInput::Carried::Folder;
+    if (!folder_.isNull()) return TabLayoutInput::Carried::Folder;
+    return tab_.isNull() ? TabLayoutInput::Carried::Tabs : TabLayoutInput::Carried::Tab;
 }
 
 int TabDrag::carriedCount() const
 {
-    return folder_.isNull() ? 1 : int(manager_.model().folderTabs(folder_).size());
+    if (!folder_.isNull()) return int(manager_.model().folderTabs(folder_).size());
+    return tab_.isNull() ? int(manager_.model().orderedTabs(movingWindow_).size()) : 1;
 }
 
 } // namespace window_system::quick

@@ -470,6 +470,59 @@ private slots:
         QTRY_VERIFY(!workspace.window(second));
     }
 
+    void aFloatingWindowDraggedByItsTitleJoinsAStrip()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto target = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Target"), QSize(520, 380)});
+        const auto other = manager.addTab(target, named(QStringLiteral("Other")));
+        const auto floating = manager.createWindow(WindowKind::Floating, {QStringLiteral("Floating"), QSize(360, 260)});
+        const auto first = manager.addTab(floating, named(QStringLiteral("First")));
+        const auto second = manager.addTab(floating, named(QStringLiteral("Second")));
+        QTRY_VERIFY(workspace.window(target) && workspace.window(floating));
+        auto* to = workspace.window(target);
+        auto* carried = workspace.window(floating);
+        const auto beside = to->frameGeometry().topRight() + QPoint(40, 0);
+        carried->setPosition(beside);
+        QVERIFY(QTest::qWaitForWindowExposed(to) && QTest::qWaitForWindowExposed(carried));
+        QTRY_COMPARE(carried->position(), beside);
+        auto* targetDock = to->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto group = manager.model().groupForTab(other);
+        QTRY_VERIFY(targetDock->group(group));
+
+        // The title starts the drag once the pointer has moved; the window
+        // then follows it, here by events to the window under the pointer.
+        const QPoint title(carried->width() / 2, quick::WindowChromeItem::rowHeight() / 2);
+        const auto drop = tabPoint(targetDock->group(group), other) + QPoint(30, 0);
+        const QRegularExpression outside(QStringLiteral("occurs outside target window"));
+        const auto carry = [&] {
+            QTest::mousePress(carried, Qt::LeftButton, {}, title);
+            QTest::mouseMove(carried, title + QPoint(-30, 0));
+            const auto start = to->mapFromGlobal(carried->mapToGlobal(title));
+            for (int step = 1; step <= 8; ++step)
+                if (!to->geometry().contains(to->mapToGlobal(start + (drop - start) * step / 8)))
+                    QTest::ignoreMessage(QtWarningMsg, outside);
+            moveHeld(to, start, drop);
+        };
+
+        // Escape puts the window back where it was.
+        carry();
+        QVERIFY(carried->position() != beside);
+        QVERIFY(!targetDock->group(group)->insertionPreviewRectGlobal().isEmpty());
+        QTest::keyClick(to, Qt::Key_Escape);
+        QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
+        QCOMPARE(carried->position(), beside);
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{other});
+
+        // Dropped on the strip, all its tabs join it and the window closes.
+        carry();
+        QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
+        QTRY_COMPARE(manager.model().group(group)->tabs, (QVector<TabId>{other, first, second}));
+        QVERIFY(!manager.model().window(floating));
+        QTRY_VERIFY(!workspace.window(floating));
+    }
+
     void shortcutsRunInTheirQuickWindow()
     {
         WindowManager manager(WindowManager::Presentation::External);

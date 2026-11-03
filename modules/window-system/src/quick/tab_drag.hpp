@@ -5,6 +5,7 @@
 #include "docking/drag_start.hpp"
 #include "docking/tab_strip_controller.hpp"
 
+#include <QAbstractNativeEventFilter>
 #include <QObject>
 #include <QPointer>
 #include <functional>
@@ -26,9 +27,12 @@ class DockSurfaceItem;
 // the strip opens its gap, over content the dock shows its guides. Targets
 // come from the shared dropTargetAt() and drops go through the manager.
 // Released elsewhere, the tab stays in its new window; Escape puts it back.
-// Folders do not tear out yet, and the window is moved here rather than by
-// the system's move loop (10.3, sub-step 5).
-class TabDrag final : public QObject {
+// A floating window dragged by its title is carried the same way, with all
+// its tabs. With the real mouse the carried window moves in the system's
+// move loop, as a title drag does, and targets follow the moves it reports.
+// Folders do not tear out yet, and over a strip the window stays a window
+// rather than turning into a tab (10.3, sub-step 5).
+class TabDrag final : public QObject, public QAbstractNativeEventFilter {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
     // Builds the Quick windows the model has now and returns this one's.
@@ -37,6 +41,8 @@ public:
     ~TabDrag() override;
     void beginTab(WindowId window, GroupId group, TabId tab, const DragStart& start);
     void beginFolder(WindowId window, GroupId group, FolderId folder, const DragStart& start);
+    // A floating window by its title, from where the button went down.
+    void beginWindow(WindowId window, QPoint pressGlobal);
     void cancel();
     [[nodiscard]] bool active() const { return active_; }
     [[nodiscard]] const DropTarget& target() const { return target_; }
@@ -47,9 +53,15 @@ protected:
     // Mouse moves and the release reach the window holding the mouse; they
     // are read there, before any item.
     bool eventFilter(QObject* watched, QEvent* event) override;
+    // The system's move loop reports the carried window's moves and its end.
+    bool nativeEventFilter(const QByteArray& type, void* message, qintptr* result) override;
 
 private:
     void begin(WindowId window, GroupId group, const DragStart& start);
+    void track(QPoint global);
+    void queueSystemMove();
+    void enterSystemMove();
+    void systemMoveEnded(quint64 generation);
     bool detach(QPoint global);
     void update(QPoint global);
     void finish(QPoint global);
@@ -78,6 +90,16 @@ private:
     QPointer<QQuickWindow> moving_;
     // The pointer's place in the moving window.
     QPoint offset_;
+    // A carried floating window's place, for Escape.
+    QPoint originalPosition_;
+    bool originalMaximized_ = false;
+    // Set when the drag starts with the real button held.
+    bool realInput_ = false;
+    bool systemMoving_ = false;
+    bool updateQueued_ = false;
+    quintptr movingHandle_ = 0;
+    // Ends queued by one move loop are ignored by the next drag.
+    quint64 moveGeneration_ = 0;
     DropTarget target_;
 };
 

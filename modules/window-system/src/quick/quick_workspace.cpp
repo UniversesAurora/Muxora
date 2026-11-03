@@ -46,6 +46,11 @@ public:
         chrome_->minimizeRequested = [this] { showMinimized(); };
         chrome_->maximizeRequested = [this] { windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen) ? showNormal() : showMaximized(); };
         chrome_->closeRequested = [this] { close(); };
+        chrome_->carriesTabs = [this] {
+            const auto* record = manager_.model().window(id_);
+            return record && record->kind == WindowKind::Floating;
+        };
+        chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, id, contentItem());
         dock->setTabDrag(&drag);
         connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {

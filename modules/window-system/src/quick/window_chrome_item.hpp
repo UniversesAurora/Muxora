@@ -6,6 +6,7 @@
 
 #include <QQuickItem>
 #include <functional>
+#include <optional>
 
 namespace window_system::quick {
 
@@ -15,7 +16,9 @@ class TabLabelTextItem;
 // A Quick window's header row, as the Widgets WindowHeader: the title in
 // the middle and the caption buttons at the outer edge. Menus and toolbars
 // join it with 10.4. Pressing the title moves the window; a double click
-// maximizes or restores it.
+// maximizes or restores it. A window whose title carries its tabs, as a
+// floating window's does, asks for that drag once the pointer has moved
+// the drag distance.
 class WindowChromeItem final : public QQuickItem {
     Q_OBJECT
 public:
@@ -30,10 +33,14 @@ public:
     std::function<void()> minimizeRequested;
     std::function<void()> maximizeRequested;
     std::function<void()> closeRequested;
+    std::function<bool()> carriesTabs;
+    std::function<void(QPoint pressGlobal)> carryRequested;
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
@@ -44,6 +51,8 @@ private:
     ButtonItem* close_;
     TabLabelTextItem* title_;
     QString titleText_;
+    // Where a carrying title was pressed, while it waits for the distance.
+    std::optional<QPoint> press_;
     CaptionButtonOrder order_ = CaptionButtonOrder::Windows;
     bool expanded_ = false;
 };

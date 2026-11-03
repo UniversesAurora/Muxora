@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <algorithm>
 
 namespace window_system::quick {
@@ -113,7 +114,23 @@ void WindowChromeItem::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton || !window()) return QQuickItem::mousePressEvent(event);
     event->accept();
-    window()->startSystemMove();
+    if (carriesTabs && carriesTabs()) press_ = event->globalPosition().toPoint();
+    else window()->startSystemMove();
+}
+
+void WindowChromeItem::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!press_) return QQuickItem::mouseMoveEvent(event);
+    event->accept();
+    if ((event->globalPosition().toPoint() - *press_).manhattanLength() < QGuiApplication::styleHints()->startDragDistance()) return;
+    const auto press = *std::exchange(press_, std::nullopt);
+    if (carryRequested) carryRequested(press);
+}
+
+void WindowChromeItem::mouseReleaseEvent(QMouseEvent* event)
+{
+    press_.reset();
+    QQuickItem::mouseReleaseEvent(event);
 }
 
 void WindowChromeItem::mouseDoubleClickEvent(QMouseEvent* event)

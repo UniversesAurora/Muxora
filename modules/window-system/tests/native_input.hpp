@@ -7,9 +7,9 @@
 // would then cancel its work). Every helper therefore refuses, and fails the
 // test, unless that window belongs to this test process.
 
-#include <QMenu>
 #include <QTest>
-#include <QWidget>
+#include <QWindow>
+#include <type_traits>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -47,7 +47,9 @@ inline QByteArray describeWindow(HWND handle)
 
 // Hold or release the real left button for native drag loops. A release is
 // still allowed after an assertion failed, so cleanup cannot leave it held.
-inline void leftButton(QWidget* target, bool pressed)
+// Targets are widgets or Quick windows.
+template <typename Target>
+void leftButton(Target* target, bool pressed)
 {
     if (pressed && QTest::currentTestFailed()) return;
 #ifdef Q_OS_WIN
@@ -66,13 +68,16 @@ inline void leftButton(QWidget* target, bool pressed)
 }
 
 // Moves the real pointer to a point of the target and optionally clicks it.
-inline void mouse(QWidget* target, QPoint local, bool click = false)
+template <typename Target>
+void mouse(Target* target, QPoint local, bool click = false)
 {
     if (QTest::currentTestFailed()) return;
 #ifdef Q_OS_WIN
-    auto* window = target->window();
-    const QPoint client = target->mapTo(window, local);
-    const qreal ratio = window->devicePixelRatioF();
+    QWindow* window = nullptr;
+    QPoint client = local;
+    if constexpr (std::is_base_of_v<QWindow, Target>) window = target;
+    else { window = target->window()->windowHandle(); client = target->mapTo(target->window(), local); }
+    const qreal ratio = window->devicePixelRatio();
     POINT point{qRound(client.x() * ratio), qRound(client.y() * ratio)};
     QVERIFY(ClientToScreen(reinterpret_cast<HWND>(window->winId()), &point));
     QVERIFY(SetCursorPos(point.x, point.y));
@@ -93,7 +98,8 @@ inline void mouse(QWidget* target, QPoint local, bool click = false)
 }
 
 // Presses and releases Escape, Tab or Space in the foreground window.
-inline void key(QWidget* target, Qt::Key key)
+template <typename Target>
+void key(Target* target, Qt::Key key)
 {
     if (QTest::currentTestFailed()) return;
 #ifdef Q_OS_WIN
