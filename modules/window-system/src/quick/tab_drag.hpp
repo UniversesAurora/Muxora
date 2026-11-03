@@ -3,6 +3,7 @@
 
 #include "docking/drop_target.hpp"
 #include "docking/drag_start.hpp"
+#include "docking/tab_drag_visual.hpp"
 #include "docking/tab_strip_controller.hpp"
 
 #include <QAbstractNativeEventFilter>
@@ -30,8 +31,9 @@ class DockSurfaceItem;
 // A floating window dragged by its title is carried the same way, with all
 // its tabs. With the real mouse the carried window moves in the system's
 // move loop, as a title drag does, and targets follow the moves it reports.
-// Folders do not tear out yet, and over a strip the window stays a window
-// rather than turning into a tab (10.3, sub-step 5).
+// Over a strip the window hides, the strip paints its tabs at the pointer,
+// and the drag takes the mouse back from the loop until the pointer leaves.
+// Folders do not tear out yet (10.3, sub-step 5).
 class TabDrag final : public QObject, public QAbstractNativeEventFilter {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
@@ -65,7 +67,12 @@ private:
     bool detach(QPoint global);
     void update(QPoint global);
     void finish(QPoint global);
-    void stop();
+    void stop(bool restoreCarrier = true);
+    [[nodiscard]] TabDragVisual carriedLabel(DockSurfaceItem& target);
+    void restoreCarrier();
+    void showCarrier();
+    void leaveSystemMove();
+    void releaseSystemMove();
     [[nodiscard]] DropTarget hit(QPoint global) const;
     [[nodiscard]] bool overSourceStrip(QPoint global) const;
     [[nodiscard]] bool carriedExists() const;
@@ -96,6 +103,10 @@ private:
     // Set when the drag starts with the real button held.
     bool realInput_ = false;
     bool systemMoving_ = false;
+    // Over a strip: the loop is ending and the drag takes the mouse back.
+    bool leavingSystemMove_ = false;
+    // The carried window shows only its tabs, in the target strip's look.
+    bool carrierCompact_ = false;
     bool updateQueued_ = false;
     quintptr movingHandle_ = 0;
     // Ends queued by one move loop are ignored by the next drag.

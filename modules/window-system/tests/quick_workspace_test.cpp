@@ -319,8 +319,12 @@ private slots:
         const auto second = manager.model().groupForTab(c);
         QVERIFY(second != first);
         QTRY_VERIFY(dock->group(second) && dock->group(second)->count() == 1 && dock->group(first)->count() == 2);
+        // The strip paints the carried label at the pointer and places the gap
+        // by the label's edges, as the Widgets strip does: a tab's width past
+        // the last tab's middle puts it after that tab.
         from = tabPoint(dock->group(first), a);
-        to = tabPoint(dock->group(second), c) + QPoint(30, 0);
+        const auto& secondStrip = dock->group(second)->tabBar()->controller();
+        to = tabPoint(dock->group(second), c) + QPoint(secondStrip.tabRect(secondStrip.indexOf(c)).width(), 0);
         QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
         moveHeld(quickWindow, from, to);
         QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
@@ -510,9 +514,15 @@ private slots:
         carry();
         QVERIFY(carried->position() != beside);
         QVERIFY(!targetDock->group(group)->insertionPreviewRectGlobal().isEmpty());
+        // Over the strip the window hides and the strip paints its tabs at
+        // the pointer.
+        QCOMPARE(carried->opacity(), 0.0);
+        QVERIFY(targetDock->group(group)->incomingRectGlobal().contains(to->mapToGlobal(drop)));
         QTest::keyClick(to, Qt::Key_Escape);
         QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
         QCOMPARE(carried->position(), beside);
+        QCOMPARE(carried->opacity(), 1.0);
+        QVERIFY(targetDock->group(group)->incomingRectGlobal().isEmpty());
         QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{other});
 
         // Dropped on the strip, all its tabs join it and the window closes.

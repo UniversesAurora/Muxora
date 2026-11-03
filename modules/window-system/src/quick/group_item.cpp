@@ -448,6 +448,50 @@ QRect GroupItem::insertionPreviewRectGlobal() const
     return QRect(bar_->mapToGlobal(QPointF(area.topLeft())).toPoint(), area.size()).intersected(stripRectGlobal());
 }
 
+void GroupItem::setDragPresentation(bool compact) { edit([&] { group_->setDragPresentation(compact, false); }); }
+
+bool GroupItem::setDragTabStyle(const GroupItem& target, bool sticky)
+{
+    bool changed = false;
+    edit([&] { changed = group_->setDragTabStyle(target.bar_->controller(), sticky); });
+    return changed;
+}
+
+QRect GroupItem::carrierBounds() const
+{
+    return bar_->controller().carrierBounds().translated(bar_->position().toPoint());
+}
+
+QPoint GroupItem::carrierAnchor() const { return bar_->controller().carrierAnchor() + bar_->position().toPoint(); }
+
+TabCarrierPiece GroupItem::carrierPiece(QPoint offset)
+{
+    return {offset + bar_->position().toPoint(), bar_->controller().carrierFrame()};
+}
+
+TabId GroupItem::currentTab() const
+{
+    const auto& strip = bar_->controller();
+    return strip.currentIndex() < 0 ? TabId{} : strip.tabData(strip.currentIndex()).toUuid();
+}
+
+QRect GroupItem::currentTabRect() const
+{
+    const auto& strip = bar_->controller();
+    return strip.currentIndex() < 0 ? QRect{} : strip.tabRect(strip.currentIndex()).translated(bar_->position().toPoint());
+}
+
+void GroupItem::setIncomingVisual(TabDragVisual visual, QPoint global)
+{
+    bar_->edit([&] { bar_->controller().setIncomingVisual(std::move(visual), bar_->mapFromGlobal(QPointF(global)).toPoint()); });
+}
+
+QRect GroupItem::incomingRectGlobal() const
+{
+    const auto area = bar_->controller().incomingRect();
+    return area.isEmpty() ? QRect{} : QRect(bar_->mapToGlobal(QPointF(area.topLeft())).toPoint(), area.size());
+}
+
 void GroupItem::geometryChange(const QRectF& now, const QRectF& previous)
 {
     QQuickItem::geometryChange(now, previous);

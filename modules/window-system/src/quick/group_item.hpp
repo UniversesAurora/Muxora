@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "docking/tab_drag_visual.hpp"
 #include "docking/tab_group_controller.hpp"
 #include <window_system/layout_model.hpp>
 
@@ -82,6 +83,20 @@ public:
     [[nodiscard]] bool insertionSticky() const;
     [[nodiscard]] FolderId insertionFolder() const;
     [[nodiscard]] QRect insertionPreviewRectGlobal() const;
+    // A carried window's strip shows only its tabs and takes the target
+    // strip's look (Widgets GroupTabs); the target then paints its label.
+    // Leaving the compact presentation restores the strip's own look.
+    void setDragPresentation(bool compact);
+    bool setDragTabStyle(const GroupItem& target, bool sticky);
+    // The strip's tabs as a carried label, in this item's coordinates.
+    [[nodiscard]] QRect carrierBounds() const;
+    [[nodiscard]] QPoint carrierAnchor() const;
+    [[nodiscard]] TabCarrierPiece carrierPiece(QPoint offset);
+    [[nodiscard]] TabId currentTab() const;
+    [[nodiscard]] QRect currentTabRect() const;
+    // An empty visual clears it.
+    void setIncomingVisual(TabDragVisual visual, QPoint global);
+    [[nodiscard]] QRect incomingRectGlobal() const;
 
     std::function<QQuickItem*(TabId)> pageRequested;
     std::function<void(int)> currentChanged;

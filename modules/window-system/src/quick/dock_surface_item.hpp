@@ -72,6 +72,14 @@ public:
                        TabLayoutInput::Carried kind);
     void showGuides(const DropTarget& target, int count, bool whole);
     void clearGuides();
+    // A carried window over another window's strip: its strips show only
+    // their tabs in that strip's look, and their label is painted there.
+    void setDragPresentation(bool compact);
+    bool setDragTabStyle(const DockSurfaceItem& target, GroupId group, bool sticky);
+    [[nodiscard]] TabDragVisual dragLabelVisual() const;
+    // The carried label at the pointer in one group's strip; a null group
+    // clears it.
+    void showIncoming(GroupId group, const TabDragVisual& visual, QPoint global);
     void clearDragPresentation();
 
 protected:
@@ -108,6 +116,7 @@ private:
     DockGuideItem* guides_;
     TabDrag* drag_ = nullptr;
     GroupId insertionGroup_;
+    GroupId incomingGroup_;
     int divider_ = 1;
     LayoutTree central_;
     std::array<PinnedRegion, 4> pinned_;

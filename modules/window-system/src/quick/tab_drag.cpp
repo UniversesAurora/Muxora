@@ -19,10 +19,6 @@
 namespace window_system::quick {
 
 namespace {
-// Over a strip the torn-out window lets the strip's gap show through, until
-// it turns into a tab as the Widgets carrier does.
-constexpr qreal overStripOpacity = 0.4;
-
 // The real primary button, which only real input holds.
 bool buttonHeld()
 {
@@ -114,7 +110,7 @@ void TabDrag::queueSystemMove()
 
 void TabDrag::enterSystemMove()
 {
-    if (!active_ || !detached_ || !moving_ || systemMoving_ || !realInput_ || !buttonHeld()) return;
+    if (!active_ || !detached_ || !moving_ || systemMoving_ || leavingSystemMove_ || !realInput_ || !buttonHeld()) return;
     // The loop keeps the window where it is relative to the pointer, which
     // may have moved on since the last event.
     moving_->setPosition(QCursor::pos() - offset_);
@@ -127,14 +123,38 @@ void TabDrag::enterSystemMove()
     moving_->setMouseGrabEnabled(true);
 }
 
+// As the Widgets drag: the system checks for losing the capture after a
+// message returns, so the loop ends by a release once it holds the capture.
+// Windows enters the loop before it takes the capture, so the release is
+// retried as the loop reports.
+void TabDrag::leaveSystemMove()
+{
+    leavingSystemMove_ = true;
+    releaseSystemMove();
+}
+
+void TabDrag::releaseSystemMove()
+{
+#ifdef Q_OS_WIN
+    QTimer::singleShot(0, this, [this, generation = moveGeneration_] {
+        if (generation == moveGeneration_ && leavingSystemMove_ && GetCapture() == reinterpret_cast<HWND>(movingHandle_))
+            ReleaseCapture();
+    });
+#endif
+}
+
 void TabDrag::systemMoveEnded(quint64 generation)
 {
     if (generation != moveGeneration_ || !active_) return;
     systemMoving_ = false;
     qApp->removeNativeEventFilter(this);
-    // The loop ends with the button still held only when Escape ended it.
-    if (buttonHeld()) cancel();
-    else finish(QCursor::pos());
+    const bool handingBack = std::exchange(leavingSystemMove_, false);
+    if (!buttonHeld()) return finish(QCursor::pos());
+    // Still held: over a strip the drag takes the mouse back; otherwise
+    // Escape ended the loop.
+    if (!handingBack) return cancel();
+    if (moving_) moving_->setMouseGrabEnabled(true);
+    update(QCursor::pos());
 }
 
 bool TabDrag::nativeEventFilter(const QByteArray&, void* message, qintptr*)
@@ -142,6 +162,10 @@ bool TabDrag::nativeEventFilter(const QByteArray&, void* message, qintptr*)
 #ifdef Q_OS_WIN
     const auto* msg = static_cast<const MSG*>(message);
     if (!systemMoving_ || quintptr(msg->hwnd) != movingHandle_) return false;
+    if (leavingSystemMove_) {
+        if (msg->message == WM_ENTERSIZEMOVE || msg->message == WM_MOVING || msg->message == WM_MOVE) releaseSystemMove();
+    }
+    if (leavingSystemMove_ && msg->message != WM_EXITSIZEMOVE) return false;
     if (msg->message == WM_MOVING || msg->message == WM_MOVE) {
         // Targets and their presentation change outside the system's handler.
         if (std::exchange(updateQueued_, true)) return false;
@@ -179,11 +203,12 @@ void TabDrag::cancel()
     manager_.activateTab(tab);
 }
 
-void TabDrag::stop()
+void TabDrag::stop(bool restoreCarrier)
 {
     active_ = false;
     ++moveGeneration_;
     updateQueued_ = false;
+    leavingSystemMove_ = false;
 #ifdef Q_OS_WIN
     // A drag ended from elsewhere also ends the system's move loop.
     if (std::exchange(systemMoving_, false)) ReleaseCapture();
@@ -193,12 +218,17 @@ void TabDrag::stop()
     QGuiApplication::restoreOverrideCursor();
     for (const auto id : manager_.model().windowOrder())
         if (auto* surface = surfaces_(id)) surface->clearDragPresentation();
-    if (moving_) {
-        moving_->setOpacity(1);
-        moving_->setMouseGrabEnabled(false);
-    }
+    if (moving_) moving_->setMouseGrabEnabled(false);
+    // A window dropped into a strip stays hidden until it closes.
+    if (restoreCarrier) showCarrier();
     lifted_ = false;
     target_ = {};
+}
+
+void TabDrag::showCarrier()
+{
+    restoreCarrier();
+    if (moving_) moving_->setOpacity(1);
 }
 
 // As the Widgets drag: the tab moves into a new floating window, which then
@@ -285,6 +315,7 @@ void TabDrag::update(QPoint global)
     }
     const bool insertion = target_.accepted && target_.insertionIndex >= 0 && !target_.toEdgeBar;
     const auto labels = carriedLabels();
+    TabDragVisual incoming;
     for (const auto id : manager_.model().windowOrder()) {
         auto* surface = surfaces_(id);
         if (!surface) continue;
@@ -294,11 +325,37 @@ void TabDrag::update(QPoint global)
             target_.insertionSticky = view->insertionSticky();
             target_.insertionFolder = view->insertionFolder();
             target_.preview = view->insertionPreviewRectGlobal();
+            if (detached_) incoming = carriedLabel(*surface);
         }
+        surface->showIncoming(here && !incoming.empty() ? target_.group : GroupId{}, incoming, global);
         if (here && !insertion) surface->showGuides(target_, carriedCount(), carried() == TabLayoutInput::Carried::Tabs);
         else surface->clearGuides();
     }
-    if (moving_) moving_->setOpacity(insertion ? overStripOpacity : 1);
+    if (incoming.empty()) restoreCarrier();
+    // Over a strip the strip paints the label and the window hides in place,
+    // keeping the mouse; elsewhere the system moves the window again.
+    if (moving_) moving_->setOpacity(incoming.empty() ? 1 : 0);
+    if (insertion && systemMoving_) leaveSystemMove();
+    else if (!insertion && detached_ && !systemMoving_) queueSystemMove();
+}
+
+// As the Widgets carrier: the window's strips show only their tabs, in the
+// target strip's look, and that picture is what the target paints.
+TabDragVisual TabDrag::carriedLabel(DockSurfaceItem& target)
+{
+    auto* carrier = surfaces_(movingWindow_);
+    if (!carrier) return {};
+    if (!std::exchange(carrierCompact_, true)) carrier->setDragPresentation(true);
+    carrier->setDragTabStyle(target, target_.group, target_.insertionSticky);
+    auto visual = carrier->dragLabelVisual();
+    if (grab_.sourceSize.isValid()) visual.sourceAnchor = grab_;
+    return visual;
+}
+
+void TabDrag::restoreCarrier()
+{
+    if (!std::exchange(carrierCompact_, false)) return;
+    if (auto* carrier = surfaces_(movingWindow_)) carrier->setDragPresentation(false);
 }
 
 void TabDrag::finish(QPoint global)
@@ -310,7 +367,10 @@ void TabDrag::finish(QPoint global)
     // Commands run in the window that holds the tab now.
     const auto source = detached_ ? movingWindow_ : sourceWindow_;
     const bool detached = detached_;
-    stop();
+    // A carrier hidden over the strip stays hidden while its tabs move out
+    // and the emptied window closes.
+    const bool hidden = carrierCompact_;
+    stop(!hidden);
     if (!target.accepted) {
         if (detached && !tab.isNull() && manager_.behavior().dragOutsideKind == WindowKind::Workbench) manager_.promoteWindow(source);
         return;
@@ -345,6 +405,8 @@ void TabDrag::finish(QPoint global)
     else success = manager_.moveTab(tab, target.group, target.placement, target.insertionIndex,
         inserting ? std::optional<bool>(target.insertionSticky) : std::nullopt,
         inserting ? std::optional<FolderId>(target.insertionFolder) : std::nullopt);
+    if (hidden && (!success || manager_.model().window(source))) showCarrier();
+    carrierCompact_ = false;
     if (!success) return;
     manager_.showWindow(target.window);
     if (!tab.isNull()) manager_.activateTab(tab);

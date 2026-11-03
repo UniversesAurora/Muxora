@@ -501,9 +501,58 @@ void DockSurfaceItem::showInsertion(GroupId group, int index, const QVector<Carr
 void DockSurfaceItem::showGuides(const DropTarget& target, int count, bool whole) { guides_->setTarget(target, count, whole); }
 void DockSurfaceItem::clearGuides() { guides_->clear(); }
 
+void DockSurfaceItem::setDragPresentation(bool compact)
+{
+    for (const auto& view : groups_) if (view) view->setDragPresentation(compact);
+}
+
+bool DockSurfaceItem::setDragTabStyle(const DockSurfaceItem& target, GroupId group, bool sticky)
+{
+    const auto* view = target.groups_.value(group).data();
+    if (!view) return false;
+    bool changed = false;
+    for (const auto& carried : groups_) if (carried) changed = carried->setDragTabStyle(*view, sticky) || changed;
+    return changed;
+}
+
+// As the Widgets DockSurface: every visible strip's tabs, in this item's
+// coordinates, with the first strip's anchor and current tab.
+TabDragVisual DockSurfaceItem::dragLabelVisual() const
+{
+    TabDragVisual visual;
+    QRect bounds;
+    QPoint anchor;
+    for (const auto& view : groups_) if (view && view->isVisible()) {
+        const auto rect = view->carrierBounds();
+        if (rect.isEmpty()) continue;
+        const auto offset = view->mapToItem(this, QPointF()).toPoint();
+        if (visual.pieces.isEmpty()) anchor = offset + view->carrierAnchor();
+        bounds |= rect.translated(offset);
+        visual.pieces.append(view->carrierPiece(offset));
+        if (visual.identity.isNull() && !view->currentTab().isNull()) {
+            visual.active = view->currentTabRect().translated(offset);
+            visual.identity = view->currentTab();
+        }
+    }
+    if (visual.empty()) return visual;
+    for (auto& piece : visual.pieces) piece.offset -= bounds.topLeft();
+    visual.size = bounds.size();
+    visual.anchor = anchor - bounds.topLeft();
+    visual.active.translate(-bounds.topLeft());
+    return visual;
+}
+
+void DockSurfaceItem::showIncoming(GroupId group, const TabDragVisual& visual, QPoint global)
+{
+    if (incomingGroup_ != group)
+        if (const auto previous = groups_.value(std::exchange(incomingGroup_, group))) previous->setIncomingVisual({}, {});
+    if (const auto view = groups_.value(group)) view->setIncomingVisual(visual, global);
+}
+
 void DockSurfaceItem::clearDragPresentation()
 {
     showInsertion({}, -1, {}, false, TabLayoutInput::Carried::Tab);
+    showIncoming({}, {}, {});
     clearGuides();
     for (const auto& view : groups_) if (view) {
         view->clearLiftedTab();

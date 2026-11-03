@@ -2,7 +2,8 @@
 // Phase 10.3: real held input drives the Quick drag through Windows' modal
 // move loop, which authored events cannot exercise. A torn-out tab's window
 // and a floating window dragged by its title both move in the system's loop,
-// keep the pointer where it took them, and drop into a strip.
+// keep the pointer where it took them, and drop into a strip. Over a strip
+// the drag takes the mouse back and the loop resumes once it leaves.
 #include "native_input.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
@@ -118,6 +119,14 @@ private slots:
         const auto start = tabPoint(dock->group(left), torn);
         const auto below = start + QPoint(40, 200);
         QQuickWindow* carrier = nullptr;
+        const auto onStrip = [&] { return tabPoint(dock->group(right), kept) + QPoint(30, 0); };
+        // Over the strip the drag holds the mouse, the window hides and the
+        // strip paints the tab at the pointer, beside its gap.
+        const auto overStrip = [&] {
+            auto* view = dock->group(right);
+            return !inSystemMove() && carrier->opacity() == 0.0 && !view->insertionPreviewRectGlobal().isEmpty()
+                && view->incomingRectGlobal().contains(QCursor::pos());
+        };
         auto error = drive(host, {
             {"press", [] { return true; }, [&] { pointer(host, start); native_input::leftButton(host, true); }},
             {"lift", [] { return QGuiApplication::mouseButtons().testFlag(Qt::LeftButton); },
@@ -126,9 +135,12 @@ private slots:
             {"system loop", [&] { return windowOf(torn) != window && inSystemMove(); },
              [&] { carrier = workspace.window(windowOf(torn)); pointer(host, below + QPoint(60, 30)); }},
             {"follow", [&] { return carrier && (titlePoint(carrier) - QCursor::pos()).manhattanLength() <= 2; },
-             [&] { pointer(host, tabPoint(dock->group(right), kept) + QPoint(30, 0)); }},
-            {"gap", [&] { return !dock->group(right)->insertionPreviewRectGlobal().isEmpty(); },
-             [&] { native_input::leftButton(host, false); }},
+             [&] { pointer(host, onStrip()); }},
+            {"strip", overStrip, [&] { pointer(host, below); }},
+            {"system loop again", [&] { return inSystemMove() && carrier->opacity() == 1.0
+                                            && dock->group(right)->incomingRectGlobal().isEmpty(); },
+             [&] { pointer(host, onStrip()); }},
+            {"strip again", overStrip, [&] { native_input::leftButton(host, false); }},
         });
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QTRY_COMPARE(manager.model().group(right)->tabs, (QVector<TabId>{kept, torn}));
