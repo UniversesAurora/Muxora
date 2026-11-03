@@ -12,6 +12,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQuickWindow>
+#include <QWheelEvent>
 #include <QTimer>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -319,14 +320,19 @@ bool TabDrag::overSourceStrip(QPoint global) const
     return (column ? strip.adjusted(-24, 0, 24, 0) : strip.adjusted(0, -28, 0, 28)).contains(global);
 }
 
-DropTarget TabDrag::hit(QPoint global) const
+WindowId TabDrag::windowAt(QPoint global) const
 {
     // The moving window is under the pointer; the target is below it.
     const auto* moving = moving_.data();
     auto* top = stackedWindowAt(global, [this, moving](const QWindow* candidate) {
         return candidate != moving && surfaces_(candidate->property("windowId").toUuid());
     });
-    const auto window = top ? top->property("windowId").toUuid() : WindowId{};
+    return top ? top->property("windowId").toUuid() : WindowId{};
+}
+
+DropTarget TabDrag::hit(QPoint global) const
+{
+    const auto window = windowAt(global);
     const auto* surface = surfaces_(window);
     if (!surface) return {};
     DropQuery query;
@@ -521,6 +527,17 @@ bool TabDrag::eventFilter(QObject* watched, QEvent* event)
         if (static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton)
             finish(static_cast<QMouseEvent*>(event)->globalPosition().toPoint());
         return false;
+    case QEvent::Wheel: {
+        // As the Widgets drag: the strip or rail under the pointer scrolls,
+        // whichever window holds the mouse.
+        const auto* wheel = static_cast<QWheelEvent*>(event);
+        const auto global = wheel->globalPosition().toPoint();
+        const auto delta = wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
+        auto* surface = surfaces_(windowAt(global));
+        if (!surface || !surface->scrollStripAt(global, delta, wheel->pixelDelta().isNull())) return false;
+        if (active_) update(lastGlobal_);
+        return true;
+    }
     case QEvent::KeyPress:
         if (static_cast<QKeyEvent*>(event)->key() != Qt::Key_Escape) return true;
         cancel();

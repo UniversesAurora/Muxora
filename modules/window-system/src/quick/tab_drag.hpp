@@ -79,6 +79,7 @@ private:
     void showCarrier();
     void leaveSystemMove();
     void releaseSystemMove();
+    [[nodiscard]] WindowId windowAt(QPoint global) const;
     [[nodiscard]] DropTarget hit(QPoint global) const;
     [[nodiscard]] bool overSourceStrip(QPoint global) const;
     [[nodiscard]] bool carriedExists() const;

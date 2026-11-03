@@ -23,6 +23,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QTest>
+#include <QWheelEvent>
 
 using namespace window_system;
 
@@ -430,6 +431,57 @@ private slots:
         QTRY_COMPARE(manager.model().group(targetGroup)->tabs, (QVector<TabId>{other, moving}));
         QCOMPARE(manager.model().group(sourceGroup)->tabs, QVector<TabId>{staying});
         QTRY_COMPARE(targetDock->group(targetGroup)->count(), 2);
+    }
+
+    void aDragScrollsTheStripUnderThePointer()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto source = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Source"), QSize(520, 380)});
+        const auto moving = manager.addTab(source, named(QStringLiteral("Moving")));
+        manager.addTab(source, named(QStringLiteral("Staying")));
+        const auto target = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Target"), QSize(520, 380)});
+        TabId first;
+        for (int index = 0; index < 16; ++index) {
+            const auto tab = manager.addTab(target, named(QStringLiteral("Long tab title %1").arg(index)));
+            if (first.isNull()) first = tab;
+        }
+        QVERIFY(manager.activateTab(first));
+        QTRY_VERIFY(workspace.window(source) && workspace.window(target));
+        auto* from = workspace.window(source);
+        auto* to = workspace.window(target);
+        to->setPosition(from->frameGeometry().topRight() + QPoint(40, 0));
+        QVERIFY(QTest::qWaitForWindowExposed(from) && QTest::qWaitForWindowExposed(to));
+        QTRY_COMPARE(to->position(), from->frameGeometry().topRight() + QPoint(40, 0));
+        auto* sourceDock = from->contentItem()->findChild<quick::DockSurfaceItem*>();
+        auto* targetDock = to->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto targetGroup = manager.model().groupForTab(first);
+        QTRY_VERIFY(sourceDock->group(manager.model().groupForTab(moving)) && targetDock->group(targetGroup));
+        const auto& strip = targetDock->group(targetGroup)->tabBar()->controller();
+        QTRY_VERIFY(strip.maximumScrollOffset() > 0);
+        const int before = strip.scrollOffset();
+
+        // Over the target's strip, a wheel step scrolls it, though the
+        // source window holds the mouse.
+        const QRegularExpression outside(QStringLiteral("occurs outside target window"));
+        const auto start = tabPoint(sourceDock->group(manager.model().groupForTab(moving)), moving);
+        const auto end = from->mapFromGlobal(to->mapToGlobal(tabPoint(targetDock->group(targetGroup), first) + QPoint(60, 0)));
+        QTest::mousePress(from, Qt::LeftButton, {}, start);
+        for (int step = 1; step <= 8; ++step)
+            if (!from->geometry().contains(from->mapToGlobal(start + (end - start) * step / 8)))
+                QTest::ignoreMessage(QtWarningMsg, outside);
+        moveHeld(from, start, end);
+        QVERIFY(!targetDock->group(targetGroup)->insertionPreviewRectGlobal().isEmpty());
+        QWheelEvent wheel(QPointF(end), QPointF(from->mapToGlobal(end)), QPoint(0, -120), QPoint(0, -120),
+                          Qt::LeftButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(from, &wheel);
+        QVERIFY(wheel.isAccepted());
+        QTRY_VERIFY(strip.scrollOffset() != before);
+        QTest::keyClick(from, Qt::Key_Escape);
+        QTest::ignoreMessage(QtWarningMsg, outside);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(manager.model().group(manager.model().groupForTab(moving))->windowId, source);
     }
 
     void aTabDraggedOutBecomesAFloatingWindow()

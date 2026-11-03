@@ -224,17 +224,21 @@ void TabBarItem::hoverLeaveEvent(QHoverEvent*) { prepare(); controller_.leave();
 
 void TabBarItem::wheelEvent(QWheelEvent* event)
 {
-    prepare();
     const auto delta = event->pixelDelta().isNull() ? event->angleDelta() / 3 : event->pixelDelta();
-    const auto decision = controller_.routeScroll(event->position().toPoint(), delta);
-    if (decision.action == TabWheelDecision::Action::Ignore) { event->ignore(); return; }
-    event->accept();
-    const bool smooth = event->pixelDelta().isNull();
+    event->setAccepted(scrollAt(event->position().toPoint(), delta, event->pixelDelta().isNull()));
+}
+
+bool TabBarItem::scrollAt(QPoint local, QPoint delta, bool smooth)
+{
+    prepare();
+    const auto decision = controller_.routeScroll(local, delta);
+    if (decision.action == TabWheelDecision::Action::Ignore) return false;
     const QPointer<TabBarItem> alive(this);
     emit scrollInputStarted();
-    if (!alive) return;
+    if (!alive) return true;
     (void)controller_.applyScroll(decision, smooth);
     synchronize();
+    return true;
 }
 
 void TabBarItem::keyPressEvent(QKeyEvent* event)

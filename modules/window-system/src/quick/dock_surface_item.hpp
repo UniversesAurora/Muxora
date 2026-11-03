@@ -92,6 +92,9 @@ public:
     // the carrier hides over that rail; no edge clears them.
     void showRailCarrier(std::optional<Edge> edge, const QVector<TabId>& tabs, QPoint global);
     void clearDragPresentation();
+    // A wheel step during a drag goes to the strip or rail under the
+    // pointer, as the Widgets surface routes it; false when none scrolls.
+    bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;

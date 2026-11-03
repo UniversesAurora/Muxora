@@ -97,6 +97,8 @@ public:
     // An empty visual clears it.
     void setIncomingVisual(TabDragVisual visual, QPoint global);
     [[nodiscard]] QRect incomingRectGlobal() const;
+    // A wheel step over the strip during a drag, as the strip takes one.
+    bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
     // A carrier's tab rectangles in this item's coordinates.
     [[nodiscard]] LabelPositions carrierTabRects() const;
     // Where the dropped tabs start, global: the lifted tab, or the incoming

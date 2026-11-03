@@ -486,6 +486,13 @@ void GroupItem::setIncomingVisual(TabDragVisual visual, QPoint global)
     bar_->edit([&] { bar_->controller().setIncomingVisual(std::move(visual), bar_->mapFromGlobal(QPointF(global)).toPoint()); });
 }
 
+bool GroupItem::scrollStripAt(QPoint global, QPoint delta, bool smooth)
+{
+    const auto local = bar_->mapFromGlobal(QPointF(global));
+    if (!bar_->isVisible() || !bar_->contains(local)) return false;
+    return bar_->scrollAt(local.toPoint(), delta, smooth);
+}
+
 LabelPositions GroupItem::carrierTabRects() const
 {
     LabelPositions positions;

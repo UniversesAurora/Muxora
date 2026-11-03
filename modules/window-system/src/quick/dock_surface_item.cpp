@@ -666,6 +666,18 @@ void DockSurfaceItem::clearDragPresentation()
     }
 }
 
+bool DockSurfaceItem::scrollStripAt(QPoint global, QPoint delta, bool smooth)
+{
+    for (const auto& view : groups_)
+        if (view && view->isVisible() && view->scrollStripAt(global, delta, smooth)) return true;
+    for (const auto& rail : rails_)
+        if (rail && rail->isVisible() && rail->viewportRectGlobal().contains(global)) {
+            rail->scrollByWheel(delta, smooth);
+            return true;
+        }
+    return false;
+}
+
 GroupItem* DockSurfaceItem::group(GroupId id) const { return groups_.value(id); }
 RailItem* DockSurfaceItem::rail(Edge edge) const { return rails_[size_t(edge)]; }
 PeekItem* DockSurfaceItem::peek() const { return peek_; }

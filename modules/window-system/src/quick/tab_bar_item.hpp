@@ -37,6 +37,9 @@ public:
     void setSmoothScrolling(bool enabled);
     [[nodiscard]] bool renderingAccepted() const { return renderingAccepted_; }
     [[nodiscard]] bool contains(const QPointF& point) const override;
+    // A wheel step at a point of the strip; false when the strip does not
+    // scroll there.
+    bool scrollAt(QPoint local, QPoint delta, bool smooth);
 
 signals:
     void currentChanged(int index);
