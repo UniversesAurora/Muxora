@@ -51,6 +51,7 @@ struct WindowManager::Private {
     QVector<CommandToolbar> customToolbars;
     QVector<StatusItem> customStatusItems;
     WindowId activeWindow;
+    WindowPresenter* presenter = nullptr;
     bool refreshing = false;
     bool destroying = false;
     int geometryUpdateDepth = 0;

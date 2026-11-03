@@ -53,6 +53,12 @@ public:
         chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, id, contentItem());
         dock->setTabDrag(&drag);
+        // As focus in a Widgets window does: the window the user turns to
+        // becomes the manager's current one.
+        connect(this, &QWindow::activeChanged, this, [this] {
+            if (!isActive() || manager_.context().window == id_) return;
+            if (const auto tab = manager_.context(id_).tab; !tab.isNull()) manager_.activateTab(tab);
+        });
         connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {
             chrome_->setExpanded(state == Qt::WindowMaximized || state == Qt::WindowFullScreen);
         });
@@ -105,7 +111,7 @@ private:
 
 } // namespace
 
-struct QuickWorkspace::Private {
+struct QuickWorkspace::Private final : WindowPresenter {
     Private(QuickWorkspace& workspace, WindowManager& owner)
         : manager(owner), drag(owner, [this](WindowId id) -> quick::DockSurfaceItem* {
               const auto window = windows.value(id);
@@ -120,12 +126,30 @@ struct QuickWorkspace::Private {
     quick::TabDrag drag;
     QSet<PaneId> panes;
     bool syncPending = false;
+
+    // As the Widgets manager shows its windows; a minimized window comes
+    // back in the state it had, maximized or full screen.
+    void showWindow(WindowId id) override
+    {
+        auto* window = windows.value(id).data();
+        if (!window) return;
+        if (window->windowStates() & Qt::WindowMinimized) window->setWindowStates(window->windowStates() & ~Qt::WindowMinimized);
+        window->show();
+        window->raise();
+        window->requestActivate();
+    }
+    bool isWindowMinimized(WindowId id) const override
+    {
+        const auto* window = windows.value(id).data();
+        return !window || !window->isVisible() || (window->windowStates() & Qt::WindowMinimized);
+    }
 };
 
 QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     : QObject(parent), d(std::make_unique<Private>(*this, manager))
 {
     Q_ASSERT(manager.presentation() == WindowManager::Presentation::External);
+    manager.setPresenter(d.get());
     // Model changes often come from a strip's own input handler; rebuilding
     // there would replace the strip under it. One sync per event-loop turn.
     connect(&manager, &WindowManager::layoutChanged, this, [this] {
@@ -137,6 +161,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
 
 QuickWorkspace::~QuickWorkspace()
 {
+    d->manager.setPresenter(nullptr);
     d->drag.cancel();
     for (const auto& window : std::as_const(d->windows)) delete window.data();
 }

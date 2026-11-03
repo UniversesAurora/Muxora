@@ -750,8 +750,19 @@ TabId WindowManager::extractPane(TabId tab, PaneId pane, WindowKind kind)
     d->options.insert(newWindow, options); d->visibilityKinds.insert(newWindow, kind); d->windowVisibility[newWindow].insert(kind, bars);
     refresh(); showWindow(newWindow); activateTab(extracted); return extracted;
 }
+void WindowManager::setPresenter(WindowPresenter* presenter)
+{
+    Q_ASSERT(d->presentation == Presentation::External || !presenter);
+    d->presenter = presenter;
+}
 void WindowManager::showWindow(WindowId window)
 {
+    if (d->presentation == Presentation::External) {
+        if (!d->model.window(window)) return;
+        if (d->presenter) d->presenter->showWindow(window);
+        d->activeWindow = window;
+        return;
+    }
     const QPointer<WindowManager> self(this);
     if (QPointer<WorkspaceWindow> widget = d->windows.value(window)) {
         // Resolve a new window's normal rectangle before starting ShowWindow.
@@ -772,6 +783,11 @@ void WindowManager::showWindow(WindowId window)
 bool WindowManager::activateWindow(WindowId window)
 {
     if (!d->model.window(window)) return false;
+    if (d->presentation == Presentation::External) {
+        showWindow(window);
+        const auto ctx = context(window);
+        return ctx.tab.isNull() || ctx.pane.isNull() || focusPane(ctx.tab, ctx.pane);
+    }
     const QPointer<WindowManager> self(this);
     QPointer<WorkspaceWindow> view = d->windows.value(window);
     if (!view) return false;
@@ -1251,8 +1267,10 @@ void WindowManager::focusWindowCycle(bool forward, const QString& scope)
     const auto ctx = context(); const auto* source = d->model.window(ctx.window); if (!source) return;
     QVector<WindowId> targets;
     for (const auto id : d->model.windowOrder()) {
-        const auto* record = d->model.window(id); auto* widget = windowWidget(id);
-        if (!widget || widget->isMinimized()) continue;
+        const auto* record = d->model.window(id);
+        if (d->presentation == Presentation::External) {
+            if (!d->presenter || d->presenter->isWindowMinimized(id)) continue;
+        } else if (auto* widget = windowWidget(id); !widget || widget->isMinimized()) continue;
         if (scope == "family" && record->familyId != source->familyId) continue;
         if (scope == "workbenches" && record->kind != WindowKind::Workbench) continue;
         targets << id;

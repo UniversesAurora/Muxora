@@ -52,6 +52,16 @@ struct WindowBehavior {
     ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
 };
 
+// The windows of a Presentation::External view, as the manager's window
+// requests reach them; the Quick workspace registers itself.
+class WindowPresenter {
+public:
+    virtual ~WindowPresenter() = default;
+    // Shows the window, restoring it when minimized, in front and active.
+    virtual void showWindow(WindowId window) = 0;
+    [[nodiscard]] virtual bool isWindowMinimized(WindowId window) const = 0;
+};
+
 class WorkspaceWindow;
 class DragController;
 class DockSurface;
@@ -74,6 +84,8 @@ public:
     explicit WindowManager(Presentation presentation, QObject* parent = nullptr);
     ~WindowManager() override;
     [[nodiscard]] Presentation presentation() const;
+    // External only; null removes it.
+    void setPresenter(WindowPresenter* presenter);
 
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           const WindowOptions& options = {}, WindowId owner = {});

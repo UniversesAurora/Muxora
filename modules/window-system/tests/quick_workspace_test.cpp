@@ -854,6 +854,50 @@ private slots:
         QTRY_VERIFY(!workspace.window(floating));
     }
 
+    void windowRequestsReachTheQuickWindows()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow(WindowKind::Workbench, {QStringLiteral("First"), QSize(420, 300)});
+        const auto firstTab = manager.addTab(first, named(QStringLiteral("One")));
+        const auto second = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Second"), QSize(420, 300)});
+        const auto secondTab = manager.addTab(second, named(QStringLiteral("Two")));
+        QTRY_VERIFY(workspace.window(first) && workspace.window(second));
+        auto* one = workspace.window(first);
+        auto* two = workspace.window(second);
+        two->setPosition(one->frameGeometry().topRight() + QPoint(40, 0));
+        QVERIFY(QTest::qWaitForWindowExposed(one) && QTest::qWaitForWindowExposed(two));
+
+        // Showing a minimized window brings it back in front and active.
+        one->showMinimized();
+        QTRY_VERIFY(one->windowStates() & Qt::WindowMinimized);
+        QVERIFY(manager.activateWindow(first));
+        QTRY_VERIFY(!(one->windowStates() & Qt::WindowMinimized));
+        QTRY_VERIFY(one->isActive());
+        QCOMPARE(manager.context().window, first);
+        QCOMPARE(manager.context().tab, firstTab);
+
+        // The window cycle goes to the next shown window and back.
+        QVERIFY(manager.execute(QStringLiteral("window.focusNext.all")));
+        QTRY_VERIFY(two->isActive());
+        QCOMPARE(manager.context().window, second);
+        QCOMPARE(manager.context().tab, secondTab);
+        QVERIFY(manager.execute(QStringLiteral("window.focusNext.all")));
+        QTRY_VERIFY(one->isActive());
+        QCOMPARE(manager.context().window, first);
+
+        // A minimized window is left out, and a window the user turns to
+        // becomes the current one.
+        one->showMinimized();
+        QTRY_VERIFY(one->windowStates() & Qt::WindowMinimized);
+        two->requestActivate();
+        QTRY_COMPARE(manager.context().window, second);
+        QVERIFY(manager.execute(QStringLiteral("window.focusNext.all")));
+        QCOMPARE(manager.context().window, second);
+        QVERIFY(one->windowStates() & Qt::WindowMinimized);
+    }
+
     void shortcutsRunInTheirQuickWindow()
     {
         WindowManager manager(WindowManager::Presentation::External);
