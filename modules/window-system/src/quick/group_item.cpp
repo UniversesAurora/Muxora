@@ -486,6 +486,28 @@ void GroupItem::setIncomingVisual(TabDragVisual visual, QPoint global)
     bar_->edit([&] { bar_->controller().setIncomingVisual(std::move(visual), bar_->mapFromGlobal(QPointF(global)).toPoint()); });
 }
 
+LabelPositions GroupItem::carrierTabRects() const
+{
+    LabelPositions positions;
+    const auto& strip = bar_->controller();
+    const auto offset = bar_->position().toPoint();
+    for (int index = 0; index < strip.count(); ++index) {
+        const auto area = strip.tabRect(index);
+        if (!area.isEmpty()) positions.insert(strip.tabData(index).toUuid(), area.translated(offset));
+    }
+    return positions;
+}
+
+LabelPositions GroupItem::captureDropPositions(std::optional<LabelPositions> carrier) const
+{
+    return bar_->controller().captureDropPositions(std::move(carrier));
+}
+
+void GroupItem::settleDroppedTabs(const LabelPositions& global)
+{
+    bar_->edit([&] { bar_->controller().settleFrom(global); });
+}
+
 QRect GroupItem::incomingRectGlobal() const
 {
     const auto area = bar_->controller().incomingRect();

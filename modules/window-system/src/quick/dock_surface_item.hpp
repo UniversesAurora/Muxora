@@ -77,6 +77,8 @@ public:
     void setDragPresentation(bool compact);
     bool setDragTabStyle(const DockSurfaceItem& target, GroupId group, bool sticky);
     [[nodiscard]] TabDragVisual dragLabelVisual() const;
+    // The carried tabs' rectangles relative to dragLabelVisual().
+    [[nodiscard]] LabelPositions carrierDropPositions() const;
     // The carried label at the pointer in one group's strip; a null group
     // clears it.
     void showIncoming(GroupId group, const TabDragVisual& visual, QPoint global);

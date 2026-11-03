@@ -13,6 +13,7 @@
 #include "quick/rail_item.hpp"
 #include "quick/tab_bar_item.hpp"
 #include "quick/window_chrome_item.hpp"
+#include "style/frame_motion.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 
@@ -652,9 +653,31 @@ private slots:
         QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{other});
 
         // Dropped on the strip, all its tabs join it and the window closes.
+        // They slide from where the strip painted them to their places.
         carry();
+        const auto painted = targetDock->group(group)->incomingRectGlobal();
         QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
         QTRY_COMPARE(manager.model().group(group)->tabs, (QVector<TabId>{other, first, second}));
+        if (motionAnimationsEnabled()) {
+            auto* bar = targetDock->group(group)->tabBar();
+            auto& strip = bar->controller();
+            const auto settling = [&] {
+                const auto frame = strip.presentationFrame();
+                return frame && frame->foreground ? frame->foreground->settling : QVector<TabStripLabelSample>{};
+            };
+            QTRY_VERIFY(!settling().isEmpty());
+            const QRect from(bar->mapFromGlobal(QPointF(painted.topLeft())).toPoint(), painted.size());
+            const auto final = strip.tabLayout().tabs.at(strip.indexOf(first)).translated(strip.tabOrigin());
+            const auto samples = settling();
+            const auto landing = std::find_if(samples.cbegin(), samples.cend(),
+                [&](const TabStripLabelSample& sample) { return sample.id == first; });
+            QVERIFY(landing != samples.cend());
+            QVERIFY(landing->label.parts.tab != final);
+            QVERIFY((from | final).contains(landing->label.parts.tab));
+            // Frames come from the display's refresh; see the lesson on
+            // measuring frames only while the screen is on.
+            QTRY_VERIFY_WITH_TIMEOUT(settling().isEmpty(), 1000);
+        }
         QVERIFY(!manager.model().window(floating));
         QTRY_VERIFY(!workspace.window(floating));
     }

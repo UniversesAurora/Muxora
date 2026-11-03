@@ -97,6 +97,13 @@ public:
     // An empty visual clears it.
     void setIncomingVisual(TabDragVisual visual, QPoint global);
     [[nodiscard]] QRect incomingRectGlobal() const;
+    // A carrier's tab rectangles in this item's coordinates.
+    [[nodiscard]] LabelPositions carrierTabRects() const;
+    // Where the dropped tabs start, global: the lifted tab, or the incoming
+    // label laid out as the carrier showed it. settleDroppedTabs() slides
+    // them from there once the model has moved them.
+    [[nodiscard]] LabelPositions captureDropPositions(std::optional<LabelPositions> carrier) const;
+    void settleDroppedTabs(const LabelPositions& global);
 
     std::function<QQuickItem*(TabId)> pageRequested;
     std::function<void(int)> currentChanged;

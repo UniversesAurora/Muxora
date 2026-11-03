@@ -417,6 +417,15 @@ void TabDrag::finish(QPoint global)
     // A carrier hidden over the strip stays hidden while its tabs move out
     // and the emptied window closes.
     const bool hidden = carrierCompact_;
+    // As the Widgets drop: the tabs slide in from where the drag showed
+    // them, the lifted tab or the label the strip painted for the carrier.
+    LabelPositions landing;
+    if (target.accepted && target.insertionIndex >= 0 && !target.toEdgeBar)
+        if (auto* surface = surfaces_(target.window)) if (auto* view = surface->group(target.group)) {
+            std::optional<LabelPositions> carrier;
+            if (hidden) if (auto* carried = surfaces_(movingWindow_)) carrier = carried->carrierDropPositions();
+            landing = view->captureDropPositions(std::move(carrier));
+        }
     stop(!hidden);
     if (!target.accepted) {
         if (detached && !tab.isNull() && manager_.behavior().dragOutsideKind == WindowKind::Workbench) manager_.promoteWindow(source);
@@ -457,6 +466,11 @@ void TabDrag::finish(QPoint global)
     if (!success) return;
     manager_.showWindow(target.window);
     if (!tab.isNull()) manager_.activateTab(tab);
+    if (landing.isEmpty()) return;
+    // The workspace rebuilds the strips on its queued sync; this runs after.
+    QMetaObject::invokeMethod(this, [this, window = target.window, group = target.group, landing] {
+        if (auto* surface = surfaces_(window)) if (auto* view = surface->group(group)) view->settleDroppedTabs(landing);
+    }, Qt::QueuedConnection);
 }
 
 bool TabDrag::eventFilter(QObject* watched, QEvent* event)

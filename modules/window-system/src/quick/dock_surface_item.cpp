@@ -553,6 +553,20 @@ TabDragVisual DockSurfaceItem::dragLabelVisual() const
     return visual;
 }
 
+LabelPositions DockSurfaceItem::carrierDropPositions() const
+{
+    QRect bounds;
+    for (const auto& view : groups_) if (view && view->isVisible())
+        bounds |= view->carrierBounds().translated(view->mapToItem(this, QPointF()).toPoint());
+    LabelPositions positions;
+    for (const auto& view : groups_) if (view && view->isVisible() && !view->carrierBounds().isEmpty()) {
+        const auto offset = view->mapToItem(this, QPointF()).toPoint() - bounds.topLeft();
+        const auto rects = view->carrierTabRects();
+        for (auto it = rects.cbegin(); it != rects.cend(); ++it) positions.insert(it.key(), it.value().translated(offset));
+    }
+    return positions;
+}
+
 void DockSurfaceItem::showIncoming(GroupId group, const TabDragVisual& visual, QPoint global)
 {
     if (incomingGroup_ != group)
