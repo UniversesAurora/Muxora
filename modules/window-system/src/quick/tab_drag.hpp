@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QPointer>
 #include <functional>
+#include <optional>
 
 class QQuickWindow;
 
@@ -43,6 +44,9 @@ public:
     ~TabDrag() override;
     void beginTab(WindowId window, GroupId group, TabId tab, const DragStart& start);
     void beginFolder(WindowId window, GroupId group, FolderId folder, const DragStart& start);
+    // An auto-hide tab from its rail: it moves among the rail's buttons, and
+    // tears out like a strip's tab once the pointer leaves the rail.
+    void beginRailTab(WindowId window, Edge edge, TabId tab, const DragStart& start);
     // A floating window by its title, from where the button went down.
     void beginWindow(WindowId window, QPoint pressGlobal);
     void cancel();
@@ -77,6 +81,7 @@ private:
     [[nodiscard]] bool overSourceStrip(QPoint global) const;
     [[nodiscard]] bool carriedExists() const;
     [[nodiscard]] QVector<CarriedLabel> carriedLabels() const;
+    [[nodiscard]] QVector<TabId> carriedTabs() const;
     [[nodiscard]] TabLayoutInput::Carried carried() const;
     [[nodiscard]] int carriedCount() const;
 
@@ -95,6 +100,8 @@ private:
     bool detached_ = false;
     WindowId movingWindow_;
     QPointer<QQuickWindow> moving_;
+    // The drag started on this rail.
+    std::optional<Edge> sourceRail_;
     // The pointer's place in the moving window.
     QPoint offset_;
     // A carried floating window's place, for Escape.

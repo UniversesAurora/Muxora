@@ -36,6 +36,9 @@ public:
     [[nodiscard]] bool isChecked() const { return checked_; }
     // Along the rail and across it; the rail sizes its buttons from this.
     [[nodiscard]] QSize preferredSize() const;
+    // The length along the rail of a button with this content, for a tab
+    // that is not on the rail yet.
+    [[nodiscard]] static int extent(const QString& title, bool icon, int number, int thickness, bool clip, int maximumTitleWidth);
 
     std::function<void()> clicked;
     std::function<void(DragStart)> drag;

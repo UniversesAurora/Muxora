@@ -108,6 +108,7 @@ void DockSurfaceItem::syncRails()
                     };
                     // Context menus arrive with the Quick menus (10.4).
                     button->close = [this, tab] { manager_.closeTab(tab); };
+                    button->drag = [this, edge, tab](DragStart start) { if (drag_) drag_->beginRailTab(window_, edge, tab, start); };
                     rail->addButton(button);
                 }
                 auto* pinAll = new ButtonItem(theme, rail);
@@ -477,8 +478,18 @@ QHash<Edge, QRect> DockSurfaceItem::edgeBarRects() const
 
 // Inserting among a rail's buttons comes with the sidebar drag; until then a
 // drop on a rail appends to it and the whole rail is the preview.
-int DockSurfaceItem::edgeTabInsertionIndex(Edge, QPoint, QRect) const { return -1; }
-QRect DockSurfaceItem::edgeTabInsertionRect(Edge edge, int) const { return edgeBarRects().value(edge); }
+int DockSurfaceItem::edgeTabInsertionIndex(Edge edge, QPoint global, QRect carriedGlobal) const
+{
+    const auto& rail = rails_[size_t(edge)];
+    return rail && rail->isVisible() ? rail->insertionIndex(global, carriedGlobal) : -1;
+}
+
+// The rail's gap once the drag has opened it, the whole rail before that.
+QRect DockSurfaceItem::edgeTabInsertionRect(Edge edge, int) const
+{
+    const auto gap = railInsertionRectGlobal(edge);
+    return gap.isEmpty() ? edgeBarRects().value(edge) : gap;
+}
 
 void DockSurfaceItem::setDraggedTab(TabId tab)
 {
@@ -549,10 +560,43 @@ void DockSurfaceItem::showIncoming(GroupId group, const TabDragVisual& visual, Q
     if (const auto view = groups_.value(group)) view->setIncomingVisual(visual, global);
 }
 
+void DockSurfaceItem::showRailInsertion(std::optional<Edge> edge, int index, int extent)
+{
+    if (railInsertion_ != edge)
+        if (const auto previous = std::exchange(railInsertion_, edge))
+            if (const auto& rail = rails_[size_t(*previous)]) rail->setInsertionPreview(-1, 0);
+    if (edge) if (const auto& rail = rails_[size_t(*edge)]) rail->setInsertionPreview(index, extent);
+}
+
+// As the Widgets DockSurface: the buttons the tabs would get there, with
+// the number the next button would show.
+int DockSurfaceItem::railExtent(Edge edge, const QVector<TabId>& tabs) const
+{
+    const auto appearance = manager_.tabAppearance();
+    const auto& rail = rails_[size_t(edge)];
+    int number = rail ? int(rail->buttons().size()) : 0;
+    int extent = 0;
+    for (const auto tab : tabs) if (const auto* record = manager_.model().tab(tab)) {
+        ++number;
+        extent += RailButtonItem::extent(record->title, appearance.showSidebarIcons && manager_.tabOptions(tab).showIcon,
+            appearance.showSidebarNumbers ? number : 0, manager_.interfaceTheme().metrics.edgeThickness,
+            appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
+    }
+    return extent;
+}
+
+QRect DockSurfaceItem::railInsertionRectGlobal(Edge edge) const
+{
+    const auto& rail = rails_[size_t(edge)];
+    return rail ? rail->insertionPreviewRect() : QRect{};
+}
+
 void DockSurfaceItem::clearDragPresentation()
 {
     showInsertion({}, -1, {}, false, TabLayoutInput::Carried::Tab);
     showIncoming({}, {}, {});
+    showRailInsertion({}, -1, 0);
+    for (const auto& rail : rails_) if (rail) rail->setDraggedTab({});
     clearGuides();
     for (const auto& view : groups_) if (view) {
         view->clearLiftedTab();

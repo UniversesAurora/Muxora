@@ -474,6 +474,71 @@ private slots:
         QTRY_VERIFY(!workspace.window(second));
     }
 
+    void railsTakeAndGiveDraggedTabs()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Rails"), QSize(560, 400)});
+        const auto moving = manager.addTab(window, named(QStringLiteral("Moving")));
+        manager.addTab(window, named(QStringLiteral("Staying")));
+        const auto first = manager.addTab(window, named(QStringLiteral("First")));
+        const auto second = manager.addTab(window, named(QStringLiteral("Second")));
+        QVERIFY(manager.moveTabToEdge(first, Edge::Left));
+        QVERIFY(manager.moveTabToEdge(second, Edge::Left));
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+        auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto central = manager.model().groupForTab(moving);
+        QTRY_VERIFY(dock->rail(Edge::Left) && dock->rail(Edge::Left)->buttons().size() == 2 && dock->group(central));
+        const auto rail = [&] { return manager.model().autoHiddenTabs(window, Edge::Left); };
+        // A rail button's point a quarter along it, in window coordinates.
+        const auto along = [&](TabId tab, qreal fraction) {
+            for (auto* button : dock->rail(Edge::Left)->buttons()) if (button->tab() == tab)
+                return button->mapToScene(QPointF(button->width() / 2, button->height() * fraction)).toPoint();
+            return QPoint();
+        };
+        const QRegularExpression outside(QStringLiteral("occurs outside target window"));
+
+        // A strip's tab dropped at the second button's leading quarter goes
+        // between the two; the rail opens a gap while the tab is over it.
+        auto from = tabPoint(dock->group(central), moving);
+        auto to = along(second, 0.25);
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
+        moveHeld(quickWindow, from, to);
+        QVERIFY(!dock->railInsertionRectGlobal(Edge::Left).isEmpty());
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
+        QTRY_COMPARE(rail(), (QVector<TabId>{first, moving, second}));
+        QVERIFY(dock->railInsertionRectGlobal(Edge::Left).isEmpty());
+
+        // Within its rail a tab moves among the buttons.
+        QTRY_VERIFY(dock->rail(Edge::Left) && dock->rail(Edge::Left)->buttons().size() == 3);
+        from = along(second, 0.5);
+        to = along(first, 0.25);
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
+        moveHeld(quickWindow, from, to);
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
+        QTRY_COMPARE(rail(), (QVector<TabId>{second, first, moving}));
+
+        // Off the rail it tears out; Escape puts it back on the rail.
+        QTRY_VERIFY(dock->rail(Edge::Left) && dock->rail(Edge::Left)->buttons().first()->tab() == second);
+        from = along(first, 0.5);
+        to = quickWindow->mapFromGlobal(quickWindow->frameGeometry().topRight() + QPoint(300, 120));
+        QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
+        for (int step = 1; step <= 8; ++step)
+            if (!quickWindow->geometry().contains(quickWindow->mapToGlobal(from + (to - from) * step / 8)))
+                QTest::ignoreMessage(QtWarningMsg, outside);
+        moveHeld(quickWindow, from, to);
+        const auto torn = manager.model().group(manager.model().groupForTab(first))->windowId;
+        QVERIFY(torn != window);
+        QTest::keyClick(quickWindow, Qt::Key_Escape);
+        QTest::ignoreMessage(QtWarningMsg, outside);
+        QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
+        QTRY_COMPARE(rail(), (QVector<TabId>{second, first, moving}));
+        QTRY_VERIFY(!workspace.window(torn));
+    }
+
     void aFolderTearsOutWithItsTabs()
     {
         WindowManager manager(WindowManager::Presentation::External);

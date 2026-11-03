@@ -8,6 +8,7 @@
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QPainterPath>
 #include <QStyleHints>
 #include <algorithm>
@@ -46,15 +47,27 @@ void RailButtonItem::setTitleClipping(bool enabled, int maximumWidth)
 }
 void RailButtonItem::setChecked(bool checked) { if (checked_ != checked) { checked_ = checked; refresh(); } }
 
-QSize RailButtonItem::preferredSize() const
+namespace {
+QSize measure(TabTitleLayout& layout, const QString& title, bool icon, int number, int thickness, bool clip, int maximumTitleWidth)
 {
     const auto font = QGuiApplication::font();
-    titleLayout_.prepare(title_, font, QGuiApplication::layoutDirection(), false);
-    const auto fitted = titleLayout_.fittedMetrics().size;
-    const int thickness = std::max(thickness_, fitted.height() + uiPixels(4));
-    const auto extent = edgeTabExtent(QFontMetrics(font), fitted.width(), !icon_.isNull(), number_, thickness,
-                                      clipTitles_, maximumTitleWidth_);
-    return vertical_ ? QSize(thickness, extent) : QSize(extent, thickness);
+    layout.prepare(title, font, QGuiApplication::layoutDirection(), false);
+    const auto fitted = layout.fittedMetrics().size;
+    const int across = std::max(thickness, fitted.height() + uiPixels(4));
+    return {edgeTabExtent(QFontMetrics(font), fitted.width(), icon, number, across, clip, maximumTitleWidth), across};
+}
+} // namespace
+
+QSize RailButtonItem::preferredSize() const
+{
+    const auto size = measure(titleLayout_, title_, !icon_.isNull(), number_, thickness_, clipTitles_, maximumTitleWidth_);
+    return vertical_ ? size.transposed() : size;
+}
+
+int RailButtonItem::extent(const QString& title, bool icon, int number, int thickness, bool clip, int maximumTitleWidth)
+{
+    TabTitleLayout layout;
+    return measure(layout, title, icon, number, thickness, clip, maximumTitleWidth).width();
 }
 
 void RailButtonItem::geometryChange(const QRectF& now, const QRectF& previous)
@@ -128,7 +141,11 @@ void RailButtonItem::mouseMoveEvent(QMouseEvent* event)
     const auto global = event->globalPosition().toPoint();
     if (!start_.crossedThreshold(global, QGuiApplication::styleHints()->startDragDistance())) return;
     pressed_ = false;
+    // A drag that tears the tab out rebuilds the rail and deletes this
+    // button; Qt then must not give it the grab.
+    const QPointer<RailButtonItem> alive(this);
     if (const auto callback = drag) callback(start_.movedTo(global));
+    if (!alive) event->ignore();
 }
 
 void RailButtonItem::mouseReleaseEvent(QMouseEvent* event)

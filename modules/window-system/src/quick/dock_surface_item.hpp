@@ -80,6 +80,11 @@ public:
     // The carried label at the pointer in one group's strip; a null group
     // clears it.
     void showIncoming(GroupId group, const TabDragVisual& visual, QPoint global);
+    // The gap in one rail; no edge closes it. The extent is the carried
+    // tabs' length along that rail.
+    void showRailInsertion(std::optional<Edge> edge, int index, int extent);
+    [[nodiscard]] int railExtent(Edge edge, const QVector<TabId>& tabs) const;
+    [[nodiscard]] QRect railInsertionRectGlobal(Edge edge) const;
     void clearDragPresentation();
 
 protected:
@@ -117,6 +122,7 @@ private:
     TabDrag* drag_ = nullptr;
     GroupId insertionGroup_;
     GroupId incomingGroup_;
+    std::optional<Edge> railInsertion_;
     int divider_ = 1;
     LayoutTree central_;
     std::array<PinnedRegion, 4> pinned_;

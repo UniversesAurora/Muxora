@@ -2,6 +2,7 @@
 #include "tab_drag.hpp"
 #include "dock_surface_item.hpp"
 #include "group_item.hpp"
+#include "rail_item.hpp"
 #include "window_chrome_item.hpp"
 #include "platform/window_order.hpp"
 #include <window_system/window_manager.hpp>
@@ -19,6 +20,8 @@
 namespace window_system::quick {
 
 namespace {
+constexpr qreal overRailOpacity = 0.4;
+
 // The real primary button, which only real input holds.
 bool buttonHeld()
 {
@@ -43,6 +46,20 @@ void TabDrag::beginTab(WindowId window, GroupId group, TabId tab, const DragStar
     begin(window, group, start);
 }
 
+void TabDrag::beginRailTab(WindowId window, Edge edge, TabId tab, const DragStart& start)
+{
+    auto* surface = surfaces_(window);
+    auto* rail = surface ? surface->rail(edge) : nullptr;
+    if (active_ || !rail || !manager_.model().tab(tab)) return;
+    tab_ = tab; folder_ = {}; sticky_ = false;
+    sourceWindow_ = window; sourceGroup_ = manager_.model().groupForTab(tab); sourceRail_ = edge;
+    sourceIndex_ = int(manager_.model().autoHiddenTabs(window, edge).indexOf(tab));
+    detached_ = false; movingWindow_ = {}; moving_ = nullptr;
+    grab_ = start.anchor;
+    rail->setDraggedTab(tab);
+    track(start.currentGlobal);
+}
+
 void TabDrag::beginFolder(WindowId window, GroupId group, FolderId folder, const DragStart& start)
 {
     if (active_ || !manager_.model().folder(folder)) return;
@@ -56,7 +73,7 @@ void TabDrag::begin(WindowId window, GroupId group, const DragStart& start)
     auto* surface = surfaces_(window);
     auto* view = surface ? surface->group(group) : nullptr;
     if (!view) return;
-    sourceWindow_ = window; sourceGroup_ = group;
+    sourceWindow_ = window; sourceGroup_ = group; sourceRail_.reset();
     // A folder's place is its first tab's.
     const auto first = tab_.isNull() ? manager_.model().folderTabs(folder_).value(0) : tab_;
     sourceIndex_ = int(manager_.model().group(group)->tabs.indexOf(first));
@@ -77,7 +94,7 @@ void TabDrag::beginWindow(WindowId window, QPoint pressGlobal)
     auto* quickWindow = surface ? surface->window() : nullptr;
     if (active_ || !record || record->kind != WindowKind::Floating || !quickWindow) return;
     tab_ = {}; folder_ = {}; sticky_ = false;
-    sourceWindow_ = window; sourceGroup_ = {}; sourceIndex_ = -1;
+    sourceWindow_ = window; sourceGroup_ = {}; sourceIndex_ = -1; sourceRail_.reset();
     detached_ = true; movingWindow_ = window; moving_ = quickWindow;
     grab_ = {};
     originalPosition_ = quickWindow->position();
@@ -205,7 +222,9 @@ void TabDrag::cancel()
         else manager_.moveTabFolderToWindow(folder_, sourceWindow_);
         return;
     }
-    if (group) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
+    // A rail's tab goes back to its rail, whose group may be gone.
+    if (sourceRail_) manager_.moveTabToEdgeBar(tab, sourceWindow_, *sourceRail_, sourceIndex_);
+    else if (group) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
     else manager_.moveTabToWindow(tab, sourceWindow_);
     manager_.showWindow(sourceWindow_);
     manager_.activateTab(tab);
@@ -294,7 +313,7 @@ DropTarget TabDrag::hit(QPoint global) const
     auto result = dropTargetAt(*surface, manager_.model(), query);
     if (!result.windowRect.isNull()) result.window = window;
     // A folder moves between strips only; the guides take single tabs.
-    if (!folder_.isNull() && result.insertionIndex < 0) result.accepted = false;
+    if (!folder_.isNull() && (result.insertionIndex < 0 || result.toEdge)) result.accepted = false;
     return result;
 }
 
@@ -303,10 +322,24 @@ void TabDrag::update(QPoint global)
     if (!carriedExists()) return cancel();
     auto* source = surfaces_(sourceWindow_);
     auto* sourceView = source ? source->group(sourceGroup_) : nullptr;
+    auto* sourceRail = source && sourceRail_ ? source->rail(*sourceRail_) : nullptr;
     if (detached_) {
         if (!moving_ || !manager_.model().window(movingWindow_)) return cancel();
         if (!systemMoving_) moving_->setPosition(global - offset_);
         target_ = hit(global);
+    } else if (sourceRail_) {
+        if (!sourceRail) return cancel();
+        // As the Widgets drag: the tab stays on its rail while over it.
+        if (sourceRail->viewportRectGlobal().contains(global)) {
+            target_ = {};
+            target_.window = sourceWindow_; target_.accepted = true;
+            target_.toEdge = target_.toEdgeBar = true; target_.edge = *sourceRail_;
+            target_.windowRect = source->globalRect();
+            target_.insertionIndex = sourceRail->insertionIndex(global);
+        } else {
+            if (!detach(global)) return cancel();
+            target_ = hit(global);
+        }
     } else if (!sourceView) {
         return cancel();
     } else if (overSourceStrip(global)) {
@@ -321,6 +354,7 @@ void TabDrag::update(QPoint global)
         target_ = hit(global);
     }
     const bool insertion = target_.accepted && target_.insertionIndex >= 0 && !target_.toEdgeBar;
+    const bool railInsertion = target_.accepted && target_.insertionIndex >= 0 && target_.toEdgeBar;
     const auto labels = carriedLabels();
     TabDragVisual incoming;
     for (const auto id : manager_.model().windowOrder()) {
@@ -335,15 +369,21 @@ void TabDrag::update(QPoint global)
             if (detached_) incoming = carriedLabel(*surface);
         }
         surface->showIncoming(here && !incoming.empty() ? target_.group : GroupId{}, incoming, global);
+        const auto rail = here && railInsertion ? std::optional<Edge>(target_.edge) : std::nullopt;
+        surface->showRailInsertion(rail, target_.insertionIndex, rail ? surface->railExtent(target_.edge, carriedTabs()) : 0);
+        if (rail) target_.preview = surface->railInsertionRectGlobal(target_.edge);
         if (here && !insertion) surface->showGuides(target_, carriedCount(), carried() == TabLayoutInput::Carried::Tabs);
         else surface->clearGuides();
     }
     if (incoming.empty()) restoreCarrier();
     // Over a strip the strip paints the label and the window hides in place,
     // keeping the mouse; elsewhere the system moves the window again.
-    if (moving_) moving_->setOpacity(incoming.empty() ? 1 : 0);
-    if (insertion && systemMoving_) leaveSystemMove();
-    else if (!insertion && detached_ && !systemMoving_) queueSystemMove();
+    // Over a rail the window lets the gap show through, until it takes the
+    // shape of a rail button as the Widgets carrier does.
+    if (moving_) moving_->setOpacity(!incoming.empty() ? 0 : railInsertion ? overRailOpacity : 1);
+    const bool placing = insertion || railInsertion;
+    if (placing && systemMoving_) leaveSystemMove();
+    else if (!placing && detached_ && !systemMoving_) queueSystemMove();
 }
 
 // As the Widgets carrier: the window's strips show only their tabs, in the
@@ -445,16 +485,21 @@ bool TabDrag::eventFilter(QObject* watched, QEvent* event)
 QVector<CarriedLabel> TabDrag::carriedLabels() const
 {
     QVector<CarriedLabel> labels;
-    auto tabs = tab_.isNull() ? manager_.model().orderedTabs(movingWindow_) : QVector<TabId>{tab_};
+    auto tabs = carriedTabs();
     if (const auto* folder = manager_.model().folder(folder_)) {
         // A folder: its header, then its tabs while open.
-        tabs = manager_.model().folderTabs(folder_);
         labels.append({folder->name, false, true, folder->collapsed, int(tabs.size())});
         if (folder->collapsed) return labels;
     }
     for (const auto id : tabs) if (const auto* record = manager_.model().tab(id))
         labels.append({record->title, manager_.tabOptions(id).showIcon});
     return labels;
+}
+
+QVector<TabId> TabDrag::carriedTabs() const
+{
+    if (!folder_.isNull()) return manager_.model().folderTabs(folder_);
+    return tab_.isNull() ? manager_.model().orderedTabs(movingWindow_) : QVector<TabId>{tab_};
 }
 
 TabLayoutInput::Carried TabDrag::carried() const
@@ -465,8 +510,7 @@ TabLayoutInput::Carried TabDrag::carried() const
 
 int TabDrag::carriedCount() const
 {
-    if (!folder_.isNull()) return int(manager_.model().folderTabs(folder_).size());
-    return tab_.isNull() ? int(manager_.model().orderedTabs(movingWindow_).size()) : 1;
+    return int(carriedTabs().size());
 }
 
 } // namespace window_system::quick
