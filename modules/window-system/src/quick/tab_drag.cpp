@@ -311,8 +311,6 @@ DropTarget TabDrag::hit(QPoint global) const
     query.edgeThickness = manager_.interfaceTheme().metrics.edgeThickness;
     auto result = dropTargetAt(*surface, manager_.model(), query);
     if (!result.windowRect.isNull()) result.window = window;
-    // A folder moves between strips only; the guides take single tabs.
-    if (!folder_.isNull() && (result.insertionIndex < 0 || result.toEdge)) result.accepted = false;
     return result;
 }
 
@@ -434,9 +432,12 @@ void TabDrag::finish(QPoint global)
     }
     bool success = false;
     const bool inserting = target.insertionIndex >= 0;
-    if (!folder.isNull()) success = manager_.moveTabFolderToGroup(folder, target.group, target.insertionIndex);
+    if (!folder.isNull() && inserting && !target.toEdgeBar)
+        success = manager_.moveTabFolderToGroup(folder, target.group, target.insertionIndex);
     else if (tab.isNull()) {
-        // A carried window: all its tabs go.
+        // A carried window, or a torn-out folder's, as the Widgets drag:
+        // all its tabs go. A folder keeps its group by the guides; a rail
+        // holds no folders and takes its tabs one by one.
         if (target.toEdgeBar) success = manager_.execute(QStringLiteral("window.moveAllToEdgeBar"),
             {{"source", source}, {"targetWindow", target.window}, {"edge", int(target.edge)}, {"index", target.insertionIndex}}, source);
         else if (target.toEdge) success = manager_.execute(QStringLiteral("window.moveAllToEdge"),
