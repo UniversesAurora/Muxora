@@ -614,7 +614,8 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
     auto* menu = menuAt(bar, {"view", sidebar ? "sidebarAppearance" : "tabBar"}); QVERIFY(menu);
     const QStringList expected = sidebar ? QStringList{"presentation.toggleSidebarIcons", "presentation.toggleSidebarNumbers", "presentation.toggleSidebarTitleClipping"}
         : QStringList{"presentation.toggleIcons", "presentation.toggleNewTabButton", "presentation.toggleNumbers",
-            "presentation.toggleTitleClipping", "presentation.toggleMultiline", "presentation.toggleWheelExpandRows"};
+            "presentation.toggleTitleClipping", "presentation.toggleMultiline", "presentation.toggleAllRows",
+            "presentation.toggleStickyMultiline", "presentation.toggleStickyAllRows", "presentation.toggleWheelExpandRows"};
     QCOMPARE(ids(menu), expected);
     QHash<QString, int> occurrences;
     for (auto* root : bar->actions()) if (root->menu()) walk(root->menu(), occurrences);
@@ -674,9 +675,10 @@ void MenuStructureTest::wheelRowsRequireMultilineAndResetWithIt()
     QCOMPARE(changes.count(), 0); QVERIFY(!manager.tabAppearance().multiline && !manager.tabAppearance().wheelExpandRows);
     multiline->trigger(); QTRY_VERIFY(manager.tabAppearance().multiline);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(multiline->isChecked());
-    // The wheel needs collapsing rows too (tab strip design 3.4).
+    // The wheel needs collapsing rows too (tab strip design 3.4): rows
+    // collapse once they are no longer all shown.
     QVERIFY(!wheel->isEnabled());
-    QVERIFY(manager.executeInContext("presentation.setRowExpansion", [&] { auto c = manager.context(window); c.args.insert("mode", "push"); return c; }()));
+    QVERIFY(manager.executeInContext("presentation.toggleAllRows", [&] { auto c = manager.context(window); c.args.insert("visible", false); return c; }()));
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isEnabled());
     wheel->trigger(); QTRY_VERIFY(manager.tabAppearance().wheelExpandRows);
     QMetaObject::invokeMethod(menu, "aboutToShow"); QVERIFY(wheel->isChecked());

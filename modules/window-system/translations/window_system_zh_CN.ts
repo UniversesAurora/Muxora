@@ -636,8 +636,8 @@
         <translation>标签位置命令需要 top/bottom 参数；普通标签栏和固定侧栏分别通过设置或 API 调整</translation>
     </message>
     <message>
-        <source>The row collapse command requires a mode; choose it from the tab bar context menu or settings</source>
-        <translation>收起标签行命令需要指定方式；请在标签栏右键菜单或设置中选择</translation>
+        <source>The row expansion command requires a mode; choose it from the tab bar context menu or settings</source>
+        <translation>展开标签行命令需要指定方式；请在标签栏右键菜单或设置中选择</translation>
     </message>
     <message>
         <source>Available in the Window menu family list and window switcher</source>

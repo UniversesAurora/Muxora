@@ -638,8 +638,8 @@
         <translation>The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API</translation>
     </message>
     <message>
-        <source>The row collapse command requires a mode; choose it from the tab bar context menu or settings</source>
-        <translation>The row collapse command requires a mode; choose it from the tab bar context menu or settings</translation>
+        <source>The row expansion command requires a mode; choose it from the tab bar context menu or settings</source>
+        <translation>The row expansion command requires a mode; choose it from the tab bar context menu or settings</translation>
     </message>
     <message>
         <source>Available in the Window menu family list and window switcher</source>

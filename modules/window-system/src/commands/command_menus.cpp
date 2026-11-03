@@ -156,6 +156,7 @@ const Items& layout(CommandMenuSurface surface)
                 command("window.tabBars.toggle"), command("window.sideBars.toggle")}),
             group("view.tabAppearance", "tabBar", QT_TRANSLATE_NOOP("WindowSystem", "Tab bar"), {command("presentation.toggleIcons"), command("presentation.toggleNewTabButton"),
                 command("presentation.toggleNumbers"), command("presentation.toggleTitleClipping"), separator(), command("presentation.toggleMultiline"),
+                command("presentation.toggleAllRows"), command("presentation.toggleStickyMultiline"), command("presentation.toggleStickyAllRows"),
                 command("presentation.toggleWheelExpandRows")}),
             group("view.sidebarAppearance", "sidebarAppearance", QT_TRANSLATE_NOOP("WindowSystem", "Sidebar tabs"), {command("presentation.toggleSidebarIcons"), command("presentation.toggleSidebarNumbers"),
                 command("presentation.toggleSidebarTitleClipping")}),
@@ -334,8 +335,8 @@ QString applicationMenuExclusion(const QString& id)
     if (id == "runCommands") return QCoreApplication::translate("WindowSystem", "Parameterized composite; configured in the keyboard shortcuts editor");
     if (id == "presentation.setCentralPlacement" || id == "presentation.setPinnedPlacement")
         return QCoreApplication::translate("WindowSystem", "The tab position command requires top/bottom; central and pinned sidebar bars are configured independently through settings or the API");
-    if (id == "presentation.setRowCollapse")
-        return QCoreApplication::translate("WindowSystem", "The row collapse command requires a mode; choose it from the tab bar context menu or settings");
+    if (id == "presentation.setRowExpansion")
+        return QCoreApplication::translate("WindowSystem", "The row expansion command requires a mode; choose it from the tab bar context menu or settings");
     if (id == "window.activate") return QCoreApplication::translate("WindowSystem", "Available in the Window menu family list and window switcher");
     if (id == "window.setTitle") return QCoreApplication::translate("WindowSystem", "The host, a script, or command arguments supply the window title");
     if (id == "window.statusItem.setVisible") return QCoreApplication::translate("WindowSystem", "Show or hide individual items from the status bar context menu");
