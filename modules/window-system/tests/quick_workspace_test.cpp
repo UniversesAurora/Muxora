@@ -474,6 +474,67 @@ private slots:
         QTRY_VERIFY(!workspace.window(second));
     }
 
+    void aFolderTearsOutWithItsTabs()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto source = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Source"), QSize(520, 380)});
+        const auto kept = manager.addTab(source, named(QStringLiteral("Kept")));
+        const auto first = manager.addTab(source, named(QStringLiteral("First")));
+        const auto second = manager.addTab(source, named(QStringLiteral("Second")));
+        const auto folder = manager.createTabFolder({first, second}, QStringLiteral("Pair"));
+        QVERIFY(!folder.isNull());
+        QTRY_VERIFY(workspace.window(source));
+        auto* from = workspace.window(source);
+        QVERIFY(QTest::qWaitForWindowExposed(from));
+        auto* dock = from->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto group = manager.model().groupForTab(kept);
+        QTRY_VERIFY(dock->group(group) && dock->group(group)->count() == 3);
+        const auto header = [&] {
+            auto* bar = dock->group(group)->tabBar();
+            return bar->mapToScene(QPointF(bar->controller().folderHeaderRect(0).center())).toPoint();
+        };
+        const auto windowOf = [&](TabId tab) { return manager.model().group(manager.model().groupForTab(tab))->windowId; };
+        const QRegularExpression outside(QStringLiteral("occurs outside target window"));
+        const auto tearOut = [&] {
+            const auto start = header();
+            const auto end = from->mapFromGlobal(from->frameGeometry().topRight() + QPoint(300, 120));
+            QTest::mousePress(from, Qt::LeftButton, {}, start);
+            for (int step = 1; step <= 8; ++step)
+                if (!from->geometry().contains(from->mapToGlobal(start + (end - start) * step / 8)))
+                    QTest::ignoreMessage(QtWarningMsg, outside);
+            moveHeld(from, start, end);
+            return end;
+        };
+
+        // Out of the strip the folder moves whole into a new window; Escape
+        // puts it back where it was.
+        auto end = tearOut();
+        const auto created = windowOf(first);
+        QVERIFY(created != source);
+        QCOMPARE(windowOf(second), created);
+        QCOMPARE(manager.model().tab(first)->folder, folder);
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{kept});
+        QTest::keyClick(from, Qt::Key_Escape);
+        QTest::ignoreMessage(QtWarningMsg, outside);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(manager.model().group(group)->tabs, (QVector<TabId>{kept, first, second}));
+        QCOMPARE(manager.model().tab(second)->folder, folder);
+        QTRY_VERIFY(!workspace.window(created));
+
+        // Released outside, it stays in its window, still a folder.
+        QTRY_VERIFY(dock->group(group) && dock->group(group)->count() == 3);
+        end = tearOut();
+        QTest::ignoreMessage(QtWarningMsg, outside);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, end);
+        QTest::qWait(50);
+        const auto torn = windowOf(first);
+        QVERIFY(torn != source);
+        QCOMPARE(manager.model().tab(second)->folder, folder);
+        QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{kept});
+    }
+
     void aFloatingWindowDraggedByItsTitleJoinsAStrip()
     {
         WindowManager manager(WindowManager::Presentation::External);

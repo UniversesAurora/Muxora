@@ -57,7 +57,9 @@ void TabDrag::begin(WindowId window, GroupId group, const DragStart& start)
     auto* view = surface ? surface->group(group) : nullptr;
     if (!view) return;
     sourceWindow_ = window; sourceGroup_ = group;
-    sourceIndex_ = tab_.isNull() ? -1 : int(manager_.model().group(group)->tabs.indexOf(tab_));
+    // A folder's place is its first tab's.
+    const auto first = tab_.isNull() ? manager_.model().folderTabs(folder_).value(0) : tab_;
+    sourceIndex_ = int(manager_.model().group(group)->tabs.indexOf(first));
     detached_ = false; movingWindow_ = {}; moving_ = nullptr;
     grab_ = start.anchor;
     if (!grab_.sourceSize.isValid())
@@ -194,11 +196,17 @@ void TabDrag::cancel()
         if (originalMaximized_) moving_->showMaximized(); else moving_->setPosition(originalPosition_);
         return;
     }
-    if (!detached || !manager_.model().tab(tab)) return;
-    // The torn-out window closes once its tab is back.
-    if (manager_.model().group(sourceGroup_)) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
-    else if (manager_.model().window(sourceWindow_)) manager_.moveTabToWindow(tab, sourceWindow_);
-    else return;
+    if (!detached || !carriedExists()) return;
+    // The torn-out window closes once its tab or folder is back.
+    const bool group = manager_.model().group(sourceGroup_) != nullptr;
+    if (!group && !manager_.model().window(sourceWindow_)) return;
+    if (!folder_.isNull()) {
+        if (group) manager_.moveTabFolderToGroup(folder_, sourceGroup_, sourceIndex_);
+        else manager_.moveTabFolderToWindow(folder_, sourceWindow_);
+        return;
+    }
+    if (group) manager_.moveTab(tab, sourceGroup_, Placement::Center, sourceIndex_, sticky_);
+    else manager_.moveTabToWindow(tab, sourceWindow_);
     manager_.showWindow(sourceWindow_);
     manager_.activateTab(tab);
 }
@@ -231,13 +239,15 @@ void TabDrag::showCarrier()
     if (moving_) moving_->setOpacity(1);
 }
 
-// As the Widgets drag: the tab moves into a new floating window, which then
-// follows the pointer by its title. Nothing else changes in the model.
+// As the Widgets drag: the tab or folder moves into a new floating window,
+// which then follows the pointer by its title. Nothing else changes in the
+// model. A folder still drops only into strips, and keeps its folder.
 bool TabDrag::detach(QPoint global)
 {
     if (auto* source = surfaces_(sourceWindow_)) source->clearDragPresentation();
     lifted_ = false;
-    const auto id = manager_.detachTab(tab_, WindowKind::Floating);
+    const auto id = folder_.isNull() ? manager_.detachTab(tab_, WindowKind::Floating)
+                                     : manager_.detachTabFolder(folder_, WindowKind::Floating);
     auto* window = id.isNull() ? nullptr : realize_(id);
     if (!window) return false;
     detached_ = true; movingWindow_ = id; moving_ = window;
@@ -306,11 +316,8 @@ void TabDrag::update(QPoint global)
         target_.window = sourceWindow_; target_.group = sourceGroup_; target_.accepted = true;
         target_.windowRect = source->globalRect();
         target_.insertionIndex = sourceView->insertionIndex(global, carried());
-    } else if (!tab_.isNull()) {
-        if (!detach(global)) return cancel();
-        target_ = hit(global);
     } else {
-        if (std::exchange(lifted_, false)) sourceView->clearLiftedTab();
+        if (!detach(global)) return cancel();
         target_ = hit(global);
     }
     const bool insertion = target_.accepted && target_.insertionIndex >= 0 && !target_.toEdgeBar;

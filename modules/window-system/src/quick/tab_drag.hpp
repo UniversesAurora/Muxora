@@ -33,7 +33,7 @@ class DockSurfaceItem;
 // move loop, as a title drag does, and targets follow the moves it reports.
 // Over a strip the window hides, the strip paints its tabs at the pointer,
 // and the drag takes the mouse back from the loop until the pointer leaves.
-// Folders do not tear out yet (10.3, sub-step 5).
+// A folder tears out with its tabs and drops only into strips.
 class TabDrag final : public QObject, public QAbstractNativeEventFilter {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
