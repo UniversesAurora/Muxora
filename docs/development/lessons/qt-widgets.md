@@ -390,3 +390,15 @@ Qt 的字族枚举中没有一个名称，不能据此断言系统和浏览器�
 - **原因**：收起时把新建按钮和首行右端控件的宽度同时扣到了所有行；拖动则按未滚动的行号取位置。首行窄于后续行时，换行条目还沿用了前一行被压窄的尺寸。
 - **做法**：置顶与普通段分别预留实际显示的控件，换行后重新从条目的自然尺寸取值；栏内与浮窗拖入共用滚动后的行网格。计数按钮的文字宽度改变时，先收敛占位再发布绘制和命中几何，不让它们使用上一次数值的宽度。
 - **验证**：纯布局计算的相关用例结果见 [本轮记录](../verification-log/2026-10.md#标签拖动定位与捕获修复等待试用2026-10-25)；按钮新外观和真实拖动仍待用户试用，没有用截图断言固定外观。
+
+### 控件的无障碍子接口要在控件析构时先放开控件
+
+**现象**：`tab-strip-layout` 在 Debug 下每次都在 `clippedTitlesKeepTheirFullText` 结束时崩溃。这个用例读过标签栏的无障碍子项，崩溃发生在 `GroupTabs` 析构时。
+
+**原因**：Qt 6.12 的 `QAccessibleCache` 在控件的 `QWidget` 部分发出 `destroyed()` 时删除它的接口。这时子类 `TabBar` 的成员已经析构，指向它的 `QPointer` 却还没清空：`~QWidget` 先发 `destroyed()`，`~QObject` 之后才清理守卫。`TabBarAccessible` 析构时删除自己创建的子接口，`QAccessibleCache::deleteInterface` 又通过 `updateAccessibility` 去问子接口 `isValid()`，子接口按标签栏查索引，读到的是已析构的控制器。
+
+**做法**：自己创建、登记的无障碍子接口，删除前先断开它对控件的引用（`detach()`）。不要用 `QPointer` 判断控件是否已经析构，它在 `destroyed()` 期间仍然有值。
+
+**验证**：`tab-strip-layout` 改后 Debug 连续 3 次通过；旧代码在 Debug 下每次崩溃，符号化的调用栈经过 `~TabBarAccessible` → `deleteInterface` → `TabAccessible::isValid` → `TabBar::tabData`。
+
+**出处**：2026-11-03，`docking/tab_bar.cpp` 的 `TabBarAccessible`。

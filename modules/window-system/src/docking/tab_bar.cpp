@@ -31,6 +31,7 @@ bool animationsSwitch = true;
 class TabAccessible final : public QAccessibleInterface {
 public:
     TabAccessible(TabBar* bar, QVariant id) : bar_(bar), id_(std::move(id)) {}
+    void detach() { bar_.clear(); }
     [[nodiscard]] bool isValid() const override { return bar_ && index() >= 0; }
     [[nodiscard]] QObject* object() const override { return nullptr; }
     [[nodiscard]] QWindow* window() const override { return bar_ ? bar_->window()->windowHandle() : nullptr; }
@@ -81,6 +82,7 @@ private:
 class TabFolderAccessible final : public QAccessibleInterface, public QAccessibleActionInterface {
 public:
     TabFolderAccessible(TabBar* bar, QUuid id) : bar_(bar), id_(id) {}
+    void detach() { bar_.clear(); }
     [[nodiscard]] bool isValid() const override { return bar_ && index() >= 0; }
     [[nodiscard]] QObject* object() const override { return nullptr; }
     [[nodiscard]] QWindow* window() const override { return bar_ ? bar_->window()->windowHandle() : nullptr; }
@@ -171,7 +173,14 @@ public:
     }
     ~TabBarAccessible() override
     {
-        for (const auto id : std::as_const(children_)) if (QAccessible::accessibleInterface(id)) QAccessible::deleteAccessibleInterface(id);
+        // Qt deletes this as the bar's QWidget part emits destroyed(), after
+        // TabBar's own members are gone but before its guards clear. Deleting a
+        // child asks it whether it is valid, so it lets go of the bar first.
+        for (const auto id : std::as_const(children_)) if (auto* child = QAccessible::accessibleInterface(id)) {
+            if (auto* tab = dynamic_cast<TabAccessible*>(child)) tab->detach();
+            else static_cast<TabFolderAccessible*>(child)->detach();
+            QAccessible::deleteAccessibleInterface(id);
+        }
     }
 private:
     [[nodiscard]] TabBar* bar() const { return static_cast<TabBar*>(widget()); }
