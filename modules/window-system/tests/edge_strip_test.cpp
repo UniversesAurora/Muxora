@@ -17,6 +17,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QWheelEvent>
+#include <algorithm>
 
 using namespace window_system;
 
@@ -64,6 +65,10 @@ public:
         tail = new QToolButton; tail->setObjectName("PinEdgeButton");
         tail->setIcon(iconFor("pin-all")); strip->setTailWidget(tail);
         applyTheme(&root);
+        // The strip is transparent over the dock's backplate, played here by
+        // the root (surface elevation design).
+        auto palette = root.palette(); palette.setColor(QPalette::Window, defaultTheme().headerBackground);
+        root.setPalette(palette); root.setAutoFillBackground(true);
         root.resize(isVertical(edge) ? QSize(160, 280) : QSize(360, 160)); root.show();
     }
     QScrollArea* scroll() const { return strip->findChild<QScrollArea*>("EdgeScrollViewport"); }
@@ -227,8 +232,10 @@ void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
     auto* button = fixture.buttons.first(); const auto before = button->mapToGlobal(QPoint());
     const auto local = button->rect().center();
     QWheelEvent wheel(local, button->mapToGlobal(local), {}, QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(button, &wheel); QCoreApplication::processEvents();
-    QVERIFY(bar->value() > 0); QCOMPARE(overlay->value(), bar->value()); QCOMPARE(fixture.clicks, 0);
+    QCoreApplication::sendEvent(button, &wheel);
+    // A notch scrolls a third of its angle, smoothly (UI design 4.8).
+    QTRY_COMPARE(bar->value(), std::min(40, bar->maximum()));
+    QCOMPARE(overlay->value(), bar->value()); QCOMPARE(fixture.clicks, 0);
     QCOMPARE(axis(edge, button->mapToGlobal(QPoint()) - before), -bar->value());
     auto* unusedAxis = isVertical(edge) ? scroll->horizontalScrollBar() : scroll->verticalScrollBar();
     QCOMPARE(unusedAxis->maximum(), 0);
@@ -239,7 +246,7 @@ void EdgeStripTest::boundedViewportScrollsWithoutActivatingButtons()
     option.sliderPosition = overlay->value(); option.pageStep = overlay->pageStep();
     const auto handle = overlay->style()->subControlRect(QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, overlay);
     QVERIFY(!handle.isEmpty());
-    const auto image = fixture.strip->grab().toImage(); const auto point = overlay->mapTo(fixture.strip, handle.center());
+    const auto image = fixture.root.grab().toImage(); const auto point = overlay->mapTo(&fixture.root, handle.center());
     QImage expected(1, 1, QImage::Format_ARGB32_Premultiplied); expected.fill(QColor("#6a568c"));
     QPainter painter(&expected); const int gray = qGray(defaultTheme().border.rgb());
     QColor translucentBorder(gray, gray, gray);
@@ -281,7 +288,7 @@ void EdgeStripTest::insertionGapMovesRealButtonsAndCapturesItsIndex()
     }
     const auto marker = fixture.strip->insertionMarkerRect(2); QVERIFY(marker.isValid()); QCOMPARE(extent(edge, marker), 4);
     // The gap is empty rail: no placeholder block (tab strip design 6.1).
-    const auto image = fixture.strip->grab().toImage(); const auto point = fixture.strip->mapFromGlobal(gap.center());
+    const auto image = fixture.root.grab().toImage(); const auto point = fixture.root.mapFromGlobal(gap.center());
     QCOMPARE(image.pixelColor(qRound(point.x() * image.devicePixelRatio()), qRound(point.y() * image.devicePixelRatio())).rgb(),
         defaultTheme().headerBackground.rgb());
     fixture.strip->setInsertionPreview(-1, 0);
