@@ -109,3 +109,15 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 **做法**：保留全部填充输入，单独验证可选 AA 的支持范围；不能静默换形状或删输入。尖肩和部分接合采用调用方明确配置的 MSAA 路径。几何可绘制不代表抗锯齿、字体和整界面外观已经等价验收。
 
 **验证**：`quick-path` 覆盖四边、裁切、接合进度、覆盖、浮层和紧凑轮廓；`quick-rendering` 检查 MSAA 目标的部分接合与尖肩。新矩阵最初错误地假设全部轮廓支持 coverage AA，修正依据和原始失败数字保留在验证日志中。
+
+### 鼠标处理里被删掉的项要拒绝事件
+
+**现象**：`quick-tab-bar-input` 在 Debug 下每次都在 `inputsAndFramesDriveTheSharedController` 崩溃，Release 下偶尔崩溃。用例在 `currentChanged` 里删掉标签栏，而这个信号是按下鼠标时发出的。
+
+**原因**：Qt 6.12 的 `QQuickDeliveryAgentPrivate::deliverMatchingPointsToItem` 把鼠标事件交给项以后，只要事件仍是接受状态，就调用 `item->isEnabled()` 和 `isVisible()` 来决定是否让它抓住鼠标。项已经被删掉时，这一步读的是释放的内存。Debug 堆会填充释放的内存，所以每次都崩溃。项自己的代码在信号之后已经用弱引用退出，问题出在返回后的 Qt 代码。
+
+**做法**：鼠标处理里发出的信号可能删掉这个项时，回调前保留 `QPointer`，返回前发现它已经没了就 `event->ignore()`，Qt 就不再碰它。只在自己的代码里检查弱引用不够。
+
+**验证**：`quick-tab-bar-input` 改后 Debug 连续 5 次通过；去掉删除那一步时旧代码也通过，确认崩溃来自删除。
+
+**出处**：2026-11-03，`TabBarItem::dispatch`。

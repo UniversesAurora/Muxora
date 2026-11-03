@@ -70,7 +70,9 @@ private:
     void attachWindow(QQuickWindow* window);
     void advance();
     void schedule();
-    void dispatch(TabPointerDecision decision);
+    // Ignores the event when a handler deleted this item: Qt checks an
+    // accepted item before giving it the grab.
+    void dispatch(QMouseEvent* event, TabPointerDecision decision);
     bool handleContextMenu(QContextMenuEvent* event);
     TabStripController controller_;
     TabStripItem* base_;

@@ -174,33 +174,33 @@ void TabBarItem::geometryChange(const QRectF& now, const QRectF& previous)
     if (alive && now != previous) synchronize();
 }
 
-void TabBarItem::dispatch(TabPointerDecision decision)
+void TabBarItem::dispatch(QMouseEvent* event, TabPointerDecision decision)
 {
     const QPointer<TabBarItem> alive(this);
     synchronize();
     if (alive && decision.action != TabPointerDecision::Action::None
         && decision.action != TabPointerDecision::Action::ActivateTab) emit actionRequested(decision);
+    if (!alive) event->ignore();
 }
 
 void TabBarItem::mousePressEvent(QMouseEvent* event)
 {
     prepare();
     event->accept();
-    const auto decision = controller_.pointerPress(event->button(), event->position().toPoint(), event->globalPosition().toPoint());
-    dispatch(decision);
+    dispatch(event, controller_.pointerPress(event->button(), event->position().toPoint(), event->globalPosition().toPoint()));
 }
 
 void TabBarItem::mouseMoveEvent(QMouseEvent* event)
 {
     prepare(); event->accept();
-    dispatch(controller_.pointerMove(event->buttons(), event->position().toPoint(), event->globalPosition().toPoint(),
+    dispatch(event, controller_.pointerMove(event->buttons(), event->position().toPoint(), event->globalPosition().toPoint(),
         QGuiApplication::styleHints()->startDragDistance()));
 }
 
 void TabBarItem::mouseReleaseEvent(QMouseEvent* event)
 {
     prepare(); event->accept();
-    dispatch(controller_.pointerRelease(event->button(), event->position().toPoint()));
+    dispatch(event, controller_.pointerRelease(event->button(), event->position().toPoint()));
 }
 
 void TabBarItem::mouseDoubleClickEvent(QMouseEvent* event) { mousePressEvent(event); }
