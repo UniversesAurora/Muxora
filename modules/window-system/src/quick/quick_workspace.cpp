@@ -14,6 +14,7 @@
 #include <QSet>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QTimer>
 #include <algorithm>
 #include <utility>
 
@@ -61,6 +62,13 @@ public:
         });
         connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {
             chrome_->setExpanded(state == Qt::WindowMaximized || state == Qt::WindowFullScreen);
+            // As the Widgets window: leaving full screen some other way ends
+            // the view mode.
+            if (applyingViewState_ || state == Qt::WindowFullScreen || state == Qt::WindowMinimized) return;
+            QTimer::singleShot(0, this, [this] {
+                if (manager_.viewMode(id_) != ViewMode::Normal && !(windowStates() & (Qt::WindowFullScreen | Qt::WindowMinimized)))
+                    manager_.setViewMode(id_, ViewMode::Normal);
+            });
         });
 #ifdef Q_OS_WIN
         NativeFrameClient client;
@@ -75,6 +83,28 @@ public:
         layoutChildren();
     }
     quick::DockSurfaceItem* dock = nullptr;
+
+    // As the Widgets window applies its view state: any view mode is full
+    // screen, and the header row, which holds the toolbars there, follows
+    // the toolbars' visibility.
+    void applyViewState()
+    {
+        const auto state = manager_.windowViewState(id_);
+        if (chrome_->isVisible() != state.effective.toolbars) {
+            chrome_->setVisible(state.effective.toolbars);
+            layoutChildren();
+        }
+        const bool fullscreen = state.mode != ViewMode::Normal;
+        if (fullscreen == bool(windowStates() & Qt::WindowFullScreen)) return;
+        applyingViewState_ = true;
+        if (fullscreen) {
+            normalStates_ = windowStates() & Qt::WindowMaximized;
+            showFullScreen();
+        } else {
+            setWindowStates(normalStates_);
+        }
+        applyingViewState_ = false;
+    }
 
 protected:
     bool event(QEvent* event) override
@@ -99,7 +129,7 @@ protected:
 private:
     void layoutChildren()
     {
-        const int header = quick::WindowChromeItem::rowHeight();
+        const int header = chrome_->isVisible() ? quick::WindowChromeItem::rowHeight() : 0;
         chrome_->setSize(QSizeF(width(), header));
         dock->setPosition(QPointF(0, header));
         dock->setSize(QSizeF(width(), std::max(0, height() - header)));
@@ -107,6 +137,8 @@ private:
     WindowManager& manager_;
     WindowId id_;
     quick::WindowChromeItem* chrome_;
+    Qt::WindowStates normalStates_;
+    bool applyingViewState_ = false;
 };
 
 } // namespace
@@ -198,6 +230,7 @@ void QuickWorkspace::sync()
             window->show();
         }
         window->dock->sync();
+        window->applyViewState();
     }
     for (auto it = d->panes.begin(); it != d->panes.end();) {
         if (live.contains(*it)) { ++it; continue; }

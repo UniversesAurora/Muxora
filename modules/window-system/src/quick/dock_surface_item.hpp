@@ -161,6 +161,8 @@ private:
     QRect inner_;
     // The tabs each group's strip was built from; a change re-adds them.
     QHash<GroupId, QVector<TabId>> builtTabs_;
+    // Group or pane fullscreen: only this group fills the surface.
+    GroupId focusGroup_;
     bool syncing_ = false;
 };
 

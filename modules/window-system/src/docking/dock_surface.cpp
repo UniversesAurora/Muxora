@@ -1464,13 +1464,7 @@ void DockSurface::showEdgeGroup(GroupId group, TabId tab)
 }
 bool DockSurface::centralTabBarVisible(bool requested) const
 {
-    if (!requested || !manager_) return false;
-    const auto* window = manager_->model().window(window_);
-    if (!window) return false;
-    const auto behavior = manager_->behavior();
-    const bool hideSingle = window->kind == WindowKind::Floating
-        ? behavior.hideSingleTabFloating : behavior.hideSingleTabWorkbench;
-    return !hideSingle || manager_->model().orderedTabs(window_).size() != 1;
+    return requested && manager_ && manager_->model().window(window_) && !manager_->singleTabHidesTabBar(window_);
 }
 void DockSurface::setTabBarsVisible(bool visible)
 {

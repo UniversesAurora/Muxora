@@ -86,6 +86,8 @@ public:
     [[nodiscard]] Presentation presentation() const;
     // External only; null removes it.
     void setPresenter(WindowPresenter* presenter);
+    // The behavior hides a window's central tab bars while it holds one tab.
+    [[nodiscard]] bool singleTabHidesTabBar(WindowId window) const;
 
     WindowId createWindow(WindowKind kind = WindowKind::Workbench,
                           const WindowOptions& options = {}, WindowId owner = {});
@@ -316,6 +318,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    [[nodiscard]] bool presented(WindowId window) const;
     friend class WorkspaceWindow;
     friend class DockSurface;
     friend class DragController;

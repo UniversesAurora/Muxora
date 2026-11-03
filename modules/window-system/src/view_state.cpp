@@ -51,6 +51,21 @@ WindowViewState WindowManager::windowViewState(WindowId window) const
     return state;
 }
 
+// The External presentation shows every model window.
+bool WindowManager::presented(WindowId window) const
+{
+    return d->presentation == Presentation::External || d->windows.value(window);
+}
+
+bool WindowManager::singleTabHidesTabBar(WindowId window) const
+{
+    const auto* record = d->model.window(window);
+    if (!record) return false;
+    const bool hideSingle = record->kind == WindowKind::Floating
+        ? d->behavior.hideSingleTabFloating : d->behavior.hideSingleTabWorkbench;
+    return hideSingle && d->model.orderedTabs(window).size() == 1;
+}
+
 BarVisibility WindowManager::barVisibility(WindowId window) const { return windowViewState(window).effective; }
 ViewMode WindowManager::viewMode(WindowId window) const { return d->viewStates.value(window).mode; }
 bool WindowManager::zenMode(WindowId window) const { return d->viewStates.value(window).zen; }
@@ -65,7 +80,7 @@ bool WindowManager::setStatusBarVisible(WindowId window, bool visible) { return 
 
 bool WindowManager::setBarVisible(WindowId window, WindowBar bar, bool visible)
 {
-    if (!d->model.window(window) || !d->windows.value(window)) return false;
+    if (!d->model.window(window) || !presented(window)) return false;
     auto& state = d->viewStates[window];
     // Zen is a projection, not a second preference store. Hiding an already
     // hidden bar leaves the pre-Zen settings untouched, including other windows.
@@ -111,7 +126,7 @@ void WindowManager::syncVisibilityKind(WindowId window)
 
 bool WindowManager::setViewMode(WindowId window, ViewMode mode)
 {
-    if (!validViewMode(mode) || !d->model.window(window) || !d->windows.value(window)
+    if (!validViewMode(mode) || !d->model.window(window) || !presented(window)
         || (d->drag && d->drag->isActive())) return false;
     auto state = d->viewStates.value(window);
     if (state.mode == mode) return true;
@@ -133,7 +148,7 @@ bool WindowManager::setViewMode(WindowId window, ViewMode mode)
 
 bool WindowManager::setZenMode(WindowId window, bool enabled)
 {
-    if (!d->model.window(window) || !d->windows.value(window)) return false;
+    if (!d->model.window(window) || !presented(window)) return false;
     auto state = d->viewStates.value(window);
     if (state.zen == enabled) return true;
     if (enabled && state.mode == ViewMode::Normal) {

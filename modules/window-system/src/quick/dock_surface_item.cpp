@@ -237,6 +237,11 @@ bool DockSurfaceItem::eventFilter(QObject* watched, QEvent* event)
 // span the window, the left and right regions sit beside the center.
 LayoutTree DockSurfaceItem::composedTree(QSize area)
 {
+    if (!focusGroup_.isNull()) {
+        auto leaf = std::make_shared<LayoutNode>();
+        leaf->itemId = focusGroup_;
+        return leaf;
+    }
     const auto& model = manager_.model();
     struct Split { Edge edge; Qt::Orientation axis; double ratio; };
     QVector<Split> splits; // Outermost first.
@@ -402,16 +407,28 @@ void DockSurfaceItem::sync()
         pinned_[size_t(edge)].tree = model.pinnedLayout(window_, edge);
         pinned_[size_t(edge)].dragged.reset();
     }
+    // As the Widgets surface's focus scope: in group or pane fullscreen only
+    // that group shows, a sidebar one included; zen hides every strip.
+    const auto state = manager_.windowViewState(window_);
+    const auto* focused = model.group(state.group);
+    focusGroup_ = (state.mode == ViewMode::GroupFullscreen || state.mode == ViewMode::PaneFullscreen)
+        && focused && focused->windowId == window_ ? focused->id : GroupId{};
+    if (!focusGroup_.isNull()) closePeek();
+    const bool centralStrips = state.effective.tabBars && !manager_.singleTabHidesTabBar(window_);
     QHash<QUuid, QPointer<QQuickItem>> leaves;
     QHash<QUuid, QSize> minima;
     for (const auto& group : model.groups()) {
-        if (group.windowId != window_ || group.location == GroupLocation::AutoHide) continue;
+        if (group.windowId != window_) continue;
+        if (focusGroup_.isNull() ? group.location == GroupLocation::AutoHide : group.id != focusGroup_) continue;
         auto* view = ensureGroup(group.id, group);
         syncGroup(*view, group);
+        view->setTabBarVisible(!state.zen && (group.location != GroupLocation::Central || centralStrips));
         leaves.insert(group.id, view);
         if (auto* page = pages_.value(group.activeTab).data()) view->setContentMinimum(page->minimumSize());
         minima.insert(group.id, view->minimumSize());
     }
+    for (auto it = pages_.cbegin(); it != pages_.cend(); ++it) if (it.value())
+        it.value()->setFocusedPane(state.mode == ViewMode::PaneFullscreen && it.key() == state.tab ? state.pane : PaneId{});
     for (const auto id : groups_.keys())
         if (!leaves.contains(id)) releaseGroup(id);
     syncRails();

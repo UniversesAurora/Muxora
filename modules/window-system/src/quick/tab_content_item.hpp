@@ -27,6 +27,8 @@ public:
     [[nodiscard]] TabId tab() const { return tab_; }
     // Rebuilds the pane tree from the model and mounts present content.
     void sync();
+    // Pane fullscreen: only this pane shows; a null pane shows the tree.
+    void setFocusedPane(PaneId pane);
     [[nodiscard]] QSize minimumSize() const;
 
 private:
@@ -37,6 +39,7 @@ private:
     TabId tab_;
     SplitTreeItem* split_;
     QHash<PaneId, QPointer<QQuickItem>> frames_;
+    PaneId focusedPane_;
 };
 
 } // namespace window_system::quick

@@ -65,10 +65,11 @@ void TabContentItem::sync()
     const auto* record = manager_.model().tab(tab_);
     if (!record) return;
     const auto panes = manager_.model().panes(tab_);
+    const bool focused = panes.contains(focusedPane_);
     QHash<QUuid, QPointer<QQuickItem>> leaves;
     for (const auto pane : panes) {
         auto* target = frame(pane);
-        leaves.insert(pane, target);
+        if (!focused || pane == focusedPane_) leaves.insert(pane, target);
         if (host_.item(pane) && host_.item(pane)->parentItem() != target) host_.mount(pane, target);
     }
     for (auto it = frames_.begin(); it != frames_.end();) {
@@ -76,9 +77,20 @@ void TabContentItem::sync()
         if (it.value()) it.value()->deleteLater();
         it = frames_.erase(it);
     }
-    split_->setTree(record->panes);
+    if (focused) {
+        auto leaf = std::make_shared<LayoutNode>();
+        leaf->itemId = focusedPane_;
+        split_->setTree(std::move(leaf));
+    } else split_->setTree(record->panes);
     split_->setLeafItems(leaves);
     split_->setSize(size());
+}
+
+void TabContentItem::setFocusedPane(PaneId pane)
+{
+    if (focusedPane_ == pane) return;
+    focusedPane_ = pane;
+    sync();
 }
 
 QSize TabContentItem::minimumSize() const { return split_->minimumSize(); }

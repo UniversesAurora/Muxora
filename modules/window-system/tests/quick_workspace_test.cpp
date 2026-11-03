@@ -898,6 +898,81 @@ private slots:
         QVERIFY(one->windowStates() & Qt::WindowMinimized);
     }
 
+    void viewModesShapeTheQuickWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("View"), QSize(640, 420)});
+        const auto a = manager.addTab(window, named(QStringLiteral("A")));
+        const auto b = manager.addTab(window, named(QStringLiteral("B")));
+        QVERIFY(manager.moveTab(b, manager.model().groupForTab(a), Placement::Right));
+        const auto left = manager.model().groupForTab(a), right = manager.model().groupForTab(b);
+        const auto top = manager.model().tab(a)->activePane;
+        const auto bottom = manager.splitPane(a, top, Placement::Bottom);
+        QVERIFY(!bottom.isNull());
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+        auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
+        auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
+        QTRY_VERIFY(dock->group(left) && dock->group(right));
+        const auto shown = [&](PaneId pane) { return shownIn(workspace.content(pane), quickWindow); };
+
+        // Tab bars follow their setting.
+        QVERIFY(!dock->group(left)->stripRect().isEmpty());
+        QVERIFY(manager.setTabBarsVisible(window, false));
+        QTRY_VERIFY(dock->group(left)->stripRect().isEmpty() && dock->group(right)->stripRect().isEmpty());
+        QVERIFY(manager.setTabBarsVisible(window, true));
+        QTRY_VERIFY(!dock->group(left)->stripRect().isEmpty());
+
+        // Window fullscreen keeps the layout.
+        QVERIFY(manager.setViewMode(window, ViewMode::WindowFullscreen));
+        QTRY_VERIFY(quickWindow->windowStates() & Qt::WindowFullScreen);
+        QVERIFY(dock->group(left) && dock->group(right));
+
+        // Group fullscreen shows only the active group.
+        QVERIFY(manager.activateTab(b));
+        QVERIFY(manager.setViewMode(window, ViewMode::GroupFullscreen));
+        QTRY_VERIFY(!dock->group(left));
+        QVERIFY(dock->group(right));
+        QVERIFY(!shown(top));
+
+        // Pane fullscreen shows only the active pane of the active tab.
+        QVERIFY(manager.focusPane(a, bottom));
+        QVERIFY(manager.setViewMode(window, ViewMode::PaneFullscreen));
+        QTRY_VERIFY(shown(bottom));
+        QVERIFY(!shown(top));
+        QVERIFY(!dock->group(right));
+
+        // Zen hides the header row and the strips.
+        QVERIFY(manager.setZenMode(window, true));
+        QTRY_VERIFY(!chrome->isVisible());
+        QTRY_VERIFY(dock->group(left)->stripRect().isEmpty());
+
+        // Back to normal: the window, both groups and both panes return.
+        QVERIFY(manager.setViewMode(window, ViewMode::Normal));
+        QTRY_VERIFY(!(quickWindow->windowStates() & Qt::WindowFullScreen));
+        QTRY_VERIFY(chrome->isVisible() && dock->group(left) && dock->group(right));
+        QTRY_VERIFY(shown(top) && shown(bottom));
+        QVERIFY(!dock->group(left)->stripRect().isEmpty());
+
+        // Leaving full screen some other way ends the view mode.
+        QVERIFY(manager.setViewMode(window, ViewMode::WindowFullscreen));
+        QTRY_VERIFY(quickWindow->windowStates() & Qt::WindowFullScreen);
+        quickWindow->showNormal();
+        QTRY_COMPARE(manager.viewMode(window), ViewMode::Normal);
+
+        // A window with one tab hides its strip when the behavior says so.
+        auto behavior = manager.behavior(); behavior.hideSingleTabFloating = true; manager.setBehavior(behavior);
+        const auto floating = manager.createWindow(WindowKind::Floating, {QStringLiteral("Single"), QSize(320, 240)}, window);
+        const auto single = manager.addTab(floating, named(QStringLiteral("Single")));
+        QTRY_VERIFY(workspace.window(floating));
+        auto* floatingDock = workspace.window(floating)->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QTRY_VERIFY(floatingDock->group(manager.model().groupForTab(single)));
+        QTRY_VERIFY(floatingDock->group(manager.model().groupForTab(single))->stripRect().isEmpty());
+    }
+
     void shortcutsRunInTheirQuickWindow()
     {
         WindowManager manager(WindowManager::Presentation::External);
