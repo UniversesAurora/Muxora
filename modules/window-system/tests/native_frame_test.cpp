@@ -1325,9 +1325,14 @@ void NativeFrameTest::compactPreviewHasNoFrameAcrossItsTransparentGap()
     backdrop.show(); QVERIFY(QTest::qWaitForWindowExposed(&backdrop));
     test::authoredMouseInput().takePriority();
     native_input::mouse(&backdrop, backdrop.rect().bottomRight() - QPoint(4, 4));
+    // The carrier's area too: a window the previous test closed can still be
+    // fading out above the backdrop there.
+    const QRect carrierArea(QPoint(40, 40), QSize(500, 320));
+    const QVector<QPoint> backdropSamples{backdrop.rect().center(), carrierArea.topLeft(), carrierArea.topRight(),
+                                          carrierArea.bottomLeft(), carrierArea.bottomRight(), carrierArea.center()};
+    const QVector<COLORREF> backdropColor(backdropSamples.size(), RGB(31, 73, 43));
     QVector<COLORREF> pixels;
-    const QVector<QPoint> backdropSamples{backdrop.rect().center()};
-    QTRY_VERIFY(readScreenPixels(&backdrop, backdropSamples, pixels) && pixels == QVector<COLORREF>{RGB(31, 73, 43)});
+    QTRY_VERIFY(readScreenPixels(&backdrop, backdropSamples, pixels) && pixels == backdropColor);
 
     WindowManager manager;
     auto appearance = manager.tabAppearance();
