@@ -83,6 +83,10 @@ public:
     // The carried label at the pointer in one group's strip; a null group
     // clears it.
     void showIncoming(GroupId group, const TabDragVisual& visual, QPoint global);
+    // The active group's page as a picture, and a picture shown over one
+    // group's pages (tab strip design 6.4); a null group clears it.
+    [[nodiscard]] QImage activeContentPicture() const;
+    void showContentPreview(GroupId group, const QImage& picture);
     // The gap in one rail; no edge closes it. The extent is the carried
     // tabs' length along that rail.
     void showRailInsertion(std::optional<Edge> edge, int index, int extent);
@@ -134,6 +138,7 @@ private:
     TabDrag* drag_ = nullptr;
     GroupId insertionGroup_;
     GroupId incomingGroup_;
+    GroupId previewGroup_;
     std::optional<Edge> railInsertion_;
     QPointer<QQuickItem> railCarrier_;
     std::optional<Edge> railCarrierEdge_;

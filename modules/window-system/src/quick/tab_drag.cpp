@@ -265,6 +265,7 @@ void TabDrag::stop(bool restoreCarrier)
 #endif
     revealTimer_.stop();
     revealCandidate_ = revealedWindow_ = {};
+    contentPicture_ = {};
     qApp->removeNativeEventFilter(this);
     qApp->removeEventFilter(this);
     QGuiApplication::restoreOverrideCursor();
@@ -400,6 +401,7 @@ void TabDrag::update(QPoint global)
             if (detached_) incoming = carriedLabel(*surface);
         }
         surface->showIncoming(here && !incoming.empty() ? target_.group : GroupId{}, incoming, global);
+        surface->showContentPreview(here && !incoming.empty() ? target_.group : GroupId{}, contentPicture_);
         const auto rail = here && railInsertion ? std::optional<Edge>(target_.edge) : std::nullopt;
         surface->showRailInsertion(rail, target_.insertionIndex, rail ? surface->railExtent(target_.edge, carriedTabs()) : 0);
         surface->showRailCarrier(detached_ ? rail : std::nullopt, carriedTabs(), global);
@@ -429,7 +431,12 @@ TabDragVisual TabDrag::carriedLabel(DockSurfaceItem& target)
 {
     auto* carrier = surfaces_(movingWindow_);
     if (!carrier) return {};
-    if (!std::exchange(carrierCompact_, true)) carrier->setDragPresentation(true);
+    if (!std::exchange(carrierCompact_, true)) {
+        // As the Widgets drag: the target shows this picture as if its tab
+        // were already there; it is taken once, before the window shrinks.
+        contentPicture_ = carrier->activeContentPicture();
+        carrier->setDragPresentation(true);
+    }
     carrier->setDragTabStyle(target, target_.group, target_.insertionSticky);
     auto visual = carrier->dragLabelVisual();
     if (grab_.sourceSize.isValid()) visual.sourceAnchor = grab_;
@@ -438,6 +445,7 @@ TabDragVisual TabDrag::carriedLabel(DockSurfaceItem& target)
 
 void TabDrag::restoreCarrier()
 {
+    contentPicture_ = {};
     if (!std::exchange(carrierCompact_, false)) return;
     if (auto* carrier = surfaces_(movingWindow_)) carrier->setDragPresentation(false);
 }
@@ -454,6 +462,7 @@ void TabDrag::finish(QPoint global)
     // A carrier hidden over the strip or rail stays hidden while its tabs
     // move out and the emptied window closes.
     const bool hidden = carrierHidden_;
+    const auto picture = contentPicture_;
     // As the Widgets drop: the tabs slide in from where the drag showed
     // them, the lifted tab or the label the strip painted for the carrier.
     LabelPositions landing;
@@ -506,10 +515,15 @@ void TabDrag::finish(QPoint global)
     if (!success) return;
     manager_.showWindow(target.window);
     if (!tab.isNull()) manager_.activateTab(tab);
-    if (landing.isEmpty()) return;
-    // The workspace rebuilds the strips on its queued sync; this runs after.
+    // As the Widgets drop, the target keeps the picture until the real page
+    // is there. The workspace rebuilds the strips and mounts pages on its
+    // queued sync; this runs after it, and the tabs slide in from there.
+    if (auto* surface = surfaces_(target.window); surface && !picture.isNull()) surface->showContentPreview(target.group, picture);
     QMetaObject::invokeMethod(this, [this, window = target.window, group = target.group, landing] {
-        if (auto* surface = surfaces_(window)) if (auto* view = surface->group(group)) view->settleDroppedTabs(landing);
+        auto* surface = surfaces_(window);
+        if (!surface) return;
+        surface->showContentPreview({}, {});
+        if (auto* view = surface->group(group); view && !landing.isEmpty()) view->settleDroppedTabs(landing);
     }, Qt::QueuedConnection);
 }
 

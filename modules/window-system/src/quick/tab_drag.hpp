@@ -7,6 +7,7 @@
 #include "docking/tab_strip_controller.hpp"
 
 #include <QAbstractNativeEventFilter>
+#include <QImage>
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
@@ -119,6 +120,8 @@ private:
     bool carrierCompact_ = false;
     // Over a strip or a rail the target paints the tabs; the window hides.
     bool carrierHidden_ = false;
+    // The carried content, taken as the window turns compact over a strip.
+    QImage contentPicture_;
     bool updateQueued_ = false;
     // The target window waiting to come to the front, and the last one that
     // did; a window comes forward once per stay.

@@ -17,6 +17,7 @@ namespace window_system::quick {
 class ButtonItem;
 class GroupSurfaceItem;
 class PathItem;
+class PictureItem;
 class TabBarItem;
 class TabLabelTextItem;
 
@@ -97,6 +98,12 @@ public:
     // An empty visual clears it.
     void setIncomingVisual(TabDragVisual visual, QPoint global);
     [[nodiscard]] QRect incomingRectGlobal() const;
+    // The shown page as a picture, global device pixels at the window's
+    // ratio; null without a page.
+    [[nodiscard]] QImage pagePicture() const;
+    // A picture over the pages while a carried tab is over the strip; a
+    // null one shows the pages again.
+    void setContentPreview(QImage picture);
     // A wheel step over the strip during a drag, as the strip takes one.
     bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
     // A carrier's tab rectangles in this item's coordinates.
@@ -153,6 +160,7 @@ private:
     PathItem* card_;
     PathItem* corners_;
     QQuickItem* content_;
+    PictureItem* preview_ = nullptr;
     ButtonItem* create_;
     ButtonItem* types_;
     ButtonItem* list_;

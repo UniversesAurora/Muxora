@@ -3,6 +3,7 @@
 #include "button_item.hpp"
 #include "group_surface_item.hpp"
 #include "path_item.hpp"
+#include "picture_item.hpp"
 #include "tab_bar_item.hpp"
 #include "tab_label_text_item.hpp"
 #include "style/frame_motion.hpp"
@@ -486,6 +487,31 @@ void GroupItem::setIncomingVisual(TabDragVisual visual, QPoint global)
     bar_->edit([&] { bar_->controller().setIncomingVisual(std::move(visual), bar_->mapFromGlobal(QPointF(global)).toPoint()); });
 }
 
+// As the Widgets surface grabs the page widget: what the window shows there.
+QImage GroupItem::pagePicture() const
+{
+    if (!shownPage_ || !shownPage_->isVisible() || !window_) return {};
+    const auto ratio = window_->devicePixelRatio();
+    const auto area = content_->mapRectToScene(QRectF(QPointF(), content_->size()));
+    auto picture = window_->grabWindow().copy(QRectF(area.topLeft() * ratio, area.size() * ratio).toRect());
+    picture.setDevicePixelRatio(ratio);
+    return picture;
+}
+
+void GroupItem::setContentPreview(QImage picture)
+{
+    if (picture.isNull()) { if (preview_) preview_->setVisible(false); return; }
+    // Shown on every move; the same picture uploads once.
+    if (preview_ && preview_->isVisible() && preview_->picture().cacheKey() == picture.cacheKey()) return;
+    if (!preview_) {
+        preview_ = new PictureItem(content_);
+        preview_->setZ(1);
+    }
+    preview_->setPicture(std::move(picture));
+    preview_->setSize(content_->size());
+    preview_->setVisible(true);
+}
+
 bool GroupItem::scrollStripAt(QPoint global, QPoint delta, bool smooth)
 {
     const auto local = bar_->mapFromGlobal(QPointF(global));
@@ -591,6 +617,7 @@ void GroupItem::layoutChildren()
     content_->setPosition(geometry.content.topLeft()); content_->setSize(geometry.content.size());
     syncCard(geometry);
     if (shownPage_) shownPage_->setSize(geometry.content.size());
+    if (preview_) preview_->setSize(geometry.content.size());
     const bool barShown = group_->tabBarVisible();
     bar_->setVisible(barShown);
     if (barShown) {

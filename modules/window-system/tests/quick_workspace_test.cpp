@@ -9,6 +9,7 @@
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include "quick/peek_item.hpp"
+#include "quick/picture_item.hpp"
 #include "quick/rail_button_item.hpp"
 #include "quick/rail_item.hpp"
 #include "quick/tab_bar_item.hpp"
@@ -753,6 +754,13 @@ private slots:
         auto* targetDock = to->contentItem()->findChild<quick::DockSurfaceItem*>();
         const auto group = manager.model().groupForTab(other);
         QTRY_VERIFY(targetDock->group(group));
+        auto* carriedDock = carried->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QTRY_VERIFY(carriedDock->group(manager.model().groupForTab(second)));
+        const auto carriedContent = carriedDock->group(manager.model().groupForTab(second))->contentRect().size();
+        const auto preview = [&] {
+            const auto* picture = targetDock->group(group)->findChild<quick::PictureItem*>();
+            return picture && picture->isVisible() ? picture->picture() : QImage{};
+        };
 
         // The title starts the drag once the pointer has moved; the window
         // then follows it, here by events to the window under the pointer.
@@ -774,14 +782,17 @@ private slots:
         QVERIFY(carried->position() != beside);
         QVERIFY(!targetDock->group(group)->insertionPreviewRectGlobal().isEmpty());
         // Over the strip the window hides and the strip paints its tabs at
-        // the pointer.
+        // the pointer; the group shows the carried content's picture at its
+        // own size.
         QCOMPARE(carried->opacity(), 0.0);
         QVERIFY(targetDock->group(group)->incomingRectGlobal().contains(to->mapToGlobal(drop)));
+        QCOMPARE(preview().deviceIndependentSize().toSize(), carriedContent);
         QTest::keyClick(to, Qt::Key_Escape);
         QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
         QCOMPARE(carried->position(), beside);
         QCOMPARE(carried->opacity(), 1.0);
         QVERIFY(targetDock->group(group)->incomingRectGlobal().isEmpty());
+        QVERIFY(preview().isNull());
         QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>{other});
 
         // Dropped on the strip, all its tabs join it and the window closes.
@@ -790,6 +801,7 @@ private slots:
         const auto painted = targetDock->group(group)->incomingRectGlobal();
         QTest::mouseRelease(to, Qt::LeftButton, {}, drop);
         QTRY_COMPARE(manager.model().group(group)->tabs, (QVector<TabId>{other, first, second}));
+        QTRY_VERIFY(preview().isNull());
         if (motionAnimationsEnabled()) {
             auto* bar = targetDock->group(group)->tabBar();
             auto& strip = bar->controller();

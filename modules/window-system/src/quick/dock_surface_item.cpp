@@ -578,6 +578,20 @@ void DockSurfaceItem::showIncoming(GroupId group, const TabDragVisual& visual, Q
     if (const auto view = groups_.value(group)) view->setIncomingVisual(visual, global);
 }
 
+QImage DockSurfaceItem::activeContentPicture() const
+{
+    const auto* window = manager_.model().window(window_);
+    const auto view = window ? groups_.value(window->activeGroup) : QPointer<GroupItem>{};
+    return view ? view->pagePicture() : QImage{};
+}
+
+void DockSurfaceItem::showContentPreview(GroupId group, const QImage& picture)
+{
+    if (previewGroup_ != group)
+        if (const auto previous = groups_.value(std::exchange(previewGroup_, group))) previous->setContentPreview({});
+    if (const auto view = groups_.value(group)) view->setContentPreview(picture);
+}
+
 void DockSurfaceItem::showRailInsertion(std::optional<Edge> edge, int index, int extent)
 {
     if (railInsertion_ != edge)
@@ -655,6 +669,7 @@ void DockSurfaceItem::clearDragPresentation()
 {
     showInsertion({}, -1, {}, false, TabLayoutInput::Carried::Tab);
     showIncoming({}, {}, {});
+    showContentPreview({}, {});
     showRailInsertion({}, -1, 0);
     showRailCarrier({}, {}, {});
     for (const auto& rail : rails_) if (rail) rail->setDraggedTab({});
