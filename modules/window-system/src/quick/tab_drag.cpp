@@ -20,8 +20,6 @@
 namespace window_system::quick {
 
 namespace {
-constexpr qreal overRailOpacity = 0.4;
-
 // The real primary button, which only real input holds.
 bool buttonHeld()
 {
@@ -254,6 +252,7 @@ void TabDrag::stop(bool restoreCarrier)
 
 void TabDrag::showCarrier()
 {
+    carrierHidden_ = false;
     restoreCarrier();
     if (moving_) moving_->setOpacity(1);
 }
@@ -355,6 +354,7 @@ void TabDrag::update(QPoint global)
     }
     const bool insertion = target_.accepted && target_.insertionIndex >= 0 && !target_.toEdgeBar;
     const bool railInsertion = target_.accepted && target_.insertionIndex >= 0 && target_.toEdgeBar;
+    const bool placing = insertion || railInsertion;
     const auto labels = carriedLabels();
     TabDragVisual incoming;
     for (const auto id : manager_.model().windowOrder()) {
@@ -371,17 +371,18 @@ void TabDrag::update(QPoint global)
         surface->showIncoming(here && !incoming.empty() ? target_.group : GroupId{}, incoming, global);
         const auto rail = here && railInsertion ? std::optional<Edge>(target_.edge) : std::nullopt;
         surface->showRailInsertion(rail, target_.insertionIndex, rail ? surface->railExtent(target_.edge, carriedTabs()) : 0);
+        surface->showRailCarrier(detached_ ? rail : std::nullopt, carriedTabs(), global);
         if (rail) target_.preview = surface->railInsertionRectGlobal(target_.edge);
-        if (here && !insertion) surface->showGuides(target_, carriedCount(), carried() == TabLayoutInput::Carried::Tabs);
+        // As the Widgets overlay: no guides while the tabs have a place.
+        if (here && !placing) surface->showGuides(target_, carriedCount(), carried() == TabLayoutInput::Carried::Tabs);
         else surface->clearGuides();
     }
     if (incoming.empty()) restoreCarrier();
-    // Over a strip the strip paints the label and the window hides in place,
-    // keeping the mouse; elsewhere the system moves the window again.
-    // Over a rail the window lets the gap show through, until it takes the
-    // shape of a rail button as the Widgets carrier does.
-    if (moving_) moving_->setOpacity(!incoming.empty() ? 0 : railInsertion ? overRailOpacity : 1);
-    const bool placing = insertion || railInsertion;
+    // Over a strip or a rail the target paints the tabs and the window
+    // hides in place, keeping the mouse; elsewhere the system moves the
+    // window again.
+    carrierHidden_ = !incoming.empty() || (detached_ && railInsertion);
+    if (moving_) moving_->setOpacity(carrierHidden_ ? 0 : 1);
     if (placing && systemMoving_) leaveSystemMove();
     else if (!placing && detached_ && !systemMoving_) queueSystemMove();
 }
@@ -414,9 +415,9 @@ void TabDrag::finish(QPoint global)
     // Commands run in the window that holds the tab now.
     const auto source = detached_ ? movingWindow_ : sourceWindow_;
     const bool detached = detached_;
-    // A carrier hidden over the strip stays hidden while its tabs move out
-    // and the emptied window closes.
-    const bool hidden = carrierCompact_;
+    // A carrier hidden over the strip or rail stays hidden while its tabs
+    // move out and the emptied window closes.
+    const bool hidden = carrierHidden_;
     // As the Widgets drop: the tabs slide in from where the drag showed
     // them, the lifted tab or the label the strip painted for the carrier.
     LabelPositions landing;
@@ -462,7 +463,7 @@ void TabDrag::finish(QPoint global)
         inserting ? std::optional<bool>(target.insertionSticky) : std::nullopt,
         inserting ? std::optional<FolderId>(target.insertionFolder) : std::nullopt);
     if (hidden && (!success || manager_.model().window(source))) showCarrier();
-    carrierCompact_ = false;
+    carrierCompact_ = carrierHidden_ = false;
     if (!success) return;
     manager_.showWindow(target.window);
     if (!tab.isNull()) manager_.activateTab(tab);

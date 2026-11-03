@@ -21,6 +21,7 @@ class ContentHost;
 class DockGuideItem;
 class GroupItem;
 class PeekItem;
+class RailButtonItem;
 class RailItem;
 class SplitTreeItem;
 class TabContentItem;
@@ -87,6 +88,9 @@ public:
     void showRailInsertion(std::optional<Edge> edge, int index, int extent);
     [[nodiscard]] int railExtent(Edge edge, const QVector<TabId>& tabs) const;
     [[nodiscard]] QRect railInsertionRectGlobal(Edge edge) const;
+    // The carried tabs as checked rail buttons under the pointer, while
+    // the carrier hides over that rail; no edge clears them.
+    void showRailCarrier(std::optional<Edge> edge, const QVector<TabId>& tabs, QPoint global);
     void clearDragPresentation();
 
 protected:
@@ -111,6 +115,9 @@ private:
     TabContentItem* page(TabId tab);
     void layoutCenter();
     void syncRails();
+    // Its preset, title clipping, icon and number; buttons in a rail count
+    // from one.
+    void configureRailButton(RailButtonItem& button, int ordinal) const;
     void placePeek();
     [[nodiscard]] LayoutTree composedTree(QSize area);
     void resizePinned(Edge edge, double ratio);
@@ -125,6 +132,9 @@ private:
     GroupId insertionGroup_;
     GroupId incomingGroup_;
     std::optional<Edge> railInsertion_;
+    QPointer<QQuickItem> railCarrier_;
+    std::optional<Edge> railCarrierEdge_;
+    QVector<TabId> railCarrierTabs_;
     int divider_ = 1;
     LayoutTree central_;
     std::array<PinnedRegion, 4> pinned_;

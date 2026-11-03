@@ -504,14 +504,29 @@ private slots:
 
         // A strip's tab dropped at the second button's leading quarter goes
         // between the two; the rail opens a gap while the tab is over it.
+        // The torn-out window hides there and the tab shows under the
+        // pointer as the checked rail button it will become.
         auto from = tabPoint(dock->group(central), moving);
         auto to = along(second, 0.25);
         QTest::mousePress(quickWindow, Qt::LeftButton, {}, from);
         moveHeld(quickWindow, from, to);
         QVERIFY(!dock->railInsertionRectGlobal(Edge::Left).isEmpty());
+        const auto carrier = workspace.window(manager.model().group(manager.model().groupForTab(moving))->windowId);
+        QVERIFY(carrier && carrier != quickWindow);
+        QCOMPARE(carrier->opacity(), 0.0);
+        const auto carried = [&] {
+            const auto buttons = dock->findChildren<quick::RailButtonItem*>();
+            const auto found = std::find_if(buttons.cbegin(), buttons.cend(), [&](const quick::RailButtonItem* button) {
+                return button->tab() == moving && button->isVisible()
+                    && button->mapRectToScene(button->boundingRect()).contains(QPointF(to));
+            });
+            return found == buttons.cend() ? nullptr : *found;
+        };
+        QVERIFY(carried() && carried()->isChecked());
         QTest::mouseRelease(quickWindow, Qt::LeftButton, {}, to);
         QTRY_COMPARE(rail(), (QVector<TabId>{first, moving, second}));
         QVERIFY(dock->railInsertionRectGlobal(Edge::Left).isEmpty());
+        QVERIFY(!carried() || dock->rail(Edge::Left)->isAncestorOf(carried()));
 
         // Within its rail a tab moves among the buttons.
         QTRY_VERIFY(dock->rail(Edge::Left) && dock->rail(Edge::Left)->buttons().size() == 3);

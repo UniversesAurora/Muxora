@@ -114,6 +114,8 @@ private:
     bool leavingSystemMove_ = false;
     // The carried window shows only its tabs, in the target strip's look.
     bool carrierCompact_ = false;
+    // Over a strip or a rail the target paints the tabs; the window hides.
+    bool carrierHidden_ = false;
     bool updateQueued_ = false;
     quintptr movingHandle_ = 0;
     // Ends queued by one move loop are ignored by the next drag.

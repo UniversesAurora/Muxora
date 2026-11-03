@@ -85,7 +85,6 @@ void DockSurfaceItem::syncRails()
     const auto& model = manager_.model();
     const auto* window = model.window(window_);
     const auto theme = manager_.interfaceTheme();
-    const auto appearance = manager_.tabAppearance();
     const bool shown = manager_.sideBarsVisible(window_);
     for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom}) {
         QVector<QPair<TabId, QString>> tabs;
@@ -125,15 +124,20 @@ void DockSurfaceItem::syncRails()
         rail->setVisible(shown);
         int ordinal = 0;
         for (auto* button : rail->buttons()) {
-            const auto tab = button->tab();
-            button->setPreset(manager_.tabColorPreset(model.tab(tab)->colorId));
-            button->setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
-            ++ordinal;
-            button->setPresentation(appearance.showSidebarIcons && manager_.tabOptions(tab).showIcon
-                ? iconFor(QStringLiteral("window"), theme) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
-            button->setChecked(tab == peekTab_);
+            configureRailButton(*button, ++ordinal);
+            button->setChecked(button->tab() == peekTab_);
         }
     }
+}
+
+void DockSurfaceItem::configureRailButton(RailButtonItem& button, int ordinal) const
+{
+    const auto tab = button.tab();
+    const auto appearance = manager_.tabAppearance();
+    button.setPreset(manager_.tabColorPreset(manager_.model().tab(tab)->colorId));
+    button.setTitleClipping(appearance.clipSidebarTitles, appearance.maximumSidebarTitleWidth);
+    button.setPresentation(appearance.showSidebarIcons && manager_.tabOptions(tab).showIcon
+        ? iconFor(QStringLiteral("window"), manager_.interfaceTheme()) : QIcon{}, appearance.showSidebarNumbers ? ordinal : 0);
 }
 
 void DockSurfaceItem::showPeek(GroupId group, TabId tab)
@@ -599,6 +603,48 @@ int DockSurfaceItem::railExtent(Edge edge, const QVector<TabId>& tabs) const
     return extent;
 }
 
+// As the Widgets carrier over a rail (tab strip design 6.7), but painted
+// by the target as the strips paint theirs: the buttons the tabs would get
+// there, numbered as railExtent() measures them, the first one centered on
+// the pointer.
+void DockSurfaceItem::showRailCarrier(std::optional<Edge> edge, const QVector<TabId>& tabs, QPoint global)
+{
+    if (!edge || tabs.isEmpty()) {
+        delete railCarrier_.data();
+        railCarrierEdge_.reset(); railCarrierTabs_.clear();
+        return;
+    }
+    const bool vertical = *edge == Edge::Left || *edge == Edge::Right;
+    if (!railCarrier_ || railCarrierEdge_ != edge || railCarrierTabs_ != tabs) {
+        delete railCarrier_.data();
+        railCarrier_ = new QQuickItem(this);
+        railCarrier_->setZ(15);
+        railCarrierEdge_ = edge; railCarrierTabs_ = tabs;
+        const auto theme = manager_.interfaceTheme();
+        const auto& rail = rails_[size_t(*edge)];
+        int ordinal = rail ? int(rail->buttons().size()) : 0;
+        qreal along = 0;
+        QSizeF size;
+        for (const auto tab : tabs) if (const auto* record = manager_.model().tab(tab)) {
+            auto* button = new RailButtonItem(theme, tab, record->title, vertical, theme.metrics.edgeThickness, railCarrier_);
+            button->setAcceptedMouseButtons(Qt::NoButton);
+            button->setAcceptHoverEvents(false);
+            configureRailButton(*button, ++ordinal);
+            button->setChecked(true);
+            const QSizeF extent = button->preferredSize();
+            button->setSize(extent);
+            button->setPosition(vertical ? QPointF(0, along) : QPointF(along, 0));
+            along += vertical ? extent.height() : extent.width();
+            size = vertical ? QSizeF(std::max(size.width(), extent.width()), along)
+                            : QSizeF(along, std::max(size.height(), extent.height()));
+        }
+        railCarrier_->setSize(size);
+    }
+    const auto buttons = railCarrier_->childItems();
+    const auto anchor = buttons.isEmpty() ? QPointF() : buttons.first()->boundingRect().center() + buttons.first()->position();
+    railCarrier_->setPosition(mapFromGlobal(QPointF(global)) - anchor);
+}
+
 QRect DockSurfaceItem::railInsertionRectGlobal(Edge edge) const
 {
     const auto& rail = rails_[size_t(edge)];
@@ -610,6 +656,7 @@ void DockSurfaceItem::clearDragPresentation()
     showInsertion({}, -1, {}, false, TabLayoutInput::Carried::Tab);
     showIncoming({}, {}, {});
     showRailInsertion({}, -1, 0);
+    showRailCarrier({}, {}, {});
     for (const auto& rail : rails_) if (rail) rail->setDraggedTab({});
     clearGuides();
     for (const auto& view : groups_) if (view) {
