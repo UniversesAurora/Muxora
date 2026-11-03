@@ -52,6 +52,10 @@ struct WindowManager::Private {
     QVector<StatusItem> customStatusItems;
     WindowId activeWindow;
     WindowPresenter* presenter = nullptr;
+    // External has no toolbars yet (10.4): a window's restored toolbar
+    // layouts are written back as read, so saving keeps them.
+    QHash<WindowId, QJsonObject> keptStrips;
+    QHash<WindowId, QJsonObject> keptInactiveStrips;
     bool refreshing = false;
     bool destroying = false;
     int geometryUpdateDepth = 0;

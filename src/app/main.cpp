@@ -59,10 +59,10 @@ int main(int argc, char* argv[])
     parser.addOption({"screenshot", QCoreApplication::translate("Muxora", "Save a window screenshot after startup"), "path"});
     parser.addOption({"command", QCoreApplication::translate("Muxora", "Run a registered command after startup"), "id"});
     parser.addOption({"state-dir", QCoreApplication::translate("Muxora", "Use a separate layout state directory"), "path"});
-    parser.addOption({"quick", QCoreApplication::translate("Muxora", "Show the windows with Qt Quick (in development; the layout is neither restored nor saved)")});
+    parser.addOption({"quick", QCoreApplication::translate("Muxora", "Show the windows with Qt Quick (in development)")});
     parser.process(app);
-    // Until 10.6 the Quick windows are opt-in. They do not touch the saved
-    // layout, which keeps describing the Widgets windows.
+    // Until 10.6 the Quick windows are opt-in. Both read and write the same
+    // layout file; Quick keeps the toolbar layouts it does not show yet.
     const bool quick = parser.isSet("quick");
     window_system::WindowManager windows(quick ? window_system::WindowManager::Presentation::External
                                                : window_system::WindowManager::Presentation::Widgets);
@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
     });
     const auto stateFile = stateRoot + "/window-layout.json";
     auto save = [&] {
-        if (quick || windows.model().windows().isEmpty()) return true;
+        if (windows.model().windows().isEmpty()) return true;
         QDir().mkpath(stateRoot); QSaveFile file(stateFile);
         if (!file.open(QIODevice::WriteOnly)) return false;
         if (file.write(QJsonDocument(windows.saveLayout()).toJson()) < 0) return false;
@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
         });
     QObject::connect(&windows, &window_system::WindowManager::commandFailed, &windows, [&windows](const QString& text) { windows.setStatus(windows.context().window, text); });
     muxora::LayoutFileRestore restore;
-    if (!parser.isSet("fresh") && !quick) restore = muxora::restoreLayoutFile(windows, stateFile);
+    if (!parser.isSet("fresh")) restore = muxora::restoreLayoutFile(windows, stateFile);
     if (!restore.restored || windows.model().windows().isEmpty()) {
         const auto window = windows.createWindow(window_system::WindowKind::Workbench, {"Muxora", QSize(1320, 850)});
         muxora::populateInitialWorkspace(windows, window); windows.showWindow(window);

@@ -60,6 +60,12 @@ public:
     // Shows the window, restoring it when minimized, in front and active.
     virtual void showWindow(WindowId window) = 0;
     [[nodiscard]] virtual bool isWindowMinimized(WindowId window) const = 0;
+    // The rectangle the window has when neither maximized nor full screen,
+    // and whether it is maximized; an invalid rectangle when it has none.
+    [[nodiscard]] virtual QRect normalGeometry(WindowId window) const = 0;
+    [[nodiscard]] virtual bool isWindowMaximized(WindowId window) const = 0;
+    // A restored window's place; the window may not exist yet.
+    virtual void restorePlacement(WindowId window, QRect normal, bool maximized) = 0;
 };
 
 class WorkspaceWindow;

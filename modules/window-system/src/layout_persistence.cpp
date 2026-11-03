@@ -214,20 +214,23 @@ QJsonObject WindowManager::saveLayout() const
 QJsonObject WindowManager::saveViewLayout() const
 {
     QJsonArray windows, panes;
+    const bool external = d->presentation == Presentation::External;
     for (const auto id : d->model.windowOrder()) {
-        const auto widget = d->windows.value(id); if (!widget) continue;
-        const auto geometry = widget->normalPlacementGeometry();
+        const auto widget = d->windows.value(id);
+        if (external ? !d->presenter || !d->presenter->normalGeometry(id).isValid() : !widget) continue;
+        const auto geometry = external ? d->presenter->normalGeometry(id) : widget->normalPlacementGeometry();
         QJsonObject record{{"id", id.toString(QUuid::WithoutBraces)}, {"title", d->options.value(id).title},
             {"x", geometry.x()}, {"y", geometry.y()}, {"width", geometry.width()}, {"height", geometry.height()},
-            {"maximized", widget->placementMaximized()},
+            {"maximized", external ? d->presenter->isWindowMaximized(id) : widget->placementMaximized()},
             {"tabBarsVisible", d->options.value(id).tabBarsVisible},
             {"sideBarsVisible", d->options.value(id).sideBarsVisible},
             {"toolbarsVisible", d->options.value(id).toolbarsVisible},
             {"statusBarVisible", d->options.value(id).statusBarVisible},
             {"hiddenStatusItems", QJsonArray::fromStringList(d->options.value(id).hiddenStatusItems)}};
-        record.insert("strips", widget->saveStripLayout());
+        if (!external) record.insert("strips", widget->saveStripLayout());
+        else if (d->keptStrips.contains(id) && !d->keptStrips.value(id).isEmpty()) record.insert("strips", d->keptStrips.value(id));
         record.insert("barLayouts", visibilityProfilesToJson(d->windowVisibility.value(id)));
-        const auto inactive = widget->saveInactiveStripLayouts();
+        const auto inactive = external ? d->keptInactiveStrips.value(id) : widget->saveInactiveStripLayouts();
         if (!inactive.isEmpty()) record.insert("stripLayouts", inactive);
 #ifndef QT_NO_DEBUG
         for (auto field = record.constBegin(); field != record.constEnd(); ++field)
@@ -388,6 +391,8 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     auto cleanup = [&] { for (auto widget : created) delete widget; };
     for (const auto& tab : candidate.tabs()) for (const auto id : candidate.panes(tab.id)) {
         if (!descriptors.contains(id)) { cleanup(); return {false, QCoreApplication::translate("WindowSystem", "Missing content restoration descriptor")}; }
+        // The External presentation creates content from the descriptors.
+        if (d->presentation == Presentation::External) continue;
         const QPointer<QWidget> content(createContent(descriptors.value(id), id));
         if (!self) {
             // Previously prepared content has not entered the manager's pane
@@ -447,10 +452,19 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
         d->windowVisibility[id].insert(kind, bars); d->visibilityKinds.insert(id, kind);
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
+    if (d->presentation == Presentation::External) {
+        d->keptStrips = restoredCurrentStrips;
+        d->keptInactiveStrips = restoredInactiveStrips;
+    }
     refresh();
     if (!self) return {false, QCoreApplication::translate("WindowSystem", "The window manager was destroyed during restoration")};
     for (const auto& entry : snapshot.value("windows").toArray()) {
         const auto object = entry.toObject(); const WindowId id(object.value("id").toString());
+        if (d->presentation == Presentation::External && d->presenter && d->model.window(id)) {
+            d->presenter->restorePlacement(id, normalizeWindowPlacement(savedWindowGeometry(object), available, {480, 320}),
+                                           object.value("maximized").toBool());
+            continue;
+        }
         auto widget = d->windows.value(id); if (!widget) continue;
         widget->restoreStripLayouts(restoredInactiveStrips.value(id), restoredCurrentStrips.value(id));
         const auto minimum = widget->minimumSize().expandedTo(widget->minimumSizeHint());

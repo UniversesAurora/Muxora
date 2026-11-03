@@ -28,8 +28,8 @@
         <translation>指定独立布局状态目录</translation>
     </message>
     <message>
-        <source>Show the windows with Qt Quick (in development; the layout is neither restored nor saved)</source>
-        <translation>用 Qt Quick 显示窗口（开发中，不恢复也不保存布局）</translation>
+        <source>Show the windows with Qt Quick (in development)</source>
+        <translation>用 Qt Quick 显示窗口（开发中）</translation>
     </message>
     <message>
         <source>New workspace tab</source>

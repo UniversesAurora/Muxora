@@ -87,6 +87,25 @@ public:
     // As the Widgets window applies its view state: any view mode is full
     // screen, and the header row, which holds the toolbars there, follows
     // the toolbars' visibility.
+    // The rectangle to save: the window's own while neither maximized nor
+    // full screen, else the last one it had then.
+    QRect normalGeometry() const
+    {
+        return windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized) ? normalGeometry_ : geometry();
+    }
+    bool normallyMaximized() const
+    {
+        return windowStates() & Qt::WindowFullScreen ? bool(normalStates_ & Qt::WindowMaximized)
+            : windowStates() & Qt::WindowMinimized ? maximizedBeforeMinimized_ : bool(windowStates() & Qt::WindowMaximized);
+    }
+    // Shows the window at a restored place.
+    void place(QRect normal, bool maximized)
+    {
+        setGeometry(normal);
+        normalGeometry_ = normal;
+        if (maximized) showMaximized(); else showNormal();
+    }
+
     // As the Widgets window: the active tab before the window's title, and
     // a floating window says so, also in its header.
     void updateCaption()
@@ -130,6 +149,11 @@ protected:
             return true;
         }
         if (event->type() == QEvent::Resize) layoutChildren();
+        if ((event->type() == QEvent::Resize || event->type() == QEvent::Move)
+            && !(windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized)) && isVisible())
+            normalGeometry_ = geometry();
+        if (event->type() == QEvent::WindowStateChange && (windowStates() & Qt::WindowMinimized))
+            maximizedBeforeMinimized_ = static_cast<QWindowStateChangeEvent*>(event)->oldState() & Qt::WindowMaximized;
         return QQuickWindow::event(event);
     }
 #ifdef Q_OS_WIN
@@ -153,6 +177,8 @@ private:
     quick::WindowChromeItem* chrome_;
     Qt::WindowStates normalStates_;
     bool applyingViewState_ = false;
+    QRect normalGeometry_;
+    bool maximizedBeforeMinimized_ = false;
 };
 
 } // namespace
@@ -189,6 +215,23 @@ struct QuickWorkspace::Private final : WindowPresenter {
         const auto* window = windows.value(id).data();
         return !window || !window->isVisible() || (window->windowStates() & Qt::WindowMinimized);
     }
+    QRect normalGeometry(WindowId id) const override
+    {
+        const auto* window = windows.value(id).data();
+        return window ? window->normalGeometry() : QRect{};
+    }
+    bool isWindowMaximized(WindowId id) const override
+    {
+        const auto* window = windows.value(id).data();
+        return window && window->normallyMaximized();
+    }
+    void restorePlacement(WindowId id, QRect normal, bool maximized) override
+    {
+        if (auto* window = windows.value(id).data()) window->place(normal, maximized);
+        else placements.insert(id, {normal, maximized});
+    }
+    // Restored places of windows not built yet.
+    QHash<WindowId, std::pair<QRect, bool>> placements;
 };
 
 QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
@@ -241,7 +284,9 @@ void QuickWorkspace::sync()
         auto& window = d->windows[id];
         if (!window) {
             window = new WorkspaceQuickWindow(d->manager, d->host, d->drag, id);
-            window->show();
+            if (const auto placement = d->placements.take(id); placement.first.isValid())
+                window->place(placement.first, placement.second);
+            else window->show();
         }
         window->dock->sync();
         window->updateCaption();

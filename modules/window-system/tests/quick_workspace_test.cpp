@@ -19,6 +19,8 @@
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -979,6 +981,54 @@ private slots:
         QTRY_COMPARE(workspace.window(floating)->title(), QStringLiteral("Renamed — Single · Floating window"));
         QVERIFY(manager.activateTab(a));
         QTRY_COMPARE(quickWindow->title(), QStringLiteral("A — View"));
+    }
+
+    void theLayoutSurvivesSavingAndRestoring()
+    {
+        QJsonObject saved;
+        WindowId window;
+        TabId first, second;
+        QRect placed;
+        {
+            WindowManager manager(WindowManager::Presentation::External);
+            QuickWorkspace workspace(manager);
+            workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+            window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Saved"), QSize(560, 380)});
+            first = manager.addTab(window, named(QStringLiteral("First")));
+            second = manager.addTab(window, named(QStringLiteral("Second")));
+            QTRY_VERIFY(workspace.window(window));
+            auto* quickWindow = workspace.window(window);
+            QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+            quickWindow->setGeometry(QRect(quickWindow->position() + QPoint(30, 20), QSize(600, 400)));
+            QTRY_COMPARE(quickWindow->size(), QSize(600, 400));
+            placed = quickWindow->geometry();
+            saved = manager.saveLayout();
+        }
+        const auto windows = saved.value("windows").toArray();
+        QCOMPARE(windows.size(), 1);
+        QCOMPARE(windows.first().toObject().value("width").toInt(), 600);
+        // A toolbar layout the Quick windows do not show yet is kept.
+        auto record = windows.first().toObject();
+        const QJsonObject strips{{"locked", true},
+            {"rows", QJsonArray{QJsonValue(QJsonArray{QStringLiteral("menu"), QStringLiteral("workspace"), QStringLiteral("title"), QStringLiteral("caption-controls")})}},
+            {"strips", QJsonObject{{"menu", QJsonObject{}}, {"workspace", QJsonObject{}}, {"title", QJsonObject{}}, {"caption-controls", QJsonObject{}}}}};
+        QVERIFY(!record.contains("strips"));
+        record.insert("strips", strips);
+        saved.insert("windows", QJsonArray{record});
+
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        int created = 0;
+        workspace.setContentFactory([&created](const TabOptions&, PaneId) { ++created; return new QQuickItem; });
+        const auto restored = manager.restoreLayout(saved);
+        QVERIFY2(restored.ok, qPrintable(restored.error));
+        QCOMPARE(manager.model().orderedTabs(window), (QVector<TabId>{first, second}));
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(quickWindow));
+        QTRY_COMPARE(quickWindow->geometry(), placed);
+        QTRY_COMPARE(created, 2);
+        QCOMPARE(manager.saveLayout().value("windows").toArray().first().toObject().value("strips").toObject(), strips);
     }
 
     void shortcutsRunInTheirQuickWindow()
