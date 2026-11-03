@@ -58,7 +58,9 @@ bool hasNativeRegion(HWND handle)
     DeleteObject(region);
     return kind != ERROR;
 }
-void verifyNativeMask(QWidget* window)
+// `hitTested`: false for a carrier hidden by opacity, which Windows passes
+// over in hit testing; capture still holds its input.
+void verifyNativeMask(QWidget* window, bool hitTested = true)
 {
     const auto handle = reinterpret_cast<HWND>(window->effectiveWinId());
     const auto actual = CreateRectRgn(0, 0, 0, 0), expected = CreateRectRgn(0, 0, 0, 0);
@@ -80,7 +82,7 @@ void verifyNativeMask(QWidget* window)
     POINT origin{}; QVERIFY(ClientToScreen(handle, &origin));
     QVERIFY(OffsetRgn(expected, origin.x - outer.left, origin.y - outer.top) != ERROR);
     QVERIFY(EqualRgn(actual, expected));
-    if (!window->isVisible()) return;
+    if (!window->isVisible() || !hitTested) return;
     // Native input must follow the shape, including the empty part of the tab
     // row. Capture does not change WindowFromPoint's geometric hit result.
     std::optional<QPoint> inside, outside;
@@ -100,7 +102,9 @@ void verifyNativeMask(QWidget* window)
     if (outside) QVERIFY(rootAt(*outside) != handle);
 }
 
-void verifyNativeStyle(QWidget* window)
+// `hidden`: a carrier over a strip, which hides its own picture while the
+// target strip paints its label (tab strip design 6.2).
+void verifyNativeStyle(QWidget* window, bool hidden = false)
 {
     const auto handle = reinterpret_cast<HWND>(window->winId());
     QVERIFY(IsWindow(handle));
@@ -124,8 +128,8 @@ void verifyNativeStyle(QWidget* window)
     QCOMPARE(style & DWORD(WS_SYSMENU), DWORD(0));
     QCOMPARE(style & DWORD(WS_POPUP), DWORD(0));
     const auto extendedStyle = DWORD(GetWindowLongPtrW(handle, GWL_EXSTYLE));
-    QCOMPARE(extendedStyle & DWORD(WS_EX_LAYERED), DWORD(0));
-    QCOMPARE(window->windowOpacity(), qreal(1.0));
+    QCOMPARE(extendedStyle & DWORD(WS_EX_LAYERED), hidden ? DWORD(WS_EX_LAYERED) : DWORD(0));
+    QCOMPARE(window->windowOpacity(), qreal(hidden ? 0.0 : 1.0));
     // This attribute is documented for Set, not Get; its getter returns
     // E_INVALIDARG. Verify the actual write's HRESULT and argument instead.
     const auto transitions = nativeTransitionConfiguration(window);
@@ -137,7 +141,7 @@ void verifyNativeStyle(QWidget* window)
     // The independent Win32 fixtures retain the full-caption region constraint
     // and prove the captionless transition used here keeps NC composition.
     QVERIFY(nonClientEnabled);
-    if (compact && !window->mask().isEmpty()) verifyNativeMask(window);
+    if (compact && !window->mask().isEmpty()) verifyNativeMask(window, !hidden);
 }
 
 void verifyMaximizedWorkArea(QWidget* window)
@@ -1476,7 +1480,8 @@ void NativeFrameTest::reorderedWholeWindowDragCannotRestoreTheStockCaption()
         sendDragMouse(carrier, QEvent::MouseMove, onStrip);
         QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Tab);
         QCOMPARE(reinterpret_cast<HWND>(carrier->effectiveWinId()), handle); QCOMPARE(GetCapture(), handle);
-        QVERIFY(hasNativeRegion(handle)); verifyNativeStyle(carrier);
+        QTRY_COMPARE(carrier->windowOpacity(), qreal(0.0));
+        QVERIFY(hasNativeRegion(handle)); verifyNativeStyle(carrier, true);
         sendDragMouse(carrier, QEvent::MouseMove, outside);
         QCOMPARE(carrier->dragPresentation(), WorkspaceWindow::DragPresentation::Window);
         QCOMPARE(carrier->geometry(), restoredMovingGeometry);
