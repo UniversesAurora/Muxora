@@ -20,6 +20,8 @@ class QWindow;
 
 namespace window_system {
 
+enum class CommandMenuSurface;
+
 struct WindowOptions {
     QString title = QStringLiteral("WindowSystem");
     QSize size = QSize(1280, 800);
@@ -346,6 +348,7 @@ private:
     void contentVisibilityChanged(const QVector<ContentVisibilityChange>& changes);
     Q_SIGNAL void contentVisibilityRequested(bool enabled);
     Q_SIGNAL void hierarchyBarsRequested(const QVector<QPair<TabId, PaneId>>& sources);
+    Q_SIGNAL void contextMenuRequested(CommandMenuSurface surface, const CommandContext& context, QPoint global);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.

@@ -611,6 +611,7 @@ void WindowManager::showTabMenu(TabId tab, QPoint global)
     // A context menu targets the clicked label without navigating away from
     // the content the user is currently reading (including an open peek).
     captured.group = group; captured.tab = tab; captured.pane = d->model.tab(tab)->activePane;
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Tab, captured, global); return; }
     const QPointer<WindowManager> self(this);
     DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, interfaceTheme());
     appendTabPresentationActions(&menu, this, captured);
@@ -621,6 +622,7 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
 {
     const auto* record = d->model.window(window); if (!record) return;
     const auto captured = context(window);
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Window, captured, global); return; }
     DismissOnlyMenu menu(windowWidget(window)); applyTheme(&menu, interfaceTheme());
     populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
     menu.exec(global);
@@ -631,6 +633,7 @@ void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget*
     activateTab(tab); focusPane(tab, pane);
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
     const auto captured = context(window);
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Pane, captured, global); return; }
     QMenu* menu = nullptr;
     for (auto* editor = content; editor; editor = editor->parentWidget()) {
         if (auto* plain = qobject_cast<QPlainTextEdit*>(editor)) { menu = plain->createStandardContextMenu(); break; }

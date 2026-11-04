@@ -4,6 +4,7 @@
 #include "quick/popup_menu.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
+#include "quick/peek_item.hpp"
 #include "quick/rail_item.hpp"
 #include "quick/rail_button_item.hpp"
 #include "quick/tab_bar_item.hpp"
@@ -178,26 +179,39 @@ private slots:
 
     void workspaceMenusKeepSelectionAndCloseTheCapturedTab_data()
     {
-        QTest::addColumn<bool>("sidebar");
-        QTest::newRow("tab-strip") << false;
-        QTest::newRow("sidebar") << true;
+        QTest::addColumn<int>("source");
+        QTest::newRow("tab-strip") << 0;
+        QTest::newRow("sidebar") << 1;
+        QTest::newRow("peek-header") << 2;
     }
     void workspaceMenusKeepSelectionAndCloseTheCapturedTab()
     {
-        QFETCH(bool, sidebar);
+        QFETCH(int, source);
         WindowManager manager(WindowManager::Presentation::External);
         QuickWorkspace workspace(manager);
         workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
         const auto window = manager.createWindow();
         const auto first = manager.addTab(window, {QStringLiteral("First")});
         const auto target = manager.addTab(window, {QStringLiteral("Target")});
-        if (sidebar) QVERIFY(manager.moveTabToEdgeBar(target, window, Edge::Left));
+        if (source) QVERIFY(manager.moveTabToEdgeBar(target, window, Edge::Left));
         QVERIFY(manager.activateTab(first));
         QTRY_VERIFY(workspace.window(window));
         auto* view = workspace.window(window);
         view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
         auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
-        if (sidebar) {
+        if (source == 2) {
+            dock->showPeek(manager.model().groupForTab(target), target);
+            QTRY_VERIFY(dock->peek());
+            auto* panel = dock->peek();
+            const QPoint point(30, 5);
+            QContextMenuEvent event(QContextMenuEvent::Mouse, panel->mapToScene(point).toPoint(), panel->mapToGlobal(point).toPoint());
+            QCoreApplication::sendEvent(view, &event);
+            QTRY_VERIFY(popup(view));
+            QTest::keyClick(popup(view), Qt::Key_Escape);
+            QTRY_VERIFY(!popup(view));
+            QVERIFY(dock->peek());
+            QCoreApplication::sendEvent(view, &event);
+        } else if (source == 1) {
             QTRY_VERIFY(dock->rail(Edge::Left));
             auto* button = dock->rail(Edge::Left)->buttons().first();
             QTest::mouseClick(view, Qt::RightButton, Qt::NoModifier,
@@ -206,11 +220,11 @@ private slots:
             auto* group = dock->group(manager.model().groupForTab(target)); QVERIFY(group);
             auto* bar = group->tabBar();
             const auto point = bar->controller().tabRect(bar->controller().indexOf(target)).center();
-            QContextMenuEvent event(QContextMenuEvent::Mouse, point, bar->mapToGlobal(point).toPoint());
-            QCoreApplication::sendEvent(bar, &event);
+            QContextMenuEvent event(QContextMenuEvent::Mouse, bar->mapToScene(point).toPoint(), bar->mapToGlobal(point).toPoint());
+            QCoreApplication::sendEvent(view, &event);
         }
         QTRY_VERIFY(popup(view));
-        QCOMPARE(manager.context().tab, first);
+        QCOMPARE(manager.context().tab, source == 2 ? target : first);
         auto* menu = popup(view);
         QVERIFY(QTest::qWaitForWindowExposed(menu));
         auto* close = namedItem(menu->contentItem(), QStringLiteral("workspace.closeTab")); QVERIFY(close);
@@ -219,6 +233,58 @@ private slots:
         QTRY_VERIFY(!manager.model().tab(target));
         QCOMPARE(manager.context().tab, first);
         QVERIFY(manager.model().tab(first));
+        QTRY_VERIFY(!popup(view));
+    }
+
+    void paneMenuTargetsThePaneUnderThePointer()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Panes")});
+        const auto first = manager.model().tab(tab)->activePane;
+        const auto target = manager.splitPane(tab, first, Placement::Right); QVERIFY(!target.isNull());
+        QVERIFY(manager.focusPane(tab, first));
+        QTRY_VERIFY(workspace.content(target) && workspace.content(target)->window());
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* content = workspace.content(target);
+        const auto point = content->mapToScene(content->boundingRect().center()).toPoint();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+        QCoreApplication::sendEvent(view, &event);
+        QTRY_VERIFY(popup(view));
+        QCOMPARE(manager.context().pane, target);
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* close = namedItem(menu->contentItem(), QStringLiteral("pane.close")); QVERIFY(close);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, close->mapToScene(close->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!manager.model().panes(tab).contains(target));
+        QCOMPARE(manager.model().panes(tab), QVector<PaneId>{first});
+    }
+
+    void managerMenuRequestsUseTheQuickWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window, {QStringLiteral("First")});
+        const auto second = manager.addTab(window, {QStringLiteral("Second")});
+        const auto folder = manager.createTabFolder({first, second}, QStringLiteral("Folder")); QVERIFY(!folder.isNull());
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        const auto global = view->mapToGlobal(QPoint(80, 80));
+        manager.showTabFolderMenu(folder, global);
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* ungroup = namedItem(menu->contentItem(), QStringLiteral("tabFolder.ungroup")); QVERIFY(ungroup);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, ungroup->mapToScene(ungroup->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!manager.model().folder(folder));
+        QVERIFY(manager.model().tab(first)); QVERIFY(manager.model().tab(second));
+        manager.showGroupMenu(manager.model().groupForTab(first), global);
+        QTRY_VERIFY(popup(view));
+        QTest::keyClick(popup(view), Qt::Key_Escape);
         QTRY_VERIFY(!popup(view));
     }
 

@@ -31,6 +31,9 @@ public:
     void sync();
     [[nodiscard]] QSize minimumSize() const;
 
+signals:
+    void contextMenuRequested(TabId tab, PaneId pane, QPoint global);
+
 private:
     ContentColumnItem* frame(PaneId pane);
 

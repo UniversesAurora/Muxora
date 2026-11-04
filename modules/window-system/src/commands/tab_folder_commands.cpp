@@ -246,6 +246,7 @@ void WindowManager::showTabFolderMenu(FolderId folder, QPoint position)
     // The current tab when it is in the folder, else the folder's first.
     captured.tab = tabs.contains(record->activeTab) ? record->activeTab : tabs.first();
     captured.pane = d->model.tab(captured.tab)->activePane;
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::TabFolder, captured, position); return; }
     auto* menu = new DismissOnlyMenu(windowWidget(record->windowId)); menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->setObjectName(QStringLiteral("TabFolderContextMenu")); applyTheme(menu, interfaceTheme());
     populateContextMenu(menu, CommandMenuSurface::TabFolder, this, captured); menu->popup(position);

@@ -166,6 +166,9 @@ void DockSurfaceItem::showPeek(GroupId group, TabId tab)
         // button does.
         panel->dragRequested = [this, tab, edge](DragStart start) { if (drag_) drag_->beginRailTab(window_, edge, tab, start); };
     }
+    panel->contextMenuRequested = [this, group, tab](QPoint global) {
+        showContextMenu(CommandMenuSurface::Tab, group, tab, global);
+    };
     peek_ = panel;
     if (window()) window()->installEventFilter(this);
     for (const auto& rail : rails_)
@@ -218,7 +221,7 @@ void DockSurfaceItem::placePeek()
 
 bool DockSurfaceItem::eventFilter(QObject* watched, QEvent* event)
 {
-    if (peek_ && watched == window()) {
+    if (peek_ && watched == window() && !menu_) {
         if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
             closePeek();
             return true;
@@ -304,6 +307,7 @@ TabContentItem* DockSurfaceItem::page(TabId tab)
     auto page = pages_.value(tab);
     if (!page) {
         page = new TabContentItem(manager_, host_, bars_, tab);
+        connect(page, &TabContentItem::contextMenuRequested, this, &DockSurfaceItem::paneMenuRequested);
         // QObject ownership follows this surface; visual parenting follows
         // the group or peek panel. Moving content never transfers the page.
         page->setParent(this);
@@ -362,6 +366,13 @@ void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, GroupId group,
     captured.group = group; captured.tab = tab.isNull() ? record->activeTab : tab;
     const auto* target = manager_.model().tab(captured.tab);
     captured.pane = target ? target->activePane : PaneId{};
+    showContextMenu(surface, captured, global, strip);
+}
+
+void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, const CommandContext& captured,
+                                      QPoint global, TabBarItem* strip)
+{
+    Q_ASSERT(captured.window == window_);
     const QPointer<DockSurfaceItem> self(this);
     const QPointer<TabBarItem> bar(strip);
     const QPointer<WindowManager> owner(&manager_);
@@ -372,8 +383,9 @@ void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, GroupId group,
     }
     auto commands = describeContextMenu(surface, owner, captured);
     if (!self || !owner) return;
-    const auto* current = owner->model().group(group);
-    if (!current || (!captured.tab.isNull() && !current->tabs.contains(captured.tab))) {
+    const auto* current = owner->model().group(captured.group);
+    if (!owner->model().window(captured.window) || (!captured.group.isNull() && (!current
+        || (!captured.tab.isNull() && !current->tabs.contains(captured.tab))))) {
         if (bar) bar->setPopupOpen(false);
         return;
     }

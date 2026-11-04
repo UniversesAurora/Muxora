@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "peek_item.hpp"
+#include <QContextMenuEvent>
 #include "button_item.hpp"
 #include "path_item.hpp"
 #include "tab_label_text_item.hpp"
@@ -113,6 +114,20 @@ void PeekItem::setEdge(Edge edge)
 int PeekItem::headerHeight() const
 {
     return std::max(uiPixels(peekHeaderHeight), QFontMetrics(font_).height() + uiPixels(2));
+}
+
+bool PeekItem::event(QEvent* event)
+{
+    if (event->type() == QEvent::ContextMenu) {
+        const auto* menu = static_cast<QContextMenuEvent*>(event);
+        const bool keyboard = menu->reason() == QContextMenuEvent::Keyboard;
+        const auto local = keyboard ? QPoint(int(width()) / 2, headerHeight() / 2) : mapFromGlobal(menu->globalPos()).toPoint();
+        if (local.y() <= headerHeight()) if (const auto callback = contextMenuRequested) {
+            const auto global = keyboard ? mapToGlobal(local).toPoint() : menu->globalPos();
+            event->accept(); callback(global); return true;
+        }
+    }
+    return QQuickItem::event(event);
 }
 
 void PeekItem::mousePressEvent(QMouseEvent* event)

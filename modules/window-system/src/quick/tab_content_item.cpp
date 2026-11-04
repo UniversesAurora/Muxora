@@ -4,9 +4,11 @@
 #include "content_bars.hpp"
 #include "split_tree_item.hpp"
 #include <window_system/window_manager.hpp>
+#include <QContextMenuEvent>
 #include <QtMath>
 #include <algorithm>
 #include <array>
+#include <functional>
 
 namespace window_system::quick {
 // Shared by the whole tab and individual panes. Ownership stays with the
@@ -14,6 +16,7 @@ namespace window_system::quick {
 class ContentColumnItem final : public QQuickItem {
 public:
     explicit ContentColumnItem(QQuickItem* parent) : QQuickItem(parent) { setClip(true); }
+    std::function<void(QPoint)> contextMenuRequested;
 
     void configure(QQuickItem* top, QQuickItem* body, QQuickItem* bottom, QSize bodyMinimum = QSize(0, 0))
     {
@@ -49,6 +52,17 @@ public:
     }
 
 protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::ContextMenu) if (const auto callback = contextMenuRequested) {
+            const auto* menu = static_cast<QContextMenuEvent*>(event);
+            const auto global = menu->reason() == QContextMenuEvent::Keyboard
+                ? mapToGlobal(boundingRect().center()).toPoint() : menu->globalPos();
+            event->accept(); callback(global); return true;
+        }
+        return QQuickItem::event(event);
+    }
+
     void geometryChange(const QRectF& now, const QRectF& previous) override
     {
         const QPointer<ContentColumnItem> self(this);
@@ -113,7 +127,10 @@ TabContentItem::~TabContentItem()
 ContentColumnItem* TabContentItem::frame(PaneId pane)
 {
     auto& frame = frames_[pane];
-    if (!frame) frame = new ContentColumnItem(split_);
+    if (!frame) {
+        frame = new ContentColumnItem(split_);
+        frame->contextMenuRequested = [this, pane](QPoint global) { emit contextMenuRequested(tab_, pane, global); };
+    }
     return frame;
 }
 

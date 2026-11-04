@@ -37,8 +37,10 @@ public:
     std::function<PeekSizePolicy()> requestedSize;
     std::function<void(PeekSizePolicy)> resizeRequested;
     std::function<void(DragStart)> dragRequested;
+    std::function<void(QPoint)> contextMenuRequested;
 
 protected:
+    bool event(QEvent* event) override;
     void geometryChange(const QRectF& now, const QRectF& previous) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;

@@ -56,6 +56,7 @@ public:
     [[nodiscard]] TabId peekTab() const { return peekTab_; }
     void showPeek(GroupId group, TabId tab);
     void closePeek();
+    void showContextMenu(CommandMenuSurface surface, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
     // The workspace's drag, which the strips start.
     void setTabDrag(TabDrag* drag) { drag_ = drag; }
 
@@ -105,6 +106,9 @@ public:
     // A wheel step during a drag goes to the strip or rail under the
     // pointer, as the Widgets surface routes it; false when none scrolls.
     bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
+
+signals:
+    void paneMenuRequested(TabId tab, PaneId pane, QPoint global);
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;

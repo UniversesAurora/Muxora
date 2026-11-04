@@ -207,6 +207,7 @@ void WindowManager::showGroupMenu(GroupId group, QPoint position)
     auto captured = context(record->windowId); captured.group = group; captured.tab = record->activeTab;
     const auto* active = d->model.tab(record->activeTab);
     captured.pane = active ? active->activePane : PaneId{};
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Group, captured, position); return; }
     auto* menu = new DismissOnlyMenu(windowWidget(record->windowId)); menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->setObjectName(QStringLiteral("TabBarContextMenu")); applyTheme(menu, interfaceTheme());
     appendTabPresentationActions(menu, this, captured);
