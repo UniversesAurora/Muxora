@@ -32,6 +32,7 @@ foreach(suite IN ITEMS frame-motion tab-position-motion label-presence tab-label
     window_system_add_suite(${suite} model LINK WindowSystemPresentation)
 endforeach()
 window_system_add_suite(tab-viewport-reflow model LINK WindowSystem::Model)
+window_system_add_suite(toolbar-layout model LINK WindowSystemPresentation)
 window_system_add_suite(dock-guides-geometry model LINK WindowSystem::Model)
 window_system_add_suite(quick-path model LINK Qt6::Gui
     SOURCES ../src/quick/path_geometry.cpp ../src/docking/surface_geometry.cpp)

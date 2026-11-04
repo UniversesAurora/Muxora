@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "command_strip.hpp"
+#include "strip_layout.hpp"
 #include "commands/popup_menu.hpp"
 
 #include <QAction>
+#include <QVarLengthArray>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QFocusEvent>
@@ -959,51 +961,15 @@ QSize CommandStripHost::minimumSizeHint() const { return areaSizeHint(Area::Top,
 
 QVector<int> CommandStripHost::rowWidths(const QStringList& visible, int available) const
 {
-    QVector<int> sizes;
-    qint64 total = 0;
-    int elastic = -1;
-    int priority = -1;
-    for (int index = 0; index < visible.size(); ++index) {
-        const auto* strip = d->strips.value(visible[index]);
-        const bool isElastic = strip->sizing == StripSizing::Elastic;
+    QVarLengthArray<StripWidthInput, 8> inputs;
+    for (const auto& id : visible) {
+        const auto* strip = d->strips.value(id);
         const int preferred = strip->requestedWidth < 0 || strip->constraints.fixedWidth
             ? strip->naturalWidth() : strip->requestedWidth;
-        const int value = isElastic ? strip->minimumWidthForLayout() : std::max(strip->minimumWidthForLayout(), preferred);
-        sizes.append(value); total += value;
-        if (isElastic) elastic = index;
-        if (strip->naturalWidthPriority) priority = index;
+        inputs.append({strip->minimumWidthForLayout(), preferred,
+            strip->sizing == StripSizing::Elastic, strip->naturalWidthPriority});
     }
-    QVector<int> compressionOrder;
-    const auto appendRange = [&compressionOrder](int begin, int end, int step) {
-        for (int index = begin; index != end; index += step) compressionOrder.append(index);
-    };
-    const int leftEnd = elastic < 0 ? int(visible.size()) : elastic;
-    if (priority >= 0 && (elastic < 0 || priority < elastic)) {
-        // Keep the reset strip's head, giving way toward the trailing edge.
-        appendRange(leftEnd - 1, priority, -1);
-        compressionOrder.append(priority);
-        appendRange(priority - 1, -1, -1);
-        // Do not make room across an exhausted elastic strip: doing so would
-        // restore a compressed prefix and move the head we promised to keep.
-        if (elastic >= 0) appendRange(elastic + 1, int(visible.size()), 1);
-    } else if (priority > elastic && elastic >= 0) {
-        // Keep its tail and the following right-anchored strips unchanged.
-        appendRange(elastic + 1, priority, 1);
-        appendRange(leftEnd - 1, -1, -1);
-        compressionOrder.append(priority);
-        appendRange(priority + 1, int(visible.size()), 1);
-    } else {
-        appendRange(leftEnd - 1, -1, -1);
-        if (elastic >= 0) appendRange(elastic + 1, int(visible.size()), 1);
-    }
-    for (const int index : compressionOrder) {
-        if (total <= available) break;
-        const int minimum = d->strips.value(visible[index])->minimumWidthForLayout();
-        const int reduction = int(std::min<qint64>(total - available, sizes[index] - minimum));
-        sizes[index] -= reduction; total -= reduction;
-    }
-    if (elastic >= 0) sizes[elastic] += int(std::max<qint64>(0, qint64(available) - total));
-    return sizes;
+    return stripRowWidths({inputs.constData(), size_t(inputs.size())}, available);
 }
 
 void CommandStripHost::arrange()
