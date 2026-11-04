@@ -16,6 +16,7 @@
 class QKeyEvent;
 class QWidget;
 class QMenu;
+class QWindow;
 
 namespace window_system {
 
@@ -327,6 +328,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    friend class QuickWorkspace;
     [[nodiscard]] bool presented(WindowId window) const;
     friend class WorkspaceWindow;
     friend class DockSurface;
@@ -338,6 +340,9 @@ private:
     void refreshModelState();
     void finishRefresh();
     bool activateWithoutViews(TabId tab, PaneId pane);
+    void contentFocused(PaneId pane, QWindow* window, bool fromInput = true);
+    void contentVisibilityChanged(const QVector<ContentVisibilityChange>& changes);
+    Q_SIGNAL void contentVisibilityRequested(bool enabled);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.

@@ -194,6 +194,9 @@ struct QuickWorkspace::Private final : WindowPresenter {
     quick::TabDrag drag;
     QSet<PaneId> panes;
     bool syncPending = false;
+    bool projecting = false;
+    PaneId focusedPane;
+    QPointer<QQuickWindow> focusedWindow;
 
     // As the Widgets manager shows its windows; a minimized window comes
     // back in the state it had, maximized or full screen.
@@ -234,6 +237,18 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     : QObject(parent), d(std::make_unique<Private>(*this, manager))
 {
     Q_ASSERT(manager.presentation() == WindowManager::Presentation::External);
+    connect(&d->host, &quick::ContentHost::paneFocused, this, [this](PaneId pane, QWindow* window) {
+        // Reparenting a page can temporarily focus its old sibling. The
+        // model's active pane remains authoritative during projection.
+        if (!d->projecting) d->manager.contentFocused(pane, window);
+    });
+    const auto visibility = [this](bool enabled) {
+        if (!enabled) { d->host.setVisibilityHandler({}); return; }
+        d->host.setVisibilityHandler([this](const QVector<ContentVisibilityChange>& changes) {
+            d->manager.contentVisibilityChanged(changes);
+        });
+    };
+    connect(&manager, &WindowManager::contentVisibilityRequested, this, visibility);
     manager.setPresenter(d.get());
     // Model changes often come from a strip's own input handler; rebuilding
     // there would replace the strip under it. One sync per event-loop turn.
@@ -246,6 +261,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
 
 QuickWorkspace::~QuickWorkspace()
 {
+    d->host.setVisibilityHandler({});
     d->manager.setPresenter(nullptr);
     d->drag.cancel();
     for (const auto& window : std::as_const(d->windows)) delete window.data();
@@ -261,15 +277,35 @@ QQuickItem* QuickWorkspace::content(PaneId pane) const { return d->host.item(pan
 
 void QuickWorkspace::sync()
 {
+    const QPointer<QuickWorkspace> self(this);
     d->syncPending = false;
+    d->projecting = true;
+    const auto previous = d->host.item(d->manager.context().pane);
+    const bool hadContentFocus = previous && previous->window()
+        && !d->host.paneForItem(previous->window()->activeFocusItem()).isNull();
     const auto& model = d->manager.model();
     // Content first, so groups mount it when they build their pages.
     QSet<PaneId> live;
     for (auto it = model.tabs().cbegin(); it != model.tabs().cend(); ++it)
         for (const auto pane : model.panes(it.key())) {
             live.insert(pane);
-            if (!d->panes.contains(pane) && d->host.create(pane, d->manager.paneOptions(pane))) d->panes.insert(pane);
+            if (!d->panes.contains(pane)) {
+                const bool created = d->host.create(pane, d->manager.paneOptions(pane));
+                if (!self) return;
+                if (created) d->panes.insert(pane);
+            }
         }
+    // Park cross-window content before either surface detaches its old page.
+    // Otherwise mount() sees an already windowless item and misses the hidden
+    // notification that must precede transferring the native input context.
+    for (const auto pane : std::as_const(d->panes)) {
+        const auto content = d->host.item(pane);
+        const auto* group = model.group(model.groupForTab(model.tabForPane(pane)));
+        if (content && content->window() && group && content->window() != d->windows.value(group->windowId)) {
+            d->host.unmount(pane);
+            if (!self) return; // A host may release the workspace in this notification.
+        }
+    }
     for (auto it = d->windows.begin(); it != d->windows.end();) {
         if (model.window(it.key())) { ++it; continue; }
         // A drag can empty a window while that window delivers its event.
@@ -293,6 +329,21 @@ void QuickWorkspace::sync()
         d->host.remove(*it);
         it = d->panes.erase(it);
     }
+    d->projecting = false;
+    const auto pane = d->manager.context().pane;
+    const auto content = d->host.item(pane);
+    if (!content || !content->window() || !content->isVisible()) return;
+    const QPointer<QQuickWindow> window(content->window());
+    // Commands select a pane; plain layout updates keep a toolbar/menu's
+    // focus. A cross-window move restores the pane's surviving editor.
+    if (pane != d->focusedPane || window != d->focusedWindow || hadContentFocus) {
+        d->focusedPane = pane;
+        d->focusedWindow = window;
+        d->host.focus(pane);
+        if (!self || !window) return;
+    }
+    const auto focused = d->host.paneForItem(window->activeFocusItem());
+    if (focused == pane) d->manager.contentFocused(focused, window, false);
 }
 
 } // namespace window_system

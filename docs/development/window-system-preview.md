@@ -186,7 +186,7 @@ Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持�
 
 Muxora 已只用 Quick 启动。接手时 Debug 构建和 16 个 Quick 定向套件通过；桌面恢复首次失败，单独恢复后成功。Widgets 占位内容已删除，应用和本地化检查共用编译后的 QML 页面，本地化套件与应用翻译检查通过，见 [本轮记录](verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。
 
-菜单、工具栏、状态栏、设置等仍待迁移；上下栏与输入法接线是下一步。当前完整范围见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起)。本轮没有全量测试、打包或外观试用，固定 Release 预览仍为之前部署的 Quick 版本。
+Quick 内容焦点、输入法作用域和显隐回调已接通，见 [本轮接线记录](verification-log/2026-11.md#quick-内容焦点与显隐接到管理器2026-11-04)。菜单、工具栏、状态栏、设置等仍待迁移；上下栏接口是下一步。当前完整范围见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起)。本轮没有全量测试、打包或外观试用，固定 Release 预览仍为之前部署的 Quick 版本。
 
 组件帧测量及历史验证见 [此前记录](verification-log/2026-10.md)。现有数据不能作为完整应用达到 144 Hz 或 GPUI 同级性能的证明。
 

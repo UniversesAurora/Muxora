@@ -42,7 +42,8 @@ foreach(suite IN ITEMS surface-elevation tab-carrier-presentation tab-label-stor
 endforeach()
 
 foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-resources quick-carrier-resources
-        quick-foreground-resources quick-strip-resources quick-rendering quick-group quick-rail quick-workspace)
+        quick-foreground-resources quick-strip-resources quick-rendering quick-group quick-rail quick-workspace
+        quick-workspace-content)
     window_system_add_suite(${suite} desktop LINK WindowSystemQuick)
 endforeach()
 window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)

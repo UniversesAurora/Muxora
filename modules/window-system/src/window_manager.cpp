@@ -193,7 +193,17 @@ void WindowManager::setContentVisibilityHandler(
 {
     d->contentVisibilityHandler = std::move(handler);
     d->contentVisibilitySnapshotRequested = bool(d->contentVisibilityHandler);
+    if (d->presentation == Presentation::External) {
+        emit contentVisibilityRequested(bool(d->contentVisibilityHandler));
+        return;
+    }
     scheduleContentVisibilityNotification();
+}
+void WindowManager::contentVisibilityChanged(const QVector<ContentVisibilityChange>& changes)
+{
+    if (d->destroying || !d->contentVisibilityHandler || changes.isEmpty()) return;
+    const auto handler = d->contentVisibilityHandler;
+    handler(changes);
 }
 void WindowManager::scheduleContentVisibilityNotification()
 {
@@ -754,6 +764,7 @@ void WindowManager::setPresenter(WindowPresenter* presenter)
 {
     Q_ASSERT(d->presentation == Presentation::External || !presenter);
     d->presenter = presenter;
+    emit contentVisibilityRequested(presenter && bool(d->contentVisibilityHandler));
 }
 void WindowManager::showWindow(WindowId window)
 {
@@ -837,6 +848,16 @@ bool WindowManager::activateWithoutViews(TabId tab, PaneId pane)
     d->activeWindow = d->model.group(d->model.groupForTab(tab))->windowId;
     emit layoutChanged();
     return true;
+}
+void WindowManager::contentFocused(PaneId pane, QWindow* window, bool fromInput)
+{
+    if (d->destroying || d->refreshing) return;
+    const auto tab = d->model.tabForPane(pane);
+    if (tab.isNull()) return; // A queued focus change can outlive its pane.
+    const QPointer<WindowManager> self(this);
+    if (context().pane != pane && (!focusPane(tab, pane) || !self)) return;
+    if (fromInput) cancelPendingShortcut();
+    d->inputMethods.focus(d->model, pane, window);
 }
 bool WindowManager::focusPane(TabId tab, PaneId pane)
 {
