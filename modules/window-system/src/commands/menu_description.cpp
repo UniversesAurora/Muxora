@@ -344,4 +344,40 @@ QVector<MenuItemDescription> describeApplicationMenu(
     return result;
 }
 
+QVector<MenuItemDescription> describeTabCreationMenu(WindowManager* manager, WindowId window, GroupId group)
+{
+    if (!manager) return {};
+    const auto* target = manager->model().group(group);
+    if (!target || target->windowId != window) return {};
+    auto context = manager->context(window);
+    context.group = group;
+    context.tab = target->activeTab;
+    const auto* tab = manager->model().tab(context.tab);
+    context.pane = tab ? tab->activePane : PaneId{};
+    const QPointer<WindowManager> owner(manager);
+    const auto choices = manager->tabCreationCommands();
+    QVector<MenuItemDescription> result;
+    for (const auto& id : choices) {
+        const auto* found = manager->commands().find(id);
+        if (!found) continue;
+        const Command definition = *found;
+        const bool enabled = !definition.enabled || definition.enabled(context);
+        if (!owner) return {};
+        const auto* current = manager->model().group(group);
+        if (!current || current->windowId != window) return {};
+        MenuItemDescription item;
+        item.kind = MenuItemDescription::Kind::TabCreation;
+        item.id = id;
+        item.commandId = id;
+        item.action.title = definition.title;
+        item.action.enabled = enabled;
+        QStringList shortcuts;
+        for (const auto& binding : definition.bindings)
+            shortcuts.append(binding.sequence.toString(QKeySequence::NativeText));
+        item.action.shortcut = shortcuts.join(QStringLiteral(" / "));
+        result.append(std::move(item));
+    }
+    return result;
+}
+
 } // namespace window_system

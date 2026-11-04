@@ -20,7 +20,7 @@ struct CommandActionDescription {
     WindowManager* manager, const QString& id, const CommandContext& context);
 
 struct MenuItemDescription {
-    enum class Kind { Command, Submenu, Separator, TabColor, Window };
+    enum class Kind { Command, Submenu, Separator, TabColor, Window, TabCreation };
     Kind kind = Kind::Command;
     QString id;
     QString commandId;
@@ -42,5 +42,7 @@ struct MenuItemDescription {
     CommandMenuSurface surface, WindowManager* manager, const CommandContext& context);
 [[nodiscard]] QVector<MenuItemDescription> describeApplicationMenu(
     CommandMenuSurface surface, WindowManager* manager, WindowId window);
+[[nodiscard]] QVector<MenuItemDescription> describeTabCreationMenu(
+    WindowManager* manager, WindowId window, GroupId group);
 
 } // namespace window_system

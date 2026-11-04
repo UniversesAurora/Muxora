@@ -3,6 +3,8 @@
 #include "style/wheel_guard.hpp"
 #include "style/smooth_scroll.hpp"
 #include "window_manager_p.hpp"
+#include "commands/command_menus.hpp"
+#include "commands/menu_description.hpp"
 #include "view_state_p.hpp"
 #include <window_system/window_manager.hpp>
 #include <window_system/interface_appearance.hpp>
@@ -324,6 +326,7 @@ bool WindowManager::setTabCreationCommands(QString defaultCommand, QStringList c
     d->tabCreationCommands = std::move(choices);
     return true;
 }
+QStringList WindowManager::tabCreationCommands() const { return d->tabCreationCommands; }
 bool WindowManager::requestNewTab(WindowId window, GroupId group, QString command, QUuid folder)
 {
     if (!d->model.window(window)) return false;
@@ -345,32 +348,17 @@ bool WindowManager::requestNewTab(WindowId window, GroupId group, QString comman
 }
 QMenu* WindowManager::createTabCreationMenu(WindowId window, GroupId group, QWidget* parent)
 {
-    const auto* target = d->model.group(group);
-    if (!target || target->windowId != window) return nullptr;
-    auto ctx = context(window); ctx.group = group; ctx.tab = target->activeTab;
-    const auto* tab = d->model.tab(ctx.tab); ctx.pane = tab ? tab->activePane : PaneId{};
     const QPointer<WindowManager> self(this);
-    QPointer<QMenu> menu = new DismissOnlyMenu(parent);
+    const QPointer<QWidget> retainedParent(parent);
+    const auto description = describeTabCreationMenu(this, window, group);
+    if (!self || (parent && !retainedParent) || description.isEmpty()) return nullptr;
+    auto* menu = new DismissOnlyMenu(parent);
     menu->setObjectName("TabCreationMenu");
     menu->setStyleSheet("QMenu{menu-scrollable:1;}");
     applyTheme(menu, d->theme);
-    const auto choices = d->tabCreationCommands;
-    for (const auto& id : choices) {
-        const auto* found = d->commands.find(id);
-        if (!found) continue;
-        const Command retained = *found;
-        const bool enabled = !retained.enabled || retained.enabled(ctx);
-        if (!self || !menu) { if (menu) delete menu.data(); return nullptr; }
-        const auto* currentGroup = d->model.group(group);
-        if (!currentGroup || currentGroup->windowId != window) { delete menu.data(); return nullptr; }
-        auto* action = menu->addAction(retained.title);
-        action->setObjectName(id); action->setEnabled(enabled);
-        action->setProperty("windowSystemCommand", id);
-        QObject::connect(action, &QAction::triggered, this, [self, window, group, id] {
-            if (self) self->requestNewTab(window, group, id);
-        });
-    }
-    if (menu->isEmpty()) { delete menu.data(); return nullptr; }
+    auto context = this->context(window);
+    context.group = group;
+    appendDescribedMenuItems(menu, description, this, context);
     return menu;
 }
 QWidget* WindowManager::createContent(const TabOptions& options, PaneId pane)

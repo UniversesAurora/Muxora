@@ -288,7 +288,7 @@ SSH 别名附加设置先集中在 `ssh-alias-overrides.json`，以“来源 ID 
 
 “窗口”菜单末尾列出全部窗口，以完整工作窗口为顶层，其所属轻量浮窗缩进列在下面。标题、归属、创建和关闭变化在菜单展开时更新，当前窗口有选中标记。点击条目调用统一窗口激活命令，最小化目标先恢复；命令执行前核验 Window ID，不依赖过期标题或已销毁控件。
 
-每个标签组的末尾加号与类型下拉调用宿主注册的新建命令。`setTabCreationCommands(defaultCommand, choices)` 声明默认项和类型选项，`requestNewTab(window, group, command)` 使用来源窗口和标签组上下文执行。窗口模块不解释宿主的业务类型，命令标题、可执行状态及处理者由统一命令目录提供。
+每个标签组的末尾加号与类型下拉调用宿主注册的新建命令。`setTabCreationCommands(defaultCommand, choices)` 声明默认项和类型选项，`tabCreationCommands()` 读取实际选项顺序，`requestNewTab(window, group, command)` 使用来源窗口和标签组上下文执行。窗口模块不解释宿主的业务类型，命令标题、可执行状态及处理者由统一命令目录提供。
 
 退出通过一次完整工作区关闭许可处理所有窗口和浮窗；拒绝时保留全部内容。最后关闭通知发生在完整模型仍可保存时，不逐窗关闭后只保存最后一个窗口；保存失败时应用不执行退出。
 

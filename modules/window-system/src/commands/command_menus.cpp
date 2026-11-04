@@ -63,10 +63,8 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     action->setEnabled(description->enabled);
 }
 
-namespace {
-
-void appendContextItems(QMenu* menu, const QVector<MenuItemDescription>& items, WindowManager* manager,
-                        const CommandContext& context, QList<QPointer<QAction>>& commands)
+void appendDescribedMenuItems(QMenu* menu, const QVector<MenuItemDescription>& items, WindowManager* manager,
+                              const CommandContext& context, QList<QPointer<QAction>>* commands, bool handled)
 {
     for (const auto& item : items) {
         QAction* action = nullptr;
@@ -77,7 +75,7 @@ void appendContextItems(QMenu* menu, const QVector<MenuItemDescription>& items, 
             child->setProperty("commandMenuPath", item.path);
             child->setStyleSheet(scrollableMenuStyle);
             action = menu->addMenu(child);
-            appendContextItems(child, item.children, manager, context, commands);
+            appendDescribedMenuItems(child, item.children, manager, context, commands, handled);
         } else action = menu->addAction(item.action.title);
         action->setObjectName(item.id);
         action->setText(item.action.title);
@@ -87,8 +85,15 @@ void appendContextItems(QMenu* menu, const QVector<MenuItemDescription>& items, 
         action->setEnabled(item.action.enabled);
         action->setCheckable(item.action.checkable);
         if (item.action.checked) action->setChecked(*item.action.checked);
+        if (handled) action->setProperty("windowSystemHandledAction", true);
         if (item.commandId.isEmpty()) continue;
-        if (item.kind == MenuItemDescription::Kind::TabColor) {
+        if (item.kind == MenuItemDescription::Kind::TabCreation) {
+            action->setProperty("windowSystemCommand", item.commandId);
+            QObject::connect(action, &QAction::triggered, manager,
+                [owner = QPointer<WindowManager>(manager), window = context.window, group = context.group, id = item.commandId] {
+                    if (owner) owner->requestNewTab(window, group, id);
+                });
+        } else if (item.kind == MenuItemDescription::Kind::TabColor) {
             action->setData(item.id);
             QObject::connect(action, &QAction::triggered, menu,
                 [owner = QPointer<WindowManager>(manager), context, args = item.arguments, id = item.commandId] {
@@ -100,22 +105,22 @@ void appendContextItems(QMenu* menu, const QVector<MenuItemDescription>& items, 
         } else {
             action->setData(item.commandId);
             action->setProperty("windowSystemCommand", item.commandId);
-            commands.append(action);
+            if (commands) commands->append(action);
             const auto& shortcut = item.action.shortcut;
             action->setText(item.action.title + (shortcut.isEmpty() ? QString() : "\t" + shortcut));
             action->setToolTip(item.action.title + (shortcut.isEmpty() ? QString() : "  " + shortcut));
             QObject::connect(action, &QAction::triggered, manager,
-                [owner = QPointer<WindowManager>(manager), context, id = item.commandId] {
+                [owner = QPointer<WindowManager>(manager), context, args = item.arguments, id = item.commandId] {
                     if (!owner) return;
-                    QTimer::singleShot(0, owner, [owner, id, context] {
-                        if (owner) owner->executeInContext(id, context);
+                    auto captured = context;
+                    for (auto it = args.cbegin(); it != args.cend(); ++it) captured.args.insert(it.key(), it.value());
+                    QTimer::singleShot(0, owner, [owner, id, captured] {
+                        if (owner) owner->executeInContext(id, captured);
                     });
                 });
         }
     }
 }
-
-} // namespace
 
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager, const CommandContext& captured)
 {
@@ -125,7 +130,7 @@ void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager*
     if (!retainedMenu || !retainedManager) return;
     if (!menu->actions().isEmpty()) menu->addSeparator();
     QList<QPointer<QAction>> actions;
-    appendContextItems(menu, description, manager, captured, actions);
+    appendDescribedMenuItems(menu, description, manager, captured, &actions);
     tidy(menu);
     for (auto* child : menu->findChildren<QMenu*>()) QObject::connect(child, &QMenu::aboutToShow, menu,
         [owner = retainedManager, actions, captured, root = retainedMenu] {

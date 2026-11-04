@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
 #include "docking/tab_strip.hpp"
+#include "commands/menu_description.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -166,6 +167,10 @@ void TabCreationTest::creationUsesClickedGroupInsteadOfFocusedGroup()
     QCOMPARE(received.size(), 1); QCOMPARE(received.last().group, leftGroup); QCOMPARE(received.last().tab, left);
     QCOMPARE(manager.model().group(leftGroup)->tabs.size(), 2); QCOMPARE(manager.model().group(rightGroup)->tabs.size(), 1);
     QVERIFY(manager.activateTab(right)); view = groupView(manager, window, leftGroup); QVERIFY(view);
+    const auto choices = describeTabCreationMenu(&manager, window, leftGroup);
+    QCOMPARE(choices.size(), 2);
+    QCOMPARE(choices.first().commandId, QStringLiteral("test.new"));
+    QCOMPARE(choices.last().commandId, QStringLiteral("test.files"));
     auto* types = view->findChild<QToolButton*>("NewTabTypeButton"); QVERIFY(types); QTest::mouseClick(types, Qt::LeftButton);
     QPointer<QMenu> menu = view->findChild<QMenu*>("TabCreationMenu"); QVERIFY(menu); QTRY_VERIFY(menu->isVisible());
     QCOMPARE(menu->actions().size(), 2); QCOMPARE(menu->actions().first()->objectName(), QStringLiteral("test.new"));
@@ -185,6 +190,10 @@ void TabCreationTest::catalogValidationIsAtomicAndDisabledCommandsDoNotCreate()
     QVERIFY(manager.setTabCreationCommands("test.new", {"test.new", "test.blocked"}));
     QVERIFY(!manager.setTabCreationCommands("missing", {})); QVERIFY(!manager.setTabCreationCommands("test.new", {"test.new", "test.new"}));
     QVERIFY(!manager.setTabCreationCommands("test.new", {"missing"}));
+    const auto choices = describeTabCreationMenu(&manager, window, group);
+    QCOMPARE(choices.size(), 2);
+    QVERIFY(choices.first().action.enabled);
+    QVERIFY(!choices.last().action.enabled);
     QVERIFY(manager.requestNewTab(window, group)); QCOMPARE(received.size(), 1);
     QVERIFY(!manager.requestNewTab(window, group, "test.blocked")); QCOMPARE(blockedExecutions, 0);
     QVERIFY(!manager.requestNewTab({}, group)); QVERIFY(!manager.requestNewTab(window, QUuid::createUuid()));

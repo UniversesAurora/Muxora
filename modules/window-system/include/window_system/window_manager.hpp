@@ -117,6 +117,7 @@ public:
     // Host command IDs define available content types. Creation always uses
     // the same command handlers as menus, keyboard and the command palette.
     bool setTabCreationCommands(QString defaultCommand, QStringList choices);
+    [[nodiscard]] QStringList tabCreationCommands() const;
     // With `folder`, the tab the command opens joins that tab folder.
     bool requestNewTab(WindowId window, GroupId group = {}, QString command = {}, QUuid folder = {});
     void setContentFactory(ContentFactory factory);

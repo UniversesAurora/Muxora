@@ -4,6 +4,7 @@
 #include <window_system/command_registry.hpp>
 #include "menu_definition.hpp"
 #include <QPointer>
+#include <QList>
 #include <QObject>
 #include <functional>
 
@@ -19,6 +20,9 @@ struct MenuItemDescription;
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context);
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager,
                          const CommandContext& captured);
+void appendDescribedMenuItems(QMenu* menu, const QVector<MenuItemDescription>& items,
+                              WindowManager* manager, const CommandContext& context,
+                              QList<QPointer<QAction>>* commands = nullptr, bool handled = false);
 
 // Owns presentation objects only. Commands stay in the host's registry; late
 // registrations are added incrementally without destroying a displayed menu.

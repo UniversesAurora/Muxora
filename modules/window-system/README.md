@@ -139,7 +139,7 @@ Quick 宿主用 `QuickWorkspace::setTabBar(tab, item, top)` 和 `setPaneBar(pane
 
 `WindowBehavior::inputMethodScope` 选择输入法记忆范围，默认 `InputMethodScope::Tab`。`inputMethodScopeKey()`／`inputMethodScopeFromKey()` 在枚举与稳定字符串之间转换，未知值返回空字符串／`nullopt`；`setBehavior()` 拒绝无效枚举且不部分应用。设置页复用现有下拉框，选择范围随行为保存，实际输入状态不序列化。层级、继承和临时界面的规则见 [输入法状态](../../docs/design/window-interaction-design.md#输入法状态)。Windows 后端保存活动 TSF 配置、键盘布局和全部输入模式；其他平台暂不读写系统状态。
 
-每组最后一个标签后是组合的新建按钮与类型下拉，样式和间距见 [新建入口](../../docs/design/tab-strip-design.md#81-新建入口)；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
+每组最后一个标签后是组合的新建按钮与类型下拉，样式和间距见 [新建入口](../../docs/design/tab-strip-design.md#81-新建入口)；右键任一按钮也打开类型菜单。宿主先注册创建内容的命令，再调用 `setTabCreationCommands(defaultCommand, choices)`；`tabCreationCommands()` 返回配置后的命令 ID 顺序。`requestNewTab(window, group, command)` 和按钮使用同一处理函数，并把被点击组的稳定 ID 传入命令；不依赖另一个组当前是否聚焦。空目录不创建内容，未知、重复命令或无效目标返回失败。
 
 标签条尺寸变化时的滚动规则见 [标签栏设计 · 条带尺寸变化](../../docs/design/tab-strip-design.md#条带尺寸变化)，模块内部实现，不需要宿主参与。
 
