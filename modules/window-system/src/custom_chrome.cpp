@@ -206,6 +206,10 @@ bool WindowManager::setToolbarsLocked(WindowId window, bool locked) {
     strips->setLocked(locked);
     return !self.isNull();
 }
+bool WindowManager::toolbarsLocked(WindowId window) const {
+    const auto *strips = stripsFor(this, window);
+    return strips && strips->isLocked();
+}
 
 bool WindowManager::registerStatusItem(StatusItem item) {
     if (!validId(item.id) || statusItemIds().contains(item.id) ||

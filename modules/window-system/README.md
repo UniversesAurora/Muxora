@@ -83,7 +83,7 @@ Quick 宿主用 `QuickWorkspace::setTabBar(tab, item, top)` 和 `setPaneBar(pane
 
 `WindowManager::resetToolbarWidth(window, stripId)` 重置指定工具条的宽度，保留排列顺序和其他条带的请求宽度。工具条选项中的“重置尺寸”调用统一命令 `window.toolbar.resetSize`；指定 `strip` 可直接执行，不带参数则显示工具条列表，支持键盘选择。目标在弹性左侧或无弹性行中保持左端，在弹性右侧保持右端，在相应方向分配或收回空间；空间不足时遵守各自最小宽度。重置隐藏条不改变可见布局，重置弹性条仍保留弹性策略。
 
-宿主用 [CommandToolbar / StatusItem](include/window_system/custom_chrome.hpp) 值描述扩展工具区：`registerToolbar()` 接受稳定 ID、标题、命令 ID 序列和默认区域／行；`updateToolbar()` 更新相同 ID 的定义并保留各窗口及窗口形态的排列。工具条状态可通过 `toolbarState()` 查询，位置、宽度、弹性、按钮及显隐继续使用普通工具条 API。`registerStatusItem()` / `setStatusItemText()` / `removeStatusItem()` 管理全局状态项，各窗口独立保存显隐。移除贡献时清理该 ID 的布局元数据，提供者仍负责注销自己的命令。
+宿主用 [CommandToolbar / StatusItem](include/window_system/custom_chrome.hpp) 值描述扩展工具区：`registerToolbar()` 接受稳定 ID、标题、命令 ID 序列和默认区域／行；`updateToolbar()` 更新相同 ID 的定义并保留各窗口及窗口形态的排列。工具条状态可通过 `toolbarState()` 查询，位置、宽度、弹性、按钮及显隐继续使用普通工具条 API；`toolbarsLocked()` 查询整个工具区的锁定状态。`registerStatusItem()` / `setStatusItemText()` / `removeStatusItem()` 管理全局状态项，各窗口独立保存显隐。移除贡献时清理该 ID 的布局元数据，提供者仍负责注销自己的命令。
 
 `StatusItem::command` 可选地指定点击或键盘激活时执行的已注册命令。命令使用该状态项所在窗口的上下文；留空仍是普通文本项。命令项的文本为空时暂时隐藏，定义与用户显隐偏好保留，恢复文本后遵循原偏好。移除状态项或销毁窗口后，尚未执行的点击不再派发。
 

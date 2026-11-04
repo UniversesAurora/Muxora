@@ -302,6 +302,7 @@ public:
     bool setToolbarElastic(WindowId window, const QString& id, bool elastic);
     bool setToolbarItemVisible(WindowId window, const QString& id, const QString& item, bool visible);
     bool setToolbarsLocked(WindowId window, bool locked);
+    [[nodiscard]] bool toolbarsLocked(WindowId window) const;
     // Floating windows retain their existing compact chrome policy (no global
     // status bar); status definitions survive conversion to a full window.
     bool registerStatusItem(StatusItem item);

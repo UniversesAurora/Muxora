@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "command_menus.hpp"
+#include "menu_description.hpp"
 #include "popup_menu.hpp"
-#include "chrome/command_strip.hpp"
 #include "style/tab_appearance_p.hpp"
 #include "localization/display_names.hpp"
-#include "chrome/workspace_window.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAction>
@@ -16,7 +15,6 @@
 #include <QTimer>
 #include <QVariant>
 #include <algorithm>
-#include <optional>
 
 namespace window_system {
 namespace {
@@ -121,69 +119,20 @@ void addItems(QMenu* menu, const Items& items, WindowManager* manager, const Con
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context)
 {
     if (!action) return;
-    if (!manager) { action->setVisible(false); action->setEnabled(false); return; }
-    const auto id = action->data().toString(); const auto* found = manager->commands().find(id);
-    if (!found) { action->setVisible(false); action->setEnabled(false); return; }
-    const Command definition = *found;
-    const QPointer<QAction> retained(action); const QPointer<WindowManager> owner(manager);
-    const bool enabled = !definition.enabled || definition.enabled(context);
-    if (!retained || !owner) return;
-    const auto* window = manager->model().window(context.window);
-    const auto* group = manager->model().group(context.group);
-    bool visible = true;
-    if (id == "window.promote") visible = window && window->kind == WindowKind::Floating;
-    if (id == "window.demote") visible = window && window->kind == WindowKind::Workbench && enabled;
-    if (id == "window.redock" || id == "window.reassignFamily") visible = window && window->kind == WindowKind::Floating && enabled;
-    if (id == "window.drag.selectTarget" || id == "window.drag.cancel") visible = enabled;
-    if (id == "workspace.pinTab" || id == "workspace.pinGroup") visible = group && group->location == GroupLocation::AutoHide;
-    if (id == "tab.stick" || id == "tab.unstick") visible = enabled;
-    if (id == "tab.peek.setSize" || id == "tab.peek.resetSize") visible = group && group->location == GroupLocation::AutoHide;
-    if (id == "workspace.unpinTab" || id == "workspace.unpinGroup") visible = group && group->location == GroupLocation::Pinned;
-    if (id == "workspace.pinEdge" || id == "workspace.unpinEdge" || id == "workspace.restoreGroupToCenter")
-        visible = group && group->location != GroupLocation::Central;
-    std::optional<bool> appearanceChecked;
-    if (id == "presentation.toggleIcons") appearanceChecked = manager->tabAppearance().showIcons;
-    else if (id == "presentation.toggleSidebarIcons") appearanceChecked = manager->tabAppearance().showSidebarIcons;
-    else if (id == "presentation.toggleSidebarNumbers") appearanceChecked = manager->tabAppearance().showSidebarNumbers;
-    else if (id == "presentation.toggleNewTabButton") appearanceChecked = manager->tabAppearance().showNewTabButton;
-    else if (id == "presentation.toggleNumbers") appearanceChecked = manager->tabAppearance().showNumbers;
-    else if (id == "presentation.toggleTitleClipping") appearanceChecked = manager->tabAppearance().clipTitles;
-    else if (id == "presentation.toggleSidebarTitleClipping") appearanceChecked = manager->tabAppearance().clipSidebarTitles;
-    else if (id == "presentation.toggleMultiline") appearanceChecked = manager->tabAppearance().multiline;
-    else if (id == "presentation.toggleAllRows") appearanceChecked = manager->tabAppearance().showAllRows;
-    else if (id == "presentation.toggleStickyMultiline") appearanceChecked = manager->tabAppearance().stickyMultiline;
-    else if (id == "presentation.toggleStickyAllRows") appearanceChecked = manager->tabAppearance().stickyShowAllRows;
-    else if (id == "presentation.toggleWheelExpandRows") appearanceChecked = manager->tabAppearance().wheelExpandRows;
-    const bool checkedCommand = appearanceChecked.has_value() || id == "window.tabBars.toggle" || id == "window.sideBars.toggle"
-        || id == "window.toolbars.toggle" || id == "window.statusBar.toggle" || id == "window.zen.toggle"
-        || (id.startsWith("window.fullscreen.") && id != "window.fullscreen.exit")
-        || id == "window.toggleStripsLock" || id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing";
-    const QSignalBlocker blocker(action); action->setCheckable(checkedCommand);
-    if (appearanceChecked) action->setChecked(*appearanceChecked);
-    if (id == "window.tabBars.toggle") action->setChecked(manager->tabBarsVisible(context.window));
-    if (id == "window.sideBars.toggle") action->setChecked(manager->sideBarsVisible(context.window));
-    if (id == "window.toolbars.toggle") action->setChecked(manager->toolbarsVisible(context.window));
-    if (id == "window.statusBar.toggle") action->setChecked(manager->statusBarVisible(context.window));
-    if (id == "window.zen.toggle") action->setChecked(manager->zenMode(context.window));
-    if (id == "window.fullscreen.toggle") action->setChecked(manager->viewMode(context.window) == ViewMode::WindowFullscreen);
-    if (id == "window.fullscreen.group") action->setChecked(manager->viewMode(context.window) == ViewMode::GroupFullscreen);
-    if (id == "window.fullscreen.pane") action->setChecked(manager->viewMode(context.window) == ViewMode::PaneFullscreen);
-    if (id == "window.toggleStripsLock") {
-        const auto* view = static_cast<WorkspaceWindow*>(manager->windowWidget(context.window));
-        action->setChecked(view && view->strips() && view->strips()->isLocked());
-    }
-    if (id == "tab.topBar.setSharing" || id == "tab.bottomBar.setSharing") {
-        const auto options = manager->tabOptions(context.tab);
-        action->setChecked(manager->model().tab(context.tab) && (id == "tab.topBar.setSharing"
-            ? options.topBarSharing : options.bottomBarSharing) == PaneBarSharing::Shared);
-    }
-    QStringList shortcuts;
-    for (const auto& binding : definition.bindings)
-        shortcuts.append(binding.sequence.toString(QKeySequence::NativeText));
-    const auto shortcut = shortcuts.join(QStringLiteral(" / "));
-    action->setText(definition.title + (!action->property("stripCommand").toBool() && !shortcut.isEmpty() ? "\t" + shortcut : QString()));
-    action->setToolTip(definition.title + (shortcut.isEmpty() ? QString() : "  " + shortcut));
-    action->setVisible(visible); action->setEnabled(enabled);
+    const QPointer<QAction> retained(action);
+    const QPointer<WindowManager> owner(manager);
+    const auto description = describeCommandAction(manager, action->data().toString(), context);
+    if (!retained || (manager && !owner)) return;
+    if (!description) { action->setVisible(false); action->setEnabled(false); return; }
+    const QSignalBlocker blocker(action);
+    action->setCheckable(description->checkable);
+    if (description->checked) action->setChecked(*description->checked);
+    const auto& shortcut = description->shortcut;
+    action->setText(description->title + (!action->property("stripCommand").toBool() && !shortcut.isEmpty()
+        ? "\t" + shortcut : QString()));
+    action->setToolTip(description->title + (shortcut.isEmpty() ? QString() : "  " + shortcut));
+    action->setVisible(description->visible);
+    action->setEnabled(description->enabled);
 }
 
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager, const CommandContext& captured)

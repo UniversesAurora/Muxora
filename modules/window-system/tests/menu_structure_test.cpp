@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "translation_checks.hpp"
 #include "commands/command_menus.hpp"
+#include "commands/menu_description.hpp"
 #include "chrome/command_strip.hpp"
 #include "chrome/workspace_window.hpp"
 #include <window_system/window_manager.hpp>
@@ -639,7 +640,11 @@ void MenuStructureTest::tabAppearanceCommandsUseOneClassifiedCheckedAction()
         return appearance.wheelExpandRows;
     };
     auto* action = menu->findChild<QAction*>(id); QVERIFY(action && action->isEnabled());
-    const bool initial = value(manager.tabAppearance()); QCOMPARE(action->isChecked(), initial);
+    const bool initial = value(manager.tabAppearance());
+    const auto description = describeCommandAction(&manager, id, manager.context(window));
+    QVERIFY(description && description->checkable && description->enabled);
+    QCOMPARE(description->checked, std::optional<bool>(initial));
+    QCOMPARE(action->isChecked(), initial);
     QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     action->trigger(); QTRY_COMPARE(value(manager.tabAppearance()), !initial);
     QCoreApplication::processEvents(); QCOMPARE(changes.count(), 1);

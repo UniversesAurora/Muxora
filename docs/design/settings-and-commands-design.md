@@ -316,6 +316,8 @@ WindowSystem 提供通用命令注册、上下文及路由 API 和自己的窗�
 
 `window.toolbar.move` 接受 `strip`、`area: "top" / "bottom"`、`row` 和 `index`；缺参可用键盘依次选择工具条、区域和行。`window.toolbars.toggle`、`window.statusBar.toggle` 与原有标签栏／侧栏命令控制独立显隐。三个全屏命令与 `window.zen.toggle`、`window.fullscreen.exit` 使用同一目录，菜单勾选显示当前有效状态；设置页只提供行为偏好，不提供当前模式的持久化开关。具体默认键位见 [交互细则](window-interaction-design.md#独立显隐与全屏)。
 
+工具区锁定状态通过 `toolbarsLocked(window)` 读取、`setToolbarsLocked(window, locked)` 修改，菜单描述不访问具体控件。
+
 ### 7.1 命令行启动
 
 应用提供面向用户的启动参数，支持打开一个会话、批量打开多个会话，以及启动后执行指定 Lua 脚本；参数结构可继续扩展。现有启动参数保持兼容，已实现范围见 [预览说明](../development/window-system-preview.md)，扩展步骤见 [7.12](../roadmap/implementation/phase-7-terminal-and-sessions.md#712-命令行启动请求)。
