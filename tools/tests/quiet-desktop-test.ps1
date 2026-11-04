@@ -235,6 +235,13 @@ public static class QuietDesktopFixture {
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint message, IntPtr first, IntPtr second);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+    [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+    public static uint ExecutionState() {
+        uint state = SetThreadExecutionState(0x80000000);
+        if (state == 0 || SetThreadExecutionState(state | 0x80000000) == 0)
+            throw new InvalidOperationException("Cannot read and restore the test thread's execution state.");
+        return state;
+    }
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr window, ref Placement placement);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
@@ -429,6 +436,13 @@ New-Item -ItemType Directory -Path $taskTemporary -Force | Out-Null
 $taskRecovery = Join-Path $taskTemporary 'fixture-windows.json'
 $taskFixtureStarted = $false
 try {
+    . $taskWrapper -ProcessHelpersOnly
+    $taskPowerBefore = [QuietDesktopFixture]::ExecutionState()
+    $taskDisplayScope = [QuietDesktopDisplayScope]::new()
+    try {
+        Assert-That (([QuietDesktopFixture]::ExecutionState() -band 3) -eq 3) 'The desktop session did not keep the system and display awake.'
+    } finally { $taskDisplayScope.Dispose() }
+    Assert-That ([QuietDesktopFixture]::ExecutionState() -eq $taskPowerBefore) 'The display request survived disposal.'
     $taskFixtureStarted = $true
     [QuietDesktopFixture]::Start()
     $original = @([QuietDesktopFixture]::Snapshot())

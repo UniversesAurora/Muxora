@@ -116,6 +116,55 @@ public sealed class QuietDesktopProcessScope : IDisposable {
 
     public void Dispose() { job.Dispose(); }
 }
+
+// Thread-scoped: no system power settings are changed. The runner holds this
+// through the command and descendant cleanup, then releases it before restore.
+public sealed class QuietDesktopDisplayScope : IDisposable {
+    [StructLayout(LayoutKind.Sequential)] struct Point { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct MouseInput {
+        public int X, Y;
+        public uint Data, Flags, Time;
+        public UIntPtr Extra;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct Input { public uint Type; public MouseInput Mouse; }
+    [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint count, Input[] inputs, int size);
+    const uint Continuous = 0x80000000;
+    readonly uint previous;
+    bool disposed;
+
+    public QuietDesktopDisplayScope() : this(false) {}
+    public QuietDesktopDisplayScope(bool wakeDisplay) {
+        previous = SetThreadExecutionState(Continuous | 3 /* system and display required */);
+        if (previous == 0) throw new InvalidOperationException("Cannot keep the test desktop awake.");
+        try {
+            if (!wakeDisplay) return;
+            // A power request alone may leave an already sleeping display
+            // without DXGI refresh notifications. Input wakes it; put the
+            // pointer back exactly, including at the screen's edges.
+            if (!GetCursorPos(out Point position)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            var inputs = new[] {
+                new Input { Mouse = new MouseInput { X = 1, Flags = 1 } },
+                new Input { Mouse = new MouseInput { X = -1, Flags = 1 } }
+            };
+            try {
+                if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) != inputs.Length)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot wake the test desktop.");
+            } finally {
+                if (!SetCursorPos(position.X, position.Y)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        } catch { Dispose(); throw; }
+    }
+
+    public void Dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (SetThreadExecutionState(previous | Continuous) == 0)
+            throw new InvalidOperationException("Cannot restore the runner's previous power request.");
+    }
+}
 '@
 }
 
@@ -591,6 +640,7 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
     [DllImport("user32.dll")] static extern IntPtr DefWindowProcW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] static extern void PostQuitMessage(int code);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr window);
     [DllImport("user32.dll")] static extern int GetMessageW(out Message message, IntPtr window, uint first, uint last);
     [DllImport("user32.dll")] static extern bool TranslateMessage(ref Message message);
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref Message message);
@@ -601,11 +651,18 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
 
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr RegisterPowerSettingNotification(IntPtr recipient, ref Guid setting, uint flags);
+    [DllImport("user32.dll")] static extern bool UnregisterPowerSettingNotification(IntPtr notification);
+
     const uint WM_DESTROY = 0x0002, WM_CLOSE = 0x0010, WM_ACTIVATE = 0x0006;
     const string ClassName = "MuxoraQuietDesktopForegroundAnchor";
     readonly WindowProc procedure;
     readonly Thread thread;
     readonly ManualResetEventSlim ready = new ManualResetEventSlim();
+    readonly ManualResetEventSlim displayReady = new ManualResetEventSlim();
+    static readonly Guid DisplaySetting = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5"); // GUID_SESSION_DISPLAY_STATUS
+    IntPtr displayNotification;
+    int displayState = -1;
     IntPtr window;
     Exception failure;
 
@@ -616,14 +673,28 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
         thread.Start();
         ready.Wait();
         if (failure != null) throw failure;
+        if (!displayReady.Wait(3000)) {
+            Dispose();
+            throw new InvalidOperationException("The test desktop did not report its display state.");
+        }
     }
 
     public IntPtr Handle { get { return window; } }
+    public bool IsDisplayOff { get { return Volatile.Read(ref displayState) == 0; } }
 
     IntPtr Procedure(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam) {
+        if (message == 0x0218 /* WM_POWERBROADCAST */ && wParam.ToInt64() == 0x8013 /* PBT_POWERSETTINGCHANGE */
+            && lParam != IntPtr.Zero && Marshal.PtrToStructure<Guid>(lParam) == DisplaySetting && Marshal.ReadInt32(lParam, 16) == 4) {
+            Volatile.Write(ref displayState, Marshal.ReadInt32(lParam, 20));
+            displayReady.Set();
+            return new IntPtr(1);
+        }
         // ASFW_ANY: the next test window may take the foreground from here.
         if (message == WM_ACTIVATE && ((long)wParam & 0xffff) != 0) AllowSetForegroundWindow(0xffffffff);
-        if (message == WM_DESTROY) PostQuitMessage(0);
+        if (message == WM_DESTROY) {
+            if (displayNotification != IntPtr.Zero) { UnregisterPowerSettingNotification(displayNotification); displayNotification = IntPtr.Zero; }
+            PostQuitMessage(0);
+        }
         return DefWindowProcW(handle, message, wParam, lParam);
     }
 
@@ -642,6 +713,9 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
                 ClassName, ClassName, 0x80000000 /* WS_POPUP */, right, bottom, 1, 1,
                 IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
             if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+            var setting = DisplaySetting;
+            displayNotification = RegisterPowerSettingNotification(window, ref setting, 0 /* window handle */);
+            if (displayNotification == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
             SetLayeredWindowAttributes(window, 0, 0, 2 /* LWA_ALPHA */);
             ShowWindow(window, 5 /* SW_SHOW */);
             SetForegroundWindow(window);
@@ -649,7 +723,11 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
             failure = error;
         }
         ready.Set();
-        if (failure != null) { UnregisterClassW(ClassName, instance); return; }
+        if (failure != null) {
+            if (window != IntPtr.Zero) { DestroyWindow(window); window = IntPtr.Zero; }
+            UnregisterClassW(ClassName, instance);
+            return;
+        }
         Message message;
         while (GetMessageW(out message, IntPtr.Zero, 0, 0) > 0) {
             TranslateMessage(ref message);
@@ -664,6 +742,7 @@ public sealed class QuietDesktopForegroundAnchor : IDisposable {
             thread.Join();
         }
         ready.Dispose();
+        displayReady.Dispose();
     }
 }
 '@
@@ -731,12 +810,20 @@ if (Test-Path -LiteralPath $taskStateFile) {
 }
 
 $taskAnchor = $null
-Invoke-QuietDesktopSession -Prepare {
-    Initialize-WindowSnapshot
-    Clear-WindowSnapshot
-    $script:taskAnchor = [QuietDesktopForegroundAnchor]::new()
-} -TestCommand $TestCommand -Recover {
-    if ($script:taskAnchor) { $script:taskAnchor.Dispose(); $script:taskAnchor = $null }
-    Restore-Windows
+$taskDisplay = $null
+try {
+    Invoke-QuietDesktopSession -Prepare {
+        Initialize-WindowSnapshot
+        Clear-WindowSnapshot
+        $script:taskAnchor = [QuietDesktopForegroundAnchor]::new()
+        $script:taskDisplay = [QuietDesktopDisplayScope]::new($script:taskAnchor.IsDisplayOff)
+    } -TestCommand $TestCommand -Recover {
+        if ($script:taskDisplay) { $script:taskDisplay.Dispose(); $script:taskDisplay = $null }
+        if ($script:taskAnchor) { $script:taskAnchor.Dispose(); $script:taskAnchor = $null }
+        Restore-Windows
+    }
+} finally {
+    # Also release the request if descendant tracking prevents recovery.
+    if ($taskDisplay) { $taskDisplay.Dispose() }
 }
 exit $LASTEXITCODE

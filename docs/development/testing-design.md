@@ -141,7 +141,7 @@ pwsh tools/tests/quiet-desktop.ps1 -Elevate pwsh tools/verify.ps1 -ReleaseOnly
 
 可选构建入口见 [模块说明](../../modules/window-system/README.md#开发中的-quick-呈现)。`frame-motion` 与 `quick-path` 不创建可见窗口，`quick-rendering` 连接真实图形后端，按桌面套件运行。Quick 基准不注册为 CTest，用来报告组件成本，不能当作全界面的帧率验收。
 
-GPU 帧测量需要屏幕处于工作状态。隔离完成后唤醒屏幕并临时保持亮屏，整批测试和进程清理完成后撤销防休眠请求，再恢复用户窗口。不把测试期间的屏幕休眠写成产品失败，也不通过永久关闭刷新通知获得通过。原理见 [Quick 经验](lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)。
+GPU 帧测量需要屏幕处于工作状态。`quiet-desktop.ps1` 隔离完成后读取会话显示状态，只在屏幕已关闭时唤醒并还原指针位置，运行期间临时保持亮屏。整批测试和进程清理完成后撤销请求，再恢复用户窗口；异常结束也撤销请求。不把测试期间的屏幕休眠写成产品失败，也不通过永久关闭刷新通知获得通过。原理见 [Quick 经验](lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)。
 
 ### 翻译覆盖
 
