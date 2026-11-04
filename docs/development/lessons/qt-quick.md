@@ -143,3 +143,11 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：沿用 Menu 的普通导航，只在实际弹出窗口补原功能需要的 Home／End，跳过不可选行；显式限制宽高为当前屏幕可用范围，让内容 ListView 滚动。不要把事件过滤器装到宿主窗口或复制菜单整套输入逻辑。
 - **验证**：初版 Home、End 与长菜单三项失败；修复后保留原断言通过，见 [菜单记录](../verification-log/2026-11.md#现有弹出菜单接入-quick-controls2026-11-05)。这些是键盘可达性和屏幕范围检查，不是静态外观验收。
 - **出处**：2026-11-05，10.4b，`QuickPopupMenuTest`。
+
+### Quick 上下文事件不自动转换为项内坐标
+
+- **现象**：标签栏直接收到合成右键事件时命中正确，从真实窗口投递却命中空白或另一个标签；窗口原点处的夹具发现不了。
+- **原因**：Qt 6.12 的 `QQuickDeliveryAgentPrivate::deliverContextMenuEvent` 将同一个事件依次交给目标项，没有像指针事件那样转换 `pos()`。Windows 的键盘菜单还可能不带鼠标坐标。
+- **做法**：鼠标上下文从 `globalPos()` 经 `mapFromGlobal()` 转换；键盘上下文按当前项确定目标与弹出位置。输入检查给控件设置非零位置，经 QQuickWindow 发送事件，不只直接发送项内坐标。
+- **验证**：修复前横排与竖排两行均失败，修复后同一行为断言通过，见 [右键命中记录](../verification-log/2026-11.md#quick-右键命中使用真实窗口坐标2026-11-05)。
+- **出处**：2026-11-05，`QuickTabBarInputTest::inputsAndFramesDriveTheSharedController`。

@@ -250,12 +250,19 @@ void TabBarItem::keyPressEvent(QKeyEvent* event)
 
 bool TabBarItem::handleContextMenu(QContextMenuEvent* event)
 {
+    event->accept();
     prepare();
-    const int tab = controller_.tabAt(event->pos());
-    const int folder = tab < 0 ? controller_.folderAt(event->pos()) : -1;
+    // Qt Quick forwards context events unchanged to items: pos() is still in
+    // window coordinates. Global coordinates also cover transformed parents.
+    const bool keyboard = event->reason() == QContextMenuEvent::Keyboard;
+    const auto local = keyboard ? controller_.tabRect(controller_.currentIndex()).center()
+        : mapFromGlobal(event->globalPos()).toPoint();
+    const auto global = keyboard ? mapToGlobal(local).toPoint() : event->globalPos();
+    const int tab = controller_.tabAt(local);
+    const int folder = tab < 0 ? controller_.folderAt(local) : -1;
     const QPointer<TabBarItem> alive(this);
     setPopupOpen(true);
-    if (alive) emit contextMenuRequested(tab, folder, event->globalPos());
+    if (alive) emit contextMenuRequested(tab, folder, global);
     return true;
 }
 
