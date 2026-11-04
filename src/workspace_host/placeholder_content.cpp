@@ -1,25 +1,12 @@
-#include <QCoreApplication>
-#include <QApplication>
 #include "placeholder_content.hpp"
-#include <QHeaderView>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPlainTextEdit>
-#include <QPushButton>
-#include <QTableWidget>
-#include <QTreeWidget>
-#include <QVBoxLayout>
 #include <window_system/interface_appearance.hpp>
+#include <window_system/window_manager.hpp>
+
+#include <QCoreApplication>
+#include <QGuiApplication>
 
 namespace muxora {
 using namespace window_system;
-namespace {
-QWidget* informationBar(const QString& text)
-{
-    auto* bar = new QLabel(text); bar->setObjectName("ContentInfoBar");
-    bar->setContentsMargins(8, 3, 8, 3); return bar;
-}
-}
 QString notesText()
 {
     return QCoreApplication::translate("Muxora",
@@ -27,7 +14,7 @@ QString notesText()
 }
 QFont notesFont()
 {
-    auto font = QApplication::font(); font.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Microsoft YaHei"), QStringLiteral("monospace")});
+    auto font = QGuiApplication::font(); font.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Microsoft YaHei"), QStringLiteral("monospace")});
     font.setStyleHint(QFont::Monospace); font.setPointSizeF(11 * interfaceScale());
     return font;
 }
@@ -63,86 +50,22 @@ QVector<QStringList> fileRows()
                      row < 3 ? QCoreApplication::translate("Muxora", "Directory") : QCoreApplication::translate("Muxora", "File")});
     return rows;
 }
+QString fileAddressText()
+{
+    return QCoreApplication::translate("Muxora", "/workspace · File view preview");
+}
+QString fileInformationText(int count)
+{
+    return QCoreApplication::translate("Muxora", "%n items  ·  File operations are not connected yet", nullptr, count);
+}
 QString transfersText()
 {
     return QCoreApplication::translate("Muxora", "Transfer list\n\nFile transfer is not connected yet.\nThis tab uses the same docking and window operations as other tabs.");
 }
 
-QWidget* createPlaceholder(const TabOptions& options, WindowManager* windows)
-{
-    if (options.contentType == "notes") {
-        auto* editor = new QPlainTextEdit;
-        editor->setObjectName("WorkspaceNotes");
-        const auto resizeFont = [editor] { editor->setFont(notesFont()); };
-        resizeFont();
-        if (auto* controller = InterfaceAppearanceController::applicationInstance())
-            QObject::connect(controller, &InterfaceAppearanceController::appearanceChanged, editor, resizeFont);
-        editor->setPlainText(notesText());
-        return editor;
-    }
-    if (options.contentType == "sessions") {
-        auto* tree = new QTreeWidget; tree->setHeaderHidden(true); tree->setObjectName("SessionPlaceholder");
-        auto* group = new QTreeWidgetItem(tree, {sessionsHeading()});
-        for (const auto& text : sessionNames()) {
-            auto* item = new QTreeWidgetItem(group, {text}); item->setIcon(0, iconFor("terminal", windows->theme()));
-        }
-        group->setExpanded(true); tree->setMinimumWidth(160); return tree;
-    }
-    if (options.contentType == "files") {
-        auto* table = new QTableWidget(7, 3); table->setObjectName("FilePlaceholder");
-        table->setHorizontalHeaderLabels(fileColumns());
-        table->verticalHeader()->hide(); table->horizontalHeader()->setStretchLastSection(true);
-        table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-        table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setAlternatingRowColors(true);
-        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        const auto rows = fileRows();
-        for (int row = 0; row < rows.size(); ++row) {
-            table->setItem(row, 0, new QTableWidgetItem(iconFor(row < 3 ? "files" : "window", windows->theme()), rows[row][0]));
-            table->setItem(row, 1, new QTableWidgetItem(rows[row][1]));
-            table->setItem(row, 2, new QTableWidgetItem(rows[row][2]));
-        }
-        return table;
-    }
-    if (options.contentType == "transfers") {
-        auto* label = new QLabel(transfersText());
-        label->setAlignment(Qt::AlignCenter); label->setWordWrap(true);
-        label->setFocusPolicy(Qt::StrongFocus); return label;
-    }
-    auto* page = new QWidget; page->setObjectName("WelcomePage");
-    auto* layout = new QVBoxLayout(page); layout->setContentsMargins(30, 28, 30, 28); layout->setSpacing(14);
-    auto* title = new QLabel(QStringLiteral("Muxora"), page);
-    QFont font = title->font(); font.setPointSize(26); font.setBold(true); title->setFont(font); layout->addWidget(title);
-    auto* subtitle = new QLabel(welcomeSubtitle(), page);
-    font = subtitle->font(); font.setPointSize(13); subtitle->setFont(font); layout->addWidget(subtitle);
-    const auto resizeWelcome = [page, layout, title, subtitle] {
-        const auto* controller = InterfaceAppearanceController::applicationInstance();
-        const double factor = interfaceScale();
-        layout->setContentsMargins(uiPixels(30), uiPixels(28), uiPixels(30), uiPixels(28)); layout->setSpacing(uiPixels(14));
-        auto font = controller ? controller->font() : page->font(); font.setPointSizeF(26 * factor); font.setBold(true); title->setFont(font);
-        font.setPointSizeF(13 * factor); font.setBold(false); subtitle->setFont(font);
-    };
-    resizeWelcome();
-    if (auto* controller = InterfaceAppearanceController::applicationInstance())
-        QObject::connect(controller, &InterfaceAppearanceController::appearanceChanged, page, resizeWelcome);
-    auto* description = new QLabel(welcomeDescription(), page);
-    description->setWordWrap(true); layout->addWidget(description);
-    const auto actions = welcomeActions();
-    for (const auto& action : actions) {
-        auto* button = new QPushButton(action.first, page); button->setMaximumWidth(260);
-        QObject::connect(button, &QPushButton::clicked, windows, [windows, id = action.second] { windows->execute(id); });
-        layout->addWidget(button);
-    }
-    layout->addStretch();
-    auto* tip = new QLabel(welcomeTip(), page);
-    tip->setObjectName("MutedText"); tip->setWordWrap(true); layout->addWidget(tip); return page;
-}
 TabId addPlaceholderTab(WindowManager& windows, WindowId window, const TabOptions& options, GroupId group)
 {
-    if (windows.presentation() == WindowManager::Presentation::External) return windows.addTab(window, options, group);
-    auto* content = createPlaceholder(options, &windows);
-    const auto tab = windows.addTab(window, content, options, group);
-    if (tab.isNull()) delete content;
-    return tab;
+    return windows.addTab(window, options, group);
 }
 void populateInitialWorkspace(WindowManager& windows, WindowId window)
 {
@@ -150,12 +73,6 @@ void populateInitialWorkspace(WindowManager& windows, WindowId window)
     addPlaceholderTab(windows, window, {QCoreApplication::translate("Muxora", "Workspace 1"), "notes", {}});
     const auto fileTab = addPlaceholderTab(windows, window, {QCoreApplication::translate("Muxora", "Files"), "files", {}});
     windows.moveTab(fileTab, windows.model().groupForTab(first), Placement::Right);
-    // Quick tab bars arrive with the Quick bar interface (10.3, sub-step 6).
-    if (windows.presentation() == WindowManager::Presentation::Widgets) {
-        auto* address = new QLineEdit(QCoreApplication::translate("Muxora", "/workspace · File view preview")); address->setReadOnly(true);
-        windows.setTabTopBar(fileTab, address);
-        windows.setTabBottomBar(fileTab, informationBar(QCoreApplication::translate("Muxora", "%n items  ·  File operations are not connected yet", nullptr, 7)));
-    }
     const auto sessionTab = addPlaceholderTab(windows, window, {QCoreApplication::translate("Muxora", "Sessions"), "sessions", {}});
     windows.moveTabToEdge(sessionTab, Edge::Left, true);
     const auto transferTab = addPlaceholderTab(windows, window, {QCoreApplication::translate("Muxora", "Transfers"), "transfers", {}});

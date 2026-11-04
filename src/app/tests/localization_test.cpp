@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
+// Contracts: host catalog lookup, translated Quick pages, and user text.
+// Dimensions: English/Chinese; each placeholder kind; singular/plural counts.
 #include "workspace_host/placeholder_content.hpp"
+#include "workspace_host/quick_placeholder.hpp"
 #include <window_system/localization.hpp>
+#include <window_system/window_manager.hpp>
 #include <window_system_lua/script_host.hpp>
 #include "../user_preferences.hpp"
 #include "translation_checks.hpp"
@@ -10,12 +14,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
-#include <QLabel>
-#include <QPlainTextEdit>
+#include <QQmlEngine>
+#include <QQuickItem>
 #include <QRegularExpression>
-#include <QTableWidget>
 #include <QTest>
-#include <QTreeWidget>
 #include <QSignalSpy>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -25,12 +27,22 @@
 using namespace window_system;
 
 namespace {
-QStringList multilineText(QWidget* root)
+QList<QQuickItem*> textItems(QQuickItem* root)
+{
+    QList<QQuickItem*> result;
+    if (root->property("text").isValid()) result.append(root);
+    for (auto* child : root->childItems()) result.append(textItems(child));
+    return result;
+}
+QStringList pageText(QQuickItem* root)
 {
     QStringList result;
-    if (const auto* editor = qobject_cast<QPlainTextEdit*>(root)) result.append(editor->toPlainText());
-    if (const auto* label = qobject_cast<QLabel*>(root)) result.append(label->text());
-    for (const auto* label : root->findChildren<QLabel*>()) result.append(label->text());
+    for (const auto* item : textItems(root)) result.append(item->property("text").toString());
+    return result;
+}
+QStringList multilineText(QQuickItem* root)
+{
+    auto result = pageText(root);
     result.removeIf([](const QString& text) { return !text.contains(QLatin1Char('\n')); });
     return result;
 }
@@ -59,27 +71,33 @@ void AppLocalizationTest::englishHostContentAndInitialTitles()
     TranslationManager translations;
     translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
     QVERIFY(translations.installLanguage(UiLanguage::English));
-    WindowManager manager;
-    std::unique_ptr<QWidget> notes(muxora::createPlaceholder({QStringLiteral("User title"), "notes", {}}, &manager));
-    auto* editor = qobject_cast<QPlainTextEdit*>(notes.get());
-    QVERIFY(editor);
-    QVERIFY(editor->toPlainText().contains(QStringLiteral("Workspace notes")));
-    QVERIFY(!editor->toPlainText().contains(QStringLiteral("工作区")));
+    WindowManager manager(WindowManager::Presentation::External);
+    QQmlEngine engine;
+    const auto factory = muxora::quickPlaceholderFactory(manager, engine);
+    std::unique_ptr<QQuickItem> notes(factory({QStringLiteral("User title"), "notes", {}}, {}));
+    QVERIFY(notes);
+    const auto editors = textItems(notes.get());
+    QCOMPARE(editors.size(), 1);
+    auto* editor = editors.first();
+    QCOMPARE(editor->property("text").toString(), muxora::notesText());
+    QVERIFY(editor->property("text").toString().contains(QStringLiteral("Workspace notes")));
+    QVERIFY(!editor->property("text").toString().contains(QStringLiteral("工作区")));
     const QString userContent = QStringLiteral("用户输入不会因界面语言变化而丢失");
-    editor->setPlainText(userContent);
+    QVERIFY(editor->setProperty("text", userContent));
     translations.setRequestedLanguage(UiLanguage::SimplifiedChinese);
-    QCOMPARE(editor->toPlainText(), userContent);
+    QCOMPARE(editor->property("text").toString(), userContent);
     QCOMPARE(translations.activeLanguage(), UiLanguage::English);
 
-    std::unique_ptr<QWidget> files(muxora::createPlaceholder({QStringLiteral("User files"), "files", {}}, &manager));
-    auto* table = qobject_cast<QTableWidget*>(files.get());
-    QVERIFY(table);
-    QCOMPARE(table->horizontalHeaderItem(0)->text(), QStringLiteral("Name"));
-    QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Directory"));
-    std::unique_ptr<QWidget> sessions(muxora::createPlaceholder({QStringLiteral("User sessions"), "sessions", {}}, &manager));
-    auto* tree = qobject_cast<QTreeWidget*>(sessions.get());
-    QVERIFY(tree);
-    QCOMPARE(tree->topLevelItem(0)->text(0), QStringLiteral("Sessions · Layout preview"));
+    std::unique_ptr<QQuickItem> files(factory({QStringLiteral("User files"), "files", {}}, {}));
+    QVERIFY(files);
+    QCOMPARE(muxora::fileColumns().first(), QStringLiteral("Name"));
+    QCOMPARE(muxora::fileRows().first().at(2), QStringLiteral("Directory"));
+    QVERIFY(pageText(files.get()).contains(QStringLiteral("Name")));
+    QVERIFY(pageText(files.get()).contains(QStringLiteral("Directory")));
+    std::unique_ptr<QQuickItem> sessions(factory({QStringLiteral("User sessions"), "sessions", {}}, {}));
+    QVERIFY(sessions);
+    QCOMPARE(muxora::sessionsHeading(), QStringLiteral("Sessions · Layout preview"));
+    QVERIFY(pageText(sessions.get()).contains(muxora::sessionsHeading()));
 
     const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Muxora"), QSize(800, 600)});
     muxora::populateInitialWorkspace(manager, window);
@@ -140,9 +158,12 @@ void AppLocalizationTest::multilineHostTextMatchesExactCatalogKeys()
     TranslationManager translations;
     translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
     QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QQmlEngine engine;
+    const auto factory = muxora::quickPlaceholderFactory(manager, engine);
     const TabOptions options{QStringLiteral("User title"), contentType, {}};
-    std::unique_ptr<QWidget> chinese(muxora::createPlaceholder(options, &manager));
+    std::unique_ptr<QQuickItem> chinese(factory(options, {}));
+    QVERIFY(chinese);
     const auto originals = multilineText(chinese.get());
     QVERIFY(!originals.isEmpty());
     if (contentType == QStringLiteral("notes")) QVERIFY(originals.first().endsWith(QLatin1Char('\n')));
@@ -160,7 +181,8 @@ void AppLocalizationTest::multilineHostTextMatchesExactCatalogKeys()
         expectedEnglish.append(sourceForChinese.value(original));
     }
     QVERIFY(translations.installLanguage(UiLanguage::English));
-    std::unique_ptr<QWidget> english(muxora::createPlaceholder(options, &manager));
+    std::unique_ptr<QQuickItem> english(factory(options, {}));
+    QVERIFY(english);
     QCOMPARE(multilineText(english.get()), expectedEnglish);
 }
 
@@ -218,7 +240,7 @@ void AppLocalizationTest::pluralMessagesUseCorrectForms()
     TranslationManager translations;
     translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
     QVERIFY(translations.installLanguage(chinese ? UiLanguage::SimplifiedChinese : UiLanguage::English));
-    QCOMPARE(QCoreApplication::translate("Muxora", "%n items  ·  File operations are not connected yet", nullptr, count),
+    QCOMPARE(muxora::fileInformationText(count),
         chinese ? QStringLiteral("%1 项  ·  文件功能尚未接入").arg(count)
         : QStringLiteral("%1 %2  ·  File operations are not connected yet").arg(count).arg(count == 1 ? "item" : "items"));
 }
@@ -228,7 +250,7 @@ void AppLocalizationTest::scriptDiagnosticsPreserveUserText()
     TranslationManager translations;
     translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
     QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     window_system_lua::ScriptHost scripts(&manager);
     QSignalSpy initialized(&scripts, &window_system_lua::ScriptHost::initialized);

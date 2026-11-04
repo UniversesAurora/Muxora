@@ -46,7 +46,6 @@
   {"file": "src/app/scripting_setup.cpp", "text": "Lua", "count": 4, "reason": "Language name; the same spelling is used in both supported UI languages."},
   {"file": "src/app/user_preferences.cpp", "text": "User", "count": 3, "reason": "Configuration directory name, not a UI label."},
   {"file": "src/workspace_host/placeholder_content.cpp", "text": "Cascadia Mono", "count": 1, "reason": "Font family name passed to Qt, not a UI label."},
-  {"file": "src/workspace_host/placeholder_content.cpp", "text": "Muxora", "count": 1, "reason": "Product name; also used as a host default title and notification title."},
   {"file": "modules/window-system/src/settings/settings_interface_appearance.cpp", "text": "Segoe UI, Microsoft YaHei, sans-serif", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
   {"file": "modules/window-system/src/style/interface_appearance.cpp", "text": "Segoe UI", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},
   {"file": "modules/window-system/src/style/interface_appearance.cpp", "text": "Microsoft YaHei", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."},

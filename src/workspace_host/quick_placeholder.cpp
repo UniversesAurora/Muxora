@@ -31,7 +31,8 @@ QVariantMap texts(const QString& kind)
     if (kind == "files") {
         QVariantList rows;
         for (const auto& row : fileRows()) rows.append(row);
-        return {{"columns", fileColumns()}, {"rows", rows}};
+        return {{"columns", fileColumns()}, {"rows", rows}, {"address", fileAddressText()},
+            {"information", fileInformationText(rows.size())}};
     }
     if (kind == "transfers") return {{"text", transfersText()}};
     QVariantList actions;
@@ -39,7 +40,7 @@ QVariantMap texts(const QString& kind)
     return {{"subtitle", welcomeSubtitle()}, {"description", welcomeDescription()}, {"tip", welcomeTip()}, {"actions", actions}};
 }
 
-// Colors and fonts follow the interface appearance, as the Widgets pages do.
+// Colors and fonts follow the interface appearance.
 QVariantMap style(const WindowManager& windows)
 {
     const auto theme = windows.interfaceTheme();

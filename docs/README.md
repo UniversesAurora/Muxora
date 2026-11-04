@@ -35,7 +35,7 @@ Muxora 当前进入窗口系统开发阶段。首个预览就是 Muxora 应用�
 | [工程、资源与依赖](development/engineering-design.md) | 所有权、模块目录、资源约束、SDK 与依赖升级 |
 | [自动化测试要求](development/testing-design.md) | 测试链路、场景矩阵、证据与失败处理 |
 | [Muxora 窗口系统预览](development/window-system-preview.md) | 当前实现范围、构建、运行、快捷键试用与最近一次验证 |
-| [验证日志](development/verification-log/2026-10.md) | 每一轮修订说明与验证记录，按月分文件、按日期倒序 |
+| [验证日志：11 月](development/verification-log/2026-11.md)、[10 月](development/verification-log/2026-10.md) | 每一轮修订说明与验证记录，按月分文件、按日期倒序 |
 | [Lua 使用说明](development/lua-guide.md) | 用户配置、脚本命令、API 分组、重载与宿主扩展 |
 | [交接记录](development/handoff.md) | 助手轮流开发时的交接入口：当前状态、进行中的工作、下一步、待用户决定的问题 |
 | [文档维护规范](development/documentation.md) | 每类信息的权威位置、索引规则、改动时要同步更新的文档、提交前检查 |

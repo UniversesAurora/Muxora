@@ -11,15 +11,22 @@ function(muxora_use_utf8_process_manifest target)
 endfunction()
 
 find_package(Qt6 6.10 REQUIRED COMPONENTS Qml Quick)
+# The application and its localization checks use the same compiled pages.
+set_source_files_properties(../workspace_host/qml/PlaceholderPage.qml PROPERTIES QT_RESOURCE_ALIAS PlaceholderPage.qml)
+qt_add_library(MuxoraWorkspaceHost STATIC)
+set_target_properties(MuxoraWorkspaceHost PROPERTIES AUTOMOC ON)
+qt_add_qml_module(MuxoraWorkspaceHost URI Muxora.WorkspaceHost VERSION 1.0 RESOURCE_PREFIX /qt/qml
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Muxora/WorkspaceHost"
+    QML_FILES ../workspace_host/qml/PlaceholderPage.qml
+    SOURCES ../workspace_host/placeholder_content.cpp ../workspace_host/placeholder_content.hpp
+        ../workspace_host/quick_placeholder.cpp ../workspace_host/quick_placeholder.hpp)
+target_link_libraries(MuxoraWorkspaceHost PUBLIC WindowSystem::Quick Qt6::Qml)
+target_compile_features(MuxoraWorkspaceHost PRIVATE cxx_std_20)
+
 qt_add_executable(muxora WIN32 main.cpp layout_file.cpp layout_file.hpp state_paths.cpp user_preferences.cpp
-    scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp
-    ../workspace_host/placeholder_content.cpp ../workspace_host/quick_placeholder.cpp ../workspace_host/quick_placeholder.hpp)
+    scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp)
 muxora_use_utf8_process_manifest(muxora)
 set_target_properties(muxora PROPERTIES AUTOMOC ON)
-# Placeholder pages of the Quick workspace, compiled ahead of time.
-set_source_files_properties(../workspace_host/qml/PlaceholderPage.qml PROPERTIES QT_RESOURCE_ALIAS PlaceholderPage.qml)
-qt_add_qml_module(muxora URI Muxora.WorkspaceHost VERSION 1.0 RESOURCE_PREFIX /qt/qml
-    QML_FILES ../workspace_host/qml/PlaceholderPage.qml)
 qt_add_lrelease(TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     QM_FILES_OUTPUT_VARIABLE muxora_translation_files LRELEASE_TARGET muxora_lrelease OPTIONS -nounfinished)
 qt_add_resources(muxora muxora_translations PREFIX "/muxora/i18n"
@@ -31,7 +38,7 @@ list(FILTER muxora_i18n_sources EXCLUDE REGEX "/tests/")
 qt_add_lupdate(SOURCE_TARGETS muxora SOURCES ${muxora_i18n_sources}
     TS_FILES translations/muxora_en.ts translations/muxora_zh_CN.ts
     LUPDATE_TARGET muxora_lupdate OPTIONS -no-obsolete -locations none -source-language en)
-target_link_libraries(muxora PRIVATE WindowSystemLua::Host WindowSystem::Quick Qt6::Qml)
+target_link_libraries(muxora PRIVATE WindowSystemLua::Host MuxoraWorkspaceHost MuxoraWorkspaceHostplugin)
 if(WIN32)
     target_link_libraries(muxora PRIVATE winmm)
 endif()
@@ -44,8 +51,8 @@ endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
-    qt_add_executable(muxora-localization-test tests/localization_test.cpp user_preferences.cpp ../workspace_host/placeholder_content.cpp)
-    target_link_libraries(muxora-localization-test PRIVATE WindowSystemLua::Host Qt6::Test)
+    qt_add_executable(muxora-localization-test tests/localization_test.cpp user_preferences.cpp)
+    target_link_libraries(muxora-localization-test PRIVATE WindowSystemLua::Host MuxoraWorkspaceHost MuxoraWorkspaceHostplugin Qt6::Test)
     target_compile_features(muxora-localization-test PRIVATE cxx_std_20)
     # Shares the catalog readers of the WindowSystem localization tests.
     target_include_directories(muxora-localization-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..

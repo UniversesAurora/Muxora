@@ -111,6 +111,8 @@
 
 **状态**：进行中。Widgets 不再是默认，按下面的单元分块删除，不等到最后一次删光；删除前确认 Quick 一侧已有等价行为和用例，缺的用例补到 `quick-*` 套件（按 [测试的分量](../../development/testing-design.md#测试的分量)，不逐条照搬）。
 
+删除单元 1 已完成：Muxora 只保留 Quick 占位页，本地化套件检查同一份编译后的 QML 和文字函数，见 [验证记录](../../development/verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。下一步为 10.3 子步 6。
+
 | 单元 | 删除内容 | 时机 |
 | --- | --- | --- |
 | 1 | Muxora 的 Widgets 占位内容：`createPlaceholder` 和它的控件代码、`addPlaceholderTab`／`populateInitialWorkspace` 里的 Widgets 分支；`src/app/tests/localization_test.cpp` 改为检查文字函数（`notesText()` 等）和 QML 占位页，保留现有译文断言 | 现在（执行者） |

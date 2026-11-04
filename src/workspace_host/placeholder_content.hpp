@@ -1,9 +1,12 @@
 #pragma once
-#include <window_system/window_manager.hpp>
+#include <window_system/content_options.hpp>
 #include <QFont>
+#include <QStringList>
+
+namespace window_system { class WindowManager; }
 
 namespace muxora {
-// What the preview's placeholders say, shared by the Widgets and Quick pages.
+// Text and initial layout of the preview's Quick placeholder pages.
 QString notesText();
 QFont notesFont();
 QString welcomeSubtitle();
@@ -14,12 +17,11 @@ QString sessionsHeading();
 QStringList sessionNames();
 QStringList fileColumns();
 QVector<QStringList> fileRows(); // Directories first, by column.
+QString fileAddressText();
+QString fileInformationText(int count);
 QString transfersText();
 
-QWidget* createPlaceholder(const window_system::TabOptions& options,
-                           window_system::WindowManager* windows);
-// Adds a placeholder tab; the Widgets presentation needs its content now,
-// the Quick workspace creates it from the options.
+// The Quick workspace creates content from the tab options.
 window_system::TabId addPlaceholderTab(window_system::WindowManager& windows, window_system::WindowId window,
                                        const window_system::TabOptions& options, window_system::GroupId group = {});
 void populateInitialWorkspace(window_system::WindowManager& windows,
