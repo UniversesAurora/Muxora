@@ -2,6 +2,9 @@
 // WindowSystem design section 6: spare-space owner, compression, reset
 // priority, and a viewport smaller than the combined minimum widths.
 #include "chrome/strip_layout.hpp"
+#include "chrome/strip_layout_state.hpp"
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QTest>
 
 using namespace window_system;
@@ -12,6 +15,8 @@ class ToolbarLayoutTest final : public QObject {
 private slots:
     void allocationKeepsMinimaAndSpaceOwner_data();
     void allocationKeepsMinimaAndSpaceOwner();
+    void storageUsesAuthoredWidthsAndCurrentFormat();
+    void restoreKeepsNewStripsAndRejectsAmbiguousRows();
 };
 
 void ToolbarLayoutTest::allocationKeepsMinimaAndSpaceOwner_data()
@@ -41,6 +46,49 @@ void ToolbarLayoutTest::allocationKeepsMinimaAndSpaceOwner()
     QFETCH(int, available);
     QFETCH(QVector<int>, expected);
     QCOMPARE(stripRowWidths({strips.constData(), size_t(strips.size())}, available), expected);
+}
+
+namespace {
+QJsonObject storedLayout()
+{
+    return QJsonDocument::fromJson(R"({"locked":false,"rows":[["menu"]],"bottomRows":[["tools"]],"strips":{
+        "menu":{"visible":false,"width":96,"sizing":"content","excluded":["host.open"],"contentVisible":true,"naturalWidthPriority":true},
+        "tools":{"visible":true,"width":-1,"sizing":"elastic","excluded":[],"contentVisible":false}}})").object();
+}
+}
+
+void ToolbarLayoutTest::storageUsesAuthoredWidthsAndCurrentFormat()
+{
+    StripLayoutSnapshot snapshot;
+    snapshot.rows = {{"menu"}, {"tools"}, {}, {}};
+    snapshot.areas = {ToolbarArea::Top, ToolbarArea::Bottom, ToolbarArea::Top, ToolbarArea::Bottom};
+    snapshot.locked = false;
+    snapshot.strips.insert("menu", {false, 96, false, {"host.open"}, true, true});
+    snapshot.strips.insert("tools", {true, -1, true, {}, false});
+    QCOMPARE(encodeStripLayout(snapshot), storedLayout());
+}
+
+void ToolbarLayoutTest::restoreKeepsNewStripsAndRejectsAmbiguousRows()
+{
+    const QVector<QStringList> rows{{"menu"}, {"tools", "new"}, {"required"}};
+    const QVector<ToolbarArea> areas{ToolbarArea::Top, ToolbarArea::Bottom, ToolbarArea::Top};
+    QHash<QString, StripRestorePolicy> policies{{"menu", {}}, {"tools", {true, true}},
+        {"new", {}}, {"required", {true, true}}};
+    const auto restored = decodeStripLayout(storedLayout(), rows, areas, policies);
+    QVERIFY(restored);
+    QCOMPARE(restored->rows, rows); QCOMPARE(restored->areas, areas);
+    QVERIFY(!restored->locked);
+    QCOMPARE(restored->strips.value("menu").width, 96);
+    QCOMPARE(restored->strips.value("menu").elastic, std::optional<bool>(false));
+    QCOMPARE(restored->strips.value("menu").excluded, QStringList{"host.open"});
+    QVERIFY(!restored->strips.contains("new"));
+    auto bad = storedLayout();
+    bad.insert("bottomRows", QJsonArray{QJsonArray{"menu", "tools"}});
+    QVERIFY(!decodeStripLayout(bad, rows, areas, policies));
+    bad = storedLayout(); bad.insert("bottomRows", QJsonArray{QJsonArray{"tools", "required"}});
+    QVERIFY(!decodeStripLayout(bad, rows, areas, policies));
+    policies["required"].requiredInLayout = true;
+    QVERIFY(!decodeStripLayout(storedLayout(), rows, areas, policies));
 }
 
 QTEST_GUILESS_MAIN(ToolbarLayoutTest)

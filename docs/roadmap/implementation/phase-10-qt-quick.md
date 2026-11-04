@@ -92,7 +92,7 @@
 - **10.4c 右键菜单（Claude，接线可交给执行者）**：标签、标签夹、标签栏空白处、标签组、窗格内容、侧栏按钮、展开面板、新建标签下拉、标签列表。`GroupItem::stripMenuRequested`、`groupMenuRequested`、`RailButtonItem::menu` 等回调已留好。完成后欢迎页“右键标签或浮窗标题栏……”这句提示才成立。
 - **10.4d 菜单栏（Claude）**：工作台在标题行显示文件／视图／布局／窗口／工具／帮助，浮窗显示自己的浮窗菜单；含窗口列表。
 - **10.4e 工具栏（前半执行者，后半 Claude）**：前半把 `chrome/command_strip.cpp` 里的排布规则（行与区域、弹性与按内容、压缩、最小宽度、重置、锁定、保存格式）抽成不依赖控件的模块，Widgets 改用它，`toolbar-*`、`multirow-toolbar` 通过；后半由 Claude 做 Quick 渲染、拖动换位和选项菜单，宿主和 Lua 的自定义工具栏随之显示。保存格式不变；做完后去掉管理器里为 Quick 原样保留工具栏布局的 `keptStrips`。
-  - 前半进行中：宽度分配、压缩和重置优先级已移入共用逻辑层，区域和完整布局状态及保存规则继续拆分，见 [记录](../../development/verification-log/2026-11.md#工具栏宽度分配移到共用逻辑层2026-11-04)。
+  - 前半进行中：宽度分配、压缩和重置优先级已移入共用逻辑层；布局快照及当前格式存取已在纯数据模块实现，控件接线待桌面恢复后验证，其余排布规则继续拆分，见 [记录](../../development/verification-log/2026-11.md#工具栏布局存取的纯数据模块2026-11-04)。
 - **10.4f 状态栏（Claude）**：工作区信息、临时消息、宿主和 Lua 的状态项、右键隐藏状态项，照 `chrome/status_bar.cpp`。
 - **10.4g 浮动面板（Claude）**：命令面板、窗口选择器（`floating_panel.cpp`、`command_dialogs.cpp`），以及拖动中按 Tab 弹出窗口列表选目标（Widgets `DragController::selectTarget`）。
 - **10.4h 设置页与快捷键页（Claude 后执行者）**：Claude 先做 Quick 表单控件（开关、下拉、数值、滑块、列表、快捷键录入，类型选择按 [设置设计 §3](../../design/settings-and-commands-design.md#3-全局设置与编辑)）和第一个分区的样板；执行者照样板迁移其余分区和快捷键页，遇到样板里没有的控件停下。
