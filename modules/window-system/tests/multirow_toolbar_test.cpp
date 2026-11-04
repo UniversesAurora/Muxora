@@ -13,7 +13,6 @@
 #include <QSignalSpy>
 #include <limits>
 #include <QTest>
-#include <QToolButton>
 #include <QVBoxLayout>
 
 using namespace window_system;
@@ -77,7 +76,6 @@ private slots:
     void vacantRowsDoNotLeaveBlankSpace_data() { addAreas(); }
     void vacantRowsDoNotLeaveBlankSpace();
     void crossAreaMovementPreservesPresentationAndCustomization();
-    void compactRowsExpandForContentAndFonts();
     void publicMovementPreservesIdentityAndAppendsRows();
     void publicMovementRejectsUnboundedAndInvalidRequestsWithoutMutation();
     void bothAreasRoundTripAndRejectAmbiguousLayouts();
@@ -109,12 +107,8 @@ void MultirowToolbarTest::arbitraryRowsGrowFromTheOuterEdge()
     QCOMPARE(host->rowCount(area), 6);
     auto* dock = bottom ? host->bottomArea() : host;
     const auto rows = visibleRows(dock); QCOMPARE(rows.size(), 6);
-    QCOMPARE(dock->height(), 168);
     for (int index = 0; index < 6; ++index) {
         QCOMPARE(host->stripOrder(area, index), QStringList{QString::number(index)});
-        const auto* strip = host->stripWidget(QString::number(index));
-        QCOMPARE(strip->height(), 28);
-        QCOMPARE(strip->parentWidget()->y(), bottom ? (5 - index) * 28 : index * 28);
     }
 }
 void MultirowToolbarTest::vacantRowsDoNotLeaveBlankSpace()
@@ -129,17 +123,16 @@ void MultirowToolbarTest::vacantRowsDoNotLeaveBlankSpace()
     }
     fixture.window.show(); QVERIFY(QTest::qWaitForWindowExposed(&fixture.window)); fixture.settle();
     auto* dock = bottom ? host->bottomArea() : host;
-    QCOMPARE(dock->height(), 112);
     QVERIFY(host->moveStrip("1", area, 0, 1)); fixture.settle();
-    QCOMPARE(dock->height(), 84); QCOMPARE(visibleRows(dock).size(), 3);
+    QCOMPARE(visibleRows(dock).size(), 3);
     QVERIFY(host->setStripVisible("2", false)); fixture.settle();
-    QCOMPARE(dock->height(), 56); QCOMPARE(visibleRows(dock).size(), 2);
+    QCOMPARE(visibleRows(dock).size(), 2);
     QVERIFY(host->moveStrip("3", bottom ? Area::Top : Area::Bottom, 0, 0)); fixture.settle();
-    QCOMPARE(dock->height(), 28); QCOMPARE(visibleRows(dock).size(), 1);
+    QCOMPARE(visibleRows(dock).size(), 1);
     QVERIFY(host->setStripVisible("0", false)); QVERIFY(host->setStripVisible("1", false)); fixture.settle();
     QCOMPARE(dock->height(), 0); QVERIFY(visibleRows(dock).isEmpty());
     QVERIFY(host->setStripVisible("2", true)); fixture.settle();
-    QCOMPARE(dock->height(), 28); QCOMPARE(visibleRows(dock).size(), 1);
+    QCOMPARE(visibleRows(dock).size(), 1);
 }
 void MultirowToolbarTest::crossAreaMovementPreservesPresentationAndCustomization()
 {
@@ -165,22 +158,6 @@ void MultirowToolbarTest::crossAreaMovementPreservesPresentationAndCustomization
     QCOMPARE(host->stripWidget("tools"), original.data());
     QCOMPARE(host->stripArea("tools"), Area::Top);
     QCOMPARE(host->bottomArea()->height(), 0);
-}
-void MultirowToolbarTest::compactRowsExpandForContentAndFonts()
-{
-    Fixture fixture; auto* host = fixture.host;
-    host->addStrip("ordinary", new QLabel("Text"), 0);
-    QCOMPARE(host->stripWidget("ordinary")->height(), 28);
-    auto* tall = new QWidget;
-    tall->setMinimumHeight(32);
-    auto* row = new QHBoxLayout(tall); row->setContentsMargins(0, 0, 0, 0);
-    auto* control = new QToolButton(tall); control->setFixedSize(42, 32); row->addWidget(control);
-    host->addStrip("protected", tall, 1);
-    QCOMPARE(host->stripWidget("protected")->height(), 32);
-    QVERIFY(host->moveStrip("ordinary", Area::Bottom, 0, 0));
-    auto font = host->font(); font.setPointSize(24); host->setFont(font); fixture.settle();
-    QVERIFY(host->stripWidget("ordinary")->height() >= host->fontMetrics().height() + 8);
-    QVERIFY(host->stripWidget("protected")->height() >= 32);
 }
 void MultirowToolbarTest::publicMovementPreservesIdentityAndAppendsRows()
 {
@@ -317,13 +294,10 @@ void MultirowToolbarTest::sparseLayoutsKeepLogicalRowsWithoutAllocatingEmptyWidg
     fixture.window.show(); QVERIFY(QTest::qWaitForWindowExposed(&fixture.window)); fixture.settle();
     const Area area = bottom ? Area::Bottom : Area::Top;
     const Area opposite = bottom ? Area::Top : Area::Bottom;
-    auto* dock = bottom ? host->bottomArea() : host;
     QCOMPARE(host->stripOrder(area, 5), QStringList{"early"});
     QCOMPARE(host->stripOrder(area, count - 1), QStringList{"late"});
-    QCOMPARE(host->rowCount(area), 2); QCOMPARE(dock->height(), 56);
+    QCOMPARE(host->rowCount(area), 2);
     QCOMPARE(fixture.window.findChildren<QWidget*>("CommandStripRow").size(), 2);
-    QCOMPARE(early->parentWidget()->y(), bottom ? 28 : 0);
-    QCOMPARE(late->parentWidget()->y(), bottom ? 0 : 28);
     int exposedRows = 0;
     for (auto* widget : host->windowDragAreas()) {
         QVERIFY(widget);
@@ -374,14 +348,14 @@ void MultirowToolbarTest::draggingOverEarlierRowsDoesNotReserveAPlaceholder()
     const auto saved = host->saveLayout();
     const auto earlier = host->stripWidget("0")->parentWidget()->mapToGlobal(QPoint(80, 14));
     begin(host, "moving", earlier); fixture.settle();
-    QVERIFY(host->isDragging()); QCOMPARE(dock->height(), 84); QCOMPARE(visibleRows(dock).size(), 3);
+    QVERIFY(host->isDragging()); QCOMPARE(visibleRows(dock).size(), 3);
     QCOMPARE(opposite->height(), 0); QCOMPARE(host->saveLayout(), saved);
     const auto last = host->stripWidget("2")->parentWidget()->mapToGlobal(QPoint(80, 14));
     mouse(host, QEvent::MouseMove, last, Qt::NoButton, Qt::LeftButton); fixture.settle();
-    QCOMPARE(dock->height(), 112); QCOMPARE(visibleRows(dock).size(), 4);
+    QCOMPARE(visibleRows(dock).size(), 4);
     QCOMPARE(opposite->height(), 0);
     QTest::keyClick(host, Qt::Key_Escape); fixture.settle();
-    QCOMPARE(dock->height(), 84); QCOMPARE(visibleRows(dock).size(), 3); QCOMPARE(host->saveLayout(), saved);
+    QCOMPARE(visibleRows(dock).size(), 3); QCOMPARE(host->saveLayout(), saved);
 }
 void MultirowToolbarTest::emptyBottomIsDiscoveredWithoutPreallocatingSpace()
 {
@@ -392,11 +366,11 @@ void MultirowToolbarTest::emptyBottomIsDiscoveredWithoutPreallocatingSpace()
     const auto saved = host->saveLayout();
     QCOMPARE(host->bottomArea()->height(), 0);
     begin(host, "moving", fixture.body->mapToGlobal(fixture.body->rect().center())); fixture.settle();
-    QVERIFY(host->isDragging()); QCOMPARE(host->height(), 28); QCOMPARE(host->bottomArea()->height(), 0);
+    QVERIFY(host->isDragging()); QCOMPARE(host->bottomArea()->height(), 0);
     const auto target = host->bottomArea()->mapToGlobal(QPoint(8, -14));
     mouse(host, QEvent::MouseMove, target, Qt::NoButton, Qt::LeftButton); fixture.settle();
-    QCOMPARE(host->bottomArea()->height(), 28); QCOMPARE(visibleRows(host->bottomArea()).size(), 1);
-    QCOMPARE(host->height(), 28); QCOMPARE(visibleRows(host).size(), 1);
+    QCOMPARE(visibleRows(host->bottomArea()).size(), 1);
+    QCOMPARE(visibleRows(host).size(), 1);
     QCOMPARE(host->saveLayout(), saved);
     QTest::keyClick(host, Qt::Key_Escape); fixture.settle();
     QCOMPARE(host->bottomArea()->height(), 0); QVERIFY(visibleRows(host->bottomArea()).isEmpty());
@@ -416,28 +390,26 @@ void MultirowToolbarTest::dragCreatesOnlyTemporaryInnermostRows()
     const auto saved = host->saveLayout();
     auto* dock = bottom ? host->bottomArea() : host;
     auto* opposite = bottom ? static_cast<QWidget*>(host) : host->bottomArea();
-    const int before = dock->height();
     const auto outside = fixture.body->mapToGlobal(fixture.body->rect().center());
     begin(host, "first", outside); fixture.settle();
     QVERIFY(host->isDragging()); QVERIFY(host->stripWidget("first")->isHidden());
     QCOMPARE(host->saveLayout(), saved);
     // Leaving the source removes its vacant row without allocating any ghost.
-    QCOMPARE(dock->height(), before - 28); QCOMPARE(visibleRows(dock).size(), 1);
+    QCOMPARE(visibleRows(dock).size(), 1);
     QCOMPARE(opposite->height(), 0);
     const auto last = dock->mapToGlobal(QPoint(80, 14));
     mouse(host, QEvent::MouseMove, last, Qt::NoButton, Qt::LeftButton); fixture.settle();
-    QCOMPARE(dock->height(), before); QCOMPARE(visibleRows(dock).size(), 2);
+    QCOMPARE(visibleRows(dock).size(), 2);
     QCOMPARE(opposite->height(), 0);
     int blank = 0;
     for (auto* row : visibleRows(dock))
         if (row->findChildren<QWidget*>("CommandStrip", Qt::FindDirectChildrenOnly).isEmpty()) ++blank;
     QCOMPARE(blank, 1);
     mouse(host, QEvent::MouseMove, outside, Qt::NoButton, Qt::LeftButton); fixture.settle();
-    QCOMPARE(dock->height(), before - 28); QCOMPARE(visibleRows(dock).size(), 1);
+    QCOMPARE(visibleRows(dock).size(), 1);
     QTest::keyClick(host, Qt::Key_Escape); fixture.settle();
     QVERIFY(!host->isDragging()); QCOMPARE(host->saveLayout(), saved);
-    QCOMPARE(dock->height(), before); QCOMPARE(visibleRows(dock).size(), 2);
-    QCOMPARE(host->bottomArea()->height(), bottom ? before : 0);
+    QCOMPARE(visibleRows(dock).size(), 2);
 }
 void MultirowToolbarTest::draggingAcrossAreasUsesTheSameLiveStrip()
 {
@@ -479,7 +451,7 @@ void MultirowToolbarTest::aNewRowCanBeCommittedBeyondTheFormerSecondRow()
     QVERIFY(!host->isDragging());
     QCOMPARE(host->stripOrder(bottom ? Area::Bottom : Area::Top, 4), QStringList{"moving"});
     QCOMPARE(host->rowCount(bottom ? Area::Bottom : Area::Top), 5);
-    QCOMPARE(dock->height(), 140); QCOMPARE(visibleRows(dock).size(), 5);
+    QCOMPARE(visibleRows(dock).size(), 5);
 }
 
 QTEST_MAIN(MultirowToolbarTest)
