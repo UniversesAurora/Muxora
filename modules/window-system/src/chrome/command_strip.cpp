@@ -1,8 +1,9 @@
-#include <window_system/interface_appearance.hpp>
 // SPDX-License-Identifier: MIT
+#include <window_system/interface_appearance.hpp>
 #include <QCoreApplication>
 #include "command_strip.hpp"
 #include "strip_layout.hpp"
+#include "strip_layout_state.hpp"
 #include "commands/popup_menu.hpp"
 
 #include <QAction>
@@ -10,7 +11,6 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QFocusEvent>
-#include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
@@ -19,7 +19,6 @@
 #include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
-#include <QSet>
 #include <QScopedValueRollback>
 #include <QStyleOptionToolButton>
 #include <QStylePainter>
@@ -38,8 +37,6 @@ constexpr int compactRowHeight = 28;
 // the first and last strips touch the window border (or the screen edge).
 constexpr int rowMargin = 0;
 constexpr int stripSpacing = 4;
-constexpr int handleWidth = 12;
-constexpr int tailWidth = 12;
 
 class StripHandle final : public QWidget {
 public:
@@ -188,13 +185,20 @@ public:
         layoutItems();
     }
 
+    [[nodiscard]] StripPolicyInput layoutPolicy() const
+    {
+        return {.elastic = sizing == CommandStripHost::StripSizing::Elastic,
+            .elasticAllowed = constraints.elasticAllowed, .elasticRequired = constraints.elasticRequired,
+            .naturalWidthPriority = naturalWidthPriority, .hasRequestedWidth = requestedWidth >= 0};
+    }
+
     [[nodiscard]] int naturalWidth() const
     {
-        int width = handle->isHidden() ? 0 : uiPixels(handleWidth);
+        int width = handle->isHidden() ? 0 : uiPixels(stripHandleWidth);
         if (content && !content->isHidden()) width += content->sizeHint().width();
         else for (const auto& item : items)
             if (item.included && item.action && item.action->isVisible() && item.button) width += item.button->sizeHint().width();
-        return std::max(chromeMinimumWidth(), width + (optionsEnabled && !hideEmptyOptions() ? uiPixels(tailWidth) : 0));
+        return std::max(chromeMinimumWidth(), width + (optionsEnabled && !hideEmptyOptions() ? uiPixels(stripOptionsWidth) : 0));
     }
 
     [[nodiscard]] int minimumWidthForLayout() const
@@ -206,12 +210,12 @@ public:
     {
         // Keep the saved-width contract independent from this presentation
         // preference. A narrow strip must still have room to reveal overflow.
-        return (optionsEnabled ? uiPixels(tailWidth) : 0) + (handle->isHidden() ? 0 : uiPixels(handleWidth)) + uiPixels(constraints.minimumContentWidth);
+        return (optionsEnabled ? uiPixels(stripOptionsWidth) : 0) + (handle->isHidden() ? 0 : uiPixels(stripHandleWidth)) + uiPixels(constraints.minimumContentWidth);
     }
 
     void layoutItems()
     {
-        const int handleSize = handle->isHidden() ? 0 : uiPixels(handleWidth);
+        const int handleSize = handle->isHidden() ? 0 : uiPixels(stripHandleWidth);
         // Decide from the complete available content width, before reserving
         // the tail. Otherwise reserving the tail itself can invent overflow.
         int contentWidth = 0;
@@ -220,7 +224,7 @@ public:
             if (item.included && item.action && item.action->isVisible() && item.button)
                 contentWidth += item.button->sizeHint().width();
         const bool optionsVisible = optionsEnabled && (!hideEmptyOptions() || contentWidth > width() - handleSize);
-        const int optionsSize = optionsVisible ? uiPixels(tailWidth) : 0;
+        const int optionsSize = optionsVisible ? uiPixels(stripOptionsWidth) : 0;
         handle->setGeometry(0, 0, handleSize, height());
         if (!optionsVisible && tail->menu() && tail->menu()->isVisible()) tail->menu()->close();
         tail->setVisible(optionsVisible);
@@ -283,6 +287,13 @@ private:
     [[nodiscard]] bool hideEmptyOptions() const { return locked_ && hideOptionsWhenLocked; }
     bool locked_ = true;
 };
+
+QVarLengthArray<StripPolicyInput, 8> rowPolicies(const QStringList& row, const QHash<QString, StripFrame*>& strips)
+{
+    QVarLengthArray<StripPolicyInput, 8> result;
+    for (const auto& id : row) result.append(strips.value(id)->layoutPolicy());
+    return result;
+}
 
 } // namespace
 
@@ -579,7 +590,7 @@ bool CommandStripHost::setStripConstraints(const QString& id, StripConstraints c
 {
     auto* strip = d->strips.value(id);
     if (!strip || constraints.minimumContentWidth <= 0
-        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - uiPixels(handleWidth) - uiPixels(tailWidth)
+        || constraints.minimumContentWidth > QWIDGETSIZE_MAX - uiPixels(stripHandleWidth) - uiPixels(stripOptionsWidth)
         || (constraints.elasticRequired && !constraints.elasticAllowed)) return false;
     if (constraints.elasticRequired) for (int row = 0; row < d->rows.size(); ++row)
         if ((isDragging() ? d->originalRows.value(row) : d->rows[row]).contains(id)
@@ -611,18 +622,11 @@ QString CommandStripHost::requiredElasticInRow(int row, const QString& except, b
 
 void CommandStripHost::normalizeElastic(int row, const QString& preferred)
 {
-    QString winner;
-    for (const auto& id : d->rows[row]) {
-        auto* strip = d->strips.value(id);
-        if (!strip->constraints.elasticAllowed) strip->sizing = StripSizing::Content;
-        if (strip->sizing == StripSizing::Elastic) winner = id;
-    }
-    if (!preferred.isEmpty() && d->rows[row].contains(preferred)
-        && d->strips.value(preferred)->sizing == StripSizing::Elastic) winner = preferred;
-    const auto required = requiredElasticInRow(row);
-    if (!required.isEmpty()) winner = required;
-    if (!winner.isEmpty()) d->strips.value(winner)->sizing = StripSizing::Elastic;
-    for (const auto& id : d->rows[row]) if (id != winner) d->strips.value(id)->sizing = StripSizing::Content;
+    const auto& entries = d->rows[row];
+    const auto policies = rowPolicies(entries, d->strips);
+    const int winner = stripElasticOwner({policies.constData(), size_t(policies.size())}, int(entries.indexOf(preferred)));
+    for (int index = 0; index < entries.size(); ++index)
+        d->strips.value(entries[index])->sizing = index == winner ? StripSizing::Elastic : StripSizing::Content;
 }
 
 void CommandStripHost::removeFromRows(const QString& id)
@@ -673,30 +677,15 @@ QWidget* CommandStripHost::areaWidget(Area area) const
 }
 int CommandStripHost::rowIndex(Area area, int row) const
 {
-    if (row < 0) return -1;
-    for (int index = 0; index < d->rowAreas.size(); ++index)
-        if (d->rowAreas[index] == area && row-- == 0) return index;
-    return -1;
+    return stripRowIndex({d->rowAreas.constData(), size_t(d->rowAreas.size())}, area, row);
 }
 int CommandStripHost::ensureRow(Area area, int row)
 {
-    if (row < 0) return -1;
-    int ordinal = 0;
-    for (int index = 0; index < d->rowAreas.size(); ++index)
-        if (d->rowAreas[index] == area && ordinal++ == row) return index;
-    // Empty logical slots preserve hidden and saved positions without a
-    // QWidget allocation. Count once rather than rescanning each new slot.
-    int result = -1;
-    while (ordinal <= row) {
-        const int storage = int(d->rows.size());
-        d->rows.append(QStringList{});
-        d->rowAreas.append(area);
-        if (storage == d->rowWidgets.size()) d->rowWidgets.append(nullptr);
-        result = storage;
-        ++ordinal;
-    }
+    const int result = ensureStripRow(d->rows, d->rowAreas, area, row);
+    while (d->rowWidgets.size() < d->rows.size()) d->rowWidgets.append(nullptr);
     return result;
 }
+
 QWidget* CommandStripHost::ensureRowWidget(int row)
 {
     if (row < 0 || row >= d->rows.size()) return nullptr;
@@ -822,15 +811,13 @@ void CommandStripHost::clearWidthPriority(int row)
 
 void CommandStripHost::normalizeWidthPriority(int row)
 {
-    QString winner;
-    for (const auto& id : d->rows[row]) {
-        auto* strip = d->strips.value(id);
-        if (strip->sizing == StripSizing::Elastic || strip->requestedWidth >= 0)
-            strip->naturalWidthPriority = false;
-        if (strip->naturalWidthPriority) winner = id;
-    }
-    for (const auto& id : d->rows[row]) if (id != winner) d->strips.value(id)->naturalWidthPriority = false;
+    const auto& entries = d->rows[row];
+    const auto policies = rowPolicies(entries, d->strips);
+    const int winner = stripWidthPriorityOwner({policies.constData(), size_t(policies.size())});
+    for (int index = 0; index < entries.size(); ++index)
+        d->strips.value(entries[index])->naturalWidthPriority = index == winner;
 }
+
 void CommandStripHost::refreshLayout() { arrange(); }
 
 void CommandStripHost::setContextMenuCustomizer(std::function<void(QMenu*)> customizer)
@@ -959,7 +946,7 @@ QSize CommandStripHost::areaSizeHint(Area area, bool minimum) const
 QSize CommandStripHost::sizeHint() const { return areaSizeHint(Area::Top, false); }
 QSize CommandStripHost::minimumSizeHint() const { return areaSizeHint(Area::Top, true); }
 
-QVector<int> CommandStripHost::rowWidths(const QStringList& visible, int available) const
+StripRowLayout CommandStripHost::rowLayout(const QStringList& visible, int width) const
 {
     QVarLengthArray<StripWidthInput, 8> inputs;
     for (const auto& id : visible) {
@@ -969,7 +956,7 @@ QVector<int> CommandStripHost::rowWidths(const QStringList& visible, int availab
         inputs.append({strip->minimumWidthForLayout(), preferred,
             strip->sizing == StripSizing::Elastic, strip->naturalWidthPriority});
     }
-    return stripRowWidths({inputs.constData(), size_t(inputs.size())}, available);
+    return layoutStripRow({inputs.constData(), size_t(inputs.size())}, width, uiPixels(rowMargin), uiPixels(stripSpacing));
 }
 
 void CommandStripHost::arrange()
@@ -1028,24 +1015,7 @@ void CommandStripHost::arrange()
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
         if (area == Area::Top && showRow) offsets[0] += extent;
-        const int available = std::max(0, host->width() - 2 * uiPixels(rowMargin)
-            - std::max(0, int(visible.size()) - 1) * uiPixels(stripSpacing));
-        const auto sizes = rowWidths(visible, available);
-        const auto elasticId = std::find_if(visible.begin(), visible.end(), [this](const QString& id) {
-            return d->strips.value(id)->sizing == StripSizing::Elastic;
-        });
-        const int elasticIndex = elasticId == visible.end() ? -1 : int(std::distance(visible.begin(), elasticId));
-        QVector<int> positions(visible.size());
-        int x = uiPixels(rowMargin);
-        for (int index = 0; index < visible.size(); ++index) {
-            positions[index] = x;
-            x += sizes[index] + uiPixels(stripSpacing);
-        }
-        int right = host->width() - uiPixels(rowMargin);
-        for (int index = int(visible.size()) - 1; elasticIndex >= 0 && index > elasticIndex; --index) {
-            positions[index] = right - sizes[index];
-            right = positions[index] - uiPixels(stripSpacing);
-        }
+        const auto layout = rowLayout(visible, host->width());
         int index = 0;
         for (const auto& id : d->rows[row]) {
             auto* strip = d->strips.value(id);
@@ -1053,7 +1023,7 @@ void CommandStripHost::arrange()
             const bool occupies = strip->visible && (id != d->dragging || d->reserveDragSlot);
             strip->setVisible(occupies && id != d->dragging);
             if (!occupies) continue;
-            strip->setGeometry(positions[index], 0, sizes[index], extent);
+            strip->setGeometry(layout.positions[index], 0, layout.widths[index], extent);
             strip->layoutItems(); ++index;
         }
     }
@@ -1069,115 +1039,52 @@ void CommandStripHost::resizeEvent(QResizeEvent* event) { QFrame::resizeEvent(ev
 
 int CommandStripHost::minimumSavedWidth(bool optionsEnabled, bool locked)
 {
-    // This validates serialized, unscaled widths, not current hit geometry.
-    return (optionsEnabled ? tailWidth : 0) + (locked ? 0 : handleWidth) + 12;
+    return minimumStripSavedWidth(optionsEnabled, locked);
 }
 QJsonObject CommandStripHost::saveLayout() const
 {
-    QJsonArray rows;
-    QJsonArray bottomRows;
-    QJsonObject strips;
-    const auto& sourceRows = isDragging() ? d->originalRows : d->rows;
-    const auto& sourceAreas = isDragging() ? d->originalAreas : d->rowAreas;
-    for (int row = 0; row < sourceRows.size(); ++row) {
-        QJsonArray entries;
-        for (const auto& id : sourceRows[row]) {
-            entries.append(id);
-            const auto* strip = d->strips.value(id);
-            QJsonArray excluded;
-            for (const auto& item : strip->items) if (!item.included) excluded.append(item.id);
-            const int savedWidth = isDragging() ? d->originalWidths.value(id, -1) : strip->requestedWidth;
-            const auto savedSizing = isDragging() ? d->originalSizing.value(id, strip->sizing) : strip->sizing;
-            QJsonObject entry{{"visible", strip->visible}, {"width", savedWidth < 0 ? -1 : qRound(savedWidth / interfaceScale())},
-                {"sizing", savedSizing == StripSizing::Elastic ? "elastic" : "content"},
-                {"excluded", excluded}, {"contentVisible", !strip->content || !strip->content->isHidden()}};
-            const bool priority = isDragging() ? d->originalWidthPriorities.value(id, false) : strip->naturalWidthPriority;
-            if (priority) entry.insert("naturalWidthPriority", true);
-            strips.insert(id, entry);
-        }
-        if (sourceAreas[row] == Area::Top) rows.append(entries);
-        else bottomRows.append(entries);
+    const bool dragging = isDragging();
+    StripLayoutSnapshot snapshot;
+    snapshot.rows = dragging ? d->originalRows : d->rows;
+    snapshot.areas = dragging ? d->originalAreas : d->rowAreas;
+    snapshot.locked = d->locked;
+    for (const auto& row : snapshot.rows) for (const auto& id : row) {
+        const auto* strip = d->strips.value(id);
+        StripLayoutPreferences value;
+        value.visible = strip->visible;
+        const int width = dragging ? d->originalWidths.value(id, -1) : strip->requestedWidth;
+        value.width = width < 0 ? -1 : qRound(width / interfaceScale());
+        const auto sizing = dragging ? d->originalSizing.value(id, strip->sizing) : strip->sizing;
+        value.elastic = sizing == StripSizing::Elastic;
+        for (const auto& item : strip->items) if (!item.included) value.excluded.append(item.id);
+        value.contentVisible = !strip->content || !strip->content->isHidden();
+        value.naturalWidthPriority = dragging ? d->originalWidthPriorities.value(id, false) : strip->naturalWidthPriority;
+        snapshot.strips.insert(id, std::move(value));
     }
-    // Transient drop rows and empty trailing slots are not layout state.
-    while (!rows.isEmpty() && rows.last().toArray().isEmpty()) rows.removeLast();
-    while (!bottomRows.isEmpty() && bottomRows.last().toArray().isEmpty()) bottomRows.removeLast();
-    QJsonObject result{{"locked", d->locked}, {"rows", rows}, {"strips", strips}};
-    if (!bottomRows.isEmpty()) result.insert("bottomRows", bottomRows);
-    return result;
+    return encodeStripLayout(snapshot);
 }
 
 void CommandStripHost::restoreLayout(const QJsonObject& json)
 {
-    if (!json.value("rows").isArray() || (json.contains("bottomRows") && !json.value("bottomRows").isArray())) return;
-    QVector<QStringList> proposed;
-    QVector<Area> areas;
-    QSet<QString> seen;
-    for (const Area area : {Area::Top, Area::Bottom}) {
-        const auto rows = json.value(area == Area::Top ? "rows" : "bottomRows").toArray();
-        for (const auto& row : rows) {
-            if (!row.isArray()) return;
-            QStringList entries;
-            for (const auto& entry : row.toArray()) {
-                if (!entry.isString() || entry.toString().isEmpty()) return;
-                const auto id = entry.toString();
-                if (!d->strips.contains(id)) continue;
-                if (seen.contains(id)) return;
-                entries.append(id); seen.insert(id);
-            }
-            proposed.append(entries); areas.append(area);
-        }
-    }
-    if (d->strips.contains("caption-controls") && !seen.contains("caption-controls")) return;
-    // Providers may register a new strip while the application is running.
-    // Keep its declared position when applying the other strips' saved layout.
-    int localRows[2] = {};
-    for (int row = 0; row < d->rows.size(); ++row) {
-        const Area area = d->rowAreas[row];
-        const int local = localRows[int(area)]++;
-        QStringList missing;
-        for (const auto& id : d->rows[row]) if (!seen.contains(id)) missing.append(id);
-        if (missing.isEmpty()) continue;
-        int target = -1;
-        int ordinal = 0;
-        for (int candidate = 0; candidate < areas.size(); ++candidate)
-            if (areas[candidate] == area && ordinal++ == local) { target = candidate; break; }
-        while (target < 0) {
-            proposed.append(QStringList{}); areas.append(area);
-            if (ordinal++ == local) target = int(proposed.size()) - 1;
-        }
-        proposed[target].append(missing);
-    }
-    for (const auto& row : proposed) {
-        int requiredCount = 0;
-        for (const auto& id : row) requiredCount += d->strips.value(id)->constraints.elasticRequired ? 1 : 0;
-        if (requiredCount > 1) return;
-    }
-    const auto settings = json.value("strips").toObject();
-    const bool savedLocked = json.value("locked").toBool(true);
-    for (const auto& id : stripIds()) {
-        if (!settings.contains(id)) continue;
-        const auto value = settings.value(id).toObject();
-        const int requested = value.value("width").toInt(-1);
-        const int savedMinimumWidth = minimumSavedWidth(d->strips.value(id)->optionsEnabled, savedLocked);
-        if (requested != -1 && requested < savedMinimumWidth) return;
-        if (value.contains("sizing") && value.value("sizing") != "elastic" && value.value("sizing") != "content") return;
-        if (value.contains("naturalWidthPriority") && !value.value("naturalWidthPriority").isBool()) return;
-    }
+    QHash<QString, StripRestorePolicy> policies;
+    for (auto* strip : d->strips) policies.insert(strip->id,
+        {strip->optionsEnabled, strip->constraints.elasticRequired, strip->id == QStringLiteral("caption-controls")});
+    const auto restored = decodeStripLayout(json, d->rows, d->rowAreas, policies);
+    if (!restored) return;
     if (isDragging()) finishDrag(false);
-    replaceRows(std::move(proposed), std::move(areas));
-    d->locked = savedLocked;
+    replaceRows(restored->rows, restored->areas);
+    d->locked = restored->locked;
     for (auto* strip : d->strips) {
         strip->setLocked(d->locked);
-        if (!settings.contains(strip->id)) continue;
-        const auto value = settings.value(strip->id).toObject();
-        strip->visible = value.value("visible").toBool(true);
-        const int authoredWidth = value.value("width").toInt(-1);
-        strip->requestedWidth = authoredWidth < 0 ? -1 : uiPixels(authoredWidth);
-        strip->naturalWidthPriority = value.value("naturalWidthPriority").toBool(false);
-        if (value.contains("sizing")) strip->sizing = value.value("sizing") == "elastic" ? StripSizing::Elastic : StripSizing::Content;
-        const auto excluded = value.value("excluded").toArray();
-        for (auto& item : strip->items) item.included = !excluded.contains(item.id);
-        if (strip->content && strip->items.isEmpty()) strip->content->setVisible(value.value("contentVisible").toBool(true));
+        const auto found = restored->strips.constFind(strip->id);
+        if (found == restored->strips.cend()) continue;
+        const auto& value = *found;
+        strip->visible = value.visible;
+        strip->requestedWidth = value.width < 0 ? -1 : uiPixels(value.width);
+        strip->naturalWidthPriority = value.naturalWidthPriority;
+        if (value.elastic) strip->sizing = *value.elastic ? StripSizing::Elastic : StripSizing::Content;
+        for (auto& item : strip->items) item.included = !value.excluded.contains(item.id);
+        if (strip->content && strip->items.isEmpty()) strip->content->setVisible(value.contentVisible);
         if (strip->constraints.fixedWidth) strip->requestedWidth = -1;
         if (strip->requestedWidth >= 0)
             strip->requestedWidth = std::max(strip->requestedWidth, strip->minimumWidthForLayout());

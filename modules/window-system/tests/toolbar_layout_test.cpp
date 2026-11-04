@@ -9,6 +9,7 @@
 
 using namespace window_system;
 Q_DECLARE_METATYPE(QVector<StripWidthInput>)
+Q_DECLARE_METATYPE(QVector<StripPolicyInput>)
 
 class ToolbarLayoutTest final : public QObject {
     Q_OBJECT
@@ -17,6 +18,10 @@ private slots:
     void allocationKeepsMinimaAndSpaceOwner();
     void storageUsesAuthoredWidthsAndCurrentFormat();
     void restoreKeepsNewStripsAndRejectsAmbiguousRows();
+    void policiesKeepOneEligibleOwner_data();
+    void policiesKeepOneEligibleOwner();
+    void rowPlacementKeepsTheAnchoredSide();
+    void areaRowNumbersPreserveExistingSlots();
 };
 
 void ToolbarLayoutTest::allocationKeepsMinimaAndSpaceOwner_data()
@@ -89,6 +94,61 @@ void ToolbarLayoutTest::restoreKeepsNewStripsAndRejectsAmbiguousRows()
     QVERIFY(!decodeStripLayout(bad, rows, areas, policies));
     policies["required"].requiredInLayout = true;
     QVERIFY(!decodeStripLayout(storedLayout(), rows, areas, policies));
+}
+
+void ToolbarLayoutTest::policiesKeepOneEligibleOwner_data()
+{
+    QTest::addColumn<QVector<StripPolicyInput>>("strips");
+    QTest::addColumn<int>("preferred");
+    QTest::addColumn<int>("elastic");
+    QTest::addColumn<int>("priority");
+    QTest::newRow("empty") << QVector<StripPolicyInput>{} << -1 << -1 << -1;
+    QTest::newRow("last-eligible-owner") << QVector<StripPolicyInput>{
+        {.elastic = true, .elasticAllowed = false}, {.elastic = true}, {.elastic = true}} << -1 << 2 << -1;
+    QTest::newRow("explicit-choice") << QVector<StripPolicyInput>{{.elastic = true}, {.elastic = true}} << 0 << 0 << -1;
+    QTest::newRow("host-required-owner") << QVector<StripPolicyInput>{
+        {.elasticRequired = true}, {.elastic = true}} << 1 << 0 << -1;
+    QTest::newRow("priority-needs-natural-content") << QVector<StripPolicyInput>{
+        {.naturalWidthPriority = true}, {.elastic = true, .naturalWidthPriority = true},
+        {.naturalWidthPriority = true, .hasRequestedWidth = true}} << -1 << 1 << 0;
+    QTest::newRow("last-natural-priority") << QVector<StripPolicyInput>{
+        {.naturalWidthPriority = true}, {.naturalWidthPriority = true}} << -1 << -1 << 1;
+}
+
+void ToolbarLayoutTest::policiesKeepOneEligibleOwner()
+{
+    QFETCH(QVector<StripPolicyInput>, strips);
+    QFETCH(int, preferred); QFETCH(int, elastic); QFETCH(int, priority);
+    const std::span<const StripPolicyInput> input(strips.constData(), size_t(strips.size()));
+    QCOMPARE(stripElasticOwner(input, preferred), elastic);
+    QCOMPARE(stripWidthPriorityOwner(input), priority);
+}
+
+void ToolbarLayoutTest::rowPlacementKeepsTheAnchoredSide()
+{
+    const QVector<StripWidthInput> content{{10, 20}, {10, 30}};
+    const auto left = layoutStripRow({content.constData(), size_t(content.size())}, 200, 5, 4);
+    QCOMPARE(left.widths, (QVector<int>{20, 30}));
+    QCOMPARE(left.positions, (QVector<int>{5, 29}));
+    const QVector<StripWidthInput> constrained{{40, 50}, {20, 500, true}, {30, 50}};
+    const auto anchored = layoutStripRow({constrained.constData(), size_t(constrained.size())}, 70, 5, 4);
+    QCOMPARE(anchored.widths, (QVector<int>{40, 20, 30}));
+    QCOMPARE(anchored.positions, (QVector<int>{5, 49, 35}));
+}
+
+void ToolbarLayoutTest::areaRowNumbersPreserveExistingSlots()
+{
+    QVector<QStringList> rows{{"top"}, {"bottom"}, {}, {"inner-bottom"}};
+    QVector<ToolbarArea> areas{ToolbarArea::Top, ToolbarArea::Bottom, ToolbarArea::Top, ToolbarArea::Bottom};
+    const std::span<const ToolbarArea> input(areas.constData(), size_t(areas.size()));
+    QCOMPARE(stripRowIndex(input, ToolbarArea::Top, 1), 2);
+    QCOMPARE(stripRowIndex(input, ToolbarArea::Bottom, 1), 3);
+    QCOMPARE(stripRowIndex(input, ToolbarArea::Top, 2), -1);
+    QCOMPARE(ensureStripRow(rows, areas, ToolbarArea::Bottom, 3), 5);
+    QCOMPARE(rows, (QVector<QStringList>{{"top"}, {"bottom"}, {}, {"inner-bottom"}, {}, {}}));
+    QCOMPARE(areas.last(), ToolbarArea::Bottom);
+    QCOMPARE(ensureStripRow(rows, areas, ToolbarArea::Top, 1), 2);
+    QCOMPARE(rows.size(), 6);
 }
 
 QTEST_GUILESS_MAIN(ToolbarLayoutTest)

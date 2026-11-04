@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QStringList>
+#include <window_system/toolbar_layout.hpp>
 
 #include <functional>
 #include <memory>
@@ -13,13 +14,14 @@ class QAction;
 class QMenu;
 
 namespace window_system {
+struct StripRowLayout;
 
 // The chrome owns its widgets and action presentations; callers retain QAction
 // ownership. Layout storage contains stable strip/action IDs, never pointers.
 class CommandStripHost final : public QFrame {
 public:
     // Rows count from the outer edge: top rows grow down, bottom rows grow up.
-    enum class Area { Top, Bottom };
+    using Area = ToolbarArea;
     enum class StripSizing { Content, Elastic };
     struct StripConstraints {
         bool compressible = true;
@@ -128,7 +130,7 @@ private:
     [[nodiscard]] int dragRowAt(QPoint globalPosition);
     [[nodiscard]] QSize areaSizeHint(Area area, bool minimum) const;
     void replaceRows(QVector<QStringList> rows, QVector<Area> areas, bool retainSpareRows = false);
-    [[nodiscard]] QVector<int> rowWidths(const QStringList& visible, int available) const;
+    [[nodiscard]] StripRowLayout rowLayout(const QStringList& visible, int width) const;
 };
 
 } // namespace window_system

@@ -55,4 +55,51 @@ QVector<int> stripRowWidths(std::span<const StripWidthInput> strips, int availab
     return sizes;
 }
 
+StripRowLayout layoutStripRow(std::span<const StripWidthInput> strips, int width, int margin, int spacing)
+{
+    const int count = int(strips.size());
+    const int available = std::max(0, width - 2 * margin - std::max(0, count - 1) * spacing);
+    StripRowLayout result;
+    result.widths = stripRowWidths(strips, available);
+    result.positions.resize(count);
+    int elastic = -1;
+    int x = margin;
+    for (int index = 0; index < count; ++index) {
+        if (elastic < 0 && strips[index].elastic) elastic = index;
+        result.positions[index] = x;
+        x += result.widths[index] + spacing;
+    }
+    int right = width - margin;
+    for (int index = count - 1; elastic >= 0 && index > elastic; --index) {
+        result.positions[index] = right - result.widths[index];
+        right = result.positions[index] - spacing;
+    }
+    return result;
+}
+
+int stripElasticOwner(std::span<const StripPolicyInput> strips, int preferred)
+{
+    int winner = -1;
+    int required = -1;
+    for (int index = 0; index < int(strips.size()); ++index) {
+        const auto& strip = strips[index];
+        if (strip.elasticAllowed && strip.elastic) winner = index;
+        if (required < 0 && strip.elasticRequired) required = index;
+    }
+    if (preferred >= 0) {
+        Q_ASSERT(preferred < int(strips.size()));
+        if (strips[preferred].elasticAllowed && strips[preferred].elastic) winner = preferred;
+    }
+    return required >= 0 ? required : winner;
+}
+
+int stripWidthPriorityOwner(std::span<const StripPolicyInput> strips)
+{
+    int winner = -1;
+    for (int index = 0; index < int(strips.size()); ++index)
+        if (strips[index].naturalWidthPriority && !strips[index].elastic && !strips[index].hasRequestedWidth)
+            winner = index;
+    return winner;
+}
+
 } // namespace window_system

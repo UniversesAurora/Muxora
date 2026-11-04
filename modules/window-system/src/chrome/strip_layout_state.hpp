@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVector>
 #include <optional>
+#include <span>
 
 namespace window_system {
 
@@ -34,6 +35,8 @@ struct StripRestorePolicy {
 };
 
 [[nodiscard]] int minimumStripSavedWidth(bool optionsEnabled, bool locked);
+[[nodiscard]] int stripRowIndex(std::span<const ToolbarArea> areas, ToolbarArea area, int row);
+int ensureStripRow(QVector<QStringList>& rows, QVector<ToolbarArea>& areas, ToolbarArea area, int row);
 [[nodiscard]] QJsonObject encodeStripLayout(const StripLayoutSnapshot& snapshot);
 // Only explicitly saved strip preferences are returned. Omitted settings keep
 // their live values, including widths produced by an in-progress layout edit.

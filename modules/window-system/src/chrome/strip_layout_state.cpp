@@ -12,6 +12,30 @@ int minimumStripSavedWidth(bool optionsEnabled, bool locked)
     return (optionsEnabled ? stripOptionsWidth : 0) + (locked ? 0 : stripHandleWidth) + 12;
 }
 
+int stripRowIndex(std::span<const ToolbarArea> areas, ToolbarArea area, int row)
+{
+    if (row < 0) return -1;
+    for (int index = 0; index < int(areas.size()); ++index)
+        if (areas[index] == area && row-- == 0) return index;
+    return -1;
+}
+
+int ensureStripRow(QVector<QStringList>& rows, QVector<ToolbarArea>& areas, ToolbarArea area, int row)
+{
+    Q_ASSERT(rows.size() == areas.size());
+    if (row < 0) return -1;
+    int ordinal = 0;
+    for (int index = 0; index < areas.size(); ++index)
+        if (areas[index] == area && ordinal++ == row) return index;
+    int result = -1;
+    while (ordinal <= row) {
+        result = int(rows.size());
+        rows.append(QStringList{}); areas.append(area);
+        ++ordinal;
+    }
+    return result;
+}
+
 QJsonObject encodeStripLayout(const StripLayoutSnapshot& snapshot)
 {
     Q_ASSERT(snapshot.rows.size() == snapshot.areas.size());
@@ -52,15 +76,7 @@ void retainNewStrips(StripLayoutSnapshot& result, const QVector<QStringList>& cu
         QStringList missing;
         for (const auto& id : currentRows[row]) if (!seen.contains(id)) missing.append(id);
         if (missing.isEmpty()) continue;
-        int target = -1;
-        int ordinal = 0;
-        for (int candidate = 0; candidate < result.areas.size(); ++candidate)
-            if (result.areas[candidate] == area && ordinal++ == local) { target = candidate; break; }
-        while (target < 0) {
-            result.rows.append(QStringList{});
-            result.areas.append(area);
-            if (ordinal++ == local) target = int(result.rows.size()) - 1;
-        }
+        const int target = ensureStripRow(result.rows, result.areas, area, local);
         result.rows[target].append(missing);
     }
 }
