@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // WindowSystem design section 6: spare-space owner, compression, reset
-// priority, and a viewport smaller than the combined minimum widths.
+// priority, top/bottom row placement, vacancy repair on both sides of the
+// elastic strip, and a viewport smaller than the combined minimum widths.
 #include "chrome/strip_layout.hpp"
 #include "chrome/strip_layout_state.hpp"
 #include <QJsonArray>
@@ -10,6 +11,7 @@
 using namespace window_system;
 Q_DECLARE_METATYPE(QVector<StripWidthInput>)
 Q_DECLARE_METATYPE(QVector<StripPolicyInput>)
+Q_DECLARE_METATYPE(QVector<StripSlotInput>)
 
 class ToolbarLayoutTest final : public QObject {
     Q_OBJECT
@@ -22,6 +24,9 @@ private slots:
     void policiesKeepOneEligibleOwner();
     void rowPlacementKeepsTheAnchoredSide();
     void areaRowNumbersPreserveExistingSlots();
+    void areasGrowFromTheirOuterEdge();
+    void vacancyFillsFromTheAnchoredSide_data();
+    void vacancyFillsFromTheAnchoredSide();
 };
 
 void ToolbarLayoutTest::allocationKeepsMinimaAndSpaceOwner_data()
@@ -149,6 +154,46 @@ void ToolbarLayoutTest::areaRowNumbersPreserveExistingSlots()
     QCOMPARE(areas.last(), ToolbarArea::Bottom);
     QCOMPARE(ensureStripRow(rows, areas, ToolbarArea::Top, 1), 2);
     QCOMPARE(rows.size(), 6);
+}
+
+void ToolbarLayoutTest::areasGrowFromTheirOuterEdge()
+{
+    const QVector<StripAreaRowInput> rows{{ToolbarArea::Top, 10, true}, {ToolbarArea::Bottom, 12, true},
+        {ToolbarArea::Top, 20, true}, {ToolbarArea::Top, 99, false}, {ToolbarArea::Bottom, 8, true}};
+    auto layout = layoutStripAreas({rows.constData(), size_t(rows.size())});
+    QCOMPARE(layout.heights[0], 30); QCOMPARE(layout.heights[1], 20);
+    QCOMPARE(layout.takeRow(ToolbarArea::Top, 10), 0);
+    QCOMPARE(layout.takeRow(ToolbarArea::Bottom, 12), 8);
+    QCOMPARE(layout.takeRow(ToolbarArea::Top, 20), 10);
+    QCOMPARE(layout.takeRow(ToolbarArea::Bottom, 8), 0);
+}
+
+void ToolbarLayoutTest::vacancyFillsFromTheAnchoredSide_data()
+{
+    QTest::addColumn<QVector<StripSlotInput>>("strips");
+    QTest::addColumn<int>("removed");
+    QTest::addColumn<int>("target");
+    QTest::addColumn<int>("width");
+    QTest::newRow("left-fills-vacancy") << QVector<StripSlotInput>{{60}, {40}, {30}} << 1 << 0 << 104;
+    QTest::newRow("left-adjacent-to-elastic") << QVector<StripSlotInput>{{60}, {40}, {.width = 100, .elastic = true}}
+        << 1 << 0 << -1;
+    QTest::newRow("right-fills-vacancy") << QVector<StripSlotInput>{{.width = 100, .elastic = true}, {40}, {30}, {50}}
+        << 2 << 3 << 84;
+    QTest::newRow("right-adjacent-to-elastic") << QVector<StripSlotInput>{{.width = 100, .elastic = true}, {30}, {50}}
+        << 1 << 2 << -1;
+    QTest::newRow("hidden-has-no-footprint") << QVector<StripSlotInput>{{60}, {.width = 40, .visible = false}, {30}}
+        << 1 << -1 << -1;
+    QTest::newRow("fixed-neighbor-keeps-width") << QVector<StripSlotInput>{{.width = 60, .fixedWidth = true}, {40}, {30}}
+        << 1 << -1 << -1;
+}
+
+void ToolbarLayoutTest::vacancyFillsFromTheAnchoredSide()
+{
+    QFETCH(QVector<StripSlotInput>, strips);
+    QFETCH(int, removed); QFETCH(int, target); QFETCH(int, width);
+    const auto change = stripVacancyAdjustment({strips.constData(), size_t(strips.size())}, removed, 4);
+    QCOMPARE(bool(change), target >= 0);
+    if (change) { QCOMPARE(change->index, target); QCOMPARE(change->requestedWidth, width); }
 }
 
 QTEST_GUILESS_MAIN(ToolbarLayoutTest)

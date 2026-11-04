@@ -26,7 +26,6 @@
 #include <QTimer>
 
 #include <algorithm>
-#include <limits>
 #include <utility>
 
 namespace window_system {
@@ -631,42 +630,19 @@ void CommandStripHost::normalizeElastic(int row, const QString& preferred)
 
 void CommandStripHost::removeFromRows(const QString& id)
 {
-    auto* removed = d->strips.value(id);
-    for (int row = 0; row < d->rows.size(); ++row) {
-        const int index = d->rows[row].indexOf(id);
+    const bool dragging = isDragging();
+    for (auto& row : d->rows) {
+        const int index = int(row.indexOf(id));
         if (index < 0) continue;
-        StripFrame* previous = nullptr;
-        StripFrame* next = nullptr;
-        for (int before = index - 1; before >= 0; --before) {
-            auto* candidate = d->strips.value(d->rows[row][before]);
-            if (candidate->visible) { previous = candidate; break; }
+        QVarLengthArray<StripSlotInput, 8> slotInputs;
+        for (const auto& entry : row) {
+            const auto* strip = d->strips.value(entry);
+            slotInputs.append({dragging ? d->originalBounds.value(entry).width() : strip->width(),
+                strip->visible, strip->sizing == StripSizing::Elastic, strip->constraints.fixedWidth});
         }
-        for (int after = index + 1; after < d->rows[row].size(); ++after) {
-            auto* candidate = d->strips.value(d->rows[row][after]);
-            if (candidate->visible) { next = candidate; break; }
-        }
-        // The neighbour on the row's anchored side fills the vacated slot,
-        // so the strips on the free side keep their places: the previous one
-        // left of the elastic strip (anchored to the left edge), the next one
-        // right of it (anchored to the right edge). Next to the elastic strip
-        // the gap simply goes to the elastic strip.
-        bool rightOfElastic = false;
-        for (int before = 0; before < index; ++before) {
-            const auto* candidate = d->strips.value(d->rows[row][before]);
-            rightOfElastic |= candidate->visible && candidate->sizing == StripSizing::Elastic;
-        }
-        auto* filler = rightOfElastic ? next : previous;
-        auto* across = rightOfElastic ? previous : next;
-        if (removed->visible && filler && filler->sizing == StripSizing::Content && !filler->constraints.fixedWidth) {
-            if (!across || across->sizing == StripSizing::Elastic) filler->requestedWidth = -1;
-            else {
-                const int fillerWidth = isDragging() ? d->originalBounds.value(filler->id).width() : filler->width();
-                const int removedWidth = isDragging() ? d->originalBounds.value(id).width() : removed->width();
-                filler->requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
-                    qint64(fillerWidth) + removedWidth + uiPixels(stripSpacing)));
-            }
-        }
-        d->rows[row].removeAt(index);
+        const auto adjustment = stripVacancyAdjustment({slotInputs.constData(), size_t(slotInputs.size())}, index, uiPixels(stripSpacing));
+        if (adjustment) d->strips.value(row[adjustment->index])->requestedWidth = adjustment->requestedWidth;
+        row.removeAt(index);
     }
 }
 
@@ -980,17 +956,17 @@ void CommandStripHost::arrange()
     // Each dock area owns its vertical geometry; both use one strip registry.
     setMinimumWidth(std::max(areaSizeHint(Area::Top, true).width(), areaSizeHint(Area::Bottom, true).width()));
     if (d->bottom) d->bottom->setMinimumWidth(areaSizeHint(Area::Bottom, true).width());
-    int heights[2] = {};
+    QVarLengthArray<StripAreaRowInput, 8> rowInputs;
     for (int row = 0; row < d->rows.size(); ++row) {
         const bool occupied = std::any_of(d->rows[row].cbegin(), d->rows[row].cend(), [this](const QString& id) {
             return d->strips.value(id)->visible && (id != d->dragging || d->reserveDragSlot);
         });
-        if (occupied || row == d->previewRows[int(d->rowAreas[row])])
-            heights[int(d->rowAreas[row])] += rowExtent(row);
+        const bool show = occupied || row == d->previewRows[int(d->rowAreas[row])];
+        rowInputs.append({d->rowAreas[row], show ? rowExtent(row) : 0, show});
     }
-    setFixedHeight(heights[0]);
-    if (d->bottom) d->bottom->setFixedHeight(heights[1]);
-    int offsets[2] = {0, heights[1]};
+    auto areas = layoutStripAreas({rowInputs.constData(), size_t(rowInputs.size())});
+    setFixedHeight(areas.heights[0]);
+    if (d->bottom) d->bottom->setFixedHeight(areas.heights[1]);
     for (int row = 0; row < d->rows.size(); ++row) {
         const Area area = d->rowAreas[row];
         auto* host = areaWidget(area);
@@ -1010,11 +986,9 @@ void CommandStripHost::arrange()
         }
         auto* rowWidget = ensureRowWidget(row);
         const int extent = rowExtent(row);
-        if (area == Area::Bottom && showRow) offsets[1] -= extent;
-        const int y = offsets[int(area)];
+        const int y = areas.takeRow(area, extent);
         rowWidget->setVisible(showRow);
         rowWidget->setGeometry(0, y, host->width(), showRow ? extent : 0);
-        if (area == Area::Top && showRow) offsets[0] += extent;
         const auto layout = rowLayout(visible, host->width());
         int index = 0;
         for (const auto& id : d->rows[row]) {

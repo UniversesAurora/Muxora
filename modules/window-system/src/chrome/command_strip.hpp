@@ -6,6 +6,7 @@
 #include <QList>
 #include <QStringList>
 #include <window_system/toolbar_layout.hpp>
+#include "strip_constraints.hpp"
 
 #include <functional>
 #include <memory>
@@ -22,18 +23,8 @@ class CommandStripHost final : public QFrame {
 public:
     // Rows count from the outer edge: top rows grow down, bottom rows grow up.
     using Area = ToolbarArea;
-    enum class StripSizing { Content, Elastic };
-    struct StripConstraints {
-        bool compressible = true;
-        bool elasticAllowed = true;
-        int minimumContentWidth = 12;
-        // A required elastic strip owns its row's spare space. Moving an
-        // ordinary elastic strip into that row makes the latter content-sized.
-        bool elasticRequired = false;
-        // Always exactly its natural width: it never absorbs a neighbour's
-        // width, takes a dragged or saved width, or leaves blank space.
-        bool fixedWidth = false;
-    };
+    using StripSizing = window_system::StripSizing;
+    using StripConstraints = window_system::StripConstraints;
     explicit CommandStripHost(QWidget* parent = nullptr);
     ~CommandStripHost() override;
 

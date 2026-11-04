@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "strip_layout.hpp"
 #include <algorithm>
+#include <limits>
 
 namespace window_system {
 
@@ -74,6 +75,45 @@ StripRowLayout layoutStripRow(std::span<const StripWidthInput> strips, int width
         result.positions[index] = right - result.widths[index];
         right = result.positions[index] - spacing;
     }
+    return result;
+}
+
+StripAreasLayout layoutStripAreas(std::span<const StripAreaRowInput> rows)
+{
+    StripAreasLayout result;
+    for (const auto& row : rows) if (row.occupied) result.heights[int(row.area)] += row.height;
+    result.next[int(ToolbarArea::Bottom)] = result.heights[int(ToolbarArea::Bottom)];
+    return result;
+}
+
+int StripAreasLayout::takeRow(ToolbarArea area, int height)
+{
+    if (area == ToolbarArea::Bottom) next[int(area)] -= height;
+    const int position = next[int(area)];
+    if (area == ToolbarArea::Top) next[int(area)] += height;
+    return position;
+}
+
+std::optional<StripVacancyAdjustment> stripVacancyAdjustment(
+    std::span<const StripSlotInput> strips, int removed, int spacing)
+{
+    Q_ASSERT(removed >= 0 && removed < int(strips.size()));
+    if (!strips[removed].visible) return std::nullopt;
+    int previous = -1, next = -1;
+    bool rightOfElastic = false;
+    for (int before = 0; before < removed; ++before) if (strips[before].visible) {
+        previous = before;
+        rightOfElastic |= strips[before].elastic;
+    }
+    for (int after = removed + 1; after < int(strips.size()); ++after)
+        if (strips[after].visible) { next = after; break; }
+    const int filler = rightOfElastic ? next : previous;
+    const int across = rightOfElastic ? previous : next;
+    if (filler < 0 || strips[filler].elastic || strips[filler].fixedWidth) return std::nullopt;
+    StripVacancyAdjustment result{filler, -1};
+    if (across >= 0 && !strips[across].elastic)
+        result.requestedWidth = int(std::min<qint64>(std::numeric_limits<int>::max(),
+            qint64(strips[filler].width) + strips[removed].width + spacing));
     return result;
 }
 

@@ -9,7 +9,7 @@ namespace window_system {
 
 int minimumStripSavedWidth(bool optionsEnabled, bool locked)
 {
-    return (optionsEnabled ? stripOptionsWidth : 0) + (locked ? 0 : stripHandleWidth) + 12;
+    return (optionsEnabled ? stripOptionsWidth : 0) + (locked ? 0 : stripHandleWidth) + stripDefaultMinimumContentWidth;
 }
 
 int stripRowIndex(std::span<const ToolbarArea> areas, ToolbarArea area, int row)
