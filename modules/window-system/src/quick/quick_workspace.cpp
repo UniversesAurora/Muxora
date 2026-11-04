@@ -200,6 +200,7 @@ struct QuickWorkspace::Private final : WindowPresenter {
     QSet<PaneId> panes;
     bool syncPending = false;
     bool projecting = false;
+    bool syncAfterProjection = false;
     PaneId focusedPane;
     QPointer<QQuickWindow> focusedWindow;
 
@@ -259,6 +260,12 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     // there would replace the strip under it. One sync per event-loop turn.
     connect(&manager, &WindowManager::layoutChanged, this, &QuickWorkspace::requestSync);
     connect(&d->bars, &quick::ContentBars::changed, this, &QuickWorkspace::requestSync);
+    connect(&manager, &WindowManager::hierarchyBarsRequested, this, [this](const QVector<QPair<TabId, PaneId>>& sources) {
+        const QPointer<QuickWorkspace> self(this);
+        const bool outerProjection = std::exchange(d->projecting, true);
+        d->bars.transferToPanes(sources);
+        if (self && !outerProjection) finishProjection();
+    });
     sync();
 }
 
@@ -293,20 +300,29 @@ QQuickItem* QuickWorkspace::content(PaneId pane) const { return d->host.item(pan
 
 void QuickWorkspace::requestSync()
 {
-    if (std::exchange(d->syncPending, true) || d->projecting) return;
+    if (d->projecting) { d->syncAfterProjection = true; return; }
+    if (std::exchange(d->syncPending, true)) return;
     QMetaObject::invokeMethod(this, &QuickWorkspace::sync, Qt::QueuedConnection);
+}
+
+void QuickWorkspace::finishProjection()
+{
+    d->projecting = false;
+    if (std::exchange(d->syncAfterProjection, false)) requestSync();
 }
 
 void QuickWorkspace::sync()
 {
-    if (d->projecting) { d->syncPending = true; return; }
-    const QPointer<QuickWorkspace> self(this);
     d->syncPending = false;
+    if (d->projecting) { d->syncAfterProjection = true; return; }
+    const QPointer<QuickWorkspace> self(this);
     d->projecting = true;
     const auto previous = d->host.item(d->manager.context().pane);
     const bool hadContentFocus = previous && previous->window()
         && !d->host.paneForItem(previous->window()->activeFocusItem()).isNull();
-    const QPointer<QQuickItem> previousBarFocus(qobject_cast<QQuickItem*>(QGuiApplication::focusObject()));
+    const QPointer<QQuickItem> transferredFocus(d->bars.takeTransferredFocus());
+    const QPointer<QQuickItem> previousBarFocus(transferredFocus ? transferredFocus.data()
+        : qobject_cast<QQuickItem*>(QGuiApplication::focusObject()));
     const auto previousBarPane = d->bars.paneForItem(d->manager.model(), previousBarFocus);
     const auto& model = d->manager.model();
     d->bars.prune(model);
@@ -363,8 +379,7 @@ void QuickWorkspace::sync()
         d->host.remove(*it);
         it = d->panes.erase(it);
     }
-    d->projecting = false;
-    if (std::exchange(d->syncPending, false)) requestSync();
+    finishProjection();
     const auto pane = d->manager.context().pane;
     const auto content = d->host.item(pane);
     if (!content || !content->window() || !content->isVisible()) return;

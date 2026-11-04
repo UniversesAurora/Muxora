@@ -343,6 +343,7 @@ private:
     void contentFocused(PaneId pane, QWindow* window, bool fromInput = true);
     void contentVisibilityChanged(const QVector<ContentVisibilityChange>& changes);
     Q_SIGNAL void contentVisibilityRequested(bool enabled);
+    Q_SIGNAL void hierarchyBarsRequested(const QVector<QPair<TabId, PaneId>>& sources);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.

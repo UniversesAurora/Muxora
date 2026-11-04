@@ -23,6 +23,8 @@ public:
     [[nodiscard]] QQuickItem* tab(TabId tab, bool top) const;
     [[nodiscard]] QQuickItem* pane(PaneId pane, bool top) const;
     [[nodiscard]] PaneId paneForItem(const LayoutModel& model, QQuickItem* item) const;
+    void transferToPanes(const QVector<QPair<TabId, PaneId>>& sources);
+    [[nodiscard]] QQuickItem* takeTransferredFocus();
     void prune(const LayoutModel& model);
 
 signals:
@@ -32,9 +34,12 @@ private:
     enum Kind { TabTop, TabBottom, PaneTop, PaneBottom };
     struct Owner { Kind kind; QUuid id; };
     bool set(Kind kind, QUuid id, QQuickItem* item);
+    QQuickItem* take(Kind kind, QUuid id);
+    void watch(Kind kind, QUuid id, QQuickItem* item);
     std::array<QHash<QUuid, QPointer<QQuickItem>>, 4> bars_;
     QHash<QQuickItem*, Owner> owners_;
     bool destroying_ = false;
+    QPointer<QQuickItem> transferredFocus_;
 };
 
 } // namespace window_system::quick

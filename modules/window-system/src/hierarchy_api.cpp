@@ -6,6 +6,10 @@
 namespace window_system {
 bool WindowManager::prepareHierarchyBars(const QVector<QPair<TabId, PaneId>> &tabs) {
     const QPointer<WindowManager> self(this);
+    if (d->presentation == Presentation::External) {
+        emit hierarchyBarsRequested(tabs);
+        return bool(self);
+    }
     ++d->geometryUpdateDepth;
     const auto releaseGeometry = qScopeGuard([self] {
         if (self)
@@ -138,7 +142,7 @@ TabId WindowManager::convertGroupToTab(GroupId group, Placement placement) {
     QVector<QPair<TabId, PaneId>> sources;
     for (const auto tab : d->model.group(group)->tabs)
         sources.append({tab, d->model.tab(tab)->activePane});
-    // Publish one complete model before any QWidget ownership callback can run.
+    // Publish one complete model before any view ownership callback can run.
     d->model = std::move(candidate);
     usePerPaneBars(result);
     if (!prepareHierarchyBars(sources) || !self)

@@ -30,6 +30,73 @@ QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->bounding
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void hierarchyConversionKeepsTheExistingBars_data()
+    {
+        QTest::addColumn<bool>("wholeGroup");
+        QTest::addColumn<bool>("paneBars");
+        for (const bool group : {false, true}) for (const bool bars : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(group ? "group" : "tab", bars ? "stacked" : "outer"))) << group << bars;
+    }
+
+    void hierarchyConversionKeepsTheExistingBars()
+    {
+        QFETCH(bool, wholeGroup);
+        QFETCH(bool, paneBars);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto target = manager.addTab(window, {QStringLiteral("Target")});
+        const auto targetPane = manager.model().tab(target)->activePane;
+        TabOptions options{QStringLiteral("Source")};
+        options.topBarSharing = options.bottomBarSharing = PaneBarSharing::PerPane;
+        const auto source = manager.addTab(window, options);
+        QVERIFY(manager.moveTab(source, manager.model().groupForTab(target), Placement::Left));
+        const auto sourceGroup = manager.model().groupForTab(source);
+        const auto sourcePane = manager.model().tab(source)->activePane;
+        QPointer<QQuickItem> extraBar;
+        if (wholeGroup) {
+            const auto extra = manager.addTab(window, {QStringLiteral("Extra")}, sourceGroup);
+            extraBar = new InputBar;
+            QVERIFY(workspace.setTabBar(extra, extraBar, true));
+        }
+        QPointer<InputBar> top = new InputBar, bottom = new InputBar;
+        QPointer<InputBar> innerTop, innerBottom;
+        QVERIFY(workspace.setTabBar(source, top, true));
+        QVERIFY(workspace.setTabBar(source, bottom, false));
+        if (paneBars) {
+            innerTop = new InputBar; innerBottom = new InputBar;
+            QVERIFY(workspace.setPaneBar(sourcePane, innerTop, true));
+            QVERIFY(workspace.setPaneBar(sourcePane, innerBottom, false));
+        }
+        QVERIFY(manager.activateTab(source));
+        QTRY_VERIFY(top->window());
+        auto* view = workspace.window(window);
+        view->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(view));
+        top->forceActiveFocus();
+        QTRY_VERIFY(top->hasActiveFocus());
+        if (wholeGroup) QVERIFY(manager.moveGroupIntoTab(sourceGroup, target, targetPane, Placement::Left));
+        else QVERIFY(manager.moveTabIntoTab(source, target, targetPane, Placement::Left));
+        QVERIFY(!manager.model().tab(source));
+        QTRY_VERIFY(top->isVisible() && bottom->isVisible());
+        QTRY_VERIFY(top->hasActiveFocus());
+        QCOMPARE(manager.context().pane, sourcePane);
+        if (wholeGroup) QTRY_VERIFY(extraBar->isVisible());
+        QList<QPointer<InputBar>> bars{top, bottom};
+        if (paneBars) { bars.append(innerTop); bars.append(innerBottom); }
+        for (const auto& bar : bars) {
+            QTRY_VERIFY(bar->isVisible());
+            const int presses = bar->presses;
+            QTest::mouseClick(view, Qt::LeftButton, {}, area(bar).center().toPoint());
+            QCOMPARE(bar->presses, presses + 1);
+            QTRY_COMPARE(manager.context().pane, sourcePane);
+            QVERIFY(!area(bar).intersects(area(workspace.content(sourcePane))));
+        }
+        QVERIFY(manager.closeTab(target));
+        QTRY_VERIFY(!top && !bottom && !innerTop && !innerBottom && !extraBar);
+    }
+
     void barsFollowTheirSharingPolicy_data()
     {
         QTest::addColumn<bool>("perPane");

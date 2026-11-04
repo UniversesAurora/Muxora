@@ -39,6 +39,7 @@ private:
     struct Private;
     std::unique_ptr<Private> d;
     void requestSync();
+    void finishProjection();
     void sync();
 };
 
