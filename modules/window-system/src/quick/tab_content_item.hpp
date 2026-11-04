@@ -14,6 +14,8 @@ class WindowManager;
 namespace window_system::quick {
 
 class ContentHost;
+class ContentBars;
+class ContentColumnItem;
 class SplitTreeItem;
 
 // One tab's page: its pane tree, each pane's content mounted in a frame
@@ -22,24 +24,23 @@ class SplitTreeItem;
 class TabContentItem final : public QQuickItem {
     Q_OBJECT
 public:
-    TabContentItem(WindowManager& manager, ContentHost& host, TabId tab, QQuickItem* parent = nullptr);
+    TabContentItem(WindowManager& manager, ContentHost& host, ContentBars& bars, TabId tab, QQuickItem* parent = nullptr);
     ~TabContentItem() override;
     [[nodiscard]] TabId tab() const { return tab_; }
     // Rebuilds the pane tree from the model and mounts present content.
     void sync();
-    // Pane fullscreen: only this pane shows; a null pane shows the tree.
-    void setFocusedPane(PaneId pane);
     [[nodiscard]] QSize minimumSize() const;
 
 private:
-    QQuickItem* frame(PaneId pane);
+    ContentColumnItem* frame(PaneId pane);
 
     WindowManager& manager_;
     ContentHost& host_;
+    ContentBars& bars_;
     TabId tab_;
+    ContentColumnItem* column_;
     SplitTreeItem* split_;
-    QHash<PaneId, QPointer<QQuickItem>> frames_;
-    PaneId focusedPane_;
+    QHash<PaneId, QPointer<ContentColumnItem>> frames_;
 };
 
 } // namespace window_system::quick

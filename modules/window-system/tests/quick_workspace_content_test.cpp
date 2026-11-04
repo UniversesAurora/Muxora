@@ -1,20 +1,157 @@
 // SPDX-License-Identifier: MIT
 // Phase 10.3: content focus, visibility notifications, and stable pane identity.
-// Dimensions: command/user focus, tab/window changes, late subscriptions.
+// Dimensions: command/user focus, tab/window changes, late subscriptions,
+// shared/per-pane bars, tab/pane ownership, fullscreen and zen.
+#include "quick/dock_surface_item.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <QHash>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QMouseEvent>
 #include <QTest>
 #include <memory>
 
 using namespace window_system;
 
+namespace {
+class InputBar final : public QQuickItem {
+public:
+    InputBar() { setImplicitHeight(24); setAcceptedMouseButtons(Qt::LeftButton); setFocusPolicy(Qt::StrongFocus); }
+    int presses = 0;
+protected:
+    void mousePressEvent(QMouseEvent* event) override { ++presses; event->accept(); forceActiveFocus(Qt::MouseFocusReason); }
+};
+
+QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->boundingRect()); }
+}
+
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void barsFollowTheirSharingPolicy_data()
+    {
+        QTest::addColumn<bool>("perPane");
+        QTest::newRow("shared") << false;
+        QTest::newRow("per-pane") << true;
+    }
+
+    void barsFollowTheirSharingPolicy()
+    {
+        QFETCH(bool, perPane);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        TabOptions options{QStringLiteral("Bars")};
+        options.topBarSharing = options.bottomBarSharing = perPane ? PaneBarSharing::PerPane : PaneBarSharing::Shared;
+        const auto tab = manager.addTab(window, options);
+        const auto left = manager.model().tab(tab)->activePane;
+        const auto right = manager.splitPane(tab, left, Placement::Right);
+        QTRY_VERIFY(workspace.content(right));
+        auto* view = workspace.window(window);
+        view->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(dock);
+        const auto minimum = dock->minimumSize();
+        auto* tabTop = new InputBar; auto* tabBottom = new InputBar;
+        auto* leftTop = new InputBar; auto* leftBottom = new InputBar;
+        auto* rightTop = new InputBar; auto* rightBottom = new InputBar;
+        QVERIFY(workspace.setTabBar(tab, tabTop, true));
+        QVERIFY(workspace.setTabBar(tab, tabBottom, false));
+        QVERIFY(workspace.setPaneBar(left, leftTop, true));
+        QVERIFY(workspace.setPaneBar(left, leftBottom, false));
+        QVERIFY(workspace.setPaneBar(right, rightTop, true));
+        QVERIFY(workspace.setPaneBar(right, rightBottom, false));
+        QTRY_VERIFY(rightTop->isVisible() && rightBottom->isVisible());
+        QTRY_VERIFY(dock->minimumSize().height() > minimum.height());
+        QCOMPARE(leftTop->isVisible(), perPane);
+        QCOMPARE(leftBottom->isVisible(), perPane);
+        QCOMPARE(tabTop->isVisible(), perPane);
+        QCOMPARE(tabBottom->isVisible(), perPane);
+        for (const auto pane : {left, right}) {
+            auto* top = perPane && pane == left ? leftTop : rightTop;
+            auto* bottom = perPane && pane == left ? leftBottom : rightBottom;
+            QVERIFY(!area(top).intersects(area(workspace.content(pane))));
+            QVERIFY(!area(bottom).intersects(area(workspace.content(pane))));
+            const QPoint point(qRound(area(workspace.content(pane)).center().x()), qRound(area(top).center().y()));
+            const int presses = top->presses;
+            QTest::mouseClick(view, Qt::LeftButton, {}, point);
+            QCOMPARE(top->presses, presses + 1);
+            QTRY_VERIFY(top->hasActiveFocus());
+        }
+        const int beforeGrowth = dock->minimumSize().height();
+        rightBottom->setImplicitHeight(rightBottom->implicitHeight() + 40);
+        QTRY_VERIFY(dock->minimumSize().height() > beforeGrowth);
+        if (!perPane) {
+            QVERIFY(manager.focusPane(tab, left));
+            QTRY_VERIFY(leftTop->isVisible() && !rightTop->isVisible());
+            QVERIFY(workspace.setPaneBar(left, nullptr, true));
+            QTRY_VERIFY(tabTop->isVisible()); // Fall back to the tab's own bar.
+        } else {
+            QVERIFY(manager.focusPane(tab, left));
+            QVERIFY(manager.setViewMode(window, ViewMode::PaneFullscreen));
+            QTRY_VERIFY(leftTop->isVisible() && !rightTop->isVisible());
+            QVERIFY(!workspace.content(right)->isVisible());
+            QVERIFY(manager.setViewMode(window, ViewMode::Normal));
+            QTRY_VERIFY(rightTop->isVisible());
+            QVERIFY(manager.setZenMode(window, true));
+            QTRY_VERIFY(!tabTop->isVisible() && !tabBottom->isVisible() && !leftTop->isVisible()
+                && !leftBottom->isVisible() && !rightTop->isVisible() && !rightBottom->isVisible());
+            QVERIFY(manager.setZenMode(window, false));
+            QTRY_VERIFY(tabTop->isVisible() && leftTop->isVisible() && rightTop->isVisible());
+        }
+    }
+
+    void barOwnershipFollowsTabsAndPanesRatherThanPages()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow();
+        manager.addTab(first, {QStringLiteral("Staying")});
+        TabOptions options{QStringLiteral("Moving")};
+        options.topBarSharing = PaneBarSharing::PerPane;
+        const auto moving = manager.addTab(first, options);
+        const auto left = manager.model().tab(moving)->activePane;
+        const auto right = manager.splitPane(moving, left, Placement::Right);
+        const auto second = manager.createWindow();
+        const auto other = manager.addTab(second, {QStringLiteral("Other")});
+        QTRY_VERIFY(workspace.content(right));
+        QPointer<QQuickItem> tabBar = new InputBar, leftBar = new InputBar, rightBar = new InputBar;
+        QVERIFY(workspace.setTabBar(moving, tabBar, true));
+        QVERIFY(workspace.setPaneBar(left, leftBar, true));
+        QVERIFY(workspace.setPaneBar(right, rightBar, true));
+        QVERIFY(!workspace.setPaneBar(left, tabBar, false));
+        QVERIFY(!workspace.setTabBar(other, workspace.content(right), true));
+        auto rejected = std::make_unique<InputBar>();
+        QVERIFY(!workspace.setTabBar(QUuid::createUuid(), rejected.get(), true));
+        QVERIFY(!rejected->parent());
+        auto* retiring = new InputBar;
+        QPointer<QQuickItem> successor = new InputBar;
+        connect(retiring, &QObject::destroyed, &workspace, [&] { QVERIFY(workspace.setTabBar(moving, successor, false)); });
+        QVERIFY(workspace.setTabBar(moving, retiring, false));
+        delete retiring;
+        QTRY_VERIFY(successor->isVisible());
+        const auto owner = tabBar->parent();
+        QVERIFY(owner);
+        QVERIFY(manager.moveTabToWindow(moving, second));
+        QVERIFY(manager.activateTab(moving));
+        QTRY_COMPARE(tabBar->window(), workspace.window(second));
+        QTRY_COMPARE(rightBar->window(), workspace.window(second));
+        QCOMPARE(tabBar->parent(), owner);
+        QVERIFY(manager.movePane(moving, right, other, manager.model().tab(other)->activePane, Placement::Right));
+        QVERIFY(manager.activateTab(other));
+        QTRY_VERIFY(rightBar->isVisible());
+        QVERIFY(manager.closePane(other, right));
+        QTRY_VERIFY(!rightBar);
+        QVERIFY(tabBar && leftBar);
+        QVERIFY(manager.closeTab(moving));
+        QTRY_VERIFY(!tabBar && !leftBar && !successor);
+    }
+
     void focusTracksThePaneAndPreservesItsEditorAcrossWindows()
     {
         WindowManager manager(WindowManager::Presentation::External);

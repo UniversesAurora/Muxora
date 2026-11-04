@@ -18,6 +18,7 @@ class WindowManager;
 namespace window_system::quick {
 
 class ContentHost;
+class ContentBars;
 class DockGuideItem;
 class GroupItem;
 class PeekItem;
@@ -36,7 +37,7 @@ class TabDrag;
 class DockSurfaceItem final : public QQuickItem, public DropSurface {
     Q_OBJECT
 public:
-    DockSurfaceItem(WindowManager& manager, ContentHost& host, WindowId window, QQuickItem* parent = nullptr);
+    DockSurfaceItem(WindowManager& manager, ContentHost& host, ContentBars& bars, WindowId window, QQuickItem* parent = nullptr);
     [[nodiscard]] WindowId windowId() const { return window_; }
     void sync();
     [[nodiscard]] QSize minimumSize() const;
@@ -131,6 +132,7 @@ private:
 
     WindowManager& manager_;
     ContentHost& host_;
+    ContentBars& bars_;
     WindowId window_;
     SplitTreeItem* center_;
     QQuickItem* foreground_;

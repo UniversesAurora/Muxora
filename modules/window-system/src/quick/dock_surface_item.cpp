@@ -23,8 +23,8 @@
 
 namespace window_system::quick {
 
-DockSurfaceItem::DockSurfaceItem(WindowManager& manager, ContentHost& host, WindowId window, QQuickItem* parent)
-    : QQuickItem(parent), manager_(manager), host_(host), window_(window),
+DockSurfaceItem::DockSurfaceItem(WindowManager& manager, ContentHost& host, ContentBars& bars, WindowId window, QQuickItem* parent)
+    : QQuickItem(parent), manager_(manager), host_(host), bars_(bars), window_(window),
       center_(new SplitTreeItem(this)), foreground_(new QQuickItem(this)), guides_(new DockGuideItem(this))
 {
     foreground_->setZ(10);
@@ -298,8 +298,15 @@ void DockSurfaceItem::resizePinned(Edge edge, double ratio)
 
 TabContentItem* DockSurfaceItem::page(TabId tab)
 {
-    auto& page = pages_[tab];
-    if (!page) page = new TabContentItem(manager_, host_, tab);
+    auto page = pages_.value(tab);
+    if (!page) {
+        page = new TabContentItem(manager_, host_, bars_, tab);
+        // QObject ownership follows this surface; visual parenting follows
+        // the group or peek panel. Moving content never transfers the page.
+        page->setParent(this);
+        page->setVisible(false);
+        pages_.insert(tab, page);
+    }
     page->sync();
     return page;
 }
@@ -427,8 +434,6 @@ void DockSurfaceItem::sync()
         if (auto* page = pages_.value(group.activeTab).data()) view->setContentMinimum(page->minimumSize());
         minima.insert(group.id, view->minimumSize());
     }
-    for (auto it = pages_.cbegin(); it != pages_.cend(); ++it) if (it.value())
-        it.value()->setFocusedPane(state.mode == ViewMode::PaneFullscreen && it.key() == state.tab ? state.pane : PaneId{});
     for (const auto id : groups_.keys())
         if (!leaves.contains(id)) releaseGroup(id);
     syncRails();
@@ -436,7 +441,10 @@ void DockSurfaceItem::sync()
     if (peek_) {
         const auto* group = model.group(model.groupForTab(peekTab_));
         if (!group || group->id != peekGroup_ || group->windowId != window_ || group->location != GroupLocation::AutoHide) closePeek();
-        else peek_->setTitle(model.tab(peekTab_)->title, QGuiApplication::font());
+        else {
+            peek_->setTitle(model.tab(peekTab_)->title, QGuiApplication::font());
+            if (auto* page = pages_.value(peekTab_).data()) page->sync();
+        }
     }
     // Pages of tabs that left this window or closed release their content.
     for (auto it = pages_.begin(); it != pages_.end();) {

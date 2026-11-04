@@ -28,12 +28,17 @@ public:
     ~QuickWorkspace() override;
     /// Set before the first pane needs content.
     void setContentFactory(ContentFactory factory);
+    /// Accepted bars become workspace-owned. Null removes a bar; rejected
+    /// items remain caller-owned. Height follows the item's implicitHeight.
+    bool setTabBar(TabId tab, QQuickItem* bar, bool top);
+    bool setPaneBar(PaneId pane, QQuickItem* bar, bool top);
     [[nodiscard]] QQuickWindow* window(WindowId window) const;
     [[nodiscard]] QQuickItem* content(PaneId pane) const;
 
 private:
     struct Private;
     std::unique_ptr<Private> d;
+    void requestSync();
     void sync();
 };
 

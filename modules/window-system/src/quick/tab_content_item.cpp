@@ -1,45 +1,102 @@
 // SPDX-License-Identifier: MIT
 #include "tab_content_item.hpp"
 #include "content_host.hpp"
+#include "content_bars.hpp"
 #include "split_tree_item.hpp"
 #include <window_system/window_manager.hpp>
+#include <QtMath>
+#include <algorithm>
+#include <array>
 
 namespace window_system::quick {
-namespace {
-
-// Keeps every child at its own size: pane content fills its frame.
-class PaneFrameItem final : public QQuickItem {
+// Shared by the whole tab and individual panes. Ownership stays with the
+// hosts; this column only mounts and sizes optional bars around a body.
+class ContentColumnItem final : public QQuickItem {
 public:
-    explicit PaneFrameItem(QQuickItem* parent) : QQuickItem(parent) { setClip(true); }
+    explicit ContentColumnItem(QQuickItem* parent) : QQuickItem(parent) { setClip(true); }
+
+    void configure(QQuickItem* top, QQuickItem* body, QQuickItem* bottom, QSize bodyMinimum = QSize(0, 0))
+    {
+        const QPointer<ContentColumnItem> self(this);
+        const std::array<QPointer<QQuickItem>, 3> next{top, body, bottom};
+        const auto previous = items_;
+        items_ = next;
+        bodyMinimum_ = bodyMinimum;
+        for (const auto& item : previous) {
+            if (!item || item->parentItem() != this || std::find(next.begin(), next.end(), item) != next.end()) continue;
+            item->setVisible(false);
+            if (!self) return;
+            if (item) item->setParentItem(nullptr);
+            if (!self) return;
+        }
+        for (const auto& item : next) if (item) {
+            if (item->parentItem() != this) item->setParentItem(this);
+            if (!self) return;
+            if (item) item->setVisible(true);
+            if (!self) return;
+        }
+        arrange();
+    }
+
+    QSize minimumSize() const
+    {
+        auto minimum = bodyMinimum_;
+        for (const int index : {0, 2}) if (const auto& item = items_[index]; item && item->parentItem() == this) {
+            minimum.setWidth(std::max(minimum.width(), qCeil(item->implicitWidth())));
+            minimum.rheight() += qCeil(std::max(qreal(0), item->implicitHeight()));
+        }
+        return minimum;
+    }
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override
     {
+        const QPointer<ContentColumnItem> self(this);
         QQuickItem::geometryChange(now, previous);
-        if (now.size() != previous.size()) fill();
-    }
-    void itemChange(ItemChange change, const ItemChangeData& data) override
-    {
-        QQuickItem::itemChange(change, data);
-        if (change == ItemChildAddedChange) fill();
+        if (self && now.size() != previous.size()) arrange();
     }
 
 private:
-    void fill()
+    void arrange()
     {
-        for (auto* child : childItems()) { child->setPosition({}); child->setSize(size()); }
+        if (arranging_) { pending_ = true; return; }
+        arranging_ = true;
+        const QPointer<ContentColumnItem> self(this);
+        do {
+            pending_ = false;
+            const auto items = items_;
+            const auto barHeight = [this](const QPointer<QQuickItem>& item) {
+                return item && item->parentItem() == this ? std::max(qreal(0), item->implicitHeight()) : qreal(0);
+            };
+            const qreal top = barHeight(items[0]), bottom = barHeight(items[2]);
+            const qreal body = std::max(qreal(0), height() - top - bottom);
+            const std::array<QRectF, 3> areas{QRectF(0, 0, width(), top), QRectF(0, top, width(), body),
+                QRectF(0, top + body, width(), bottom)};
+            for (int index = 0; index < 3; ++index) if (const auto& item = items[index]; item && item->parentItem() == this) {
+                item->setPosition(areas[index].topLeft());
+                if (!self) return;
+                if (pending_) break;
+                if (item) item->setSize(areas[index].size());
+                if (!self) return;
+                if (pending_) break;
+            }
+        } while (pending_);
+        arranging_ = false;
     }
+    std::array<QPointer<QQuickItem>, 3> items_;
+    QSize bodyMinimum_{0, 0};
+    bool arranging_ = false;
+    bool pending_ = false;
 };
 
-} // namespace
-
-TabContentItem::TabContentItem(WindowManager& manager, ContentHost& host, TabId tab, QQuickItem* parent)
-    : QQuickItem(parent), manager_(manager), host_(host), tab_(tab), split_(new SplitTreeItem(this))
+TabContentItem::TabContentItem(WindowManager& manager, ContentHost& host, ContentBars& bars, TabId tab, QQuickItem* parent)
+    : QQuickItem(parent), manager_(manager), host_(host), bars_(bars), tab_(tab),
+      column_(new ContentColumnItem(this)), split_(new SplitTreeItem(column_))
 {
     const auto theme = manager.interfaceTheme();
     split_->setDividerMetrics(std::max(1, theme.metrics.splitterWidth), 6);
-    connect(this, &QQuickItem::widthChanged, split_, [this] { split_->setSize(size()); });
-    connect(this, &QQuickItem::heightChanged, split_, [this] { split_->setSize(size()); });
+    connect(this, &QQuickItem::widthChanged, column_, [this] { column_->setSize(size()); });
+    connect(this, &QQuickItem::heightChanged, column_, [this] { column_->setSize(size()); });
     connect(split_, &SplitTreeItem::ratioRequested, this, [this](QUuid node, double ratio) {
         const auto* record = manager_.model().group(manager_.model().groupForTab(tab_));
         if (record) manager_.execute(QStringLiteral("layout.setRatio"), {{"node", node}, {"ratio", ratio}}, record->windowId);
@@ -53,46 +110,60 @@ TabContentItem::~TabContentItem()
         if (it.value() && host_.item(it.key()) && host_.item(it.key())->parentItem() == it.value()) host_.unmount(it.key());
 }
 
-QQuickItem* TabContentItem::frame(PaneId pane)
+ContentColumnItem* TabContentItem::frame(PaneId pane)
 {
     auto& frame = frames_[pane];
-    if (!frame) frame = new PaneFrameItem(split_);
+    if (!frame) frame = new ContentColumnItem(split_);
     return frame;
 }
 
 void TabContentItem::sync()
 {
+    const QPointer<TabContentItem> self(this);
     const auto* record = manager_.model().tab(tab_);
     if (!record) return;
+    const auto tree = record->panes;
+    const auto* group = manager_.model().group(manager_.model().groupForTab(tab_));
+    const auto state = manager_.windowViewState(group->windowId);
+    const auto focused = state.mode == ViewMode::PaneFullscreen && state.tab == tab_ ? state.pane : PaneId{};
+    const auto active = focused.isNull() ? record->activePane : focused;
+    const auto options = manager_.tabOptions(tab_);
     const auto panes = manager_.model().panes(tab_);
-    const bool focused = panes.contains(focusedPane_);
     QHash<QUuid, QPointer<QQuickItem>> leaves;
+    QHash<QUuid, QSize> minima;
     for (const auto pane : panes) {
-        auto* target = frame(pane);
-        if (!focused || pane == focusedPane_) leaves.insert(pane, target);
+        const QPointer<ContentColumnItem> target(frame(pane));
+        leaves.insert(pane, target);
         if (host_.item(pane) && host_.item(pane)->parentItem() != target) host_.mount(pane, target);
+        if (!self || !target) return;
+        target->configure(!state.zen && options.topBarSharing == PaneBarSharing::PerPane ? bars_.pane(pane, true) : nullptr,
+            host_.item(pane), !state.zen && options.bottomBarSharing == PaneBarSharing::PerPane ? bars_.pane(pane, false) : nullptr);
+        if (!self || !target) return;
+        minima.insert(pane, target->minimumSize());
     }
     for (auto it = frames_.begin(); it != frames_.end();) {
         if (panes.contains(it.key())) { ++it; continue; }
         if (it.value()) it.value()->deleteLater();
         it = frames_.erase(it);
     }
-    if (focused) {
-        auto leaf = std::make_shared<LayoutNode>();
-        leaf->itemId = focusedPane_;
-        split_->setTree(std::move(leaf));
-    } else split_->setTree(record->panes);
+    split_->setTree(tree);
+    if (!self) return;
+    split_->setMinimumSizes(minima);
+    if (!self) return;
     split_->setLeafItems(leaves);
-    split_->setSize(size());
+    if (!self) return;
+    split_->setFocusedItem(focused);
+    if (!self) return;
+    const auto shared = [&](bool top) -> QQuickItem* {
+        if (state.zen) return nullptr;
+        const auto sharing = top ? options.topBarSharing : options.bottomBarSharing;
+        auto* paneBar = sharing == PaneBarSharing::Shared ? bars_.pane(active, top) : nullptr;
+        return paneBar ? paneBar : bars_.tab(tab_, top);
+    };
+    column_->configure(shared(true), split_, shared(false), split_->minimumSize());
+    if (self) column_->setSize(size());
 }
 
-void TabContentItem::setFocusedPane(PaneId pane)
-{
-    if (focusedPane_ == pane) return;
-    focusedPane_ = pane;
-    sync();
-}
-
-QSize TabContentItem::minimumSize() const { return split_->minimumSize(); }
+QSize TabContentItem::minimumSize() const { return column_->minimumSize(); }
 
 } // namespace window_system::quick

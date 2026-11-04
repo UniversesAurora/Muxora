@@ -134,7 +134,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/tab_folder_item.cpp src/quick/overlay_band_item.cpp
     src/quick/tab_strip_item.cpp src/quick/tab_carrier_item.cpp src/quick/tab_foreground_item.cpp
     src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
-    src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp
+    src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp src/quick/content_bars.cpp
     src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
