@@ -83,6 +83,7 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - **换行符**：在 Windows 上用 Python `write_text` 改文件会写成 CRLF，git 提交时会改回 LF；用 `write_bytes` 或指定 `newline` 可以避免。
   - **诊断目录**：`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 是 10.5 要对照的基准证据，暂时保留。
   - **运行状态**：没有运行中的预览或测试。
+  - **Codex 删除受阻（2026-11-04）**：系统临时目录下的 `Muxora-toolbar-measure-bb214121144a4599883aa3886ace6300` 是本轮工具栏 CPU 取样目录，包含临时 C++ 源码、CMake 文件及构建产物。递归删除被策略以 `blocked by policy` 拦截，未给出具体原因，未换方法绕过。由 Claude 接手时先核对实际路径与内容，确认没有用户数据后删除该目录；取样数字已写入 [验证日志](verification-log/2026-11.md#工具栏无需压缩时跳过压缩顺序2026-11-04)。此项仅按删除受阻规则登记，当前迁移进度仍见实现计划。
 
 ## 2026-10-30 · Codex：Quick 控制器与窗口边界收尾
 
