@@ -380,4 +380,80 @@ QVector<MenuItemDescription> describeTabCreationMenu(WindowManager* manager, Win
     return result;
 }
 
+QVector<MenuItemDescription> describeTabPresentationMenu(
+    WindowManager* manager, const CommandContext& context, bool autoHide)
+{
+    if (!manager) return {};
+    const auto* group = manager->model().group(context.group);
+    autoHide = autoHide || (group && group->location == GroupLocation::AutoHide);
+    const bool pinned = group && group->location == GroupLocation::Pinned;
+    const QPointer<WindowManager> owner(manager);
+    QVector<MenuItemDescription> result;
+    const auto addFlag = [manager, &result, &context, &owner](const QString& id) {
+        const auto description = describeCommandAction(manager, id, context);
+        if (!owner) return false;
+        MenuItemDescription item;
+        item.id = id;
+        item.commandId = id;
+        if (description) item.action = *description;
+        else { item.action.visible = false; item.action.enabled = false; }
+        result.append(std::move(item));
+        return true;
+    };
+    if (autoHide) {
+        for (const auto* id : {"presentation.toggleSidebarIcons", "presentation.toggleSidebarNumbers", "presentation.toggleSidebarTitleClipping"})
+            if (!addFlag(QString::fromLatin1(id))) return {};
+        return result;
+    }
+    for (const auto* id : {pinned ? "presentation.toggleSidebarIcons" : "presentation.toggleIcons", "presentation.toggleNewTabButton",
+                           pinned ? "presentation.toggleSidebarNumbers" : "presentation.toggleNumbers", "presentation.toggleTitleClipping"})
+        if (!addFlag(QString::fromLatin1(id))) return {};
+    const auto appearance = manager->tabAppearance();
+    const auto current = pinned ? appearance.pinnedPlacement : appearance.centralPlacement;
+    const auto addChoices = [&result](QString title, QString id, const QString& command, const QString& argument,
+                                      const QStringList& values, const QStringList& labels, int checked) {
+        MenuItemDescription menu;
+        menu.kind = MenuItemDescription::Kind::Submenu;
+        menu.id = std::move(id);
+        menu.action.title = std::move(title);
+        for (int index = 0; index < values.size(); ++index) {
+            MenuItemDescription choice;
+            choice.id = command + '.' + values.at(index);
+            choice.commandId = command;
+            choice.arguments.insert(argument, values.at(index));
+            choice.action.title = labels.at(index);
+            choice.action.checkable = true;
+            choice.action.checked = index == checked;
+            menu.children.append(std::move(choice));
+        }
+        result.append(std::move(menu));
+    };
+    MenuItemDescription separator;
+    separator.kind = MenuItemDescription::Kind::Separator;
+    result.append(separator);
+    if (current == TabBarPlacement::Top || current == TabBarPlacement::Bottom) {
+        QStringList flags{QStringLiteral("presentation.toggleMultiline")};
+        if (appearance.multiline) flags.append(QStringLiteral("presentation.toggleAllRows"));
+        if (appearance.stickyTabsOnSeparateRow) {
+            flags.append(QStringLiteral("presentation.toggleStickyMultiline"));
+            if (appearance.stickyMultiline) flags.append(QStringLiteral("presentation.toggleStickyAllRows"));
+        }
+        for (const auto& id : flags) if (!addFlag(id)) return {};
+        if (appearance.multiline || appearance.stickyMultiline) {
+            addChoices(QCoreApplication::translate("WindowSystem", "Expanded tab rows"), QStringLiteral("TabRowExpansionMenu"),
+                QStringLiteral("presentation.setRowExpansion"), QStringLiteral("mode"), tabRowExpansionNames(),
+                {QCoreApplication::translate("WindowSystem", "Push the content"), QCoreApplication::translate("WindowSystem", "Overlay the content")},
+                int(appearance.rowExpansion));
+            if (!addFlag(QStringLiteral("presentation.toggleWheelExpandRows"))) return {};
+        }
+    }
+    addChoices(QCoreApplication::translate("WindowSystem", "Tab bar position"), QStringLiteral("TabBarPlacementMenu"),
+        pinned ? QStringLiteral("presentation.setPinnedPlacement") : QStringLiteral("presentation.setCentralPlacement"),
+        QStringLiteral("position"), tabBarPlacementNames(),
+        {QCoreApplication::translate("WindowSystem", "Top"), QCoreApplication::translate("WindowSystem", "Bottom"),
+         QCoreApplication::translate("WindowSystem", "Left"), QCoreApplication::translate("WindowSystem", "Right")}, int(current));
+    result.append(std::move(separator));
+    return result;
+}
+
 } // namespace window_system

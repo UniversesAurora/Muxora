@@ -50,6 +50,14 @@ constexpr std::array placementNames{std::pair{TabBarPlacement::Top, "top"}, std:
 constexpr std::array expansionNames{std::pair{TabRowExpansion::Push, "push"}, std::pair{TabRowExpansion::Overlay, "overlay"}};
 
 template <typename Value, std::size_t Size>
+QStringList enumNames(const std::array<std::pair<Value, const char*>, Size>& names)
+{
+    QStringList result;
+    for (const auto& entry : names) result.append(QString::fromLatin1(entry.second));
+    return result;
+}
+
+template <typename Value, std::size_t Size>
 QString enumName(const std::array<std::pair<Value, const char*>, Size>& names, Value value)
 {
     for (const auto& [candidate, name] : names) if (candidate == value) return QString::fromLatin1(name);
@@ -74,6 +82,17 @@ constexpr std::array stickyCloseGuardNames{std::pair{StickyTabCloseGuard::Keyboa
     std::pair{StickyTabCloseGuard::Never, "never"}};
 
 } // namespace
+
+const QStringList& tabBarPlacementNames()
+{
+    static const auto names = enumNames(placementNames);
+    return names;
+}
+const QStringList& tabRowExpansionNames()
+{
+    static const auto names = enumNames(expansionNames);
+    return names;
+}
 
 QString stickyCloseGuardName(StickyTabCloseGuard guard)
 {

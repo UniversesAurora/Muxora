@@ -5,9 +5,12 @@
 #include <window_system/layout_model.hpp>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QStringList>
 #include <optional>
 
 namespace window_system {
+[[nodiscard]] const QStringList& tabBarPlacementNames();
+[[nodiscard]] const QStringList& tabRowExpansionNames();
 [[nodiscard]] QJsonObject tabAppearanceToJson(const TabAppearance& appearance);
 [[nodiscard]] OperationResult parseTabAppearance(const QJsonValue& value, TabAppearance& appearance);
 [[nodiscard]] bool validTabAppearance(const TabAppearance& appearance);

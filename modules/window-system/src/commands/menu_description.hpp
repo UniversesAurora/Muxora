@@ -44,5 +44,7 @@ struct MenuItemDescription {
     CommandMenuSurface surface, WindowManager* manager, WindowId window);
 [[nodiscard]] QVector<MenuItemDescription> describeTabCreationMenu(
     WindowManager* manager, WindowId window, GroupId group);
+[[nodiscard]] QVector<MenuItemDescription> describeTabPresentationMenu(
+    WindowManager* manager, const CommandContext& context, bool autoHide = false);
 
 } // namespace window_system

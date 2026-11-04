@@ -140,10 +140,10 @@ private slots:
 
 void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto builtins = manager.commands().commands();
     contributeApplicationCommands(manager);
-    const auto window = manager.createWindow(); manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
+    const auto window = manager.createWindow(); manager.addTab(window, TabOptions{"One", "label", {}});
     const auto tree = describeApplicationMenu(CommandMenuSurface::Application, &manager, window);
     QStringList roots;
     for (const auto& item : tree) if (item.action.visible) roots.append(item.id);
@@ -169,8 +169,8 @@ void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
 
 void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
 {
-    WindowManager manager; const auto window = manager.createWindow();
-    manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
+    manager.addTab(window, TabOptions{"One", "label", {}});
     const auto tree = describeApplicationMenu(CommandMenuSurface::Application, &manager, window);
     const QList<QPair<QStringList, QString>> families{
         {{"view", "focusGroup"}, "workspace.focusGroup."}, {{"view", "focusPane"}, "pane.focus."},
@@ -191,26 +191,27 @@ void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
 
 void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
 {
-    WindowManager manager; const auto window = manager.createWindow();
-    manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
-    auto* bar = menuBar(manager, window); auto* layout = menuAt(bar, {"layout"}); QVERIFY(layout);
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
+    manager.addTab(window, TabOptions{"One", "label", {}});
+    const auto tree = describeApplicationMenu(CommandMenuSurface::Application, &manager, window);
+    const auto* layout = menuAt(tree, {"layout"}); QVERIFY(layout);
     QStringList objectNames, objectTitles;
-    for (auto* action : layout->actions()) if (auto* child = action->menu()) {
-        objectNames.append(child->objectName()); objectTitles.append(child->title());
+    for (const auto& child : layout->children) if (child.kind == MenuItemDescription::Kind::Submenu) {
+        objectNames.append(child.id); objectTitles.append(child.action.title);
     }
     QCOMPARE(objectNames, (QStringList{"layout.groups", "layout.tab", "layout.folder", "layout.panes"}));
     QCOMPARE(objectTitles, (QStringList{"当前标签组", "当前标签", "当前标签夹", "当前窗格"}));
-    QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "convertGroup"}), false),
+    QCOMPARE(ids(menuAt(tree, {"layout", "currentGroup", "convertGroup"})->children, false),
         (QStringList{"group.convertToTab", "group.moveIntoTab",
             "group.convertToFolder.left", "group.convertToFolder.right",
             "group.convertToFolder.up", "group.convertToFolder.down", "group.convertToFolder"}));
-    QCOMPARE(ids(menuAt(bar, {"layout", "currentTab", "convertTab"}), false),
+    QCOMPARE(ids(menuAt(tree, {"layout", "currentTab", "convertTab"})->children, false),
         (QStringList{"tab.convertToGroup", "tab.moveIntoTab"}));
-    const auto paneMoves = ids(menuAt(bar, {"layout", "currentPane", "movePane"}), false);
+    const auto paneMoves = ids(menuAt(tree, {"layout", "currentPane", "movePane"})->children, false);
     QCOMPARE(paneMoves, QStringList{"pane.extractToTab"});
-    const auto withinTabBar = ids(menuAt(bar, {"layout", "currentTab", "reorderTab"}), false);
+    const auto withinTabBar = ids(menuAt(tree, {"layout", "currentTab", "reorderTab"})->children, false);
     QCOMPARE(withinTabBar, (QStringList{"workspace.reorderTab.previous", "workspace.reorderTab.next"}));
-    QCOMPARE(ids(menuAt(bar, {"layout", "currentGroup", "sortGroup"}), false),
+    QCOMPARE(ids(menuAt(tree, {"layout", "currentGroup", "sortGroup"})->children, false),
         (QStringList{"group.sort.alphabeticalAscending", "group.sort.alphabeticalDescending", "group.sort.openedAscending",
             "group.sort.openedDescending", "group.sort.visitedAscending", "group.sort.visitedDescending"}));
     const QList<QPair<QStringList, QStringList>> scoped{
@@ -219,26 +220,28 @@ void MenuStructureTest::layoutMenusIdentifyTheSourceObjectAndConversionTarget()
         {{"layout", "currentPane"}, {"pane.extractToTab", "pane.moveToTab", "pane.moveToWindow", "pane.close"}}};
     QHash<QString, int> all;
     for (const auto& [path, commands] : scoped) {
-        auto* source = menuAt(bar, path); QVERIFY(source);
-        QHash<QString, int> occurrences; walk(source, occurrences);
+        const auto* source = menuAt(tree, path); QVERIFY(source);
+        QHash<QString, int> occurrences; walk(source->children, occurrences);
         for (const auto& command : commands) {
             QVERIFY2(manager.commands().find(command), qPrintable(command));
             QCOMPARE(occurrences.value(command), 1); ++all[command];
         }
-        verifySeparators(source);
+        verifySeparators(source->children);
     }
     for (auto count : all) QCOMPARE(count, 1);
     for (const auto* oldRoot : {"layout.moveGroup", "layout.swapGroup", "layout.mergeGroup", "layout.moveTab", "layout.movePane", "layout.edge"})
-        QVERIFY(!layout->findChild<QMenu*>(QString::fromLatin1(oldRoot), Qt::FindDirectChildrenOnly));
+        QVERIFY(std::none_of(layout->children.cbegin(), layout->children.cend(), [oldRoot](const auto& item) {
+            return item.kind == MenuItemDescription::Kind::Submenu && item.id == QString::fromLatin1(oldRoot);
+        }));
 }
 
 void MenuStructureTest::groupContextMenusDoNotPretendToOperateOnASingleTab()
 {
-    WindowManager manager; const auto window = manager.createWindow();
-    const auto first = manager.addTab(window, new QLabel("First"), {"First", "label", {}});
-    manager.addTab(window, new QLabel("Second"), {"Second", "label", {}});
-    QMenu menu; populateContextMenu(&menu, CommandMenuSurface::Group, &manager, manager.context(window));
-    QHash<QString, int> occurrences; walk(&menu, occurrences);
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
+    const auto first = manager.addTab(window, TabOptions{"First", "label", {}});
+    manager.addTab(window, TabOptions{"Second", "label", {}});
+    const auto menu = describeContextMenu(CommandMenuSurface::Group, &manager, manager.context(window));
+    QHash<QString, int> occurrences; walk(menu, occurrences);
     for (const auto* id : {"group.close", "group.convertToTab", "group.moveIntoTab", "group.moveToGroup", "group.swap", "group.merge",
                            "workspace.splitGroup.left", "workspace.splitGroup.right", "workspace.splitGroup.up", "workspace.splitGroup.down"})
         QCOMPARE(occurrences.value(QString::fromLatin1(id)), 1);
@@ -247,7 +250,7 @@ void MenuStructureTest::groupContextMenusDoNotPretendToOperateOnASingleTab()
     for (auto count : occurrences) QCOMPARE(count, 1);
     const auto declared = declaredMenuCommands(CommandMenuSurface::Group);
     QCOMPARE(QSet<QString>(declared.cbegin(), declared.cend()).size(), declared.size());
-    verifySeparators(&menu); QVERIFY(manager.model().tab(first));
+    verifySeparators(menu); QVERIFY(manager.model().tab(first));
 }
 
 void MenuStructureTest::lateContributionsRespectMetadataAndPreserveExistingMenus()
