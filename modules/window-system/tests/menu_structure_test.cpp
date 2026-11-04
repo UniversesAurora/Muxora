@@ -57,10 +57,28 @@ void verifySeparators(QMenu* menu)
     }
     QVERIFY(!previousSeparator || menu->actions().isEmpty() || !menu->menuAction()->isVisible());
 }
+const MenuItemDescription* menuAt(const QVector<MenuItemDescription>& items, const QStringList& path)
+{
+    for (const auto& item : items) {
+        if (item.kind == MenuItemDescription::Kind::Submenu && item.path == path) return &item;
+        if (const auto* found = menuAt(item.children, path)) return found;
+    }
+    return nullptr;
+}
+QStringList ids(const QVector<MenuItemDescription>& items, bool visibleOnly = true)
+{
+    QStringList result;
+    for (const auto& item : items)
+        if ((!visibleOnly || item.action.visible) && !item.commandId.isEmpty()
+            && item.kind != MenuItemDescription::Kind::Window && item.kind != MenuItemDescription::Kind::TabColor)
+            result.append(item.commandId);
+    return result;
+}
 void walk(const QVector<MenuItemDescription>& items, QHash<QString, int>& occurrences)
 {
     for (const auto& item : items) {
-        if (!item.commandId.isEmpty() && item.kind != MenuItemDescription::Kind::TabColor)
+        if (!item.commandId.isEmpty() && item.kind != MenuItemDescription::Kind::TabColor
+            && item.kind != MenuItemDescription::Kind::Window)
             ++occurrences[item.commandId];
         walk(item.children, occurrences);
     }
@@ -126,17 +144,17 @@ void MenuStructureTest::applicationTreeUsesSemanticGroupsAndCoversEveryCommand()
     const auto builtins = manager.commands().commands();
     contributeApplicationCommands(manager);
     const auto window = manager.createWindow(); manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
-    auto* bar = menuBar(manager, window); QVERIFY(bar);
+    const auto tree = describeApplicationMenu(CommandMenuSurface::Application, &manager, window);
     QStringList roots;
-    for (auto* action : bar->actions()) if (action->isVisible()) roots.append(action->objectName());
+    for (const auto& item : tree) if (item.action.visible) roots.append(item.id);
     QCOMPARE(roots, (QStringList{"file", "view", "layout", "window", "tools", "help"}));
-    QCOMPARE(ids(menuAt(bar, {"file"})), (QStringList{"host.newTab", "window.new", "layout.save", "workspace.closeTab", "window.close", "application.exit"}));
-    QCOMPARE(ids(menuAt(bar, {"tools"})), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
+    QCOMPARE(ids(menuAt(tree, {"file"})->children), (QStringList{"host.newTab", "window.new", "layout.save", "workspace.closeTab", "window.close", "application.exit"}));
+    QCOMPARE(ids(menuAt(tree, {"tools"})->children), (QStringList{"window.settings", "preferences.openKeyboardShortcuts"}));
     QCOMPARE(manager.commands().find("window.settings")->title, QStringLiteral("设置"));
-    const auto layoutActions = menuAt(bar, {"layout"})->actions();
-    QCOMPARE(layoutActions.last()->data().toString(), QStringLiteral("layout.reset"));
+    const auto& layoutActions = menuAt(tree, {"layout"})->children;
+    QCOMPARE(layoutActions.last().commandId, QStringLiteral("layout.reset"));
     QHash<QString, int> occurrences;
-    for (auto* action : bar->actions()) if (action->menu()) { walk(action->menu(), occurrences); verifySeparators(action->menu()); }
+    walk(tree, occurrences); verifySeparators(tree);
     const auto declarations = declaredMenuCommands(CommandMenuSurface::Application);
     QCOMPARE(QSet<QString>(declarations.cbegin(), declarations.cend()).size(), declarations.size());
     for (const auto& definition : builtins) {
@@ -153,7 +171,7 @@ void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
 {
     WindowManager manager; const auto window = manager.createWindow();
     manager.addTab(window, new QLabel("Content"), {"One", "label", {}});
-    auto* bar = menuBar(manager, window);
+    const auto tree = describeApplicationMenu(CommandMenuSurface::Application, &manager, window);
     const QList<QPair<QStringList, QString>> families{
         {{"view", "focusGroup"}, "workspace.focusGroup."}, {{"view", "focusPane"}, "pane.focus."},
         {{"layout", "currentGroup", "createGroup"}, "workspace.splitGroup."},
@@ -164,10 +182,10 @@ void MenuStructureTest::directionalFamiliesHaveAConsistentOrder()
         {{"layout", "currentTab", "moveTab", "moveToAdjacentGroup"}, "workspace.moveTabToGroup."},
         {{"layout", "currentPane", "movePane", "mergeIntoAdjacentGroup"}, "pane.moveToGroup."}};
     for (const auto& [path, prefix] : families) {
-        auto* menu = menuAt(bar, path); QVERIFY2(menu, qPrintable(path.join('/')));
-        QCOMPARE(ids(menu, false), (QStringList{prefix + "left", prefix + "right", prefix + "up", prefix + "down"}));
+        const auto* menu = menuAt(tree, path); QVERIFY2(menu, qPrintable(path.join('/')));
+        QCOMPARE(ids(menu->children, false), (QStringList{prefix + "left", prefix + "right", prefix + "up", prefix + "down"}));
     }
-    QCOMPARE(ids(menuAt(bar, {"window", "switchWindow", "allWindows"})),
+    QCOMPARE(ids(menuAt(tree, {"window", "switchWindow", "allWindows"})->children),
         (QStringList{"window.focusPrevious.all", "window.focusNext.all"}));
 }
 

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
-#include <QCoreApplication>
 #include "command_menus.hpp"
 #include "menu_description.hpp"
 #include "popup_menu.hpp"
-#include "localization/display_names.hpp"
 #include <window_system/window_manager.hpp>
 
 #include <QAction>
+#include <QHash>
 #include <QMenu>
 #include <QMenuBar>
-#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVariant>
@@ -18,10 +16,7 @@
 namespace window_system {
 namespace {
 
-using Item = CommandMenuItem;
-using Items = QVector<Item>;
 const auto scrollableMenuStyle = QStringLiteral("QMenu { menu-scrollable: 1; }");
-QString plainTitle(QString title) { return title.remove(QRegularExpression(QStringLiteral("\\(&[A-Za-z]\\)"))); }
 
 void tidy(QMenu* menu)
 {
@@ -45,73 +40,6 @@ void tidy(QMenu* menu)
     // QMenu resize/reposition twice and flashes the parent under the cursor.
     for (auto* action : menu->actions()) if (action->isSeparator())
         action->setVisible(visibleSeparators.contains(action));
-}
-bool orderedBefore(const QAction* left, const QAction* right)
-{
-    const int a = left->property("menuOrder").toInt(), b = right->property("menuOrder").toInt();
-    if (a != b) return a < b;
-    const auto titleA = left->property("menuSortTitle").toString(), titleB = right->property("menuSortTitle").toString();
-    const int titleOrder = QString::localeAwareCompare(titleA, titleB);
-    return titleOrder ? titleOrder < 0 : left->objectName() < right->objectName();
-}
-void insertOrdered(QWidget* owner, QAction* added)
-{
-    const auto actions = owner->actions();
-    const auto before = std::find_if(actions.cbegin(), actions.cend(), [added](QAction* action) {
-        return action != added && orderedBefore(added, action);
-    });
-    if (before != actions.cend()) owner->insertAction(*before, added);
-}
-QMenu* makeMenu(QWidget* owner, const Item& item, const QStringList& path)
-{
-    const auto title = item.id.startsWith(QStringLiteral("extension."))
-        ? commandCategoryDisplayName(item.title)
-        : QCoreApplication::translate("WindowSystem", item.title.toUtf8().constData());
-    auto* menu = new DismissOnlyMenu(title, owner);
-    menu->setObjectName(item.id); menu->setProperty("commandMenuPath", path);
-    menu->setStyleSheet(scrollableMenuStyle);
-    menu->menuAction()->setObjectName(item.id); menu->menuAction()->setProperty("menuOrder", item.order);
-    menu->menuAction()->setProperty("menuSortTitle", plainTitle(item.title));
-    return menu;
-}
-using Context = std::function<CommandContext()>;
-void addItems(QMenu* menu, const Items& items, WindowManager* manager, const Context& context,
-              QList<QPointer<QAction>>& actions, QList<QPointer<QMenu>>* menus, QObject* actionOwner,
-              bool contribution = false)
-{
-    const QPointer<QMenu> retainedMenu(menu);
-    const QPointer<WindowManager> retainedManager(manager);
-    const QPointer<QObject> retainedOwner(actionOwner);
-    int ordinal = 0;
-    for (const auto& item : items) {
-        if (!retainedMenu || !retainedManager || (actionOwner && !retainedOwner)) return;
-        QAction* action = nullptr;
-        if (item.command) {
-            action = menu->addAction(QString()); action->setData(item.id); action->setObjectName(item.id);
-            action->setProperty("windowSystemCommand", item.id); actions.append(action);
-            if (contribution) action->setProperty("commandMenuContribution", true);
-            const QPointer<QAction> retainedAction(action);
-            refreshCommandAction(manager, action, context());
-            if (!retainedMenu || !retainedManager || !retainedAction || (actionOwner && !retainedOwner)) return;
-            if (actionOwner) QObject::connect(action, &QAction::triggered, actionOwner,
-                [manager = QPointer<WindowManager>(manager), receiver = QPointer<QObject>(actionOwner), id = item.id, context] {
-                if (!manager || !receiver) return;
-                const auto captured = context();
-                QTimer::singleShot(0, receiver.data(), [manager, id, captured] {
-                    if (!manager) return;
-                    manager->executeInContext(id, captured);
-                });
-            });
-        } else if (!item.id.isEmpty()) {
-            const auto path = menu->property("commandMenuPath").toStringList() + QStringList{item.pathKey};
-            auto* child = makeMenu(menu, item, path); menu->addMenu(child); action = child->menuAction();
-            if (menus) menus->append(child);
-            addItems(child, item.children, manager, context, actions, menus, actionOwner, contribution);
-            if (!retainedMenu || !retainedManager || (actionOwner && !retainedOwner)) return;
-        } else action = menu->addSeparator();
-        action->setProperty("menuOrder", item.order ? item.order : ++ordinal * 10);
-        action->setProperty("menuSortTitle", item.command ? item.id : item.title);
-    }
 }
 
 } // namespace
@@ -213,215 +141,144 @@ ApplicationCommandMenus::ApplicationCommandMenus(QMenuBar* bar, WindowManager* m
                                                CommandMenuSurface surface)
     : QObject(bar), bar_(bar), manager_(manager), window_(window), surface_(surface)
 {
-    for (const auto& item : commandMenuDefinition(surface_)) {
-        auto* menu = makeMenu(bar, item, {item.id}); bar->addMenu(menu); menus_.append(menu);
-        addItems(menu, item.children, manager_, [this] { return manager_ ? manager_->context(window_) : CommandContext{}; }, actions_, &menus_, this);
-    }
-    for (const auto& menu : menus_) connect(menu, &QMenu::aboutToShow, this, [this] { refresh(); });
     refresh();
 }
-QMenu* ApplicationCommandMenus::menuAtPath(const QStringList& path)
+
+QAction* ApplicationCommandMenus::createAction(QWidget* owner, const MenuItemDescription& item)
 {
-    if (path.isEmpty() || !bar_) return nullptr;
-    QStringList partial;
-    QMenu* parent = nullptr;
-    for (const auto& title : path) {
-        partial.append(title);
-        auto existing = std::find_if(menus_.cbegin(), menus_.cend(), [&partial](const auto& menu) {
-            return menu && menu->property("commandMenuPath").toStringList() == partial;
-        });
-        if (existing != menus_.cend()) parent = existing->data();
-        else {
-            Item item{QStringLiteral("extension.") + partial.join('.'), title, {}, 500, false};
-            auto* child = makeMenu(parent ? static_cast<QWidget*>(parent) : bar_.data(), item, partial);
-            child->setProperty("commandMenuContribution", true);
-            if (parent) { parent->addMenu(child); insertOrdered(parent, child->menuAction()); }
-            else { bar_->addMenu(child); insertOrdered(bar_, child->menuAction()); }
-            menus_.append(child); connect(child, &QMenu::aboutToShow, this, [this] { refresh(); }); parent = child;
-        }
-    }
-    return parent;
-}
-bool ApplicationCommandMenus::removeUnusedContributions()
-{
-    bool removed = false;
-    const QPointer<ApplicationCommandMenus> retained(this);
-    const auto actions = actions_;
-    for (const auto& action : actions) {
-        if (!retained || !manager_ || !bar_) return removed;
-        // Built-in placeholders intentionally survive absent host commands so
-        // their declared position is still available for a later registration.
-        if (action && action->property("commandMenuContribution").toBool()
-            && !manager_->commands().find(action->data().toString())) {
-            delete action.data();
-            removed = true;
-        }
-    }
-    if (!retained) return removed;
-    actions_.removeIf([](const auto& action) { return action.isNull(); });
-    // Children are appended after their parent. Reclaim empty dynamic branches
-    // from the leaves upward, preserving both core menus and shared branches.
-    const auto menus = menus_;
-    for (auto it = menus.crbegin(); it != menus.crend(); ++it) {
-        if (!retained || !manager_ || !bar_) return removed;
-        const auto menu = *it;
-        if (!menu || !menu->property("commandMenuContribution").toBool()) continue;
-        const auto items = menu->actions();
-        if (std::none_of(items.cbegin(), items.cend(), [](QAction* action) { return !action->isSeparator(); })) {
-            delete menu.data();
-            removed = true;
-        }
-    }
-    if (retained) menus_.removeIf([](const auto& menu) { return menu.isNull(); });
-    return removed;
-}
-void ApplicationCommandMenus::addContributions()
-{
-    if (!manager_ || !bar_) return;
-    const QPointer<ApplicationCommandMenus> retained(this);
-    const auto declared = declaredMenuCommands(surface_);
-    for (const auto& definition : manager_->commands().commands()) {
-        const auto exclusion = surface_ == CommandMenuSurface::FloatingApplication
-            ? floatingMenuExclusion(definition.id) : applicationMenuExclusion(definition.id);
-        if (declared.contains(definition.id) || !exclusion.isEmpty()) continue;
-        if (std::any_of(actions_.cbegin(), actions_.cend(), [&definition](const auto& action) {
-            return action && action->data().toString() == definition.id;
-        })) continue;
-        auto path = definition.menuPath;
-        if (path.isEmpty()) {
-            const auto category = definition.category.isEmpty() ? QStringLiteral("other") : definition.category;
-            const QStringList core{QStringLiteral("file"), QStringLiteral("view"), QStringLiteral("layout"),
-                QStringLiteral("window"), QStringLiteral("tools"), QStringLiteral("help")};
-            path = core.contains(category) ? QStringList{category, QStringLiteral("extensions")}
-                : QStringList{QStringLiteral("extensions"), category};
-        }
-        const QPointer<QMenu> menu(menuAtPath(path)); if (!menu) continue;
-        addItems(menu, {Item::action(definition.id, definition.menuOrder)}, manager_,
-            [this] { return manager_ ? manager_->context(window_) : CommandContext{}; }, actions_, nullptr, this, true);
-        if (!retained || !manager_ || !bar_) return;
-        // An enabled callback can unload its own command and synchronously
-        // reclaim this branch. It can also register unrelated contributions;
-        // the last action in the list is therefore not necessarily ours.
-        if (!menu || !manager_->commands().find(definition.id)) continue;
-        const auto found = std::find_if(actions_.cbegin(), actions_.cend(), [&definition](const auto& action) {
-            return action && action->data().toString() == definition.id;
-        });
-        if (found == actions_.cend()) continue;
-        const QPointer<QAction> action = *found;
-        action->setProperty("menuOrder", definition.menuOrder);
-        action->setProperty("menuSortTitle", definition.title);
-        insertOrdered(menu, action);
-    }
-}
-void ApplicationCommandMenus::refreshWindowList()
-{
-    if (!manager_ || !bar_) return;
-    auto* menu = menuAtPath({QStringLiteral("window")});
-    if (!menu) return;
-    const auto order = manager_->model().windowOrder();
-    const QSet<WindowId> present(order.cbegin(), order.cend());
-    for (auto iterator = windowActions_.begin(); iterator != windowActions_.end();) {
-        if (!present.contains(iterator.key()) || !iterator.value()) {
-            if (iterator.value()) delete iterator.value().data();
-            iterator = windowActions_.erase(iterator);
-        } else ++iterator;
-    }
-    if (!windowListSeparator_) {
-        windowListSeparator_ = menu->addSeparator();
-        windowListSeparator_->setObjectName(QStringLiteral("WindowListSeparator"));
-        windowListSeparator_->setProperty("menuOrder", 1000000);
-    }
-    QList<QAction*> desiredTail{windowListSeparator_};
-    const auto append = [this, menu, &desiredTail](WindowId id, const QString& prefix, bool floating) {
-        const auto* widget = manager_->windowWidget(id);
-        if (!widget) return;
-        auto retained = windowActions_.value(id);
-        if (!retained) {
-            auto* action = new QAction(menu);
-            action->setObjectName(QStringLiteral("WindowListItem"));
-            action->setProperty("windowSystemWindow", id);
-            action->setProperty("menuOrder", 1000000);
-            action->setCheckable(true);
-            connect(action, &QAction::triggered, this,
-                [manager = manager_, source = window_, target = id] {
-                    if (!manager || !manager->model().window(target)) return;
-                    QTimer::singleShot(0, manager, [manager, source, target] {
-                        if (manager) manager->execute(QStringLiteral("window.activate"),
-                            {{QStringLiteral("targetWindow"), target}}, source);
+    QPointer<QAction> retained;
+    if (item.kind == MenuItemDescription::Kind::Submenu) {
+        auto* child = new DismissOnlyMenu(item.action.title, owner);
+        child->setObjectName(item.id);
+        child->setStyleSheet(scrollableMenuStyle);
+        child->setProperty("commandMenuPath", item.path);
+        child->setProperty("commandMenuContribution", item.contribution);
+        connect(child, &QMenu::aboutToShow, this, [this] { refresh(); });
+        retained = child->menuAction();
+    } else {
+        retained = new QAction(owner);
+        retained->setSeparator(item.kind == MenuItemDescription::Kind::Separator);
+        if (!item.commandId.isEmpty()) {
+            if (item.kind == MenuItemDescription::Kind::Window) {
+                connect(retained, &QAction::triggered, this,
+                    [manager = manager_, source = window_, args = item.arguments, id = item.commandId] {
+                        if (!manager || !manager->model().window(args.value(QStringLiteral("targetWindow")).toUuid())) return;
+                        QTimer::singleShot(0, manager, [manager, source, args, id] {
+                            if (manager) manager->execute(id, args, source);
+                        });
                     });
-                });
-            retained = action; windowActions_.insert(id, action);
+            } else {
+                connect(retained, &QAction::triggered, this,
+                    [manager = manager_, source = window_, id = item.commandId, receiver = QPointer(this)] {
+                        if (!manager || !receiver) return;
+                        const auto context = manager->context(source);
+                        QTimer::singleShot(0, receiver, [manager, id, context] {
+                            if (manager) manager->executeInContext(id, context);
+                        });
+                    });
+            }
         }
-        retained->setText(prefix + widget->windowTitle());
-        retained->setToolTip(widget->windowTitle());
-        const auto theme = manager_->interfaceTheme();
-        const QVariantList iconTokens{floating, theme.text, theme.mutedText, theme.selectionText, theme.accent};
-        if (retained->property("windowListIconTokens").toList() != iconTokens) {
-            retained->setIcon(iconFor(floating ? QStringLiteral("detach") : QStringLiteral("window"), theme));
-            retained->setProperty("windowListIconTokens", iconTokens);
-        }
-        retained->setChecked(manager_->context().window == id);
-        retained->setProperty("windowSystemWindowDepth", floating ? 1 : 0);
-        desiredTail.append(retained);
-    };
-    QHash<FamilyId, QVector<WindowId>> children;
-    for (const auto id : order) {
-        const auto* record = manager_->model().window(id);
-        if (record && record->kind == WindowKind::Floating) children[record->familyId].append(id);
     }
-    int familyIndex = 0;
-    for (const auto id : order) {
-        const auto* record = manager_->model().window(id);
-        if (!record || record->kind != WindowKind::Workbench) continue;
-        const auto family = record->familyId;
-        ++familyIndex;
-        append(id, QStringLiteral("%1  ").arg(familyIndex), false);
-        int childIndex = 0;
-        for (const auto child : children.value(family))
-            append(child, QStringLiteral("    %1.%2  ").arg(familyIndex).arg(++childIndex), true);
-    }
-    QList<QAction*> currentTail;
-    const auto existing = menu->actions();
-    for (auto* action : existing)
-        if (action == windowListSeparator_ || action->objectName() == QStringLiteral("WindowListItem")) currentTail.append(action);
-    // Moving the same actions on every nested aboutToShow invalidates native
-    // parent-menu geometry. Only actual window/order changes touch the list.
-    if (currentTail != desiredTail || existing.mid(existing.size() - desiredTail.size()) != desiredTail) {
-        for (auto* action : currentTail) menu->removeAction(action);
-        for (auto* action : desiredTail) menu->addAction(action);
-    }
+    retained->setObjectName(item.kind == MenuItemDescription::Kind::Window ? QStringLiteral("WindowListItem") : item.id);
+    return retained;
 }
+
+bool ApplicationCommandMenus::updateAction(QAction* action, const MenuItemDescription& item, bool root)
+{
+    bool availabilityChanged = false;
+    action->setProperty("menuOrder", item.order);
+    action->setProperty("menuSortTitle", item.sortTitle);
+    action->setProperty("commandMenuContribution", item.contribution);
+    const QSignalBlocker blocker(action);
+    action->setText(item.action.title + (item.action.shortcut.isEmpty() ? QString() : "\t" + item.action.shortcut));
+    action->setToolTip(item.tooltip.isEmpty()
+        ? item.action.title + (item.action.shortcut.isEmpty() ? QString() : "  " + item.action.shortcut) : item.tooltip);
+    action->setEnabled(item.action.enabled);
+    action->setCheckable(item.action.checkable);
+    if (item.action.checked) action->setChecked(*item.action.checked);
+    if (root) {
+        const bool available = item.action.visible;
+        availabilityChanged = action->property("commandMenuAvailable").toBool() != available;
+        action->setProperty("commandMenuAvailable", available);
+        if (!available) action->setVisible(false);
+    } else action->setVisible(item.action.visible);
+    if (item.kind == MenuItemDescription::Kind::Window) {
+        action->setProperty("windowSystemWindow", item.arguments.value(QStringLiteral("targetWindow")));
+        action->setProperty("windowSystemWindowDepth", item.depth);
+        const auto theme = manager_->interfaceTheme();
+        const QVariantList tokens{item.iconName, theme.text, theme.mutedText, theme.selectionText, theme.accent};
+        if (action->property("windowListIconTokens").toList() != tokens) {
+            action->setIcon(iconFor(item.iconName, theme));
+            action->setProperty("windowListIconTokens", tokens);
+        }
+    } else if (!item.commandId.isEmpty()) {
+        action->setData(item.commandId);
+        action->setProperty("windowSystemCommand", item.commandId);
+    }
+    return availabilityChanged;
+}
+
+bool ApplicationCommandMenus::syncMenu(QWidget* owner, const QVector<MenuItemDescription>& items)
+{
+    const QPointer<ApplicationCommandMenus> self(this);
+    const QPointer<QWidget> retainedOwner(owner);
+    QHash<QString, QPointer<QAction>> existing;
+    for (auto* action : owner->actions()) {
+        const auto key = action->property("menuDescriptionKey").toString();
+        if (!key.isEmpty()) existing.insert(key, action);
+    }
+    QList<QAction*> desired;
+    bool changed = false;
+    const bool root = owner == bar_;
+    int separator = 0;
+    for (const auto& item : items) {
+        const auto key = item.kind == MenuItemDescription::Kind::Separator && item.id.isEmpty()
+            ? QStringLiteral("separator.%1").arg(++separator) : QString::number(int(item.kind)) + ':' + item.id;
+        auto retained = existing.take(key);
+        if (!retained) {
+            retained = createAction(owner, item);
+            retained->setProperty("menuDescriptionKey", key);
+            changed = true;
+        }
+        auto* action = retained.data();
+        changed |= updateAction(action, item, root);
+        if (auto* child = action->menu()) changed |= syncMenu(child, item.children);
+        if (!self || !retainedOwner || !retained) return changed;
+        desired.append(action);
+    }
+    for (const auto& action : existing) if (action) {
+        owner->removeAction(action);
+        if (auto* menu = action->menu()) delete menu;
+        else delete action.data();
+        if (!self || !retainedOwner) return true;
+        changed = true;
+    }
+    QList<QAction*> current;
+    for (auto* action : owner->actions()) if (!action->property("menuDescriptionKey").toString().isEmpty()) current.append(action);
+    // Reusing actions is insufficient: removing and adding unchanged items
+    // also invalidates native popup geometry while a submenu is opening.
+    if (current != desired) {
+        for (auto* action : current) owner->removeAction(action);
+        for (auto* action : desired) owner->addAction(action);
+        changed = true;
+    }
+    return changed;
+}
+
 void ApplicationCommandMenus::refresh()
 {
     if (!bar_) return;
     if (!manager_) {
-        for (const auto& action : actions_) if (action) refreshCommandAction(nullptr, action, {});
-        for (const auto& action : windowActions_) if (action) { action->setEnabled(false); action->setVisible(false); }
-        if (windowListSeparator_) windowListSeparator_->setVisible(false);
+        for (auto* action : bar_->findChildren<QAction*>()) { action->setEnabled(false); action->setVisible(false); }
         return;
     }
     const QPointer<ApplicationCommandMenus> retained(this);
-    const auto previousCount = actions_.size();
-    const bool removed = removeUnusedContributions();
+    const auto description = describeApplicationMenu(surface_, manager_, window_);
     if (!retained || !manager_ || !bar_) return;
-    addContributions(); if (!retained || !manager_ || !bar_) return;
-    const auto context = manager_->context(window_);
-    bool availabilityChanged = false;
-    const auto actions = actions_;
-    for (const auto& action : actions) {
-        if (action) refreshCommandAction(manager_, action, context);
-        if (!retained || !manager_ || !bar_) return;
-    }
-    refreshWindowList();
-    for (auto* rootAction : bar_->actions()) if (auto* menu = rootAction->menu()) {
-        tidy(menu); const auto rootActions = menu->actions();
-        const bool available = std::any_of(rootActions.cbegin(), rootActions.cend(),
-            [](QAction* action) { return !action->isSeparator() && action->isVisible(); });
-        availabilityChanged |= rootAction->property("commandMenuAvailable").toBool() != available;
-        rootAction->setProperty("commandMenuAvailable", available);
-        if (!available) rootAction->setVisible(false);
-    }
-    if ((removed || previousCount != actions_.size() || availabilityChanged) && structureChanged) structureChanged();
+    const bool changed = syncMenu(bar_, description);
+    if (!retained) return;
+    const auto callback = structureChanged;
+    if (changed && callback) callback();
 }
 
 } // namespace window_system

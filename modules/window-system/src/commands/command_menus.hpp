@@ -3,8 +3,6 @@
 
 #include <window_system/command_registry.hpp>
 #include "menu_definition.hpp"
-#include <QList>
-#include <QHash>
 #include <QPointer>
 #include <QObject>
 #include <functional>
@@ -12,9 +10,11 @@
 class QAction;
 class QMenu;
 class QMenuBar;
+class QWidget;
 
 namespace window_system {
 class WindowManager;
+struct MenuItemDescription;
 
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context);
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager,
@@ -34,14 +34,9 @@ private:
     QPointer<WindowManager> manager_;
     WindowId window_;
     CommandMenuSurface surface_;
-    QList<QPointer<QAction>> actions_;
-    QList<QPointer<QMenu>> menus_;
-    QPointer<QAction> windowListSeparator_;
-    QHash<WindowId, QPointer<QAction>> windowActions_;
-    QMenu* menuAtPath(const QStringList& path);
-    bool removeUnusedContributions();
-    void addContributions();
-    void refreshWindowList();
+    QAction* createAction(QWidget* owner, const MenuItemDescription& item);
+    bool updateAction(QAction* action, const MenuItemDescription& item, bool root);
+    bool syncMenu(QWidget* owner, const QVector<MenuItemDescription>& items);
 };
 
 } // namespace window_system

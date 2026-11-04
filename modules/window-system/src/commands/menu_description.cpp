@@ -3,6 +3,7 @@
 #include <window_system/window_manager.hpp>
 #include <QPointer>
 #include <QCoreApplication>
+#include <QRegularExpression>
 #include "localization/display_names.hpp"
 #include "style/tab_appearance_p.hpp"
 #include <algorithm>
@@ -203,6 +204,113 @@ void appendTabColors(Nodes& nodes, WindowManager* manager, const CommandContext&
     }
 }
 
+bool orderedBefore(const Node& left, const Node& right)
+{
+    if (left.order != right.order) return left.order < right.order;
+    const int titleOrder = QString::localeAwareCompare(left.sortTitle, right.sortTitle);
+    return titleOrder ? titleOrder < 0 : left.id < right.id;
+}
+Node& insertOrdered(Nodes& nodes, Node node)
+{
+    const auto before = std::find_if(nodes.cbegin(), nodes.cend(), [&node](const auto& existing) {
+        return orderedBefore(node, existing);
+    });
+    return *nodes.insert(before, std::move(node));
+}
+Nodes& applicationPath(Nodes& roots, const QStringList& path)
+{
+    auto* destination = &roots;
+    QStringList partial;
+    for (const auto& title : path) {
+        partial.append(title);
+        auto found = std::find_if(destination->begin(), destination->end(), [&partial](const auto& node) {
+            return node.kind == Node::Kind::Submenu && node.path == partial;
+        });
+        if (found != destination->end()) destination = &found->children;
+        else {
+            Node menu;
+            menu.kind = Node::Kind::Submenu;
+            menu.id = QStringLiteral("extension.") + partial.join('.');
+            menu.action.title = commandCategoryDisplayName(title);
+            menu.sortTitle = QString(title).remove(QRegularExpression(QStringLiteral("\\(&[A-Za-z]\\)")));
+            menu.path = partial;
+            menu.order = 500;
+            menu.contribution = true;
+            destination = &insertOrdered(*destination, std::move(menu)).children;
+        }
+    }
+    return *destination;
+}
+void appendApplicationContributions(Nodes& nodes, CommandMenuSurface surface,
+                                    WindowManager* manager, const CommandContext& context)
+{
+    const QPointer<WindowManager> owner(manager);
+    const auto declared = declaredMenuCommands(surface);
+    const auto commands = manager->commands().commands();
+    for (const auto& definition : commands) {
+        const auto exclusion = surface == CommandMenuSurface::FloatingApplication
+            ? floatingMenuExclusion(definition.id) : applicationMenuExclusion(definition.id);
+        if (declared.contains(definition.id) || !exclusion.isEmpty()) continue;
+        auto resolved = describeItems({CommandMenuItem::action(definition.id)}, manager, context);
+        if (!owner) return;
+        if (!manager->commands().find(definition.id)) continue;
+        auto path = definition.menuPath;
+        if (path.isEmpty()) {
+            const auto category = definition.category.isEmpty() ? QStringLiteral("other") : definition.category;
+            const QStringList core{QStringLiteral("file"), QStringLiteral("view"), QStringLiteral("layout"),
+                QStringLiteral("window"), QStringLiteral("tools"), QStringLiteral("help")};
+            path = core.contains(category) ? QStringList{category, QStringLiteral("extensions")}
+                : QStringList{QStringLiteral("extensions"), category};
+        }
+        auto& node = resolved.first();
+        node.order = definition.menuOrder;
+        node.sortTitle = definition.title;
+        node.contribution = true;
+        insertOrdered(applicationPath(nodes, path), std::move(node));
+    }
+}
+void appendWindowList(Nodes& nodes, WindowManager* manager)
+{
+    auto& menu = applicationPath(nodes, {QStringLiteral("window")});
+    Node separator;
+    separator.kind = Node::Kind::Separator;
+    separator.id = QStringLiteral("WindowListSeparator");
+    separator.order = 1000000;
+    menu.append(std::move(separator));
+    const auto order = manager->model().windowOrder();
+    const auto active = manager->context().window;
+    const auto append = [manager, active, &menu](WindowId id, const QString& prefix, bool floating) {
+        Node node;
+        node.kind = Node::Kind::Window;
+        node.id = id.toString(QUuid::WithoutBraces);
+        node.commandId = QStringLiteral("window.activate");
+        node.arguments.insert(QStringLiteral("targetWindow"), id);
+        node.tooltip = manager->windowCaption(id);
+        node.action.title = prefix + node.tooltip;
+        node.action.checkable = true;
+        node.action.checked = active == id;
+        node.iconName = floating ? QStringLiteral("detach") : QStringLiteral("window");
+        node.depth = floating ? 1 : 0;
+        node.order = 1000000;
+        menu.append(std::move(node));
+    };
+    QHash<FamilyId, QVector<WindowId>> children;
+    for (const auto id : order) {
+        const auto* record = manager->model().window(id);
+        if (record && record->kind == WindowKind::Floating) children[record->familyId].append(id);
+    }
+    int familyIndex = 0;
+    for (const auto id : order) {
+        const auto* record = manager->model().window(id);
+        if (!record || record->kind != WindowKind::Workbench) continue;
+        ++familyIndex;
+        append(id, QStringLiteral("%1  ").arg(familyIndex), false);
+        int childIndex = 0;
+        for (const auto child : children.value(record->familyId))
+            append(child, QStringLiteral("    %1.%2  ").arg(familyIndex).arg(++childIndex), true);
+    }
+}
+
 } // namespace
 
 QVector<MenuItemDescription> describeContextMenu(
@@ -216,6 +324,22 @@ QVector<MenuItemDescription> describeContextMenu(
     if (!owner) return {};
     if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group)
         appendTabColors(result, manager, context);
+    tidy(result);
+    return result;
+}
+
+QVector<MenuItemDescription> describeApplicationMenu(
+    CommandMenuSurface surface, WindowManager* manager, WindowId window)
+{
+    if (!manager) return {};
+    Q_ASSERT(surface == CommandMenuSurface::Application || surface == CommandMenuSurface::FloatingApplication);
+    const QPointer<WindowManager> owner(manager);
+    const auto context = manager->context(window);
+    auto result = describeItems(commandMenuDefinition(surface), manager, context);
+    if (!owner) return {};
+    appendApplicationContributions(result, surface, manager, context);
+    if (!owner) return {};
+    appendWindowList(result, manager);
     tidy(result);
     return result;
 }
