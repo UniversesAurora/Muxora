@@ -129,7 +129,7 @@ target_include_directories(WindowSystemWidgets PUBLIC
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSystemWidgets PUBLIC WindowSystem::Model Qt6::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 
-find_package(Qt6 6.10 REQUIRED COMPONENTS Quick QuickShapes ShaderTools)
+find_package(Qt6 6.10 REQUIRED GLOBAL COMPONENTS Quick QuickControls2 QuickShapes ShaderTools)
 # The Quick presentation; it replaces the Widgets views by 10.6.
 add_library(WindowSystemQuick STATIC
     src/quick/path_geometry.cpp src/quick/path_item.cpp src/quick/window_motion.cpp
@@ -141,15 +141,23 @@ add_library(WindowSystemQuick STATIC
     src/quick/masked_item.cpp src/quick/qml_scene_component.cpp
     src/quick/path_stroke_item.cpp src/quick/split_tree_item.cpp src/quick/content_host.cpp src/quick/content_bars.cpp
     src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
+    src/quick/popup_menu.cpp src/quick/popup_menu.hpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
     include/window_system/quick_workspace.hpp)
 add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
 set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
 target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
-target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src)
+target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src src/quick)
+foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator)
+    set_source_files_properties(src/quick/${menu_file}.qml PROPERTIES QT_RESOURCE_ALIAS ${menu_file}.qml)
+endforeach()
+qt_add_qml_module(WindowSystemQuick URI WindowSystem.Internal VERSION 1.0 NO_PLUGIN
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WindowSystem/Internal"
+    RESOURCE_PREFIX /qt/qml
+    QML_FILES src/quick/PopupMenuNode.qml src/quick/PopupMenuRow.qml src/quick/PopupMenuSeparator.qml)
 # WindowManager still lives in the Widgets library; 10.6 moves it out.
-target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
+target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE Qt6::QuickControls2 WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)
 target_sources(WindowSystemQuick PRIVATE ${window_system_masks})
 qt_add_shaders(WindowSystemQuick window_system_mask_shaders

@@ -135,3 +135,11 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 **出处**：2026-11-03，`TabBarItem::dispatch`。
 
 **复发**：同一天，`RailButtonItem::mouseMoveEvent` 发出的拖动把标签拆出侧栏，工作区同步重建侧栏，删掉了这个按钮；整套运行时间歇崩溃在 `QQuickItem::isEnabled`。凡是在鼠标处理里可能触发同步重建（例如拖出时立即建窗口）的项，都要按上面的做法检查。
+
+### 独立菜单窗口需要显式尺寸上限和初始边界导航
+
+- **现象**：Qt Quick Controls 菜单刚打开时，挂在 ListView 上的 Home／End 处理未收到按键；使用 `Popup.Window` 的长菜单即使翻转位置，仍超出屏幕。
+- **原因**：Qt 6.12 的 `QQuickMenu` 初始焦点在弹出项，尚无当前行，按键不会向下投递到 ListView；`QQuickPopupPositioner` 的独立窗口分支只移动或翻转，尺寸超过可用区域时不缩短窗口。源码为 `qquickmenu.cpp` 和 `qquickpopuppositioner.cpp`。
+- **做法**：沿用 Menu 的普通导航，只在实际弹出窗口补原功能需要的 Home／End，跳过不可选行；显式限制宽高为当前屏幕可用范围，让内容 ListView 滚动。不要把事件过滤器装到宿主窗口或复制菜单整套输入逻辑。
+- **验证**：初版 Home、End 与长菜单三项失败；修复后保留原断言通过，见 [菜单记录](../verification-log/2026-11.md#现有弹出菜单接入-quick-controls2026-11-05)。这些是键盘可达性和屏幕范围检查，不是静态外观验收。
+- **出处**：2026-11-05，10.4b，`QuickPopupMenuTest`。

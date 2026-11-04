@@ -5,9 +5,9 @@ class QQmlComponent;
 
 namespace window_system::quick {
 
-enum class SceneComponent { Mask, PathStroke };
+enum class SceneComponent { Mask, PathStroke, Menu, MenuRow, MenuSeparator };
 
-// Both retained components share one GUI-thread engine. Components and the
+// Retained components and menus share one GUI-thread engine. Components and the
 // engine are owned by the application; created items belong to their callers.
 [[nodiscard]] QQmlComponent& sceneComponent(SceneComponent kind);
 

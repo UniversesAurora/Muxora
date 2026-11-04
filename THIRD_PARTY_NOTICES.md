@@ -6,11 +6,10 @@ The deployment includes the Microsoft Visual C++ runtime, Mesa's software OpenGL
 renderer and Microsoft's HLSL compiler. Lua is compiled into the application.
 Each component keeps its own license.
 
-The opt-in, in-progress `WindowSystemQuick` rendering target also links Qt Quick
-and its Qt Qml and Qt Quick Shapes dependencies under LGPLv3. It uses public
+The `WindowSystemQuick` rendering target used by the preview also links Qt Quick,
+Qt Qml, Qt Quick Shapes and Qt Quick Controls under LGPLv3. It uses public
 C++ and QML interfaces; Qt ShaderTools' `qsb` prepares its GPU masks at build
-time. It does not link Qt Canvas Painter. This target is not yet linked into
-or deployed with the default preview. See the [Qt Quick licensing documentation](https://doc.qt.io/qt-6/qtquick-index.html),
+time. It does not link Qt Canvas Painter. See the [Qt Quick licensing documentation](https://doc.qt.io/qt-6/qtquick-index.html),
 the [matching qtdeclarative source](https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtdeclarative-everywhere-src-6.12.0.zip)
 and its [license collection](https://code.qt.io/cgit/qt/qtdeclarative.git/tree/LICENSES?h=v6.12.0).
 Actual deployment of that target must retain these runtime notices and licenses.
