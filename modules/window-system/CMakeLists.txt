@@ -76,6 +76,7 @@ add_library(WindowSystemWidgets STATIC
     src/floating_panel.cpp
     src/commands/command_registry.cpp
     src/commands/command_menus.cpp
+    src/commands/menu_definition.cpp
     src/commands/popup_menu.cpp
     src/commands/tab_group_commands.cpp
     src/commands/tab_folder_commands.cpp

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <window_system/command_registry.hpp>
+#include "menu_definition.hpp"
 #include <QList>
 #include <QHash>
 #include <QPointer>
@@ -15,12 +16,6 @@ class QMenuBar;
 namespace window_system {
 class WindowManager;
 
-enum class CommandMenuSurface { Application, FloatingApplication, Tab, Pane, Window, Group, TabFolder };
-
-// Built-in menu taxonomy, also used to audit complete command coverage.
-[[nodiscard]] QStringList declaredMenuCommands(CommandMenuSurface surface);
-[[nodiscard]] QString applicationMenuExclusion(const QString& commandId);
-[[nodiscard]] QString floatingMenuExclusion(const QString& commandId);
 void refreshCommandAction(WindowManager* manager, QAction* action, const CommandContext& context);
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager,
                          const CommandContext& captured);
