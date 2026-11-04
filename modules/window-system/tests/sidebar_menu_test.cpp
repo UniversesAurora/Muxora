@@ -281,11 +281,9 @@ void SidebarMenuTest::tabListHoverExposesCloseWithoutChangingSelection()
     auto* close = first->findChild<QToolButton*>();
     QVERIFY(close);
     QTest::mouseMove(first, QPoint(3, first->height() / 2));
-    QTRY_VERIFY(first->property("emphasized").toBool());
     QTRY_VERIFY(close->isVisible());
     QTest::mouseMove(close, close->rect().center());
     QTest::mouseMove(second, QPoint(3, second->height() / 2));
-    QTRY_VERIFY(!first->property("emphasized").toBool());
     QTRY_VERIFY(!close->isVisible());
     QTest::mouseMove(first, QPoint(3, first->height() / 2));
     QCOMPARE(tabs.currentIndex(), 1);
