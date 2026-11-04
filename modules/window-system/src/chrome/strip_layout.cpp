@@ -18,6 +18,10 @@ QVector<int> stripRowWidths(std::span<const StripWidthInput> strips, int availab
         if (strip.elastic) elastic = index;
         if (strip.naturalWidthPriority) priority = index;
     }
+    if (total <= available) {
+        if (elastic >= 0) sizes[elastic] += int(qint64(available) - total);
+        return sizes;
+    }
     QVector<int> compressionOrder;
     const auto appendRange = [&compressionOrder](int begin, int end, int step) {
         for (int index = begin; index != end; index += step) compressionOrder.append(index);
