@@ -52,7 +52,8 @@ target_include_directories(WindowSystemSurfaces PRIVATE src include)
 target_link_libraries(WindowSystemSurfaces PUBLIC Qt6::Gui PRIVATE WindowSystem::Model WindowSystemPresentation)
 
 add_library(WindowSystemPlatform STATIC
-    src/input_method_scopes.cpp src/platform/input_method_state.cpp src/platform/window_order.cpp)
+    src/input_method_scopes.cpp src/platform/input_method_state.cpp src/platform/window_order.cpp
+    src/platform/popup_frame.cpp)
 set_target_properties(WindowSystemPlatform PROPERTIES EXPORT_NAME Platform)
 target_compile_features(WindowSystemPlatform PUBLIC cxx_std_20)
 target_include_directories(WindowSystemPlatform PRIVATE src include)

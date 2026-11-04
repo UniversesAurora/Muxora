@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "popup_menu.hpp"
+#include "platform/popup_frame.hpp"
 #include "style/ui_metrics.hpp"
 
 #include <QApplication>
@@ -8,11 +9,6 @@
 #include <QShowEvent>
 #include <QVariant>
 #include <QWindow>
-
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#include <dwmapi.h>
-#endif
 
 #include <algorithm>
 
@@ -58,38 +54,10 @@ void preparePopupFrame(QWidget* popup)
 {
     if (!popup || !popup->isWindow()) return;
     popup->clearMask();
-#ifdef Q_OS_WIN
-    // A square stylesheet changes client painting, but Win11 can still round
-    // the native popup HWND. Apply the policy before first exposure and when
-    // Qt replaces a handle. Earlier Windows keeps its ordinary square popup.
-    // Never create the handle here: winId() on a popup whose parent is an
-    // ordinary child widget (a menu bar's menu, a combo box's list) forces
-    // native windows on that parent's children and, from there, up and across
-    // the whole window, which then breaks painting, hover and the native hit
-    // test. Callers apply this again on Show, which Qt sends after it creates
-    // the handle and before the native window appears.
-    if (!popup->internalWinId()) return;
-    const auto handle = reinterpret_cast<HWND>(popup->internalWinId());
-    // QSS supplies the single client border. A native edge or Win11's DWM
-    // outline would otherwise add a second rim (often white under a different
-    // system palette). Keep the compositor's shadow while removing only rims.
-    const auto style = GetWindowLongPtrW(handle, GWL_STYLE);
-    const auto squareStyle = style & ~(WS_BORDER | WS_DLGFRAME | WS_THICKFRAME);
-    const auto extended = GetWindowLongPtrW(handle, GWL_EXSTYLE);
-    const auto squareExtended = extended & ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
-    if (style != squareStyle || extended != squareExtended) {
-        SetWindowLongPtrW(handle, GWL_STYLE, squareStyle);
-        SetWindowLongPtrW(handle, GWL_EXSTYLE, squareExtended);
-        SetWindowPos(handle, nullptr, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    }
-    constexpr DWORD cornerPreferenceAttribute = 33;
-    const DWORD squareCorners = 1; // DWMWCP_DONOTROUND
-    DwmSetWindowAttribute(handle, cornerPreferenceAttribute, &squareCorners, sizeof(squareCorners));
-    constexpr DWORD borderColorAttribute = 34;
-    const COLORREF noBorder = 0xfffffffe; // DWMWA_COLOR_NONE
-    DwmSetWindowAttribute(handle, borderColorAttribute, &noBorder, sizeof(noBorder));
-#endif
+    // Do not create an HWND here: promoting a child menu's ancestors to native
+    // widgets breaks hover and frame hit testing. Show reapplies the policy
+    // after Qt has created the real popup window.
+    if (popup->internalWinId()) preparePopupFrame(popup->windowHandle());
 }
 
 void DismissOnlyMenu::configureNativePopup()
