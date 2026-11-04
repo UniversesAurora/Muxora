@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "translation_checks.hpp"
+#include "native_input.hpp"
 #include <window_system/window_manager.hpp>
 #include "docking/tab_strip.hpp"
 
@@ -275,17 +276,27 @@ void SidebarMenuTest::tabListHoverExposesCloseWithoutChangingSelection()
     auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
     QVERIFY(menu);
     const auto rows = menu->findChildren<QWidget*>(QStringLiteral("TabListRow"));
+    QVERIFY(QTest::qWaitForWindowExposed(menu));
     QCOMPARE(rows.size(), 2);
     auto* first = rows.first();
     auto* second = rows.last();
     auto* close = first->findChild<QToolButton*>();
     QVERIFY(close);
-    QTest::mouseMove(first, QPoint(3, first->height() / 2));
+    // Native popup enter/leave delivery is asynchronous. Wait for each target
+    // before moving again, including across consecutive theme rows.
+    const auto moveTo = [](QWidget* widget, QPoint point) {
+        native_input::mouse(widget, point);
+        QCoreApplication::processEvents();
+        QTRY_VERIFY(widget->underMouse());
+    };
+    native_input::mouse(list, list->rect().center());
+    QCoreApplication::processEvents();
+    moveTo(first, QPoint(3, first->height() / 2));
     QTRY_VERIFY(close->isVisible());
-    QTest::mouseMove(close, close->rect().center());
-    QTest::mouseMove(second, QPoint(3, second->height() / 2));
+    moveTo(close, close->rect().center());
+    moveTo(second, QPoint(3, second->height() / 2));
     QTRY_VERIFY(!close->isVisible());
-    QTest::mouseMove(first, QPoint(3, first->height() / 2));
+    moveTo(first, QPoint(3, first->height() / 2));
     QCOMPARE(tabs.currentIndex(), 1);
     QTest::keyClick(menu, Qt::Key_Escape);
     QTRY_VERIFY(!QApplication::activePopupWidget());

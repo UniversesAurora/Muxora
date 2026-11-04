@@ -91,6 +91,13 @@
 
 ## 菜单
 
+### 原生鼠标移动后要等目标收到事件
+
+- **现象**：标签列表连续检查两种主题时，关闭按钮偶尔未显示或离开后未隐藏；菜单行坐标和 `widgetAt` 已命中，`underMouse()` 仍暂为 false。
+- **原因**：Qt 6.12 的 QWidget 版 `QTest::mouseMove` 调用 `QCursor::setPos` 后只处理当前队列，系统产生的 Enter/Leave 可能尚未到达。紧接着再次移动会错过被检查的状态。
+- **做法**：确实检查原生悬停路由时，用现有 `native_input` 入口移动，等待目标的 `underMouse()` 再继续。先从弹窗外开始，避免上一数据行留下相同位置；弹出捕获期间不要要求弹窗外的控件收到 Enter。
+- **出处**：2026-11-04，`SidebarMenuTest::tabListHoverExposesCloseWithoutChangingSelection`，失败尝试与最终结果见 [记录](../verification-log/2026-11.md#菜单行悬停检查等待原生输入到达2026-11-04)。
+
 ### 用 `setActiveAction()` 驱动菜单悬停，不用合成的鼠标移动
 
 - **现象**：用 `QTest::mouseMove` 或一串 `QMouseEvent` 悬停菜单项来打开子菜单，大约十次里有一次打不开，失败时菜单的 `activeAction()` 为空。
