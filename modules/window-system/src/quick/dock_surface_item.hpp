@@ -2,6 +2,8 @@
 #pragma once
 
 #include <window_system/layout_model.hpp>
+#include <window_system/command_registry.hpp>
+#include "commands/menu_definition.hpp"
 #include "docking/drop_target.hpp"
 #include "docking/tab_strip_controller.hpp"
 
@@ -13,6 +15,7 @@
 
 namespace window_system {
 class WindowManager;
+struct MenuItemDescription;
 }
 
 namespace window_system::quick {
@@ -27,6 +30,8 @@ class RailItem;
 class SplitTreeItem;
 class TabContentItem;
 class TabDrag;
+class TabBarItem;
+class PopupMenu;
 
 // One window's docking area in Quick, built from the model on every
 // layoutChanged: the central tree of tab groups, the pinned regions around
@@ -129,6 +134,8 @@ private:
     void placePeek();
     [[nodiscard]] LayoutTree composedTree(QSize area);
     void resizePinned(Edge edge, double ratio);
+    void showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab, QPoint global, TabBarItem* strip = nullptr);
+    void showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
 
     WindowManager& manager_;
     ContentHost& host_;
@@ -138,6 +145,7 @@ private:
     QQuickItem* foreground_;
     DockGuideItem* guides_;
     TabDrag* drag_ = nullptr;
+    QPointer<PopupMenu> menu_;
     GroupId insertionGroup_;
     GroupId incomingGroup_;
     GroupId previewGroup_;

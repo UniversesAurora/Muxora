@@ -2,7 +2,15 @@
 // Phase 10.4b: popup input and lifetime. Dimensions: disabled/hidden/separator
 // rows, keyboard cascades, outside capture, screen edge, owner destruction.
 #include "quick/popup_menu.hpp"
+#include "quick/dock_surface_item.hpp"
+#include "quick/group_item.hpp"
+#include "quick/rail_item.hpp"
+#include "quick/rail_button_item.hpp"
+#include "quick/tab_bar_item.hpp"
 #include "native_input.hpp"
+#include <window_system/quick_workspace.hpp>
+#include <window_system/window_manager.hpp>
+#include <QContextMenuEvent>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QSignalSpy>
@@ -25,6 +33,12 @@ QQuickWindow* popup(QQuickWindow* parent)
     for (auto* window : QGuiApplication::topLevelWindows())
         if (window->type() == Qt::Popup && window->isVisible() && window->transientParent() == parent)
             return qobject_cast<QQuickWindow*>(window);
+    return nullptr;
+}
+QQuickItem* namedItem(QQuickItem* parent, const QString& name)
+{
+    if (parent->objectName() == name) return parent;
+    for (auto* child : parent->childItems()) if (auto* found = namedItem(child, name)) return found;
     return nullptr;
 }
 class InputItem final : public QQuickItem {
@@ -160,6 +174,77 @@ private slots:
         QTRY_VERIFY(available.contains(view->geometry()));
         QTest::keyClick(view, Qt::Key_End); QTest::keyClick(view, Qt::Key_Return);
         QTRY_COMPARE(command, QString("99"));
+    }
+
+    void workspaceMenusKeepSelectionAndCloseTheCapturedTab_data()
+    {
+        QTest::addColumn<bool>("sidebar");
+        QTest::newRow("tab-strip") << false;
+        QTest::newRow("sidebar") << true;
+    }
+    void workspaceMenusKeepSelectionAndCloseTheCapturedTab()
+    {
+        QFETCH(bool, sidebar);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window, {QStringLiteral("First")});
+        const auto target = manager.addTab(window, {QStringLiteral("Target")});
+        if (sidebar) QVERIFY(manager.moveTabToEdgeBar(target, window, Edge::Left));
+        QVERIFY(manager.activateTab(first));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        if (sidebar) {
+            QTRY_VERIFY(dock->rail(Edge::Left));
+            auto* button = dock->rail(Edge::Left)->buttons().first();
+            QTest::mouseClick(view, Qt::RightButton, Qt::NoModifier,
+                button->mapToScene(button->boundingRect().center()).toPoint());
+        } else {
+            auto* group = dock->group(manager.model().groupForTab(target)); QVERIFY(group);
+            auto* bar = group->tabBar();
+            const auto point = bar->controller().tabRect(bar->controller().indexOf(target)).center();
+            QContextMenuEvent event(QContextMenuEvent::Mouse, point, bar->mapToGlobal(point).toPoint());
+            QCoreApplication::sendEvent(bar, &event);
+        }
+        QTRY_VERIFY(popup(view));
+        QCOMPARE(manager.context().tab, first);
+        auto* menu = popup(view);
+        QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* close = namedItem(menu->contentItem(), QStringLiteral("workspace.closeTab")); QVERIFY(close);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier,
+            close->mapToScene(close->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!manager.model().tab(target));
+        QCOMPARE(manager.context().tab, first);
+        QVERIFY(manager.model().tab(first));
+        QTRY_VERIFY(!popup(view));
+    }
+
+    void aCommandQueryCanReleaseTheWorkspace()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        auto workspace = std::make_unique<QuickWorkspace>(manager);
+        workspace->setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Target")});
+        QTRY_VERIFY(workspace->window(window));
+        auto* view = workspace->window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        auto* bar = dock->group(manager.model().groupForTab(tab))->tabBar();
+        Command command;
+        command.id = "test.release"; command.title = "Release";
+        command.contextMenus = {{ContextMenuTarget::Tab}};
+        command.enabled = [&](const CommandContext&) { workspace.reset(); return true; };
+        command.execute = [](const CommandContext&) { return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        const auto point = bar->controller().tabRect(0).center();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point, bar->mapToGlobal(point).toPoint());
+        QCoreApplication::sendEvent(bar, &event);
+        QVERIFY(!workspace);
+        QVERIFY(manager.model().tab(tab));
     }
 };
 

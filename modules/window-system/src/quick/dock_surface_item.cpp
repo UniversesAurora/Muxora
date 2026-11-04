@@ -5,6 +5,7 @@
 #include "button_item.hpp"
 #include "group_item.hpp"
 #include "peek_item.hpp"
+#include "popup_menu.hpp"
 #include "rail_button_item.hpp"
 #include "rail_item.hpp"
 #include "split_tree_item.hpp"
@@ -105,7 +106,9 @@ void DockSurfaceItem::syncRails()
                     button->clicked = [this, tab, group = groups.value(tab)] {
                         if (peekTab_ == tab) closePeek(); else showPeek(group, tab);
                     };
-                    // Context menus arrive with the Quick menus (10.4).
+                    button->menu = [this, tab, group = groups.value(tab)](QPoint global) {
+                        showContextMenu(CommandMenuSurface::Tab, group, tab, global);
+                    };
                     button->close = [this, tab] { manager_.closeTab(tab); };
                     button->drag = [this, edge, tab](DragStart start) { if (drag_) drag_->beginRailTab(window_, edge, tab, start); };
                     rail->addButton(button);
@@ -321,6 +324,67 @@ void DockSurfaceItem::releaseGroup(GroupId id)
     locations_.remove(id);
 }
 
+void DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context,
+                               QPoint global, TabBarItem* strip)
+{
+    // Finish the previous hold before opening another menu on the same strip.
+    // Its later closed notification must not collapse the new menu's strip.
+    delete menu_.data();
+    auto* menu = new PopupMenu(manager_.interfaceTheme(), this);
+    menu_ = menu;
+    const QPointer<WindowManager> owner(&manager_);
+    const QPointer<TabBarItem> bar(strip);
+    if (bar) bar->setPopupOpen(true);
+    connect(menu, &PopupMenu::closed, menu, &QObject::deleteLater);
+    connect(menu, &QObject::destroyed, this, [bar] { if (bar) bar->setPopupOpen(false); });
+    connect(menu, &PopupMenu::triggered, menu, [owner, context](const MenuItemDescription& item) {
+        if (!owner) return;
+        if (item.kind == MenuItemDescription::Kind::TabCreation) {
+            owner->requestNewTab(context.window, context.group, item.commandId);
+            return;
+        }
+        auto captured = context;
+        for (auto it = item.arguments.cbegin(); it != item.arguments.cend(); ++it) captured.args.insert(it.key(), it.value());
+        owner->executeInContext(item.commandId, captured);
+    });
+    if (!menu->open(this, global, items)) delete menu;
+}
+
+void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab,
+                                      QPoint global, TabBarItem* strip)
+{
+    const auto* record = manager_.model().group(group);
+    if (!record || record->windowId != window_ || (!tab.isNull() && !record->tabs.contains(tab))) {
+        if (strip) strip->setPopupOpen(false);
+        return;
+    }
+    auto captured = manager_.context(window_);
+    captured.group = group; captured.tab = tab.isNull() ? record->activeTab : tab;
+    const auto* target = manager_.model().tab(captured.tab);
+    captured.pane = target ? target->activePane : PaneId{};
+    const QPointer<DockSurfaceItem> self(this);
+    const QPointer<TabBarItem> bar(strip);
+    const QPointer<WindowManager> owner(&manager_);
+    QVector<MenuItemDescription> items;
+    if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group) {
+        items = describeTabPresentationMenu(owner, captured);
+        if (!self || !owner) return;
+    }
+    auto commands = describeContextMenu(surface, owner, captured);
+    if (!self || !owner) return;
+    const auto* current = owner->model().group(group);
+    if (!current || (!captured.tab.isNull() && !current->tabs.contains(captured.tab))) {
+        if (bar) bar->setPopupOpen(false);
+        return;
+    }
+    if (!items.isEmpty() && !commands.isEmpty()) {
+        MenuItemDescription separator; separator.kind = MenuItemDescription::Kind::Separator;
+        items.append(std::move(separator));
+    }
+    items += commands;
+    showMenu(items, captured, global, bar);
+}
+
 GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)
 {
     if (locations_.value(id, record.location) != record.location) releaseGroup(id);
@@ -361,6 +425,25 @@ GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)
         }
     };
     view->newTabRequested = [this, id] { manager_.requestNewTab(window_, id); };
+    view->stripMenuRequested = [this, view, id, tabAt](int tab, int folder, QPoint global) {
+        if (folder >= 0) {
+            const auto& folders = view->tabBar()->controller().folders();
+            const auto tabs = manager_.model().folderTabs(folders.at(folder).id);
+            if (tabs.isEmpty()) { view->tabBar()->setPopupOpen(false); return; }
+            const auto* group = manager_.model().group(id);
+            const auto target = group && tabs.contains(group->activeTab) ? group->activeTab : tabs.value(0);
+            showContextMenu(CommandMenuSurface::TabFolder, id, target, global, view->tabBar());
+        } else showContextMenu(tab >= 0 ? CommandMenuSurface::Tab : CommandMenuSurface::Group,
+            id, tab >= 0 ? tabAt(tab) : TabId{}, global, view->tabBar());
+    };
+    view->groupMenuRequested = [this, id](QPoint global) { showContextMenu(CommandMenuSurface::Group, id, {}, global); };
+    view->newTabMenuRequested = [this, view, id](QRect trigger) {
+        const QPointer<DockSurfaceItem> self(this);
+        const QPointer<TabBarItem> bar(view->tabBar());
+        auto captured = manager_.context(window_); captured.group = id;
+        const auto items = describeTabCreationMenu(&manager_, window_, id);
+        if (self) showMenu(items, captured, trigger.bottomLeft() + QPoint(0, 1), bar);
+    };
     view->verticalStateChanged = [this, id](int width, bool iconsOnly) {
         if (manager_.model().group(id)) manager_.setGroupTabStrip(id, width, iconsOnly);
     };
