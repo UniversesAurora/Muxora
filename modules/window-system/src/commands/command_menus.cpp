@@ -3,7 +3,6 @@
 #include "command_menus.hpp"
 #include "menu_description.hpp"
 #include "popup_menu.hpp"
-#include "style/tab_appearance_p.hpp"
 #include "localization/display_names.hpp"
 #include <window_system/window_manager.hpp>
 
@@ -21,6 +20,7 @@ namespace {
 
 using Item = CommandMenuItem;
 using Items = QVector<Item>;
+const auto scrollableMenuStyle = QStringLiteral("QMenu { menu-scrollable: 1; }");
 QString plainTitle(QString title) { return title.remove(QRegularExpression(QStringLiteral("\\(&[A-Za-z]\\)"))); }
 
 void tidy(QMenu* menu)
@@ -69,7 +69,7 @@ QMenu* makeMenu(QWidget* owner, const Item& item, const QStringList& path)
         : QCoreApplication::translate("WindowSystem", item.title.toUtf8().constData());
     auto* menu = new DismissOnlyMenu(title, owner);
     menu->setObjectName(item.id); menu->setProperty("commandMenuPath", path);
-    menu->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
+    menu->setStyleSheet(scrollableMenuStyle);
     menu->menuAction()->setObjectName(item.id); menu->menuAction()->setProperty("menuOrder", item.order);
     menu->menuAction()->setProperty("menuSortTitle", plainTitle(item.title));
     return menu;
@@ -135,72 +135,78 @@ void refreshCommandAction(WindowManager* manager, QAction* action, const Command
     action->setEnabled(description->enabled);
 }
 
+namespace {
+
+void appendContextItems(QMenu* menu, const QVector<MenuItemDescription>& items, WindowManager* manager,
+                        const CommandContext& context, QList<QPointer<QAction>>& commands)
+{
+    for (const auto& item : items) {
+        QAction* action = nullptr;
+        if (item.kind == MenuItemDescription::Kind::Separator) action = menu->addSeparator();
+        else if (item.kind == MenuItemDescription::Kind::Submenu) {
+            auto* child = new DismissOnlyMenu(item.menuTitle.isEmpty() ? item.action.title : item.menuTitle, menu);
+            child->setObjectName(item.menuId.isEmpty() ? item.id : item.menuId);
+            child->setProperty("commandMenuPath", item.path);
+            child->setStyleSheet(scrollableMenuStyle);
+            action = menu->addMenu(child);
+            appendContextItems(child, item.children, manager, context, commands);
+        } else action = menu->addAction(item.action.title);
+        action->setObjectName(item.id);
+        action->setText(item.action.title);
+        action->setProperty("menuOrder", item.order);
+        action->setProperty("menuSortTitle", item.sortTitle);
+        action->setVisible(item.action.visible);
+        action->setEnabled(item.action.enabled);
+        action->setCheckable(item.action.checkable);
+        if (item.action.checked) action->setChecked(*item.action.checked);
+        if (item.commandId.isEmpty()) continue;
+        if (item.kind == MenuItemDescription::Kind::TabColor) {
+            action->setData(item.id);
+            QObject::connect(action, &QAction::triggered, menu,
+                [owner = QPointer<WindowManager>(manager), context, args = item.arguments, id = item.commandId] {
+                    if (!owner) return;
+                    auto captured = context;
+                    for (auto it = args.cbegin(); it != args.cend(); ++it) captured.args.insert(it.key(), it.value());
+                    owner->executeInContext(id, captured);
+                });
+        } else {
+            action->setData(item.commandId);
+            action->setProperty("windowSystemCommand", item.commandId);
+            commands.append(action);
+            const auto& shortcut = item.action.shortcut;
+            action->setText(item.action.title + (shortcut.isEmpty() ? QString() : "\t" + shortcut));
+            action->setToolTip(item.action.title + (shortcut.isEmpty() ? QString() : "  " + shortcut));
+            QObject::connect(action, &QAction::triggered, manager,
+                [owner = QPointer<WindowManager>(manager), context, id = item.commandId] {
+                    if (!owner) return;
+                    QTimer::singleShot(0, owner, [owner, id, context] {
+                        if (owner) owner->executeInContext(id, context);
+                    });
+                });
+        }
+    }
+}
+
+} // namespace
+
 void populateContextMenu(QMenu* menu, CommandMenuSurface surface, WindowManager* manager, const CommandContext& captured)
 {
     const QPointer<QMenu> retainedMenu(menu);
     const QPointer<WindowManager> retainedManager(manager);
+    const auto description = describeContextMenu(surface, manager, captured);
+    if (!retainedMenu || !retainedManager) return;
     if (!menu->actions().isEmpty()) menu->addSeparator();
     QList<QPointer<QAction>> actions;
-    addItems(menu, commandMenuDefinition(surface), manager, [captured] { return captured; }, actions, nullptr, manager);
-    if (!retainedMenu || !retainedManager) return;
-    struct Contribution { Command command; ContextMenuPlacement placement; };
-    QVector<Contribution> contributions;
-    const auto target = surface == CommandMenuSurface::Tab ? ContextMenuTarget::Tab
-        : surface == CommandMenuSurface::Group ? ContextMenuTarget::Group
-        : surface == CommandMenuSurface::Pane ? ContextMenuTarget::Pane : ContextMenuTarget::Window;
-    const auto contentType = manager->tabOptions(captured.tab).contentType;
-    for (const auto& command : manager->commands().commands())
-        for (const auto& placement : command.contextMenus)
-            if (placement.target == target && (placement.contentType.isEmpty() || placement.contentType == contentType))
-                contributions.append({command, placement});
-    std::stable_sort(contributions.begin(), contributions.end(), [](const auto& left, const auto& right) {
-        if (left.placement.order != right.placement.order) return left.placement.order < right.placement.order;
-        return left.command.id < right.command.id;
-    });
-    QHash<QString, QPointer<QMenu>> contributedMenus;
-    if (!contributions.isEmpty()) menu->addSeparator();
-    for (const auto& contribution : contributions) {
-        if (!retainedMenu || !retainedManager) return;
-        QPointer<QMenu> destination(menu);
-        QString prefix;
-        for (const auto& title : contribution.placement.path) {
-            prefix += QChar(0x1f) + title;
-            auto child = contributedMenus.value(prefix);
-            if (!child) {
-                child = new DismissOnlyMenu(title, destination);
-                child->setObjectName(QStringLiteral("ExtensionContextMenu"));
-                destination->addMenu(child); contributedMenus.insert(prefix, child);
-            }
-            destination = child;
-        }
-        addItems(destination, {Item::action(contribution.command.id)}, manager, [captured] { return captured; },
-                 actions, nullptr, manager);
-    }
-    if (!retainedMenu || !retainedManager) return;
-    if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group) {
-        for (auto* action : menu->actions()) if (action->objectName() == "tab.color.set") {
-            auto* colors = new DismissOnlyMenu(QCoreApplication::translate("WindowSystem", "Set tab color"), menu);
-            colors->setObjectName(QStringLiteral("TabColorChoices"));
-            const auto addColor = [colors, owner = QPointer<WindowManager>(manager), captured](QString name, QString id) {
-                auto* choice = colors->addAction(name); choice->setData(id); choice->setCheckable(true);
-                if (owner && owner->model().tab(captured.tab)) choice->setChecked(owner->model().tab(captured.tab)->colorId == id);
-                QObject::connect(choice, &QAction::triggered, colors, [owner, captured, id] {
-                    if (!owner) return;
-                    auto context = captured; context.args.insert("color", id);
-                    owner->executeInContext(QStringLiteral("tab.color.set"), context);
-                });
-            };
-            addColor(QCoreApplication::translate("WindowSystem", "Default color"), {});
-            for (const auto& preset : manager->tabAppearance().colors) addColor(tabColorDisplayName(preset), preset.id);
-            action->setMenu(colors);
-        }
-    }
+    appendContextItems(menu, description, manager, captured, actions);
     tidy(menu);
     for (auto* child : menu->findChildren<QMenu*>()) QObject::connect(child, &QMenu::aboutToShow, menu,
-        [manager = QPointer<WindowManager>(manager), actions, captured, menu] {
-        for (const auto& action : actions) if (action) refreshCommandAction(manager, action, captured);
-        tidy(menu);
-    });
+        [owner = retainedManager, actions, captured, root = retainedMenu] {
+            for (const auto& action : actions) {
+                if (action) refreshCommandAction(owner, action, captured);
+                if (!root || !owner) return;
+            }
+            tidy(root);
+        });
 }
 
 ApplicationCommandMenus::ApplicationCommandMenus(QMenuBar* bar, WindowManager* manager, WindowId window,

@@ -57,6 +57,27 @@ void verifySeparators(QMenu* menu)
     }
     QVERIFY(!previousSeparator || menu->actions().isEmpty() || !menu->menuAction()->isVisible());
 }
+void walk(const QVector<MenuItemDescription>& items, QHash<QString, int>& occurrences)
+{
+    for (const auto& item : items) {
+        if (!item.commandId.isEmpty() && item.kind != MenuItemDescription::Kind::TabColor)
+            ++occurrences[item.commandId];
+        walk(item.children, occurrences);
+    }
+}
+void verifySeparators(const QVector<MenuItemDescription>& items)
+{
+    bool previousSeparator = true;
+    bool any = false;
+    for (const auto& item : items) if (item.action.visible) {
+        const bool separator = item.kind == MenuItemDescription::Kind::Separator;
+        QVERIFY(!separator || !previousSeparator);
+        previousSeparator = separator;
+        any = true;
+        if (!item.children.isEmpty()) verifySeparators(item.children);
+    }
+    QVERIFY(!any || !previousSeparator);
+}
 void contributeApplicationCommands(WindowManager& manager)
 {
     for (const auto& command : QVector<Command>{
@@ -300,14 +321,16 @@ void MenuStructureTest::tabAndPaneContextMenusRetainScopeAndUsefulGroups()
     // Classification is checked for every declared context operation, including
     // currently disabled items and the color action which owns a submenu.
     for (const auto surface : {CommandMenuSurface::Tab, CommandMenuSurface::Group, CommandMenuSurface::Pane, CommandMenuSurface::Window}) {
-        QMenu current; populateContextMenu(&current, surface, &manager, captured);
+        const auto current = describeContextMenu(surface, &manager, captured);
+        QHash<QString, int> occurrences;
+        walk(current, occurrences);
         const auto declarations = declaredMenuCommands(surface);
         QCOMPARE(QSet<QString>(declarations.cbegin(), declarations.cend()).size(), declarations.size());
         for (const auto& id : declarations) {
             QVERIFY2(manager.commands().find(id), qPrintable(id));
-            QCOMPARE(current.findChildren<QAction*>(id).size(), 1);
+            QCOMPARE(occurrences.value(id), 1);
         }
-        verifySeparators(&current);
+        verifySeparators(current);
     }
 }
 

@@ -2,6 +2,10 @@
 #include "menu_description.hpp"
 #include <window_system/window_manager.hpp>
 #include <QPointer>
+#include <QCoreApplication>
+#include "localization/display_names.hpp"
+#include "style/tab_appearance_p.hpp"
+#include <algorithm>
 
 namespace window_system {
 
@@ -68,6 +72,151 @@ std::optional<CommandActionDescription> describeCommandAction(
     for (const auto& binding : definition.bindings)
         shortcuts.append(binding.sequence.toString(QKeySequence::NativeText));
     result.shortcut = shortcuts.join(QStringLiteral(" / "));
+    return result;
+}
+
+namespace {
+
+using Node = MenuItemDescription;
+using Nodes = QVector<Node>;
+
+Nodes describeItems(const QVector<CommandMenuItem>& items, WindowManager* manager,
+                    const CommandContext& context, const QStringList& parentPath = {})
+{
+    const QPointer<WindowManager> owner(manager);
+    Nodes result;
+    int ordinal = 0;
+    for (const auto& item : items) {
+        Node node;
+        node.id = item.id;
+        node.order = item.order ? item.order : ++ordinal * 10;
+        node.sortTitle = item.command ? item.id : item.title;
+        if (item.command) {
+            node.commandId = item.id;
+            const auto action = describeCommandAction(manager, item.id, context);
+            if (!owner) return {};
+            if (action) node.action = *action;
+            else { node.action.visible = false; node.action.enabled = false; }
+        } else if (!item.id.isEmpty()) {
+            node.kind = Node::Kind::Submenu;
+            node.path = parentPath + QStringList{item.pathKey};
+            node.action.title = QCoreApplication::translate("WindowSystem", item.title.toUtf8().constData());
+            node.children = describeItems(item.children, manager, context, node.path);
+            if (!owner) return {};
+        } else node.kind = Node::Kind::Separator;
+        result.append(std::move(node));
+    }
+    return result;
+}
+
+void tidy(Nodes& nodes)
+{
+    bool previous = false;
+    Node* pending = nullptr;
+    for (auto& node : nodes) {
+        if (node.kind == Node::Kind::Submenu) {
+            tidy(node.children);
+            node.action.visible = std::any_of(node.children.cbegin(), node.children.cend(), [](const auto& child) {
+                return child.kind != Node::Kind::Separator && child.action.visible;
+            });
+        }
+        if (node.kind == Node::Kind::Separator) {
+            node.action.visible = false;
+            pending = &node;
+        } else if (node.action.visible) {
+            if (previous && pending) pending->action.visible = true;
+            pending = nullptr;
+            previous = true;
+        }
+    }
+}
+
+void appendContextContributions(Nodes& nodes, CommandMenuSurface surface,
+                                WindowManager* manager, const CommandContext& context)
+{
+    struct Contribution { Command command; ContextMenuPlacement placement; };
+    QVector<Contribution> contributions;
+    const auto target = surface == CommandMenuSurface::Tab ? ContextMenuTarget::Tab
+        : surface == CommandMenuSurface::Group ? ContextMenuTarget::Group
+        : surface == CommandMenuSurface::Pane ? ContextMenuTarget::Pane : ContextMenuTarget::Window;
+    const auto contentType = manager->tabOptions(context.tab).contentType;
+    for (const auto& command : manager->commands().commands())
+        for (const auto& placement : command.contextMenus)
+            if (placement.target == target && (placement.contentType.isEmpty() || placement.contentType == contentType))
+                contributions.append({command, placement});
+    std::stable_sort(contributions.begin(), contributions.end(), [](const auto& left, const auto& right) {
+        if (left.placement.order != right.placement.order) return left.placement.order < right.placement.order;
+        return left.command.id < right.command.id;
+    });
+    if (!contributions.isEmpty()) {
+        Node separator;
+        separator.kind = Node::Kind::Separator;
+        nodes.append(std::move(separator));
+    }
+    const QPointer<WindowManager> owner(manager);
+    for (const auto& contribution : contributions) {
+        auto resolved = describeItems({CommandMenuItem::action(contribution.command.id)}, manager, context);
+        if (!owner) return;
+        auto* destination = &nodes;
+        QStringList path;
+        for (const auto& title : contribution.placement.path) {
+            path.append(title);
+            auto child = std::find_if(destination->begin(), destination->end(), [&path](const auto& node) {
+                return node.contribution && node.kind == Node::Kind::Submenu && node.path == path;
+            });
+            if (child == destination->end()) {
+                Node menu;
+                menu.kind = Node::Kind::Submenu;
+                menu.id = QStringLiteral("ExtensionContextMenu");
+                menu.action.title = title;
+                menu.path = path;
+                menu.contribution = true;
+                destination->append(std::move(menu));
+                child = destination->end() - 1;
+            }
+            destination = &child->children;
+        }
+        *destination += resolved;
+    }
+}
+
+void appendTabColors(Nodes& nodes, WindowManager* manager, const CommandContext& context)
+{
+    for (auto& node : nodes) if (node.commandId == QStringLiteral("tab.color.set")) {
+        node.kind = Node::Kind::Submenu;
+        node.menuId = QStringLiteral("TabColorChoices");
+        node.menuTitle = QCoreApplication::translate("WindowSystem", "Set tab color");
+        const auto* tab = manager->model().tab(context.tab);
+        const auto add = [&node, tab](QString title, QString id) {
+            Node choice;
+            choice.kind = Node::Kind::TabColor;
+            choice.id = id;
+            choice.commandId = QStringLiteral("tab.color.set");
+            choice.arguments.insert(QStringLiteral("color"), id);
+            choice.action.title = std::move(title);
+            choice.action.checkable = true;
+            choice.action.checked = tab && tab->colorId == id;
+            node.children.append(std::move(choice));
+        };
+        add(QCoreApplication::translate("WindowSystem", "Default color"), {});
+        for (const auto& preset : manager->tabAppearance().colors) add(tabColorDisplayName(preset), preset.id);
+    }
+}
+
+} // namespace
+
+QVector<MenuItemDescription> describeContextMenu(
+    CommandMenuSurface surface, WindowManager* manager, const CommandContext& context)
+{
+    if (!manager) return {};
+    const QPointer<WindowManager> owner(manager);
+    auto result = describeItems(commandMenuDefinition(surface), manager, context);
+    if (!owner) return {};
+    appendContextContributions(result, surface, manager, context);
+    if (!owner) return {};
+    if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group)
+        appendTabColors(result, manager, context);
+    tidy(result);
     return result;
 }
 
