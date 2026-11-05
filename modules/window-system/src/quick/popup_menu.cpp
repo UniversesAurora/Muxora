@@ -41,6 +41,9 @@ QStringList rowKey(const MenuItemDescription& item, int ordinal)
         + (item.id.isEmpty() ? QString::number(ordinal) : item.id)};
     // Contributed submenus share a type ID; their paths distinguish siblings.
     key.append(item.path);
+    // A tab row builds its buttons and marker once; a change replaces it.
+    for (const auto& action : item.rowActions) key.append(action.id);
+    if (item.marker.isValid()) key.append(item.marker.name(QColor::HexArgb));
     return key;
 }
 
@@ -376,8 +379,10 @@ void PopupMenu::syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuIt
     auto previous = std::move(rows);
     rows = {};
     rows.reserve(items.size());
-    QHash<QStringList, int> remaining;
-    for (int index = 0; index < previous.size(); ++index) remaining.insert(previous.at(index).key, index);
+    // Contributions may repeat a sibling's key. find() returns the latest
+    // insertion, so inserting backwards reuses equal rows in their order.
+    QMultiHash<QStringList, int> remaining;
+    for (int index = int(previous.size()) - 1; index >= 0; --index) remaining.insert(previous.at(index).key, index);
     for (int index = 0; index < items.size(); ++index) {
         const auto& item = items.at(index);
         const auto found = remaining.find(rowKey(item, index));

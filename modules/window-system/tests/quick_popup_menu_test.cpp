@@ -22,6 +22,7 @@
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
+#include <functional>
 
 using namespace window_system;
 using window_system::quick::PopupMenu;
@@ -602,6 +603,36 @@ private slots:
         // Inserting ahead of the selected action must not redirect Enter.
         QTest::keyClick(root, Qt::Key_Return);
         QTRY_COMPARE(invoked, QStringLiteral("keep"));
+    }
+
+    void repeatedContributionsKeepOneRowEachAcrossRefreshes()
+    {
+        QQuickWindow window;
+        window.resize(600, 400); window.show(); window.requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        // A host contribution may repeat a built-in command in the same menu.
+        QVector<MenuItemDescription> items{action("same"), action("same")};
+        PopupMenu menu(defaultTheme());
+        menu.setRefreshHandler([&] { return items; });
+        QVERIFY(menu.open(window.contentItem(), window.mapToGlobal(QPoint(30, 40)), items));
+        QTRY_VERIFY(popup(&window));
+        auto* root = popup(&window); QVERIFY(QTest::qWaitForWindowExposed(root));
+        const auto rows = [root] {
+            int count = 0;
+            const std::function<void(QQuickItem*)> visit = [&](QQuickItem* item) {
+                if (item->objectName() == QStringLiteral("same") && item->isVisible()) ++count;
+                for (auto* child : item->childItems()) visit(child);
+            };
+            visit(root->contentItem());
+            return count;
+        };
+        QCOMPARE(rows(), 2);
+        for (const auto* marker : {"first", "second"}) {
+            items.append(action(marker));
+            menu.requestRefresh();
+            QTRY_VERIFY(namedItem(root->contentItem(), QString::fromLatin1(marker)));
+            QCOMPARE(rows(), 2);
+        }
     }
 
     void menuBarUsesLateCommandsAndItsOwnWindow_data()
