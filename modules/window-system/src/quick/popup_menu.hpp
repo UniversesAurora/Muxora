@@ -36,7 +36,6 @@ class MenuEntry final : public QObject {
     Q_PROPERTY(QQuickItem* content READ content CONSTANT)
 public:
     MenuEntry(MenuItemDescription description, PopupMenu& owner, bool menuBar = false);
-    ~MenuEntry() override;
     QString title() const { return description_.action.title; }
     QString id() const { return description_.id; }
     QString tooltip() const { return description_.tooltip; }

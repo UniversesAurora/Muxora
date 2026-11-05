@@ -31,13 +31,6 @@ Basic.MenuBar {
         }
         return result
     }
-    readonly property real minimumWidthHint: {
-        for (let index = 0; index < count; ++index) {
-            const entry = entryAt(index)
-            if (entry && entry.visible) return Math.min(naturalWidth, entry.content.implicitWidth + session.overflow.extent)
-        }
-        return 0
-    }
     readonly property int firstHiddenIndex: {
         if (naturalWidth <= width) return count
         const available = Math.max(0, width - session.overflow.extent)

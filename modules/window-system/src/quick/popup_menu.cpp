@@ -249,7 +249,6 @@ MenuEntry::MenuEntry(MenuItemDescription description, PopupMenu& owner, bool men
 {
     if (label_) label_->setParent(this);
 }
-MenuEntry::~MenuEntry() = default;
 QQuickItem* MenuEntry::content() const { return label_; }
 void MenuEntry::setHighlighted(bool highlighted) { if (label_) label_->setHighlighted(highlighted); }
 void MenuEntry::setHovered(bool hovered) { if (label_) label_->setHovered(hovered); }

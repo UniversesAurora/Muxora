@@ -33,9 +33,10 @@ Basic.Menu {
         entry: subMenu ? (subMenu as PopupMenuNode).entry : null
     }
     onClosed: if (!entry) session.finished()
-    // A host query can destroy the workspace. Qt continues using this popup
-    // after aboutToShow returns, so query after its opening handler unwinds.
-    onAboutToShow: session.requestCatalogRefresh()
+    // Submenus query current state as they open; a root was described just
+    // before open(). A host query can destroy the workspace, and Qt continues
+    // using this popup after aboutToShow returns, so query after it unwinds.
+    onAboutToShow: if (entry) session.requestCatalogRefresh()
     function insertBranch(index: int, child: QtObject): Item {
         insertMenu(index, child as PopupMenuNode)
         return itemAt(index)
