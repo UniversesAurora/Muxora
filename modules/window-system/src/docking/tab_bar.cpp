@@ -1223,34 +1223,7 @@ bool TabBar::event(QEvent* event)
         QTimer::singleShot(0, this, [this] { refreshScrollInput(); if (iconMode()) reconcileColumnHover(); });
     if (event->type() == QEvent::ToolTip) {
         auto* help = static_cast<QHelpEvent*>(event);
-        const int index = tabAt(help->pos());
-        QString text; QRect area;
-        if (index >= 0) {
-            area = tabRect(index);
-            const auto action = actionRect(index);
-            if (!action.isEmpty() && action.contains(help->pos())) {
-                area = action;
-                text = index < stickyCount() ? QCoreApplication::translate("WindowSystem", "Unstick tab")
-                                            : QCoreApplication::translate("WindowSystem", "Close tab");
-            } else {
-                text = tabToolTip(index);
-                // Leaving the title for its action dismisses the title's tip.
-                if (!action.isEmpty()) {
-                    if (help->pos().x() < action.left()) area.setRight(action.left() - 1);
-                    else if (help->pos().x() > action.right()) area.setLeft(action.right() + 1);
-                }
-            }
-        }
-        if (const int folder = index < 0 ? folderAt(help->pos()) : -1; folder >= 0) {
-            area = folderHeaderRect(folder);
-            const auto& record = folders().at(folder);
-            if (vertical() && controller_.painter().folderAddRect(area).contains(help->pos()))
-                text = QCoreApplication::translate("WindowSystem", "New tab in this tab folder");
-            else {
-                const auto count = QCoreApplication::translate("WindowSystem", "%n tab(s)", nullptr, record.count);
-                text = record.name.isEmpty() ? count : record.name + QStringLiteral(" · ") + count;
-            }
-        }
+        const auto [text, area] = controller_.toolTipAt(help->pos());
         if (!text.isEmpty()) QToolTip::showText(help->globalPos(), text, this, area);
         else { QToolTip::hideText(); event->ignore(); }
         return true;

@@ -147,6 +147,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/command_strip_item.cpp src/quick/command_strip_host_item.cpp
     src/quick/window_drag_area_item.cpp
     src/quick/text_edit_menu.cpp
+    src/quick/tool_tip.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
     include/window_system/quick_workspace.hpp)
@@ -154,13 +155,14 @@ add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
 set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
 target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
 target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src src/quick)
-foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator ApplicationMenuBar)
+foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator ApplicationMenuBar HoverToolTip)
     set_source_files_properties(src/quick/${menu_file}.qml PROPERTIES QT_RESOURCE_ALIAS ${menu_file}.qml)
 endforeach()
 qt_add_qml_module(WindowSystemQuick URI WindowSystem.Internal VERSION 1.0 NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WindowSystem/Internal"
     RESOURCE_PREFIX /qt/qml
-    QML_FILES src/quick/PopupMenuNode.qml src/quick/PopupMenuRow.qml src/quick/PopupMenuSeparator.qml src/quick/ApplicationMenuBar.qml)
+    QML_FILES src/quick/PopupMenuNode.qml src/quick/PopupMenuRow.qml src/quick/PopupMenuSeparator.qml src/quick/ApplicationMenuBar.qml
+        src/quick/HoverToolTip.qml)
 # WindowManager still lives in the Widgets library; 10.6 moves it out.
 target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE Qt6::QuickControls2 WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)

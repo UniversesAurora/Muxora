@@ -635,6 +635,48 @@ private slots:
         }
     }
 
+    // Hover tips, as QToolTip shows them: a button's after the wake-up
+    // delay, a tab's title at once while tips are awake, and none once the
+    // pointer leaves.
+    void hoverTipsFollowThePointer()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("First tab")});
+        manager.addTab(window, {QStringLiteral("Second tab")});
+        QTRY_VERIFY(workspace.window(window));
+        const QPointer<QQuickWindow> view(workspace.window(window));
+        view->resize(900, 500);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        const auto shownTip = [&]() -> QString {
+            for (auto* candidate : QGuiApplication::topLevelWindows()) {
+                auto* tip = qobject_cast<QQuickWindow*>(candidate);
+                if (!tip || tip == view || !tip->isVisible() || tip->transientParent() != view) continue;
+                QList<QQuickItem*> items{tip->contentItem()};
+                while (!items.isEmpty()) {
+                    auto* item = items.takeFirst();
+                    if (const auto text = item->property("text"); text.isValid() && !text.toString().isEmpty()) return text.toString();
+                    items += item->childItems();
+                }
+            }
+            return {};
+        };
+        auto* create = view->contentItem()->findChild<quick::ButtonItem*>(QStringLiteral("NewTabButton"));
+        QVERIFY(create);
+        native_input::mouse(view.data(), create->mapToScene(create->boundingRect().center()).toPoint());
+        QTRY_COMPARE(shownTip(), QStringLiteral("New tab"));
+        QPointer<quick::TabBarItem> bar;
+        for (auto* item : view->contentItem()->findChildren<quick::TabBarItem*>()) if (item->isVisible()) bar = item;
+        QVERIFY(bar);
+        const auto title = bar->controller().tabRect(1).center();
+        native_input::mouse(view.data(), bar->mapToScene(QPointF(title)).toPoint());
+        QTRY_COMPARE(shownTip(), QStringLiteral("Second tab"));
+        // The dock below the strips has no tip.
+        native_input::mouse(view.data(), QPoint(view->width() / 2, view->height() - 40));
+        QTRY_VERIFY(shownTip().isEmpty());
+    }
     void menuBarUsesLateCommandsAndItsOwnWindow_data()
     {
         QTest::addColumn<bool>("floating");

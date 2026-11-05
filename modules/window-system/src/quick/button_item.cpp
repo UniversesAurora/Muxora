@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "button_item.hpp"
+#include "tool_tip.hpp"
 #include "path_item.hpp"
 #include "tab_icon_item.hpp"
 #include "tab_label_text_item.hpp"
@@ -59,10 +60,13 @@ void ButtonItem::setIcon(const QIcon& icon) { iconSource_ = icon; refresh(); }
 void ButtonItem::setIconExtent(int extent) { if (iconExtent_ != extent) { iconExtent_ = extent; refresh(); } }
 void ButtonItem::setActiveIcon(const QIcon& icon) { activeIcon_ = icon; refresh(); }
 void ButtonItem::setDestructive(bool destructive) { if (destructive_ != destructive) { destructive_ = destructive; refresh(); } }
+// Pointer hover and the native caption's hit testing both arrive here.
 void ButtonItem::setHovered(bool hovered)
 {
     if (hovered_ == hovered) return;
-    hovered_ = hovered; refresh(); emit hoveredChanged(hovered);
+    hovered_ = hovered; refresh();
+    if (hovered) showToolTip(this, theme_, toolTip_); else hideToolTip(this);
+    emit hoveredChanged(hovered);
 }
 void ButtonItem::setPressed(bool pressed) { if (pressed_ != pressed) { pressed_ = pressed; refresh(); } }
 void ButtonItem::setText(const QString& text, const QFont& font)
@@ -147,6 +151,7 @@ void ButtonItem::refresh()
 
 void ButtonItem::mousePressEvent(QMouseEvent* event)
 {
+    hideToolTip(this);
     if (event->button() == Qt::RightButton) {
         event->accept();
         emit contextMenuRequested(event->globalPosition().toPoint());
@@ -205,14 +210,14 @@ void ButtonItem::itemChange(ItemChange change, const ItemChangeData& data)
     }
 }
 
-void ButtonItem::hoverEnterEvent(QHoverEvent*)
-{
-    hovered_ = true; refresh(); emit hoveredChanged(true);
-}
+void ButtonItem::hoverEnterEvent(QHoverEvent*) { setHovered(true); }
 
-void ButtonItem::hoverLeaveEvent(QHoverEvent*)
+void ButtonItem::hoverLeaveEvent(QHoverEvent*) { setHovered(false); }
+
+void ButtonItem::setToolTip(QString tip)
 {
-    hovered_ = false; refresh(); emit hoveredChanged(false);
+    toolTip_ = std::move(tip);
+    if (hovered_) showToolTip(this, theme_, toolTip_);
 }
 
 } // namespace window_system::quick

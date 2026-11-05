@@ -42,7 +42,7 @@ public:
     void setEmphasized(bool emphasized);
     [[nodiscard]] bool hovered() const { return hovered_; }
     [[nodiscard]] const QString& toolTip() const { return toolTip_; }
-    void setToolTip(QString tip) { toolTip_ = std::move(tip); }
+    void setToolTip(QString tip);
     // Native caption input: the frame reports hover, press and activation
     // for caption buttons, whose pixels Windows hit-tests as non-client.
     void setHovered(bool hovered);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "tab_bar_item.hpp"
+#include "tool_tip.hpp"
 #include "tab_foreground_item.hpp"
 #include "tab_strip_item.hpp"
 #include <QContextMenuEvent>
@@ -185,6 +186,7 @@ void TabBarItem::dispatch(QMouseEvent* event, TabPointerDecision decision)
 
 void TabBarItem::mousePressEvent(QMouseEvent* event)
 {
+    hideToolTip(this);
     prepare();
     event->accept();
     dispatch(event, controller_.pointerPress(event->button(), event->position().toPoint(), event->globalPosition().toPoint()));
@@ -216,11 +218,14 @@ void TabBarItem::hoverEnterEvent(QHoverEvent* event) { prepare(); controller_.en
 void TabBarItem::hoverMoveEvent(QHoverEvent* event)
 {
     prepare();
-    (void)controller_.pointerMove(Qt::NoButton, event->position().toPoint(), mapToGlobal(event->position()).toPoint(),
+    const auto local = event->position().toPoint();
+    (void)controller_.pointerMove(Qt::NoButton, local, mapToGlobal(event->position()).toPoint(),
         QGuiApplication::styleHints()->startDragDistance());
+    const auto [text, area] = controller_.toolTipAt(local);
+    showToolTip(this, controller_.theme(), text, area);
     synchronize();
 }
-void TabBarItem::hoverLeaveEvent(QHoverEvent*) { prepare(); controller_.leave(); synchronize(); }
+void TabBarItem::hoverLeaveEvent(QHoverEvent*) { hideToolTip(this); prepare(); controller_.leave(); synchronize(); }
 
 void TabBarItem::wheelEvent(QWheelEvent* event)
 {

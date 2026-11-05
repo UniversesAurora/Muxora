@@ -160,6 +160,10 @@ public:
     [[nodiscard]] QIcon tabIcon(int index) const;
     void setTabIcon(int index, const QIcon& icon);
     [[nodiscard]] QString tabToolTip(int index) const;
+    // The tip at a point and the area it belongs to: a tab's title, its
+    // close or unstick action, or a folder header; empty text elsewhere.
+    struct ToolTip { QString text; QRect area; };
+    [[nodiscard]] ToolTip toolTipAt(QPoint local) const;
     void setTabToolTip(int index, const QString& tip);
     void setTabMetadata(int index, const TabRecord& tab);
     [[nodiscard]] const TabColorPreset* tabPreset(int index) const;
@@ -172,6 +176,7 @@ public:
     void setTheme(const Theme& theme);
     void setAppearance(const TabAppearance& appearance, TabBarPlacement placement);
     [[nodiscard]] TabBarPlacement placement() const { return placement_; }
+    [[nodiscard]] const Theme& theme() const { return theme_; }
     [[nodiscard]] bool vertical() const { return placement_ == TabBarPlacement::Left || placement_ == TabBarPlacement::Right; }
     [[nodiscard]] const TabAppearance& appearance() const { return appearance_; }
     [[nodiscard]] const TabMetrics& metrics() const { return metrics_; }

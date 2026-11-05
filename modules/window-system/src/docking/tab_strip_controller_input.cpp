@@ -1,11 +1,45 @@
 // SPDX-License-Identifier: MIT
 #include "tab_strip_controller.hpp"
+#include <QCoreApplication>
 #include "tab_keyboard_controller.hpp"
 #include "style/tab_appearance_p.hpp"
 #include <window_system/interface_appearance.hpp>
 #include <algorithm>
 
 namespace window_system {
+
+TabStripController::ToolTip TabStripController::toolTipAt(QPoint local) const
+{
+    ToolTip result;
+    const int index = tabAt(local);
+    if (index >= 0) {
+        result.area = tabRect(index);
+        const auto action = actionRect(index);
+        if (!action.isEmpty() && action.contains(local)) {
+            result.area = action;
+            result.text = index < stickyCount() ? QCoreApplication::translate("WindowSystem", "Unstick tab")
+                                                : QCoreApplication::translate("WindowSystem", "Close tab");
+        } else {
+            result.text = tabToolTip(index);
+            // Leaving the title for its action dismisses the title's tip.
+            if (!action.isEmpty()) {
+                if (local.x() < action.left()) result.area.setRight(action.left() - 1);
+                else if (local.x() > action.right()) result.area.setLeft(action.right() + 1);
+            }
+        }
+    }
+    if (const int folder = index < 0 ? folderAt(local) : -1; folder >= 0) {
+        result.area = folderHeaderRect(folder);
+        const auto& record = folders().at(folder);
+        if (vertical() && painter().folderAddRect(result.area).contains(local))
+            result.text = QCoreApplication::translate("WindowSystem", "New tab in this tab folder");
+        else {
+            const auto count = QCoreApplication::translate("WindowSystem", "%n tab(s)", nullptr, record.count);
+            result.text = record.name.isEmpty() ? count : record.name + QStringLiteral(" · ") + count;
+        }
+    }
+    return result;
+}
 
 void TabStripController::restoreScrollOffsets(int regular, int sticky, int rows)
 {
