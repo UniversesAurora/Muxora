@@ -402,10 +402,12 @@ private slots:
         QTRY_COMPARE(manager.toolbarState(window, "test.bar")->index, 1);
         const auto* host = view->contentItem()->findChild<quick::CommandStripHostItem*>();
         QVERIFY(host);
+        // Positions are taken once the layout follows the window's size.
+        QTRY_COMPARE(qRound(host->width()), view->width());
         const auto handle = strip->mapToScene(QPointF(uiPixels(stripHandleWidth) / 2.0, strip->height() / 2)).toPoint();
         QPoint target;
         if (drop == "reorder") target = neighbour->mapToScene(QPointF(4, neighbour->height() / 2)).toPoint();
-        else target = QPoint(200, view->height() - qRound(host->bottomArea()->height()) - uiPixels(compactRowHeight) / 2);
+        else target = host->bottomArea()->mapToScene(QPointF(200, -uiPixels(compactRowHeight) / 2.0)).toPoint();
         const auto savedStrips = [&] {
             return manager.saveLayout().value("windows").toArray().first().toObject().value("strips").toObject();
         };

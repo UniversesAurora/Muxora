@@ -473,6 +473,7 @@ std::optional<std::pair<ToolbarArea, int>> CommandStripHostItem::dragTarget(QPoi
 void CommandStripHostItem::updateDrag(QPoint global)
 {
     if (!drag_) return;
+    drag_->last = global;
     const auto target = dragTarget(global);
     // Each position starts again from the layout before the drag.
     layout_ = drag_->original;
@@ -648,7 +649,12 @@ void CommandStripHostItem::mouseReleaseEvent(QMouseEvent* event)
 {
     if (!drag_) return WindowDragAreaItem::mouseReleaseEvent(event);
     event->accept();
-    finishDrag(true);
+    // As in Widgets: removing an emptied source row can move the rows under
+    // a still pointer, so a release keeps the last preview; a drop outside
+    // every row cancels.
+    const auto global = event->globalPosition().toPoint();
+    if (global != drag_->last) updateDrag(global);
+    if (drag_) finishDrag(drag_->dropRow >= 0);
 }
 
 void CommandStripHostItem::mouseUngrabEvent() { finishDrag(false); }
@@ -658,6 +664,13 @@ void CommandStripHostItem::keyPressEvent(QKeyEvent* event)
     if (!drag_ || event->key() != Qt::Key_Escape) return WindowDragAreaItem::keyPressEvent(event);
     event->accept();
     finishDrag(false);
+}
+
+bool CommandStripHostItem::event(QEvent* event)
+{
+    // No toolbar menu in the middle of a drag, as in Widgets.
+    if (drag_ && event->type() == QEvent::ContextMenu) { event->accept(); return true; }
+    return WindowDragAreaItem::event(event);
 }
 
 void CommandStripHostItem::geometryChange(const QRectF& now, const QRectF& previous)

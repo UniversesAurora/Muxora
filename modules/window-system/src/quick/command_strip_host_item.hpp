@@ -55,6 +55,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseUngrabEvent() override;
     void keyPressEvent(QKeyEvent* event) override;
+    bool event(QEvent* event) override;
 private:
     void restoreLayout(const QVector<CommandToolbarDescription>& descriptions, const QJsonObject& saved);
     void normalizeLayout(const QHash<QString, StripLayoutPreferences>& defaults);
@@ -88,6 +89,7 @@ private:
         QHash<QString, QRect> bounds; // In each strip's area, before the drag.
         QPoint offset;
         int dropRow = -1;
+        QPoint last;
     };
     std::optional<Drag> drag_;
     QVector<QRectF> rowRects_; // Each shown row in its area; empty if not shown.
