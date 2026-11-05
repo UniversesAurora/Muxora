@@ -21,7 +21,7 @@ namespace window_system::quick {
 QQmlComponent& sceneComponent(SceneComponent kind)
 {
     static QPointer<QQmlEngine> engine;
-    static std::array<QPointer<QQmlComponent>, 8> components;
+    static std::array<QPointer<QQmlComponent>, 9> components;
     if (!engine) {
         initializeSceneResources();
         engine = new QQmlEngine(qApp);
@@ -34,7 +34,7 @@ QQmlComponent& sceneComponent(SceneComponent kind)
             const auto name = kind == SceneComponent::Mask ? QStringLiteral("MaskedLayer.qml") : QStringLiteral("PathStroke.qml");
             components[index]->loadUrl(QUrl(QStringLiteral("qrc:/window-system/") + name));
         } else {
-            static const std::array names{"PopupMenuNode", "PopupMenuRow", "PopupMenuSeparator", "ApplicationMenuBar", "HoverToolTip", "CommandPanelView"};
+            static const std::array names{"PopupMenuNode", "PopupMenuRow", "PopupMenuSeparator", "ApplicationMenuBar", "HoverToolTip", "CommandPanelView", "SettingsPageView"};
             components[index]->loadFromModule("WindowSystem.Internal", QLatin1String(names[index - size_t(SceneComponent::Menu)]));
         }
         if (components[index]->isError())

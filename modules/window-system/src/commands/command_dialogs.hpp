@@ -15,8 +15,10 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
                         const FloatingPanelOptions& options = {});
 void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent,
                         const FloatingPanelOptions& options = {});
-void openBehaviorSettings(WindowManager* manager, QWidget* parent);
-void openShortcutEditor(WindowManager* manager, QWidget* parent);
+// In the Widgets presentation the parent's window receives the tab; other
+// presentations use `window`, or the current window.
+void openBehaviorSettings(WindowManager* manager, QWidget* parent, WindowId window = {});
+void openShortcutEditor(WindowManager* manager, QWidget* parent, WindowId window = {});
 [[nodiscard]] bool isInternalSettingsContentType(const QString& type);
 [[nodiscard]] QWidget* createInternalSettingsContent(WindowManager* manager, const TabOptions& options);
 

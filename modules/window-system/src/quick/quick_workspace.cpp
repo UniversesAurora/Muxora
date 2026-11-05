@@ -11,6 +11,8 @@
 #include "command_strip_host_item.hpp"
 #include "status_bar_item.hpp"
 #include "command_panel.hpp"
+#include "settings_page_model.hpp"
+#include "commands/command_dialogs.hpp"
 #include "window_manager_p.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
@@ -545,7 +547,10 @@ QuickWorkspace::~QuickWorkspace()
 
 void QuickWorkspace::setContentFactory(ContentFactory factory)
 {
-    d->host.setFactory(std::move(factory));
+    d->host.setFactory([this, factory = std::move(factory)](const TabOptions& options, PaneId pane) -> QQuickItem* {
+        if (isInternalSettingsContentType(options.contentType)) return quick::createSettingsContent(d->manager, options);
+        return factory ? factory(options, pane) : nullptr;
+    });
 }
 
 bool QuickWorkspace::setTabBar(TabId tab, QQuickItem* bar, bool top)

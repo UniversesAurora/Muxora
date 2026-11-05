@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### 拼按键序列时空的段要写 0
+
+- **现象**：把按键录入规则抽成共用代码后，依次按 Ctrl+K、A、B，录到的是 “B, , , ”：每段都开始新序列，后面跟着三个空名字的键。
+- **原因**：`QKeyCombination` 默认构造的是 `Qt::Key_unknown`，不是 0。用默认值填空的段时，`QKeySequence` 把它们当成真的键，`count()` 是 4，录入以为已经录满。
+- **做法**：空的段用 `QKeyCombination::fromCombined(0)`；拼好后用 `toString()` 检查，不只看第一段。
+- **出处**：2026-11-06，10.4h，`QuickSettingsTest::keyRecorderKeepsBoundKeys`，见 [记录](../verification-log/2026-11.md#quick-设置页与表单控件2026-11-06)。
+
 ### 独立菜单窗口需要显式尺寸上限和初始边界导航
 
 - **现象**：Qt Quick Controls 菜单刚打开时，挂在 ListView 上的 Home／End 处理未收到按键；使用 `Popup.Window` 的长菜单即使翻转位置，仍超出屏幕。

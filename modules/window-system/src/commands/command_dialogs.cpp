@@ -306,10 +306,28 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
 namespace {
 
 void openSettingsTab(WindowManager* manager, QWidget* parent, const QString& type,
-                     const QString& title)
+                     const QString& title, WindowId window = {})
 {
     if (!manager) return;
     const QPointer<WindowManager> alive(manager);
+    if (manager->presentation() == WindowManager::Presentation::External) {
+        // The presentation creates the content from its type; an open page
+        // comes forward instead of a second one.
+        for (const auto& record : manager->model().tabs())
+            for (const auto pane : manager->model().panes(record.id)) {
+                if (manager->paneOptions(pane).contentType != type) continue;
+                const auto* group = manager->model().group(manager->model().groupForTab(record.id));
+                if (!group) continue;
+                const auto tab = record.id;
+                manager->showWindow(group->windowId);
+                if (alive) alive->activateTab(tab);
+                if (alive) alive->focusPane(tab, pane);
+                return;
+            }
+        const auto context = manager->context(window);
+        if (manager->model().window(context.window)) manager->addTab(context.window, TabOptions{title, type, {}}, context.group);
+        return;
+    }
     // Built-in preferences are ordinary workspace content. Search stable pane
     // IDs instead of keeping a weak tab cache that could become stale on moves.
     for (const auto& record : manager->model().tabs()) {
@@ -329,7 +347,7 @@ void openSettingsTab(WindowManager* manager, QWidget* parent, const QString& typ
             return;
         }
     }
-    const auto window = parent ? parent->window()->property("windowId").toUuid() : WindowId{};
+    if (parent) window = parent->window()->property("windowId").toUuid();
     const auto context = manager->context(window);
     if (!manager->model().window(context.window)) return;
     const TabOptions options{title, type, {}};
@@ -354,14 +372,14 @@ QWidget* createInternalSettingsContent(WindowManager* manager, const TabOptions&
     return nullptr;
 }
 
-void openBehaviorSettings(WindowManager* manager, QWidget* parent)
+void openBehaviorSettings(WindowManager* manager, QWidget* parent, WindowId window)
 {
-    openSettingsTab(manager, parent, QStringLiteral("window_system.settings"), QCoreApplication::translate("WindowSystem", "Settings"));
+    openSettingsTab(manager, parent, QStringLiteral("window_system.settings"), QCoreApplication::translate("WindowSystem", "Settings"), window);
 }
 
-void openShortcutEditor(WindowManager* manager, QWidget* parent)
+void openShortcutEditor(WindowManager* manager, QWidget* parent, WindowId window)
 {
-    openSettingsTab(manager, parent, QStringLiteral("window_system.shortcuts"), QCoreApplication::translate("WindowSystem", "Keyboard shortcuts"));
+    openSettingsTab(manager, parent, QStringLiteral("window_system.shortcuts"), QCoreApplication::translate("WindowSystem", "Keyboard shortcuts"), window);
 }
 
 } // namespace window_system

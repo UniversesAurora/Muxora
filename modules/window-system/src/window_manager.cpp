@@ -995,7 +995,7 @@ void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptio
     if (d->presentation == Presentation::External) { emit windowSelectorRequested(ctx.window, options); return; }
     openWindowSelector(this, ctx.window, windowWidget(ctx.window), options);
 }
-void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
+void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window), ctx.window); }
 void WindowManager::setStatus(WindowId window, const QString& text)
 {
     if (!d->model.window(window)) return;
@@ -1381,7 +1381,11 @@ bool WindowManager::eventFilter(QObject* watched, QEvent* event)
         }
         windowId = widget->window()->property("windowId").toUuid();
     } else if (auto* window = qobject_cast<QWindow*>(watched); window && d->presentation == Presentation::External) {
-        // A Quick window sees its keys before the focused item does.
+        // A Quick window sees its keys before the focused item does; a key
+        // recorder keeps them.
+        if (auto* focus = window->focusObject(); focus && focus->property("windowSystemKeyCapture").toBool()) {
+            cancelChord(); return false;
+        }
         receiver = window;
         windowId = window->property("windowId").toUuid();
     } else {

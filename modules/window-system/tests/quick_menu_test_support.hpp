@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QGuiApplication>
+#include <QQuickItem>
 #include <QQuickWindow>
 
 namespace quick_menu_test {

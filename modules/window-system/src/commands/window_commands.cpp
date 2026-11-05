@@ -132,7 +132,7 @@ void WindowManager::registerWindowCommands()
     add("window.settings", QCoreApplication::translate("WindowSystem", "Settings"), "tools", QKeySequence("Ctrl+,"),
         [this](const CommandContext& c) { showSettings(c.window); return true; });
     add("preferences.openKeyboardShortcuts", QCoreApplication::translate("WindowSystem", "Keyboard shortcut settings"), "tools", QKeySequence("Ctrl+K, Ctrl+S"),
-        [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window)); return true; });
+        [this](const CommandContext& c) { openShortcutEditor(this, windowWidget(c.window), c.window); return true; });
     registerToolbarMoveCommand(this);
     registerPeekSizeCommands(this);
     registerTabGroupCommands();
