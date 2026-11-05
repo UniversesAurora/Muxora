@@ -7,7 +7,9 @@
 #include <QKeyEvent>
 #include <QQuickWindow>
 #include <QShortcut>
+#include <QScopedValueRollback>
 #include <QTimer>
+#include <algorithm>
 
 namespace window_system::quick {
 
@@ -72,7 +74,8 @@ QVector<MenuItemDescription> MenuBarOverflow::popupItems(QQuickItem* root) const
     const int first = bar_->property("firstHiddenIndex").toInt();
     for (int index = 0; index < roots_.size(); ++index) {
         const auto& item = roots_.at(index);
-        if (root && item.button == root) return item.description.children;
+        if (root && item.button == root) return item.description.action.visible && item.description.action.enabled
+            ? item.description.children : QVector<MenuItemDescription>{};
         if (!root && index >= first && item.description.action.visible) result.append(item.description);
     }
     return result;
@@ -80,8 +83,12 @@ QVector<MenuItemDescription> MenuBarOverflow::popupItems(QQuickItem* root) const
 
 bool MenuBarOverflow::eventFilter(QObject* object, QEvent* event)
 {
-    if (object == bar_ && event->type() == QEvent::KeyPress
-        && bar_->property("firstHiddenIndex").toInt() < roots_.size()) {
+    if (forwardingKey_ || object != bar_ || event->type() != QEvent::KeyPress) return QObject::eventFilter(object, event);
+    const bool customNavigation = bar_->property("firstHiddenIndex").toInt() < roots_.size()
+        || std::any_of(roots_.cbegin(), roots_.cend(), [](const auto& root) {
+            return !root.description.action.visible || !root.description.action.enabled;
+        });
+    if (customNavigation) {
         // Qt's MenuBar advances through its model without skipping hidden
         // buttons. Route folded roots through the extension's anchor instead.
         const int key = static_cast<QKeyEvent*>(event)->key();
@@ -89,6 +96,21 @@ bool MenuBarOverflow::eventFilter(QObject* object, QEvent* event)
             QQuickItem* current = nullptr;
             for (const auto& root : roots_)
                 if (root.button && root.button->property("highlighted").toBool()) { current = root.button; break; }
+            if (!owner_.isOpen()) {
+                // Keep Qt's closed-bar focus state: advance its selection
+                // past unavailable roots without turning navigation into a click.
+                const QPointer<QQuickItem> target(nextRoot(current, key == Qt::Key_Right));
+                if (!target) { event->accept(); return true; }
+                const QScopedValueRollback forwarding(forwardingKey_, true);
+                for (qsizetype step = 0; step < roots_.size(); ++step) {
+                    QCoreApplication::sendEvent(bar_, event);
+                    if (target->property("highlighted").toBool()) {
+                        if (!target->isVisible()) requestOpen(target);
+                        event->accept(); return true;
+                    }
+                }
+                event->accept(); return true;
+            }
             navigate(current, key == Qt::Key_Right);
             event->accept(); return true;
         }
@@ -96,7 +118,7 @@ bool MenuBarOverflow::eventFilter(QObject* object, QEvent* event)
     return QObject::eventFilter(object, event);
 }
 
-void MenuBarOverflow::navigate(QQuickItem* from, bool forward)
+QQuickItem* MenuBarOverflow::nextRoot(QQuickItem* from, bool forward) const
 {
     int current = forward ? -1 : 0;
     for (int index = 0; index < roots_.size(); ++index)
@@ -105,15 +127,21 @@ void MenuBarOverflow::navigate(QQuickItem* from, bool forward)
         const int index = (current + (forward ? offset : -offset) + roots_.size()) % roots_.size();
         const auto& root = roots_.at(index);
         if (!root.description.action.visible || !root.description.action.enabled) continue;
-        const QPointer<QQuickItem> target(root.button);
-        if (index >= bar_->property("firstHiddenIndex").toInt()) requestOpen(target);
-        else QTimer::singleShot(0, this, [this, target] {
-            if (!target) return;
-            owner_.dismiss();
-            QMetaObject::invokeMethod(target, "click");
-        });
-        break;
+        return root.button;
     }
+    return nullptr;
+}
+
+void MenuBarOverflow::navigate(QQuickItem* from, bool forward)
+{
+    const QPointer<QQuickItem> target(nextRoot(from, forward));
+    if (!target) return;
+    if (!target->isVisible()) requestOpen(target);
+    else QTimer::singleShot(0, this, [this, target] {
+        if (!target) return;
+        owner_.dismiss();
+        QMetaObject::invokeMethod(target, "click");
+    });
 }
 
 void MenuBarOverflow::requestOpen(QQuickItem* root)

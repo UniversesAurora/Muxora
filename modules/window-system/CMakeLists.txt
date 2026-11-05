@@ -144,7 +144,8 @@ add_library(WindowSystemQuick STATIC
     src/quick/tab_bar_item.cpp src/quick/button_item.cpp src/quick/group_item.cpp
     src/quick/popup_menu.cpp src/quick/popup_menu.hpp
     src/quick/menu_bar_overflow.cpp src/quick/menu_bar_overflow.hpp
-    src/quick/command_toolbar_item.cpp src/quick/command_toolbars_item.cpp
+    src/quick/command_strip_item.cpp src/quick/command_strip_host_item.cpp
+    src/quick/window_drag_area_item.cpp
     src/quick/text_edit_menu.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp

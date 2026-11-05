@@ -48,6 +48,7 @@ private:
     };
     void requestOpen(QQuickItem* root);
     void navigate(QQuickItem* from, bool forward);
+    QQuickItem* nextRoot(QQuickItem* from, bool forward) const;
     QVector<MenuItemDescription> popupItems(QQuickItem* root) const;
     PopupMenu& owner_;
     MenuEntry* entry_;
@@ -55,5 +56,6 @@ private:
     QPointer<PopupMenu> popup_;
     QPointer<QQuickItem> requested_;
     QVector<Root> roots_;
+    bool forwardingKey_ = false;
 };
 } // namespace window_system::quick

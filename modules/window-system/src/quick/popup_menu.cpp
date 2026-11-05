@@ -494,8 +494,26 @@ QQuickItem* PopupMenu::createMenuBar(QQuickItem* parent, const QVector<MenuItemD
     bar->installEventFilter(this);
     bar->setParentItem(parent);
     overflow_->attach(bar);
-    syncMenu(bar, rows_, items, true);
+    barItems_ = items;
+    syncMenuBar();
     return bar;
+}
+
+void PopupMenu::setExcludedRoots(const QStringList& excluded)
+{
+    const QSet<QString> next(excluded.cbegin(), excluded.cend());
+    if (next == excludedRoots_) return;
+    excludedRoots_ = next;
+    if (menuBar_) syncMenuBar();
+}
+
+void PopupMenu::syncMenuBar()
+{
+    auto effective = barItems_;
+    for (auto& item : effective) item.action.visible = item.action.visible && !excludedRoots_.contains(item.id);
+    syncMenu(menu_.get(), rows_, effective, true);
+    for (const auto& row : rows_)
+        if (row.submenu && (!row.entry->visible() || !row.entry->enabled())) QMetaObject::invokeMethod(row.submenu, "close");
 }
 
 void PopupMenu::dismiss()
@@ -534,7 +552,8 @@ void PopupMenu::refresh()
     const auto resolve = refreshHandler_;
     const auto items = resolve();
     if (!self) return; // A host query may close the workspace and session.
-    syncMenu(menu_.get(), rows_, items, menuBar_);
+    if (menuBar_) { barItems_ = items; syncMenuBar(); }
+    else syncMenu(menu_.get(), rows_, items);
     refreshing_ = false;
     if (!std::any_of(items.cbegin(), items.cend(), [](const auto& item) {
         return item.action.visible && item.kind != MenuItemDescription::Kind::Separator;

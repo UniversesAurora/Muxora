@@ -154,7 +154,8 @@ private slots:
         carried->setPosition(host->position() + QPoint(80, 220));
         QVERIFY(QTest::qWaitForWindowExposed(carried));
         QTRY_VERIFY(dock->group(right) && dock->group(right)->count() == 2);
-        const auto grip = titlePoint(carried) + QPoint(-40, 0);
+        auto* title = carried->contentItem()->findChild<quick::WindowChromeItem*>(); QVERIFY(title);
+        const auto grip = title->mapToGlobal(title->boundingRect().center()).toPoint();
         error = drive(carried, {
             {"press", [] { return true; }, [&] { pointer(carried, grip); native_input::leftButton(carried, true); }},
             {"carry", [] { return QGuiApplication::mouseButtons().testFlag(Qt::LeftButton); },

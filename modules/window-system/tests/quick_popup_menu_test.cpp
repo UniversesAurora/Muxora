@@ -3,7 +3,6 @@
 // rows, keyboard cascades, outside capture, screen edge, owner destruction.
 #include "quick/popup_menu.hpp"
 #include "quick/button_item.hpp"
-#include "quick/command_toolbar_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include "quick/peek_item.hpp"
@@ -12,11 +11,11 @@
 #include "quick/tab_bar_item.hpp"
 #include "quick/window_chrome_item.hpp"
 #include "native_input.hpp"
+#include "quick_menu_test_support.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <window_system/interface_appearance.hpp>
 #include <QContextMenuEvent>
-#include <QJsonArray>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickWindow>
@@ -26,6 +25,7 @@
 
 using namespace window_system;
 using window_system::quick::PopupMenu;
+using namespace quick_menu_test;
 
 namespace {
 MenuItemDescription action(QString id, bool enabled = true)
@@ -35,38 +35,6 @@ MenuItemDescription action(QString id, bool enabled = true)
     result.action.title = std::move(id);
     result.action.enabled = enabled;
     return result;
-}
-QQuickWindow* popup(QQuickWindow* parent)
-{
-    for (auto* window : QGuiApplication::topLevelWindows())
-        if (window->type() == Qt::Popup && window->isVisible() && window->transientParent() == parent)
-            return qobject_cast<QQuickWindow*>(window);
-    return nullptr;
-}
-QQuickItem* namedItem(QQuickItem* parent, const QString& name)
-{
-    if (parent->objectName() == name) return parent;
-    for (auto* child : parent->childItems()) if (auto* found = namedItem(child, name)) return found;
-    return nullptr;
-}
-QJsonObject withBottomToolbar(QJsonObject snapshot, WindowId window, const QString& hidden)
-{
-    auto records = snapshot.value("windows").toArray();
-    QJsonObject settings;
-    for (const auto* id : {"menu", "title", "caption-controls", "workspace", "test.bar"})
-        settings.insert(id, QJsonObject{{"width", -1}, {"visible", true}});
-    settings.insert("test.bar", QJsonObject{{"width", -1}, {"visible", true}, {"excluded", QJsonArray{hidden}}});
-    QJsonArray bottomRows; bottomRows.append(QJsonArray{"test.bar"});
-    for (qsizetype index = 0; index < records.size(); ++index) {
-        auto record = records.at(index).toObject();
-        if (record.value("id").toString() != window.toString(QUuid::WithoutBraces)) continue;
-        record.insert("strips", QJsonObject{{"locked", true}, {"strips", settings},
-            {"rows", QJsonArray{QJsonArray{"menu", "title", "caption-controls"}, QJsonArray{"workspace"}}},
-            {"bottomRows", bottomRows}});
-        records[index] = record;
-    }
-    snapshot.insert("windows", records);
-    return snapshot;
 }
 class InputItem final : public QQuickItem {
 public:
@@ -809,90 +777,7 @@ private slots:
         QTRY_COMPARE(invoked, tab);
     }
 
-    void commandToolbarsRetainContextStateAndLifetime_data()
-    {
-        QTest::addColumn<int>("mode");
-        QTest::newRow("button") << 0;
-        QTest::newRow("overflow") << 1;
-        QTest::newRow("owner-closes") << 2;
-        QTest::newRow("keyboard") << 3;
-    }
-    void commandToolbarsRetainContextStateAndLifetime()
-    {
-        QFETCH(int, mode);
-        WindowManager manager(WindowManager::Presentation::External);
-        auto workspace = std::make_unique<QuickWorkspace>(manager);
-        workspace->setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
-        bool enabled = false;
-        CommandContext invoked;
-        QStringList commands;
-        const int count = mode == 1 ? 22 : 2;
-        for (int index = 0; index < count; ++index) {
-            Command command;
-            command.id = index == count - 1 ? QStringLiteral("test.toolbarTarget") : QStringLiteral("test.toolbar%1").arg(index);
-            command.title = command.id;
-            command.enabled = [&](const CommandContext&) { return enabled; };
-            command.execute = [&](const CommandContext& context) { invoked = context; if (mode == 2) workspace.reset(); return true; };
-            commands.append(command.id);
-            QVERIFY(manager.commands().add(std::move(command)));
-        }
-        QVERIFY(manager.registerToolbar({"test.bar", "Commands", commands}));
-        const auto first = manager.createWindow();
-        const auto tab = manager.addTab(first, {QStringLiteral("First")});
-        const auto second = manager.createWindow(); manager.addTab(second, {QStringLiteral("Second")});
-        QTRY_VERIFY(workspace->window(first));
-        const QPointer<QQuickWindow> view(workspace->window(first));
-        view->resize(mode == 1 ? 320 : 1000, 500);
-        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
-        QPointer<quick::CommandToolbarItem> strip;
-        for (auto* item : view->contentItem()->findChildren<quick::CommandToolbarItem*>())
-            if (item->property("stripId").toString() == "test.bar") strip = item;
-        QVERIFY(strip);
-        QPointer<quick::ButtonItem> target, keep;
-        for (auto* item : strip->findChildren<quick::ButtonItem*>()) {
-            if (item->property("commandId").toString() == "test.toolbarTarget") target = item;
-            if (item->property("commandId").toString() == commands.first()) keep = item;
-        }
-        QVERIFY(target); QVERIFY(keep); QVERIFY(!target->isEnabled());
-        enabled = true;
-        QVERIFY(manager.commands().setShortcut("test.toolbarTarget", QKeySequence("Ctrl+Alt+T")));
-        QTRY_VERIFY(target->isEnabled());
-        if (mode == 3) {
-            // Restore an ordinary current-format layout, with a hidden button
-            // and the contributed strip moved from its default top row.
-            const auto snapshot = withBottomToolbar(manager.saveLayout(), first, commands.first());
-            const auto restored = manager.restoreLayout(snapshot);
-            QVERIFY2(restored, qPrintable(restored.error));
-            QTRY_VERIFY(!keep->isVisible());
-            QVERIFY(manager.setZenMode(first, true));
-            QTRY_VERIFY(!target->isVisible());
-            QVERIFY(manager.setZenMode(first, false));
-            QTRY_VERIFY(target->isVisible());
-        }
-        QPointer<QQuickWindow> menu;
-        if (mode == 1) {
-            auto* more = strip->findChild<quick::ButtonItem*>("StripOverflowButton"); QVERIFY(more);
-            native_input::mouse(view.data(), more->mapToScene(more->boundingRect().center()).toPoint(), true);
-            QTRY_VERIFY(popup(view)); menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
-            auto* action = namedItem(menu->contentItem(), QStringLiteral("test.toolbarTarget")); QVERIFY(action);
-            QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
-        } else if (mode == 3) {
-            target->forceActiveFocus(Qt::TabFocusReason);
-            QTest::keyPress(view, Qt::Key_Space);
-            QVERIFY(invoked.window.isNull());
-            QTest::keyRelease(view, Qt::Key_Space);
-        } else {
-            QVERIFY(target->isVisible());
-            QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, target->mapToScene(target->boundingRect().center()).toPoint());
-        }
-        QTRY_COMPARE(invoked.window, first); QCOMPARE(invoked.tab, tab);
-        if (mode == 2) { QTRY_VERIFY(!view); return; }
-        QTRY_VERIFY(!menu);
-        QVERIFY(manager.updateToolbar({"test.bar", "Commands", {commands.first()}}));
-        QTRY_VERIFY(!target); QVERIFY(keep);
-        QVERIFY(manager.removeToolbar("test.bar"));
-        QTRY_VERIFY(!strip); QTRY_VERIFY(!keep);
-    }
+
 };
 
 QTEST_MAIN(QuickPopupMenuTest)

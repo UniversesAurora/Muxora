@@ -6,6 +6,7 @@
 #include <window_system/theme.hpp>
 #include <QFont>
 #include <QHash>
+#include <QSet>
 #include <QPalette>
 #include <QPointer>
 #include <QQuickItem>
@@ -76,6 +77,7 @@ public:
     ~PopupMenu() override;
     bool open(QQuickItem* anchor, QPoint globalPosition, const QVector<MenuItemDescription>& items);
     QQuickItem* createMenuBar(QQuickItem* parent, const QVector<MenuItemDescription>& items);
+    void setExcludedRoots(const QStringList& excluded);
     void setPresentation(const Theme& theme);
     void dismiss();
     bool isOpen() const;
@@ -116,6 +118,7 @@ private:
     void watchWindow(QObject* menu, QQuickItem* content);
     void refresh();
     void queueRefresh(bool force);
+    void syncMenuBar();
     Theme theme_;
     QFont font_;
     qreal scale_ = 1;
@@ -126,6 +129,8 @@ private:
     MenuBarOverflow* overflow_ = nullptr;
     std::function<QVector<MenuItemDescription>()> refreshHandler_;
     std::function<void(bool)> rootNavigation_;
+    QVector<MenuItemDescription> barItems_;
+    QSet<QString> excludedRoots_;
     bool menuBar_ = false, refreshing_ = false, refreshQueued_ = false, forceRefresh_ = false;
 };
 
