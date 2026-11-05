@@ -42,6 +42,7 @@ private:
         MenuItemDescription description;
         QPointer<ButtonItem> button;
         bool included = true;
+        QString iconKey;
     };
     Theme theme_;
     QVector<Action> actions_;

@@ -15,6 +15,16 @@
 #include <algorithm>
 
 namespace window_system::quick {
+namespace {
+// Everything iconFor() reads: a sync that changes none of it keeps the
+// button's prepared pixmap instead of rasterizing a new engine.
+QString iconKey(const QString& name, const Theme& theme)
+{
+    return name + QLatin1Char('|') + theme.text.name(QColor::HexArgb) + theme.mutedText.name(QColor::HexArgb)
+        + theme.selectionText.name(QColor::HexArgb) + theme.accent.name(QColor::HexArgb)
+        + QString::number(theme.metrics.iconSize);
+}
+} // namespace
 
 CommandStripItem::CommandStripItem(QQuickItem* parent, bool optionsEnabled)
     : QQuickItem(parent), viewport_(new QQuickItem(this)), more_(optionsEnabled ? new ButtonItem(defaultTheme(), this) : nullptr),
@@ -38,12 +48,13 @@ void CommandStripItem::sync(const QVector<MenuItemDescription>& actions, const T
     theme_ = theme;
     hideEmptyOptions_ = hideEmptyOptions;
     more_->setTheme(theme);
-    QHash<QString, QPointer<ButtonItem>> previous;
-    for (const auto& action : actions_) previous.insert(action.description.id, action.button);
+    QHash<QString, Action> previous;
+    for (const auto& action : std::as_const(actions_)) previous.insert(action.description.id, action);
     actions_.clear(); actions_.reserve(actions.size());
     const QSet<QString> hidden(preferences.excluded.cbegin(), preferences.excluded.cend());
     for (const auto& item : actions) {
-        auto button = previous.take(item.id);
+        const auto retained = previous.take(item.id);
+        auto button = retained.button;
         if (!button) {
             button = new ButtonItem(theme, viewport_);
             button->setObjectName(QStringLiteral("StripCommandButton"));
@@ -56,14 +67,15 @@ void CommandStripItem::sync(const QVector<MenuItemDescription>& actions, const T
             });
         }
         button->setTheme(theme);
-        button->setIcon(iconFor(item.iconName, theme));
+        auto icon = iconKey(item.iconName, theme);
+        if (!retained.button || retained.iconKey != icon) button->setIcon(iconFor(item.iconName, theme));
         button->setToolTip(item.tooltip);
         button->setEnabled(item.action.enabled);
         button->setCheckable(item.action.checkable);
         button->setChecked(item.action.checked.value_or(false));
-        actions_.append({item, button, !hidden.contains(item.id)});
+        actions_.append({item, button, !hidden.contains(item.id), std::move(icon)});
     }
-    for (const auto& button : previous) delete button.data();
+    for (const auto& action : std::as_const(previous)) delete action.button.data();
     const int count = int(std::count_if(actions_.cbegin(), actions_.cend(), [](const auto& action) {
         return action.included && action.description.action.visible;
     }));
