@@ -12,6 +12,7 @@ Basic.Menu {
     width: Math.min(implicitWidth, maximumSize.width)
     height: Math.min(implicitHeight, maximumSize.height)
     title: entry ? entry.title : ""
+    enabled: !entry || (entry.enabled && entry.visible)
     font: session.menuFont
     palette.window: session.menuPalette.window
     palette.windowText: session.menuPalette.windowText
@@ -32,13 +33,24 @@ Basic.Menu {
         entry: subMenu ? (subMenu as PopupMenuNode).entry : null
     }
     onClosed: if (!entry) session.finished()
+    // A host query can destroy the workspace. Qt continues using this popup
+    // after aboutToShow returns, so query after its opening handler unwinds.
+    onAboutToShow: session.requestRefresh()
     function appendMenu(child: QtObject): void { addMenu(child as PopupMenuNode) }
     function showAt(anchor: Item, point: point): void { popup(anchor, point) }
+    function measureContent(): void {
+        let hint = 0
+        for (let index = 0; index < count; ++index) {
+            const item = itemAt(index)
+            if (item && item.visible) hint = Math.max(hint, item.implicitWidth)
+        }
+        contentWidthHint = hint
+    }
     function selectBoundary(last: bool): void {
         for (let offset = 0; offset < count; ++offset) {
             const index = last ? count - 1 - offset : offset
             const item = itemAt(index)
-            if (item && item.enabled && item.activeFocusOnTab) {
+            if (item && item.visible && item.enabled && item.activeFocusOnTab) {
                 currentIndex = index
                 return
             }

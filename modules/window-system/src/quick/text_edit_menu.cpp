@@ -24,7 +24,7 @@ QVector<MenuItemDescription> describeTextEditMenu(QQuickItem* editor)
     const bool selected = !editor->property("selectedText").toString().isEmpty();
     const auto echo = editor->property("echoMode");
     const bool copyable = selected && (!echo.isValid() || echo.toInt() == 0);
-    const auto add = [&](const char* method, const char* title, QKeySequence::StandardKey key, bool enabled) {
+    const auto add = [&](const char* method, const char* title, QKeySequence::StandardKey key, bool enabled, bool visible = true) {
         MenuItemDescription item;
         item.kind = MenuItemDescription::Kind::TextEdit;
         item.commandId = QString::fromLatin1(method);
@@ -32,23 +32,21 @@ QVector<MenuItemDescription> describeTextEditMenu(QQuickItem* editor)
         item.action.title = QCoreApplication::translate("QWidgetTextControl", title);
         if (key != QKeySequence::UnknownKey) item.action.shortcut = QKeySequence(key).toString(QKeySequence::NativeText);
         item.action.enabled = enabled;
+        item.action.visible = visible;
         result.append(std::move(item));
     };
-    const auto separate = [&] {
+    const auto separate = [&](bool visible = true) {
         MenuItemDescription item; item.kind = MenuItemDescription::Kind::Separator;
+        item.action.visible = visible;
         result.append(std::move(item));
     };
-    if (editable) {
-        add("undo", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Undo"), QKeySequence::Undo, editor->property("canUndo").toBool());
-        add("redo", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Redo"), QKeySequence::Redo, editor->property("canRedo").toBool());
-        separate();
-        add("cut", QT_TRANSLATE_NOOP("QWidgetTextControl", "Cu&t"), QKeySequence::Cut, copyable);
-    }
+    add("undo", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Undo"), QKeySequence::Undo, editable && editor->property("canUndo").toBool(), editable);
+    add("redo", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Redo"), QKeySequence::Redo, editable && editor->property("canRedo").toBool(), editable);
+    separate(editable);
+    add("cut", QT_TRANSLATE_NOOP("QWidgetTextControl", "Cu&t"), QKeySequence::Cut, editable && copyable, editable);
     add("copy", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Copy"), QKeySequence::Copy, copyable);
-    if (editable) {
-        add("paste", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Paste"), QKeySequence::Paste, editor->property("canPaste").toBool());
-        add("delete", QT_TRANSLATE_NOOP("QWidgetTextControl", "Delete"), QKeySequence::UnknownKey, selected);
-    }
+    add("paste", QT_TRANSLATE_NOOP("QWidgetTextControl", "&Paste"), QKeySequence::Paste, editable && editor->property("canPaste").toBool(), editable);
+    add("delete", QT_TRANSLATE_NOOP("QWidgetTextControl", "Delete"), QKeySequence::UnknownKey, editable && selected, editable);
     separate();
     add("selectAll", QT_TRANSLATE_NOOP("QWidgetTextControl", "Select All"), QKeySequence::SelectAll, !editor->property("text").toString().isEmpty());
     return result;

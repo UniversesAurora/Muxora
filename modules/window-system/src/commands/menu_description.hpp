@@ -15,6 +15,7 @@ struct CommandActionDescription {
     bool enabled = true;
     bool checkable = false;
     std::optional<bool> checked;
+    bool operator==(const CommandActionDescription&) const = default;
 };
 
 [[nodiscard]] std::optional<CommandActionDescription> describeCommandAction(

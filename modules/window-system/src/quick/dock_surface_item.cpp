@@ -20,6 +20,7 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QKeyEvent>
+#include <QMetaProperty>
 #include <QMouseEvent>
 #include <QQuickWindow>
 
@@ -397,25 +398,47 @@ void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, const CommandC
     const QPointer<TabBarItem> bar(strip);
     const QPointer<WindowManager> owner(&manager_);
     const QPointer<QQuickItem> editor(surface == CommandMenuSurface::Pane ? textEditorFor(source) : nullptr);
-    QVector<MenuItemDescription> items = describeTextEditMenu(editor);
-    if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group) {
-        items = describeTabPresentationMenu(owner, captured);
-        if (!self || !owner) return;
-    }
-    auto commands = describeContextMenu(surface, owner, captured);
+    const auto valid = [owner, captured] {
+        if (!owner || !owner->model().window(captured.window)) return false;
+        const auto* group = owner->model().group(captured.group);
+        return captured.group.isNull() || (group && group->windowId == captured.window
+            && (captured.tab.isNull() || group->tabs.contains(captured.tab)));
+    };
+    const auto describe = [owner, captured, surface, editor, valid] {
+        if (!valid()) return QVector<MenuItemDescription>{};
+        auto items = surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group
+            ? describeTabPresentationMenu(owner, captured) : describeTextEditMenu(editor);
+        if (!owner) return QVector<MenuItemDescription>{};
+        auto commands = describeContextMenu(surface, owner, captured);
+        if (!valid()) return QVector<MenuItemDescription>{};
+        if (!items.isEmpty() && !commands.isEmpty()) {
+            MenuItemDescription separator; separator.kind = MenuItemDescription::Kind::Separator;
+            items.append(std::move(separator));
+        }
+        items += commands;
+        return items;
+    };
+    const auto items = describe();
     if (!self || !owner) return;
-    const auto* current = owner->model().group(captured.group);
-    if (!owner->model().window(captured.window) || (!captured.group.isNull() && (!current
-        || (!captured.tab.isNull() && !current->tabs.contains(captured.tab))))) {
+    if (!valid()) {
         if (bar) bar->setPopupOpen(false);
         return;
     }
-    if (!items.isEmpty() && !commands.isEmpty()) {
-        MenuItemDescription separator; separator.kind = MenuItemDescription::Kind::Separator;
-        items.append(std::move(separator));
+    auto* menu = showMenu(items, captured, global, bar, editor);
+    if (!menu) return;
+    menu->setRefreshHandler(describe);
+    connect(owner, &WindowManager::commandsChanged, menu, &PopupMenu::requestRefresh);
+    connect(owner, &WindowManager::layoutChanged, menu, &PopupMenu::requestRefresh);
+    if (editor) {
+        const auto receiver = menu->metaObject()->method(menu->metaObject()->indexOfSlot("requestRefresh()"));
+        for (const auto* name : {"text", "readOnly", "selectedText", "canUndo", "canRedo", "canPaste", "echoMode"}) {
+            const int index = editor->metaObject()->indexOfProperty(name);
+            if (index < 0) continue;
+            const auto property = editor->metaObject()->property(index);
+            if (property.hasNotifySignal()) connect(editor, property.notifySignal(), menu, receiver);
+        }
+        connect(editor, &QObject::destroyed, menu, &PopupMenu::requestRefresh);
     }
-    items += commands;
-    showMenu(items, captured, global, bar, editor);
 }
 
 GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)

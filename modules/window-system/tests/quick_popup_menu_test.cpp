@@ -372,7 +372,18 @@ private slots:
         QTRY_VERIFY(popup(view));
         auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
         QVERIFY(namedItem(menu->contentItem(), QStringLiteral("pane.close")));
-        if (readOnly) QVERIFY(!namedItem(menu->contentItem(), QStringLiteral("edit.delete")));
+        if (readOnly) {
+            auto* remove = namedItem(menu->contentItem(), QStringLiteral("edit.delete")); QVERIFY(remove);
+            QVERIFY(!remove->isVisible());
+            editor->setProperty("readOnly", false);
+            // Both Qt text controls move the cursor and clear the selection
+            // when readOnly changes. Restore a selection before deleting.
+            QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 0), Q_ARG(int, 5)));
+            QTRY_VERIFY2(remove->isVisible() && remove->isEnabled(), qPrintable(QStringLiteral("visible=%1 enabled=%2 readOnly=%3 selection=%4")
+                .arg(remove->isVisible()).arg(remove->isEnabled()).arg(editor->property("readOnly").toBool()).arg(editor->property("selectedText").toString())));
+            editor->setProperty("readOnly", true);
+            QTRY_VERIFY(!remove->isVisible() && !remove->isEnabled());
+        }
         auto* command = namedItem(menu->contentItem(), readOnly ? QStringLiteral("edit.selectAll") : QStringLiteral("edit.delete"));
         QVERIFY(command);
         QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, command->mapToScene(command->boundingRect().center()).toPoint());
@@ -445,6 +456,61 @@ private slots:
         QTRY_COMPARE(manager.model().window(floating)->kind, WindowKind::Workbench);
         QCOMPARE(manager.model().group(manager.model().groupForTab(first))->windowId, main);
         QCOMPARE(manager.model().group(manager.model().groupForTab(second))->windowId, floating);
+    }
+
+    void submenuQueriesCurrentStateWithoutLosingItsTarget_data()
+    {
+        QTest::addColumn<bool>("release");
+        QTest::newRow("execute") << false;
+        QTest::newRow("query-releases-workspace") << true;
+    }
+    void submenuQueriesCurrentStateWithoutLosingItsTarget()
+    {
+        QFETCH(bool, release);
+        WindowManager manager(WindowManager::Presentation::External);
+        auto workspace = std::make_unique<QuickWorkspace>(manager);
+        workspace->setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Target")});
+        bool enabled = false, destroy = false;
+        TabId executed;
+        Command command;
+        command.id = "test.dynamic"; command.title = "Dynamic";
+        command.contextMenus = {{ContextMenuTarget::Tab, {"Runtime"}}};
+        command.enabled = [&](const CommandContext&) { if (destroy) workspace.reset(); return enabled; };
+        command.execute = [&](const CommandContext& context) { executed = context.tab; return true; };
+        QVERIFY(manager.commands().add(command));
+        command.id = "test.other"; command.contextMenus = {{ContextMenuTarget::Tab, {"Other"}}};
+        command.enabled = [](const CommandContext&) { return false; };
+        QVERIFY(manager.commands().add(command));
+        QTRY_VERIFY(workspace->window(window));
+        const QPointer<QQuickWindow> view(workspace->window(window));
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        dock->showContextMenu(CommandMenuSurface::Tab, manager.context(window), view->mapToGlobal(QPoint(80, 80)));
+        QTRY_VERIFY(popup(view));
+        auto* root = popup(view); QVERIFY(QTest::qWaitForWindowExposed(root));
+        // Contributions use the same branch type ID; their paths distinguish
+        // the two branches when live state is applied to retained rows.
+        auto* branch = namedItem(root->contentItem(), QStringLiteral("ExtensionContextMenu")); QVERIFY(branch);
+        QTest::keyClick(root, Qt::Key_End); QTest::keyClick(root, Qt::Key_Up);
+        QTRY_VERIFY(branch->property("highlighted").toBool());
+        QTest::keyClick(root, Qt::Key_Right);
+        QTRY_VERIFY(popup(root));
+        auto* child = popup(root); QVERIFY(QTest::qWaitForWindowExposed(child));
+        auto* row = namedItem(child->contentItem(), QStringLiteral("test.dynamic")); QVERIFY(row);
+        QVERIFY(!row->isEnabled());
+        QTest::keyClick(child, Qt::Key_Escape); QTRY_VERIFY(!popup(root));
+        enabled = true; destroy = release;
+        QTest::keyClick(root, Qt::Key_Right);
+        if (release) { QTRY_VERIFY(!workspace); QTRY_VERIFY(!view); return; }
+        QTRY_VERIFY(popup(root));
+        child = popup(root); QVERIFY(QTest::qWaitForWindowExposed(child));
+        row = namedItem(child->contentItem(), QStringLiteral("test.dynamic")); QVERIFY(row);
+        QTRY_VERIFY(row->isEnabled());
+        QTest::mouseClick(child, Qt::LeftButton, Qt::NoModifier, row->mapToScene(row->boundingRect().center()).toPoint());
+        QTRY_COMPARE(executed, tab);
+        QVERIFY(manager.model().tab(tab));
     }
 };
 

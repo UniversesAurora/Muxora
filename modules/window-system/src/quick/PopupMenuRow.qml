@@ -8,13 +8,17 @@ Basic.MenuItem {
     required property MenuEntry entry
     objectName: entry ? entry.id : ""
     text: entry ? entry.title : ""
-    enabled: entry ? entry.enabled : false
+    visible: entry ? entry.visible : false
+    // Qt Menu's arrow navigation skips disabled rows, including retained
+    // rows that are currently hidden by their command state.
+    enabled: entry ? entry.enabled && entry.visible : false
     checkable: entry ? entry.checkable : false
     checked: entry ? entry.checked : false
     font: session.menuFont
     padding: 0
     implicitWidth: contentItem ? contentItem.implicitWidth : 0
     implicitHeight: contentItem ? contentItem.implicitHeight : 0
+    height: visible ? implicitHeight : 0
     contentItem: entry ? entry.content : null
     indicator: null
     arrow: null

@@ -30,6 +30,27 @@ QObject* create(SceneComponent kind, const QVariantMap& properties, QObject* par
     QQmlEngine::setObjectOwnership(object, QQmlEngine::CppOwnership);
     return object;
 }
+
+QStringList entryPath(const QStringList& parent, const MenuItemDescription& item, int ordinal)
+{
+    auto key = parent + QStringList{QString::number(int(item.kind)) + QLatin1Char(':')
+        + (item.id.isEmpty() ? QString::number(ordinal) : item.id)};
+    // Contributed submenus share a type ID; their declared path identifies
+    // each branch. Prefix path tokens so they cannot alias a child row key.
+    for (const auto& part : item.path) key.append(QStringLiteral("path:") + part);
+    return key;
+}
+
+void indexDescriptions(const QVector<MenuItemDescription>& items, const QStringList& path,
+                       QHash<QStringList, const MenuItemDescription*>& result)
+{
+    for (int index = 0; index < items.size(); ++index) {
+        const auto& item = items.at(index);
+        const auto key = entryPath(path, item, index);
+        result.insert(key, &item);
+        indexDescriptions(item.children, key, result);
+    }
+}
 } // namespace
 
 // Reuse retained native text and icon nodes. Controls only moves the selection
@@ -41,15 +62,8 @@ public:
           shortcut_(new TabLabelTextItem(this)), check_(new TabLabelTextItem(this)),
           icon_(new TabIconItem(this)), arrow_(new TabIconItem(this))
     {
-        const QFontMetrics metrics(font);
         const bool tab = item.kind == MenuItemDescription::Kind::Tab;
-        titleWidth_ = tab ? metrics.horizontalAdvance(item.action.title) : metrics.size(Qt::TextShowMnemonic, item.action.title).width();
-        shortcutWidth_ = metrics.horizontalAdvance(item.action.shortcut);
-        checkWidth_ = metrics.horizontalAdvance(QChar(0x2713));
-        iconSource_ = iconFor(item.iconName, theme);
         arrowSource_ = iconFor(QStringLiteral("chevron-right"), theme);
-        setImplicitHeight(metrics.height() + uiPixels(10));
-        setImplicitWidth(uiPixels(22 + 24) + titleWidth_ + (shortcutWidth_ ? uiPixels(20) + shortcutWidth_ : 0));
         if (tab) {
             for (const auto& action : item.rowActions) {
                 auto* button = new ButtonItem(theme, this);
@@ -63,12 +77,30 @@ public:
             }
             marker_ = new PathItem(this);
             marker_->setFill(item.marker); marker_->setVisible(item.marker.isValid());
-            const int icons = item.iconName.isEmpty() ? 0 : uiPixels(16 + 7);
-            const int count = int(actions_.size());
-            const int buttons = uiPixels(18 * count + 2 * std::max(0, count - 1));
-            setImplicitHeight(std::max(metrics.height(), uiPixels(18)) + uiPixels(4));
-            setImplicitWidth(std::clamp(uiPixels(8 + 7 + 4) + icons + titleWidth_ + buttons, uiPixels(240), uiPixels(520)));
         }
+        refreshDescription(true);
+    }
+    void refreshDescription(bool remeasure)
+    {
+        if (remeasure) {
+            const QFontMetrics metrics(font_);
+            const bool tab = item_.kind == MenuItemDescription::Kind::Tab;
+            titleWidth_ = tab ? metrics.horizontalAdvance(item_.action.title) : metrics.size(Qt::TextShowMnemonic, item_.action.title).width();
+            shortcutWidth_ = metrics.horizontalAdvance(item_.action.shortcut);
+            checkWidth_ = metrics.horizontalAdvance(QChar(0x2713));
+            iconSource_ = iconFor(item_.iconName, theme_);
+            setImplicitHeight(metrics.height() + uiPixels(10));
+            setImplicitWidth(uiPixels(22 + 24) + titleWidth_ + (shortcutWidth_ ? uiPixels(20) + shortcutWidth_ : 0));
+            if (tab) {
+                const int icons = item_.iconName.isEmpty() ? 0 : uiPixels(16 + 7);
+                const int count = int(actions_.size());
+                const int buttons = uiPixels(18 * count + 2 * std::max(0, count - 1));
+                setImplicitHeight(std::max(metrics.height(), uiPixels(18)) + uiPixels(4));
+                setImplicitWidth(std::clamp(uiPixels(8 + 7 + 4) + icons + titleWidth_ + buttons, uiPixels(240), uiPixels(520)));
+                elideWidth_ = -1;
+            }
+        }
+        refresh();
     }
     void setHighlighted(bool selected)
     {
@@ -180,16 +212,30 @@ private:
 
 MenuEntry::MenuEntry(MenuItemDescription description, PopupMenu& owner)
     : QObject(&owner), description_(std::move(description)), owner_(owner),
-      label_(new MenuLabelItem(description_, owner.theme(), owner.menuFont(), *this))
+      label_(description_.kind == MenuItemDescription::Kind::Separator ? nullptr
+          : new MenuLabelItem(description_, owner.theme(), owner.menuFont(), *this))
 {
-    label_->setParent(this);
+    if (label_) label_->setParent(this);
 }
 MenuEntry::~MenuEntry() = default;
 QQuickItem* MenuEntry::content() const { return label_; }
-void MenuEntry::setHighlighted(bool highlighted) { label_->setHighlighted(highlighted); }
-void MenuEntry::setHovered(bool hovered) { label_->setHovered(hovered); }
+void MenuEntry::setHighlighted(bool highlighted) { if (label_) label_->setHighlighted(highlighted); }
+void MenuEntry::setHovered(bool hovered) { if (label_) label_->setHovered(hovered); }
 void MenuEntry::activate() { owner_.activate(description_); }
 void MenuEntry::activateAction(const QString& action) { owner_.activateAction(description_, action); }
+
+void MenuEntry::updateDescription(const MenuItemDescription* value)
+{
+    auto next = value ? *value : description_;
+    if (!value) { next.action.visible = false; next.action.enabled = false; }
+    const bool remeasure = description_.action.title != next.action.title
+        || description_.action.shortcut != next.action.shortcut || description_.iconName != next.iconName;
+    const bool updated = description_.action != next.action || description_.tooltip != next.tooltip || remeasure;
+    description_ = std::move(next);
+    if (!updated) return;
+    if (label_) label_->refreshDescription(remeasure);
+    emit changed();
+}
 
 PopupMenu::PopupMenu(const Theme& theme, QObject* parent)
     : QObject(parent), theme_(theme), font_(QGuiApplication::font()) {}
@@ -212,23 +258,27 @@ QPalette PopupMenu::menuPalette() const
     return result;
 }
 
-QObject* PopupMenu::buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent)
+QObject* PopupMenu::buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, const QStringList& path)
 {
     auto* menu = create(SceneComponent::Menu,
         {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(entry)}, {"maximumSize", maximumSize_}}, parent);
     watchWindow(menu, menu->property("contentItem").value<QQuickItem*>());
+    menus_.append(menu);
     qreal width = 0;
-    for (const auto& description : items) {
-        if (!description.action.visible) continue;
+    for (int index = 0; index < items.size(); ++index) {
+        const auto& description = items.at(index);
+        const auto key = entryPath(path, description, index);
+        auto* value = new MenuEntry(description, *this);
+        entries_.insert(key, value);
         if (description.kind == MenuItemDescription::Kind::Separator) {
-            auto* separator = qobject_cast<QQuickItem*>(create(SceneComponent::MenuSeparator, {{"session", QVariant::fromValue(this)}}, menu));
+            auto* separator = qobject_cast<QQuickItem*>(create(SceneComponent::MenuSeparator,
+                {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(value)}}, menu));
             QMetaObject::invokeMethod(menu, "addItem", Q_ARG(QQuickItem*, separator));
             continue;
         }
-        auto* value = new MenuEntry(description, *this);
-        width = std::max(width, value->content()->implicitWidth());
+        if (description.action.visible) width = std::max(width, value->content()->implicitWidth());
         if (description.kind == MenuItemDescription::Kind::Submenu) {
-            auto* child = buildMenu(description.children, value, menu);
+            auto* child = buildMenu(description.children, value, menu, key);
             QMetaObject::invokeMethod(menu, "appendMenu", Q_ARG(QObject*, child));
         } else {
             auto* row = qobject_cast<QQuickItem*>(create(SceneComponent::MenuRow,
@@ -296,15 +346,47 @@ void PopupMenu::dismiss()
 
 bool PopupMenu::isOpen() const { return menu_ && menu_->property("visible").toBool(); }
 
+void PopupMenu::setRefreshHandler(std::function<QVector<MenuItemDescription>()> handler)
+{
+    refreshHandler_ = std::move(handler);
+}
+
+void PopupMenu::requestRefresh()
+{
+    if (refreshQueued_) return;
+    refreshQueued_ = true;
+    QTimer::singleShot(0, this, [this] { refreshQueued_ = false; if (isOpen()) refresh(); });
+}
+
+void PopupMenu::refresh()
+{
+    if (!refreshHandler_ || refreshing_) return;
+    refreshing_ = true;
+    const QPointer<PopupMenu> self(this);
+    const auto resolve = refreshHandler_;
+    const auto items = resolve();
+    if (!self) return; // A host query may close the workspace and session.
+    QHash<QStringList, const MenuItemDescription*> descriptions;
+    indexDescriptions(items, {}, descriptions);
+    for (auto it = entries_.cbegin(); it != entries_.cend(); ++it)
+        it.value()->updateDescription(descriptions.value(it.key()));
+    for (const auto& menu : std::as_const(menus_)) if (menu) QMetaObject::invokeMethod(menu, "measureContent");
+    refreshing_ = false;
+    if (!std::any_of(items.cbegin(), items.cend(), [](const auto& item) {
+        return item.action.visible && item.kind != MenuItemDescription::Kind::Separator;
+    })) dismiss();
+}
+
 void PopupMenu::activateAction(const MenuItemDescription& item, const QString& action)
 {
+    if (!item.action.visible || !item.action.enabled) return;
     QTimer::singleShot(0, this, [this, item, action] { emit rowActionTriggered(item, action); });
     dismiss();
 }
 
 void PopupMenu::activate(const MenuItemDescription& item)
 {
-    if (!item.action.enabled || item.kind == MenuItemDescription::Kind::Submenu) return;
+    if (!item.action.visible || !item.action.enabled || item.kind == MenuItemDescription::Kind::Submenu) return;
     // Controls dismisses the menu in its trigger handler. Execute only after
     // that handler returns: a command may close the window and this session.
     QTimer::singleShot(0, this, [this, item] { emit triggered(item); });
