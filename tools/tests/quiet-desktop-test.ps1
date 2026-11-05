@@ -218,8 +218,6 @@ public static class QuietDesktopFixture {
     static uint uiId;
     static Exception failure;
     static bool delayed;
-    static volatile bool lateOrderArmed;
-    static int lateOrderCount;
     static int helperMinimizations;
     static volatile bool revealHiddenArmed;
     static int appearingMinimizations;
@@ -247,26 +245,11 @@ public static class QuietDesktopFixture {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
     [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtrW(IntPtr window, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr window, StringBuilder name, int size);
-    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
-    [DllImport("user32.dll")] static extern UIntPtr SetTimer(IntPtr window, UIntPtr id, uint milliseconds, IntPtr callback);
-    [DllImport("user32.dll")] static extern bool KillTimer(IntPtr window, UIntPtr id);
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("comctl32.dll")] static extern void InitCommonControls();
 
     static IntPtr Dispatch(IntPtr window, uint message, IntPtr first, IntPtr second) {
-        if (message == 5 /* WM_SIZE */ && first.ToInt64() != 1 && lateOrderArmed &&
-            windows.ContainsKey("slow") && windows["slow"] == window) {
-            lateOrderArmed = false;
-            SetTimer(window, new UIntPtr(1), 50, IntPtr.Zero);
-        }
-        if (message == 0x0113 /* WM_TIMER */ && first.ToInt64() == 1 &&
-            windows.ContainsKey("slow") && windows["slow"] == window) {
-            KillTimer(window, new UIntPtr(1));
-            SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, 0x0013 /* NOACTIVATE | NOMOVE | NOSIZE */);
-            Interlocked.Increment(ref lateOrderCount);
-        }
         if (message == 5 /* WM_SIZE */ && first.ToInt64() == 1 /* SIZE_MINIMIZED */) {
             if (windows.ContainsKey("appearing-hidden") && windows["appearing-hidden"] == window) {
                 Interlocked.Increment(ref appearingMinimizations);
@@ -361,19 +344,9 @@ public static class QuietDesktopFixture {
         return result.ToArray();
     }
 
-    public static void ArmLateOrder() { lateOrderArmed = true; }
-    public static int LateOrderCount() { return Volatile.Read(ref lateOrderCount); }
     public static int HelperMinimizations() { return Volatile.Read(ref helperMinimizations); }
     public static void ArmHiddenAppearance() { revealHiddenArmed = true; }
     public static int AppearingMinimizations() { return Volatile.Read(ref appearingMinimizations); }
-
-    public static long[] Order(long[] handles) {
-        var remaining = new HashSet<long>(handles); var result = new List<long>();
-        EnumWindows((window, parameter) => {
-            if (remaining.Contains(window.ToInt64())) result.Add(window.ToInt64()); return true;
-        }, IntPtr.Zero);
-        return result.ToArray();
-    }
 
     public static void Stop() {
         PostThreadMessageW(uiId, 18 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
@@ -447,11 +420,7 @@ try {
     [QuietDesktopFixture]::Start()
     $original = @([QuietDesktopFixture]::Snapshot())
     $original | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $taskTemporary 'fixture.json') -Encoding utf8
-    $orderedHandles = @($original | Where-Object { $_.Name -notin @('tooltip', 'qt-tooltip', 'originally-hidden', 'appearing-hidden', 'originally-minimized') } | ForEach-Object Handle)
-    $originalOrder = [QuietDesktopFixture]::Order([long[]]$orderedHandles)
     foreach ($expectedExit in @(0, 7)) {
-        $lateOrderBefore = [QuietDesktopFixture]::LateOrderCount()
-        [QuietDesktopFixture]::ArmLateOrder()
         & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -File $PSCommandPath -Probe -CaseDirectory $taskTemporary -FixtureStateFile $taskRecovery -ProbeExitCode $expectedExit
         Assert-That ($LASTEXITCODE -eq $expectedExit) "The wrapper changed the child exit code: $LASTEXITCODE."
         Assert-That (Test-Path -LiteralPath (Join-Path $taskTemporary 'probe-ran')) 'The isolated command did not execute.'
@@ -461,16 +430,7 @@ try {
             Assert-That ($current.Visible -eq $entry.Visible -and $current.Iconic -eq $entry.Iconic) "Visibility was not restored for $($entry.Name)."
             Assert-That ($current.Placement.ShowCommand -eq $entry.Placement.ShowCommand) "Window state was not restored for $($entry.Name)."
             Assert-That ($current.Placement.Normal.Equals($entry.Placement.Normal)) "Normal geometry changed for $($entry.Name)."
-            Assert-That ($current.Topmost -eq $entry.Topmost) "The topmost band changed for $($entry.Name)."
         }
-        $elapsed = [Diagnostics.Stopwatch]::StartNew()
-        do {
-            $restoredOrder = [QuietDesktopFixture]::Order([long[]]$orderedHandles)
-            if (($restoredOrder -join ',') -eq ($originalOrder -join ',')) { break }
-            Start-Sleep -Milliseconds 25
-        } while ($elapsed.ElapsedMilliseconds -lt 3000)
-        Assert-That (($restoredOrder -join ',') -eq ($originalOrder -join ',')) "Application Z order was not restored: expected $($originalOrder -join ','), got $($restoredOrder -join ',')."
-        Assert-That ([QuietDesktopFixture]::LateOrderCount() -gt $lateOrderBefore) 'The delayed restore-time Z-order change did not execute.'
         Assert-That ([QuietDesktopFixture]::HelperMinimizations() -eq 0) 'A non-activating helper without minimize controls was unnecessarily minimized.'
     }
     # The child's -Command must remain an argument, not bind to the wrapper.
@@ -532,4 +492,4 @@ try {
     if (-not $taskResolved.StartsWith($taskAllowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fixture cleanup path.' }
     Remove-Item -LiteralPath $taskResolved -Recurse -Force
 }
-Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry/Z-order recovery with delayed reordering, child failure and -Command forwarding, unsupported snapshot rejection, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
+Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry recovery, child failure and -Command forwarding, unsupported snapshot rejection, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'

@@ -530,41 +530,24 @@ public static class QuietDesktopNative {
         return before;
     }
 
+    // One pass of requests, not verified: the user decided (2026-11-05) that
+    // the restore puts the stacking back without checking that it held.
     static void RestoreOrder(WindowState[] states) {
         const uint flags = 0x0013 /* NOACTIVATE | NOMOVE | NOSIZE */ | 0x0200 /* NOOWNERZORDER */ | 0x4000 /* ASYNCWINDOWPOS */;
         var ownersFirst = new List<WindowState>(states);
         ownersFirst.Sort((left, right) => OwnerDepth(left).CompareTo(OwnerDepth(right)));
-        var elapsed = Stopwatch.StartNew();
-        long settledAt = -1;
-        do {
-            bool bandsMatch = true;
-            foreach (var state in ownersFirst) {
-                if (!SameWindow(state) || Topmost(state) == state.Topmost) continue;
-                bandsMatch = false;
+        foreach (var state in ownersFirst)
+            if (SameWindow(state) && Topmost(state) != state.Topmost)
                 SetWindowPos(new IntPtr(state.Handle), new IntPtr(state.Topmost ? -1 : -2), 0, 0, 0, 0, flags);
-            }
-            foreach (var state in states) {
-                if (!SameWindow(state)) continue;
-                var previous = Predecessor(state, states);
-                // Raising another application's first window needs foreground
-                // permission. Put only out-of-order peers down behind their
-                // live predecessor; later peers close any temporary gaps.
-                if (Before(state, previous))
-                    SetWindowPos(new IntPtr(state.Handle), new IntPtr(previous.Handle), 0, 0, 0, 0, flags);
-            }
-            if (bandsMatch && OrderRestored(states)) {
-                if (settledAt < 0) settledAt = elapsed.ElapsedMilliseconds;
-                if (elapsed.ElapsedMilliseconds - settledAt >= 100) return;
-            } else settledAt = -1;
-            Thread.Sleep(25);
-        } while (elapsed.ElapsedMilliseconds < 3000);
         foreach (var state in states) {
             if (!SameWindow(state)) continue;
             var previous = Predecessor(state, states);
-            if (Topmost(state) != state.Topmost || Before(state, previous))
-                throw new InvalidOperationException("Application window order has not restored; keep the recovery snapshot and run -Restore again. " + PositionDiagnostic(state, previous, states));
+            // Raising another application's first window needs foreground
+            // permission. Put only out-of-order peers down behind their
+            // live predecessor; later peers close any temporary gaps.
+            if (Before(state, previous))
+                SetWindowPos(new IntPtr(state.Handle), new IntPtr(previous.Handle), 0, 0, 0, 0, flags);
         }
-        throw new InvalidOperationException("Application window order did not settle; keep the recovery snapshot and run -Restore again.");
     }
 
     static bool PlacementRestored(WindowState state) {
@@ -576,36 +559,6 @@ public static class QuietDesktopNative {
         return current.ShowCommand == saved.ShowCommand && current.Normal.Left == saved.Normal.Left &&
             current.Normal.Top == saved.Normal.Top && current.Normal.Right == saved.Normal.Right &&
             current.Normal.Bottom == saved.Normal.Bottom;
-    }
-
-    static bool OrderRestored(WindowState[] states) {
-        var expected = new List<long>();
-        foreach (var state in states) if (SameWindow(state)) expected.Add(state.Handle);
-        var remaining = new HashSet<long>(expected);
-        var actual = new List<long>();
-        EnumWindows((window, parameter) => {
-            if (remaining.Contains(window.ToInt64())) actual.Add(window.ToInt64());
-            return true;
-        }, IntPtr.Zero);
-        if (expected.Count != actual.Count) return false;
-        for (int i = 0; i < expected.Count; ++i) if (expected[i] != actual[i]) return false;
-        return true;
-    }
-
-    static string PositionDiagnostic(WindowState state, WindowState previous, WindowState[] states) {
-        var window = new IntPtr(state.Handle);
-        var peers = new HashSet<long>();
-        foreach (var candidate in states) if (SameWindow(candidate)) peers.Add(candidate.Handle);
-        var order = new List<string>();
-        EnumWindows((entry, parameter) => {
-            if (peers.Contains(entry.ToInt64())) order.Add("0x" + entry.ToInt64().ToString("x"));
-            return true;
-        }, IntPtr.Zero);
-        return "window=0x" + state.Handle.ToString("x") + " PID=" + state.Process + " thread=" + state.Thread +
-            " class=" + state.Class + " owner=0x" + GetWindow(window, 4).ToInt64().ToString("x") +
-            " topmost=" + ((GetWindowLongPtrW(window, -20).ToInt64() & 8) != 0) + " expectedTopmost=" + state.Topmost +
-            " previous=" + (previous == null ? "none" : "0x" + previous.Handle.ToString("x") + " alive=" + SameWindow(previous)) +
-            " foreground=0x" + GetForegroundWindow().ToInt64().ToString("x") + " order=" + string.Join(",", order);
     }
 
     public static WindowState FromSnapshot(long handle, uint process, uint thread, string name, bool topmost,
