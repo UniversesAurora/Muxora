@@ -150,13 +150,13 @@ add_library(WindowSystem::Quick ALIAS WindowSystemQuick)
 set_target_properties(WindowSystemQuick PROPERTIES AUTOMOC ON)
 target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
 target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src src/quick)
-foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator)
+foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator ApplicationMenuBar)
     set_source_files_properties(src/quick/${menu_file}.qml PROPERTIES QT_RESOURCE_ALIAS ${menu_file}.qml)
 endforeach()
 qt_add_qml_module(WindowSystemQuick URI WindowSystem.Internal VERSION 1.0 NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WindowSystem/Internal"
     RESOURCE_PREFIX /qt/qml
-    QML_FILES src/quick/PopupMenuNode.qml src/quick/PopupMenuRow.qml src/quick/PopupMenuSeparator.qml)
+    QML_FILES src/quick/PopupMenuNode.qml src/quick/PopupMenuRow.qml src/quick/PopupMenuSeparator.qml src/quick/ApplicationMenuBar.qml)
 # WindowManager still lives in the Widgets library; 10.6 moves it out.
 target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE Qt6::QuickControls2 WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)

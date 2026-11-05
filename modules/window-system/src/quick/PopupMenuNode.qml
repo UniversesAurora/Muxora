@@ -35,7 +35,7 @@ Basic.Menu {
     onClosed: if (!entry) session.finished()
     // A host query can destroy the workspace. Qt continues using this popup
     // after aboutToShow returns, so query after its opening handler unwinds.
-    onAboutToShow: session.requestRefresh()
+    onAboutToShow: session.requestCatalogRefresh()
     function insertBranch(index: int, child: QtObject): Item {
         insertMenu(index, child as PopupMenuNode)
         return itemAt(index)
@@ -69,11 +69,21 @@ Basic.Menu {
         }
     }
     contentItem: ListView {
+        id: list
         implicitHeight: contentHeight
         model: control.contentModel
-        currentIndex: control.currentIndex
+        // Menu owns keyboard selection and focus. A second current-item
+        // owner feeds focus back during model moves and removals.
+        currentIndex: -1
         clip: true
         interactive: contentHeight > height
+        function revealCurrent(): void {
+            if (control.currentIndex >= 0) positionViewAtIndex(control.currentIndex, ListView.Contain)
+        }
+        Connections {
+            target: control
+            function onCurrentIndexChanged(): void { Qt.callLater(list.revealCurrent) }
+        }
         Basic.ScrollIndicator.vertical: Basic.ScrollIndicator {}
     }
     background: Rectangle {

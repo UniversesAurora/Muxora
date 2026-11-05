@@ -33,7 +33,7 @@ class MenuEntry final : public QObject {
     Q_PROPERTY(bool persistentHighlight READ persistentHighlight NOTIFY changed)
     Q_PROPERTY(QQuickItem* content READ content CONSTANT)
 public:
-    MenuEntry(MenuItemDescription description, PopupMenu& owner);
+    MenuEntry(MenuItemDescription description, PopupMenu& owner, bool menuBar = false);
     ~MenuEntry() override;
     QString title() const { return description_.action.title; }
     QString id() const { return description_.id; }
@@ -45,6 +45,7 @@ public:
     bool persistentHighlight() const { return description_.kind == MenuItemDescription::Kind::Tab && checked(); }
     QQuickItem* content() const;
     void updateDescription(MenuItemDescription description);
+    void updatePresentation(const Theme& theme, const QFont& font, bool remeasure);
     Q_INVOKABLE void setHighlighted(bool highlighted);
     Q_INVOKABLE void setHovered(bool hovered);
     Q_INVOKABLE void activate();
@@ -57,24 +58,29 @@ private:
     MenuLabelItem* label_;
 };
 
-// Qt Quick Controls owns popup capture, cascades, scrolling and key routing.
+// One retained tree, rooted at a popup or the title's menu bar. Quick Controls
+// owns popup capture, cascades, scrolling and key routing.
 // This session owns only the description and the existing themed presentation.
 class PopupMenu final : public QObject {
     Q_OBJECT
     QML_ELEMENT
     QML_UNCREATABLE("Created by the window adapter")
-    Q_PROPERTY(QFont menuFont READ menuFont CONSTANT)
-    Q_PROPERTY(QPalette menuPalette READ menuPalette CONSTANT)
-    Q_PROPERTY(qreal scale READ scale CONSTANT)
+    Q_PROPERTY(QFont menuFont READ menuFont NOTIFY presentationChanged)
+    Q_PROPERTY(QPalette menuPalette READ menuPalette NOTIFY presentationChanged)
+    Q_PROPERTY(QColor hoverFill READ hoverFill NOTIFY presentationChanged)
+    Q_PROPERTY(qreal scale READ scale NOTIFY presentationChanged)
 public:
     explicit PopupMenu(const Theme& theme, QObject* parent = nullptr);
     ~PopupMenu() override;
     bool open(QQuickItem* anchor, QPoint globalPosition, const QVector<MenuItemDescription>& items);
+    QQuickItem* createMenuBar(QQuickItem* parent, const QVector<MenuItemDescription>& items);
+    void setPresentation(const Theme& theme);
     void dismiss();
     bool isOpen() const;
     QFont menuFont() const { return font_; }
     QPalette menuPalette() const;
     qreal scale() const;
+    QColor hoverFill() const { return theme_.accentSoft; }
     const Theme& theme() const { return theme_; }
     void activate(const MenuItemDescription& item);
     void activateAction(const MenuItemDescription& item, const QString& action);
@@ -82,7 +88,10 @@ public:
     Q_INVOKABLE void finished();
 public slots:
     void requestRefresh();
+    void requestCatalogRefresh();
 signals:
+    void presentationChanged();
+    void contextMenuRequested(QPoint global);
     void triggered(window_system::MenuItemDescription item);
     void rowActionTriggered(window_system::MenuItemDescription item, QString action);
     void closed();
@@ -97,19 +106,21 @@ private:
         QVector<Row> children;
     };
     QObject* buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, QVector<Row>& rows);
-    Row createRow(QObject* menu, const MenuItemDescription& item, int index);
-    void syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuItemDescription>& items);
+    Row createRow(QObject* menu, const MenuItemDescription& item, int index, bool menuBar);
+    void syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuItemDescription>& items, bool menuBar = false);
     void removeRow(QObject* menu, const Row& row);
     void watchWindow(QObject* menu, QQuickItem* content);
     void refresh();
+    void queueRefresh(bool force);
     Theme theme_;
     QFont font_;
+    qreal scale_ = 1;
     QSize maximumSize_;
     std::unique_ptr<QObject> menu_;
     QHash<QObject*, QPointer<QObject>> menuWindows_;
     QVector<Row> rows_;
     std::function<QVector<MenuItemDescription>()> refreshHandler_;
-    bool refreshing_ = false, refreshQueued_ = false;
+    bool menuBar_ = false, refreshing_ = false, refreshQueued_ = false, forceRefresh_ = false;
 };
 
 } // namespace window_system::quick

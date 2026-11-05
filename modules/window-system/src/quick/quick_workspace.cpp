@@ -5,6 +5,7 @@
 #include "content_host.hpp"
 #include "content_bars.hpp"
 #include "dock_surface_item.hpp"
+#include "popup_menu.hpp"
 #include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
 #ifdef Q_OS_WIN
@@ -18,17 +19,28 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTimer>
+#include <QtMath>
 #include <algorithm>
 #include <utility>
 
 namespace window_system {
 namespace {
 
+QVector<MenuItemDescription> windowMenus(WindowManager* manager, WindowId id)
+{
+    if (!manager) return {};
+    const auto* record = manager->model().window(id);
+    if (!record) return {};
+    return describeApplicationMenu(record->kind == WindowKind::Floating
+        ? CommandMenuSurface::FloatingApplication : CommandMenuSurface::Application, manager, id);
+}
+
 // A workspace window: the header row above the dock, in a native frame
 // without the system caption. Closing asks the manager, which may refuse.
 class WorkspaceQuickWindow final : public QQuickWindow {
 public:
-    WorkspaceQuickWindow(WindowManager& manager, quick::ContentHost& host, quick::ContentBars& bars, quick::TabDrag& drag, WindowId id)
+    WorkspaceQuickWindow(WindowManager& manager, quick::ContentHost& host, quick::ContentBars& bars,
+                         quick::TabDrag& drag, WindowId id, const QVector<MenuItemDescription>& menuItems)
         : manager_(manager), id_(id)
     {
         const auto options = manager.windowOptions(id);
@@ -56,6 +68,7 @@ public:
         chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, bars, id, contentItem());
         dock->setTabDrag(&drag);
+        createMenus(theme, menuItems);
         chrome_->menuRequested = [this](QPoint global) {
             const auto* record = manager_.model().window(id_);
             // The workbench header's strip menu joins it with the toolbars.
@@ -80,7 +93,11 @@ public:
         });
 #ifdef Q_OS_WIN
         NativeFrameClient client;
-        client.minimumSize = [this] { return dock->minimumSize() + QSize(0, quick::WindowChromeItem::rowHeight()); };
+        client.minimumSize = [this] {
+            const auto body = dock->minimumSize();
+            const auto header = chrome_->isVisible() ? chrome_->minimumSize() : QSize(0, 0);
+            return QSize(std::max(body.width(), header.width()), body.height() + header.height());
+        };
         client.captionButtonAt = [this](QPointF position) -> QObject* { return chrome_->captionButtonAt(position); };
         client.setCaptionHovered = [](QObject* button, bool hovered, QPointF) { static_cast<quick::ButtonItem*>(button)->setHovered(hovered); };
         client.setCaptionPressed = [](QObject* button, bool pressed) { static_cast<quick::ButtonItem*>(button)->setPressed(pressed); };
@@ -122,6 +139,7 @@ public:
         const auto title = manager_.windowCaption(id_);
         if (this->title() != title) setTitle(title);
         chrome_->setTitle(record && record->kind == WindowKind::Floating ? title : manager_.windowOptions(id_).title);
+        if (menus_) menus_->setPresentation(manager_.interfaceTheme());
     }
 
     void applyViewState()
@@ -169,9 +187,35 @@ protected:
 #endif
 
 private:
+    void createMenus(const Theme& theme, const QVector<MenuItemDescription>& menuItems)
+    {
+        menus_ = new quick::PopupMenu(theme, this);
+        chrome_->setMenuBar(menus_->createMenuBar(chrome_, menuItems));
+        const QPointer<WindowManager> owner(&manager_);
+        menus_->setRefreshHandler([owner, id = id_] { return windowMenus(owner, id); });
+        connect(&manager_, &WindowManager::commandsChanged, menus_, &quick::PopupMenu::requestCatalogRefresh);
+        connect(&manager_, &WindowManager::layoutChanged, menus_, &quick::PopupMenu::requestRefresh);
+        connect(menus_, &quick::PopupMenu::presentationChanged, chrome_, [this] {
+            const QPointer<WorkspaceQuickWindow> self(this);
+            setColor(menus_->theme().headerBackground);
+            if (!self) return;
+            chrome_->setTheme(menus_->theme()); layoutChildren();
+        }, Qt::QueuedConnection);
+        connect(menus_, &quick::PopupMenu::contextMenuRequested, dock, [this](QPoint global) {
+            dock->showContextMenu(CommandMenuSurface::Group, manager_.context(id_), global);
+        });
+        connect(menus_, &quick::PopupMenu::triggered, menus_, [owner, id = id_](const MenuItemDescription& item) {
+            if (!owner) return;
+            auto context = owner->context(id);
+            context.args = item.arguments;
+            owner->executeInContext(item.commandId, context);
+        });
+        connect(chrome_, &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
+    }
+
     void layoutChildren()
     {
-        const int header = chrome_->isVisible() ? quick::WindowChromeItem::rowHeight() : 0;
+        const int header = chrome_->isVisible() ? qCeil(chrome_->implicitHeight()) : 0;
         chrome_->setSize(QSizeF(width(), header));
         dock->setPosition(QPointF(0, header));
         dock->setSize(QSizeF(width(), std::max(0, height() - header)));
@@ -179,6 +223,7 @@ private:
     WindowManager& manager_;
     WindowId id_;
     quick::WindowChromeItem* chrome_;
+    quick::PopupMenu* menus_ = nullptr;
     Qt::WindowStates normalStates_;
     bool applyingViewState_ = false;
     QRect normalGeometry_;
@@ -369,7 +414,12 @@ void QuickWorkspace::sync()
     for (const auto id : model.windowOrder()) {
         auto& window = d->windows[id];
         if (!window) {
-            window = new WorkspaceQuickWindow(d->manager, d->host, d->bars, d->drag, id);
+            // Queries can call host code. Resolve before constructing a native
+            // window, then recheck the workspace and model before using them.
+            const auto menus = windowMenus(&d->manager, id);
+            if (!self) return;
+            if (!model.window(id)) continue;
+            window = new WorkspaceQuickWindow(d->manager, d->host, d->bars, d->drag, id, menus);
             connect(window->dock, &quick::DockSurfaceItem::paneMenuRequested, this,
                 [this](TabId tab, PaneId pane, QPoint global, QQuickItem* source) { d->manager.showPaneMenu(tab, pane, global, source); });
             d->ownedWindows.insert(window);

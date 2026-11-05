@@ -5,6 +5,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QQuickItem>
+#include <QPointer>
 #include <functional>
 #include <optional>
 
@@ -14,8 +15,8 @@ class ButtonItem;
 class TabLabelTextItem;
 
 // A Quick window's header row, as the Widgets WindowHeader: the title in
-// the middle and the caption buttons at the outer edge. Menus and toolbars
-// join it with 10.4. Pressing the title moves the window; a double click
+// the middle, the menu bar before it and caption buttons at the outer edge.
+// Toolbars join it with 10.4e. Pressing the title moves the window; a double click
 // maximizes or restores it. A window whose title carries its tabs, as a
 // floating window's does, asks for that drag once the pointer has moved
 // the drag distance.
@@ -25,6 +26,9 @@ public:
     WindowChromeItem(const Theme& theme, QQuickItem* parent = nullptr);
     [[nodiscard]] static int rowHeight();
     void setTitle(const QString& title);
+    void setTheme(const Theme& theme);
+    void setMenuBar(QQuickItem* menu);
+    [[nodiscard]] QSize minimumSize() const;
     void setButtonOrder(CaptionButtonOrder order);
     // Maximized or full screen: the middle button restores.
     void setExpanded(bool expanded);
@@ -46,17 +50,20 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
+    void requestLayout();
     void relayout();
     Theme theme_;
     ButtonItem* minimize_;
     ButtonItem* maximize_;
     ButtonItem* close_;
     TabLabelTextItem* title_;
+    QPointer<QQuickItem> menu_;
     QString titleText_;
     // Where a carrying title was pressed, while it waits for the distance.
     std::optional<QPoint> press_;
     CaptionButtonOrder order_ = CaptionButtonOrder::Windows;
     bool expanded_ = false;
+    bool layoutPending_ = false;
 };
 
 } // namespace window_system::quick

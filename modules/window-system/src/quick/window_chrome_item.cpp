@@ -11,6 +11,7 @@
 #include <QMouseEvent>
 #include <QQuickWindow>
 #include <QStyleHints>
+#include <QtMath>
 #include <algorithm>
 
 namespace window_system::quick {
@@ -25,22 +26,46 @@ WindowChromeItem::WindowChromeItem(const Theme& theme, QQuickItem* parent)
 {
     setAcceptedMouseButtons(Qt::LeftButton);
     for (auto* button : {minimize_, maximize_, close_}) button->setShape(ButtonItem::Shape::Caption);
-    minimize_->setIcon(iconFor(QStringLiteral("minimize"), theme));
     minimize_->setToolTip(QCoreApplication::translate("WindowSystem", "Minimize"));
-    close_->setIcon(iconFor(QStringLiteral("close"), theme));
-    // The close icon turns white on its danger fill.
-    auto onDanger = theme;
-    onDanger.text = onDanger.headerText = Qt::white;
-    close_->setActiveIcon(iconFor(QStringLiteral("close"), onDanger));
     close_->setDestructive(true);
     close_->setToolTip(QCoreApplication::translate("WindowSystem", "Close window"));
     connect(minimize_, &ButtonItem::clicked, this, [this] { if (minimizeRequested) minimizeRequested(); });
     connect(maximize_, &ButtonItem::clicked, this, [this] { if (maximizeRequested) maximizeRequested(); });
     connect(close_, &ButtonItem::clicked, this, [this] { if (closeRequested) closeRequested(); });
-    setExpanded(false);
+    setTheme(theme);
 }
 
 int WindowChromeItem::rowHeight() { return uiPixels(32); }
+
+void WindowChromeItem::setTheme(const Theme& theme)
+{
+    theme_ = theme;
+    for (auto* button : {minimize_, maximize_, close_}) button->setTheme(theme);
+    minimize_->setIcon(iconFor(QStringLiteral("minimize"), theme));
+    close_->setIcon(iconFor(QStringLiteral("close"), theme));
+    auto onDanger = theme;
+    onDanger.text = onDanger.headerText = Qt::white;
+    close_->setActiveIcon(iconFor(QStringLiteral("close"), onDanger));
+    setExpanded(expanded_);
+    relayout();
+}
+
+void WindowChromeItem::setMenuBar(QQuickItem* menu)
+{
+    Q_ASSERT(!menu_);
+    menu_ = menu;
+    menu->setClip(true);
+    // A font or catalog update must finish before header geometry reaches
+    // host content callbacks, which can destroy the workspace synchronously.
+    connect(menu, &QQuickItem::implicitWidthChanged, this, &WindowChromeItem::requestLayout);
+    connect(menu, &QQuickItem::implicitHeightChanged, this, &WindowChromeItem::requestLayout);
+    relayout();
+}
+
+QSize WindowChromeItem::minimumSize() const
+{
+    return {3 * uiPixels(captionButtonWidth) + (menu_ ? qCeil(menu_->implicitWidth()) : 0), qCeil(implicitHeight())};
+}
 
 void WindowChromeItem::setTitle(const QString& title)
 {
@@ -78,8 +103,16 @@ void WindowChromeItem::geometryChange(const QRectF& now, const QRectF& previous)
     if (now.size() != previous.size()) relayout();
 }
 
+void WindowChromeItem::requestLayout()
+{
+    if (layoutPending_) return;
+    layoutPending_ = true;
+    QMetaObject::invokeMethod(this, [this] { layoutPending_ = false; relayout(); }, Qt::QueuedConnection);
+}
+
 void WindowChromeItem::relayout()
 {
+    setImplicitHeight(std::max(rowHeight(), menu_ ? qCeil(menu_->implicitHeight()) : 0));
     // The outermost button keeps the window's edge, as in the Widgets row.
     const int button = uiPixels(captionButtonWidth), row = int(height());
     const bool leading = order_ != CaptionButtonOrder::Windows;
@@ -93,9 +126,14 @@ void WindowChromeItem::relayout()
         item->setSize(QSizeF(button, row));
         x += button;
     }
-    // The title is centered in the rest of the row.
-    const QRect area = leading ? QRect(controls, 0, std::max(0, int(width()) - controls), row)
-                               : QRect(0, 0, std::max(0, int(width()) - controls), row);
+    const int available = std::max(0, int(width()) - controls);
+    const int menus = menu_ ? std::min(available, qCeil(menu_->implicitWidth())) : 0;
+    if (menu_) {
+        menu_->setPosition({qreal(leading ? controls : 0), (row - menu_->implicitHeight()) / 2});
+        menu_->setSize({qreal(menus), menu_->implicitHeight()});
+    }
+    // The title is centered between the menus and caption controls.
+    const QRect area((leading ? controls : 0) + menus, 0, available - menus, row);
     const auto font = QGuiApplication::font();
     const int natural = QFontMetrics(font).horizontalAdvance(titleText_);
     const int textWidth = std::min(natural, std::max(0, area.width() - uiPixels(16)));

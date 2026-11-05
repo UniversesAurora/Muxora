@@ -13,6 +13,7 @@
 #include "native_input.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
+#include <window_system/interface_appearance.hpp>
 #include <QContextMenuEvent>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -402,23 +403,36 @@ private slots:
         QCOMPARE(manager.model().panes(tab), QVector<PaneId>{pane});
     }
 
+    void aCommandQueryCanReleaseTheWorkspace_data()
+    {
+        QTest::addColumn<bool>("initial");
+        QTest::newRow("initial-menu-bar") << true;
+        QTest::newRow("context-menu") << false;
+    }
     void aCommandQueryCanReleaseTheWorkspace()
     {
+        QFETCH(bool, initial);
         WindowManager manager(WindowManager::Presentation::External);
         auto workspace = std::make_unique<QuickWorkspace>(manager);
         workspace->setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
         const auto window = manager.createWindow();
         const auto tab = manager.addTab(window, {QStringLiteral("Target")});
-        QTRY_VERIFY(workspace->window(window));
-        auto* view = workspace->window(window);
-        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
-        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
-        auto* bar = dock->group(manager.model().groupForTab(tab))->tabBar();
         Command command;
         command.id = "test.release"; command.title = "Release";
         command.contextMenus = {{ContextMenuTarget::Tab}};
         command.enabled = [&](const CommandContext&) { workspace.reset(); return true; };
         command.execute = [](const CommandContext&) { return true; };
+        if (initial) {
+            QVERIFY(manager.commands().add(std::move(command)));
+            QTRY_VERIFY(!workspace);
+            QVERIFY(manager.model().tab(tab));
+            return;
+        }
+        QTRY_VERIFY(workspace->window(window));
+        auto* view = workspace->window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        auto* bar = dock->group(manager.model().groupForTab(tab))->tabBar();
         QVERIFY(manager.commands().add(std::move(command)));
         const auto point = bar->controller().tabRect(0).center();
         QContextMenuEvent event(QContextMenuEvent::Mouse, point, bar->mapToGlobal(point).toPoint());
@@ -599,6 +613,113 @@ private slots:
         // Inserting ahead of the selected action must not redirect Enter.
         QTest::keyClick(root, Qt::Key_Return);
         QTRY_COMPARE(invoked, QStringLiteral("keep"));
+    }
+
+    void menuBarUsesLateCommandsAndItsOwnWindow_data()
+    {
+        QTest::addColumn<bool>("floating");
+        QTest::newRow("workbench") << false;
+        QTest::newRow("floating") << true;
+    }
+    void menuBarUsesLateCommandsAndItsOwnWindow()
+    {
+        QFETCH(bool, floating);
+        InterfaceAppearanceController appearance;
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto owner = manager.createWindow();
+        manager.addTab(owner, {QStringLiteral("Owner")});
+        const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, owner) : owner;
+        const auto tab = floating ? manager.addTab(window, {QStringLiteral("Floating")}) : manager.context(owner).tab;
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        workspace.content(manager.model().tab(tab)->activePane)->forceActiveFocus();
+        auto* bar = namedItem(view->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
+        bool enabled = false;
+        CommandContext invoked;
+        Command command;
+        command.id = "test.menuBar"; command.title = "Run late command"; command.menuPath = {"tools"};
+        command.enabled = [&](const CommandContext&) { return enabled; };
+        command.execute = [&](const CommandContext& context) { invoked = context; return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        auto changed = appearance.appearance(); changed.fontSize += 2; changed.zoomLevel = 0.5;
+        QVERIFY(appearance.setAppearance(changed));
+        QTest::keyClick(view, Qt::Key_T, Qt::AltModifier);
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QTRY_VERIFY(namedItem(menu->contentItem(), QStringLiteral("test.menuBar")));
+        QTest::keyClick(menu, Qt::Key_Left);
+        QTRY_VERIFY(popup(view) && namedItem(popup(view)->contentItem(), QStringLiteral("window.select")));
+        QTest::keyClick(popup(view), Qt::Key_Right);
+        QTRY_VERIFY(popup(view) && namedItem(popup(view)->contentItem(), QStringLiteral("test.menuBar")));
+        menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* action = namedItem(menu->contentItem(), QStringLiteral("test.menuBar"));
+        QVERIFY(!action->isEnabled());
+        enabled = true;
+        QVERIFY(manager.commands().setShortcut("test.menuBar", QKeySequence("Ctrl+Alt+M")));
+        QTRY_VERIFY(action->isEnabled());
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
+        QTRY_COMPARE(invoked.window, window); QCOMPARE(invoked.tab, tab);
+        QTRY_VERIFY(!popup(view));
+        QTRY_VERIFY(workspace.content(manager.model().tab(tab)->activePane)->hasActiveFocus());
+        const auto point = bar->mapToScene(bar->boundingRect().center()).toPoint();
+        QContextMenuEvent context(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+        QCoreApplication::sendEvent(view, &context);
+        QTRY_VERIFY(popup(view));
+        menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        action = namedItem(menu->contentItem(), QStringLiteral("presentation.toggleNumbers")); QVERIFY(action);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
+        QTRY_VERIFY(manager.tabAppearance().showNumbers);
+    }
+
+    void menuBarWindowListTracksWindowsCreatedAfterItsBar()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow(); manager.addTab(first, {QStringLiteral("First")});
+        QTRY_VERIFY(workspace.window(first));
+        const auto retired = manager.createWindow(); manager.addTab(retired, {QStringLiteral("Retired")});
+        const auto target = manager.createWindow(); manager.addTab(target, {QStringLiteral("Target")});
+        QTRY_VERIFY(workspace.window(target));
+        auto* view = workspace.window(first);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* bar = namedItem(view->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
+        auto* button = namedItem(bar, QStringLiteral("window")); QVERIFY(button);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, button->mapToScene(button->boundingRect().center()).toPoint());
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QTRY_VERIFY(namedItem(menu->contentItem(), retired.toString(QUuid::WithoutBraces)));
+        const QPointer<QQuickItem> removed(namedItem(menu->contentItem(), retired.toString(QUuid::WithoutBraces)));
+        QVERIFY(manager.requestCloseWindow(retired));
+        QTRY_VERIFY(!removed);
+        QVERIFY(menu->isVisible());
+        auto* activate = namedItem(menu->contentItem(), target.toString(QUuid::WithoutBraces)); QVERIFY(activate);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, activate->mapToScene(activate->boundingRect().center()).toPoint());
+        QTRY_COMPARE(manager.context().window, target);
+        QTRY_VERIFY(workspace.window(target)->isActive());
+    }
+
+    void menuBarReleasesRemovedRootContributions()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(); manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        auto* bar = namedItem(workspace.window(window)->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
+        Command command;
+        command.id = "test.temporary"; command.title = "Temporary action"; command.menuPath = {"temporary"};
+        command.execute = [](const CommandContext&) { return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        QTRY_VERIFY(namedItem(bar, QStringLiteral("extension.temporary")));
+        const QPointer<QQuickItem> row(namedItem(bar, QStringLiteral("extension.temporary")));
+        const QPointer<QObject> menu(row->property("menu").value<QObject*>()); QVERIFY(menu);
+        QVERIFY(manager.commands().remove("test.temporary"));
+        QTRY_VERIFY(!row); QTRY_VERIFY(!menu);
+        QVERIFY(manager.model().window(window));
     }
 };
 
