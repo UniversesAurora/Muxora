@@ -64,7 +64,7 @@ void WindowChromeItem::setMenuBar(QQuickItem* menu)
 
 QSize WindowChromeItem::minimumSize() const
 {
-    return {3 * uiPixels(captionButtonWidth) + (menu_ ? qCeil(menu_->implicitWidth()) : 0), qCeil(implicitHeight())};
+    return {3 * uiPixels(captionButtonWidth) + (menu_ ? qCeil(menu_->property("minimumWidthHint").toReal()) : 0), qCeil(implicitHeight())};
 }
 
 void WindowChromeItem::setTitle(const QString& title)

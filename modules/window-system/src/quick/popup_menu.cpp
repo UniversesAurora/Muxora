@@ -103,7 +103,7 @@ public:
             iconSource_ = iconFor(item_.iconName, theme_);
             setImplicitHeight(metrics.height() + uiPixels(10));
             setImplicitWidth(uiPixels(22 + 24) + titleWidth_ + (shortcutWidth_ ? uiPixels(20) + shortcutWidth_ : 0));
-            if (menuBar_) setImplicitWidth(uiPixels(16) + titleWidth_);
+            if (menuBar_) setImplicitWidth(item_.iconName == QStringLiteral("menu-overflow") ? uiPixels(22) : uiPixels(16) + titleWidth_);
             if (tab) {
                 const int icons = item_.iconName.isEmpty() ? 0 : uiPixels(16 + 7);
                 const int count = int(actions_.size());
@@ -160,9 +160,18 @@ private:
     void refresh()
     {
         if (menuBar_) {
+            shortcut_->clearLabel(); check_->clearLabel(); arrow_->setVisible(false);
+            if (item_.iconName == QStringLiteral("menu-overflow")) {
+                title_->clearLabel();
+                const int extent = uiPixels(14);
+                icon_->setVisible(true);
+                icon_->setPosition({(width() - extent) / 2, (height() - extent) / 2});
+                icon_->setIcon(iconSource_, {extent, extent}, {}, true, false);
+                return;
+            }
             text(title_, item_.action.title, titleWidth_, {uiPixels(8), 0, std::max(0, qRound(width()) - uiPixels(16)), qRound(height())},
                 theme_.headerText, TabTextRole::Title);
-            shortcut_->clearLabel(); check_->clearLabel(); icon_->setVisible(false); arrow_->setVisible(false);
+            icon_->setVisible(false);
             return;
         }
         if (item_.kind == MenuItemDescription::Kind::Tab) { refreshTab(); return; }
@@ -271,6 +280,7 @@ PopupMenu::~PopupMenu()
     // Window destruction callbacks still remove their entries from the map.
     // Release the QML tree before any session member is destroyed.
     menu_.reset();
+    delete std::exchange(overflow_, nullptr);
 }
 qreal PopupMenu::scale() const { return scale_; }
 QPalette PopupMenu::menuPalette() const
@@ -299,6 +309,7 @@ void PopupMenu::setPresentation(const Theme& theme)
         return true;
     };
     if (!update(update, rows_)) return;
+    if (overflow_) { overflow_->updatePresentation(remeasure); if (!self) return; }
     for (auto* object : menuWindows_.keys()) {
         static_cast<QQuickWindow*>(object)->setColor(theme_.surface);
         if (!self) return;
@@ -381,6 +392,15 @@ void PopupMenu::syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuIt
         }
     }
     for (const auto index : remaining) removeRow(menu, previous.at(index));
+    if (menuBar) {
+        QVector<QQuickItem*> buttons;
+        buttons.reserve(rows.size());
+        for (int index = 0; index < rows.size(); ++index) {
+            rows.at(index).item->setProperty("barIndex", index);
+            buttons.append(rows.at(index).item);
+        }
+        overflow_->sync(items, buttons);
+    }
     if (structureChanged && !menuBar) {
         menu->setProperty("currentIndex", -1);
         for (int index = 0; selected && index < rows.size(); ++index)
@@ -430,8 +450,13 @@ bool PopupMenu::eventFilter(QObject* object, QEvent* event)
     }
     if (event->type() == QEvent::KeyPress) {
         const int key = static_cast<QKeyEvent*>(event)->key();
+        auto* menu = menuWindows_.value(object).data();
+        if (rootNavigation_ && menu == menu_.get() && (key == Qt::Key_Left || key == Qt::Key_Right)) {
+            const int selected = menu->property("currentIndex").toInt();
+            const bool entersBranch = key == Qt::Key_Right && selected >= 0 && selected < rows_.size() && rows_.at(selected).submenu;
+            if (!entersBranch) { rootNavigation_(key == Qt::Key_Right); event->accept(); return true; }
+        }
         if (key == Qt::Key_Home || key == Qt::Key_End) {
-            auto* menu = menuWindows_.value(object).data();
             Q_ASSERT(menu);
             QMetaObject::invokeMethod(menu, "selectBoundary", Q_ARG(bool, key == Qt::Key_End));
             event->accept();
@@ -462,17 +487,20 @@ QQuickItem* PopupMenu::createMenuBar(QQuickItem* parent, const QVector<MenuItemD
 {
     Q_ASSERT(!menu_ && parent && parent->window());
     menuBar_ = true;
+    overflow_ = new MenuBarOverflow(*this);
     maximumSize_ = parent->window()->screen()->availableGeometry().size();
     auto* bar = qobject_cast<QQuickItem*>(create(SceneComponent::MenuBar, {{"session", QVariant::fromValue(this)}}, this));
     menu_.reset(bar);
     bar->installEventFilter(this);
     bar->setParentItem(parent);
+    overflow_->attach(bar);
     syncMenu(bar, rows_, items, true);
     return bar;
 }
 
 void PopupMenu::dismiss()
 {
+    if (overflow_) overflow_->dismiss();
     if (menu_) QMetaObject::invokeMethod(menu_.get(), "dismiss");
 }
 

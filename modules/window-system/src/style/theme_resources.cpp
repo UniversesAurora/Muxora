@@ -38,7 +38,7 @@ bool supportedIcon(const QString& name)
         QStringLiteral("return"), QStringLiteral("save"), QStringLiteral("command"),
         QStringLiteral("help"), QStringLiteral("chevron-left"), QStringLiteral("chevron-right"),
         QStringLiteral("chevron-up"), QStringLiteral("chevron-down"), QStringLiteral("sticky"),
-        QStringLiteral("sticky-vertical"), QStringLiteral("tab-list")
+        QStringLiteral("sticky-vertical"), QStringLiteral("tab-list"), QStringLiteral("menu-overflow")
     };
     return names.contains(name);
 }
@@ -203,6 +203,9 @@ public:
             question.cubicTo(9.5, 8, 8, 7.5, 8, 9);
             painter->drawPath(question);
             painter->drawPoint(QPointF(8, 11));
+        } else if (name_ == QStringLiteral("menu-overflow")) {
+            painter->drawPolyline(QPolygonF{{3, 4}, {7, 8}, {3, 12}});
+            painter->drawPolyline(QPolygonF{{8, 4}, {12, 8}, {8, 12}});
         } else {
             painter->translate(8, 8);
             if (name_ == QStringLiteral("chevron-left")) painter->rotate(90);

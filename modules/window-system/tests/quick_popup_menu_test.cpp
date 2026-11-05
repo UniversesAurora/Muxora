@@ -721,6 +721,72 @@ private slots:
         QTRY_VERIFY(!row); QTRY_VERIFY(!menu);
         QVERIFY(manager.model().window(window));
     }
+
+    void foldedMenusKeepMouseMnemonicAndOwnerLifetime_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("extension") << 0;
+        QTest::newRow("hidden-mnemonic") << 1;
+        QTest::newRow("owner-closes") << 2;
+        QTest::newRow("arrows") << 3;
+    }
+    void foldedMenusKeepMouseMnemonicAndOwnerLifetime()
+    {
+        QFETCH(int, mode);
+        WindowManager manager(WindowManager::Presentation::External);
+        auto workspace = std::make_unique<QuickWorkspace>(manager);
+        workspace->setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        TabId invoked;
+        Command command;
+        command.id = "test.folded"; command.title = "Folded action"; command.menuPath = {"tools"};
+        command.execute = [&](const CommandContext& context) { invoked = context.tab; return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace->window(window));
+        auto* view = workspace->window(window);
+        view->resize(300, 420); view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* content = workspace->content(manager.model().tab(tab)->activePane); content->forceActiveFocus();
+        auto* bar = namedItem(view->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
+        auto* more = namedItem(bar, QStringLiteral("MenuOverflowButton")); QVERIFY(more);
+        auto* tools = namedItem(bar, QStringLiteral("tools")); QVERIFY(tools);
+        QTRY_VERIFY(more->isVisible() && !tools->isVisible());
+        if (mode == 1 || mode == 3) QTest::keyClick(view, Qt::Key_T, Qt::AltModifier);
+        else native_input::mouse(view, more->mapToScene(more->boundingRect().center()).toPoint(), true);
+        QTRY_VERIFY(popup(view));
+        QPointer<QQuickWindow> menu(popup(view)); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        if (mode == 2) { workspace.reset(); QTRY_VERIFY(!menu); return; }
+        if (mode == 0) {
+            auto* branch = namedItem(menu->contentItem(), QStringLiteral("tools")); QVERIFY(branch);
+            native_input::mouse(menu.data(), branch->mapToScene(branch->boundingRect().center()).toPoint());
+            QTRY_VERIFY(branch->property("highlighted").toBool());
+            QTest::keyClick(menu, Qt::Key_Right);
+            QTRY_VERIFY(popup(menu));
+            menu = popup(menu); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        }
+        if (mode == 3) {
+            QTest::keyClick(menu, Qt::Key_Left);
+            QTRY_VERIFY(popup(view) && namedItem(popup(view)->contentItem(), QStringLiteral("window.select")));
+            QTest::keyClick(popup(view), Qt::Key_Right);
+            QTRY_VERIFY(popup(view) && namedItem(popup(view)->contentItem(), QStringLiteral("test.folded")));
+            menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        }
+        auto* action = namedItem(menu->contentItem(), QStringLiteral("test.folded")); QVERIFY(action);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
+        QTRY_COMPARE(invoked, tab);
+        QTRY_VERIFY(!popup(view));
+        QTRY_VERIFY(content->hasActiveFocus());
+        view->resize(1200, 700);
+        QTRY_VERIFY(!more->isVisible() && tools->isVisible());
+        QCOMPARE(namedItem(bar, QStringLiteral("tools")), tools);
+        invoked = {};
+        QTest::keyClick(view, Qt::Key_T, Qt::AltModifier);
+        QTRY_VERIFY(popup(view));
+        menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        action = namedItem(menu->contentItem(), QStringLiteral("test.folded")); QVERIFY(action);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, action->mapToScene(action->boundingRect().center()).toPoint());
+        QTRY_COMPARE(invoked, tab);
+    }
 };
 
 QTEST_MAIN(QuickPopupMenuTest)

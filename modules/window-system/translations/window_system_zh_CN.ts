@@ -3417,5 +3417,9 @@ Ctrl+Shift+P 打开命令面板</translation>
         <source>Resize text, icons and controls in all windows. Changes take effect immediately.</source>
         <translation>调整所有窗口中的文字、图标和控件大小，修改后立即生效。</translation>
     </message>
+    <message>
+        <source>More menus</source>
+        <translation>更多菜单</translation>
+    </message>
 </context>
 </TS>

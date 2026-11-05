@@ -55,5 +55,6 @@
   {"file": "modules/window-system/src/quick/qml_scene_component.cpp", "text": "Cannot load Quick scene component: %s", "count": 1, "reason": "Developer-only qFatal diagnostic for a broken build (missing compiled QML), not a recoverable application error."},
   {"file": "modules/window-system/src/quick/popup_menu.cpp", "text": "Cannot create Quick menu: %s", "count": 1, "reason": "Developer-only qFatal diagnostic for a broken compiled QML module, not a recoverable application error."},
   {"file": "modules/window-system/src/quick/popup_menu.hpp", "text": "Created by a menu session", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
-  {"file": "modules/window-system/src/quick/popup_menu.hpp", "text": "Created by the window adapter", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."}
+  {"file": "modules/window-system/src/quick/popup_menu.hpp", "text": "Created by the window adapter", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
+  {"file": "modules/window-system/src/quick/menu_bar_overflow.hpp", "text": "Created by the menu bar", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."}
 ]

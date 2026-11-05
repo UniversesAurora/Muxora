@@ -2,6 +2,7 @@
 #pragma once
 
 #include "commands/menu_description.hpp"
+#include "menu_bar_overflow.hpp"
 #include <window_system/theme.hpp>
 #include <QFont>
 #include <QHash>
@@ -69,6 +70,7 @@ class PopupMenu final : public QObject {
     Q_PROPERTY(QPalette menuPalette READ menuPalette NOTIFY presentationChanged)
     Q_PROPERTY(QColor hoverFill READ hoverFill NOTIFY presentationChanged)
     Q_PROPERTY(qreal scale READ scale NOTIFY presentationChanged)
+    Q_PROPERTY(MenuBarOverflow* overflow READ overflow CONSTANT)
 public:
     explicit PopupMenu(const Theme& theme, QObject* parent = nullptr);
     ~PopupMenu() override;
@@ -82,6 +84,7 @@ public:
     qreal scale() const;
     QColor hoverFill() const { return theme_.accentSoft; }
     const Theme& theme() const { return theme_; }
+    MenuBarOverflow* overflow() const { return overflow_; }
     void activate(const MenuItemDescription& item);
     void activateAction(const MenuItemDescription& item, const QString& action);
     void setRefreshHandler(std::function<QVector<MenuItemDescription>()> handler);
@@ -98,6 +101,7 @@ signals:
 protected:
     bool eventFilter(QObject* object, QEvent* event) override;
 private:
+    friend class MenuBarOverflow;
     struct Row {
         QStringList key;
         QPointer<MenuEntry> entry;
@@ -119,7 +123,9 @@ private:
     std::unique_ptr<QObject> menu_;
     QHash<QObject*, QPointer<QObject>> menuWindows_;
     QVector<Row> rows_;
+    MenuBarOverflow* overflow_ = nullptr;
     std::function<QVector<MenuItemDescription>()> refreshHandler_;
+    std::function<void(bool)> rootNavigation_;
     bool menuBar_ = false, refreshing_ = false, refreshQueued_ = false, forceRefresh_ = false;
 };
 

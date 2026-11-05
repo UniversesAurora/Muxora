@@ -74,7 +74,7 @@ void applyTheme(QWidget* root, const Theme& theme = defaultTheme());
 /// Vector icons render at the exact requested device pixel ratio.
 /// Names: app, close, minimize, maximize, restore, add, terminal, files, settings,
 /// search, pin, unpin, pin-all, unpin-all, lock, unlock, split-horizontal, split-vertical, detach,
-/// window, return, save, command, help, chevron-left/right/up/down.
+/// window, return, save, command, help, chevron-left/right/up/down, menu-overflow.
 /// Unknown names return a null icon. No resources or SVG dependency are needed.
 [[nodiscard]] QIcon iconFor(QString name, const Theme& theme = defaultTheme(),
                             QSize size = QSize(16, 16));

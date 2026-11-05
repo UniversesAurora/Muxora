@@ -3427,5 +3427,9 @@ Ctrl+Shift+P opens the command palette</translation>
         <source>Resize text, icons and controls in all windows. Changes take effect immediately.</source>
         <translation>Resize text, icons and controls in all windows. Changes take effect immediately.</translation>
     </message>
+    <message>
+        <source>More menus</source>
+        <translation>More menus</translation>
+    </message>
 </context>
 </TS>
