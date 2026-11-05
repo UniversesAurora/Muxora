@@ -5,6 +5,7 @@
 // while its tab moves between windows.
 #include "docking/drop_target.hpp"
 #include "quick/button_item.hpp"
+#include "quick/command_strip_host_item.hpp"
 #include "quick/dock_guide_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
@@ -26,6 +27,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QTest>
+#include <QtMath>
 #include <QWheelEvent>
 
 using namespace window_system;
@@ -299,7 +301,17 @@ private slots:
         QCOMPARE(quickWindow->format().samples(), 4);
         auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
         auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
-        QVERIFY(chrome && dock);
+        auto* toolbars = quickWindow->contentItem()->findChild<quick::CommandStripHostItem*>();
+        QVERIFY(chrome && dock && toolbars);
+        // The dock fills the window between the top and bottom toolbar areas,
+        // also after the window changes state.
+        const auto dockFillsTheBody = [&] {
+            const auto* bottom = toolbars->bottomArea();
+            const int below = bottom->isVisible() ? qCeil(bottom->implicitHeight()) : 0;
+            return toolbars->height() > 0 && dock->y() == toolbars->y() + toolbars->height()
+                && dock->y() + dock->height() == quickWindow->height() - below;
+        };
+        QTRY_VERIFY(dockFillsTheBody());
         // The buttons sit at the right edge: minimize, maximize, close.
         const QPointF row(quickWindow->width() - 1, chrome->height() / 2);
         auto* close = chrome->captionButtonAt(row - QPointF(4, 0));
@@ -311,6 +323,7 @@ private slots:
         };
         click(maximize);
         QTRY_VERIFY(quickWindow->windowStates() & Qt::WindowMaximized);
+        QTRY_VERIFY(dockFillsTheBody());
         click(maximize);
         QTRY_VERIFY(!(quickWindow->windowStates() & Qt::WindowMaximized));
         click(close);
