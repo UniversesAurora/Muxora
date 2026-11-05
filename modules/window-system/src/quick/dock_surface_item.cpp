@@ -6,6 +6,7 @@
 #include "group_item.hpp"
 #include "peek_item.hpp"
 #include "popup_menu.hpp"
+#include "text_edit_menu.hpp"
 #include "rail_button_item.hpp"
 #include "rail_item.hpp"
 #include "split_tree_item.hpp"
@@ -329,7 +330,7 @@ void DockSurfaceItem::releaseGroup(GroupId id)
 }
 
 PopupMenu* DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context,
-                               QPoint global, TabBarItem* strip)
+                               QPoint global, TabBarItem* strip, QQuickItem* editor)
 {
     // Finish the previous hold before opening another menu on the same strip.
     // Its later closed notification must not collapse the new menu's strip.
@@ -339,6 +340,7 @@ PopupMenu* DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, 
     menu_ = menu;
     const QPointer<WindowManager> owner(&manager_);
     const QPointer<TabBarItem> bar(strip);
+    const QPointer<QQuickItem> edit(editor);
     if (bar) bar->setPopupOpen(true);
     connect(menu, &PopupMenu::closed, menu, &QObject::deleteLater);
     connect(menu, &QObject::destroyed, this, [bar] { if (bar) bar->setPopupOpen(false); });
@@ -352,8 +354,13 @@ PopupMenu* DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, 
         else owner->activateTab(tab);
     };
     connect(menu, &PopupMenu::rowActionTriggered, menu, tabAction);
-    connect(menu, &PopupMenu::triggered, menu, [owner, context, tabAction](const MenuItemDescription& item) {
+    connect(menu, &PopupMenu::triggered, menu, [this, owner, context, tabAction, edit](const MenuItemDescription& item) {
         if (!owner) return;
+        if (item.kind == MenuItemDescription::Kind::TextEdit) {
+            if (edit && edit->window() == window() && host_.paneForItem(edit) == context.pane)
+                executeTextEditAction(edit, item.commandId);
+            return;
+        }
         if (item.kind == MenuItemDescription::Kind::Tab) { tabAction(item, {}); return; }
         if (item.kind == MenuItemDescription::Kind::TabCreation) {
             owner->requestNewTab(context.window, context.group, item.commandId);
@@ -383,13 +390,14 @@ void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, GroupId group,
 }
 
 void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, const CommandContext& captured,
-                                      QPoint global, TabBarItem* strip)
+                                      QPoint global, TabBarItem* strip, QQuickItem* source)
 {
     Q_ASSERT(captured.window == window_);
     const QPointer<DockSurfaceItem> self(this);
     const QPointer<TabBarItem> bar(strip);
     const QPointer<WindowManager> owner(&manager_);
-    QVector<MenuItemDescription> items;
+    const QPointer<QQuickItem> editor(surface == CommandMenuSurface::Pane ? textEditorFor(source) : nullptr);
+    QVector<MenuItemDescription> items = describeTextEditMenu(editor);
     if (surface == CommandMenuSurface::Tab || surface == CommandMenuSurface::Group) {
         items = describeTabPresentationMenu(owner, captured);
         if (!self || !owner) return;
@@ -407,7 +415,7 @@ void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, const CommandC
         items.append(std::move(separator));
     }
     items += commands;
-    showMenu(items, captured, global, bar);
+    showMenu(items, captured, global, bar, editor);
 }
 
 GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)

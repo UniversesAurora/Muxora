@@ -348,7 +348,7 @@ private:
     void contentVisibilityChanged(const QVector<ContentVisibilityChange>& changes);
     Q_SIGNAL void contentVisibilityRequested(bool enabled);
     Q_SIGNAL void hierarchyBarsRequested(const QVector<QPair<TabId, PaneId>>& sources);
-    Q_SIGNAL void contextMenuRequested(CommandMenuSurface surface, const CommandContext& context, QPoint global);
+    Q_SIGNAL void contextMenuRequested(CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source = nullptr);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.
@@ -388,7 +388,7 @@ private:
                                  const std::function<void(QWidget*)>& beforeShow, bool preserveDrag);
     void beginWindowDrag(WindowId window, QPoint globalPosition);
     void showTabMenu(TabId tab, QPoint globalPosition);
-    void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QWidget* content);
+    void showPaneMenu(TabId tab, PaneId pane, QPoint globalPosition, QObject* content);
     void showWindowMenu(WindowId window, QPoint globalPosition);
     void updateActive(WindowId window, GroupId group, TabId tab);
     bool setBarVisible(WindowId window, WindowBar bar, bool visible);

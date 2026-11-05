@@ -32,7 +32,7 @@ public:
     [[nodiscard]] QSize minimumSize() const;
 
 signals:
-    void contextMenuRequested(TabId tab, PaneId pane, QPoint global);
+    void contextMenuRequested(TabId tab, PaneId pane, QPoint global, QQuickItem* source);
 
 private:
     ContentColumnItem* frame(PaneId pane);

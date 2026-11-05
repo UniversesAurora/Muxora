@@ -2,6 +2,37 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en" sourcelanguage="en">
 <context>
+    <name>QWidgetTextControl</name>
+    <message>
+        <source>&amp;Undo</source>
+        <translation>&amp;Undo</translation>
+    </message>
+    <message>
+        <source>&amp;Redo</source>
+        <translation>&amp;Redo</translation>
+    </message>
+    <message>
+        <source>Cu&amp;t</source>
+        <translation>Cu&amp;t</translation>
+    </message>
+    <message>
+        <source>&amp;Copy</source>
+        <translation>&amp;Copy</translation>
+    </message>
+    <message>
+        <source>&amp;Paste</source>
+        <translation>&amp;Paste</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Select All</translation>
+    </message>
+</context>
+<context>
     <name>WindowSystem</name>
     <message>
         <source>Follow system</source>

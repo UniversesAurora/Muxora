@@ -13,6 +13,8 @@
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <QContextMenuEvent>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QSignalSpy>
@@ -331,6 +333,61 @@ private slots:
         else if (operation == "unstick") QTRY_VERIFY(!manager.isTabSticky(target));
         else QTRY_COMPARE(manager.context().tab, target);
         QVERIFY(manager.model().tab(first));
+    }
+
+    void paneTextMenuPreservesEditingAndReadOnlyActions_data()
+    {
+        QTest::addColumn<bool>("readOnly");
+        QTest::addColumn<QByteArray>("type");
+        QTest::newRow("editor") << false << QByteArray("TextEdit");
+        QTest::newRow("read-only-editor") << true << QByteArray("TextEdit");
+        QTest::newRow("input") << false << QByteArray("TextInput");
+        QTest::newRow("read-only-input") << true << QByteArray("TextInput");
+    }
+    void paneTextMenuPreservesEditingAndReadOnlyActions()
+    {
+        QFETCH(bool, readOnly);
+        QFETCH(QByteArray, type);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick; " + type + " { text: 'Alpha Beta'; selectByMouse: true }", QUrl());
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([&](const TabOptions&, PaneId) { return qobject_cast<QQuickItem*>(component.create()); });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Editor")});
+        const auto pane = manager.model().tab(tab)->activePane;
+        QTRY_VERIFY(workspace.content(pane) && workspace.content(pane)->window());
+        auto* editor = workspace.content(pane);
+        editor->setProperty("readOnly", readOnly);
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        editor->forceActiveFocus();
+        QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 0), Q_ARG(int, 5)));
+        const auto point = editor->mapToScene(QPointF(20, 5)).toPoint();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+        QCoreApplication::sendEvent(view, &event);
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QVERIFY(namedItem(menu->contentItem(), QStringLiteral("pane.close")));
+        if (readOnly) QVERIFY(!namedItem(menu->contentItem(), QStringLiteral("edit.delete")));
+        auto* command = namedItem(menu->contentItem(), readOnly ? QStringLiteral("edit.selectAll") : QStringLiteral("edit.delete"));
+        QVERIFY(command);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, command->mapToScene(command->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!popup(view));
+        if (readOnly) QTRY_COMPARE(editor->property("selectedText").toString(), QStringLiteral("Alpha Beta"));
+        else {
+            QTRY_COMPARE(editor->property("text").toString(), QStringLiteral(" Beta"));
+            QContextMenuEvent keyboard(QContextMenuEvent::Keyboard, point, view->mapToGlobal(point));
+            QCoreApplication::sendEvent(view, &keyboard);
+            QTRY_VERIFY(popup(view));
+            menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+            command = namedItem(menu->contentItem(), QStringLiteral("edit.undo")); QVERIFY(command);
+            QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, command->mapToScene(command->boundingRect().center()).toPoint());
+            QTRY_COMPARE(editor->property("text").toString(), QStringLiteral("Alpha Beta"));
+        }
+        QCOMPARE(manager.model().panes(tab), QVector<PaneId>{pane});
     }
 
     void aCommandQueryCanReleaseTheWorkspace()

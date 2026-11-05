@@ -257,9 +257,9 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     connect(&manager, &WindowManager::contentVisibilityRequested, this, visibility);
     manager.setPresenter(d.get());
     connect(&manager, &WindowManager::contextMenuRequested, this,
-        [this](CommandMenuSurface surface, const CommandContext& context, QPoint global) {
+        [this](CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source) {
             if (const auto window = d->windows.value(context.window); window && d->manager.validCommandContext(context))
-                window->dock->showContextMenu(surface, context, global);
+                window->dock->showContextMenu(surface, context, global, nullptr, qobject_cast<QQuickItem*>(source));
         });
     // Model changes often come from a strip's own input handler; rebuilding
     // there would replace the strip under it. One sync per event-loop turn.
@@ -365,7 +365,7 @@ void QuickWorkspace::sync()
         if (!window) {
             window = new WorkspaceQuickWindow(d->manager, d->host, d->bars, d->drag, id);
             connect(window->dock, &quick::DockSurfaceItem::paneMenuRequested, this,
-                [this](TabId tab, PaneId pane, QPoint global) { d->manager.showPaneMenu(tab, pane, global, nullptr); });
+                [this](TabId tab, PaneId pane, QPoint global, QQuickItem* source) { d->manager.showPaneMenu(tab, pane, global, source); });
             d->ownedWindows.insert(window);
             connect(window, &QObject::destroyed, this, [this, retired = window.data()] { d->ownedWindows.remove(retired); });
             connect(window, &QQuickWindow::activeFocusItemChanged, this, [this, observed = QPointer<QQuickWindow>(window)] {

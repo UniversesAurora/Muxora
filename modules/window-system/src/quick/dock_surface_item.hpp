@@ -56,7 +56,7 @@ public:
     [[nodiscard]] TabId peekTab() const { return peekTab_; }
     void showPeek(GroupId group, TabId tab);
     void closePeek();
-    void showContextMenu(CommandMenuSurface surface, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
+    void showContextMenu(CommandMenuSurface surface, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr, QQuickItem* source = nullptr);
     // The workspace's drag, which the strips start.
     void setTabDrag(TabDrag* drag) { drag_ = drag; }
 
@@ -108,7 +108,7 @@ public:
     bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
 
 signals:
-    void paneMenuRequested(TabId tab, PaneId pane, QPoint global);
+    void paneMenuRequested(TabId tab, PaneId pane, QPoint global, QQuickItem* source);
 
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;
@@ -139,7 +139,7 @@ private:
     [[nodiscard]] LayoutTree composedTree(QSize area);
     void resizePinned(Edge edge, double ratio);
     void showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab, QPoint global, TabBarItem* strip = nullptr);
-    PopupMenu* showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
+    PopupMenu* showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr, QQuickItem* editor = nullptr);
 
     WindowManager& manager_;
     ContentHost& host_;

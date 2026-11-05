@@ -28,7 +28,7 @@ struct MenuRowActionDescription {
 };
 
 struct MenuItemDescription {
-    enum class Kind { Command, Submenu, Separator, TabColor, Window, TabCreation, Tab };
+    enum class Kind { Command, Submenu, Separator, TabColor, Window, TabCreation, Tab, TextEdit };
     Kind kind = Kind::Command;
     QString id;
     QString commandId;

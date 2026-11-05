@@ -5,6 +5,7 @@
 #include "split_tree_item.hpp"
 #include <window_system/window_manager.hpp>
 #include <QContextMenuEvent>
+#include <QQuickWindow>
 #include <QtMath>
 #include <algorithm>
 #include <array>
@@ -16,7 +17,7 @@ namespace window_system::quick {
 class ContentColumnItem final : public QQuickItem {
 public:
     explicit ContentColumnItem(QQuickItem* parent) : QQuickItem(parent) { setClip(true); }
-    std::function<void(QPoint)> contextMenuRequested;
+    std::function<void(QPoint, QQuickItem*)> contextMenuRequested;
 
     void configure(QQuickItem* top, QQuickItem* body, QQuickItem* bottom, QSize bodyMinimum = QSize(0, 0))
     {
@@ -58,7 +59,15 @@ protected:
             const auto* menu = static_cast<QContextMenuEvent*>(event);
             const auto global = menu->reason() == QContextMenuEvent::Keyboard
                 ? mapToGlobal(boundingRect().center()).toPoint() : menu->globalPos();
-            event->accept(); callback(global); return true;
+            QQuickItem* source = this;
+            if (menu->reason() == QContextMenuEvent::Keyboard) source = window()->activeFocusItem();
+            else for (;;) {
+                const auto local = source->mapFromGlobal(global);
+                auto* child = source->childAt(local.x(), local.y());
+                if (!child) break;
+                source = child;
+            }
+            event->accept(); callback(global, source); return true;
         }
         return QQuickItem::event(event);
     }
@@ -129,7 +138,7 @@ ContentColumnItem* TabContentItem::frame(PaneId pane)
     auto& frame = frames_[pane];
     if (!frame) {
         frame = new ContentColumnItem(split_);
-        frame->contextMenuRequested = [this, pane](QPoint global) { emit contextMenuRequested(tab_, pane, global); };
+        frame->contextMenuRequested = [this, pane](QPoint global, QQuickItem* source) { emit contextMenuRequested(tab_, pane, global, source); };
     }
     return frame;
 }

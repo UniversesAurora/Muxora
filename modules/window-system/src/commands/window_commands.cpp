@@ -627,15 +627,16 @@ void WindowManager::showWindowMenu(WindowId window, QPoint global)
     populateContextMenu(&menu, CommandMenuSurface::Window, this, captured);
     menu.exec(global);
 }
-void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QWidget* content)
+void WindowManager::showPaneMenu(TabId tab, PaneId pane, QPoint global, QObject* content)
 {
     if (!d->model.panes(tab).contains(pane)) return;
+    const QPointer<QObject> source(content);
     activateTab(tab); focusPane(tab, pane);
     const auto group = d->model.groupForTab(tab); const auto window = d->model.group(group)->windowId;
     const auto captured = context(window);
-    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Pane, captured, global); return; }
+    if (d->presentation == Presentation::External) { emit contextMenuRequested(CommandMenuSurface::Pane, captured, global, source); return; }
     QMenu* menu = nullptr;
-    for (auto* editor = content; editor; editor = editor->parentWidget()) {
+    for (auto* editor = qobject_cast<QWidget*>(source.data()); editor; editor = editor->parentWidget()) {
         if (auto* plain = qobject_cast<QPlainTextEdit*>(editor)) { menu = plain->createStandardContextMenu(); break; }
         if (auto* rich = qobject_cast<QTextEdit*>(editor)) { menu = rich->createStandardContextMenu(); break; }
         if (auto* input = qobject_cast<QLineEdit*>(editor)) { menu = input->createStandardContextMenu(); break; }
