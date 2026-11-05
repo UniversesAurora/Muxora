@@ -56,6 +56,7 @@ public:
     void setGroupFocused(bool focused);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
     void setTabListOpen(bool open);
+    void setNewTabMenuOpen(bool open);
     // The largest minimum any page declares; the column never takes it.
     void setContentMinimum(QSize minimum);
     [[nodiscard]] QSize minimumSize() const;
@@ -182,6 +183,7 @@ private:
     bool layingOut_ = false;
     bool reflowQueued_ = false;
     bool createsHovered_ = false;
+    bool newTabMenuOpen_ = false;
 };
 
 } // namespace window_system::quick

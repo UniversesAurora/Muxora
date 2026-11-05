@@ -512,6 +512,46 @@ private slots:
         QTRY_COMPARE(executed, tab);
         QVERIFY(manager.model().tab(tab));
     }
+
+    void newTabTypesRefreshAndUseTheirButtonGroup()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window, {QStringLiteral("First")});
+        const auto target = manager.addTab(window, {QStringLiteral("Target")});
+        QVERIFY(manager.moveTab(target, manager.model().groupForTab(first), Placement::Right));
+        const auto targetGroup = manager.model().groupForTab(target);
+        bool allowed = false;
+        GroupId executed;
+        Command command;
+        command.id = "test.create"; command.title = "New content";
+        command.enabled = [&](const CommandContext& context) { return allowed && context.group == targetGroup; };
+        command.execute = [&](const CommandContext& context) { executed = context.group; return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        QVERIFY(manager.setTabCreationCommands("test.create", {"test.create"}));
+        QVERIFY(manager.activateTab(first));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        auto* group = dock->group(targetGroup); QVERIFY(group);
+        auto* button = group->findChild<quick::ButtonItem*>("NewTabTypeButton"); QVERIFY(button);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, button->mapToScene(button->boundingRect().center()).toPoint());
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* create = namedItem(menu->contentItem(), QStringLiteral("test.create")); QVERIFY(create);
+        QVERIFY(!create->isEnabled());
+        allowed = true;
+        QVERIFY(manager.commands().setShortcut("test.create", QKeySequence("Ctrl+Alt+N")));
+        QTRY_VERIFY(create->isEnabled());
+        QCOMPARE(manager.context().tab, first);
+        QTest::keyClick(menu, Qt::Key_Home); QTest::keyClick(menu, Qt::Key_Return);
+        QTRY_COMPARE(executed, targetGroup);
+        QTRY_VERIFY(!popup(view));
+        QVERIFY(manager.model().tab(first)); QVERIFY(manager.model().tab(target));
+    }
 };
 
 QTEST_MAIN(QuickPopupMenuTest)

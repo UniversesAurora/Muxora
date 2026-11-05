@@ -337,6 +337,7 @@ PopupMenu* DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, 
     // Its later closed notification must not collapse the new menu's strip.
     delete menu_.data();
     tabListGroup_ = {};
+    newTabMenuGroup_ = {};
     auto* menu = new PopupMenu(manager_.interfaceTheme(), this);
     menu_ = menu;
     const QPointer<WindowManager> owner(&manager_);
@@ -494,11 +495,26 @@ GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)
     };
     view->groupMenuRequested = [this, id](QPoint global) { showContextMenu(CommandMenuSurface::Group, id, {}, global); };
     view->newTabMenuRequested = [this, view, id](QRect trigger) {
+        if (menu_ && menu_->isOpen() && newTabMenuGroup_ == id) { menu_->dismiss(); return; }
         const QPointer<DockSurfaceItem> self(this);
+        const QPointer<GroupItem> group(view);
         const QPointer<TabBarItem> bar(view->tabBar());
+        const QPointer<WindowManager> owner(&manager_);
         auto captured = manager_.context(window_); captured.group = id;
-        const auto items = describeTabCreationMenu(&manager_, window_, id);
-        if (self) showMenu(items, captured, trigger.bottomLeft() + QPoint(0, 1), bar);
+        const auto describe = [owner, window = window_, id] {
+            return owner ? describeTabCreationMenu(owner, window, id) : QVector<MenuItemDescription>{};
+        };
+        const auto items = describe();
+        if (!self || !group || !owner) return;
+        auto* menu = showMenu(items, captured, trigger.bottomLeft() + QPoint(0, 1), bar);
+        if (!menu) return;
+        menu->setRefreshHandler(describe);
+        connect(owner, &WindowManager::commandsChanged, menu, &PopupMenu::requestRefresh);
+        connect(owner, &WindowManager::layoutChanged, menu, &PopupMenu::requestRefresh);
+        newTabMenuGroup_ = id;
+        group->setNewTabMenuOpen(true);
+        connect(menu, &PopupMenu::closed, group, [group] { group->setNewTabMenuOpen(false); });
+        connect(menu, &QObject::destroyed, group, [group] { group->setNewTabMenuOpen(false); });
     };
     view->tabListRequested = [this, view, id](QRect trigger) {
         if (menu_ && menu_->isOpen() && tabListGroup_ == id) { menu_->dismiss(); return; }

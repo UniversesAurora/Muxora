@@ -151,6 +151,7 @@ private:
     TabDrag* drag_ = nullptr;
     QPointer<PopupMenu> menu_;
     GroupId tabListGroup_;
+    GroupId newTabMenuGroup_;
     GroupId insertionGroup_;
     GroupId incomingGroup_;
     GroupId previewGroup_;

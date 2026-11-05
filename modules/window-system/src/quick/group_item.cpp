@@ -90,8 +90,10 @@ GroupItem::GroupItem(const Theme& theme, QQuickItem* parent)
     name_->setZ(4); title_->setZ(4); resizeHandle_->setZ(5);
     create_->setShape(ButtonItem::Shape::SplitStart); types_->setShape(ButtonItem::Shape::SplitEnd);
     create_->setIcon(iconFor(QStringLiteral("add"), theme));
+    create_->setObjectName(QStringLiteral("NewTabButton"));
     create_->setToolTip(QCoreApplication::translate("WindowSystem", "New tab"));
     types_->setIcon(iconFor(QStringLiteral("chevron-down"), theme));
+    types_->setObjectName(QStringLiteral("NewTabTypeButton"));
     types_->setToolTip(QCoreApplication::translate("WindowSystem", "Choose new tab type"));
     list_->setIcon(iconFor(QStringLiteral("tab-list"), theme));
     list_->setObjectName(QStringLiteral("TabListButton"));
@@ -99,7 +101,7 @@ GroupItem::GroupItem(const Theme& theme, QQuickItem* parent)
     // The two halves of the new-tab button light up together.
     for (auto* part : {create_, types_})
         connect(part, &ButtonItem::hoveredChanged, this, [this] {
-            const bool hovered = create_->hovered() || types_->hovered();
+            const bool hovered = !newTabMenuOpen_ && (create_->hovered() || types_->hovered());
             create_->setEmphasized(hovered); types_->setEmphasized(hovered);
         });
     connect(create_, &ButtonItem::clicked, this, [this] { if (const auto callback = newTabRequested) callback(); });
@@ -149,6 +151,15 @@ GroupItem::~GroupItem()
 }
 
 void GroupItem::setTabListOpen(bool open) { list_->setDown(open); }
+
+void GroupItem::setNewTabMenuOpen(bool open)
+{
+    newTabMenuOpen_ = open;
+    types_->setDown(open);
+    const auto pointer = QCursor::pos();
+    const bool hovered = !open && (create_->contains(create_->mapFromGlobal(pointer)) || types_->contains(types_->mapFromGlobal(pointer)));
+    create_->setEmphasized(hovered); types_->setEmphasized(hovered);
+}
 
 template <class Apply> void GroupItem::edit(Apply&& apply)
 {
