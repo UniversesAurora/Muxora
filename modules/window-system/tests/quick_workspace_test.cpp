@@ -6,6 +6,7 @@
 #include "docking/drop_target.hpp"
 #include "quick/button_item.hpp"
 #include "quick/command_strip_host_item.hpp"
+#include "quick/status_bar_item.hpp"
 #include "quick/dock_guide_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
@@ -303,11 +304,14 @@ private slots:
         auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
         auto* toolbars = quickWindow->contentItem()->findChild<quick::CommandStripHostItem*>();
         QVERIFY(chrome && dock && toolbars);
-        // The dock fills the window between the top and bottom toolbar areas,
-        // also after the window changes state.
+        // The dock fills the window between the top toolbar area and the
+        // bottom toolbars and status bar, also after the window changes state.
+        auto* status = quickWindow->contentItem()->findChild<quick::StatusBarItem*>();
+        QVERIFY(status);
         const auto dockFillsTheBody = [&] {
             const auto* bottom = toolbars->bottomArea();
-            const int below = bottom->isVisible() ? qCeil(bottom->implicitHeight()) : 0;
+            const int below = (bottom->isVisible() ? qCeil(bottom->implicitHeight()) : 0)
+                + (status->isVisible() ? qCeil(status->implicitHeight()) : 0);
             return toolbars->height() > 0 && dock->y() == toolbars->y() + toolbars->height()
                 && dock->y() + dock->height() == quickWindow->height() - below;
         };

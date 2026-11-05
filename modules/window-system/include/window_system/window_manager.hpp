@@ -357,6 +357,10 @@ private:
     using CommandChoices = QVector<QPair<QStringList, QVariantMap>>;
     void offerChoices(WindowId window, const QString& command, const CommandChoices& choices);
     Q_SIGNAL void choicesOffered(WindowId window, const QString& command, const window_system::WindowManager::CommandChoices& choices);
+    // A window's status message, its transient message (a pending key chord)
+    // or the status items changed; a null window means every window.
+    Q_SIGNAL void statusChanged(WindowId window);
+    void setTransientStatus(WindowId window, const QString& text);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.

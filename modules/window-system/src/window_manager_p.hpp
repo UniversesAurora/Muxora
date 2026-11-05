@@ -56,6 +56,10 @@ struct WindowManager::Private {
     // presentation committed it, and the presentation's editor of a window.
     QHash<WindowId, QHash<WindowKind, QJsonObject>> toolbarLayouts;
     std::function<ToolbarEditor*(WindowId)> toolbarEditors;
+    // Each window's status message and transient message, for presentations
+    // other than Widgets, which keep theirs in the status bar itself.
+    QHash<WindowId, QString> statusMessages;
+    QHash<WindowId, QString> transientStatus;
     bool refreshing = false;
     bool destroying = false;
     int geometryUpdateDepth = 0;

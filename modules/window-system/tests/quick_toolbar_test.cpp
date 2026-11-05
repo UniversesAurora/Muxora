@@ -2,7 +2,7 @@
 // Toolbar command routing, retained input objects, current-format restore,
 // hidden content and native caption hit testing after moving strips;
 // layout edits, saving them, the kind profile, the offered choices, the
-// toolbar menus and handle drags.
+// toolbar menus and handle drags; the status bar below them.
 #include "quick/command_strip_item.hpp"
 #include "quick/command_strip_host_item.hpp"
 #include "quick/picture_item.hpp"
@@ -438,6 +438,56 @@ private slots:
         }
         // The drop is saved with the layout; a cancelled drag saves nothing.
         QCOMPARE(savedStrips() == before, drop == "cancel");
+    }
+    // The workbench status bar, as the Widgets one: the message, the
+    // workspace information, a host item whose click runs its command, and
+    // its menu hiding an entry. A floating window has none.
+    void statusBarShowsMessagesItemsAndItsMenu()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        int runs = 0;
+        Command command;
+        command.id = "test.status"; command.title = "Status command";
+        command.execute = [&](const CommandContext&) { ++runs; return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        QVERIFY(manager.registerStatusItem({"test.item", "Item text", "Item tip", "test.status"}));
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("Status tab")});
+        const auto floating = manager.createWindow(WindowKind::Floating);
+        manager.addTab(floating, {QStringLiteral("Floating tab")});
+        QTRY_VERIFY(workspace.window(window) && workspace.window(floating));
+        const QPointer<QQuickWindow> view(workspace.window(window));
+        view->resize(900, 500);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        const auto entry = [&](const QString& name) { return view->contentItem()->findChild<QQuickItem*>(name); };
+        auto* bar = entry(QStringLiteral("StatusBar"));
+        QVERIFY(bar);
+        QTRY_VERIFY(bar->isVisible() && bar->height() > 0);
+        QTRY_COMPARE(entry(QStringLiteral("StatusWorkspace"))->property("text").toString().contains("Status tab"), true);
+        manager.setStatus(window, QStringLiteral("Working"));
+        QTRY_COMPARE(entry(QStringLiteral("StatusMessage"))->property("text").toString(), QStringLiteral("Working"));
+        auto* item = entry(QStringLiteral("CustomStatusCommandItem"));
+        QVERIFY(item);
+        QCOMPARE(item->property("text").toString(), QStringLiteral("Item text"));
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, item->mapToScene(item->boundingRect().center()).toPoint());
+        QTRY_COMPARE(runs, 1);
+        // Hiding the message from the bar's menu.
+        const auto point = bar->mapToScene(QPointF(4, bar->height() / 2)).toPoint();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+        QCoreApplication::sendEvent(view, &event);
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view);
+        QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QQuickItem* toggle = nullptr;
+        QTRY_VERIFY((toggle = namedItem(menu->contentItem(), QStringLiteral("StatusItemToggle/message"))));
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, toggle->mapToScene(toggle->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!manager.statusItemVisible(window, "message"));
+        QTRY_VERIFY(!entry(QStringLiteral("StatusMessage"))->isVisible());
+        auto* floatingBar = workspace.window(floating)->contentItem()->findChild<QQuickItem*>(QStringLiteral("StatusBar"));
+        QVERIFY(floatingBar);
+        QVERIFY(!floatingBar->isVisible());
     }
 };
 

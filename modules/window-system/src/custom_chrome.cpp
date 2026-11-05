@@ -255,7 +255,8 @@ bool WindowManager::registerStatusItem(StatusItem item) {
         if (!self)
             return false;
     }
-    return true;
+    emit statusChanged({});
+    return !self.isNull();
 }
 bool WindowManager::removeStatusItem(const QString &id) {
     const auto found = std::find_if(d->customStatusItems.begin(), d->customStatusItems.end(),
@@ -277,6 +278,9 @@ bool WindowManager::removeStatusItem(const QString &id) {
         if (!self)
             return false;
     }
+    emit statusChanged({});
+    if (!self)
+        return false;
     emit layoutChanged();
     return !self.isNull();
 }
@@ -304,7 +308,8 @@ bool WindowManager::setStatusItemText(const QString &id, QString text, QString t
         if (!self)
             return false;
     }
-    return true;
+    emit statusChanged({});
+    return !self.isNull();
 }
 
 bool WindowManager::renameTab(TabId tab, QString title) {

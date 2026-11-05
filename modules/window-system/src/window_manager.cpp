@@ -986,7 +986,20 @@ bool WindowManager::executeResolved(const QString& command, CommandContext ctx, 
 void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
 void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
 void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
-void WindowManager::setStatus(WindowId window, const QString& text) { if (auto widget = d->windows.value(window)) widget->setStatus(text); }
+void WindowManager::setStatus(WindowId window, const QString& text)
+{
+    if (!d->model.window(window)) return;
+    d->statusMessages.insert(window, text);
+    if (auto widget = d->windows.value(window)) widget->setStatus(text);
+    emit statusChanged(window);
+}
+void WindowManager::setTransientStatus(WindowId window, const QString& text)
+{
+    if (window.isNull()) return;
+    if (text.isEmpty()) d->transientStatus.remove(window); else d->transientStatus.insert(window, text);
+    if (auto widget = d->windows.value(window)) widget->setTransientStatus(text);
+    emit statusChanged(window);
+}
 bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, bool visible)
 {
     if (!d->model.window(window) || !statusItemIds().contains(item)) return false;
@@ -997,6 +1010,8 @@ bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, b
     const QPointer<WindowManager> self(this);
     d->options.insert(window, options);
     if (auto view = d->windows.value(window)) view->setOptions(options);
+    if (!self) return false;
+    emit statusChanged(window);
     if (!self) return false;
     emit layoutChanged(); return true;
 }
@@ -1288,7 +1303,7 @@ void WindowManager::cancelPendingShortcut()
     const auto window = d->keyWindow;
     d->pendingKeys = {}; d->keyWindow = WindowId{}; d->keyFocus.clear(); d->keyContext = {};
     d->keyTimer->stop();
-    if (auto widget = d->windows.value(window)) widget->setTransientStatus({});
+    setTransientStatus(window, {});
 }
 
 bool WindowManager::eventFilter(QObject* watched, QEvent* event)
@@ -1428,8 +1443,7 @@ bool WindowManager::dispatchShortcutKey(QKeyEvent* key, WindowId windowId, QObje
     if (partial && validCommandContext(ctx)) {
         d->pendingKeys = sequence; d->keyWindow = windowId; d->keyFocus = receiver; d->keyContext = ctx;
         d->keyTimer->start(1500); key->accept();
-        if (auto window = d->windows.value(windowId)) window->setTransientStatus(
-            QCoreApplication::translate("WindowSystem", "Waiting for next key: %1").arg(sequence.toString()));
+        setTransientStatus(windowId, QCoreApplication::translate("WindowSystem", "Waiting for next key: %1").arg(sequence.toString()));
         return true;
     }
     if (continuing) { cancelChord(); key->accept(); return true; }

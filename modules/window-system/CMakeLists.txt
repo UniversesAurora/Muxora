@@ -148,6 +148,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/window_drag_area_item.cpp
     src/quick/text_edit_menu.cpp
     src/quick/tool_tip.cpp
+    src/quick/status_bar_item.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
     include/window_system/quick_workspace.hpp)

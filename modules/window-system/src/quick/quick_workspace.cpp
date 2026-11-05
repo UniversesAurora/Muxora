@@ -9,6 +9,7 @@
 #include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
 #include "command_strip_host_item.hpp"
+#include "status_bar_item.hpp"
 #include "window_manager_p.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
@@ -59,6 +60,8 @@ public:
         setColor(theme.headerBackground);
         resize(options.size);
         chrome_ = new quick::WindowChromeItem(theme, contentItem());
+        status_ = new quick::StatusBarItem(contentItem());
+        status_->setTheme(theme);
         updateCaption();
         chrome_->setButtonOrder(manager.behavior().captionButtonOrder);
         chrome_->minimizeRequested = [this] { showMinimized(); };
@@ -80,6 +83,15 @@ public:
         };
         connect(toolbars_, &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
         connect(toolbars_->bottomArea(), &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
+        connect(status_, &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
+        status_->triggered = [owner = QPointer<WindowManager>(&manager), id](const QString& item, const QString& command) {
+            if (!owner || !owner->model().window(id)) return;
+            // Only an item still defined with that command acts.
+            const auto items = owner->statusItems();
+            if (std::any_of(items.cbegin(), items.cend(), [&](const auto& entry) { return entry.id == item && entry.command == command; }))
+                owner->execute(command, {}, id);
+        };
+        status_->menuRequested = [this](QPoint global) { dock->showMenu(statusMenu(), manager_.context(id_), global); };
         createMenus(theme, menuItems);
         // As the Widgets header: the toolbar area's menu, then the window's.
         chrome_->menuRequested = [this](QPoint global) {
@@ -116,7 +128,8 @@ public:
         client.minimumSize = [this] {
             const auto body = dock->minimumSize();
             const int tools = toolbars_->isVisible() ? qCeil(toolbars_->implicitHeight() + toolbars_->bottomArea()->implicitHeight()) : 0;
-            return QSize(std::max(body.width(), toolbars_->isVisible() ? toolbars_->minimumWidth() : 0), body.height() + tools);
+            const int status = status_->isVisible() ? qCeil(status_->implicitHeight()) : 0;
+            return QSize(std::max(body.width(), toolbars_->isVisible() ? toolbars_->minimumWidth() : 0), body.height() + tools + status);
         };
         client.captionButtonAt = [this](QPointF position) -> QObject* { return chrome_->captionButtonAt(position); };
         client.setCaptionHovered = [](QObject* button, bool hovered, QPointF) { static_cast<quick::ButtonItem*>(button)->setHovered(hovered); };
@@ -174,14 +187,26 @@ public:
         chrome_->setTitle(record && record->kind == WindowKind::Floating ? title : manager_.windowOptions(id_).title);
         chrome_->setButtonOrder(manager_.behavior().captionButtonOrder);
         if (menus_) menus_->setPresentation(manager_.interfaceTheme());
+        const auto* tab = manager_.model().tab(manager_.context(id_).tab);
+        status_->setWorkspace(tab ? tab->title : QString(), int(manager_.model().orderedTabs(id_).size()));
+    }
+
+    void syncStatus(const QString& message, const QString& transient)
+    {
+        status_->setMessage(message, transient);
+        status_->setItems(manager_.statusItems(), manager_.windowOptions(id_).hiddenStatusItems);
     }
 
     void applyViewState()
     {
         const auto state = manager_.windowViewState(id_);
-        const bool changed = toolbars_->isVisible() != state.effective.toolbars;
+        // Floating windows keep their compact chrome, without a status bar.
+        const auto* record = manager_.model().window(id_);
+        const bool status = state.effective.statusBar && record && record->kind == WindowKind::Workbench;
+        const bool changed = toolbars_->isVisible() != state.effective.toolbars || status_->isVisible() != status;
         toolbars_->setVisible(state.effective.toolbars);
         toolbars_->bottomArea()->setVisible(state.effective.toolbars);
+        status_->setVisible(status);
         if (changed) layoutChildren();
         const bool fullscreen = state.mode != ViewMode::Normal;
         if (fullscreen == bool(windowStates() & Qt::WindowFullScreen)) return;
@@ -242,7 +267,9 @@ private:
             const QPointer<WorkspaceQuickWindow> self(this);
             setColor(menus_->theme().headerBackground);
             if (!self) return;
-            chrome_->setTheme(menus_->theme()); layoutChildren();
+            chrome_->setTheme(menus_->theme());
+            status_->setTheme(menus_->theme());
+            layoutChildren();
         }, Qt::QueuedConnection);
         connect(menus_, &quick::PopupMenu::contextMenuRequested, dock, [this](QPoint global) {
             dock->showContextMenu(CommandMenuSurface::Group, manager_.context(id_), global);
@@ -266,20 +293,53 @@ private:
         return menuId;
     }
 
+    // As the Widgets column: toolbars, the dock, the bottom toolbars, then
+    // the status bar along the window's bottom edge.
     void layoutChildren()
     {
         const int top = toolbars_->isVisible() ? qCeil(toolbars_->implicitHeight()) : 0;
         const int bottom = toolbars_->bottomArea()->isVisible() ? qCeil(toolbars_->bottomArea()->implicitHeight()) : 0;
+        const int status = status_->isVisible() ? qCeil(status_->implicitHeight()) : 0;
         toolbars_->setPosition({0, 0});
         toolbars_->setSize({qreal(width()), qreal(top)});
-        toolbars_->bottomArea()->setPosition({0, qreal(height() - bottom)});
+        toolbars_->bottomArea()->setPosition({0, qreal(height() - status - bottom)});
+        status_->setPosition({0, qreal(height() - status)});
+        status_->setSize({qreal(width()), qreal(status)});
         dock->setPosition(QPointF(0, top));
-        dock->setSize(QSizeF(width(), std::max(0, height() - top - bottom)));
+        dock->setSize(QSizeF(width(), std::max(0, height() - top - bottom - status)));
+    }
+
+    // Each status entry with whether it shows, as the Widgets bar's menu.
+    QVector<MenuItemDescription> statusMenu() const
+    {
+        QVector<QPair<QString, QString>> entries{
+            {QStringLiteral("message"), QCoreApplication::translate("WindowSystem", "Status message")},
+            {QStringLiteral("workspace"), QCoreApplication::translate("WindowSystem", "Workspace information")}};
+        for (const auto& item : manager_.statusItems()) {
+            auto title = item.text;
+            if (title.isEmpty() && !item.command.isEmpty())
+                if (const auto* command = manager_.commands().find(item.command)) title = command->title;
+            entries.append({item.id, title.isEmpty() ? item.id : title});
+        }
+        QVector<MenuItemDescription> result;
+        for (const auto& [id, title] : entries) {
+            const bool visible = manager_.statusItemVisible(id_, id);
+            MenuItemDescription entry;
+            entry.id = QStringLiteral("StatusItemToggle/") + id;
+            entry.commandId = QStringLiteral("window.statusItem.setVisible");
+            entry.action.title = title;
+            entry.action.checkable = true;
+            entry.action.checked = visible;
+            entry.arguments = {{"item", id}, {"visible", !visible}};
+            result.append(std::move(entry));
+        }
+        return result;
     }
     WindowManager& manager_;
     WindowId id_;
     quick::WindowChromeItem* chrome_;
     quick::CommandStripHostItem* toolbars_;
+    quick::StatusBarItem* status_;
     quick::PopupMenu* menus_ = nullptr;
     QPointer<QQuickItem> menuBar_;
     Qt::WindowStates normalStates_;
@@ -365,6 +425,12 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     };
     connect(&manager, &WindowManager::contentVisibilityRequested, this, visibility);
     manager.setPresenter(d.get());
+    connect(&manager, &WindowManager::statusChanged, this, [this](WindowId changed) {
+        for (auto it = d->windows.cbegin(); it != d->windows.cend(); ++it)
+            if (it.value() && (changed.isNull() || it.key() == changed))
+                it.value()->syncStatus(d->manager.d->statusMessages.value(it.key(), QCoreApplication::translate("WindowSystem", "Ready")),
+                                       d->manager.d->transientStatus.value(it.key()));
+    });
     manager.d->toolbarEditors = [this](WindowId window) -> ToolbarEditor* {
         const auto view = d->windows.value(window);
         return view ? view->toolbarEditor() : nullptr;
@@ -534,6 +600,8 @@ void QuickWorkspace::sync()
             });
             window->syncToolbars(toolbars, d->manager.toolbarLayout(id));
             if (!self) return;
+            window->syncStatus(d->manager.d->statusMessages.value(id, QCoreApplication::translate("WindowSystem", "Ready")),
+                               d->manager.d->transientStatus.value(id));
             if (!model.window(id)) continue;
             if (const auto placement = d->placements.take(id); placement.first.isValid())
                 window->place(placement.first, placement.second);
