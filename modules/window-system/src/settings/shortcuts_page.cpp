@@ -1,6 +1,7 @@
 #include "style/ui_metrics.hpp"
 // SPDX-License-Identifier: MIT
 #include "settings_page.hpp"
+#include "key_recording.hpp"
 
 #include <QCoreApplication>
 #include "localization/display_names.hpp"
@@ -60,10 +61,10 @@ class ShortcutCapture final : public QKeySequenceEdit {
 public:
     explicit ShortcutCapture(QWidget* parent) : QKeySequenceEdit(parent)
     {
-        setMaximumSequenceLength(4);
+        setMaximumSequenceLength(KeyRecording::maximumStrokes);
         setFinishingKeyCombinations({});
         timeout_.setSingleShot(true);
-        QObject::connect(&timeout_, &QTimer::timeout, this, [this] { recording_ = false; });
+        QObject::connect(&timeout_, &QTimer::timeout, this, [this] { recording_.stop(); });
     }
 
 protected:
@@ -78,53 +79,37 @@ protected:
 
     void keyPressEvent(QKeyEvent* event) override
     {
-        switch (event->key()) {
-        case Qt::Key_Control: case Qt::Key_Shift: case Qt::Key_Alt: case Qt::Key_Meta:
-        case Qt::Key_AltGr: case Qt::Key_unknown:
-            event->accept();
-            return;
-        default: break;
-        }
-        if (event->isAutoRepeat()) { event->accept(); return; }
-        if (!recording_ && event->modifiers() == Qt::NoModifier &&
-            (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
-            clear();
-            event->accept();
-            return;
-        }
-        QVector<QKeyCombination> strokes;
-        if (recording_) for (int index = 0; index < keySequence().count(); ++index)
-            strokes.append(keySequence()[index]);
-        if (strokes.size() == maximumSequenceLength()) strokes.clear();
-        strokes.append(event->keyCombination());
-        const auto at = [&strokes](int index) {
-            return index < strokes.size() ? strokes[index] : QKeyCombination::fromCombined(0);
-        };
-        setKeySequence(QKeySequence(at(0), at(1), at(2), at(3)));
-        recording_ = strokes.size() < maximumSequenceLength();
-        timeout_.start(1500);
         event->accept();
+        auto sequence = keySequence();
+        switch (recording_.press(*event, sequence)) {
+        case KeyRecording::Result::Ignored: return;
+        case KeyRecording::Result::Cleared: clear(); return;
+        case KeyRecording::Result::Recorded:
+            setKeySequence(sequence);
+            timeout_.start(KeyRecording::pauseMs);
+            return;
+        }
     }
 
     void keyReleaseEvent(QKeyEvent* event) override { event->accept(); }
 
     void focusInEvent(QFocusEvent* event) override
     {
-        recording_ = false;
+        recording_.stop();
         timeout_.stop();
         QKeySequenceEdit::focusInEvent(event);
     }
 
     void focusOutEvent(QFocusEvent* event) override
     {
-        recording_ = false;
+        recording_.stop();
         timeout_.stop();
         QKeySequenceEdit::focusOutEvent(event);
     }
 
 private:
     QTimer timeout_;
-    bool recording_ = false;
+    KeyRecording recording_;
 };
 
 } // namespace
