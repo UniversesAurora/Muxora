@@ -136,4 +136,115 @@ std::optional<StripLayoutSnapshot> decodeStripLayout(
     return result;
 }
 
+namespace {
+
+qsizetype newStripInsertion(const QJsonArray& merged, const QJsonArray& current, qsizetype index)
+{
+    for (qsizetype before = index; before-- > 0;)
+        for (qsizetype position = 0; position < merged.size(); ++position)
+            if (merged[position] == current[before]) return position + 1;
+    for (qsizetype after = index + 1; after < current.size(); ++after)
+        for (qsizetype position = 0; position < merged.size(); ++position)
+            if (merged[position] == current[after]) return position;
+    return merged.size();
+}
+
+QJsonArray mergeStripRow(const QJsonArray& previous, const QJsonArray& current,
+                        const QSet<QString>& present, const QSet<QString>& cachedIds)
+{
+    QJsonArray currentExisting;
+    for (const auto& entry : current)
+        if (cachedIds.contains(entry.toString())) currentExisting.append(entry);
+    QJsonArray merged;
+    qsizetype next = 0;
+    // Reuse shared slots while keeping dormant provider strips in place.
+    for (const auto& entry : previous) {
+        if (!present.contains(entry.toString())) merged.append(entry);
+        else if (next < currentExisting.size()) merged.append(currentExisting[next++]);
+    }
+    while (next < currentExisting.size()) merged.append(currentExisting[next++]);
+    // New presentations are inserted beside their renderer neighbours after
+    // merging. They cannot consume a shared strip's original slot.
+    for (qsizetype index = 0; index < current.size(); ++index) {
+        const auto entry = current[index];
+        if (!cachedIds.contains(entry.toString())) merged.insert(newStripInsertion(merged, current, index), entry);
+    }
+    return merged;
+}
+
+} // namespace
+
+QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObject& rendered)
+{
+    if (cached.isEmpty()) return rendered;
+    QSet<QString> present;
+    QSet<QString> cachedIds;
+    for (const auto* field : {"rows", "bottomRows"})
+        for (const auto& row : cached.value(field).toArray())
+            for (const auto& entry : row.toArray()) cachedIds.insert(entry.toString());
+    auto settings = cached.value("strips").toObject();
+    const auto renderedSettings = rendered.value("strips").toObject();
+    for (auto entry = renderedSettings.begin(); entry != renderedSettings.end(); ++entry) {
+        present.insert(entry.key()); settings.insert(entry.key(), entry.value());
+    }
+    auto result = cached;
+    for (const auto* field : {"rows", "bottomRows"}) {
+        const auto cachedRows = cached.value(field).toArray();
+        const auto renderedRows = rendered.value(field).toArray();
+        QJsonArray rows;
+        for (qsizetype row = 0; row < qMax(cachedRows.size(), renderedRows.size()); ++row) {
+            const auto current = row < renderedRows.size() ? renderedRows.at(row).toArray() : QJsonArray{};
+            const auto previous = row < cachedRows.size() ? cachedRows.at(row).toArray() : QJsonArray{};
+            const auto merged = mergeStripRow(previous, current, present, cachedIds);
+            if (!merged.isEmpty()) rows.append(merged);
+        }
+        if (QString::fromLatin1(field) == "rows") result.insert(field, rows);
+        else if (rows.isEmpty()) result.remove(field);
+        else result.insert(field, rows);
+    }
+    result.insert("locked", rendered.value("locked"));
+    result.insert("strips", settings);
+    return result;
+}
+
+QJsonObject mergeToolbarEdit(QJsonObject latest, const QJsonObject& before, const QJsonObject& after)
+{
+    if (latest.isEmpty()) return after;
+    // A row transfer changes both areas as one operation. Unrelated edits in
+    // an older live window must retain the newer profile's ordering.
+    if (before.value("rows") != after.value("rows") || before.value("bottomRows") != after.value("bottomRows")) {
+        for (const auto* field : {"rows", "bottomRows"}) {
+            if (after.contains(field)) latest.insert(field, after.value(field));
+            else latest.remove(field);
+        }
+    }
+    if (before.value("locked") != after.value("locked")) latest.insert("locked", after.value("locked"));
+    auto settings = latest.value("strips").toObject();
+    const auto oldSettings = before.value("strips").toObject();
+    const auto newSettings = after.value("strips").toObject();
+    for (auto strip = newSettings.begin(); strip != newSettings.end(); ++strip) {
+        const auto oldFields = oldSettings.value(strip.key()).toObject();
+        const auto newFields = strip->toObject();
+        auto merged = settings.value(strip.key()).toObject();
+        QSet<QString> fields;
+        for (auto field = oldFields.begin(); field != oldFields.end(); ++field) fields.insert(field.key());
+        for (auto field = newFields.begin(); field != newFields.end(); ++field) fields.insert(field.key());
+        for (const auto& field : fields) if (oldFields.value(field) != newFields.value(field)) {
+            if (field == "excluded") {
+                auto excluded = merged.value(field).toArray();
+                const auto oldExcluded = oldFields.value(field).toArray(), newExcluded = newFields.value(field).toArray();
+                for (const auto& id : oldExcluded) if (!newExcluded.contains(id))
+                    for (qsizetype index = excluded.size(); index-- > 0;) if (excluded[index] == id) excluded.removeAt(index);
+                for (const auto& id : newExcluded) if (!oldExcluded.contains(id) && !excluded.contains(id)) excluded.append(id);
+                merged.insert(field, excluded); continue;
+            }
+            if (newFields.contains(field)) merged.insert(field, newFields.value(field));
+            else merged.remove(field);
+        }
+        if (!merged.isEmpty()) settings.insert(strip.key(), merged);
+    }
+    latest.insert("strips", settings);
+    return latest;
+}
+
 } // namespace window_system

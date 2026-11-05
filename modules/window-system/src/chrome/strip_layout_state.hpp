@@ -44,4 +44,9 @@ int ensureStripRow(QVector<QStringList>& rows, QVector<ToolbarArea>& areas, Tool
     const QJsonObject& json, const QVector<QStringList>& currentRows,
     const QVector<ToolbarArea>& currentAreas, const QHash<QString, StripRestorePolicy>& policies);
 
+// Keep dormant providers in their stored slots while updating live strips.
+[[nodiscard]] QJsonObject mergeRenderedStripLayout(const QJsonObject& cached, const QJsonObject& rendered);
+// Publish only the edited fields, retaining newer edits from other windows.
+[[nodiscard]] QJsonObject mergeToolbarEdit(QJsonObject latest, const QJsonObject& before, const QJsonObject& after);
+
 } // namespace window_system
