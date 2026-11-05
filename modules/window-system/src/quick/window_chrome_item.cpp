@@ -5,6 +5,7 @@
 #include <window_system/ui_scale.hpp>
 
 #include <QCoreApplication>
+#include <QContextMenuEvent>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QMouseEvent>
@@ -116,6 +117,17 @@ void WindowChromeItem::mousePressEvent(QMouseEvent* event)
     event->accept();
     if (carriesTabs && carriesTabs()) press_ = event->globalPosition().toPoint();
     else window()->startSystemMove();
+}
+
+bool WindowChromeItem::event(QEvent* event)
+{
+    if (event->type() == QEvent::ContextMenu) if (const auto callback = menuRequested) {
+        const auto* menu = static_cast<QContextMenuEvent*>(event);
+        const auto global = menu->reason() == QContextMenuEvent::Keyboard
+            ? mapToGlobal(boundingRect().center()).toPoint() : menu->globalPos();
+        event->accept(); callback(global); return true;
+    }
+    return QQuickItem::event(event);
 }
 
 void WindowChromeItem::mouseMoveEvent(QMouseEvent* event)

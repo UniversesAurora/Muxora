@@ -35,8 +35,10 @@ public:
     std::function<void()> closeRequested;
     std::function<bool()> carriesTabs;
     std::function<void(QPoint pressGlobal)> carryRequested;
+    std::function<void(QPoint)> menuRequested;
 
 protected:
+    bool event(QEvent* event) override;
     void geometryChange(const QRectF& now, const QRectF& previous) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;

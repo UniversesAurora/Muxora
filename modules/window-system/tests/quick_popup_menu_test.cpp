@@ -9,6 +9,7 @@
 #include "quick/rail_item.hpp"
 #include "quick/rail_button_item.hpp"
 #include "quick/tab_bar_item.hpp"
+#include "quick/window_chrome_item.hpp"
 #include "native_input.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
@@ -413,6 +414,37 @@ private slots:
         QCoreApplication::sendEvent(bar, &event);
         QVERIFY(!workspace);
         QVERIFY(manager.model().tab(tab));
+    }
+
+    void floatingTitleMenuTargetsItsOwnWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto main = manager.createWindow();
+        const auto first = manager.addTab(main, {QStringLiteral("Main")});
+        const auto floating = manager.createWindow(WindowKind::Floating);
+        const auto second = manager.addTab(floating, {QStringLiteral("Floating")});
+        QTRY_VERIFY(workspace.window(floating));
+        auto* view = workspace.window(floating);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* chrome = view->contentItem()->findChild<quick::WindowChromeItem*>(); QVERIFY(chrome);
+        const auto point = chrome->mapToScene(chrome->boundingRect().center()).toPoint();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+        QCoreApplication::sendEvent(view, &event);
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* kind = namedItem(menu->contentItem(), QStringLiteral("window.kind")); QVERIFY(kind);
+        native_input::mouse(menu, kind->mapToScene(kind->boundingRect().center()).toPoint());
+        QTRY_VERIFY(kind->property("highlighted").toBool());
+        QTest::keyClick(menu, Qt::Key_Right);
+        QTRY_VERIFY(popup(menu));
+        menu = popup(menu); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* promote = namedItem(menu->contentItem(), QStringLiteral("window.promote")); QVERIFY(promote);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, promote->mapToScene(promote->boundingRect().center()).toPoint());
+        QTRY_COMPARE(manager.model().window(floating)->kind, WindowKind::Workbench);
+        QCOMPARE(manager.model().group(manager.model().groupForTab(first))->windowId, main);
+        QCOMPARE(manager.model().group(manager.model().groupForTab(second))->windowId, floating);
     }
 };
 

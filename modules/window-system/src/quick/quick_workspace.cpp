@@ -56,6 +56,12 @@ public:
         chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, bars, id, contentItem());
         dock->setTabDrag(&drag);
+        chrome_->menuRequested = [this](QPoint global) {
+            const auto* record = manager_.model().window(id_);
+            // The workbench header's strip menu joins it with the toolbars.
+            if (record && record->kind == WindowKind::Floating)
+                dock->showContextMenu(CommandMenuSurface::Window, manager_.context(id_), global);
+        };
         // As focus in a Widgets window does: the window the user turns to
         // becomes the manager's current one.
         connect(this, &QWindow::activeChanged, this, [this] {
