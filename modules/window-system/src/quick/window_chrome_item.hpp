@@ -5,6 +5,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QQuickItem>
+#include <QFont>
 #include <QPointer>
 #include <functional>
 #include <optional>
@@ -52,6 +53,7 @@ protected:
 private:
     void requestLayout();
     void relayout();
+    void measureTitle();
     Theme theme_;
     ButtonItem* minimize_;
     ButtonItem* maximize_;
@@ -59,6 +61,8 @@ private:
     TabLabelTextItem* title_;
     QPointer<QQuickItem> menu_;
     QString titleText_;
+    QFont titleFont_;
+    int titleWidth_ = 0;
     // Where a carrying title was pressed, while it waits for the distance.
     std::optional<QPoint> press_;
     CaptionButtonOrder order_ = CaptionButtonOrder::Windows;

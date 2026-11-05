@@ -181,6 +181,10 @@ public:
 protected:
     bool event(QEvent* event) override
     {
+        // Qt posts font and DPR changes to QWindows. Invalidate header metrics
+        // at that boundary, without filtering every application input event.
+        if (event->type() == QEvent::ApplicationFontChange || event->type() == QEvent::DevicePixelRatioChange)
+            QCoreApplication::sendEvent(chrome_, event);
         if (event->type() == QEvent::Close) {
             // If the manager agrees, the next sync deletes this window.
             event->ignore();

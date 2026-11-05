@@ -13,6 +13,7 @@
 #include <QStyleHints>
 #include <QtMath>
 #include <algorithm>
+#include <array>
 
 namespace window_system::quick {
 namespace {
@@ -32,6 +33,9 @@ WindowChromeItem::WindowChromeItem(const Theme& theme, QQuickItem* parent)
     connect(minimize_, &ButtonItem::clicked, this, [this] { if (minimizeRequested) minimizeRequested(); });
     connect(maximize_, &ButtonItem::clicked, this, [this] { if (maximizeRequested) maximizeRequested(); });
     connect(close_, &ButtonItem::clicked, this, [this] { if (closeRequested) closeRequested(); });
+    connect(qGuiApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
+        measureTitle(); title_->clearLabel(); requestLayout();
+    });
     setTheme(theme);
 }
 
@@ -39,6 +43,7 @@ int WindowChromeItem::rowHeight() { return uiPixels(32); }
 
 void WindowChromeItem::setTheme(const Theme& theme)
 {
+    if (titleFont_ != QGuiApplication::font()) measureTitle();
     theme_ = theme;
     for (auto* button : {minimize_, maximize_, close_}) button->setTheme(theme);
     minimize_->setIcon(iconFor(QStringLiteral("minimize"), theme));
@@ -71,7 +76,14 @@ void WindowChromeItem::setTitle(const QString& title)
 {
     if (titleText_ == title) return;
     titleText_ = title;
+    measureTitle();
     relayout();
+}
+
+void WindowChromeItem::measureTitle()
+{
+    titleFont_ = QGuiApplication::font();
+    titleWidth_ = titleText_.isEmpty() ? 0 : QFontMetrics(titleFont_).horizontalAdvance(titleText_);
 }
 
 void WindowChromeItem::setButtonOrder(CaptionButtonOrder order)
@@ -116,9 +128,9 @@ void WindowChromeItem::relayout()
     // The outermost button keeps the window's edge, as in the Widgets row.
     const int button = uiPixels(captionButtonWidth), row = int(height());
     const bool leading = order_ != CaptionButtonOrder::Windows;
-    const QVector<ButtonItem*> buttons = order_ == CaptionButtonOrder::Reversed ? QVector{close_, maximize_, minimize_}
-        : order_ == CaptionButtonOrder::MacOS ? QVector{close_, minimize_, maximize_}
-        : QVector{minimize_, maximize_, close_};
+    const std::array buttons = order_ == CaptionButtonOrder::Reversed ? std::array{close_, maximize_, minimize_}
+        : order_ == CaptionButtonOrder::MacOS ? std::array{close_, minimize_, maximize_}
+        : std::array{minimize_, maximize_, close_};
     const int controls = int(buttons.size()) * button;
     int x = leading ? 0 : int(width()) - controls;
     for (auto* item : buttons) {
@@ -134,15 +146,13 @@ void WindowChromeItem::relayout()
     }
     // The title is centered between the menus and caption controls.
     const QRect area((leading ? controls : 0) + menus, 0, available - menus, row);
-    const auto font = QGuiApplication::font();
-    const int natural = QFontMetrics(font).horizontalAdvance(titleText_);
-    const int textWidth = std::min(natural, std::max(0, area.width() - uiPixels(16)));
+    const int textWidth = std::min(titleWidth_, std::max(0, area.width() - uiPixels(16)));
     if (titleText_.isEmpty() || textWidth <= 0) { title_->clearLabel(); return; }
     const QRect text(0, 0, textWidth, row);
     TabLabelPresentation label;
     label.parts.tab = text; label.parts.title = text;
     label.state.shape = TabShape::Row; label.state.selected = true; label.state.title = titleText_;
-    label.font = font; label.naturalWidth = natural;
+    label.font = titleFont_; label.naturalWidth = titleWidth_;
     TabStripLabelStyle style;
     style.palette.text = theme_.headerText;
     title_->setLabel(label, style, TabTextRole::Literal);
@@ -159,6 +169,9 @@ void WindowChromeItem::mousePressEvent(QMouseEvent* event)
 
 bool WindowChromeItem::event(QEvent* event)
 {
+    if (event->type() == QEvent::ApplicationFontChange || event->type() == QEvent::DevicePixelRatioChange) {
+        measureTitle(); title_->clearLabel(); requestLayout();
+    }
     if (event->type() == QEvent::ContextMenu) if (const auto callback = menuRequested) {
         const auto* menu = static_cast<QContextMenuEvent*>(event);
         const auto global = menu->reason() == QContextMenuEvent::Keyboard

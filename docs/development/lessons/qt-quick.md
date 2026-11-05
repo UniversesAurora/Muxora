@@ -186,3 +186,10 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：在布局文件解析边界按相同工具栏规则拒绝无效宽度，保留已运行的模型和内容。不要在每个呈现里另加夹取或默认恢复。
 - **验证**：自定义栏的无效宽度场景先在旧解析上失败，修复后与已有无效布局场景一同通过，见 [工具栏记录](../verification-log/2026-11.md#quick-命令工具栏接入窗口2026-11-05)。
 - **出处**：2026-11-05，`ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched`。
+
+### 字体测量缓存由窗口的字体事件失效
+
+- **原因**：保留文字节点不代表标题测量也被保留；尺寸回调内的 `QFontMetrics::horizontalAdvance` 仍会重复做全文工作。Qt 6.12 将 `ApplicationFontChange` 发给顶层 QWindow，普通子项不会自动收到；旧的 `QGuiApplication::fontChanged` 信号已经弃用。
+- **做法**：缓存全文宽度，标题和字体变化时重新测量；窗口收到字体或 DPR 事件时通知标题，字体数据库变化另走对应信号。不要为这一件事过滤整个应用的所有输入事件。
+- **验证**：已有字体调整与窗口控制行为检查通过。被移出操作的局部 CPU 取样及限制见 [记录](../verification-log/2026-11.md#quick-标题测量移出尺寸变化2026-11-05)，没有将它当成整窗性能验收。
+- **出处**：Qt 6.12 `qguiapplication.cpp` 的 `setFont` 与字体事件分发；2026-11-05，`WindowChromeItem`。
