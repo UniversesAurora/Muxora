@@ -24,21 +24,27 @@ class MenuEntry final : public QObject {
     QML_UNCREATABLE("Created by a menu session")
     Q_PROPERTY(QString title READ title CONSTANT)
     Q_PROPERTY(QString id READ id CONSTANT)
+    Q_PROPERTY(QString tooltip READ tooltip CONSTANT)
     Q_PROPERTY(bool enabled READ enabled CONSTANT)
     Q_PROPERTY(bool checkable READ checkable CONSTANT)
     Q_PROPERTY(bool checked READ checked CONSTANT)
+    Q_PROPERTY(bool persistentHighlight READ persistentHighlight CONSTANT)
     Q_PROPERTY(QQuickItem* content READ content CONSTANT)
 public:
     MenuEntry(MenuItemDescription description, PopupMenu& owner);
     ~MenuEntry() override;
     QString title() const { return description_.action.title; }
     QString id() const { return description_.id; }
+    QString tooltip() const { return description_.tooltip; }
     bool enabled() const { return description_.action.enabled; }
     bool checkable() const { return description_.action.checkable; }
     bool checked() const { return description_.action.checked.value_or(false); }
+    bool persistentHighlight() const { return description_.kind == MenuItemDescription::Kind::Tab && checked(); }
     QQuickItem* content() const;
     Q_INVOKABLE void setHighlighted(bool highlighted);
+    Q_INVOKABLE void setHovered(bool hovered);
     Q_INVOKABLE void activate();
+    Q_INVOKABLE void activateAction(const QString& action);
 private:
     MenuItemDescription description_;
     PopupMenu& owner_;
@@ -59,14 +65,17 @@ public:
     ~PopupMenu() override;
     bool open(QQuickItem* anchor, QPoint globalPosition, const QVector<MenuItemDescription>& items);
     void dismiss();
+    bool isOpen() const;
     QFont menuFont() const { return font_; }
     QPalette menuPalette() const;
     qreal scale() const;
     const Theme& theme() const { return theme_; }
     void activate(const MenuItemDescription& item);
+    void activateAction(const MenuItemDescription& item, const QString& action);
     Q_INVOKABLE void finished();
 signals:
     void triggered(window_system::MenuItemDescription item);
+    void rowActionTriggered(window_system::MenuItemDescription item, QString action);
     void closed();
 protected:
     bool eventFilter(QObject* object, QEvent* event) override;

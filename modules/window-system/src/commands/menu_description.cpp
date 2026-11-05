@@ -456,4 +456,31 @@ QVector<MenuItemDescription> describeTabPresentationMenu(
     return result;
 }
 
+QVector<MenuItemDescription> describeTabListMenu(WindowManager* manager, GroupId group)
+{
+    const auto* record = manager->model().group(group);
+    if (!record) return {};
+    QVector<MenuItemDescription> result;
+    const auto appearance = manager->tabAppearance();
+    for (const auto id : record->tabs) {
+        MenuItemDescription item;
+        item.kind = MenuItemDescription::Kind::Tab;
+        item.id = id.toString(QUuid::WithoutBraces);
+        const auto* tab = manager->model().tab(id);
+        item.action.title = item.tooltip = tab->title;
+        item.action.checkable = true;
+        item.action.checked = id == record->activeTab;
+        item.arguments.insert(QStringLiteral("tab"), id);
+        if (appearance.showIcons && manager->tabOptions(id).showIcon) item.iconName = QStringLiteral("window");
+        if (const auto preset = manager->tabColorPreset(tab->colorId)) item.marker = preset->groupInactive.line;
+        if (manager->isTabSticky(id))
+            item.rowActions.append({QStringLiteral("unstick"), QStringLiteral("sticky"),
+                QCoreApplication::translate("WindowSystem", "Unstick tab"), false});
+        item.rowActions.append({QStringLiteral("close"), QStringLiteral("close"),
+            QCoreApplication::translate("WindowSystem", "Close tab"), true});
+        result.append(std::move(item));
+    }
+    return result;
+}
+
 } // namespace window_system

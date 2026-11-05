@@ -55,6 +55,7 @@ public:
     void setContentEdgeToEdge(bool enabled);
     void setGroupFocused(bool focused);
     void setPinnedActions(std::function<void()> current, std::function<void()> all);
+    void setTabListOpen(bool open);
     // The largest minimum any page declares; the column never takes it.
     void setContentMinimum(QSize minimum);
     [[nodiscard]] QSize minimumSize() const;

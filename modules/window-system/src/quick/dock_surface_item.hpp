@@ -139,7 +139,7 @@ private:
     [[nodiscard]] LayoutTree composedTree(QSize area);
     void resizePinned(Edge edge, double ratio);
     void showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab, QPoint global, TabBarItem* strip = nullptr);
-    void showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
+    PopupMenu* showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr);
 
     WindowManager& manager_;
     ContentHost& host_;
@@ -150,6 +150,7 @@ private:
     DockGuideItem* guides_;
     TabDrag* drag_ = nullptr;
     QPointer<PopupMenu> menu_;
+    GroupId tabListGroup_;
     GroupId insertionGroup_;
     GroupId incomingGroup_;
     GroupId previewGroup_;

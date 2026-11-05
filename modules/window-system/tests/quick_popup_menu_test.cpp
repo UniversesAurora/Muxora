@@ -2,6 +2,7 @@
 // Phase 10.4b: popup input and lifetime. Dimensions: disabled/hidden/separator
 // rows, keyboard cascades, outside capture, screen edge, owner destruction.
 #include "quick/popup_menu.hpp"
+#include "quick/button_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include "quick/peek_item.hpp"
@@ -286,6 +287,50 @@ private slots:
         QTRY_VERIFY(popup(view));
         QTest::keyClick(popup(view), Qt::Key_Escape);
         QTRY_VERIFY(!popup(view));
+    }
+
+    void tabListActionsFollowTheTabAcrossReordering_data()
+    {
+        QTest::addColumn<QString>("operation");
+        QTest::newRow("activate") << QString{};
+        QTest::newRow("close") << QStringLiteral("close");
+        QTest::newRow("unstick") << QStringLiteral("unstick");
+    }
+    void tabListActionsFollowTheTabAcrossReordering()
+    {
+        QFETCH(QString, operation);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window, {QStringLiteral("First")});
+        const auto target = manager.addTab(window, {QStringLiteral("Target & title")});
+        if (operation == "unstick") QVERIFY(manager.setTabSticky(target, true));
+        QVERIFY(manager.activateTab(first));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window); QVERIFY(view);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>(); QVERIFY(dock);
+        auto* group = dock->group(manager.model().groupForTab(target)); QVERIFY(group);
+        auto* button = group->findChild<quick::ButtonItem*>("TabListButton"); QVERIFY(button);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier,
+            button->mapToScene(button->boundingRect().center()).toPoint());
+        QTRY_VERIFY(popup(view));
+        auto* menu = popup(view); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        auto* row = namedItem(menu->contentItem(), target.toString(QUuid::WithoutBraces)); QVERIFY(row);
+        if (operation != "unstick") QVERIFY(manager.reorderTab(target, false));
+        if (!operation.isEmpty()) {
+            native_input::mouse(menu, row->mapToScene(row->boundingRect().center()).toPoint());
+            row = namedItem(row, operation); QVERIFY(row);
+            QTRY_VERIFY(row->isVisible());
+        }
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier,
+            row->mapToScene(row->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!popup(view));
+        if (operation == "close") QTRY_VERIFY(!manager.model().tab(target));
+        else if (operation == "unstick") QTRY_VERIFY(!manager.isTabSticky(target));
+        else QTRY_COMPARE(manager.context().tab, target);
+        QVERIFY(manager.model().tab(first));
     }
 
     void aCommandQueryCanReleaseTheWorkspace()

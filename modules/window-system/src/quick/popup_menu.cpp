@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "popup_menu.hpp"
+#include "button_item.hpp"
+#include "path_item.hpp"
 #include "qml_scene_component.hpp"
 #include "tab_icon_item.hpp"
 #include "tab_label_text_item.hpp"
@@ -8,6 +10,7 @@
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QKeyEvent>
+#include <QPainterPath>
 #include <QPlatformSurfaceEvent>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -33,30 +36,70 @@ QObject* create(SceneComponent kind, const QVariantMap& properties, QObject* par
 // background and routes input; entering a row does not rebuild the menu tree.
 class MenuLabelItem final : public QQuickItem {
 public:
-    MenuLabelItem(const MenuItemDescription& item, const Theme& theme, const QFont& font)
+    MenuLabelItem(const MenuItemDescription& item, const Theme& theme, const QFont& font, MenuEntry& entry)
         : item_(item), theme_(theme), font_(font), title_(new TabLabelTextItem(this)),
           shortcut_(new TabLabelTextItem(this)), check_(new TabLabelTextItem(this)),
           icon_(new TabIconItem(this)), arrow_(new TabIconItem(this))
     {
         const QFontMetrics metrics(font);
-        titleWidth_ = metrics.size(Qt::TextShowMnemonic, item.action.title).width();
+        const bool tab = item.kind == MenuItemDescription::Kind::Tab;
+        titleWidth_ = tab ? metrics.horizontalAdvance(item.action.title) : metrics.size(Qt::TextShowMnemonic, item.action.title).width();
         shortcutWidth_ = metrics.horizontalAdvance(item.action.shortcut);
         checkWidth_ = metrics.horizontalAdvance(QChar(0x2713));
         iconSource_ = iconFor(item.iconName, theme);
         arrowSource_ = iconFor(QStringLiteral("chevron-right"), theme);
         setImplicitHeight(metrics.height() + uiPixels(10));
         setImplicitWidth(uiPixels(22 + 24) + titleWidth_ + (shortcutWidth_ ? uiPixels(20) + shortcutWidth_ : 0));
+        if (tab) {
+            for (const auto& action : item.rowActions) {
+                auto* button = new ButtonItem(theme, this);
+                button->setObjectName(action.id);
+                button->setIcon(iconFor(action.iconName, theme));
+                button->setToolTip(action.tooltip);
+                button->setVisible(!action.hoverOnly);
+                connect(button, &ButtonItem::clicked, &entry, [&entry, id = action.id] { entry.activateAction(id); });
+                connect(button, &ButtonItem::hoveredChanged, this, [this] { refreshActions(); });
+                actions_.append(button);
+            }
+            marker_ = new PathItem(this);
+            marker_->setFill(item.marker); marker_->setVisible(item.marker.isValid());
+            const int icons = item.iconName.isEmpty() ? 0 : uiPixels(16 + 7);
+            const int count = int(actions_.size());
+            const int buttons = uiPixels(18 * count + 2 * std::max(0, count - 1));
+            setImplicitHeight(std::max(metrics.height(), uiPixels(18)) + uiPixels(4));
+            setImplicitWidth(std::clamp(uiPixels(8 + 7 + 4) + icons + titleWidth_ + buttons, uiPixels(240), uiPixels(520)));
+        }
     }
     void setHighlighted(bool selected)
     {
         if (selected_ == selected) return;
         selected_ = selected; refresh();
     }
+    void setHovered(bool hovered)
+    {
+        hovered_ = hovered;
+        refreshActions();
+    }
+private:
+    void refreshActions()
+    {
+        // A child tool button accepts hover before Controls sees the row.
+        // Keep the row actions exposed while either target owns that hover.
+        const bool inside = hovered_ || std::any_of(actions_.cbegin(), actions_.cend(), [](const auto* button) { return button->hovered(); });
+        for (int index = 0; index < actions_.size(); ++index)
+            if (item_.rowActions.at(index).hoverOnly) actions_.at(index)->setVisible(inside);
+    }
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override
     {
         QQuickItem::geometryChange(now, previous);
-        if (now.size() != previous.size()) refresh();
+        if (now.size() != previous.size()) {
+            if (marker_) {
+                QPainterPath path; path.addRect(QRectF(0, 0, uiPixels(4), height()));
+                marker_->setSize(size()); marker_->setPath(path);
+            }
+            refresh();
+        }
     }
 private:
     void text(TabLabelTextItem* target, QString value, int naturalWidth, QRect area, QColor color, TabTextRole role)
@@ -71,6 +114,7 @@ private:
     }
     void refresh()
     {
+        if (item_.kind == MenuItemDescription::Kind::Tab) { refreshTab(); return; }
         const int h = qRound(height()), end = qRound(width()) - uiPixels(24), start = uiPixels(22);
         const auto ink = !item_.action.enabled ? theme_.mutedText : selected_ ? theme_.selectionText : theme_.text;
         const int shortcutStart = std::max(start, end - shortcutWidth_);
@@ -92,26 +136,60 @@ private:
             arrow_->setIcon(arrowSource_, {extent, extent}, {}, item_.action.enabled, selected_);
         }
     }
+    void refreshTab()
+    {
+        const bool selected = selected_ || item_.action.checked.value_or(false);
+        const auto ink = selected ? theme_.selectionText : theme_.text;
+        const int h = qRound(height()), extent = uiPixels(16), button = uiPixels(18);
+        int start = uiPixels(8), end = qRound(width()) - uiPixels(4);
+        shortcut_->clearLabel(); check_->clearLabel(); arrow_->setVisible(false);
+        icon_->setVisible(!item_.iconName.isEmpty());
+        if (icon_->isVisible()) {
+            icon_->setPosition({qreal(start), qreal((h - extent) / 2)});
+            icon_->setIcon(iconSource_, {extent, extent}, {}, true, selected);
+            start += extent + uiPixels(7);
+        }
+        for (int index = int(actions_.size()) - 1; index >= 0; --index) {
+            end -= button;
+            actions_.at(index)->setPosition({qreal(end), qreal((h - button) / 2)});
+            actions_.at(index)->setSize({qreal(button), qreal(button)});
+            end -= uiPixels(2);
+        }
+        const int available = std::max(0, end - uiPixels(5) - start);
+        if (available != elideWidth_) {
+            elideWidth_ = available;
+            const QFontMetrics metrics(font_);
+            elided_ = metrics.elidedText(item_.action.title, Qt::ElideRight, available);
+            elidedWidth_ = metrics.horizontalAdvance(elided_);
+        }
+        text(title_, elided_, elidedWidth_, {start, 0, available, h}, ink, TabTextRole::Literal);
+    }
     const MenuItemDescription& item_;
     Theme theme_;
     QFont font_;
     TabLabelTextItem *title_, *shortcut_, *check_;
     TabIconItem *icon_, *arrow_;
     QIcon iconSource_, arrowSource_;
+    QVector<ButtonItem*> actions_;
+    PathItem* marker_ = nullptr;
+    QString elided_;
+    int elideWidth_ = -1, elidedWidth_ = 0;
     int titleWidth_ = 0, shortcutWidth_ = 0, checkWidth_ = 0;
-    bool selected_ = false;
+    bool selected_ = false, hovered_ = false;
 };
 
 MenuEntry::MenuEntry(MenuItemDescription description, PopupMenu& owner)
     : QObject(&owner), description_(std::move(description)), owner_(owner),
-      label_(new MenuLabelItem(description_, owner.theme(), owner.menuFont()))
+      label_(new MenuLabelItem(description_, owner.theme(), owner.menuFont(), *this))
 {
     label_->setParent(this);
 }
 MenuEntry::~MenuEntry() = default;
 QQuickItem* MenuEntry::content() const { return label_; }
 void MenuEntry::setHighlighted(bool highlighted) { label_->setHighlighted(highlighted); }
+void MenuEntry::setHovered(bool hovered) { label_->setHovered(hovered); }
 void MenuEntry::activate() { owner_.activate(description_); }
+void MenuEntry::activateAction(const QString& action) { owner_.activateAction(description_, action); }
 
 PopupMenu::PopupMenu(const Theme& theme, QObject* parent)
     : QObject(parent), theme_(theme), font_(QGuiApplication::font()) {}
@@ -214,6 +292,14 @@ bool PopupMenu::open(QQuickItem* anchor, QPoint globalPosition, const QVector<Me
 void PopupMenu::dismiss()
 {
     if (menu_) QMetaObject::invokeMethod(menu_.get(), "dismiss");
+}
+
+bool PopupMenu::isOpen() const { return menu_ && menu_->property("visible").toBool(); }
+
+void PopupMenu::activateAction(const MenuItemDescription& item, const QString& action)
+{
+    QTimer::singleShot(0, this, [this, item, action] { emit rowActionTriggered(item, action); });
+    dismiss();
 }
 
 void PopupMenu::activate(const MenuItemDescription& item)

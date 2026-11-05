@@ -221,7 +221,7 @@ void DockSurfaceItem::placePeek()
 
 bool DockSurfaceItem::eventFilter(QObject* watched, QEvent* event)
 {
-    if (peek_ && watched == window() && !menu_) {
+    if (peek_ && watched == window() && !(menu_ && menu_->isOpen())) {
         if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
             closePeek();
             return true;
@@ -328,12 +328,13 @@ void DockSurfaceItem::releaseGroup(GroupId id)
     locations_.remove(id);
 }
 
-void DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context,
+PopupMenu* DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context,
                                QPoint global, TabBarItem* strip)
 {
     // Finish the previous hold before opening another menu on the same strip.
     // Its later closed notification must not collapse the new menu's strip.
     delete menu_.data();
+    tabListGroup_ = {};
     auto* menu = new PopupMenu(manager_.interfaceTheme(), this);
     menu_ = menu;
     const QPointer<WindowManager> owner(&manager_);
@@ -341,8 +342,19 @@ void DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const 
     if (bar) bar->setPopupOpen(true);
     connect(menu, &PopupMenu::closed, menu, &QObject::deleteLater);
     connect(menu, &QObject::destroyed, this, [bar] { if (bar) bar->setPopupOpen(false); });
-    connect(menu, &PopupMenu::triggered, menu, [owner, context](const MenuItemDescription& item) {
+    const auto tabAction = [owner, context](const MenuItemDescription& item, const QString& action) {
         if (!owner) return;
+        const auto tab = item.arguments.value(QStringLiteral("tab")).toUuid();
+        const auto* group = owner->model().group(context.group);
+        if (!group || group->windowId != context.window || !group->tabs.contains(tab)) return;
+        if (action == QStringLiteral("close")) owner->closeTab(tab);
+        else if (action == QStringLiteral("unstick")) owner->setTabSticky(tab, false);
+        else owner->activateTab(tab);
+    };
+    connect(menu, &PopupMenu::rowActionTriggered, menu, tabAction);
+    connect(menu, &PopupMenu::triggered, menu, [owner, context, tabAction](const MenuItemDescription& item) {
+        if (!owner) return;
+        if (item.kind == MenuItemDescription::Kind::Tab) { tabAction(item, {}); return; }
         if (item.kind == MenuItemDescription::Kind::TabCreation) {
             owner->requestNewTab(context.window, context.group, item.commandId);
             return;
@@ -351,7 +363,8 @@ void DockSurfaceItem::showMenu(const QVector<MenuItemDescription>& items, const 
         for (auto it = item.arguments.cbegin(); it != item.arguments.cend(); ++it) captured.args.insert(it.key(), it.value());
         owner->executeInContext(item.commandId, captured);
     });
-    if (!menu->open(this, global, items)) delete menu;
+    if (!menu->open(this, global, items)) { delete menu; return nullptr; }
+    return menu;
 }
 
 void DockSurfaceItem::showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab,
@@ -455,6 +468,17 @@ GroupItem* DockSurfaceItem::ensureGroup(GroupId id, const GroupRecord& record)
         auto captured = manager_.context(window_); captured.group = id;
         const auto items = describeTabCreationMenu(&manager_, window_, id);
         if (self) showMenu(items, captured, trigger.bottomLeft() + QPoint(0, 1), bar);
+    };
+    view->tabListRequested = [this, view, id](QRect trigger) {
+        if (menu_ && menu_->isOpen() && tabListGroup_ == id) { menu_->dismiss(); return; }
+        auto captured = manager_.context(window_); captured.group = id;
+        auto* menu = showMenu(describeTabListMenu(&manager_, id), captured,
+            trigger.bottomLeft() + QPoint(0, 1), view->tabBar());
+        if (!menu) return;
+        tabListGroup_ = id;
+        view->setTabListOpen(true);
+        connect(menu, &PopupMenu::closed, view, [view] { view->setTabListOpen(false); });
+        connect(menu, &QObject::destroyed, view, [view] { view->setTabListOpen(false); });
     };
     view->verticalStateChanged = [this, id](int width, bool iconsOnly) {
         if (manager_.model().group(id)) manager_.setGroupTabStrip(id, width, iconsOnly);

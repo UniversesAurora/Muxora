@@ -94,6 +94,7 @@ GroupItem::GroupItem(const Theme& theme, QQuickItem* parent)
     types_->setIcon(iconFor(QStringLiteral("chevron-down"), theme));
     types_->setToolTip(QCoreApplication::translate("WindowSystem", "Choose new tab type"));
     list_->setIcon(iconFor(QStringLiteral("tab-list"), theme));
+    list_->setObjectName(QStringLiteral("TabListButton"));
     list_->setToolTip(QCoreApplication::translate("WindowSystem", "All tabs"));
     // The two halves of the new-tab button light up together.
     for (auto* part : {create_, types_})
@@ -146,6 +147,8 @@ GroupItem::~GroupItem()
     // Pages belong to their host; never destroy them with the group.
     for (const auto& page : std::as_const(pages_)) if (page) page->setParentItem(nullptr);
 }
+
+void GroupItem::setTabListOpen(bool open) { list_->setDown(open); }
 
 template <class Apply> void GroupItem::edit(Apply&& apply)
 {
