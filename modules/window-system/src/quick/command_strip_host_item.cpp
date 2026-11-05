@@ -1,18 +1,29 @@
 // SPDX-License-Identifier: MIT
 #include "command_strip_host_item.hpp"
 #include "command_strip_item.hpp"
+#include "path_item.hpp"
+#include "picture_item.hpp"
 #include "chrome/strip_layout.hpp"
 #include <window_system/ui_scale.hpp>
 #include <QScopedValueRollback>
 #include <QSet>
 #include <QVarLengthArray>
+#include <QPainterPath>
+#include <QQuickItemGrabResult>
+#include <QQuickWindow>
+#include <QCursor>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QtMath>
 #include <algorithm>
 
 namespace window_system::quick {
 
-CommandStripHostItem::CommandStripHostItem(QQuickItem* parent) : WindowDragAreaItem(parent), bottom_(new WindowDragAreaItem(parent))
+CommandStripHostItem::CommandStripHostItem(QQuickItem* parent)
+    : WindowDragAreaItem(parent), bottom_(new WindowDragAreaItem(parent)), dropMarker_(new PathItem(this))
 {
+    dropMarker_->setZ(10);
+    dropMarker_->setVisible(false);
     bottom_->setParent(this);
     setObjectName(QStringLiteral("CommandToolbars"));
     bottom_->setObjectName(QStringLiteral("BottomCommandToolbars"));
@@ -25,12 +36,16 @@ CommandStripHostItem::CommandStripHostItem(QQuickItem* parent) : WindowDragAreaI
 
 CommandStripHostItem::~CommandStripHostItem()
 {
+    // A window can close in the middle of a drag; nothing is committed.
+    drag_.reset();
+    releasePreview();
     // The bottom view is visually a sibling, but belongs to this registry.
     delete bottom_;
 }
 
 void CommandStripHostItem::watchStrip(CommandStripItem* strip)
 {
+    strip->dragStarted = [this, strip](QPoint global, QPoint offset) { beginDrag(strip->property("stripId").toString(), global, offset); };
     connect(strip, &QQuickItem::implicitWidthChanged, this, &CommandStripHostItem::requestLayout);
     connect(strip, &QQuickItem::implicitHeightChanged, this, &CommandStripHostItem::requestLayout);
 }
@@ -104,6 +119,7 @@ void CommandStripHostItem::restoreLayout(const QVector<CommandToolbarDescription
     // A sync after this window's own edit, or one that changes nothing else,
     // keeps the layout as it is.
     if (saved == applied_ && defaults.rows == defaultRows_ && defaults.areas == defaultAreas_) return;
+    finishDrag(false);
     applied_ = saved; defaultRows_ = defaults.rows; defaultAreas_ = defaults.areas;
     if (saved.isEmpty()) layout_ = defaults;
     else {
@@ -143,6 +159,7 @@ void CommandStripHostItem::normalizeLayout(const QHash<QString, StripLayoutPrefe
 
 void CommandStripHostItem::syncViews(const QVector<CommandToolbarDescription>& descriptions, const Theme& theme, bool hideOptionsWhenLocked)
 {
+    dropMarker_->setFill(theme.accent);
     QSet<QString> live;
     for (const auto& content : contents_) {
         live.insert(content.id);
@@ -279,7 +296,8 @@ void CommandStripHostItem::removeFromRows(const QString& id)
         for (const auto& entry : row) {
             const auto* strip = strips_.value(entry).data();
             const auto& preference = layout_.strips[entry];
-            slotInputs.append({strip ? qRound(strip->width()) : 0, preference.visible, preference.elastic.value_or(false),
+            const int width = drag_ ? drag_->bounds.value(entry).width() : strip ? qRound(strip->width()) : 0;
+            slotInputs.append({width, preference.visible, preference.elastic.value_or(false),
                 constraintsFor(entry).fixedWidth});
         }
         if (const auto adjustment = stripVacancyAdjustment({slotInputs.constData(), size_t(slotInputs.size())}, index, uiPixels(stripSpacing))) {
@@ -295,6 +313,7 @@ void CommandStripHostItem::removeFromRows(const QString& id)
 
 bool CommandStripHostItem::setToolbarVisible(const QString& id, bool visible)
 {
+    finishDrag(false);
     if (rowOf(id) < 0) return false;
     layout_.strips[id].visible = visible;
     commit();
@@ -308,6 +327,7 @@ int CommandStripHostItem::minimumSavedWidth(const QString& id) const
 
 bool CommandStripHostItem::setToolbarWidth(const QString& id, int width)
 {
+    finishDrag(false);
     const int row = rowOf(id);
     if (row < 0 || constraintsFor(id).fixedWidth || width < minimumSavedWidth(id)) return false;
     clearWidthPriority(row);
@@ -318,6 +338,7 @@ bool CommandStripHostItem::setToolbarWidth(const QString& id, int width)
 
 bool CommandStripHostItem::resetToolbarWidth(const QString& id)
 {
+    finishDrag(false);
     const int row = rowOf(id);
     if (row < 0) return false;
     auto& preference = layout_.strips[id];
@@ -334,6 +355,7 @@ bool CommandStripHostItem::resetToolbarWidth(const QString& id)
 
 bool CommandStripHostItem::setToolbarElastic(const QString& id, bool elastic)
 {
+    finishDrag(false);
     const int row = rowOf(id);
     const auto constraints = constraintsFor(id);
     if (row < 0 || (!elastic && constraints.elasticRequired) || (elastic && !constraints.elasticAllowed)
@@ -347,6 +369,7 @@ bool CommandStripHostItem::setToolbarElastic(const QString& id, bool elastic)
 
 bool CommandStripHostItem::setToolbarItemVisible(const QString& id, const QString& item, bool visible)
 {
+    finishDrag(false);
     if (rowOf(id) < 0) return false;
     auto& preference = layout_.strips[id];
     const auto* found = content(id);
@@ -365,6 +388,7 @@ bool CommandStripHostItem::setToolbarItemVisible(const QString& id, const QStrin
 
 bool CommandStripHostItem::moveToolbar(const QString& id, ToolbarArea area, int row, int index)
 {
+    finishDrag(false);
     if (rowOf(id) < 0) return false;
     const int existing = stripRowIndex({layout_.areas.constData(), size_t(layout_.areas.size())}, area, row);
     if (existing >= 0 && constraintsFor(id).elasticRequired && !requiredElasticInRow(existing, id).isEmpty()) return false;
@@ -384,9 +408,256 @@ bool CommandStripHostItem::moveToolbar(const QString& id, ToolbarArea area, int 
 
 void CommandStripHostItem::setToolbarsLocked(bool locked)
 {
+    finishDrag(false);
     if (layout_.locked == locked) return;
     layout_.locked = locked;
     commit();
+}
+
+int CommandStripHostItem::storedWidth(const QString& id, int pixels) const
+{
+    return std::max(qRound(pixels / uiPixelsF(1)), minimumSavedWidth(id));
+}
+
+QQuickItem* CommandStripHostItem::areaItem(ToolbarArea area) const
+{
+    return area == ToolbarArea::Top ? const_cast<CommandStripHostItem*>(this) : bottom_;
+}
+
+void CommandStripHostItem::beginDrag(const QString& id, QPoint global, QPoint offset)
+{
+    auto* strip = strips_.value(id).data();
+    if (!strip || layout_.locked || drag_) return;
+    Drag drag{id, layout_, {}, offset, -1};
+    for (auto it = strips_.cbegin(); it != strips_.cend(); ++it) if (it.value())
+        drag.bounds.insert(it.key(), QRect(qRound(it.value()->x()), qRound(it.value()->y()), qRound(it.value()->width()), qRound(it.value()->height())));
+    drag_ = std::move(drag);
+    grabMouse();
+    forceActiveFocus(Qt::MouseFocusReason);
+    setCursor(QCursor(Qt::SizeAllCursor));
+    // As the Widgets preview: a picture of the strip under the pointer.
+    if (auto* scene = window() ? window()->contentItem() : nullptr) {
+        dragPreview_ = new PictureItem(scene);
+        dragPreview_->setZ(1000);
+    }
+    updateDrag(global);
+}
+
+// The row under the pointer, as its area and its index in that area; below
+// the top rows or above the bottom rows, a new row.
+std::optional<std::pair<ToolbarArea, int>> CommandStripHostItem::dragTarget(QPoint global) const
+{
+    constexpr qreal reach = 12;
+    for (const auto area : {ToolbarArea::Top, ToolbarArea::Bottom}) {
+        const auto* host = areaItem(area);
+        if (!host->isVisible()) continue;
+        const auto position = host->mapFromGlobal(QPointF(global));
+        if (position.x() < -reach || position.x() > host->width() + reach) continue;
+        int local = 0, lastOccupied = -1;
+        for (int row = 0; row < layout_.rows.size(); ++row) {
+            if (layout_.areas.at(row) != area) continue;
+            const auto& entries = layout_.rows.at(row);
+            if (std::any_of(entries.cbegin(), entries.cend(), [this](const QString& id) {
+                    return id != drag_->id && layout_.strips.value(id).visible; })) lastOccupied = local;
+            if (row < rowRects_.size() && !rowRects_.at(row).isEmpty()
+                && rowRects_.at(row).adjusted(-reach, 0, reach, 0).contains(position)) return std::pair{area, local};
+            ++local;
+        }
+        const int band = uiPixels(compactRowHeight);
+        const QRectF newRow(0, area == ToolbarArea::Top ? host->height() : -band, host->width(), band);
+        if (newRow.adjusted(-reach, 0, reach, 0).contains(position)) return std::pair{area, lastOccupied + 1};
+    }
+    return std::nullopt;
+}
+
+void CommandStripHostItem::updateDrag(QPoint global)
+{
+    if (!drag_) return;
+    const auto target = dragTarget(global);
+    // Each position starts again from the layout before the drag.
+    layout_ = drag_->original;
+    drag_->dropRow = -1;
+    if (target) {
+        const int row = ensureStripRow(layout_.rows, layout_.areas, target->first, target->second);
+        for (int affected = 0; affected < layout_.rows.size(); ++affected)
+            if (affected == row || (affected < drag_->original.rows.size() && drag_->original.rows.at(affected).contains(drag_->id)))
+                clearWidthPriority(affected);
+        const auto position = areaItem(target->first)->mapFromGlobal(QPointF(global)).toPoint();
+        const bool originalRow = row < drag_->original.areas.size() && drag_->original.areas.at(row) == target->first;
+        if (!originalRow || !resizeDragBoundary(row, position.x() - drag_->offset.x())) insertDraggedStrip(row, position);
+        if (layout_.rows.at(row).contains(drag_->id)) drag_->dropRow = row;
+    } else removeFromRows(drag_->id);
+    syncDragViews();
+    relayout();
+    auto* strip = strips_.value(drag_->id).data();
+    if (dragPreview_ && strip) {
+        // A new size, as at a boundary, takes a new picture.
+        if (dragPreview_->size() != strip->size()) {
+            dragPreview_->setSize(strip->size());
+            if (const auto grab = strip->grabToImage(strip->size().toSize())) {
+                connect(grab.data(), &QQuickItemGrabResult::ready, dragPreview_.data(),
+                    [preview = dragPreview_, grab] { if (preview) preview->setPicture(grab->image()); });
+            }
+        }
+        dragPreview_->setPosition(dragPreview_->parentItem()->mapFromGlobal(QPointF(global - drag_->offset)));
+    }
+    if (drag_->dropRow < 0 || drag_->dropRow >= rowRects_.size() || rowRects_.at(drag_->dropRow).isEmpty() || !strip) {
+        dropMarker_->setVisible(false);
+        return;
+    }
+    auto* host = areaItem(layout_.areas.at(drag_->dropRow));
+    const auto bounds = rowRects_.at(drag_->dropRow);
+    QPainterPath marker;
+    marker.addRect(QRectF(qBound(0.0, strip->x(), std::max(0.0, host->width() - 2)), bounds.y(), uiPixelsF(2), bounds.height()));
+    dropMarker_->setParentItem(host);
+    dropMarker_->setPath(marker);
+    dropMarker_->setVisible(true);
+}
+
+// As the Widgets host: dragging a handle moves the boundary at the strip's
+// left edge. The strip on the row's anchored side of that boundary changes
+// width; the strips on the free side keep theirs and move, and the elastic
+// strip absorbs the difference. Left of the elastic strip that is the
+// previous strip; right of it, the dragged strip itself. A fixed-width strip
+// on the anchored side cannot change, so the drag can only reorder.
+bool CommandStripHostItem::resizeDragBoundary(int row, int requestedLeft)
+{
+    const auto& original = drag_->original.rows.at(row);
+    const int originalIndex = int(original.indexOf(drag_->id));
+    if (originalIndex < 0) return false;
+    const auto visible = [this](const QString& id) { return drag_->original.strips.value(id).visible; };
+    const auto elastic = [this](const QString& id) { return drag_->original.strips.value(id).elastic.value_or(false); };
+    const auto minimum = [this](const QString& id) { return strips_.value(id) ? strips_.value(id)->minimumWidth() : 0; };
+    QString previous, next;
+    bool elasticBefore = false;
+    for (int before = 0; before < originalIndex; ++before) if (visible(original.at(before))) {
+        previous = original.at(before);
+        elasticBefore |= elastic(previous);
+    }
+    for (int after = originalIndex + 1; after < original.size(); ++after)
+        if (visible(original.at(after))) { next = original.at(after); break; }
+    const bool rightOfElastic = elasticBefore && !elastic(drag_->id);
+    const auto resized = rightOfElastic ? drag_->id : previous;
+    const auto previousBounds = drag_->bounds.value(previous);
+    if (previous.isEmpty() || elastic(resized) || constraintsFor(resized).fixedWidth
+        || requestedLeft < previousBounds.left() + minimum(previous) / 2
+        || (!next.isEmpty() && requestedLeft >= drag_->bounds.value(next).left() + minimum(next) / 2)) return false;
+    if (rightOfElastic) {
+        const auto own = drag_->bounds.value(drag_->id);
+        const int left = std::min(requestedLeft, own.right() - minimum(drag_->id) + 1);
+        layout_.strips[drag_->id].width = storedWidth(drag_->id, own.right() - left + 1);
+        return true;
+    }
+    const int spacing = uiPixels(stripSpacing);
+    int left = std::max(requestedLeft, previousBounds.left() + minimum(previous) + spacing);
+    int trailing = minimum(drag_->id);
+    for (int after = originalIndex + 1; after < original.size(); ++after)
+        if (visible(original.at(after))) trailing += minimum(original.at(after)) + spacing;
+    left = std::min(left, qRound(areaItem(layout_.areas.at(row))->width()) - trailing);
+    layout_.strips[previous].width = storedWidth(previous, std::max(minimum(previous), left - previousBounds.left() - spacing));
+    return true;
+}
+
+// At a new insertion point the handle becomes the boundary with the left
+// neighbour, resized as above: left of the elastic strip the neighbour
+// reaches the pointer; right of it the inserted strip spans from the
+// pointer to its right neighbour.
+void CommandStripHostItem::insertDraggedStrip(int row, QPoint position)
+{
+    if (constraintsFor(drag_->id).elasticRequired && !requiredElasticInRow(row, drag_->id).isEmpty()) return;
+    removeFromRows(drag_->id);
+    syncDragViews();
+    relayout();
+    auto& entries = layout_.rows[row];
+    const auto visible = [this](const QString& id) { return layout_.strips.value(id).visible; };
+    int index = 0;
+    for (int item = 0; item < entries.size(); ++item) {
+        const auto* strip = strips_.value(entries.at(item)).data();
+        if (!strip || !visible(entries.at(item))) continue;
+        if (position.x() < strip->x() + strip->minimumWidth() / 2) break;
+        index = item + 1;
+        if (position.x() < strip->x() + strip->width()) break;
+    }
+    const int handle = position.x() - drag_->offset.x();
+    const int spacing = uiPixels(stripSpacing);
+    const bool draggedElastic = layout_.strips.value(drag_->id).elastic.value_or(false);
+    bool rightOfElastic = false;
+    for (int before = 0; before < index; ++before)
+        rightOfElastic |= visible(entries.at(before)) && layout_.strips.value(entries.at(before)).elastic.value_or(false);
+    if (rightOfElastic && !draggedElastic) {
+        if (!constraintsFor(drag_->id).fixedWidth) {
+            int boundary = qRound(areaItem(layout_.areas.at(row))->width());
+            for (int after = index; after < entries.size(); ++after)
+                if (const auto* strip = strips_.value(entries.at(after)).data(); strip && visible(entries.at(after))) {
+                    boundary = qRound(strip->x()) - spacing;
+                    break;
+                }
+            const auto* dragged = strips_.value(drag_->id).data();
+            layout_.strips[drag_->id].width = storedWidth(drag_->id, std::max(dragged->minimumWidth(), boundary - handle));
+        }
+    } else {
+        for (int previous = index - 1; previous >= 0; --previous) {
+            const auto& id = entries.at(previous);
+            const auto* strip = strips_.value(id).data();
+            if (!strip || !visible(id)) continue;
+            if (!layout_.strips.value(id).elastic.value_or(false) && !constraintsFor(id).fixedWidth)
+                layout_.strips[id].width = storedWidth(id, std::max(strip->minimumWidth(), handle - qRound(strip->x()) - spacing));
+            break;
+        }
+    }
+    entries.insert(index, drag_->id);
+    normalizeElastic(row, draggedElastic ? drag_->id : QString{});
+}
+
+// Strips show their row's current preferences while a drag reshapes them.
+// The dragged strip keeps the pointer grab, so outside every row it only
+// turns transparent; the preview still shows it under the pointer.
+void CommandStripHostItem::syncDragViews()
+{
+    for (auto it = strips_.cbegin(); it != strips_.cend(); ++it) if (auto* strip = it.value().data()) {
+        const bool placed = rowOf(it.key()) >= 0;
+        if (drag_ && it.key() == drag_->id) strip->setOpacity(placed ? 1 : 0);
+        else strip->setVisible(layout_.strips.value(it.key()).visible && placed);
+    }
+}
+
+void CommandStripHostItem::releasePreview() { delete dragPreview_.data(); }
+
+void CommandStripHostItem::finishDrag(bool keep)
+{
+    if (!drag_) return;
+    if (!keep) layout_ = drag_->original;
+    if (auto* strip = strips_.value(drag_->id).data()) strip->setOpacity(1);
+    drag_.reset();
+    releasePreview();
+    unsetCursor();
+    if (window() && window()->mouseGrabberItem() == this) ungrabMouse();
+    dropMarker_->setVisible(false);
+    dropMarker_->setParentItem(this);
+    commit();
+}
+
+void CommandStripHostItem::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!drag_) return WindowDragAreaItem::mouseMoveEvent(event);
+    event->accept();
+    updateDrag(event->globalPosition().toPoint());
+}
+
+void CommandStripHostItem::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!drag_) return WindowDragAreaItem::mouseReleaseEvent(event);
+    event->accept();
+    finishDrag(true);
+}
+
+void CommandStripHostItem::mouseUngrabEvent() { finishDrag(false); }
+
+void CommandStripHostItem::keyPressEvent(QKeyEvent* event)
+{
+    if (!drag_ || event->key() != Qt::Key_Escape) return WindowDragAreaItem::keyPressEvent(event);
+    event->accept();
+    finishDrag(false);
 }
 
 void CommandStripHostItem::geometryChange(const QRectF& now, const QRectF& previous)
@@ -414,6 +685,7 @@ void CommandStripHostItem::relayout()
         inputs.append({layout_.areas.at(row), height, count > 0});
     }
     auto areas = layoutStripAreas({inputs.constData(), size_t(inputs.size())});
+    rowRects_ = QVector<QRectF>(layout_.rows.size());
     setImplicitHeight(areas.heights[0]);
     bottom_->setImplicitHeight(areas.heights[1]);
     bottom_->setSize({width(), qreal(areas.heights[1])});
@@ -421,6 +693,7 @@ void CommandStripHostItem::relayout()
         if (!inputs.at(row).occupied) continue;
         auto* parent = layout_.areas.at(row) == ToolbarArea::Top ? this : bottom_;
         const int height = inputs.at(row).height, y = areas.takeRow(layout_.areas.at(row), height);
+        rowRects_[row] = QRectF(0, y, width(), height);
         QStringList visible;
         QVarLengthArray<StripWidthInput, 8> widths;
         for (const auto& id : layout_.rows.at(row)) {

@@ -8,6 +8,9 @@
 #include <QCoreApplication>
 #include <QFontMetrics>
 #include <QGuiApplication>
+#include <QCursor>
+#include <QMouseEvent>
+#include <QStyleHints>
 #include <QHash>
 #include <QSet>
 #include <QTimer>
@@ -32,6 +35,7 @@ CommandStripItem::CommandStripItem(QQuickItem* parent, bool optionsEnabled)
 {
     setClip(true);
     viewport_->setClip(true);
+    setAcceptedMouseButtons(Qt::LeftButton);
     if (more_) {
         more_->setObjectName(QStringLiteral("StripOverflowButton"));
         more_->setActiveFocusOnTab(true);
@@ -159,6 +163,7 @@ void CommandStripItem::relayout()
     viewport_->setPosition({qreal(handle), 0}); viewport_->setSize({qreal(available), height()});
     if (more_) { more_->setPosition({std::max(0.0, width() - tail), 0}); more_->setSize({qreal(tail), height()}); }
     handle_->setSize({qreal(handle), height()}); handle_->setVisible(!locked_); updateHandle();
+    if (locked_) handle_->unsetCursor(); else handle_->setCursor(QCursor(Qt::SizeAllCursor));
     overflow_.clear();
     if (content_) {
         content_->setPosition({0, 0}); content_->setSize(viewport_->size());
@@ -178,6 +183,36 @@ void CommandStripItem::relayout()
     // The tail also holds the strip's options, as the Widgets tail does.
     more_->setEnabled(!overflow_.isEmpty() || bool(options));
     updateArrows();
+}
+
+void CommandStripItem::mousePressEvent(QMouseEvent* event)
+{
+    // Elsewhere the press belongs to the toolbar area, which moves the window.
+    if (locked_ || event->button() != Qt::LeftButton || event->position().x() >= uiPixels(stripHandleWidth)) {
+        event->ignore();
+        return;
+    }
+    event->accept();
+    pressGlobal_ = event->globalPosition().toPoint();
+    pressOffset_ = event->position().toPoint();
+}
+
+void CommandStripItem::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!pressGlobal_) return QQuickItem::mouseMoveEvent(event);
+    event->accept();
+    if ((event->globalPosition().toPoint() - *pressGlobal_).manhattanLength() < QGuiApplication::styleHints()->startDragDistance()) return;
+    // A drag can move this strip to the other area, which would cost its
+    // pointer grab; the receiver takes the pointer before that.
+    const auto press = *std::exchange(pressGlobal_, std::nullopt);
+    if (const auto callback = dragStarted) callback(press, pressOffset_);
+}
+
+void CommandStripItem::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!pressGlobal_) return QQuickItem::mouseReleaseEvent(event);
+    event->accept();
+    pressGlobal_.reset();
 }
 
 void CommandStripItem::updateHandle()

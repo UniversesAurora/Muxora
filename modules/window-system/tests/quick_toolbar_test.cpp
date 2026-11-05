@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Toolbar command routing, retained input objects, current-format restore,
 // hidden content and native caption hit testing after moving strips;
-// layout edits, saving them, the kind profile, the offered choices and the
-// toolbar menus.
+// layout edits, saving them, the kind profile, the offered choices, the
+// toolbar menus and handle drags.
 #include "quick/command_strip_item.hpp"
 #include "quick/command_strip_host_item.hpp"
+#include "quick/picture_item.hpp"
+#include "chrome/strip_constraints.hpp"
 #include "quick/button_item.hpp"
 #include "quick/window_chrome_item.hpp"
 #include "native_input.hpp"
@@ -372,6 +374,68 @@ private slots:
         choose(popup(view), QStringLiteral("StripVisibility/workspace"));
         QTRY_VERIFY(!manager.toolbarState(window, "workspace")->visible);
         QTRY_VERIFY(!strip->isVisible());
+    }
+    // Dragging an unlocked strip's handle, as in Widgets: a drop on the band
+    // past the last bottom row makes a new row, a drop before a neighbour
+    // reorders the row, and Esc puts everything back.
+    void handleDragsMoveStrips_data()
+    {
+        QTest::addColumn<QString>("drop");
+        for (const auto* drop : {"bottom", "reorder", "cancel"}) QTest::newRow(drop) << QString(drop);
+    }
+    void handleDragsMoveStrips()
+    {
+        QFETCH(QString, drop);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        QVERIFY(manager.registerToolbar({"test.bar", "Commands", {"window.settings"}}));
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        const QPointer<QQuickWindow> view(workspace.window(window));
+        view->resize(1000, 600);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QVERIFY(manager.setToolbarsLocked(window, false));
+        QPointer<quick::CommandStripItem> strip, neighbour;
+        QTRY_VERIFY((strip = stripItem(view, "test.bar")) && (neighbour = stripItem(view, "workspace")));
+        QTRY_COMPARE(manager.toolbarState(window, "test.bar")->index, 1);
+        const auto* host = view->contentItem()->findChild<quick::CommandStripHostItem*>();
+        QVERIFY(host);
+        const auto handle = strip->mapToScene(QPointF(uiPixels(stripHandleWidth) / 2.0, strip->height() / 2)).toPoint();
+        QPoint target;
+        if (drop == "reorder") target = neighbour->mapToScene(QPointF(4, neighbour->height() / 2)).toPoint();
+        else target = QPoint(200, view->height() - qRound(host->bottomArea()->height()) - uiPixels(compactRowHeight) / 2);
+        const auto savedStrips = [&] {
+            return manager.saveLayout().value("windows").toArray().first().toObject().value("strips").toObject();
+        };
+        const auto before = savedStrips();
+        QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, handle);
+        QTest::mouseMove(view, handle + QPoint(12, 0));
+        QTest::mouseMove(view, (handle + target) / 2);
+        QTest::mouseMove(view, target);
+        if (drop == "cancel") {
+            const auto preview = [&] {
+                for (auto* item : view->contentItem()->childItems())
+                    if (qobject_cast<quick::PictureItem*>(item)) return item;
+                return static_cast<QQuickItem*>(nullptr);
+            };
+            QTRY_VERIFY(preview());
+            QTest::keyClick(view, Qt::Key_Escape);
+            QTRY_VERIFY(!preview());
+        }
+        QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, target);
+        const auto state = manager.toolbarState(window, "test.bar");
+        QVERIFY(state);
+        QCOMPARE(state->area, drop == "bottom" ? ToolbarArea::Bottom : ToolbarArea::Top);
+        if (drop == "bottom") QTRY_COMPARE(strip->parentItem(), host->bottomArea());
+        if (drop == "reorder") QCOMPARE(state->index, 0);
+        if (drop == "cancel") {
+            QCOMPARE(state->index, 1);
+            QCOMPARE(manager.toolbarState(window, "workspace")->index, 0);
+        }
+        // The drop is saved with the layout; a cancelled drag saves nothing.
+        QCOMPARE(savedStrips() == before, drop == "cancel");
     }
 };
 

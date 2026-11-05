@@ -10,9 +10,12 @@
 #include "window_drag_area_item.hpp"
 #include <QPointer>
 #include <functional>
+#include <optional>
 
 namespace window_system::quick {
 class CommandStripItem;
+class PathItem;
+class PictureItem;
 
 // Command strips in both dock areas share one registry and row allocator.
 // The saved layout is decoded when it or the registered strips change; an
@@ -48,6 +51,10 @@ public:
     [[nodiscard]] bool toolbarsLocked() const override { return layout_.locked; }
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseUngrabEvent() override;
+    void keyPressEvent(QKeyEvent* event) override;
 private:
     void restoreLayout(const QVector<CommandToolbarDescription>& descriptions, const QJsonObject& saved);
     void normalizeLayout(const QHash<QString, StripLayoutPreferences>& defaults);
@@ -64,6 +71,28 @@ private:
     void removeFromRows(const QString& id);
     [[nodiscard]] QJsonObject currentLayout() const;
     void commit();
+    [[nodiscard]] int storedWidth(const QString& id, int pixels) const;
+    [[nodiscard]] QQuickItem* areaItem(ToolbarArea area) const;
+    // Dragging a handle previews the layout live; Esc or a lost grab cancels.
+    void beginDrag(const QString& id, QPoint global, QPoint offset);
+    [[nodiscard]] std::optional<std::pair<ToolbarArea, int>> dragTarget(QPoint global) const;
+    void updateDrag(QPoint global);
+    bool resizeDragBoundary(int row, int requestedLeft);
+    void insertDraggedStrip(int row, QPoint position);
+    void syncDragViews();
+    void finishDrag(bool keep);
+    void releasePreview();
+    struct Drag {
+        QString id;
+        StripLayoutSnapshot original;
+        QHash<QString, QRect> bounds; // In each strip's area, before the drag.
+        QPoint offset;
+        int dropRow = -1;
+    };
+    std::optional<Drag> drag_;
+    QVector<QRectF> rowRects_; // Each shown row in its area; empty if not shown.
+    QPointer<PictureItem> dragPreview_;
+    PathItem* dropMarker_;
     struct Content {
         QString id;
         QPointer<QQuickItem> item;
