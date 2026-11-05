@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Toolbar command routing, retained input objects, current-format restore,
 // hidden content and native caption hit testing after moving strips;
-// layout edits, saving them, the kind profile and the offered choices.
+// layout edits, saving them, the kind profile, the offered choices and the
+// toolbar menus.
 #include "quick/command_strip_item.hpp"
 #include "quick/command_strip_host_item.hpp"
 #include "quick/button_item.hpp"
@@ -11,6 +12,7 @@
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <window_system/ui_scale.hpp>
+#include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QTest>
 
@@ -317,6 +319,59 @@ private slots:
         choose(popup(destinations), QStringLiteral("Bottom/New row"));
         QTRY_COMPARE(manager.toolbarState(window, "workspace")->area, ToolbarArea::Bottom);
         QTRY_VERIFY(!popup(view));
+    }
+    // The toolbar area's menu and a strip's options menu, as in Widgets:
+    // each choice changes the layout through the toolbar commands.
+    void toolbarMenusChangeTheLayout()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        const QPointer<QQuickWindow> view(workspace.window(window));
+        view->resize(1000, 600);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QPointer<quick::CommandStripItem> strip;
+        QTRY_VERIFY((strip = stripItem(view, "workspace")));
+        const auto choose = [&](QQuickWindow* menu, const QString& id) {
+            QVERIFY(QTest::qWaitForWindowExposed(menu));
+            QQuickItem* row = nullptr;
+            QTRY_VERIFY((row = namedItem(menu->contentItem(), id)));
+            QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, row->mapToScene(row->boundingRect().center()).toPoint());
+        };
+        const auto openAreaMenu = [&] {
+            // Past the end of the workspace strip: the toolbar area itself.
+            const auto point = strip->mapToScene(QPointF(strip->width() + 8, strip->height() / 2)).toPoint();
+            QContextMenuEvent event(QContextMenuEvent::Mouse, point, view->mapToGlobal(point));
+            QCoreApplication::sendEvent(view, &event);
+        };
+        // Unlocking from the area menu shows each strip's options button.
+        openAreaMenu();
+        QTRY_VERIFY(popup(view));
+        choose(popup(view), QStringLiteral("LockStripsAction"));
+        QTRY_VERIFY(!manager.toolbarsLocked(window));
+        QTRY_VERIFY(!popup(view));
+        auto* more = strip->findChild<quick::ButtonItem*>("StripOverflowButton");
+        QVERIFY(more);
+        // The unlocked strip gains its handle; click once its tail settles.
+        QTRY_VERIFY(more->isVisible() && qRound(more->x() + more->width()) == qRound(strip->width()));
+        native_input::mouse(view.data(), more->mapToScene(more->boundingRect().center()).toPoint(), true);
+        QTRY_VERIFY(popup(view));
+        auto* options = popup(view);
+        QVERIFY(QTest::qWaitForWindowExposed(options));
+        QVERIFY(namedItem(options->contentItem(), QStringLiteral("StripResetWidthAction")));
+        choose(options, QStringLiteral("StripCustomizeMenu"));
+        QTRY_VERIFY(popup(options));
+        choose(popup(options), QStringLiteral("window.settings"));
+        QTRY_COMPARE(manager.toolbarState(window, "workspace")->hiddenItems, QStringList{"window.settings"});
+        QTRY_VERIFY(!popup(view));
+        openAreaMenu();
+        QTRY_VERIFY(popup(view));
+        choose(popup(view), QStringLiteral("StripVisibility/workspace"));
+        QTRY_VERIFY(!manager.toolbarState(window, "workspace")->visible);
+        QTRY_VERIFY(!strip->isVisible());
     }
 };
 

@@ -29,7 +29,10 @@ public:
     void setLocked(bool locked);
     int minimumWidth() const;
     [[nodiscard]] QStringList itemIds() const;
-    std::function<void(const QString&)> triggered;
+    std::function<void(const QString& command, const QVariantMap& arguments)> triggered;
+    // The strip's options, after its overflowing buttons in the same menu.
+    std::function<QVector<MenuItemDescription>()> options;
+    [[nodiscard]] QVector<MenuItemDescription> buttons() const;
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;
 private:

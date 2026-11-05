@@ -63,7 +63,7 @@ void CommandStripItem::sync(const QVector<MenuItemDescription>& actions, const T
             button->setActiveFocusOnTab(true);
             connect(button, &ButtonItem::clicked, this, [this, id = item.commandId] {
                 // A command can destroy this toolbar or its whole window.
-                QTimer::singleShot(0, this, [this, id] { if (const auto callback = triggered) callback(id); });
+                QTimer::singleShot(0, this, [this, id] { if (const auto callback = triggered) callback(id, {}); });
             });
         }
         button->setTheme(theme);
@@ -113,6 +113,13 @@ int CommandStripItem::chromeMinimumWidth() const
 {
     return (locked_ ? 0 : uiPixels(stripHandleWidth)) + (optionsEnabled_ ? uiPixels(stripOptionsWidth) : 0)
         + uiPixels(constraints_.minimumContentWidth);
+}
+
+QVector<MenuItemDescription> CommandStripItem::buttons() const
+{
+    QVector<MenuItemDescription> result;
+    for (const auto& action : actions_) result.append(action.description);
+    return result;
 }
 
 QStringList CommandStripItem::itemIds() const
@@ -168,7 +175,8 @@ void CommandStripItem::relayout()
             x += buttonWidth;
         } else if (included) { full = true; overflow_.append(action.description); }
     }
-    more_->setEnabled(!overflow_.isEmpty());
+    // The tail also holds the strip's options, as the Widgets tail does.
+    more_->setEnabled(!overflow_.isEmpty() || bool(options));
     updateArrows();
 }
 
@@ -206,12 +214,25 @@ void CommandStripItem::showOverflow()
     delete popup_.data();
     auto* popup = new PopupMenu(theme_, this);
     popup_ = popup;
-    popup->setRefreshHandler([this] { return overflow_; });
+    const auto describe = [this] {
+        auto items = overflow_;
+        if (const auto describeOptions = options) {
+            const auto more = describeOptions();
+            if (!items.isEmpty() && !more.isEmpty()) {
+                MenuItemDescription separator;
+                separator.kind = MenuItemDescription::Kind::Separator;
+                items.append(std::move(separator));
+            }
+            items += more;
+        }
+        return items;
+    };
+    popup->setRefreshHandler(describe);
     connect(popup, &PopupMenu::triggered, this, [this](const MenuItemDescription& item) {
-        if (const auto callback = triggered) callback(item.commandId);
+        if (const auto callback = triggered) callback(item.commandId, item.arguments);
     });
     connect(popup, &PopupMenu::closed, popup, &QObject::deleteLater);
-    popup->open(more_, more_->mapToGlobal(QPointF(0, more_->height())).toPoint(), overflow_);
+    popup->open(more_, more_->mapToGlobal(QPointF(0, more_->height())).toPoint(), describe());
 }
 
 } // namespace window_system::quick

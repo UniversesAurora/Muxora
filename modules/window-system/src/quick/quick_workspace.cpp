@@ -75,17 +75,24 @@ public:
         toolbars_->maximizeRequested = chrome_->maximizeRequested;
         toolbars_->carriesTabs = chrome_->carriesTabs;
         toolbars_->carryRequested = chrome_->carryRequested;
-        toolbars_->triggered = [owner = QPointer<WindowManager>(&manager), id](const QString& command) {
-            if (owner) owner->execute(command, {}, id);
+        toolbars_->triggered = [owner = QPointer<WindowManager>(&manager), id](const QString& command, const QVariantMap& arguments) {
+            if (owner) owner->execute(command, arguments, id);
         };
         connect(toolbars_, &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
         connect(toolbars_->bottomArea(), &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
         createMenus(theme, menuItems);
+        // As the Widgets header: the toolbar area's menu, then the window's.
         chrome_->menuRequested = [this](QPoint global) {
-            const auto* record = manager_.model().window(id_);
-            // The workbench header's strip menu joins it with the toolbars.
-            if (record && record->kind == WindowKind::Floating)
-                dock->showContextMenu(CommandMenuSurface::Window, manager_.context(id_), global);
+            auto items = describeToolbarAreaMenu(*toolbars_);
+            const auto context = manager_.context(id_);
+            const auto window = describeContextMenu(CommandMenuSurface::Window, &manager_, context);
+            if (!window.isEmpty()) {
+                MenuItemDescription separator;
+                separator.kind = MenuItemDescription::Kind::Separator;
+                items.append(std::move(separator));
+                items += window;
+            }
+            dock->showMenu(items, context, global);
         };
         toolbars_->menuRequested = chrome_->menuRequested;
         // As focus in a Widgets window does: the window the user turns to

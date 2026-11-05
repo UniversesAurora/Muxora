@@ -30,7 +30,7 @@ public:
     QQuickItem* bottomArea() const { return bottom_; }
     int minimumWidth() const { return minimumWidth_; }
     [[nodiscard]] QStringList excludedItems(const QString& id) const { return layout_.strips.value(id).excluded; }
-    std::function<void(const QString&)> triggered;
+    std::function<void(const QString& command, const QVariantMap& arguments)> triggered;
     std::function<void(const QJsonObject& before, const QJsonObject& after)> committed;
 
     [[nodiscard]] QStringList toolbarIds() const override;

@@ -159,7 +159,12 @@ void CommandStripHostItem::syncViews(const QVector<CommandToolbarDescription>& d
         if (!strip) {
             strip = new CommandStripItem(this);
             strip->setProperty("stripId", id);
-            strip->triggered = [this](const QString& command) { if (const auto callback = triggered) callback(command); };
+            strip->triggered = [this](const QString& command, const QVariantMap& arguments) {
+                if (const auto callback = triggered) callback(command, arguments);
+            };
+            strip->options = [this, id, view = QPointer<CommandStripItem>(strip)] {
+                return view ? describeToolbarOptions(*this, id, view->buttons()) : QVector<MenuItemDescription>{};
+            };
             watchStrip(strip);
         }
         const auto preferences = layout_.strips.value(id);
