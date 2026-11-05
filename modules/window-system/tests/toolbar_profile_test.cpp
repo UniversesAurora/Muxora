@@ -265,7 +265,7 @@ void ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched_data()
 {
     QTest::addColumn<QString>("mutation");
     for (const auto* name : {"not-object", "unknown-kind", "duplicate-id", "mixed-menu", "bad-width", "inactive-not-object", "inactive-mixed-menu", "current-mixed-menu", "zero-width", "short-title-width", "short-menu-width", "unlocked-menu-width", "inactive-short-width", "current-short-width",
-                            "profile-missing-caption", "current-missing-caption", "inactive-missing-caption", "current-missing-menu", "current-missing-title", "current-missing-workspace", "current-unpositioned-caption"})
+                            "profile-missing-caption", "current-missing-caption", "inactive-missing-caption", "current-missing-menu", "current-missing-title", "current-missing-workspace", "current-unpositioned-caption", "short-custom-width"})
         QTest::newRow(name) << QString::fromLatin1(name);
 }
 
@@ -310,9 +310,10 @@ void ToolbarProfileTest::malformedProfilesLeaveTheManagerUntouched()
     }
     else if (mutation.endsWith("width") && mutation != "bad-width") {
         auto settings = layout.value("strips").toObject();
-        const bool menuWidth = mutation.contains("menu"); const auto id = menuWidth ? "menu" : "title";
+        const bool menuWidth = mutation.contains("menu"), customWidth = mutation == "short-custom-width";
+        const auto id = customWidth ? "custom.commands" : menuWidth ? "menu" : "title";
         auto value = settings.value(id).toObject();
-        value.insert("width", mutation == "zero-width" ? 0 : menuWidth ? 23 : 11);
+        value.insert("width", mutation == "zero-width" ? 0 : menuWidth || customWidth ? 23 : 11);
         if (mutation == "unlocked-menu-width") { layout.insert("locked", false); value.insert("width", 35); }
         settings.insert(id, value); layout.insert("strips", settings);
         if (mutation.startsWith("inactive") || mutation.startsWith("current")) {

@@ -300,9 +300,6 @@ private slots:
         auto* chrome = quickWindow->contentItem()->findChild<quick::WindowChromeItem*>();
         auto* dock = quickWindow->contentItem()->findChild<quick::DockSurfaceItem*>();
         QVERIFY(chrome && dock);
-        QCOMPARE(int(chrome->height()), quick::WindowChromeItem::rowHeight());
-        QCOMPARE(int(dock->y()), quick::WindowChromeItem::rowHeight());
-        QCOMPARE(int(dock->height()), quickWindow->height() - quick::WindowChromeItem::rowHeight());
         // The buttons sit at the right edge: minimize, maximize, close.
         const QPointF row(quickWindow->width() - 1, chrome->height() / 2);
         auto* close = chrome->captionButtonAt(row - QPointF(4, 0));
@@ -314,7 +311,6 @@ private slots:
         };
         click(maximize);
         QTRY_VERIFY(quickWindow->windowStates() & Qt::WindowMaximized);
-        QTRY_COMPARE(int(dock->height()), quickWindow->height() - quick::WindowChromeItem::rowHeight());
         click(maximize);
         QTRY_VERIFY(!(quickWindow->windowStates() & Qt::WindowMaximized));
         click(close);

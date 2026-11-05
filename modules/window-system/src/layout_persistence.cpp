@@ -112,10 +112,8 @@ OperationResult validateStripLayout(const QJsonValue& value)
         const auto width = strip.value("width");
         if (!width.isUndefined() && (!width.isDouble() || width.toDouble() != width.toInt(-2)
             || width.toInt(-2) < -1 || width.toInt(-2) > QWIDGETSIZE_MAX)) return {false, QCoreApplication::translate("WindowSystem", "Invalid toolbar width")};
-        const bool known = it.key() == "menu" || it.key() == "floating-menu" || it.key() == "workspace"
-            || it.key() == "title" || it.key() == "caption-controls";
         const bool options = it.key() != "title" && it.key() != "caption-controls";
-        if (known && !width.isUndefined() && width.toInt() != -1
+        if (!width.isUndefined() && width.toInt() != -1
             && width.toInt() < CommandStripHost::minimumSavedWidth(options, object.value("locked").toBool(true)))
             return {false, QCoreApplication::translate("WindowSystem", "Toolbar width is below the recoverable minimum")};
         const auto sizing = strip.value("sizing");

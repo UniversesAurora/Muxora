@@ -8,6 +8,7 @@
 #include "popup_menu.hpp"
 #include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
+#include "command_toolbars_item.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
 #endif
@@ -68,6 +69,12 @@ public:
         chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, bars, id, contentItem());
         dock->setTabDrag(&drag);
+        toolbars_ = new quick::CommandToolbarsItem(contentItem());
+        toolbars_->triggered = [owner = QPointer<WindowManager>(&manager), id](const QString& command) {
+            if (owner) owner->execute(command, {}, id);
+        };
+        connect(toolbars_, &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
+        connect(toolbars_->bottomArea(), &QQuickItem::implicitHeightChanged, this, [this] { layoutChildren(); }, Qt::QueuedConnection);
         createMenus(theme, menuItems);
         chrome_->menuRequested = [this](QPoint global) {
             const auto* record = manager_.model().window(id_);
@@ -96,7 +103,9 @@ public:
         client.minimumSize = [this] {
             const auto body = dock->minimumSize();
             const auto header = chrome_->isVisible() ? chrome_->minimumSize() : QSize(0, 0);
-            return QSize(std::max(body.width(), header.width()), body.height() + header.height());
+            const int tools = toolbars_->isVisible() ? qCeil(toolbars_->implicitHeight() + toolbars_->bottomArea()->implicitHeight()) : 0;
+            return QSize(std::max({body.width(), header.width(), toolbars_->isVisible() ? toolbars_->minimumWidth() : 0}),
+                body.height() + header.height() + tools);
         };
         client.captionButtonAt = [this](QPointF position) -> QObject* { return chrome_->captionButtonAt(position); };
         client.setCaptionHovered = [](QObject* button, bool hovered, QPointF) { static_cast<quick::ButtonItem*>(button)->setHovered(hovered); };
@@ -108,6 +117,12 @@ public:
         layoutChildren();
     }
     quick::DockSurfaceItem* dock = nullptr;
+
+    void syncToolbars(const QVector<CommandToolbarDescription>& descriptions, const QJsonObject& layout)
+    {
+        toolbars_->sync(descriptions, layout, manager_.interfaceTheme(), manager_.behavior().hideToolbarOptionsWhenLocked);
+        layoutChildren();
+    }
 
     // As the Widgets window applies its view state: any view mode is full
     // screen, and the header row, which holds the toolbars there, follows
@@ -145,6 +160,8 @@ public:
     void applyViewState()
     {
         const auto state = manager_.windowViewState(id_);
+        toolbars_->setVisible(state.effective.toolbars);
+        toolbars_->bottomArea()->setVisible(state.effective.toolbars);
         if (chrome_->isVisible() != state.effective.toolbars) {
             chrome_->setVisible(state.effective.toolbars);
             layoutChildren();
@@ -216,13 +233,19 @@ private:
     void layoutChildren()
     {
         const int header = chrome_->isVisible() ? qCeil(chrome_->implicitHeight()) : 0;
+        const int top = toolbars_->isVisible() ? qCeil(toolbars_->implicitHeight()) : 0;
+        const int bottom = toolbars_->bottomArea()->isVisible() ? qCeil(toolbars_->bottomArea()->implicitHeight()) : 0;
         chrome_->setSize(QSizeF(width(), header));
-        dock->setPosition(QPointF(0, header));
-        dock->setSize(QSizeF(width(), std::max(0, height() - header)));
+        toolbars_->setPosition({0, qreal(header)});
+        toolbars_->setSize({qreal(width()), qreal(top)});
+        toolbars_->bottomArea()->setPosition({0, qreal(height() - bottom)});
+        dock->setPosition(QPointF(0, header + top));
+        dock->setSize(QSizeF(width(), std::max(0, height() - header - top - bottom)));
     }
     WindowManager& manager_;
     WindowId id_;
     quick::WindowChromeItem* chrome_;
+    quick::CommandToolbarsItem* toolbars_;
     quick::PopupMenu* menus_ = nullptr;
     Qt::WindowStates normalStates_;
     bool applyingViewState_ = false;
@@ -315,6 +338,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     // Model changes often come from a strip's own input handler; rebuilding
     // there would replace the strip under it. One sync per event-loop turn.
     connect(&manager, &WindowManager::layoutChanged, this, &QuickWorkspace::requestSync);
+    connect(&manager, &WindowManager::commandsChanged, this, &QuickWorkspace::requestSync);
     connect(&d->bars, &quick::ContentBars::changed, this, &QuickWorkspace::requestSync);
     connect(&manager, &WindowManager::hierarchyBarsRequested, this, [this](const QVector<QPair<TabId, PaneId>>& sources) {
         const QPointer<QuickWorkspace> self(this);
@@ -412,6 +436,9 @@ void QuickWorkspace::sync()
         it = d->windows.erase(it);
     }
     for (const auto id : model.windowOrder()) {
+        const auto toolbars = describeCommandToolbars(&d->manager, id);
+        if (!self) return;
+        if (!model.window(id)) continue;
         auto& window = d->windows[id];
         if (!window) {
             // Queries can call host code. Resolve before constructing a native
@@ -433,6 +460,8 @@ void QuickWorkspace::sync()
                 window->place(placement.first, placement.second);
             else window->show();
         }
+        window->syncToolbars(toolbars, d->manager.initialToolbarLayout(id));
+        if (!self) return;
         window->dock->sync();
         window->updateCaption();
         window->applyViewState();

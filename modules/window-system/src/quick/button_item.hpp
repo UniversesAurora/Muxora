@@ -27,6 +27,7 @@ public:
     void setTheme(const Theme& theme);
     void setShape(Shape shape);
     void setIcon(const QIcon& icon);
+    void setIconExtent(int extent);
     // Shown instead while hovered or pressed, for a fill that needs it.
     void setActiveIcon(const QIcon& icon);
     // A caption button that closes: hover and press use the danger fill.
@@ -60,6 +61,11 @@ protected:
     void mouseUngrabEvent() override;
     void hoverEnterEvent(QHoverEvent* event) override;
     void hoverLeaveEvent(QHoverEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
+    void focusInEvent(QFocusEvent* event) override;
+    void itemChange(ItemChange change, const ItemChangeData& data) override;
 
 private:
     void refresh();
@@ -84,6 +90,8 @@ private:
     bool down_ = false;
     bool emphasized_ = false;
     bool destructive_ = false;
+    int iconExtent_ = 14;
+    bool keyboardPressed_ = false;
 };
 
 } // namespace window_system::quick

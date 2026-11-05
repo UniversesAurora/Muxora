@@ -3,6 +3,7 @@
 #include "workspace_window.hpp"
 #include "command_strip.hpp"
 #include "strip_layout_state.hpp"
+#include "toolbar_description.hpp"
 #include "window_title_label.hpp"
 #include "status_bar.hpp"
 #include "style/ui_metrics.hpp"
@@ -355,11 +356,7 @@ void WorkspaceWindow::createChrome()
     strips_->addStrip(floating ? "floating-menu" : "menu", QCoreApplication::translate("WindowSystem", "Menu"), menu, 0);
     if (kind_ == WindowKind::Workbench) {
         QList<QAction*> toolActions;
-        const QVector<QPair<QString, QString>> buttons = {{"host.newTab", "add"},
-            {"workspace.splitGroup.right", "split-horizontal"}, {"pane.split.right", "split-vertical"},
-            {"workspace.detachFloating", "detach"}, {"workbench.showCommandPalette", "command"},
-            {"window.settings", "settings"}, {"layout.save", "save"}};
-        for (const auto& item : buttons) {
+        for (const auto& item : workspaceToolbarCommands()) {
             const auto* command = manager_->commands().find(item.first);
             if (!command) continue;
             auto* action = new QAction(iconFor(item.second, manager_->interfaceTheme()), command->title, strips_);

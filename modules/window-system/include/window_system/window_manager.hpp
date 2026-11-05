@@ -360,6 +360,7 @@ private:
     bool prepareHierarchyBars(const QVector<QPair<TabId, PaneId>>& tabs);
     void usePerPaneBars(TabId tab);
     void registerCustomChromeCommands();
+    QJsonObject initialToolbarLayout(WindowId window) const;
     bool applyResult(const OperationResult& result);
     TabContent* ensureTabView(TabId tab);
     void scheduleContentVisibilityNotification();

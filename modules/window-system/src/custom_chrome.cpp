@@ -151,6 +151,12 @@ bool WindowManager::removeToolbar(const QString &id) {
 
 QVector<CommandToolbar> WindowManager::toolbars() const { return d->customToolbars; }
 
+QJsonObject WindowManager::initialToolbarLayout(WindowId window) const {
+    const auto* record = d->model.window(window);
+    Q_ASSERT(record);
+    return d->keptStrips.value(window, d->toolbarProfiles.value(record->kind));
+}
+
 std::optional<ToolbarState> WindowManager::toolbarState(WindowId window, const QString &id) const {
     const auto *strips = stripsFor(this, window);
     if (!strips || !strips->stripWidget(id))

@@ -7,6 +7,8 @@
 
 #include <QFontMetrics>
 #include <QMouseEvent>
+#include <QKeyEvent>
+#include <QFocusEvent>
 #include <QPainterPath>
 #include <algorithm>
 
@@ -54,6 +56,7 @@ ButtonItem::ButtonItem(const Theme& theme, QQuickItem* parent)
 void ButtonItem::setTheme(const Theme& theme) { theme_ = theme; refresh(); }
 void ButtonItem::setShape(Shape shape) { if (shape_ != shape) { shape_ = shape; refresh(); } }
 void ButtonItem::setIcon(const QIcon& icon) { iconSource_ = icon; refresh(); }
+void ButtonItem::setIconExtent(int extent) { if (iconExtent_ != extent) { iconExtent_ = extent; refresh(); } }
 void ButtonItem::setActiveIcon(const QIcon& icon) { activeIcon_ = icon; refresh(); }
 void ButtonItem::setDestructive(bool destructive) { if (destructive_ != destructive) { destructive_ = destructive; refresh(); } }
 void ButtonItem::setHovered(bool hovered)
@@ -85,7 +88,7 @@ void ButtonItem::geometryChange(const QRectF& now, const QRectF& previous)
 void ButtonItem::refresh()
 {
     const QRectF area(QPointF(), size());
-    const bool pressed = (pressed_ && hovered_) || down_ || checked_;
+    const bool pressed = (pressed_ && (hovered_ || keyboardPressed_)) || down_ || checked_;
     const bool caption = shape_ == Shape::Caption;
     const bool split = shape_ == Shape::SplitStart || shape_ == Shape::SplitEnd;
     QColor fill;
@@ -99,7 +102,8 @@ void ButtonItem::refresh()
         fill_->setPath(outline(area, shape_, uiPixelsF(splitRadius)));
     }
     // Tool buttons show a one-pixel accent frame while hovered or pressed.
-    const bool framed = shape_ == Shape::Tool && (pressed || hovered_) && area.width() > 2 && area.height() > 2;
+    const bool focused = hasActiveFocus() && activeFocusOnTab();
+    const bool framed = shape_ == Shape::Tool && (pressed || hovered_ || focused) && area.width() > 2 && area.height() > 2;
     border_->setVisible(framed);
     if (framed) {
         QPainterPath frame;
@@ -107,9 +111,9 @@ void ButtonItem::refresh()
         frame.addRect(QRectF(0, area.height() - 1, area.width(), 1));
         frame.addRect(QRectF(0, 1, 1, area.height() - 2));
         frame.addRect(QRectF(area.width() - 1, 1, 1, area.height() - 2));
-        border_->setSize(size()); border_->setFill(theme_.accent); border_->setPath(frame);
+        border_->setSize(size()); border_->setFill(focused ? theme_.focus : theme_.accent); border_->setPath(frame);
     }
-    const int extent = std::max(1, std::min({uiPixels(caption ? 16 : 14), int(area.width()) - uiPixels(2), int(area.height()) - uiPixels(2)}));
+    const int extent = std::max(1, std::min({uiPixels(caption ? 16 : iconExtent_), int(area.width()) - uiPixels(2), int(area.height()) - uiPixels(2)}));
     const QSize iconSize(extent, extent);
     QRect glyph;
     if (iconRail_) {
@@ -162,6 +166,44 @@ void ButtonItem::mouseReleaseEvent(QMouseEvent* event)
 }
 
 void ButtonItem::mouseUngrabEvent() { pressed_ = false; refresh(); }
+
+void ButtonItem::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() != Qt::Key_Space && event->key() != Qt::Key_Return && event->key() != Qt::Key_Enter)
+        return QQuickItem::keyPressEvent(event);
+    event->accept();
+    if (event->isAutoRepeat()) return;
+    keyboardPressed_ = pressed_ = true; refresh();
+}
+
+void ButtonItem::keyReleaseEvent(QKeyEvent* event)
+{
+    if (!keyboardPressed_ || (event->key() != Qt::Key_Space && event->key() != Qt::Key_Return && event->key() != Qt::Key_Enter))
+        return QQuickItem::keyReleaseEvent(event);
+    event->accept();
+    if (event->isAutoRepeat()) return;
+    keyboardPressed_ = pressed_ = false;
+    if (checkable_) checked_ = !checked_;
+    refresh(); emit clicked();
+}
+
+void ButtonItem::focusOutEvent(QFocusEvent* event)
+{
+    if (keyboardPressed_) keyboardPressed_ = pressed_ = false;
+    QQuickItem::focusOutEvent(event);
+    refresh();
+}
+
+void ButtonItem::focusInEvent(QFocusEvent* event) { QQuickItem::focusInEvent(event); refresh(); }
+
+void ButtonItem::itemChange(ItemChange change, const ItemChangeData& data)
+{
+    QQuickItem::itemChange(change, data);
+    if (change == ItemEnabledHasChanged) {
+        if (!isEnabled()) keyboardPressed_ = pressed_ = false;
+        refresh();
+    }
+}
 
 void ButtonItem::hoverEnterEvent(QHoverEvent*)
 {
