@@ -31,26 +31,15 @@ QObject* create(SceneComponent kind, const QVariantMap& properties, QObject* par
     return object;
 }
 
-QStringList entryPath(const QStringList& parent, const MenuItemDescription& item, int ordinal)
+QStringList rowKey(const MenuItemDescription& item, int ordinal)
 {
-    auto key = parent + QStringList{QString::number(int(item.kind)) + QLatin1Char(':')
+    auto key = QStringList{QString::number(int(item.kind)) + QLatin1Char(':')
         + (item.id.isEmpty() ? QString::number(ordinal) : item.id)};
-    // Contributed submenus share a type ID; their declared path identifies
-    // each branch. Prefix path tokens so they cannot alias a child row key.
-    for (const auto& part : item.path) key.append(QStringLiteral("path:") + part);
+    // Contributed submenus share a type ID; their paths distinguish siblings.
+    key.append(item.path);
     return key;
 }
 
-void indexDescriptions(const QVector<MenuItemDescription>& items, const QStringList& path,
-                       QHash<QStringList, const MenuItemDescription*>& result)
-{
-    for (int index = 0; index < items.size(); ++index) {
-        const auto& item = items.at(index);
-        const auto key = entryPath(path, item, index);
-        result.insert(key, &item);
-        indexDescriptions(item.children, key, result);
-    }
-}
 } // namespace
 
 // Reuse retained native text and icon nodes. Controls only moves the selection
@@ -224,10 +213,8 @@ void MenuEntry::setHovered(bool hovered) { if (label_) label_->setHovered(hovere
 void MenuEntry::activate() { owner_.activate(description_); }
 void MenuEntry::activateAction(const QString& action) { owner_.activateAction(description_, action); }
 
-void MenuEntry::updateDescription(const MenuItemDescription* value)
+void MenuEntry::updateDescription(MenuItemDescription next)
 {
-    auto next = value ? *value : description_;
-    if (!value) { next.action.visible = false; next.action.enabled = false; }
     const bool remeasure = description_.action.title != next.action.title
         || description_.action.shortcut != next.action.shortcut || description_.iconName != next.iconName;
     const bool updated = description_.action != next.action || description_.tooltip != next.tooltip || remeasure;
@@ -258,46 +245,85 @@ QPalette PopupMenu::menuPalette() const
     return result;
 }
 
-QObject* PopupMenu::buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, const QStringList& path)
+QObject* PopupMenu::buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, QVector<Row>& rows)
 {
     auto* menu = create(SceneComponent::Menu,
         {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(entry)}, {"maximumSize", maximumSize_}}, parent);
     watchWindow(menu, menu->property("contentItem").value<QQuickItem*>());
-    menus_.append(menu);
-    qreal width = 0;
+    syncMenu(menu, rows, items);
+    return menu;
+}
+
+PopupMenu::Row PopupMenu::createRow(QObject* menu, const MenuItemDescription& item, int index)
+{
+    Row row;
+    row.key = rowKey(item, index);
+    row.entry = new MenuEntry(item, *this);
+    if (item.kind == MenuItemDescription::Kind::Submenu) {
+        row.submenu = buildMenu(item.children, row.entry, menu, row.children);
+        QQuickItem* delegate = nullptr;
+        QMetaObject::invokeMethod(menu, "insertBranch", Q_RETURN_ARG(QQuickItem*, delegate),
+            Q_ARG(int, index), Q_ARG(QObject*, row.submenu.data()));
+        row.item = delegate;
+    } else {
+        const auto kind = item.kind == MenuItemDescription::Kind::Separator ? SceneComponent::MenuSeparator : SceneComponent::MenuRow;
+        row.item = qobject_cast<QQuickItem*>(create(kind,
+            {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(row.entry.data())}}, menu));
+        QMetaObject::invokeMethod(menu, "insertItem", Q_ARG(int, index), Q_ARG(QQuickItem*, row.item.data()));
+    }
+    // Controls releases removed delegates later. Their entries must survive
+    // until the delegate has stopped referring to the label and QML state.
+    connect(row.item, &QObject::destroyed, row.entry, &QObject::deleteLater);
+    return row;
+}
+
+void PopupMenu::removeRow(QObject* menu, const Row& row)
+{
+    if (row.submenu) {
+        QMetaObject::invokeMethod(row.submenu, "close");
+        QMetaObject::invokeMethod(menu, "removeBranch", Q_ARG(QObject*, row.submenu.data()));
+    } else QMetaObject::invokeMethod(menu, "removeItem", Q_ARG(QQuickItem*, row.item.data()));
+}
+
+void PopupMenu::syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuItemDescription>& items)
+{
+    auto previous = std::move(rows);
+    rows = {};
+    rows.reserve(items.size());
+    QHash<QStringList, int> remaining;
+    for (int index = 0; index < previous.size(); ++index) remaining.insert(previous.at(index).key, index);
     for (int index = 0; index < items.size(); ++index) {
-        const auto& description = items.at(index);
-        const auto key = entryPath(path, description, index);
-        auto* value = new MenuEntry(description, *this);
-        entries_.insert(key, value);
-        if (description.kind == MenuItemDescription::Kind::Separator) {
-            auto* separator = qobject_cast<QQuickItem*>(create(SceneComponent::MenuSeparator,
-                {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(value)}}, menu));
-            QMetaObject::invokeMethod(menu, "addItem", Q_ARG(QQuickItem*, separator));
-            continue;
-        }
-        if (description.action.visible) width = std::max(width, value->content()->implicitWidth());
-        if (description.kind == MenuItemDescription::Kind::Submenu) {
-            auto* child = buildMenu(description.children, value, menu, key);
-            QMetaObject::invokeMethod(menu, "appendMenu", Q_ARG(QObject*, child));
-        } else {
-            auto* row = qobject_cast<QQuickItem*>(create(SceneComponent::MenuRow,
-                {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(value)}}, menu));
-            QMetaObject::invokeMethod(menu, "addItem", Q_ARG(QQuickItem*, row));
+        const auto& item = items.at(index);
+        const auto found = remaining.find(rowKey(item, index));
+        if (found == remaining.end()) rows.append(createRow(menu, item, index));
+        else {
+            auto row = std::move(previous[*found]);
+            remaining.erase(found);
+            row.entry->updateDescription(item);
+            if (row.submenu) syncMenu(row.submenu, row.children, item.children);
+            QMetaObject::invokeMethod(menu, "placeItem", Q_ARG(int, index), Q_ARG(QQuickItem*, row.item.data()));
+            rows.append(std::move(row));
         }
     }
-    menu->setProperty("contentWidthHint", width);
-    return menu;
+    for (const auto index : remaining) removeRow(menu, previous.at(index));
+    QMetaObject::invokeMethod(menu, "measureContent");
 }
 
 void PopupMenu::watchWindow(QObject* menu, QQuickItem* content)
 {
     connect(content, &QQuickItem::windowChanged, this, [this, menu](QQuickWindow* window) {
         if (!window || window->type() != Qt::Popup) return;
+        // Closing a child temporarily mounts its content in the parent's
+        // popup window. That window belongs to the parent menu, not this one.
+        if (menuWindows_.contains(window)) return;
         // Popup.Window defaults to transparent. Our menu has an opaque surface
         // just like the old menu, including native text rendering.
         window->setColor(theme_.surface);
         menuWindows_.insert(window, menu);
+        connect(menu, &QObject::destroyed, this, [this, observed = QPointer<QQuickWindow>(window)] {
+            if (!observed) return;
+            menuWindows_.remove(observed); observed->removeEventFilter(this);
+        });
         connect(window, &QObject::destroyed, this, [this, window] { menuWindows_.remove(window); });
         const auto updateLimit = [menu, window] { menu->setProperty("maximumSize", window->screen()->availableGeometry().size()); };
         connect(window, &QWindow::screenChanged, menu, updateLimit);
@@ -334,7 +360,7 @@ bool PopupMenu::open(QQuickItem* anchor, QPoint globalPosition, const QVector<Me
     const auto* screen = QGuiApplication::screenAt(globalPosition);
     if (!screen) screen = anchor->window()->screen();
     maximumSize_ = screen->availableGeometry().size();
-    menu_.reset(buildMenu(items, nullptr, this));
+    menu_.reset(buildMenu(items, nullptr, this, rows_));
     const auto position = anchor->mapFromGlobal(globalPosition);
     return QMetaObject::invokeMethod(menu_.get(), "showAt", Q_ARG(QQuickItem*, anchor), Q_ARG(QPointF, position));
 }
@@ -366,11 +392,7 @@ void PopupMenu::refresh()
     const auto resolve = refreshHandler_;
     const auto items = resolve();
     if (!self) return; // A host query may close the workspace and session.
-    QHash<QStringList, const MenuItemDescription*> descriptions;
-    indexDescriptions(items, {}, descriptions);
-    for (auto it = entries_.cbegin(); it != entries_.cend(); ++it)
-        it.value()->updateDescription(descriptions.value(it.key()));
-    for (const auto& menu : std::as_const(menus_)) if (menu) QMetaObject::invokeMethod(menu, "measureContent");
+    syncMenu(menu_.get(), rows_, items);
     refreshing_ = false;
     if (!std::any_of(items.cbegin(), items.cend(), [](const auto& item) {
         return item.action.visible && item.kind != MenuItemDescription::Kind::Separator;

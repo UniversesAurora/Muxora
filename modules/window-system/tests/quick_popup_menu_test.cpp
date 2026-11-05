@@ -552,6 +552,54 @@ private slots:
         QTRY_VERIFY(!popup(view));
         QVERIFY(manager.model().tab(first)); QVERIFY(manager.model().tab(target));
     }
+
+    void structureUpdatesRetainInputAndReleaseRetiredRows_data()
+    {
+        QTest::addColumn<bool>("branch");
+        QTest::newRow("action") << false;
+        QTest::newRow("open-submenu") << true;
+    }
+    void structureUpdatesRetainInputAndReleaseRetiredRows()
+    {
+        QFETCH(bool, branch);
+        QQuickWindow window;
+        window.resize(600, 400); window.show(); window.requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto retired = action("retired");
+        if (branch) { retired.kind = MenuItemDescription::Kind::Submenu; retired.children = {action("child")}; }
+        QVector<MenuItemDescription> items{action("keep"), retired};
+        PopupMenu menu(defaultTheme());
+        menu.setRefreshHandler([&] { return items; });
+        QString invoked;
+        connect(&menu, &PopupMenu::triggered, this, [&](const auto& item) { invoked = item.commandId; });
+        QVERIFY(menu.open(window.contentItem(), window.mapToGlobal(QPoint(30, 40)), items));
+        QTRY_VERIFY(popup(&window));
+        auto* root = popup(&window); QVERIFY(QTest::qWaitForWindowExposed(root));
+        const QPointer<QQuickItem> keep(namedItem(root->contentItem(), QStringLiteral("keep")));
+        const QPointer<QQuickItem> removed(namedItem(root->contentItem(), QStringLiteral("retired")));
+        QVERIFY(keep); QVERIFY(removed);
+        QPointer<quick::MenuEntry> entry;
+        for (auto* candidate : menu.findChildren<quick::MenuEntry*>()) if (candidate->id() == "retired") entry = candidate;
+        QVERIFY(entry);
+        QTest::keyClick(root, branch ? Qt::Key_End : Qt::Key_Home);
+        QPointer<QQuickWindow> child;
+        if (branch) {
+            QTest::keyClick(root, Qt::Key_Right);
+            QTRY_VERIFY(popup(root));
+            child = popup(root);
+            QVERIFY(QTest::qWaitForWindowExposed(child));
+        }
+        items = {action("added"), action("keep")};
+        menu.requestRefresh();
+        QTRY_VERIFY(namedItem(root->contentItem(), QStringLiteral("added")));
+        QCOMPARE(namedItem(root->contentItem(), QStringLiteral("keep")), keep.data());
+        QTRY_VERIFY(!removed); QTRY_VERIFY(!entry); QTRY_VERIFY(!child);
+        QVERIFY(root->isVisible());
+        if (branch) QTest::keyClick(root, Qt::Key_End);
+        // Inserting ahead of the selected action must not redirect Enter.
+        QTest::keyClick(root, Qt::Key_Return);
+        QTRY_COMPARE(invoked, QStringLiteral("keep"));
+    }
 };
 
 QTEST_MAIN(QuickPopupMenuTest)

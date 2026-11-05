@@ -36,13 +36,25 @@ Basic.Menu {
     // A host query can destroy the workspace. Qt continues using this popup
     // after aboutToShow returns, so query after its opening handler unwinds.
     onAboutToShow: session.requestRefresh()
-    function appendMenu(child: QtObject): void { addMenu(child as PopupMenuNode) }
+    function insertBranch(index: int, child: QtObject): Item {
+        insertMenu(index, child as PopupMenuNode)
+        return itemAt(index)
+    }
+    function removeBranch(child: QtObject): void { removeMenu(child as PopupMenuNode) }
+    function placeItem(index: int, item: Item): void {
+        if (itemAt(index) === item) return
+        for (let from = 0; from < count; ++from) {
+            if (itemAt(from) === item) { moveItem(from, index); return }
+        }
+    }
     function showAt(anchor: Item, point: point): void { popup(anchor, point) }
     function measureContent(): void {
         let hint = 0
         for (let index = 0; index < count; ++index) {
-            const item = itemAt(index)
-            if (item && item.visible) hint = Math.max(hint, item.implicitWidth)
+            // Effective visibility is false while the popup is closed.
+            // Measure the logical command state before opening its window.
+            const item = itemAt(index) as PopupMenuRow
+            if (item && item.entry && item.entry.visible) hint = Math.max(hint, item.implicitWidth)
         }
         contentWidthHint = hint
     }

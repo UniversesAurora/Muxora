@@ -7,7 +7,7 @@ Basic.MenuSeparator {
     required property PopupMenu session
     required property MenuEntry entry
     visible: entry.visible
-    height: visible ? implicitHeight : 0
+    height: entry.visible ? implicitHeight : 0
     padding: 0
     verticalPadding: 3 * session.scale
     horizontalPadding: 5 * session.scale

@@ -18,7 +18,7 @@ Basic.MenuItem {
     padding: 0
     implicitWidth: contentItem ? contentItem.implicitWidth : 0
     implicitHeight: contentItem ? contentItem.implicitHeight : 0
-    height: visible ? implicitHeight : 0
+    height: entry && entry.visible ? implicitHeight : 0
     contentItem: entry ? entry.content : null
     indicator: null
     arrow: null

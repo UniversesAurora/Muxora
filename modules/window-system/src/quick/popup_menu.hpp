@@ -17,8 +17,8 @@ namespace window_system::quick {
 class PopupMenu;
 class MenuLabelItem;
 
-// Stable rows for one opening; their state is resolved by the caller, not by
-// the rendering/input adapter. Refresh never replaces the input objects.
+// The caller resolves state and structure; the adapter retains unchanged rows
+// while adding or retiring only the input objects whose identity changed.
 class MenuEntry final : public QObject {
     Q_OBJECT
     QML_ELEMENT
@@ -44,7 +44,7 @@ public:
     bool checked() const { return description_.action.checked.value_or(false); }
     bool persistentHighlight() const { return description_.kind == MenuItemDescription::Kind::Tab && checked(); }
     QQuickItem* content() const;
-    void updateDescription(const MenuItemDescription* description);
+    void updateDescription(MenuItemDescription description);
     Q_INVOKABLE void setHighlighted(bool highlighted);
     Q_INVOKABLE void setHovered(bool hovered);
     Q_INVOKABLE void activate();
@@ -89,7 +89,17 @@ signals:
 protected:
     bool eventFilter(QObject* object, QEvent* event) override;
 private:
-    QObject* buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, const QStringList& path = {});
+    struct Row {
+        QStringList key;
+        QPointer<MenuEntry> entry;
+        QPointer<QQuickItem> item;
+        QPointer<QObject> submenu;
+        QVector<Row> children;
+    };
+    QObject* buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, QVector<Row>& rows);
+    Row createRow(QObject* menu, const MenuItemDescription& item, int index);
+    void syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuItemDescription>& items);
+    void removeRow(QObject* menu, const Row& row);
     void watchWindow(QObject* menu, QQuickItem* content);
     void refresh();
     Theme theme_;
@@ -97,8 +107,7 @@ private:
     QSize maximumSize_;
     std::unique_ptr<QObject> menu_;
     QHash<QObject*, QPointer<QObject>> menuWindows_;
-    QHash<QStringList, MenuEntry*> entries_;
-    QList<QPointer<QObject>> menus_;
+    QVector<Row> rows_;
     std::function<QVector<MenuItemDescription>()> refreshHandler_;
     bool refreshing_ = false, refreshQueued_ = false;
 };
