@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "tab_drag.hpp"
+#include "popup_menu.hpp"
 #include "dock_surface_item.hpp"
 #include "group_item.hpp"
 #include "rail_item.hpp"
@@ -224,6 +225,35 @@ bool TabDrag::nativeEventFilter(const QByteArray&, void* message, qintptr*)
     return false;
 }
 
+void TabDrag::selectTarget()
+{
+    if (!active_ || chooser_) return;
+    // A tab still on its strip tears out first, as in the Widgets drag.
+    if (!detached_ && !detach(lastGlobal_)) { cancel(); return; }
+    QVector<MenuItemDescription> items;
+    for (const auto id : manager_.model().windowOrder()) {
+        if (id == movingWindow_) continue;
+        MenuItemDescription item;
+        item.id = item.commandId = id.toString(QUuid::WithoutBraces);
+        item.action.title = manager_.windowCaption(id);
+        items.append(std::move(item));
+    }
+    // The list opens from the source window, which outlives the carried
+    // one: that window turns transparent or compact and closes on a drop.
+    auto* source = surfaces_(sourceWindow_);
+    if (items.isEmpty() || !source) return;
+    auto* menu = new PopupMenu(manager_.interfaceTheme(), this);
+    chooser_ = menu;
+    connect(menu, &PopupMenu::closed, menu, &QObject::deleteLater);
+    connect(menu, &PopupMenu::triggered, this, [this](const MenuItemDescription& item) {
+        if (!active_) return;
+        forcedWindow_ = WindowId(item.id);
+        manager_.showWindow(forcedWindow_);
+        update(lastGlobal_);
+    });
+    if (!menu->open(source, lastGlobal_, items)) delete menu;
+}
+
 void TabDrag::cancel()
 {
     if (!active_) return;
@@ -272,6 +302,9 @@ void TabDrag::stop(bool restoreCarrier)
     for (const auto id : manager_.model().windowOrder())
         if (auto* surface = surfaces_(id)) surface->clearDragPresentation();
     if (moving_) moving_->setMouseGrabEnabled(false);
+    forcedWindow_ = {};
+    // An open window list closes and then deletes itself.
+    if (chooser_) chooser_->dismiss();
     // A window dropped into a strip stays hidden until it closes.
     if (restoreCarrier) showCarrier();
     lifted_ = false;
@@ -323,6 +356,8 @@ bool TabDrag::overSourceStrip(QPoint global) const
 
 WindowId TabDrag::windowAt(QPoint global) const
 {
+    // A window chosen with Tab stays the target, as in the Widgets drag.
+    if (!forcedWindow_.isNull() && forcedWindow_ != movingWindow_ && surfaces_(forcedWindow_)) return forcedWindow_;
     // The moving window is under the pointer; the target is below it.
     const auto* moving = moving_.data();
     auto* top = stackedWindowAt(global, [this, moving](const QWindow* candidate) {
@@ -530,6 +565,8 @@ void TabDrag::finish(QPoint global)
 bool TabDrag::eventFilter(QObject* watched, QEvent* event)
 {
     if (!active_ || !qobject_cast<QWindow*>(watched)) return QObject::eventFilter(watched, event);
+    // While the window list is open, it takes the keys and the pointer.
+    if (chooser_ && chooser_->isOpen()) return QObject::eventFilter(watched, event);
     switch (event->type()) {
     case QEvent::MouseMove:
         // Qt places a move through its window as the window is now. A
@@ -553,8 +590,8 @@ bool TabDrag::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     case QEvent::KeyPress:
-        if (static_cast<QKeyEvent*>(event)->key() != Qt::Key_Escape) return true;
-        cancel();
+        if (static_cast<QKeyEvent*>(event)->key() == Qt::Key_Tab) selectTarget();
+        else if (static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) cancel();
         return true;
     default:
         return QObject::eventFilter(watched, event);

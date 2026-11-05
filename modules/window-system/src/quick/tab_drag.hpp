@@ -38,6 +38,8 @@ class DockSurfaceItem;
 // paints its tabs at the pointer, and the drag takes the mouse back from
 // the loop until the pointer leaves. A target the pointer rests on comes
 // to the front after the behavior's delay.
+class PopupMenu;
+
 class TabDrag final : public QObject, public QAbstractNativeEventFilter {
 public:
     using SurfaceLookup = std::function<DockSurfaceItem*(WindowId)>;
@@ -67,6 +69,9 @@ protected:
 
 private:
     void begin(WindowId window, GroupId group, const DragStart& start);
+    // Tab during a drag: a list of the other windows, the chosen one becomes
+    // the target window and comes forward, as in the Widgets drag.
+    void selectTarget();
     void track(QPoint global);
     void queueSystemMove();
     void enterSystemMove();
@@ -133,6 +138,8 @@ private:
     // Ends queued by one move loop are ignored by the next drag.
     quint64 moveGeneration_ = 0;
     DropTarget target_;
+    WindowId forcedWindow_;
+    QPointer<PopupMenu> chooser_;
 };
 
 } // namespace window_system::quick

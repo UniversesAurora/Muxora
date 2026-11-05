@@ -478,6 +478,59 @@ private slots:
         QTRY_COMPARE(targetDock->group(targetGroup)->count(), 2);
     }
 
+    // Tab during a drag, as in the Widgets drag: the tab tears out, a list of
+    // the other windows opens, and the chosen one comes back from the
+    // taskbar to receive the drop. Esc then returns the tab.
+    void tabDuringADragChoosesTheTargetWindow()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto source = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Source"), QSize(520, 380)});
+        const auto moving = manager.addTab(source, named(QStringLiteral("Moving")));
+        manager.addTab(source, named(QStringLiteral("Staying")));
+        const auto target = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Target"), QSize(520, 380)});
+        manager.addTab(target, named(QStringLiteral("Target tab")));
+        QTRY_VERIFY(workspace.window(source) && workspace.window(target));
+        auto* from = workspace.window(source);
+        QPointer<QQuickWindow> to(workspace.window(target));
+        QVERIFY(QTest::qWaitForWindowExposed(from));
+        to->showMinimized();
+        QTRY_VERIFY(to->windowStates() & Qt::WindowMinimized);
+        from->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(from));
+        auto* dock = from->contentItem()->findChild<quick::DockSurfaceItem*>();
+        const auto sourceGroup = manager.model().groupForTab(moving);
+        QTRY_VERIFY(dock->group(sourceGroup));
+        const auto start = tabPoint(dock->group(sourceGroup), moving);
+        QTest::mousePress(from, Qt::LeftButton, {}, start);
+        moveHeld(from, start, start + QPoint(12, 0));
+        QTest::keyClick(from, Qt::Key_Tab);
+        // The tab is now in a floating window, which anchors the list.
+        QTRY_VERIFY(manager.model().groupForTab(moving) != sourceGroup);
+        QQuickWindow* list = nullptr;
+        QTRY_VERIFY((list = [&]() -> QQuickWindow* {
+            for (auto* window : QGuiApplication::topLevelWindows())
+                if (window->type() == Qt::Popup && window->isVisible()) return qobject_cast<QQuickWindow*>(window);
+            return nullptr;
+        }()));
+        QVERIFY(QTest::qWaitForWindowExposed(list));
+        QQuickItem* row = nullptr;
+        const auto targetRow = target.toString(QUuid::WithoutBraces);
+        QTRY_VERIFY((row = [&]() -> QQuickItem* {
+            QList<QQuickItem*> items{list->contentItem()};
+            while (!items.isEmpty()) {
+                auto* item = items.takeFirst();
+                if (item->objectName() == targetRow) return item;
+                items += item->childItems();
+            }
+            return nullptr;
+        }()));
+        QTest::mouseClick(list, Qt::LeftButton, Qt::NoModifier, row->mapToScene(row->boundingRect().center()).toPoint());
+        QTRY_VERIFY(to && !(to->windowStates() & Qt::WindowMinimized));
+        QTest::keyClick(from, Qt::Key_Escape);
+        QTRY_COMPARE(manager.model().groupForTab(moving), sourceGroup);
+        QTest::mouseRelease(from, Qt::LeftButton, {}, start);
+    }
     void aDragScrollsTheStripUnderThePointer()
     {
         WindowManager manager(WindowManager::Presentation::External);
