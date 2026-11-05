@@ -360,6 +360,9 @@ private:
     // A window's status message, its transient message (a pending key chord)
     // or the status items changed; a null window means every window.
     Q_SIGNAL void statusChanged(WindowId window);
+    // The command palette and window selector of other presentations.
+    Q_SIGNAL void commandPaletteRequested(const window_system::CommandContext& context, const window_system::FloatingPanelOptions& options);
+    Q_SIGNAL void windowSelectorRequested(window_system::WindowId window, const window_system::FloatingPanelOptions& options);
     void setTransientStatus(WindowId window, const QString& text);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,

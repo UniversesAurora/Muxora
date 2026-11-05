@@ -1331,10 +1331,6 @@ The current window or content does not meet this command&apos;s conditions.</sou
         <translation>取消</translation>
     </message>
     <message>
-        <source>Workspace window</source>
-        <translation>工作区窗口</translation>
-    </message>
-    <message>
         <source>Floating window</source>
         <translation>轻量浮窗</translation>
     </message>

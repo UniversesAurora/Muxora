@@ -983,8 +983,18 @@ bool WindowManager::executeResolved(const QString& command, CommandContext ctx, 
     if (executed) return true;
     emit commandFailed(QCoreApplication::translate("WindowSystem", "Command is unavailable: %1").arg(command)); return false;
 }
-void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
-void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
+void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options)
+{
+    const auto ctx = context(window);
+    if (d->presentation == Presentation::External) { emit commandPaletteRequested(ctx, options); return; }
+    openCommandPalette(this, ctx, windowWidget(ctx.window), options);
+}
+void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options)
+{
+    const auto ctx = context(window);
+    if (d->presentation == Presentation::External) { emit windowSelectorRequested(ctx.window, options); return; }
+    openWindowSelector(this, ctx.window, windowWidget(ctx.window), options);
+}
 void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
 void WindowManager::setStatus(WindowId window, const QString& text)
 {

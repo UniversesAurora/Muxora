@@ -1334,10 +1334,6 @@ The current window or content does not meet this command&apos;s conditions.</tra
         <translation>Cancel</translation>
     </message>
     <message>
-        <source>Workspace window</source>
-        <translation>Workspace window</translation>
-    </message>
-    <message>
         <source>Floating window</source>
         <translation>Floating window</translation>
     </message>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "command_dialogs.hpp"
+#include "panel_rows.hpp"
 #include "../settings/settings_page.hpp"
 #include "localization/display_names.hpp"
 
@@ -27,33 +28,6 @@
 
 namespace window_system {
 namespace {
-
-QString displayTitle(const Command& command)
-{
-    return command.title.isEmpty() ? command.id : command.title;
-}
-
-QString shortcutText(const Command& command)
-{
-    QStringList sequences;
-    for (const auto& binding : command.bindings)
-        sequences.append(binding.sequence.toString(QKeySequence::NativeText));
-    return sequences.join(QStringLiteral(" / "));
-}
-
-bool matchesSearch(const QString& searchable, const QString& query)
-{
-    const QString folded = searchable.toCaseFolded();
-    const auto terms = query.simplified().toCaseFolded().split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    return std::all_of(terms.cbegin(), terms.cend(), [&folded](const QString& term) {
-        return folded.contains(term);
-    });
-}
-
-bool canExecute(const Command& command, const CommandContext& context)
-{
-    return command.execute && (!command.enabled || command.enabled(context));
-}
 
 FloatingPanel* createDialog(WindowManager* manager, QWidget* parent,
                              const QString& name, const QString& title, QSize size,
@@ -209,32 +183,23 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         if (!tree || !buttons || !details) return;
         const auto* item = tree->currentItem();
         const QString id = item ? item->data(0, Qt::UserRole).toString() : QString();
-        const auto* found = alive ? alive->commands().find(id) : nullptr;
-        const Command command = found ? *found : Command{};
-        const bool enabled = found && canExecute(command, target);
+        const bool found = alive && alive->commands().find(id);
+        const bool enabled = found && canRunFromPalette(alive, id, target);
         if (!alive || !tree || !buttons || !details) return;
         buttons->button(QDialogButtonBox::Ok)->setEnabled(enabled);
-        details->setText(found ? command.id : QCoreApplication::translate("WindowSystem", "No matching command is available."));
+        details->setText(found ? id : QCoreApplication::translate("WindowSystem", "No matching command is available."));
     };
     const auto rebuild = [alive, tree = retainedTree, search = retainedSearch, target, updateSelected] {
         if (!tree || !search) return;
         tree->clear();
         if (!alive) return;
-        const QString query = search->text();
-        const auto commands = alive->commands().commands();
-        for (const auto& command : commands) {
-            const QString category = commandCategoryDisplayName(command.category);
-            const QString searchable = displayTitle(command) + QLatin1Char(' ') + category + QLatin1Char(' ') + command.id;
-            if (!matchesSearch(searchable, query)) continue;
-            const bool enabled = canExecute(command, target);
-            if (!alive || !tree || !search) return;
-            auto* item = new QTreeWidgetItem(tree, {displayTitle(command), category, shortcutText(command)});
-            item->setData(0, Qt::UserRole, command.id);
-            item->setToolTip(0, command.id);
-            if (!enabled) {
-                item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-                item->setToolTip(0, command.id + QCoreApplication::translate("WindowSystem", "\nThe current window or content does not meet this command's conditions."));
-            }
+        const auto rows = commandPaletteRows(alive, target, search->text());
+        if (!alive || !tree || !search) return;
+        for (const auto& row : rows) {
+            auto* item = new QTreeWidgetItem(tree, row.cells);
+            item->setData(0, Qt::UserRole, row.id);
+            item->setToolTip(0, row.tooltip);
+            if (!row.enabled) item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
         }
         selectFirstEnabled(tree);
         updateSelected();
@@ -244,10 +209,7 @@ void openCommandPalette(WindowManager* manager, const CommandContext& context, Q
         const auto* item = tree->currentItem();
         if (!alive || !item) return;
         const QString id = item->data(0, Qt::UserRole).toString();
-        const auto* found = alive->commands().find(id);
-        if (!found) return;
-        const Command command = *found;
-        const bool enabled = canExecute(command, target);
+        const bool enabled = canRunFromPalette(alive, id, target);
         if (enabled && alive && tree && dialog) {
             dialog->setProperty("selectedCommand", id);
             dialog->accept();
@@ -305,22 +267,12 @@ void openWindowSelector(WindowManager* manager, WindowId source, QWidget* parent
         if (tree->currentItem()) previous = tree->currentItem()->data(0, Qt::UserRole).toUuid();
         tree->clear();
         if (!alive) return;
-        const auto& model = alive->model();
-        for (const auto id : model.windowOrder()) {
-            const auto* record = model.window(id);
-            if (!record) continue;
-            const auto* widget = alive->windowWidget(id);
-            const QString title = widget ? widget->windowTitle() : QCoreApplication::translate("WindowSystem", "Workspace window");
-            const QString kind = record->kind == WindowKind::Workbench ? QCoreApplication::translate("WindowSystem", "Workbench window", "window type") : QCoreApplication::translate("WindowSystem", "Floating window");
-            const WindowId rootId = model.familyRoot(record->familyId);
-            const auto* ownerWidget = alive->windowWidget(rootId);
-            const QString owner = record->kind == WindowKind::Workbench ? QStringLiteral("—") :
-                (ownerWidget ? ownerWidget->windowTitle() : QCoreApplication::translate("WindowSystem", "Owner workbench"));
-            if (!matchesSearch(title + QLatin1Char(' ') + kind + QLatin1Char(' ') + owner + QLatin1Char(' ') + id.toString(), search->text())) continue;
-            auto* item = new QTreeWidgetItem(tree, {title, kind, owner, QString::number(model.orderedTabs(id).size())});
+        for (const auto& row : windowSelectorRows(alive, search->text())) {
+            auto* item = new QTreeWidgetItem(tree, row.cells);
+            const WindowId id(row.id);
             item->setData(0, Qt::UserRole, id);
-            item->setToolTip(0, id.toString(QUuid::WithoutBraces));
-            item->setIcon(0, iconFor(record->kind == WindowKind::Workbench ? QStringLiteral("window") : QStringLiteral("detach"), alive->interfaceTheme()));
+            item->setToolTip(0, row.tooltip);
+            item->setIcon(0, iconFor(row.iconName, alive->interfaceTheme()));
             if (id == previous) tree->setCurrentItem(item);
         }
         if (!tree->currentItem()) selectFirstEnabled(tree);

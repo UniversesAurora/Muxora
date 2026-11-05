@@ -677,6 +677,57 @@ private slots:
         native_input::mouse(view.data(), QPoint(view->width() / 2, view->height() - 40));
         QTRY_VERIFY(shownTip().isEmpty());
     }
+    // The command palette and window selector in Quick windows, as in
+    // Widgets: typing filters, Enter runs the selected row, Esc closes, and
+    // the selector starts on its own window.
+    void palettesRunTheirChoiceFromTheKeyboard()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        int runs = 0;
+        Command command;
+        command.id = "test.palette"; command.title = "Palette target";
+        command.execute = [&](const CommandContext&) { ++runs; return true; };
+        QVERIFY(manager.commands().add(std::move(command)));
+        const auto main = manager.createWindow();
+        manager.addTab(main, {QStringLiteral("Main")});
+        const auto floating = manager.createWindow(WindowKind::Floating);
+        manager.addTab(floating, {QStringLiteral("Floating")});
+        QTRY_VERIFY(workspace.window(main) && workspace.window(floating));
+        auto* view = workspace.window(main);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        const auto panel = [](const QString& name) -> QQuickWindow* {
+            for (auto* window : QGuiApplication::topLevelWindows())
+                if (window->objectName() == name && window->isVisible()) return qobject_cast<QQuickWindow*>(window);
+            return nullptr;
+        };
+        manager.showCommandPalette(main);
+        QTRY_VERIFY(panel("CommandPalette"));
+        QPointer<QQuickWindow> palette(panel("CommandPalette"));
+        QVERIFY(QTest::qWaitForWindowActive(palette));
+        for (const char letter : QByteArrayLiteral("palette target")) QTest::keyClick(palette.data(), letter);
+        QTRY_VERIFY(namedItem(palette->contentItem(), QStringLiteral("PanelRow/test.palette")));
+        QTest::keyClick(palette.data(), Qt::Key_Return);
+        QTRY_COMPARE(runs, 1);
+        QTRY_VERIFY(!palette);
+        manager.showCommandPalette(main);
+        QTRY_VERIFY(panel("CommandPalette"));
+        palette = panel("CommandPalette");
+        QVERIFY(QTest::qWaitForWindowActive(palette));
+        QTest::keyClick(palette.data(), Qt::Key_Escape);
+        QTRY_VERIFY(!palette);
+        QCOMPARE(runs, 1);
+        manager.showWindowSelector(main);
+        QTRY_VERIFY(panel("WindowSelector"));
+        QPointer<QQuickWindow> selector(panel("WindowSelector"));
+        QVERIFY(QTest::qWaitForWindowActive(selector));
+        QVERIFY(namedItem(selector->contentItem(), QStringLiteral("PanelRow/") + floating.toString(QUuid::WithoutBraces)));
+        QTest::keyClick(selector.data(), Qt::Key_Down);
+        QTest::keyClick(selector.data(), Qt::Key_Return);
+        QTRY_VERIFY(!selector);
+        QTRY_COMPARE(manager.context().window, floating);
+    }
     void menuBarUsesLateCommandsAndItsOwnWindow_data()
     {
         QTest::addColumn<bool>("floating");

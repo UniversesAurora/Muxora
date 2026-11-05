@@ -100,6 +100,7 @@
 - **10.4f 状态栏（Claude）**：工作区信息、临时消息、宿主和 Lua 的状态项、右键隐藏状态项，照 `chrome/status_bar.cpp`。
   - 已完成：Quick 工作台窗口底部的状态栏，覆盖消息与临时消息（按键序列等待）、工作区信息、宿主／Lua 状态项（带命令的可点击、可键盘激活）、右键逐项显隐和悬停提示；浮窗照旧没有状态栏，见 [记录](../../development/verification-log/2026-11.md#quick-状态栏2026-11-05)。Widgets 的 `WorkspaceStatusBar` 随 10.6 删除。
 - **10.4g 浮动面板（Claude）**：命令面板、窗口选择器（`floating_panel.cpp`、`command_dialogs.cpp`），以及拖动中按 Tab 弹出窗口列表选目标（Widgets `DragController::selectTarget`）。
+  - 命令面板和窗口选择器已在 Quick 里实现：一个共用面板（无边框窗口居中于所属窗口，搜索框、带表头的列表、提示和两个按钮），行内容和筛选规则与 Widgets 共用 `panel_rows`，见 [记录](../../development/verification-log/2026-11.md#quick-命令面板与窗口选择器2026-11-05)。和 Widgets 的差别：窗口选择器的行前还没有窗口图标。拖动中按 Tab 选目标尚未做。
 - **10.4h 设置页与快捷键页（Claude 后执行者）**：Claude 先做 Quick 表单控件（开关、下拉、数值、滑块、列表、快捷键录入，类型选择按 [设置设计 §3](../../design/settings-and-commands-design.md#3-全局设置与编辑)）和第一个分区的样板；执行者照样板迁移其余分区和快捷键页，遇到样板里没有的控件停下。
 - **10.4i 对话框（Claude）**：重命名标签／组／标签夹（现用 `QInputDialog`）、侧栏面板尺寸（`peek_size_command.cpp`）、关于、Lua 的输入框（`src/app/scripting_setup.cpp`）、Lua 父窗口查询（`src/app/script_services.cpp`）。宿主的关闭确认由宿主提供，Muxora 的那个也一起换。
 - **10.4j 无障碍（执行者）**：Quick 的标签栏、标签组、侧栏按钮、按钮和标题行提供无障碍角色、名称和状态，照 Widgets 的 `TabBarAccessible`；键盘焦点顺序与 Widgets 一致。

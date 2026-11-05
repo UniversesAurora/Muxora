@@ -10,6 +10,7 @@
 #include "window_chrome_item.hpp"
 #include "command_strip_host_item.hpp"
 #include "status_bar_item.hpp"
+#include "command_panel.hpp"
 #include "window_manager_p.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
@@ -425,6 +426,52 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     };
     connect(&manager, &WindowManager::contentVisibilityRequested, this, visibility);
     manager.setPresenter(d.get());
+    connect(&manager, &WindowManager::commandPaletteRequested, this, [this](const CommandContext& context, const FloatingPanelOptions& options) {
+        const QPointer<WindowManager> owner(&d->manager);
+        quick::CommandPanel::Setup setup;
+        setup.name = QStringLiteral("CommandPalette");
+        setup.title = QCoreApplication::translate("WindowSystem", "Command palette");
+        setup.placeholder = QCoreApplication::translate("WindowSystem", "Type a command name, category, or ID…");
+        setup.acceptText = QCoreApplication::translate("WindowSystem", "Run");
+        setup.rejectText = QCoreApplication::translate("WindowSystem", "Close");
+        setup.columns = {QCoreApplication::translate("WindowSystem", "Command"), QCoreApplication::translate("WindowSystem", "Category"),
+                         QCoreApplication::translate("WindowSystem", "Shortcut")};
+        setup.size = {780, 450};
+        setup.hint = [](const PanelRow* row) {
+            return row ? row->id : QCoreApplication::translate("WindowSystem", "No matching command is available.");
+        };
+        setup.rows = [owner, context](const QString& query) { return owner ? commandPaletteRows(owner, context, query) : QVector<PanelRow>{}; };
+        setup.acceptable = [owner, context](const PanelRow& row) { return owner && canRunFromPalette(owner, row.id, context); };
+        setup.accepted = [owner, context](const QString& id) {
+            if (!owner) return;
+            const bool executed = owner->executeInContext(id, context);
+            if (!executed && owner && owner->model().window(context.window))
+                owner->setStatus(context.window, QCoreApplication::translate("WindowSystem", "Command was not executed: %1").arg(id));
+        };
+        new quick::CommandPanel(d->windows.value(context.window), d->manager.interfaceTheme(), options, std::move(setup));
+    });
+    connect(&manager, &WindowManager::windowSelectorRequested, this, [this](WindowId source, const FloatingPanelOptions& options) {
+        const QPointer<WindowManager> owner(&d->manager);
+        quick::CommandPanel::Setup setup;
+        setup.name = QStringLiteral("WindowSelector");
+        setup.title = QCoreApplication::translate("WindowSystem", "Switch window");
+        setup.placeholder = QCoreApplication::translate("WindowSystem", "Search windows, owners, or window types…");
+        setup.acceptText = QCoreApplication::translate("WindowSystem", "Switch");
+        setup.rejectText = QCoreApplication::translate("WindowSystem", "Cancel");
+        setup.columns = {QCoreApplication::translate("WindowSystem", "Window"), QCoreApplication::translate("WindowSystem", "Type"),
+                         QCoreApplication::translate("WindowSystem", "Owner workbench"), QCoreApplication::translate("WindowSystem", "Tab")};
+        setup.size = {780, 410};
+        setup.initial = source.toString(QUuid::WithoutBraces);
+        setup.hint = [](const PanelRow*) {
+            return QCoreApplication::translate("WindowSystem", "Includes all workbench and floating windows. Enter to switch; Esc to cancel.");
+        };
+        setup.rows = [owner](const QString& query) { return owner ? windowSelectorRows(owner, query) : QVector<PanelRow>{}; };
+        setup.acceptable = [owner](const PanelRow& row) { return owner && owner->model().window(WindowId(row.id)); };
+        setup.accepted = [owner](const QString& id) { if (owner) owner->activateWindow(WindowId(id)); };
+        auto* panel = new quick::CommandPanel(d->windows.value(source), d->manager.interfaceTheme(), options, std::move(setup));
+        // Windows opened or closed meanwhile appear in the list.
+        connect(&d->manager, &WindowManager::layoutChanged, panel, &quick::CommandPanel::refresh);
+    });
     connect(&manager, &WindowManager::statusChanged, this, [this](WindowId changed) {
         for (auto it = d->windows.cbegin(); it != d->windows.cend(); ++it)
             if (it.value() && (changed.isNull() || it.key() == changed))
