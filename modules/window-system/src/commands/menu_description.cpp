@@ -370,11 +370,8 @@ QVector<MenuItemDescription> describeTabCreationMenu(WindowManager* manager, Win
         item.id = id;
         item.commandId = id;
         item.action.title = definition.title;
+        // As the existing new-tab menu: type titles only, without shortcuts.
         item.action.enabled = enabled;
-        QStringList shortcuts;
-        for (const auto& binding : definition.bindings)
-            shortcuts.append(binding.sequence.toString(QKeySequence::NativeText));
-        item.action.shortcut = shortcuts.join(QStringLiteral(" / "));
         result.append(std::move(item));
     }
     return result;
