@@ -28,6 +28,7 @@ public:
     void syncContent(const Theme& theme, const StripLayoutPreferences& preferences, bool hideEmptyOptions);
     void setLocked(bool locked);
     int minimumWidth() const;
+    [[nodiscard]] QStringList itemIds() const;
     std::function<void(const QString&)> triggered;
 protected:
     void geometryChange(const QRectF& now, const QRectF& previous) override;

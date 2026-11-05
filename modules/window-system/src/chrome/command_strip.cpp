@@ -31,11 +31,9 @@
 namespace window_system {
 namespace {
 
-constexpr int compactRowHeight = 28;
 // Rows have no outer gutter: like native caption buttons and VS Code's menu,
 // the first and last strips touch the window border (or the screen edge).
 constexpr int rowMargin = 0;
-constexpr int stripSpacing = 4;
 
 class StripHandle final : public QWidget {
 public:

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "window_manager_p.hpp"
 #include "chrome/command_strip.hpp"
+#include "chrome/strip_layout_state.hpp"
 #include "chrome/status_bar.hpp"
 #include "chrome/workspace_window.hpp"
 #include "commands/command_menus.hpp"
@@ -151,70 +152,93 @@ bool WindowManager::removeToolbar(const QString &id) {
 
 QVector<CommandToolbar> WindowManager::toolbars() const { return d->customToolbars; }
 
-QJsonObject WindowManager::initialToolbarLayout(WindowId window) const {
-    const auto* record = d->model.window(window);
+QJsonObject WindowManager::toolbarLayout(WindowId window) {
+    const auto *record = d->model.window(window);
     Q_ASSERT(record);
-    return d->keptStrips.value(window, d->toolbarProfiles.value(record->kind));
+    auto &layouts = d->toolbarLayouts[window];
+    if (!layouts.contains(record->kind))
+        layouts.insert(record->kind, d->toolbarProfiles.value(record->kind));
+    return layouts.value(record->kind);
+}
+
+void WindowManager::commitToolbarLayout(WindowId window, const QJsonObject &before, const QJsonObject &after) {
+    const auto *record = d->model.window(window);
+    if (!record)
+        return;
+    d->toolbarLayouts[window].insert(record->kind, after);
+    // As a Widgets window publishes its edit: only the edited fields reach
+    // the kind's profile, keeping newer edits made in other windows.
+    d->toolbarProfiles.insert(record->kind, mergeToolbarEdit(d->toolbarProfiles.value(record->kind), before, after));
+    emit layoutChanged();
+}
+
+ToolbarEditor *WindowManager::toolbarEditor(WindowId window) const {
+    if (d->presentation == Presentation::External)
+        return d->toolbarEditors ? d->toolbarEditors(window) : nullptr;
+    return stripsFor(this, window);
+}
+
+void WindowManager::offerChoices(WindowId window, const QString &command, const CommandChoices &choices) {
+    Q_ASSERT(d->presentation == Presentation::External);
+    if (d->model.window(window) && !choices.isEmpty())
+        emit choicesOffered(window, command, choices);
 }
 
 std::optional<ToolbarState> WindowManager::toolbarState(WindowId window, const QString &id) const {
-    const auto *strips = stripsFor(this, window);
-    if (!strips || !strips->stripWidget(id))
-        return {};
-    const auto layout = strips->saveLayout();
-    const auto fields = layout.value(QStringLiteral("strips")).toObject().value(id).toObject();
-    ToolbarState result;
-    result.area =
-        strips->stripArea(id) == CommandStripHost::Area::Top ? ToolbarArea::Top : ToolbarArea::Bottom;
-    const auto rows = layout.value(result.area == ToolbarArea::Top ? "rows" : "bottomRows").toArray();
-    for (qsizetype row = 0; row < rows.size(); ++row) {
-        const auto entries = rows[row].toArray();
-        for (qsizetype index = 0; index < entries.size(); ++index)
-            if (entries[index].toString() == id) {
-                result.row = int(row);
-                result.index = int(index);
-            }
-    }
-    result.width = fields.value(QStringLiteral("width")).toInt(-1);
-    result.visible = strips->isStripVisible(id);
-    result.elastic = strips->stripSizing(id) == CommandStripHost::StripSizing::Elastic;
-    result.locked = strips->isLocked();
-    for (const auto &value : fields.value(QStringLiteral("excluded")).toArray())
-        result.hiddenItems.append(value.toString());
-    return result;
+    const auto *editor = toolbarEditor(window);
+    return editor ? editor->toolbarState(id) : std::nullopt;
 }
 
 bool WindowManager::setToolbarVisible(WindowId window, const QString &id, bool visible) {
-    auto *strips = stripsFor(this, window);
-    return strips && strips->setStripVisible(id, visible);
+    auto *editor = toolbarEditor(window);
+    return editor && editor->setToolbarVisible(id, visible);
 }
 bool WindowManager::setToolbarWidth(WindowId window, const QString &id, int width) {
     if (width < -1 || width > QWIDGETSIZE_MAX)
         return false;
-    auto *strips = stripsFor(this, window);
-    return strips && (width == -1 ? strips->resetStripWidth(id) : strips->setStripWidth(id, width));
+    auto *editor = toolbarEditor(window);
+    return editor && (width == -1 ? editor->resetToolbarWidth(id) : editor->setToolbarWidth(id, width));
+}
+bool WindowManager::resetToolbarWidth(WindowId window, const QString &id) {
+    auto *editor = toolbarEditor(window);
+    return editor && editor->resetToolbarWidth(id);
 }
 bool WindowManager::setToolbarElastic(WindowId window, const QString &id, bool elastic) {
-    auto *strips = stripsFor(this, window);
-    return strips && strips->setStripSizing(id, elastic ? CommandStripHost::StripSizing::Elastic
-                                                        : CommandStripHost::StripSizing::Content);
+    auto *editor = toolbarEditor(window);
+    return editor && editor->setToolbarElastic(id, elastic);
 }
 bool WindowManager::setToolbarItemVisible(WindowId window, const QString &id, const QString &item,
                                           bool visible) {
-    auto *strips = stripsFor(this, window);
-    return strips && strips->setStripItemVisible(id, item, visible);
+    auto *editor = toolbarEditor(window);
+    return editor && editor->setToolbarItemVisible(id, item, visible);
 }
 bool WindowManager::setToolbarsLocked(WindowId window, bool locked) {
     const QPointer<WindowManager> self(this);
-    auto *strips = stripsFor(this, window);
-    if (!strips)
+    auto *editor = toolbarEditor(window);
+    if (!editor)
         return false;
-    strips->setLocked(locked);
+    editor->setToolbarsLocked(locked);
     return !self.isNull();
 }
 bool WindowManager::toolbarsLocked(WindowId window) const {
-    const auto *strips = stripsFor(this, window);
-    return strips && strips->isLocked();
+    const auto *editor = toolbarEditor(window);
+    return editor && editor->toolbarsLocked();
+}
+bool WindowManager::moveToolbar(WindowId window, const QString &stripId, ToolbarArea area, int row, int index) {
+    if (row < 0 || index < -1 || (area != ToolbarArea::Top && area != ToolbarArea::Bottom))
+        return false;
+    auto *editor = toolbarEditor(window);
+    if (!editor || !editor->toolbarIds().contains(stripId))
+        return false;
+    const auto rows = editor->toolbarRows(area);
+    // A new row can only be appended. Reject gaps and untrusted huge indices
+    // before the presentation creates rows or cancels an active drag.
+    if (row > rows.size())
+        return false;
+    const int count = row < rows.size() ? int(rows.at(row).size()) : 0;
+    if (index > count)
+        return false;
+    return editor->moveToolbar(stripId, area, row, index < 0 ? count : index);
 }
 
 bool WindowManager::registerStatusItem(StatusItem item) {

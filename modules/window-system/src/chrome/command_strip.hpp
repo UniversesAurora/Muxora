@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <window_system/toolbar_layout.hpp>
 #include "strip_constraints.hpp"
+#include "toolbar_editor.hpp"
 
 #include <functional>
 #include <memory>
@@ -19,7 +20,7 @@ struct StripRowLayout;
 
 // The chrome owns its widgets and action presentations; callers retain QAction
 // ownership. Layout storage contains stable strip/action IDs, never pointers.
-class CommandStripHost final : public QFrame {
+class CommandStripHost final : public QFrame, public ToolbarEditor {
 public:
     // Rows count from the outer edge: top rows grow down, bottom rows grow up.
     using Area = ToolbarArea;
@@ -79,6 +80,27 @@ public:
     void setLayoutChangedCallback(std::function<void()> callback);
     void setSizingChangeRequest(std::function<void(const QString&, StripSizing)> request);
     void setWidthResetRequest(std::function<void(const QString&)> request);
+
+    // ToolbarEditor, over the methods above.
+    [[nodiscard]] QStringList toolbarIds() const override { return stripIds(); }
+    [[nodiscard]] QString toolbarTitle(const QString& id) const override { return stripTitle(id); }
+    [[nodiscard]] std::optional<ToolbarState> toolbarState(const QString& id) const override;
+    [[nodiscard]] QVector<QStringList> toolbarRows(ToolbarArea area) const override;
+    [[nodiscard]] bool isToolbarSizingEditable(const QString& id) const override { return isStripSizingEditable(id); }
+    bool setToolbarVisible(const QString& id, bool visible) override { return setStripVisible(id, visible); }
+    bool setToolbarWidth(const QString& id, int width) override { return setStripWidth(id, width); }
+    bool resetToolbarWidth(const QString& id) override { return resetStripWidth(id); }
+    bool setToolbarElastic(const QString& id, bool elastic) override
+    {
+        return setStripSizing(id, elastic ? StripSizing::Elastic : StripSizing::Content);
+    }
+    bool setToolbarItemVisible(const QString& id, const QString& item, bool visible) override
+    {
+        return setStripItemVisible(id, item, visible);
+    }
+    bool moveToolbar(const QString& id, ToolbarArea area, int row, int index) override { return moveStrip(id, area, row, index); }
+    void setToolbarsLocked(bool locked) override { setLocked(locked); }
+    [[nodiscard]] bool toolbarsLocked() const override { return isLocked(); }
 
     [[nodiscard]] QJsonObject saveLayout() const;
     [[nodiscard]] static int minimumSavedWidth(bool optionsEnabled, bool locked);

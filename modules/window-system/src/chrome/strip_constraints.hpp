@@ -6,6 +6,9 @@ namespace window_system {
 inline constexpr int stripHandleWidth = 12;
 inline constexpr int stripOptionsWidth = 12;
 inline constexpr int stripDefaultMinimumContentWidth = 12;
+// Between strips in a row, and the least height of a row.
+inline constexpr int stripSpacing = 4;
+inline constexpr int compactRowHeight = 28;
 
 enum class StripSizing { Content, Elastic };
 struct StripConstraints {

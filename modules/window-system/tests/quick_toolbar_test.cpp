@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Toolbar command routing, retained input objects, current-format restore,
-// hidden content and native caption hit testing after moving strips.
+// hidden content and native caption hit testing after moving strips;
+// layout edits, saving them, the kind profile and the offered choices.
 #include "quick/command_strip_item.hpp"
+#include "quick/command_strip_host_item.hpp"
 #include "quick/button_item.hpp"
 #include "quick/window_chrome_item.hpp"
 #include "native_input.hpp"
 #include "quick_menu_test_support.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
+#include <window_system/ui_scale.hpp>
 #include <QJsonArray>
 #include <QTest>
 
@@ -35,6 +38,12 @@ QJsonObject withBottomToolbar(QJsonObject snapshot, WindowId window, const QStri
     return withStrips(std::move(snapshot), window, {{"locked", true}, {"strips", settings},
         {"rows", QJsonArray{QJsonArray{"menu", "title", "caption-controls"}, QJsonArray{"workspace"}}},
         {"bottomRows", bottomRows}});
+}
+quick::CommandStripItem* stripItem(QQuickWindow* view, const QString& id)
+{
+    for (auto* item : view->contentItem()->findChildren<quick::CommandStripItem*>())
+        if (item->property("stripId").toString() == id) return item;
+    return nullptr;
 }
 } // namespace
 
@@ -184,6 +193,130 @@ private slots:
         QTRY_VERIFY(view->windowStates() & Qt::WindowMaximized);
         QVERIFY(manager.requestCloseWindow(window));
         QTRY_VERIFY(!view);
+    }
+    // Edits made through the manager, as a script or a command makes them:
+    // the window shows them, saving keeps them and restoring brings them back.
+    void editsShowInTheWindowAndSurviveSaving_data()
+    {
+        QTest::addColumn<QString>("edit");
+        for (const auto* edit : {"hidden", "width", "elastic", "button", "bottom", "unlocked"}) QTest::newRow(edit) << QString(edit);
+    }
+    void editsShowInTheWindowAndSurviveSaving()
+    {
+        QFETCH(QString, edit);
+        QJsonObject saved;
+        for (const bool restoring : {false, true}) {
+            WindowManager manager(WindowManager::Presentation::External);
+            QuickWorkspace workspace(manager);
+            workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+            for (const auto* id : {"test.a", "test.b"}) {
+                Command command;
+                command.id = id; command.title = id;
+                command.execute = [](const CommandContext&) { return true; };
+                QVERIFY(manager.commands().add(std::move(command)));
+            }
+            QVERIFY(manager.registerToolbar({"test.bar", "Commands", {"test.a", "test.b"}}));
+            WindowId window;
+            if (restoring) {
+                const auto restored = manager.restoreLayout(saved);
+                QVERIFY2(restored, qPrintable(restored.error));
+                window = manager.model().windowOrder().constFirst();
+            } else {
+                window = manager.createWindow();
+                manager.addTab(window, {QStringLiteral("Content")});
+            }
+            QTRY_VERIFY(workspace.window(window));
+            auto* view = workspace.window(window);
+            view->resize(1200, 600);
+            QVERIFY(QTest::qWaitForWindowExposed(view));
+            QPointer<quick::CommandStripItem> strip;
+            QTRY_VERIFY((strip = stripItem(view, "test.bar")));
+            if (!restoring) {
+                if (edit == "hidden") QVERIFY(manager.setToolbarVisible(window, "test.bar", false));
+                if (edit == "width") QVERIFY(manager.setToolbarWidth(window, "test.bar", 240));
+                if (edit == "elastic") QVERIFY(manager.setToolbarElastic(window, "test.bar", true));
+                if (edit == "button") QVERIFY(manager.setToolbarItemVisible(window, "test.bar", "test.b", false));
+                if (edit == "bottom") QVERIFY(manager.moveToolbar(window, "test.bar", ToolbarArea::Bottom, 0, -1));
+                if (edit == "unlocked") QVERIFY(manager.execute("window.toggleStripsLock", {}, window));
+                saved = manager.saveLayout();
+            }
+            const auto state = manager.toolbarState(window, "test.bar");
+            QVERIFY(state);
+            QCOMPARE(state->visible, edit != "hidden");
+            QCOMPARE(state->width, edit == "width" ? 240 : -1);
+            QCOMPARE(state->elastic, edit == "elastic");
+            QCOMPARE(state->hiddenItems, edit == "button" ? QStringList{"test.b"} : QStringList{});
+            QCOMPARE(state->area, edit == "bottom" ? ToolbarArea::Bottom : ToolbarArea::Top);
+            QCOMPARE(manager.toolbarsLocked(window), edit != "unlocked");
+            QCOMPARE(state->locked, edit != "unlocked");
+            // What the window shows.
+            const auto* host = view->contentItem()->findChild<quick::CommandStripHostItem*>();
+            QVERIFY(host);
+            QTRY_COMPARE(strip->isVisible(), edit != "hidden");
+            if (edit == "width") QTRY_COMPARE(qRound(strip->width()), uiPixels(240));
+            if (edit == "elastic") QTRY_COMPARE(qRound(strip->x() + strip->width()), qRound(host->width()));
+            if (edit == "bottom") QTRY_COMPARE(strip->parentItem(), host->bottomArea());
+            if (edit == "button") {
+                quick::ButtonItem* hidden = nullptr;
+                for (auto* button : strip->findChildren<quick::ButtonItem*>())
+                    if (button->property("commandId").toString() == "test.b") hidden = button;
+                QVERIFY(hidden);
+                QTRY_VERIFY(!hidden->isVisible());
+            }
+        }
+    }
+
+    // As the Widgets windows do, an edit becomes the window kind's profile,
+    // which a window created afterwards starts from.
+    void aNewWindowStartsFromTheEditedLayout()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow();
+        manager.addTab(first, {QStringLiteral("First")});
+        QTRY_VERIFY(workspace.window(first));
+        QVERIFY(manager.moveToolbar(first, "workspace", ToolbarArea::Bottom, 0, -1));
+        const auto second = manager.createWindow();
+        manager.addTab(second, {QStringLiteral("Second")});
+        QTRY_VERIFY(workspace.window(second));
+        QTRY_VERIFY(manager.toolbarState(second, "workspace"));
+        QCOMPARE(manager.toolbarState(second, "workspace")->area, ToolbarArea::Bottom);
+        // Later edits in one window leave the other window's own layout.
+        QVERIFY(manager.setToolbarVisible(first, "workspace", false));
+        QVERIFY(manager.toolbarState(second, "workspace")->visible);
+    }
+
+    // Run without arguments, a toolbar command offers its choices in a Quick
+    // menu; each choice runs the command again with its arguments.
+    void toolbarCommandsOfferTheirChoicesInQuickMenus()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        const QPointer<QQuickWindow> view(workspace.window(window));
+        view->resize(1000, 600);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        const auto choose = [&](QQuickWindow* menu, const QString& id) {
+            QVERIFY(QTest::qWaitForWindowExposed(menu));
+            QQuickItem* row = nullptr;
+            QTRY_VERIFY((row = namedItem(menu->contentItem(), id)));
+            QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, row->mapToScene(row->boundingRect().center()).toPoint());
+        };
+        QVERIFY(manager.execute("window.toolbar.move", {}, window));
+        QTRY_VERIFY(popup(view));
+        choose(popup(view), QStringLiteral("Workspace"));
+        // The same command again, now with the strip: where to.
+        QTRY_VERIFY(popup(view) && namedItem(popup(view)->contentItem(), QStringLiteral("Bottom")));
+        auto* destinations = popup(view);
+        choose(destinations, QStringLiteral("Bottom"));
+        QTRY_VERIFY(popup(destinations));
+        choose(popup(destinations), QStringLiteral("Bottom/New row"));
+        QTRY_COMPARE(manager.toolbarState(window, "workspace")->area, ToolbarArea::Bottom);
+        QTRY_VERIFY(!popup(view));
     }
 };
 

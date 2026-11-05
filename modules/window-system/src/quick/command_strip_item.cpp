@@ -115,6 +115,13 @@ int CommandStripItem::chromeMinimumWidth() const
         + uiPixels(constraints_.minimumContentWidth);
 }
 
+QStringList CommandStripItem::itemIds() const
+{
+    QStringList result;
+    for (const auto& action : actions_) result.append(action.description.id);
+    return result;
+}
+
 int CommandStripItem::minimumWidth() const { return constraints_.compressible ? chromeMinimumWidth() : qCeil(implicitWidth()); }
 
 void CommandStripItem::updateMetrics()
@@ -122,7 +129,7 @@ void CommandStripItem::updateMetrics()
     const int content = content_ ? contentVisible_ ? qCeil(content_->implicitWidth()) : 0 : contentWidth_;
     setImplicitWidth(std::max(chromeMinimumWidth(), content + (locked_ ? 0 : uiPixels(stripHandleWidth))
         + (optionsEnabled_ && !hideEmptyOptions_ ? uiPixels(stripOptionsWidth) : 0)));
-    setImplicitHeight(std::max({uiPixels(28), QFontMetrics(QGuiApplication::font()).height() + uiPixels(8),
+    setImplicitHeight(std::max({uiPixels(compactRowHeight), QFontMetrics(QGuiApplication::font()).height() + uiPixels(8),
         content_ && contentVisible_ ? qCeil(content_->implicitHeight()) : 0}));
 }
 

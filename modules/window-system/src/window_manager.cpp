@@ -986,11 +986,6 @@ bool WindowManager::executeResolved(const QString& command, CommandContext ctx, 
 void WindowManager::showCommandPalette(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openCommandPalette(this, ctx, windowWidget(ctx.window), options); }
 void WindowManager::showWindowSelector(WindowId window, const FloatingPanelOptions& options) { const auto ctx = context(window); openWindowSelector(this, ctx.window, windowWidget(ctx.window), options); }
 void WindowManager::showSettings(WindowId window) { const auto ctx = context(window); openBehaviorSettings(this, windowWidget(ctx.window)); }
-bool WindowManager::resetToolbarWidth(WindowId window, const QString& stripId)
-{
-    const auto view = d->windows.value(window);
-    return view && view->strips() && view->strips()->resetStripWidth(stripId);
-}
 void WindowManager::setStatus(WindowId window, const QString& text) { if (auto widget = d->windows.value(window)) widget->setStatus(text); }
 bool WindowManager::setStatusItemVisible(WindowId window, const QString& item, bool visible)
 {

@@ -77,6 +77,7 @@ public:
     bool open(QQuickItem* anchor, QPoint globalPosition, const QVector<MenuItemDescription>& items);
     QQuickItem* createMenuBar(QQuickItem* parent, const QVector<MenuItemDescription>& items);
     void setExcludedRoots(const QStringList& excluded);
+    [[nodiscard]] QStringList menuBarItemIds() const;
     void setPresentation(const Theme& theme);
     void dismiss();
     bool isOpen() const;

@@ -52,10 +52,10 @@ struct WindowManager::Private {
     QVector<StatusItem> customStatusItems;
     WindowId activeWindow;
     WindowPresenter* presenter = nullptr;
-    // External has no toolbars yet (10.4): a window's restored toolbar
-    // layouts are written back as read, so saving keeps them.
-    QHash<WindowId, QJsonObject> keptStrips;
-    QHash<WindowId, QJsonObject> keptInactiveStrips;
+    // External: each window's saved toolbar layout per window kind, as the
+    // presentation committed it, and the presentation's editor of a window.
+    QHash<WindowId, QHash<WindowKind, QJsonObject>> toolbarLayouts;
+    std::function<ToolbarEditor*(WindowId)> toolbarEditors;
     bool refreshing = false;
     bool destroying = false;
     int geometryUpdateDepth = 0;

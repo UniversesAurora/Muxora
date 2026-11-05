@@ -58,8 +58,49 @@ QVariantMap chooseDestination(WorkspaceWindow* window, const Theme& theme)
     return selected ? selected->data().toMap() : QVariantMap{};
 }
 
+} // namespace
+
+// Without modal pickers, the same command is offered again with the strip
+// or with the strip and its destination.
+bool offerToolbarMoveChoices(WindowManager* manager, const CommandContext& context)
+{
+    const auto* editor = manager->toolbarEditor(context.window);
+    if (!editor) return false;
+    const auto strip = context.args.value("strip").toString();
+    WindowManager::CommandChoices choices;
+    if (!context.args.contains("strip")) {
+        for (const auto& id : editor->toolbarIds()) choices.append({{editor->toolbarTitle(id)}, {{"strip", id}}});
+    } else {
+        if (!editor->toolbarIds().contains(strip)) return false;
+        for (const auto area : {ToolbarArea::Top, ToolbarArea::Bottom}) {
+            const auto title = area == ToolbarArea::Top ? QCoreApplication::translate("WindowSystem", "Top")
+                                                        : QCoreApplication::translate("WindowSystem", "Bottom");
+            const auto rows = editor->toolbarRows(area);
+            for (int row = 0; row <= rows.size(); ++row) {
+                if (row < rows.size() && rows.at(row).isEmpty()) continue;
+                choices.append({{title, row == rows.size() ? QCoreApplication::translate("WindowSystem", "New row")
+                                                          : QCoreApplication::translate("WindowSystem", "Row %1").arg(row + 1)},
+                    {{"strip", strip}, {"area", area == ToolbarArea::Top ? "top" : "bottom"}, {"row", row}}});
+            }
+        }
+    }
+    manager->offerChoices(context.window, QStringLiteral("window.toolbar.move"), choices);
+    return true;
+}
+
+namespace {
+
 bool moveToolbar(WindowManager* manager, const CommandContext& context)
 {
+    int row = 0, index = -1;
+    if (!integerArgument(context.args, "row", 0, row) || !integerArgument(context.args, "index", -1, index)) return false;
+    if (manager->presentation() == WindowManager::Presentation::External) {
+        if (!context.args.contains("strip") || !context.args.contains("area")) return offerToolbarMoveChoices(manager, context);
+        const auto area = context.args.value("area").toString();
+        if (area != "top" && area != "bottom") return false;
+        return manager->moveToolbar(context.window, context.args.value("strip").toString(),
+                                    area == "top" ? ToolbarArea::Top : ToolbarArea::Bottom, row, index);
+    }
     const QPointer<WindowManager> owner(manager);
     QPointer<WorkspaceWindow> window = static_cast<WorkspaceWindow*>(manager->windowWidget(context.window));
     if (!window || !window->strips()) return false;
@@ -72,8 +113,6 @@ bool moveToolbar(WindowManager* manager, const CommandContext& context)
     }
     if (!window->strips()->stripIds().contains(strip)) return false;
     auto area = context.args.value("area").toString();
-    int row = 0, index = -1;
-    if (!integerArgument(context.args, "row", 0, row) || !integerArgument(context.args, "index", -1, index)) return false;
     if (!context.args.contains("area")) {
         const auto target = chooseDestination(window, manager->interfaceTheme());
         if (!stillOwned()) return false;

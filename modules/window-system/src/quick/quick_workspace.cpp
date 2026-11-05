@@ -9,11 +9,13 @@
 #include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
 #include "command_strip_host_item.hpp"
+#include "window_manager_p.hpp"
 #ifdef Q_OS_WIN
 #include "platform/windows/window_frame.hpp"
 #endif
 
 #include <QCoreApplication>
+#include <QCursor>
 #include <QGuiApplication>
 #include <QPointer>
 #include <QSet>
@@ -122,13 +124,15 @@ public:
 
     void syncToolbars(const QVector<CommandToolbarDescription>& descriptions, const QJsonObject& layout)
     {
-        const auto* record = manager_.model().window(id_);
-        Q_ASSERT(record);
-        const auto menuId = record->kind == WindowKind::Floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
-        toolbars_->setContent(menuId, menuBar_, {true, true, 24});
-        menus_->setExcludedRoots(layout.value("strips").toObject().value(menuId).toObject().value("excluded").toVariant().toStringList());
+        const auto menuId = setMenuContent();
         toolbars_->sync(descriptions, layout, manager_.interfaceTheme(), manager_.behavior().hideToolbarOptionsWhenLocked);
+        menus_->setExcludedRoots(toolbars_->excludedItems(menuId));
         layoutChildren();
+    }
+    ToolbarEditor* toolbarEditor() const { return toolbars_; }
+    void setToolbarCommit(std::function<void(const QJsonObject&, const QJsonObject&)> commit)
+    {
+        toolbars_->committed = std::move(commit);
     }
 
     // As the Widgets window applies its view state: any view mode is full
@@ -218,11 +222,11 @@ private:
     {
         menus_ = new quick::PopupMenu(theme, this);
         menuBar_ = menus_->createMenuBar(contentItem(), menuItems);
-        const auto* record = manager_.model().window(id_);
-        const auto menuId = record->kind == WindowKind::Floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
-        toolbars_->setContent(menuId, menuBar_, {true, true, 24});
-        toolbars_->setContent(QStringLiteral("title"), chrome_, {true, true, 96, true}, StripSizing::Elastic);
-        toolbars_->setContent(QStringLiteral("caption-controls"), chrome_->captionContent(), {false, false, 12, false, true});
+        setMenuContent();
+        toolbars_->setContent(QStringLiteral("title"), QCoreApplication::translate("WindowSystem", "Window title"),
+            chrome_, {true, true, 96, true}, StripSizing::Elastic);
+        toolbars_->setContent(QStringLiteral("caption-controls"), QCoreApplication::translate("WindowSystem", "Window controls"),
+            chrome_->captionContent(), {false, false, 12, false, true});
         const QPointer<WindowManager> owner(&manager_);
         menus_->setRefreshHandler([owner, id = id_] { return windowMenus(owner, id); });
         connect(&manager_, &WindowManager::commandsChanged, menus_, &quick::PopupMenu::requestCatalogRefresh);
@@ -242,6 +246,17 @@ private:
             context.args = item.arguments;
             owner->executeInContext(item.commandId, context);
         });
+    }
+
+    // The menu strip's ID follows the window kind; its items are the roots.
+    QString setMenuContent()
+    {
+        const auto* record = manager_.model().window(id_);
+        Q_ASSERT(record);
+        const auto menuId = record->kind == WindowKind::Floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
+        toolbars_->setContent(menuId, QCoreApplication::translate("WindowSystem", "Menu"), menuBar_, {true, true, 24},
+            StripSizing::Content, [menus = QPointer<quick::PopupMenu>(menus_)] { return menus ? menus->menuBarItemIds() : QStringList{}; });
+        return menuId;
     }
 
     void layoutChildren()
@@ -343,6 +358,42 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     };
     connect(&manager, &WindowManager::contentVisibilityRequested, this, visibility);
     manager.setPresenter(d.get());
+    manager.d->toolbarEditors = [this](WindowId window) -> ToolbarEditor* {
+        const auto view = d->windows.value(window);
+        return view ? view->toolbarEditor() : nullptr;
+    };
+    // Choices for a command run without arguments: picking one runs it again
+    // with the choice's arguments, as the Widgets pickers do.
+    connect(&manager, &WindowManager::choicesOffered, this,
+        [this](WindowId window, const QString& command, const WindowManager::CommandChoices& choices) {
+            const auto view = d->windows.value(window);
+            if (!view) return;
+            QVector<MenuItemDescription> items;
+            for (const auto& [path, arguments] : choices) {
+                auto* level = &items;
+                for (int depth = 0; depth + 1 < path.size(); ++depth) {
+                    auto found = std::find_if(level->begin(), level->end(), [&](const auto& item) {
+                        return item.kind == MenuItemDescription::Kind::Submenu && item.action.title == path.at(depth);
+                    });
+                    if (found == level->end()) {
+                        MenuItemDescription submenu;
+                        submenu.kind = MenuItemDescription::Kind::Submenu;
+                        submenu.id = path.mid(0, depth + 1).join(QLatin1Char('/'));
+                        submenu.action.title = path.at(depth);
+                        level->append(std::move(submenu));
+                        found = level->end() - 1;
+                    }
+                    level = &found->children;
+                }
+                MenuItemDescription item;
+                item.id = path.join(QLatin1Char('/'));
+                item.commandId = command;
+                item.action.title = path.constLast();
+                item.arguments = arguments;
+                level->append(std::move(item));
+            }
+            view->dock->showMenu(items, d->manager.context(window), QCursor::pos());
+        });
     connect(&manager, &WindowManager::contextMenuRequested, this,
         [this](CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source) {
             if (const auto window = d->windows.value(context.window); window && d->manager.validCommandContext(context))
@@ -364,6 +415,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
 
 QuickWorkspace::~QuickWorkspace()
 {
+    d->manager.d->toolbarEditors = {};
     d->host.setVisibilityHandler({});
     d->manager.setPresenter(nullptr);
     d->drag.cancel();
@@ -470,14 +522,17 @@ void QuickWorkspace::sync()
                 const auto pane = d->bars.paneForItem(d->manager.model(), observed->activeFocusItem());
                 if (!pane.isNull()) d->manager.contentFocused(pane, observed);
             });
-            window->syncToolbars(toolbars, d->manager.initialToolbarLayout(id));
+            window->setToolbarCommit([this, id](const QJsonObject& before, const QJsonObject& after) {
+                d->manager.commitToolbarLayout(id, before, after);
+            });
+            window->syncToolbars(toolbars, d->manager.toolbarLayout(id));
             if (!self) return;
             if (!model.window(id)) continue;
             if (const auto placement = d->placements.take(id); placement.first.isValid())
                 window->place(placement.first, placement.second);
             else window->show();
         }
-        if (!creating) window->syncToolbars(toolbars, d->manager.initialToolbarLayout(id));
+        if (!creating) window->syncToolbars(toolbars, d->manager.toolbarLayout(id));
         if (!self) return;
         window->dock->sync();
         window->updateCaption();

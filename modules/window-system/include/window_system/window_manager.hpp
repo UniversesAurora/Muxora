@@ -21,6 +21,7 @@ class QWindow;
 namespace window_system {
 
 enum class CommandMenuSurface;
+class ToolbarEditor;
 
 struct WindowOptions {
     QString title = QStringLiteral("WindowSystem");
@@ -333,6 +334,7 @@ protected:
 
 private:
     friend class QuickWorkspace;
+    friend bool offerToolbarMoveChoices(WindowManager* manager, const CommandContext& context);
     [[nodiscard]] bool presented(WindowId window) const;
     friend class WorkspaceWindow;
     friend class DockSurface;
@@ -349,6 +351,12 @@ private:
     Q_SIGNAL void contentVisibilityRequested(bool enabled);
     Q_SIGNAL void hierarchyBarsRequested(const QVector<QPair<TabId, PaneId>>& sources);
     Q_SIGNAL void contextMenuRequested(CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source = nullptr);
+    // A command run without its arguments, in a presentation without modal
+    // pickers: each choice runs the same command with its arguments. Its
+    // path holds the submenu titles, then its own title.
+    using CommandChoices = QVector<QPair<QStringList, QVariantMap>>;
+    void offerChoices(WindowId window, const QString& command, const CommandChoices& choices);
+    Q_SIGNAL void choicesOffered(WindowId window, const QString& command, const window_system::WindowManager::CommandChoices& choices);
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.
@@ -360,7 +368,12 @@ private:
     bool prepareHierarchyBars(const QVector<QPair<TabId, PaneId>>& tabs);
     void usePerPaneBars(TabId tab);
     void registerCustomChromeCommands();
-    QJsonObject initialToolbarLayout(WindowId window) const;
+    // The toolbar layout a window shows: its own for its current kind, or the
+    // kind's profile, which the window keeps from then on (External).
+    QJsonObject toolbarLayout(WindowId window);
+    // A presentation's edit, as the layout before and after it.
+    void commitToolbarLayout(WindowId window, const QJsonObject& before, const QJsonObject& after);
+    [[nodiscard]] ToolbarEditor* toolbarEditor(WindowId window) const;
     bool applyResult(const OperationResult& result);
     TabContent* ensureTabView(TabId tab);
     void scheduleContentVisibilityNotification();

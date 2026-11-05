@@ -503,6 +503,13 @@ QQuickItem* PopupMenu::createMenuBar(QQuickItem* parent, const QVector<MenuItemD
     return bar;
 }
 
+QStringList PopupMenu::menuBarItemIds() const
+{
+    QStringList result;
+    for (const auto& item : barItems_) result.append(item.id);
+    return result;
+}
+
 void PopupMenu::setExcludedRoots(const QStringList& excluded)
 {
     const QSet<QString> next(excluded.cbegin(), excluded.cend());

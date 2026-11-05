@@ -107,6 +107,9 @@ public:
     // pointer, as the Widgets surface routes it; false when none scrolls.
     bool scrollStripAt(QPoint global, QPoint delta, bool smooth);
 
+    // Runs a chosen command item in the given context; tab, text editing
+    // and new-tab items act on their targets.
+    PopupMenu* showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr, QQuickItem* editor = nullptr);
 signals:
     void paneMenuRequested(TabId tab, PaneId pane, QPoint global, QQuickItem* source);
 
@@ -139,7 +142,6 @@ private:
     [[nodiscard]] LayoutTree composedTree(QSize area);
     void resizePinned(Edge edge, double ratio);
     void showContextMenu(CommandMenuSurface surface, GroupId group, TabId tab, QPoint global, TabBarItem* strip = nullptr);
-    PopupMenu* showMenu(const QVector<MenuItemDescription>& items, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr, QQuickItem* editor = nullptr);
 
     WindowManager& manager_;
     ContentHost& host_;

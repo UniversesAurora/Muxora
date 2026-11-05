@@ -141,11 +141,29 @@ void WindowManager::registerWindowCommands()
     registerCustomChromeCommands();
     add("window.toolbar.setSizing", QCoreApplication::translate("WindowSystem", "Change toolbar flexible space…"), "layout", {},
         [this](const CommandContext& c) {
+            const auto value = c.args.value("sizing").toString();
+            if (!value.isEmpty() && value != "elastic" && value != "content") return false;
+            if (d->presentation == Presentation::External) {
+                auto* editor = toolbarEditor(c.window);
+                if (!editor) return false;
+                const auto id = c.args.value("strip").toString();
+                if (!c.args.contains("strip")) {
+                    CommandChoices choices;
+                    for (const auto& strip : editor->toolbarIds()) if (editor->isToolbarSizingEditable(strip)) {
+                        QVariantMap args{{"strip", strip}};
+                        if (!value.isEmpty()) args.insert("sizing", value);
+                        choices.append({{editor->toolbarTitle(strip)}, args});
+                    }
+                    if (choices.isEmpty()) return false;
+                    offerChoices(c.window, "window.toolbar.setSizing", choices);
+                    return true;
+                }
+                const auto state = editor->toolbarState(id);
+                return state && editor->setToolbarElastic(id, value.isEmpty() ? !state->elastic : value == "elastic");
+            }
             auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
             auto* strips = window ? window->strips() : nullptr;
             if (!strips) return false;
-            const auto value = c.args.value("sizing").toString();
-            if (!value.isEmpty() && value != "elastic" && value != "content") return false;
             QString id = c.args.value("strip").toString();
             if (!c.args.contains("strip")) {
                 QPointer<WorkspaceWindow> observed(window);
@@ -170,18 +188,26 @@ void WindowManager::registerWindowCommands()
                 : (value == "elastic" ? StripSizing::Elastic : StripSizing::Content);
             return strips->setStripSizing(id, sizing);
         }, [this](const CommandContext& c) {
-            auto* window = static_cast<WorkspaceWindow*>(windowWidget(c.window));
-            if (!window || !window->strips()) return false;
+            const auto* editor = toolbarEditor(c.window);
+            if (!editor) return false;
             if (c.args.contains("strip")) return true;
-            for (const auto& id : window->strips()->stripIds())
-                if (window->strips()->isStripSizingEditable(id)) return true;
+            for (const auto& id : editor->toolbarIds())
+                if (editor->isToolbarSizingEditable(id)) return true;
             return false;
         });
     add("window.toolbar.resetSize", QCoreApplication::translate("WindowSystem", "Reset toolbar size…"), "layout", {},
         [this](const CommandContext& c) {
+            if (c.args.contains("strip")) return resetToolbarWidth(c.window, c.args.value("strip").toString());
+            if (d->presentation == Presentation::External) {
+                const auto* editor = toolbarEditor(c.window);
+                if (!editor) return false;
+                CommandChoices choices;
+                for (const auto& id : editor->toolbarIds()) choices.append({{editor->toolbarTitle(id)}, {{"strip", id}}});
+                offerChoices(c.window, "window.toolbar.resetSize", choices);
+                return true;
+            }
             QPointer<WorkspaceWindow> window = d->windows.value(c.window);
             if (!window || !window->strips()) return false;
-            if (c.args.contains("strip")) return resetToolbarWidth(c.window, c.args.value("strip").toString());
             // Keep the picker independent of QWidget parent ownership: its
             // window may close while the menu's event loop is running.
             DismissOnlyMenu picker;
@@ -197,10 +223,7 @@ void WindowManager::registerWindowCommands()
             // deleted from the event loop; the model already knows it closed.
             if (!window || !d->model.window(c.window)) return false;
             return !chosen || resetToolbarWidth(c.window, chosen->data().toString());
-        }, [this](const CommandContext& c) {
-            const auto window = d->windows.value(c.window);
-            return window && window->strips();
-        });
+        }, [this](const CommandContext& c) { return toolbarEditor(c.window) != nullptr; });
     // VS Code's preventPinnedEditorClose: the close shortcut leaves a sticky
     // tab open and shows the first tab that is not sticky instead, in its
     // group first. Menus, the palette and the tab's own controls still close.
@@ -562,12 +585,11 @@ void WindowManager::registerWindowCommands()
         }, hasTab);
     add("window.toggleStripsLock", QCoreApplication::translate("WindowSystem", "Lock or unlock menus and toolbars"), "tools", {},
         [this](const CommandContext& c) {
-            const auto* window = d->windows.value(c.window).data();
-            if (!window || !window->strips()) return false;
+            if (!toolbarEditor(c.window)) return false;
             if (c.args.contains("locked") && c.args.value("locked").metaType().id() != QMetaType::Bool) return false;
-            return setToolbarsLocked(c.window, c.args.value("locked", !window->strips()->isLocked()).toBool());
+            return setToolbarsLocked(c.window, c.args.value("locked", !toolbarsLocked(c.window)).toBool());
         },
-        [this](const CommandContext& c) { const auto* window = d->windows.value(c.window).data(); return window && window->strips(); });
+        [this](const CommandContext& c) { return toolbarEditor(c.window) != nullptr; });
     add("window.drag.selectTarget", QCoreApplication::translate("WindowSystem", "Select target window while dragging"), "window", {},
         [this](const CommandContext&) { d->drag->selectTarget(); return true; }, [this](const CommandContext&) { return d->drag->isActive(); });
     add("window.drag.cancel", QCoreApplication::translate("WindowSystem", "Cancel current drag"), "window", {},

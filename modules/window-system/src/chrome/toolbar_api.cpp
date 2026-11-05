@@ -1,27 +1,37 @@
 // SPDX-License-Identifier: MIT
-#include <window_system/window_manager.hpp>
 #include "command_strip.hpp"
-#include "workspace_window.hpp"
 
 #include <QJsonArray>
 
 namespace window_system {
 
-bool WindowManager::moveToolbar(WindowId window, const QString& stripId,
-                                ToolbarArea area, int row, int index)
+std::optional<ToolbarState> CommandStripHost::toolbarState(const QString& id) const
 {
-    if (row < 0 || index < -1 || (area != ToolbarArea::Top && area != ToolbarArea::Bottom)) return false;
-    auto* view = static_cast<WorkspaceWindow*>(windowWidget(window));
-    if (!view || !view->strips() || !view->strips()->stripWidget(stripId)) return false;
-    auto* strips = view->strips();
-    const auto rows = strips->saveLayout().value(area == ToolbarArea::Top ? "rows" : "bottomRows").toArray();
-    // A new row can only be appended. Reject gaps and untrusted huge indices
-    // before the engine creates any row widgets or cancels an active drag.
-    if (row > rows.size()) return false;
-    const int count = row < rows.size() ? int(rows[row].toArray().size()) : 0;
-    if (index > count) return false;
-    return strips->moveStrip(stripId, area == ToolbarArea::Top ? CommandStripHost::Area::Top : CommandStripHost::Area::Bottom,
-                             row, index < 0 ? count : index);
+    if (!stripWidget(id)) return {};
+    const auto layout = saveLayout();
+    const auto fields = layout.value(QStringLiteral("strips")).toObject().value(id).toObject();
+    ToolbarState result;
+    result.area = stripArea(id);
+    const auto rows = toolbarRows(result.area);
+    for (int row = 0; row < rows.size(); ++row)
+        if (const int index = int(rows.at(row).indexOf(id)); index >= 0) { result.row = row; result.index = index; }
+    result.width = fields.value(QStringLiteral("width")).toInt(-1);
+    result.visible = isStripVisible(id);
+    result.elastic = stripSizing(id) == StripSizing::Elastic;
+    result.locked = isLocked();
+    for (const auto& value : fields.value(QStringLiteral("excluded")).toArray()) result.hiddenItems.append(value.toString());
+    return result;
+}
+
+QVector<QStringList> CommandStripHost::toolbarRows(ToolbarArea area) const
+{
+    QVector<QStringList> result;
+    for (const auto& row : saveLayout().value(area == ToolbarArea::Top ? "rows" : "bottomRows").toArray()) {
+        QStringList ids;
+        for (const auto& entry : row.toArray()) ids.append(entry.toString());
+        result.append(ids);
+    }
+    return result;
 }
 
 } // namespace window_system

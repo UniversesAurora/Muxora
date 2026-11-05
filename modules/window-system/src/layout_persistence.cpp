@@ -225,10 +225,17 @@ QJsonObject WindowManager::saveViewLayout() const
             {"toolbarsVisible", d->options.value(id).toolbarsVisible},
             {"statusBarVisible", d->options.value(id).statusBarVisible},
             {"hiddenStatusItems", QJsonArray::fromStringList(d->options.value(id).hiddenStatusItems)}};
+        // A window without a toolbar layout of its own shows the defaults,
+        // which restoring rebuilds; an empty layout cannot be restored.
+        const auto kind = d->model.window(id)->kind;
+        const auto layouts = d->toolbarLayouts.value(id);
         if (!external) record.insert("strips", widget->saveStripLayout());
-        else if (d->keptStrips.contains(id) && !d->keptStrips.value(id).isEmpty()) record.insert("strips", d->keptStrips.value(id));
+        else if (!layouts.value(kind).isEmpty()) record.insert("strips", layouts.value(kind));
         record.insert("barLayouts", visibilityProfilesToJson(d->windowVisibility.value(id)));
-        const auto inactive = external ? d->keptInactiveStrips.value(id) : widget->saveInactiveStripLayouts();
+        QJsonObject inactive;
+        if (!external) inactive = widget->saveInactiveStripLayouts();
+        else for (auto layout = layouts.cbegin(); layout != layouts.cend(); ++layout)
+            if (layout.key() != kind && !layout.value().isEmpty()) inactive.insert(toolbarKindKey(layout.key()), layout.value());
         if (!inactive.isEmpty()) record.insert("stripLayouts", inactive);
 #ifndef QT_NO_DEBUG
         for (auto field = record.constBegin(); field != record.constEnd(); ++field)
@@ -451,8 +458,14 @@ OperationResult WindowManager::restoreLayout(const QJsonObject& snapshot)
     }
     for (auto content : d->panes) if (content) content->setParent(d->storage);
     if (d->presentation == Presentation::External) {
-        d->keptStrips = restoredCurrentStrips;
-        d->keptInactiveStrips = restoredInactiveStrips;
+        d->toolbarLayouts.clear();
+        for (auto it = restoredCurrentStrips.cbegin(); it != restoredCurrentStrips.cend(); ++it) {
+            auto& layouts = d->toolbarLayouts[it.key()];
+            if (!it.value().isEmpty()) layouts.insert(d->model.window(it.key())->kind, it.value());
+            const auto inactive = restoredInactiveStrips.value(it.key());
+            for (const auto kind : {WindowKind::Workbench, WindowKind::Floating})
+                if (inactive.contains(toolbarKindKey(kind))) layouts.insert(kind, inactive.value(toolbarKindKey(kind)).toObject());
+        }
     }
     refresh();
     if (!self) return {false, QCoreApplication::translate("WindowSystem", "The window manager was destroyed during restoration")};
