@@ -138,10 +138,130 @@ private slots:
         QVERIFY(namedItem(page, QStringLiteral("SettingRow/window.revealDelayMs"))->isVisible());
         QVERIFY(namedItem(page, QStringLiteral("SettingsCategoryHeading/window/drag"))->isVisible());
         QVERIFY(namedItem(page, QStringLiteral("SettingsCategoryHeading/window"))->isVisible());
-        typeInto(view, search, QStringLiteral("tab position"));
+        typeInto(view, search, QStringLiteral("window.newTabPosition"));
         QTRY_VERIFY(namedItem(page, QStringLiteral("SettingRow/window.newTabPosition"))->isVisible());
         QVERIFY(!namedItem(page, QStringLiteral("SettingsCategoryHeading/window/drag"))->isVisible());
         QCOMPARE(namedItem(page, QStringLiteral("SettingsResultCount"))->property("text").toString(), QStringLiteral("1 settings"));
+    }
+
+    void visibilityEditsFollowTheSettingsPage()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow(WindowKind::Workbench, {QStringLiteral("First"), QSize(1000, 900)});
+        manager.addTab(first, {QStringLiteral("Content")});
+        const auto second = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Second"), QSize(1000, 900)});
+        manager.addTab(second, {QStringLiteral("Other")});
+        manager.showSettings(first);
+        QTRY_VERIFY(workspace.window(first));
+        auto* view = workspace.window(first);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QQuickItem* page = nullptr;
+        QTRY_VERIFY((page = namedItem(view->contentItem(), QStringLiteral("SettingsPage"))) && page->width() > 0);
+        auto* compact = namedItem(page, QStringLiteral("SettingControl/window.hideToolbarOptionsWhenLocked"));
+        auto* bars = namedItem(page, QStringLiteral("SettingControl/window.visibility.toolbars"));
+        QVERIFY(compact && bars);
+        scrollTo(page, compact);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(compact));
+        QTRY_VERIFY(manager.behavior().hideToolbarOptionsWhenLocked);
+        auto behavior = manager.behavior();
+        behavior.hideToolbarOptionsWhenLocked = false;
+        manager.setBehavior(behavior);
+        QTRY_VERIFY(!compact->property("checked").toBool());
+        scrollTo(page, bars);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(bars));
+        QTRY_VERIFY(!manager.barVisibility(first).toolbars);
+        QVERIFY(manager.barVisibility(second).toolbars);
+
+        const auto pane = page->property("paneId").toUuid();
+        const auto tab = manager.model().tabForPane(pane);
+        QVERIFY(manager.moveTabToWindow(tab, second));
+        auto* target = workspace.window(second);
+        QTRY_COMPARE(page->window(), target);
+        QTRY_VERIFY(bars->property("checked").toBool());
+        target->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(target));
+        scrollTo(page, bars);
+        QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, centre(bars));
+        QTRY_VERIFY(!manager.barVisibility(second).toolbars);
+        // A change made through commands or another page reaches this one.
+        QVERIFY(manager.setToolbarsVisible(second, true));
+        QTRY_VERIFY(bars->property("checked").toBool());
+        QVERIFY(!manager.barVisibility(first).toolbars);
+        QCOMPARE(workspace.content(pane), page);
+    }
+
+    void tabSettingsKeepDependentValues()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1000, 900)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        manager.showSettings(window);
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QQuickItem* page = nullptr;
+        QTRY_VERIFY((page = namedItem(view->contentItem(), QStringLiteral("SettingsPage"))) && page->width() > 0);
+        auto* clip = namedItem(page, QStringLiteral("SettingControl/tabs.clipTitles"));
+        auto* width = namedItem(page, QStringLiteral("SettingControl/tabs.maximumTitleWidth"));
+        auto* allRows = namedItem(page, QStringLiteral("SettingControl/tabs.showAllRows"));
+        auto* sizing = namedItem(page, QStringLiteral("SettingControl/tabs.stickySizing"));
+        auto* shrink = namedItem(page, QStringLiteral("SettingControl/tabs.shrinkStickyTitleWidth"));
+        auto* separate = namedItem(page, QStringLiteral("SettingControl/tabs.stickyTabsOnSeparateRow"));
+        QVERIFY(clip && width && allRows && sizing && shrink && separate);
+        QVERIFY(!width->isEnabled());
+        scrollTo(page, clip);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(clip));
+        QTRY_VERIFY(manager.tabAppearance().clipTitles);
+        QTRY_VERIFY(width->isEnabled());
+        scrollTo(page, width);
+        QQuickItem* box = nullptr;
+        for (auto* child : width->childItems()) if (child->property("displayText").isValid()) box = child;
+        QVERIFY(box);
+        typeInto(view, box, QStringLiteral("5000"));
+        QTRY_COMPARE(manager.tabAppearance().maximumTitleWidth, 5000);
+        auto appearance = manager.tabAppearance();
+        appearance.clipTitles = false;
+        appearance.maximumTitleWidth = 420;
+        appearance.multiline = true;
+        manager.setTabAppearance(appearance);
+        QTRY_VERIFY(!width->isEnabled());
+        QTRY_COMPARE(box->property("displayText").toString(), QStringLiteral("420 px"));
+        QTRY_VERIFY(allRows->isEnabled());
+        QVERIFY(!shrink->isEnabled());
+
+        scrollTo(page, sizing);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(sizing));
+        QQuickWindow* choices = nullptr;
+        QTRY_VERIFY((choices = popup(view)));
+        QVERIFY(QTest::qWaitForWindowExposed(choices));
+        QQuickItem* shrinkChoice = nullptr;
+        QTRY_VERIFY([&] {
+            QList<QQuickItem*> items{choices->contentItem()};
+            while (!items.isEmpty()) {
+                auto* item = items.takeFirst();
+                if (item->property("text").toString() == QStringLiteral("Shrink: the start of the title")) shrinkChoice = item;
+                items += item->childItems();
+            }
+            return shrinkChoice;
+        }());
+        QTest::mouseClick(choices, Qt::LeftButton, Qt::NoModifier, centre(shrinkChoice));
+        QTRY_COMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Shrink);
+        QTRY_VERIFY(shrink->isEnabled());
+        scrollTo(page, separate);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(separate));
+        QTRY_VERIFY(manager.tabAppearance().stickyTabsOnSeparateRow);
+        appearance = manager.tabAppearance();
+        appearance.stickySizing = StickyTabSizing::Compact;
+        appearance.centralPlacement = appearance.pinnedPlacement = TabBarPlacement::Right;
+        manager.setTabAppearance(appearance);
+        QTRY_VERIFY(!allRows->isEnabled());
+        QTRY_VERIFY(!shrink->isEnabled());
+        QTRY_COMPARE(sizing->property("currentText").toString(), QStringLiteral("Compact: icon or first letter only"));
+        QVERIFY(manager.tabAppearance().multiline);
+        QCOMPARE(manager.tabAppearance().maximumTitleWidth, 420);
     }
 
     // Text, decimal and slider controls, from descriptions made up here.

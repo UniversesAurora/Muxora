@@ -4,6 +4,7 @@
 #include <QString>
 #include <QVariant>
 #include <QVector>
+#include <window_system/layout_model.hpp>
 #include <functional>
 
 namespace window_system {
@@ -54,7 +55,14 @@ struct SettingCategory {
 // The categories and settings the Quick settings page shows, in page order.
 // Sections are added here as they move from the Widgets page (10.4h).
 [[nodiscard]] QVector<SettingCategory> settingCategories(WindowManager* manager);
-[[nodiscard]] QVector<SettingDescription> describeSettings(WindowManager* manager);
+// Resolve the page's current window when reading or editing visibility, so a
+// page moved to another window follows that window without being recreated.
+[[nodiscard]] QVector<SettingDescription> describeSettings(WindowManager* manager,
+    const std::function<WindowId()>& currentWindow);
+
+[[nodiscard]] QVector<SettingDescription> describeViewSettings(WindowManager* manager,
+    const std::function<WindowId()>& currentWindow);
+[[nodiscard]] QVector<SettingDescription> describeTabSettings(WindowManager* manager);
 
 // The tab color list as both settings pages edit it: an indented JSON array,
 // applied over the other tab appearance settings.

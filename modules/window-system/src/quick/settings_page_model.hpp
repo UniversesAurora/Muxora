@@ -75,6 +75,6 @@ private:
 };
 
 // The built-in settings page as Quick content, or none for other types.
-[[nodiscard]] QQuickItem* createSettingsContent(WindowManager& manager, const TabOptions& options);
+[[nodiscard]] QQuickItem* createSettingsContent(WindowManager& manager, const TabOptions& options, PaneId pane);
 
 } // namespace window_system::quick

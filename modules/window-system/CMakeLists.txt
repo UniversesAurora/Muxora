@@ -84,6 +84,8 @@ add_library(WindowSystemWidgets STATIC
     src/commands/panel_rows.cpp
     src/commands/dialogs.cpp
     src/settings/setting_description.cpp
+    src/settings/setting_view_description.cpp
+    src/settings/setting_tab_description.cpp
     src/chrome/toolbar_description.cpp
     src/commands/popup_menu.cpp
     src/commands/tab_group_commands.cpp

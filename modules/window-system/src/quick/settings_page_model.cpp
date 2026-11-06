@@ -152,10 +152,16 @@ void SettingsPageModel::refresh()
     emit valuesChanged();
 }
 
-QQuickItem* createSettingsContent(WindowManager& manager, const TabOptions& options)
+QQuickItem* createSettingsContent(WindowManager& manager, const TabOptions& options, PaneId pane)
 {
     if (options.contentType != QStringLiteral("window_system.settings")) return nullptr;
-    auto* model = new SettingsPageModel(settingCategories(&manager), describeSettings(&manager), manager.interfaceTheme());
+    const auto currentWindow = [owner = QPointer<WindowManager>(&manager), pane]() -> WindowId {
+        if (!owner) return {};
+        const auto& model = owner->model();
+        const auto* group = model.group(model.groupForTab(model.tabForPane(pane)));
+        return group ? group->windowId : WindowId{};
+    };
+    auto* model = new SettingsPageModel(settingCategories(&manager), describeSettings(&manager, currentWindow), manager.interfaceTheme());
     auto* view = qobject_cast<QQuickItem*>(sceneComponent(SceneComponent::SettingsPage)
         .createWithInitialProperties({{"page", QVariant::fromValue(model)}}));
     Q_ASSERT(view);

@@ -36,11 +36,13 @@ QVector<SettingCategory> settingCategories(WindowManager*)
     if (InterfaceAppearanceController::applicationInstance()) result.append({QStringLiteral("interface"), QCoreApplication::translate("WindowSystem", "Interface")});
     result.append({QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window")});
     result.append({QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "Dragging")});
+    result.append({QStringLiteral("window/display"), QCoreApplication::translate("WindowSystem", "Visibility")});
     result.append({QStringLiteral("window/tabs"), QCoreApplication::translate("WindowSystem", "Tab appearance")});
+    result.append({QStringLiteral("window/tabs/sticky"), QCoreApplication::translate("WindowSystem", "Sticky tabs")});
     return result;
 }
 
-QVector<SettingDescription> describeSettings(WindowManager* manager)
+QVector<SettingDescription> describeSettings(WindowManager* manager, const std::function<WindowId()>& currentWindow)
 {
     const QPointer<WindowManager> owner(manager);
     QVector<SettingDescription> result;
@@ -157,6 +159,9 @@ QVector<SettingDescription> describeSettings(WindowManager* manager)
     delay.write = behaviorWriter(owner, [](WindowBehavior& next, const QVariant& value) { next.revealDelayMs = value.toInt(); });
     delay.enabled = [behavior] { return behavior().revealDuringDrag; };
     result.append(std::move(delay));
+
+    result += describeViewSettings(manager, currentWindow);
+    result += describeTabSettings(manager);
 
     SettingDescription colors{QStringLiteral("window/tabs"), QStringLiteral("tabs.colors"), QCoreApplication::translate("WindowSystem", "Tab colors"),
         QCoreApplication::translate("WindowSystem", "Edit a strict JSON array to override the default palette. Each entry has a stable ID, name, and active/inactive states for central and auto-hide bars. Each state contains background, text, underline, and icon colors in #RRGGBB or #AARRGGBB format."), Kind::Json};

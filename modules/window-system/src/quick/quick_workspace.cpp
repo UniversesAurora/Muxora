@@ -601,7 +601,7 @@ QuickWorkspace::~QuickWorkspace()
 void QuickWorkspace::setContentFactory(ContentFactory factory)
 {
     d->host.setFactory([this, factory = std::move(factory)](const TabOptions& options, PaneId pane) -> QQuickItem* {
-        if (isInternalSettingsContentType(options.contentType)) return quick::createSettingsContent(d->manager, options);
+        if (isInternalSettingsContentType(options.contentType)) return quick::createSettingsContent(d->manager, options, pane);
         return factory ? factory(options, pane) : nullptr;
     });
 }
