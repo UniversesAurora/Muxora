@@ -49,6 +49,43 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-11-06 · Claude：10.4e–i 完成，Quick 外观对齐 Widgets 参考版
+
+- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。
+- **本轮完成**（上次交接后 22 个提交加本节；每项的改动、排查和实际运行结果见链接）：
+  - 审查 Codex 的 10.3 子步 6 至 10.4e 提交并修正，见 [审查记录](verification-log/2026-11.md#审查-codex-的-103-子步-6-至-104e-提交2026-11-05)；10 月日志里错放的 11 月记录已移回。
+  - 10.4e 工具栏完成：[编辑与写回](verification-log/2026-11.md#quick-工具栏编辑与布局写回2026-11-05)、[区域菜单与选项菜单](verification-log/2026-11.md#quick-工具栏区域菜单与选项菜单2026-11-05)、[手柄拖动](verification-log/2026-11.md#quick-工具栏手柄拖动2026-11-05)、[悬停提示](verification-log/2026-11.md#quick-悬停提示2026-11-05)。
+  - 10.4f [状态栏](verification-log/2026-11.md#quick-状态栏2026-11-05)；10.4g [命令面板与窗口选择器](verification-log/2026-11.md#quick-命令面板与窗口选择器2026-11-05)、[拖动中按 Tab 选目标](verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
+  - 10.4h 中 Claude 的部分：[设置页与表单控件](verification-log/2026-11.md#quick-设置页与表单控件2026-11-06)、[标签配色编辑](verification-log/2026-11.md#quick-设置页的标签配色编辑2026-11-06)、[输入框聚焦清空的修复](verification-log/2026-11.md#quick-设置页输入框聚焦后清空2026-11-06)。
+  - 10.4i [对话框](verification-log/2026-11.md#quick-对话框2026-11-06)（管理器的 `openDialog`，不阻塞调用方）和 [选择菜单](verification-log/2026-11.md#quick-下的选择菜单2026-11-06)（Quick 下不再弹 Widgets 菜单，选择沿用原命令上下文）。
+  - Muxora [文件页的地址栏和信息栏](verification-log/2026-11.md#muxora-文件页的地址栏和信息栏2026-11-06)。
+  - 按用户指出的标签问题逐像素对齐 Widgets：[窗口先排好再显示](verification-log/2026-11.md#quick-窗口启动时标签先分离再接合2026-11-06)、[顶部边框与菜单项高度](verification-log/2026-11.md#quick-窗口顶部边框和菜单项高度对齐-widgets2026-11-06)、[工具栏按钮与菜单栏选项按钮](verification-log/2026-11.md#quick-工具栏按钮宽度和菜单栏选项按钮对齐-widgets2026-11-06)、[菜单标题被截断](verification-log/2026-11.md#quick-菜单栏标题被截断2026-11-06)、[访问键下划线](verification-log/2026-11.md#quick-菜单的访问键下划线照-windows-规则显示2026-11-06)。
+  - `quiet-desktop.ps1` 恢复窗口时仍按原顺序恢复，但不再检查顺序（用户决定，见 [记录](verification-log/2026-11.md#桌面隔离恢复时不再检查窗口顺序2026-11-05)）。
+  - 验证范围：每步只跑相关套件，最后一次全部 21 个 Quick 套件、`external-presentation` 和应用的 `localization` 在 `ec66ca3` 之前的 `5d33232` 上通过，`ec66ca3` 之后跑了菜单相关的 9 个套件；翻译检查和文档检查通过。没有跑全量，没有在应用里手动试用。
+- **进行中**：无。10.4h 剩下的部分属于执行者，见下一步。
+- **下一步**（给执行者，按顺序；每项的要求写在 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md#104-工具栏侧栏菜单与设置) 对应条目里）：
+  1. 先读 [助手协作经验](lessons/collaboration.md)、[Qt Quick 经验](lessons/qt-quick.md) 和阶段 10 的 10.4 状态段，特别是“和 Widgets 版对照的标准”。
+  2. **10.4h 其余分类**：把 `settings/settings_view_options.cpp`（“显示”分类 `window/display`）、`settings/settings_tab_appearance.cpp` 里标签外观的其余设置（放进已有的 `window/tabs` 分类、排在标签配色前面）和“置顶标签”分类（`window/tabs/sticky`）改写成 `settings/setting_description.cpp` 里的描述，Quick 设置页自动显示。栏显隐只作用于设置页所在的窗口：给 `describeSettings` 加窗口参数，`quick::createSettingsContent` 从窗格所在窗口传入。控件类型按 [设置设计 §3](../design/settings-and-commands-design.md#3-全局设置与编辑) 选，已有类型够用；遇到现有类型表达不了的控件就停下，写进交接记录。用例加在 `quick-settings`：每个分类挑一两个设置，检查改动写回管理器、别处的改动回到控件、不可编辑时控件禁用（例如标题裁切关闭时长度控件）。
+  3. **10.4h 快捷键页**：照 `settings/shortcuts_page.cpp` 做 Quick 页面，用已有的 `SettingTable`（命令列表、绑定列表）、`SettingKeySequenceField`（录键，录键时不触发快捷键已经做好）、`SettingButton`、`SettingTextArea`（参数 JSON）、`SettingTextField`（搜索）和 `SettingsStyle`。先把冲突与前缀提示、参数校验、`runCommands` 校验这些规则从 `ShortcutsPage` 移到不依赖控件的代码里，两边共用（Widgets 页改为调用它，跑一次 `shortcut-settings` 确认行为不变）。内容按 `window_system.shortcuts` 类型由 `quick::createSettingsContent` 创建（现在这个类型在 Quick 下是空白标签）。用例加在 `quick-settings`：搜索、按键搜索、录入并应用一条绑定、冲突时不能应用、删除绑定。
+  4. **10.4k 菜单栏单按 Alt 的键盘导航**：要求和用例写在计划的 10.4k 条目里。
+  5. **10.4j 无障碍**：按计划条目。
+  6. 每项完成：更新计划状态、验证日志、变更记录和预览说明；只跑相关套件，桌面套件整批经 `quiet-desktop.ps1 -Elevate`。不要删 Widgets 代码：10.6 单元 2 已并入单元 3，等 Claude 拆好步骤。
+  7. 碰到新界面组件或新外观就停下写进交接记录；复用现有控件和样式的接入自己做。
+- **Claude 下次接手**：审查执行者的提交；拆 10.6 单元 3（管理器去掉 Widgets 呈现）为可单独提交的步骤；根据 10.5 的测量定优化方案。
+- **待用户决定**：无新问题。之前就有的：8.27 菜单与浮动面板重做的具体要求；Quick 版整体试用（拖动、布局、视图模式、工具栏编辑、设置页、对话框）。Release 预览（`out/package/muxora-preview/`）仍是 11-04 的版本，没有更新，未打包。
+- **请下一位回答**：无。
+- **本轮新决定**（用户 2026-11-06，写在 [阶段 10 · 10.4](../roadmap/implementation/phase-10-qt-quick.md#104-工具栏侧栏菜单与设置)）：
+  - Quick 的窗口框架、标签、菜单、工具栏等要和 Widgets 参考版一比一一致，以同一进程里的 Widgets 窗口为准。
+  - Muxora 的占位内容页以后会重写，不要求还原；文字纵向位置只要合理，不要求逐像素一致。
+  - 要有菜单栏单按 Alt 的键盘导航（10.4k）。
+  - 10.6 单元 2 并入单元 3（Claude 根据现状改的计划，理由写在表里）。
+- **环境与注意事项**：
+  - 用 `Start-Process` 在 `quiet-desktop.ps1` 会话里启动应用截图或冒烟后，有两次桌面没有恢复，按提示单独跑 `quiet-desktop.ps1 -Elevate -Restore` 就好。
+  - 应用的 `--screenshot` 截完不退出，要关窗口；它在启动后 700 毫秒拍，适合检查第一帧。和 Widgets 参考版对比时两边都用 `--fresh --state-dir <临时目录>`，不要碰参考包自带的 `data/`。
+  - 测试进程崩溃时，`-o 文件` 的输出不完整，去掉 `-o`、把标准输出重定向到文件才能看到调用栈，见 [调试经验](lessons/debugging.md#测试进程崩溃时看标准输出里的调用栈)。
+  - `out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 仍是 10.5 的基准证据，保留；本轮的对比截图目录已删除。
+  - 没有运行中的预览或测试。
+
 ## 2026-11-05 · Codex：Quick 菜单与统一工具栏布局，继续 10.4e
 
 - **最后提交**：实现截至 `2baa71c`，本节随后的记录提交一起推送到 `main`；没有其他分支推送。用户要求立即交接，未再运行验证。
@@ -105,22 +142,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - **换行符**：在 Windows 上用 Python `write_text` 改文件会写成 CRLF，git 提交时会改回 LF；用 `write_bytes` 或指定 `newline` 可以避免。
   - **诊断目录**：`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 是 10.5 要对照的基准证据，暂时保留。
   - **运行状态**：没有运行中的预览或测试。
-
-## 2026-10-30 · Codex：Quick 控制器与窗口边界收尾
-
-- **最后提交**：本轮实现均提交到 `main` 并推送，最后一条以 `git log` 为准；工作区干净，没有新建远程分支。
-- **本轮完成**：
-  - DeepSeek 提交审查与修复、Quick 标签基础/前景消费者及统一帧发布已提交。范围与原始失败见 [审查](verification-log/2026-10.md#gpt-审查-deepseek-提交标签合成与运行段资源2026-10-29)、[前景](verification-log/2026-10.md#quick-拖动前景的保留合成2026-10-29) 和 [发布](verification-log/2026-10.md#标签栏基础与前景的统一发布2026-10-29)。
-  - `e3a9da8`：组/窗格共用 Quick 分割布局，保留内容身份、最小尺寸和临时投影；实际模型比例提交的有限基准已完成，未通过高刷新验收，见 [分割记录](verification-log/2026-10.md#quick-组与窗格的共用分割布局2026-10-29)。
-  - `1dce7c3`：真实标签状态、布局、交互和动画移到 `TabStripController`，Widgets 保留薄适配；外观值与默认配色进入 Gui 层，见 [控制器记录](verification-log/2026-10.md#标签状态与-widgets-门面分离2026-10-30)。
-  - Quick 输入适配、QWindow 共用平台及真实内容宿主已收尾，Release 构建和相关定向检查通过。首次失败、显示器唤醒及输入法旧分支验证完整保留在 [收尾记录](verification-log/2026-10.md#quick-输入qwindow-与内容宿主收尾2026-10-30)。
-- **进行中**：[10.2](../roadmap/implementation/phase-10-qt-quick.md#102-分离标签交互与呈现) 尚未完成，10.3 仅完成前置边界。现有 Muxora 入口与 WindowManager 仍使用 Widgets；没有完整 Quick 组/窗口/命令路径，没有留下未完成的组容器或按钮组件文件。长标题的可见原生字形子集、尾部控件、原生拖动与跨窗口停靠、内容提供者、菜单/设置/可访问性及整窗性能仍需迁移。不要把组件验证或提交间隔当作整应用验收。
-- **下一步**：
-  1. 阅读当前计划和下面的审查请求，先核对已拆分控制器与两个适配器的行为边界。
-  2. 用 `TabBarItem`、`SplitTreeItem`、`GroupSurfaceItem` 和 `ContentHost` 接真实 Quick 组容器，复用 `layoutTabGroup`、既有组状态和按钮样式；按 PaneId 保留内容、按需创建标签视图，投影时抑制临时焦点回写。
-  3. 在现有应用中接 QQuickWindow、原生框架与真实内容提供者，继续共用模型、命令和布局；保持全屏/最大化恢复、IME、焦点、显隐和跨窗口内容身份。不要用隐藏 QWidget 或原生子窗当正式后端。
-  4. 再推进余下 chrome/菜单/设置和完整性能调优。用户要求先完成迁移，不为交接另造对照设施或扩充测试；必要功能检查遵循现有测试规范，全量/大回归仍须单独授权。
-- **待用户决定**：当前无。后续默认切换和全量验收仍按阶段 10.6 的完成条件进行，本次没有该验收或打包授权。
-- **请下一位回答**：Q1 已由 Claude 答复（附条件批准），结论和条件见 [审查记录](verification-log/2026-10.md#审查-codex-与-deepseek-的迁移提交2026-10-30)。
-- **本轮新决定**：用户先要求持续到完整迁移完成，随后明确停止扩展、收尾交接；不要为接手方准备对比测试。工作经过记在验证日志，不改 AGENTS.md。
-- **环境与注意事项**：没有运行中的本轮预览或测试。GPU 帧检查需要真正唤醒显示器，单独防休眠请求或显示器消息不一定足够；本轮轻移鼠标后相同产物恢复发帧。没有切换默认后端、打包、全量测试或运行静态外观套件。本轮测量临时文件已清理；之前被策略拦截的目标仍按下方清单由 Claude 核对清理，未绕过拦截。

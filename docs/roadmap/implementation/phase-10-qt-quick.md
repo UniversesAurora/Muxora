@@ -18,7 +18,7 @@
 | 8 | 命令面板、窗口选择器、拖动中按 Tab 选目标 | 10.4g | Claude |
 | 9 | 设置页与快捷键页：Claude 先做 Quick 表单控件和第一页样板，执行者按样板迁移其余分区 | 10.4h | Claude，然后执行者 |
 | 10 | 对话框（改名、侧栏面板尺寸、关于、脚本输入框） | 10.4i | Claude |
-| 11 | 无障碍 | 10.4j | 执行者 |
+| 11 | 无障碍；菜单栏单按 Alt 的键盘导航 | 10.4j、10.4k | 执行者 |
 | 12 | 帧成本测量与调优 | 10.5 | 执行者测量，Claude 定优化 |
 | 13 | 管理器去掉 Widgets 呈现，删除其余 Widgets 代码和测试 | 10.6 删除单元 3–5 | Claude 拆步，执行者执行 |
 | 14 | 用户试用、经授权的全量测试、部署依赖和文档收尾 | 10.6 收尾 | Claude |
@@ -84,7 +84,9 @@
 
 ## 10.4 工具栏、侧栏、菜单与设置
 
-**状态**：进行中。10.4a 的菜单数据分离和 10.4e 前半的工具栏规则分离已完成，10.4b 的共用菜单呈现已实现并定向验证，10.4c 的现有入口及状态接线已完成，当前继续 10.4e 工具栏，见 [规则提取记录](../../development/verification-log/2026-11.md#工具栏区域与空位回收完成共用规则2026-11-04)。Quick 已接入标签、标签夹、标签组、侧栏与新建类型菜单入口，窗格与展开面板的菜单也已接入，全部标签列表也已接入，文本编辑常用菜单与浮窗标题入口也已接入，上下文菜单的打开期间状态刷新也已接入；新建类型菜单状态保持已接入；菜单栏常规布局与窄窗口收纳已接入，命令工具栏已接入，继续工具栏布局编辑、状态栏、设置页、命令面板、快捷键编辑器、窗口选择器和各种对话框；有些命令仍会弹出 Widgets 的菜单或对话框（独立的顶层窗口，能用但外观不同），按下面各项替换。外观照现有 Widgets 版和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。每项完成时删掉被替代的 Widgets 代码和只测它的用例（10.6 删除单元 2）。
+**状态**：进行中（2026-11-06）。10.4a–g、10.4i 已完成；10.4h 中 Claude 的部分已完成，其余分类和快捷键页由执行者迁移；10.4j 无障碍和新增的 10.4k 菜单栏键盘导航未开始。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
+
+**和 Widgets 版对照的标准**（用户 2026-11-06）：窗口框架、标签、标签栏、菜单、工具栏、状态栏、面板和对话框要和 Widgets 参考版一比一一致，位置和尺寸以同一进程里的 Widgets 窗口为准（`QuickWorkspaceTest::rowsMatchTheWidgetsWindow` 的做法），截图对比要在同一时刻拍。例外：Muxora 的占位内容页（欢迎、会话、文件、传输）以后会重写，不要求还原；文字的纵向位置只要合理，不要求和原版逐像素一致（现在比原版高 1 个物理像素，是两套渲染器给基线取整不同）。
 
 - **10.4a 命令菜单数据模型（执行者）**：`commands/command_menus.cpp` 现在一边决定菜单内容一边建 `QMenu`。拆成与呈现无关的菜单描述：条目的命令 ID、标题、快捷键文字、能否勾选与是否勾选、可用、可见、分隔、子菜单，以及动态部分（窗口列表、标签颜色、新建标签类型、贡献菜单）。应用菜单、浮窗菜单和各处右键菜单都先生成描述，`QMenu` 只按描述生成，行为不变。`menu-structure` 改为检查描述，保留现有断言。完成标准：描述不依赖 Qt Widgets，`QMenu` 一侧只剩生成代码；`menu-structure`、`popup-menu`、`sidebar-menu` 通过（这一步仍要跑这几个 Widgets 套件，因为它们是行为不变的依据）。
   - 已完成：静态菜单、命令状态、应用及浮窗扩展、窗口列表、右键菜单、标签颜色、新建类型和标签栏选项由不含控件的值描述生成；相关结构断言检查描述，实际弹出与执行检查保留。结果及边界见上述记录。
@@ -107,6 +109,12 @@
 - **10.4i 对话框（Claude）**：重命名标签／组／标签夹（现用 `QInputDialog`）、侧栏面板尺寸（`peek_size_command.cpp`）、关于、Lua 的输入框（`src/app/scripting_setup.cpp`）、Lua 父窗口查询（`src/app/script_services.cpp`）。宿主的关闭确认由宿主提供，Muxora 的那个也一起换。
   - 已完成：管理器的 `openDialog` 让对话框不依赖呈现、不阻塞调用方，Quick 下是带原生标题栏的独立窗口；重命名标签／组／标签夹、侧栏面板尺寸、关于、Lua 输入框和 Lua 通知已改用它，见 [记录](../../development/verification-log/2026-11.md#quick-对话框2026-11-06)。Muxora 没有设置关闭确认，无需替换。不带参数时仍弹 Widgets 菜单的选择命令（标签和标签夹颜色、选目标标签组／窗口／标签／标签夹）也改为在 Quick 菜单里列出选择，见 [选择菜单记录](../../development/verification-log/2026-11.md#quick-下的选择菜单2026-11-06)。Widgets 呈现下的旧对话框和菜单随 10.6 删除。
 - **10.4j 无障碍（执行者）**：Quick 的标签栏、标签组、侧栏按钮、按钮和标题行提供无障碍角色、名称和状态，照 Widgets 的 `TabBarAccessible`；键盘焦点顺序与 Widgets 一致。
+- **10.4k 菜单栏单按 Alt 的键盘导航（执行者，用户 2026-11-06 要求）**：Widgets 的 QMenuBar 在 Windows 上单按一下 Alt（按下到松开之间没有别的键、没有鼠标操作）进入键盘导航，Quick 菜单栏还没有。照 Qt 源码 `qmenubar.cpp`（`QMenuBar::eventFilter` 的 `altPressed`、`QMenuBarPrivate::setKeyboardMode`、`keyPressEvent`）实现，外观复用现有的悬停底色，不做新样式：
+  - 进入：Alt 松开时进入键盘导航，高亮第一个可见菜单，记下原来的焦点项，菜单栏取得键盘焦点；访问键下划线显示（`PopupMenu::setMnemonicsShown`，现在只跟 Alt 的按下松开和 Alt 打开的菜单，见 `WorkspaceQuickWindow::updateMnemonics`）。按 Alt 期间按了别的键、点了鼠标、窗口失去激活，都不进入。
+  - 导航中：左右键在可见菜单间移动并循环，窄窗口时包括收纳按钮；下键、上键、回车、空格打开高亮的菜单并选中第一项；按某个菜单的访问键字母直接打开它；菜单打开后左右键切换到相邻菜单（现有行为）。
+  - 退出：Esc、再按一次 Alt、鼠标点击、窗口失去激活都退出，焦点回到原来的项，下划线收起。
+  - 测试加在 `quick-popup-menu`（参考 `menuAccessKeysShowWithTheKeyboard`）：单按 Alt 后第一个菜单高亮、下划线显示；右键移到第二个、下键打开它；Esc 退出后焦点回到原内容；Alt 与其他键组合时不进入。
+  - 做完在 [变更记录](../../../CHANGELOG.md) 写一条；验证日志的新记录里说明补上了 [访问键下划线记录](../../development/verification-log/2026-11.md#quick-菜单的访问键下划线照-windows-规则显示2026-11-06) 末尾提到的差别，旧记录不改。
 
 ## 10.5 帧成本与资源调优
 
@@ -129,7 +137,7 @@
 | 单元 | 删除内容 | 时机 |
 | --- | --- | --- |
 | 1 | Muxora 的 Widgets 占位内容：`createPlaceholder` 和它的控件代码、`addPlaceholderTab`／`populateInitialWorkspace` 里的 Widgets 分支；`src/app/tests/localization_test.cpp` 改为检查文字函数（`notesText()` 等）和 QML 占位页，保留现有译文断言 | 现在（执行者） |
-| 2 | 随 10.4 各项删除：`commands/popup_menu.cpp` 和 `command_menus.cpp` 的 `QMenu` 部分、`chrome/status_bar.cpp`、`chrome/command_strip.cpp`、`floating_panel.cpp`、`commands/command_dialogs.cpp`、`settings/*`、`peek_size_command.cpp` 的对话框，以及只测它们的 Widgets 套件 | 每项完成时 |
+| 2 | 10.4 各项替换掉的 Widgets 代码：`commands/popup_menu.cpp` 和 `command_menus.cpp` 的 `QMenu` 部分、`chrome/status_bar.cpp`、`chrome/command_strip.cpp`、`floating_panel.cpp`、`commands/command_dialogs.cpp`、`settings/*`、`peek_size_command.cpp` 和各命令里 Widgets 分支的对话框与 `QMenu` 选择器、`commands/dialogs.cpp` 的 `WidgetDialogs`，以及只测它们的 Widgets 套件 | 并入单元 3：管理器的 Widgets 呈现还在用这些代码，删掉 Widgets 呈现时一起删（2026-11-06 改） |
 | 3 | 管理器去掉 Widgets 呈现：删除 `Presentation` 里的 Widgets 和 `refresh()` 的建视图部分；公开接口去掉 `QWidget`（`addTab(QWidget*)`、`addTabToNewGroup(QWidget*)`、`splitPane(…, QWidget*, …)`、`setTab*Bar(QWidget*)`／`setPane*Bar(QWidget*)`、`windowWidget`、`paneWidget`、`QWidget` 内容工厂）；`WindowManager` 移出 `WindowSystemWidgets`，只依赖 Qt Gui。Lua 模块（`window-system-lua/src/window_api.cpp`）和 Muxora 跟着改 | 10.4 完成后，Claude 先拆成可单独提交的步骤 |
 | 4 | Widgets 停靠区与窗口：`docking/dock_surface`、`tab_strip`、`tab_bar`、`edge_strip`、`edge_tab_button`、`drag_controller`、`drag_presentation`、`panes/tab_content`、`chrome/workspace_window`、`workspace_view`、`style` 里只给控件用的部分（`themed_controls`、`integer_slider`、`wheel_guard`、`smooth_scroll`、`tooltip_layout`、`applyTheme`）、`input_method_scopes_widgets.cpp`，以及剩下的 Widgets 套件 | 单元 3 之后 |
 | 5 | 构建与部署：模块和应用不再链接 Qt Widgets（应用改用 `QGuiApplication`），`deployment-files.json` 和 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 去掉 Widgets 的文件和插件 | 单元 4 之后 |
