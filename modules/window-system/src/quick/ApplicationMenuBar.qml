@@ -76,6 +76,7 @@ Basic.MenuBar {
         id: button
         property int barIndex: -1
         readonly property MenuEntry entry: menu ? (menu as PopupMenuNode).entry : null
+        readonly property bool keyboardSelected: control.session.overflow.keyboardItem === button
         objectName: entry ? entry.id : ""
         text: entry ? entry.title : ""
         visible: entry ? entry.visible && (barIndex < 0 || barIndex < control.firstHiddenIndex) : false
@@ -92,7 +93,8 @@ Basic.MenuBar {
         onHighlightedChanged: if (entry) entry.setHighlighted(highlighted)
         background: Rectangle {
             color: button.down ? control.session.menuPalette.highlight
-                 : button.highlighted ? control.session.hoverFill : "transparent"
+                 : (control.session.overflow.keyboardItem && !control.popupOpen ? button.keyboardSelected : button.highlighted)
+                    ? control.session.hoverFill : "transparent"
         }
     }
     background: Item {
@@ -112,7 +114,7 @@ Basic.MenuBar {
             onClicked: control.session.overflow.open()
             background: Rectangle {
                 color: more.down ? control.session.menuPalette.highlight
-                     : more.hovered ? control.session.hoverFill : "transparent"
+                     : (control.session.overflow.keyboardItem === more || more.hovered) ? control.session.hoverFill : "transparent"
             }
         }
     }

@@ -6,6 +6,7 @@
 #include "content_bars.hpp"
 #include "dock_surface_item.hpp"
 #include "popup_menu.hpp"
+#include "menu_bar_overflow.hpp"
 #include "tab_drag.hpp"
 #include "window_chrome_item.hpp"
 #include "command_strip_host_item.hpp"
@@ -253,6 +254,21 @@ protected:
             if (altHeld_) keyboardMenu_ = true;
             updateMnemonics();
         }
+        switch (event->type()) {
+        case QEvent::KeyPress: case QEvent::KeyRelease: case QEvent::ShortcutOverride:
+        case QEvent::MouseButtonPress: case QEvent::WindowDeactivate: case QEvent::Hide: {
+            const QPointer<WorkspaceQuickWindow> self(this);
+            const bool handled = menus_ && menus_->overflow()->handleWindowEvent(event);
+            if (!self || handled) return true;
+            break;
+        }
+        default: break;
+        }
+        if (event->type() == QEvent::WindowDeactivate) {
+            altHeld_ = false;
+            if (!menus_ || !menus_->isOpen()) keyboardMenu_ = false;
+            updateMnemonics();
+        }
         if ((event->type() == QEvent::Resize || event->type() == QEvent::Move)
             && !(windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized)) && isVisible())
             normalGeometry_ = geometry();
@@ -273,6 +289,7 @@ private:
     {
         menus_ = new quick::PopupMenu(theme, this);
         menuBar_ = menus_->createMenuBar(contentItem(), menuItems);
+        connect(menus_->overflow(), &quick::MenuBarOverflow::keyboardModeChanged, this, [this] { updateMnemonics(); });
         setMenuContent();
         toolbars_->setContent(QStringLiteral("title"), QCoreApplication::translate("WindowSystem", "Window title"),
             chrome_, {true, true, 96, true}, StripSizing::Elastic);
@@ -326,7 +343,7 @@ private:
     {
         if (!menus_) return;
         if (!altHeld_ && !menus_->isOpen()) keyboardMenu_ = false;
-        menus_->setMnemonicsShown(keyboardCuesAlwaysShown() || altHeld_ || keyboardMenu_);
+        menus_->setMnemonicsShown(keyboardCuesAlwaysShown() || altHeld_ || keyboardMenu_ || menus_->overflow()->keyboardItem());
     }
 
     void layoutChildren()

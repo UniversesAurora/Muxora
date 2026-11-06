@@ -8,6 +8,7 @@
 #include <QtQml/qqmlregistration.h>
 
 class QShortcut;
+class QKeyEvent;
 Q_MOC_INCLUDE("popup_menu.hpp")
 
 namespace window_system::quick {
@@ -23,12 +24,16 @@ class MenuBarOverflow final : public QObject {
     Q_PROPERTY(MenuEntry* entry READ entry CONSTANT)
     Q_PROPERTY(qreal extent READ extent NOTIFY presentationChanged)
     Q_PROPERTY(bool opened READ opened NOTIFY openedChanged)
+    Q_PROPERTY(QQuickItem* keyboardItem READ keyboardItem NOTIFY keyboardModeChanged)
 public:
     explicit MenuBarOverflow(PopupMenu& owner);
     ~MenuBarOverflow() override;
     MenuEntry* entry() const { return entry_; }
     qreal extent() const;
     bool opened() const;
+    QQuickItem* keyboardItem() const { return keyboardItem_; }
+    bool handleWindowEvent(QEvent* event);
+    bool handlePopupEvent(QEvent* event);
     void attach(QQuickItem* bar);
     void sync(const QVector<MenuItemDescription>& items, const QVector<QQuickItem*>& buttons);
     void updatePresentation(bool remeasure);
@@ -38,6 +43,7 @@ public:
 signals:
     void openedChanged();
     void presentationChanged();
+    void keyboardModeChanged();
 protected:
     bool eventFilter(QObject* object, QEvent* event) override;
 private:
@@ -50,6 +56,12 @@ private:
     void navigate(QQuickItem* from, bool forward);
     QQuickItem* nextRoot(QQuickItem* from, bool forward) const;
     QVector<MenuItemDescription> popupItems(QQuickItem* root) const;
+    QQuickItem* nextKeyboardItem(bool forward) const;
+    void selectKeyboardItem(QQuickItem* item);
+    void leaveKeyboardMode();
+    bool navigateKeyboard(QKeyEvent* event);
+    void openKeyboardItem();
+    void cancelAlt();
     PopupMenu& owner_;
     MenuEntry* entry_;
     QPointer<QQuickItem> bar_;
@@ -57,5 +69,9 @@ private:
     QPointer<QQuickItem> requested_;
     QVector<Root> roots_;
     bool forwardingKey_ = false;
+    bool altCandidate_ = false;
+    bool keyboardMode_ = false;
+    QPointer<QQuickItem> keyboardItem_;
+    QPointer<QQuickItem> previousFocus_;
 };
 } // namespace window_system::quick

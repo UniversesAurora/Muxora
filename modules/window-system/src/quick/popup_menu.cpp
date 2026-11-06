@@ -466,6 +466,8 @@ void PopupMenu::watchWindow(QObject* menu, QQuickItem* content)
 
 bool PopupMenu::eventFilter(QObject* object, QEvent* event)
 {
+    if (menuWindows_.contains(object) && ((overflow_ && overflow_->handlePopupEvent(event))
+        || (keyboardHandler_ && keyboardHandler_(event)))) return true;
     if (menuBar_ && object == menu_.get()) {
         if (event->type() == QEvent::ContextMenu) {
             const auto* request = static_cast<QContextMenuEvent*>(event);

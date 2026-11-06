@@ -1,5 +1,9 @@
 # Qt Quick
 
+### 在自己的操作通知中检查重入销毁
+
+Qt 的焦点处理发出 `focusObjectChanged` 后，还会继续通知变更的焦点项，这段处理仍需要窗口存活。模块重入检查在自己发布的操作通知中触发，例如菜单导航状态变化，验证通知回调能销毁工作区。可能改变焦点的调用前保存弱引用，返回后检查存活，再继续操作。依据为 `QQuickDeliveryAgentPrivate::setFocusInScope` 和 `QObject` 析构说明，原始超时与修正见 [Alt 导航记录](../verification-log/2026-11.md#quick-菜单栏单按-alt-导航2026-11-06)。
+
 ### 文本输入检查先点击取得焦点
 
 `QTest::mouseDClick` 发送的双击事件不能代替完整点击。Qt 的 `QQuickTextInput::mousePressEvent` 处理鼠标聚焦，`mouseDoubleClickEvent` 主要处理选词；输入框之前已有焦点时用例能通过，焦点留在录键框时，同一写法却把后续文字录成快捷键。输入前正常点击，再全选替换文字。源码依据和失败记录见 [快捷键页记录](../verification-log/2026-11.md#quick-快捷键页2026-11-06)。

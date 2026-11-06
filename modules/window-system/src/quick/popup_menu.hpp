@@ -137,6 +137,7 @@ private:
     MenuBarOverflow* overflow_ = nullptr;
     std::function<QVector<MenuItemDescription>()> refreshHandler_;
     std::function<void(bool)> rootNavigation_;
+    std::function<bool(QEvent*)> keyboardHandler_;
     QVector<MenuItemDescription> barItems_;
     QSet<QString> excludedRoots_;
     bool menuBar_ = false, refreshing_ = false, refreshQueued_ = false, forceRefresh_ = false;
