@@ -12,12 +12,15 @@ endfunction()
 
 find_package(Qt6 6.10 REQUIRED COMPONENTS Qml Quick)
 # The application and its localization checks use the same compiled pages.
-set_source_files_properties(../workspace_host/qml/PlaceholderPage.qml PROPERTIES QT_RESOURCE_ALIAS PlaceholderPage.qml)
+foreach(page IN ITEMS PlaceholderPage FileAddressBar FileInformationBar)
+    set_source_files_properties(../workspace_host/qml/${page}.qml PROPERTIES QT_RESOURCE_ALIAS ${page}.qml)
+endforeach()
 qt_add_library(MuxoraWorkspaceHost STATIC)
 set_target_properties(MuxoraWorkspaceHost PROPERTIES AUTOMOC ON)
 qt_add_qml_module(MuxoraWorkspaceHost URI Muxora.WorkspaceHost VERSION 1.0 RESOURCE_PREFIX /qt/qml
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Muxora/WorkspaceHost"
-    QML_FILES ../workspace_host/qml/PlaceholderPage.qml
+    QML_FILES ../workspace_host/qml/PlaceholderPage.qml ../workspace_host/qml/FileAddressBar.qml
+        ../workspace_host/qml/FileInformationBar.qml
     SOURCES ../workspace_host/placeholder_content.cpp ../workspace_host/placeholder_content.hpp
         ../workspace_host/quick_placeholder.cpp ../workspace_host/quick_placeholder.hpp)
 target_link_libraries(MuxoraWorkspaceHost PUBLIC WindowSystem::Quick Qt6::Qml)

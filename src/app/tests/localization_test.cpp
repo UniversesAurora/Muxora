@@ -4,6 +4,7 @@
 #include "workspace_host/placeholder_content.hpp"
 #include "workspace_host/quick_placeholder.hpp"
 #include <window_system/localization.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <window_system_lua/script_host.hpp>
 #include "../user_preferences.hpp"
@@ -16,6 +17,7 @@
 #include <QHash>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QRegularExpression>
 #include <QTest>
 #include <QSignalSpy>
@@ -52,6 +54,7 @@ class AppLocalizationTest final : public QObject {
     Q_OBJECT
 private slots:
     void englishHostContentAndInitialTitles();
+    void filePagesShowTheirBars();
     void chineseHostCatalogAndPreferenceDiagnostics();
     void hostCatalogsAreComplete();
     void multilineHostTextMatchesExactCatalogKeys_data();
@@ -108,6 +111,49 @@ void AppLocalizationTest::englishHostContentAndInitialTitles()
     QVERIFY(titles.contains(QStringLiteral("Files")));
     QVERIFY(titles.contains(QStringLiteral("Sessions")));
     QVERIFY(titles.contains(QStringLiteral("Transfers")));
+}
+
+// In a Quick window a file page has its address above it and its item
+// count below, in the interface language.
+void AppLocalizationTest::filePagesShowTheirBars()
+{
+    TranslationManager translations;
+    translations.addCatalog(QStringLiteral(":/muxora/i18n/muxora"));
+    QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    QQmlEngine engine;
+    workspace.setContentFactory(muxora::quickPlaceholderFactory(manager, engine, &workspace));
+    const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(800, 600)});
+    // The initial workspace, as the application builds it.
+    muxora::populateInitialWorkspace(manager, window);
+    TabId tab;
+    for (const auto& record : manager.model().tabs()) if (manager.paneOptions(manager.model().panes(record.id).first()).contentType == "files") tab = record.id;
+    QVERIFY(!tab.isNull());
+    const auto find = [&](const QString& name) -> QQuickItem* {
+        auto* view = workspace.window(window);
+        if (!view) return nullptr;
+        QList<QQuickItem*> items{view->contentItem()};
+        while (!items.isEmpty()) {
+            auto* item = items.takeFirst();
+            if (item->objectName() == name && item->isVisible() && item->height() > 0) return item;
+            items += item->childItems();
+        }
+        return nullptr;
+    };
+    // The bars arrive with the page, not a moment after it.
+    const auto pane = manager.model().panes(tab).first();
+    QTRY_VERIFY(workspace.content(pane) && workspace.content(pane)->isVisible());
+    auto* address = find(QStringLiteral("FileAddressBar"));
+    auto* information = find(QStringLiteral("FileInformationBar"));
+    QVERIFY(address && information);
+    QCOMPARE(address->property("text").toString(), muxora::fileAddressText());
+    QCOMPARE(information->property("text").toString(), muxora::fileInformationText(int(muxora::fileRows().size())));
+    QVERIFY(address->property("text").toString().contains(QStringLiteral("文件")));
+    const auto content = workspace.content(pane);
+    QVERIFY(content);
+    QVERIFY(address->mapToScene(QPointF(0, address->height())).y() <= content->mapToScene(QPointF()).y());
+    QVERIFY(information->mapToScene(QPointF()).y() >= content->mapToScene(QPointF(0, content->height())).y());
 }
 
 void AppLocalizationTest::chineseHostCatalogAndPreferenceDiagnostics()

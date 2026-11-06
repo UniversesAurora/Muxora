@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
     window_system::WindowManager windows(window_system::WindowManager::Presentation::External);
     QQmlEngine qml;
     window_system::QuickWorkspace workspace(windows);
-    workspace.setContentFactory(muxora::quickPlaceholderFactory(windows, qml));
+    workspace.setContentFactory(muxora::quickPlaceholderFactory(windows, qml, &workspace));
     QObject::connect(&interfaceAppearance, &window_system::InterfaceAppearanceController::appearanceChanged, &app, [&] {
         if (!preferences.saveInterfaceAppearance(interfaceAppearance.appearance())) {
             qWarning().noquote() << preferences.diagnostic();

@@ -78,7 +78,7 @@
 6. 进行中（执行者）：宿主内容和栏位的 Quick 接口。内容焦点、输入法作用域和宿主显隐回调已接通，见 [记录](../../development/verification-log/2026-11.md#quick-内容焦点与显隐接到管理器2026-11-04)。宿主内容已由内容工厂按描述创建（子步 4）。上下栏接口、共享规则、最小尺寸、禅模式和跨窗格移动已实现，见 [上下栏记录](../../development/verification-log/2026-11.md#quick-标签与窗格的上下栏接口2026-11-04)；层级转换的栏转移与合并也已接通，见 [收尾记录](../../development/verification-log/2026-11.md#quick-层级转换保留宿主栏2026-11-04)。执行者的接口部分已完成，Muxora 文件栏组件和用户试用仍待完成。原定要求如下：
    - **上下栏**：`QuickWorkspace` 增加 `setTabBar(TabId, QQuickItem*, bool top)` 和 `setPaneBar(PaneId, QQuickItem*, bool top)`，传空指针移除；工作区接管所有权，标签或窗格关闭时删除，在组间、窗口间移动时保持同一个项（和窗格内容一样按 ID 保存）。排布照 Widgets 的 `panes/tab_content.cpp`：`TabOptions::topBarSharing`／`bottomBarSharing` 为 `Shared` 时一条栏横跨整个标签，`PerPane` 时每个窗格各有一条；栏高取项的隐含高度；栏计入最小尺寸；禅模式隐藏全部栏（`windowViewState().zen`）；窗格全屏时只排那个窗格的栏。用 `quick-workspace` 用例覆盖两种共享方式、移动后身份不变、关闭时删除、禅模式隐藏，用普通 `QQuickItem` 当栏，不做新外观。
    - **输入法与焦点**：Quick 内容获得焦点时，管理器的当前窗格跟着变（相当于 `WindowManager::eventFilter` 里 Widgets 的 `FocusIn` 分支），输入法按 [8.16](phase-8-ui-quality.md#816-按层级保存输入法状态) 的作用域保存和恢复；Widgets 版在 `input_method_scopes_widgets.cpp`。
-   - **Muxora**：文件标签的地址栏和信息栏（Widgets 版见 `placeholder_content.cpp` 的 `populateInitialWorkspace`）需要两个 QML 栏组件，属于新外观，由 Claude 做；执行者只做接口。
+   - **Muxora**：文件标签的地址栏和信息栏（Widgets 版见 `placeholder_content.cpp` 的 `populateInitialWorkspace`）需要两个 QML 栏组件，属于新外观，由 Claude 做；执行者只做接口。已完成，见 [记录](../../development/verification-log/2026-11.md#muxora-文件页的地址栏和信息栏2026-11-06)。
 7. 完成条件：两个组、窗格、分隔条和标签跨窗口移动都能完整使用。原定“缺项不切换默认”由用户 2026-11-04 的决定取代：先切换，缺的在 Quick 里补。子步 6 完成、用户试用过 Quick 版的拖动与布局后，10.3 才算完成。
 7. 完成条件：两个组、窗格、分隔条和标签跨窗口移动都能完整使用。原定“缺项不切换默认”由用户 2026-11-04 的决定取代：先切换，缺的在 Quick 里补。
 

@@ -26,7 +26,8 @@ public:
 
     explicit QuickWorkspace(WindowManager& manager, QObject* parent = nullptr);
     ~QuickWorkspace() override;
-    /// Set before the first pane needs content.
+    /// Set before the first pane needs content. The factory may set the
+    /// pane's bars while it creates the content; they show with the page.
     void setContentFactory(ContentFactory factory);
     /// Accepted bars become workspace-owned. Null removes a bar; rejected
     /// items remain caller-owned. Height follows the item's implicitHeight.
