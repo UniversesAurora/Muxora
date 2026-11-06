@@ -143,14 +143,30 @@
 
 **状态**：进行中。Widgets 不再是默认，按下面的单元分块删除，不等到最后一次删光；删除前确认 Quick 一侧已有等价行为和用例，缺的用例补到 `quick-*` 套件（按 [测试的分量](../../development/testing-design.md#测试的分量)，不逐条照搬）。
 
-删除单元 1 已完成：Muxora 只保留 Quick 占位页，本地化套件检查同一份编译后的 QML 和文字函数，见 [验证记录](../../development/verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。10.4h、10.4j 与 10.4k 已接入并定向验证，下一步由 Claude 拆分删除单元 3–5，单元 2 随单元 3 执行。
+删除单元 1 已完成：Muxora 只保留 Quick 占位页，本地化套件检查同一份编译后的 QML 和文字函数，见 [验证记录](../../development/verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。单元 3 已由 Claude 拆成下面“单元 3 的步骤”（2026-11-07），单元 2 在其中的 3.5 执行。
 
 | 单元 | 删除内容 | 时机 |
 | --- | --- | --- |
 | 1 | Muxora 的 Widgets 占位内容：`createPlaceholder` 和它的控件代码、`addPlaceholderTab`／`populateInitialWorkspace` 里的 Widgets 分支；`src/app/tests/localization_test.cpp` 改为检查文字函数（`notesText()` 等）和 QML 占位页，保留现有译文断言 | 现在（执行者） |
 | 2 | 10.4 各项替换掉的 Widgets 代码：`commands/popup_menu.cpp` 和 `command_menus.cpp` 的 `QMenu` 部分、`chrome/status_bar.cpp`、`chrome/command_strip.cpp`、`floating_panel.cpp`、`commands/command_dialogs.cpp`、`settings/*`、`peek_size_command.cpp` 和各命令里 Widgets 分支的对话框与 `QMenu` 选择器、`commands/dialogs.cpp` 的 `WidgetDialogs`，以及只测它们的 Widgets 套件 | 并入单元 3：管理器的 Widgets 呈现还在用这些代码，删掉 Widgets 呈现时一起删（2026-11-06 改） |
-| 3 | 管理器去掉 Widgets 呈现：删除 `Presentation` 里的 Widgets 和 `refresh()` 的建视图部分；公开接口去掉 `QWidget`（`addTab(QWidget*)`、`addTabToNewGroup(QWidget*)`、`splitPane(…, QWidget*, …)`、`setTab*Bar(QWidget*)`／`setPane*Bar(QWidget*)`、`windowWidget`、`paneWidget`、`QWidget` 内容工厂）；`WindowManager` 移出 `WindowSystemWidgets`，只依赖 Qt Gui。Lua 模块（`window-system-lua/src/window_api.cpp`）和 Muxora 跟着改 | 10.4 完成后，Claude 先拆成可单独提交的步骤 |
+| 3 | 管理器去掉 Widgets 呈现：删除 `Presentation` 里的 Widgets 和 `refresh()` 的建视图部分；公开接口去掉 `QWidget`（`addTab(QWidget*)`、`addTabToNewGroup(QWidget*)`、`splitPane(…, QWidget*, …)`、`setTab*Bar(QWidget*)`／`setPane*Bar(QWidget*)`、`windowWidget`、`paneWidget`、`QWidget` 内容工厂）；`WindowManager` 移出 `WindowSystemWidgets`，只依赖 Qt Gui。Lua 模块（`window-system-lua/src/window_api.cpp`）和 Muxora 跟着改 | 按下面“单元 3 的步骤”（2026-11-07 拆） |
 | 4 | Widgets 停靠区与窗口：`docking/dock_surface`、`tab_strip`、`tab_bar`、`edge_strip`、`edge_tab_button`、`drag_controller`、`drag_presentation`、`panes/tab_content`、`chrome/workspace_window`、`workspace_view`、`style` 里只给控件用的部分（`themed_controls`、`integer_slider`、`wheel_guard`、`smooth_scroll`、`tooltip_layout`、`applyTheme`）、`input_method_scopes_widgets.cpp`，以及剩下的 Widgets 套件 | 单元 3 之后 |
 | 5 | 构建与部署：模块和应用不再链接 Qt Widgets（应用改用 `QGuiApplication`），`deployment-files.json` 和 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 去掉 Widgets 的文件和插件 | 单元 4 之后 |
+
+### 单元 3 的步骤（Claude 2026-11-07 拆）
+
+现状：管理器的 Widgets 呈现只剩测试在用。2026-11-07 时 58 个测试源码（`rg -l "Presentation::Widgets|WindowManager manager;" modules/window-system/tests modules/window-system-lua/tests src/app/tests`；默认构造就是 Widgets 呈现）还建 Widgets 窗口，其中很多测的是管理器行为，不是 Widgets 外观。所以先迁测试，再删代码；每步完成时构建和相关套件保持通过。
+
+| 步骤 | 内容 | 负责 | 完成标准 |
+| --- | --- | --- | --- |
+| 3.1 | Lua 的 `tabs.set_bar`／`panes.set_bar` 改用与呈现无关的文字栏：管理器加文字栏描述（文字、提示），Quick 工作区画成一条文字栏，外观照 Widgets 的 `QLabel`（左右各 6 像素边距、界面字体和文字颜色）。Quick 下这两个接口现在不显示（见 [记录](../../development/verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)） | Claude（新界面元素） | Quick 下 Lua 设置、替换、清除两种栏，有 `quick-*` 用例 |
+| 3.2 | 测试清单：上面 58 个源码逐个用例分三类，写成表格放进本节（每行：源码、用例、类别、去向）。A：测管理器或模型行为，不依赖 Widgets 控件，换成 `Presentation::External`（要窗口时加 `QuickWorkspace`）就能测；B：测 Widgets 控件本身，Quick 已有等价用例（写出是哪个 `quick-*` 用例），随单元 4 删除；C：行为 Quick 还没有用例，要补到 `quick-*` 套件。只写表，不改代码 | 执行者 | 表格完整，每个用例都有类别；拿不准的标 C。Claude 审过表再做 3.3 |
+| 3.3 | 按表把 A 类迁到 External：一个源码一个提交，断言不改，只换建窗口的方式和取控件的方式（例如 `windowWidget` 换成 `QuickWorkspace::window`）。改不动的（断言依赖 Widgets 控件）改标 C，写明原因 | 执行者 | 迁过的套件在 External 下通过；不删断言、不放宽时限 |
+| 3.4 | C 类补到对应 `quick-*` 套件，按 [测试的分量](../../development/testing-design.md#测试的分量) 合并成行为用例，不逐条照搬。Quick 行为和 Widgets 不一致的，先写进交接记录问 Claude，不改预期迁就 | 执行者 | 每个 C 类都有 Quick 用例或写明的放弃理由 |
+| 3.5 | 删除单元 2 的内容：命令里的 Widgets 分支（`tab_group_commands`、`tab_folder_commands`、`window_commands`、`peek_size_command`、`command_dialogs` 里 `presentation == External` 之外的分支）、`WidgetDialogs`、`QMenu` 选择器、Widgets 设置页和快捷键页、`floating_panel`、`chrome/status_bar`、`chrome/command_strip`，以及表里只测它们的 B 类用例 | 执行者 | 全模块构建通过，剩下的 Widgets 呈现只在管理器内部 |
+| 3.6 | 管理器只留外部呈现：删除 `Presentation` 枚举和构造参数、`refresh()` 的建视图部分、`ensureTabView`、`storage`、`TabContent`／`WorkspaceWindow`／`DragController` 的使用、`QApplication::focusChanged` 监听、`windowWidget`／`paneWidget`、`QWidget` 内容工厂和带 `QWidget*` 的重载（`addTab`、`addTabToNewGroup`、`splitPane`、`setTab*Bar`／`setPane*Bar`、拆出时的 `beforeShow`）、`createTabCreationMenu`。`layout_persistence`、`view_state`、`custom_chrome`、`hierarchy_api` 里的 Widgets 分支一起删。Lua 和 Muxora 跟着改 | 执行者 | 公开头文件不出现 `QWidget`；所有剩余套件通过 |
+| 3.7 | 库拆分：与呈现无关的源码（管理器、命令、设置描述、工具栏描述、布局保存、主题、本地化等）移到只依赖 Qt Gui 的新库，`WindowSystemQuick` 和 Lua 模块链接它，不再链接 `WindowSystemWidgets`；`WindowSystemWidgets` 只剩单元 4 要删的控件 | 执行者 | Quick 套件和 Muxora 不链接 Qt Widgets 之外的 Widgets 库；构建通过 |
+
+每步完成都更新本节状态、验证日志和预览说明；3.2 的表审完之前不删任何用例。遇到新界面或新外观停下交给 Claude。
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
