@@ -51,7 +51,7 @@ void CommandStripHostItem::watchStrip(CommandStripItem* strip)
 }
 
 void CommandStripHostItem::setContent(QString id, QString title, QQuickItem* content, StripConstraints constraints,
-                                      StripSizing sizing, std::function<QStringList()> items)
+                                      StripSizing sizing, std::function<QStringList()> items, bool options)
 {
     for (auto& existing : contents_) if (existing.item == content) {
         if (existing.id != id) {
@@ -63,11 +63,10 @@ void CommandStripHostItem::setContent(QString id, QString title, QQuickItem* con
         return;
     }
     titles_.insert(id, std::move(title));
-    auto* strip = new CommandStripItem(this, false);
+    auto* strip = new CommandStripItem(this, options);
     strip->setProperty("stripId", id);
-    // Menus keep their existing extension anchor; no second options tail.
     strip->setContent(content, constraints);
-    strips_.insert(id, strip); contents_.append({std::move(id), content, constraints, sizing, std::move(items)});
+    strips_.insert(id, strip); contents_.append({std::move(id), content, constraints, sizing, std::move(items), options});
     watchStrip(strip);
 }
 
@@ -107,7 +106,7 @@ void CommandStripHostItem::restoreLayout(const QVector<CommandToolbarDescription
         for (const auto& content : contents_) {
             defaults.rows[row].append(content.id);
             defaults.strips[content.id].elastic = content.sizing == StripSizing::Elastic;
-            policies.insert(content.id, {false, content.constraints.elasticRequired, content.id == QStringLiteral("caption-controls")});
+            policies.insert(content.id, {content.options, content.constraints.elasticRequired, content.id == QStringLiteral("caption-controls")});
         }
     }
     for (const auto& description : descriptions) {

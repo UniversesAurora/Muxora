@@ -27,9 +27,10 @@ public:
     ~CommandStripHostItem() override;
     void sync(const QVector<CommandToolbarDescription>& descriptions, const QJsonObject& saved, const Theme& theme, bool hideOptionsWhenLocked);
     // Content with items (a menu bar's roots) hides them one by one; other
-    // content shows or hides as a whole.
+    // content shows or hides as a whole. With options, the strip keeps its
+    // options tail, as the Widgets menu strip does.
     void setContent(QString id, QString title, QQuickItem* content, StripConstraints constraints,
-                    StripSizing sizing = StripSizing::Content, std::function<QStringList()> items = {});
+                    StripSizing sizing = StripSizing::Content, std::function<QStringList()> items = {}, bool options = false);
     QQuickItem* bottomArea() const { return bottom_; }
     int minimumWidth() const { return minimumWidth_; }
     [[nodiscard]] QStringList excludedItems(const QString& id) const { return layout_.strips.value(id).excluded; }
@@ -101,6 +102,7 @@ private:
         StripConstraints constraints;
         StripSizing sizing;
         std::function<QStringList()> items;
+        bool options = false;
     };
     const Content* content(const QString& id) const;
     void watchStrip(CommandStripItem* strip);

@@ -23,6 +23,7 @@
 #include <window_system/window_manager.hpp>
 
 #include <QJsonArray>
+#include <algorithm>
 #include <QMenuBar>
 #include <QWidget>
 #include <QJsonObject>
@@ -139,7 +140,8 @@ private slots:
 
     // The rows sit where the Widgets window puts them: below a one-pixel
     // border along the top of a normal window, none when maximized; menu
-    // titles as high as QMenuBar makes them.
+    // titles as high as QMenuBar makes them; toolbar buttons as wide as
+    // QToolButton, with the menu strip keeping its options tail.
     void rowsMatchTheWidgetsWindow()
     {
         InterfaceAppearanceController appearance;
@@ -166,6 +168,25 @@ private slots:
         QCOMPARE(itemIn(view, "DockSurfaceItem").top(), widgetIn(top, "DockSurface").top());
         QCOMPARE(itemIn(view, "TabBarItem"), widgetIn(top, "TabBar"));
         QCOMPARE(itemIn(view, "MenuBarItem", QStringLiteral("file")).size(), menuBar->actionGeometry(menuBar->actions().first()).size());
+
+        // Toolbar buttons and the strips' option tails, the menu strip's too.
+        for (const auto* name : {"StripCommandButton", "StripOverflowButton"}) {
+            QVector<QRect> widgetRects, quickRects;
+            for (auto* child : top->findChildren<QWidget*>(QString::fromLatin1(name)))
+                if (child->isVisible()) widgetRects.append(QRect(child->mapTo(top, QPoint()), child->size()));
+            QList<QQuickItem*> items{view->contentItem()};
+            while (!items.isEmpty()) {
+                auto* item = items.takeFirst();
+                if (item->isVisible() && item->objectName() == QLatin1String(name))
+                    quickRects.append(QRectF(item->mapToScene(QPointF()), item->size()).toRect());
+                items += item->childItems();
+            }
+            const auto byPosition = [](const QRect& a, const QRect& b) { return std::pair(a.y(), a.x()) < std::pair(b.y(), b.x()); };
+            std::sort(widgetRects.begin(), widgetRects.end(), byPosition);
+            std::sort(quickRects.begin(), quickRects.end(), byPosition);
+            QVERIFY(!widgetRects.isEmpty());
+            QCOMPARE(quickRects, widgetRects);
+        }
 
         const int toolbars = itemIn(view, "CommandStripHostItem", QStringLiteral("CommandToolbars")).height();
         QCOMPARE(itemIn(view, "DockSurfaceItem").top(), 1 + toolbars);

@@ -300,7 +300,8 @@ private:
         Q_ASSERT(record);
         const auto menuId = record->kind == WindowKind::Floating ? QStringLiteral("floating-menu") : QStringLiteral("menu");
         toolbars_->setContent(menuId, QCoreApplication::translate("WindowSystem", "Menu"), menuBar_, {true, true, 24},
-            StripSizing::Content, [menus = QPointer<quick::PopupMenu>(menus_)] { return menus ? menus->menuBarItemIds() : QStringList{}; });
+            StripSizing::Content, [menus = QPointer<quick::PopupMenu>(menus_)] { return menus ? menus->menuBarItemIds() : QStringList{}; },
+            true);
         return menuId;
     }
 

@@ -18,6 +18,10 @@
 #include <algorithm>
 
 namespace window_system::quick {
+
+// As a QToolButton under the Widgets style sheet: the 16-pixel icon, 4-pixel
+// side padding, 1-pixel borders and the style's 3-pixel button margin.
+constexpr int commandButtonWidth = 29;
 namespace {
 // Everything iconFor() reads: a sync that changes none of it keeps the
 // button's prepared pixmap instead of rasterizing a new engine.
@@ -83,7 +87,7 @@ void CommandStripItem::sync(const QVector<MenuItemDescription>& actions, const T
     const int count = int(std::count_if(actions_.cbegin(), actions_.cend(), [](const auto& action) {
         return action.included && action.description.action.visible;
     }));
-    contentWidth_ = count * uiPixels(26);
+    contentWidth_ = count * uiPixels(commandButtonWidth);
     updateMetrics();
     if (popup_) popup_->setPresentation(theme);
     relayout();
@@ -152,7 +156,7 @@ void CommandStripItem::geometryChange(const QRectF& now, const QRectF& previous)
 
 void CommandStripItem::relayout()
 {
-    const int buttonWidth = uiPixels(26);
+    const int buttonWidth = uiPixels(commandButtonWidth);
     const int handle = locked_ ? 0 : uiPixels(stripHandleWidth);
     const int content = content_ ? contentVisible_ ? qCeil(content_->implicitWidth()) : 0 : contentWidth_;
     // Reserve the options tail only after checking the complete content.
