@@ -14,6 +14,7 @@
 namespace window_system {
 namespace {
 QPointer<InterfaceAppearanceController> instance;
+constexpr auto styleHint = QFont::SansSerif;
 
 // Native Qt controls use the same scale as custom-painted controls. Screen
 // DPR remains Qt's responsibility; no private DPI API or bitmap scaling.
@@ -92,12 +93,15 @@ InterfaceAppearanceController::InterfaceAppearanceController(QObject* parent)
     Q_ASSERT(qApp && !instance);
     d->originalFont = qApp->font(); d->originalStyle = qApp->style()->objectName();
     d->families = resolvePlatformFontFamilies(defaults());
+    prefillFontFallbacks(d->families, styleHint);
     instance = this;
     qApp->setStyle(new ScaledStyle(QStyleFactory::create(d->originalStyle)));
     qApp->setFont(font());
     connect(qApp, &QGuiApplication::fontDatabaseChanged, this, [this] {
         const auto names = resolvePlatformFontFamilies(d->value.fontFamily.trimmed().isEmpty()
             ? defaults() : interfaceFontFamilies(d->value.fontFamily));
+        // Qt drops its fallback lists with the database.
+        prefillFontFallbacks(names, styleHint);
         if (names == d->families) return;
         d->families = names; applyAppearance();
     });
@@ -115,7 +119,7 @@ QFont InterfaceAppearanceController::font() const
 {
     auto font = d->originalFont;
     font.setFamilies(d->families);
-    font.setStyleHint(QFont::SansSerif);
+    font.setStyleHint(styleHint);
 #ifdef Q_OS_WIN
     // Qt's default hinting uses asymmetric DirectWrite rendering at small
     // logical sizes, even on high-DPI displays. Natural symmetric coverage
@@ -130,8 +134,10 @@ bool InterfaceAppearanceController::setAppearance(const InterfaceAppearance& val
 {
     if (!validInterfaceAppearance(value)) return false;
     if (value == d->value) return true;
-    if (value.fontFamily != d->value.fontFamily)
+    if (value.fontFamily != d->value.fontFamily) {
         d->families = resolvePlatformFontFamilies(value.fontFamily.trimmed().isEmpty() ? defaults() : interfaceFontFamilies(value.fontFamily));
+        prefillFontFallbacks(d->families, styleHint);
+    }
     d->value = value; detail::interfaceScaleValue = interfaceScaleForZoom(value.zoomLevel);
     applyAppearance();
     return true;

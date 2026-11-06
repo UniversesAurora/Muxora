@@ -51,6 +51,7 @@ window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick Window
 window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
 window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
 if(WIN32)
+    window_system_add_suite(font-fallback widget LINK WindowSystem::Widgets Qt6::GuiPrivate)
     window_system_add_suite(quick-native-frame desktop LINK WindowSystemQuick WindowSystemPlatform user32)
     window_system_add_suite(quick-native-drag desktop LINK WindowSystemQuick user32)
 endif()

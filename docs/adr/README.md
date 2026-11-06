@@ -19,6 +19,7 @@
 | [0011](0011-own-tab-strip.md) | 标签栏自绘，拖动时内容用画面预览 | 采用（实施见阶段 8.21、8.22） |
 | [0012](0012-live-interface-scaling.md) | 用统一尺寸倍率实现即时界面缩放 | 采用 |
 | [0013](0013-qt-quick-rendering.md) | 保持外观与交互，分步迁移到 Qt Quick 呈现 | 采用，迁移中 |
+| [0014](0014-prefill-font-fallbacks.md) | Windows 上预先给 Qt 填界面字体的后备字体表 | 采用 |
 
 ## 写法
 

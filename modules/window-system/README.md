@@ -21,6 +21,8 @@
 
 从源码构建需要 Qt 的 LinguistTools；翻译目录在构建时编译并嵌入静态库，已安装的模块消费者不需要翻译工具或 SDK 目录中的 `.qm` 文件。
 
+Windows 上界面字体的后备字体表由模块预先填进 Qt 的缓存（[ADR 0014](../../docs/adr/0014-prefill-font-fallbacks.md)），这要用 Qt Gui 的私有接口，构建和安装后的使用者都需要 Qt 的 `GuiPrivate` 组件；升级 Qt 时先核对这处。
+
 ### 开发中的 Quick 呈现
 
 `WindowSystemQuick` 目标（别名 `WindowSystem::Quick`）总是构建，额外依赖 Qt Quick、Qt Quick Controls、Qt Quick Shapes 及构建期 Qt ShaderTools。它提供保留路径节点、主体与接合阴影纹理、自有标签组背板合成、完整整形后的原生标题/编号文字节点、表面/文字/主图标/动作图标组合项、按稳定 ID 复用的分栏标签容器、背景/分隔线/滚动条装饰、文件夹头、运行段边缘渐隐、展开边缘阴影、外部载荷与窗口级拖动前景、组/窗格分割布局和窗口帧驱动，不创建另一套窗口管理器，也尚未作为安装后的公开 API 导出。内部遮罩通过公开 QML 层和预编译着色器合成，只在需要时分配有界 GPU 目标；描边使用 Qt 的曲线渲染器。很长的标题只把可见部分交给文字节点。迁移状态见 [阶段 10](../../docs/roadmap/implementation/phase-10-qt-quick.md)。

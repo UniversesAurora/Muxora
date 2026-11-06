@@ -10,6 +10,10 @@ option(WINDOW_SYSTEM_BUILD_TESTS "Build WindowSystem automated tests" ${BUILD_TE
 option(WINDOW_SYSTEM_BUILD_BENCHMARKS "Build WindowSystem scale benchmarks" OFF)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets LinguistTools)
+if(WIN32)
+    # The font fallback cache (src/platform/windows/font_families.cpp).
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+endif()
 
 add_library(WindowSystemModel STATIC src/model/layout_model.cpp src/model/tab_ordering.cpp
     src/model/pinned_layout.cpp src/model/pinned_positions.cpp src/model/hierarchy_conversion.cpp)
@@ -232,7 +236,7 @@ qt_add_lupdate(SOURCE_TARGETS WindowSystemWidgets WindowSystemModel
     LUPDATE_TARGET window_system_lupdate OPTIONS -no-obsolete -locations none -source-language en)
 if(WIN32)
     target_sources(WindowSystemWidgets PRIVATE src/platform/windows/window_frame_widgets.cpp src/platform/windows/window_menu_widgets.cpp src/platform/windows/font_families.cpp)
-    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite)
+    target_link_libraries(WindowSystemWidgets PRIVATE dwmapi user32 imm32 ole32 uuid dwrite Qt6::GuiPrivate)
 endif()
 set(window_system_compile_targets WindowSystemModel WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform WindowSystemWidgets
     WindowSystemQuick)
