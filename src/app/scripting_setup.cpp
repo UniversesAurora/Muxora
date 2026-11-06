@@ -10,7 +10,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QInputDialog>
 #include <QSaveFile>
 #include <QStringDecoder>
 #include <QTimer>
@@ -238,28 +237,23 @@ bool AppScriptingSetup::runCommand(const window_system::CommandContext &context)
         }
         return host_->run(source, name, context) != 0;
     }
-    if (input_) {
-        input_->raise();
-        input_->activateWindow();
+    if (input_ && manager_->raiseDialog(input_))
         return true;
-    }
-    auto *input = new QInputDialog(manager_->windowWidget(context.window));
-    input_ = input;
-    input->setObjectName(QStringLiteral("LuaScriptInput"));
-    input->setAttribute(Qt::WA_DeleteOnClose);
-    input->setWindowTitle(QCoreApplication::translate("Muxora", "Run Lua script"));
-    input->setLabelText(QCoreApplication::translate("Muxora", "Enter Lua script:"));
-    input->setOption(QInputDialog::UsePlainTextEditForTextInput);
-    input->resize(640, 360);
-    input->setOkButtonText(QCoreApplication::translate("Muxora", "Run"));
-    input->setCancelButtonText(QCoreApplication::translate("Muxora", "Cancel"));
-    window_system::applyTheme(input, manager_->theme());
-    connect(input, &QInputDialog::textValueSelected, this, [this, context](const QString &source) {
-        if (host_ && !shuttingDown_)
-            host_->run(source, QStringLiteral("@interactive"), context);
-    });
-    input->open();
-    return true;
+    window_system::DialogRequest request;
+    request.name = QStringLiteral("LuaScriptInput");
+    request.title = QCoreApplication::translate("Muxora", "Run Lua script");
+    request.fields = {{QStringLiteral("source"), QCoreApplication::translate("Muxora", "Enter Lua script:"),
+                       window_system::DialogField::Kind::Lines, QString()}};
+    request.acceptText = QCoreApplication::translate("Muxora", "Run");
+    request.cancelText = QCoreApplication::translate("Muxora", "Cancel");
+    request.minimumSize = QSize(640, 360);
+    const QPointer<AppScriptingSetup> self(this);
+    request.accepted = [self, context](const QVariantMap &values) {
+        if (self && self->host_ && !self->shuttingDown_)
+            self->host_->run(values.value(QStringLiteral("source")).toString(), QStringLiteral("@interactive"), context);
+    };
+    input_ = manager_->openDialog(context.window, std::move(request));
+    return input_ != 0;
 }
 
 void AppScriptingSetup::stageBindings() {
@@ -325,8 +319,8 @@ void AppScriptingSetup::shutdown() {
         flushKeybindings();
     shuttingDown_ = true;
     saveTimer_->stop();
-    if (input_)
-        delete input_.data();
+    if (input_ && manager_)
+        manager_->closeDialog(std::exchange(input_, 0));
     services_->reset();
     if (manager_)
         manager_->removeStatusItem(QString::fromLatin1(runningStatusId));

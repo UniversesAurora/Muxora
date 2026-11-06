@@ -82,6 +82,7 @@ add_library(WindowSystemWidgets STATIC
     src/commands/menu_definition.cpp
     src/commands/menu_description.cpp
     src/commands/panel_rows.cpp
+    src/commands/dialogs.cpp
     src/settings/setting_description.cpp
     src/chrome/toolbar_description.cpp
     src/commands/popup_menu.cpp
@@ -153,6 +154,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/status_bar_item.cpp
     src/quick/command_panel.cpp
     src/quick/settings_page_model.cpp src/quick/settings_style.cpp src/quick/key_sequence_capture.cpp
+    src/quick/dialog_window.cpp
     src/quick/rail_button_item.cpp src/quick/rail_item.cpp src/quick/picture_item.cpp
     src/quick/tab_content_item.cpp src/quick/peek_item.cpp src/quick/window_chrome_item.cpp src/quick/dock_guide_item.cpp src/quick/tab_drag.cpp src/quick/dock_surface_item.cpp src/quick/quick_workspace.cpp
     include/window_system/quick_workspace.hpp)
@@ -162,7 +164,7 @@ target_compile_features(WindowSystemQuick PUBLIC cxx_std_20)
 target_include_directories(WindowSystemQuick PUBLIC include PRIVATE src src/quick)
 foreach(menu_file IN ITEMS PopupMenuNode PopupMenuRow PopupMenuSeparator ApplicationMenuBar HoverToolTip CommandPanelView
         SettingsPageView SettingCheckBox SettingComboBox SettingSpinBox SettingTextField SettingSlider
-        SettingKeySequenceField SettingButton SettingTextArea SettingTable)
+        SettingKeySequenceField SettingButton SettingTextArea SettingTable DialogView)
     set_source_files_properties(src/quick/${menu_file}.qml PROPERTIES QT_RESOURCE_ALIAS ${menu_file}.qml)
 endforeach()
 qt_add_qml_module(WindowSystemQuick URI WindowSystem.Internal VERSION 1.0 NO_PLUGIN
@@ -172,7 +174,8 @@ qt_add_qml_module(WindowSystemQuick URI WindowSystem.Internal VERSION 1.0 NO_PLU
         src/quick/HoverToolTip.qml src/quick/CommandPanelView.qml
         src/quick/SettingsPageView.qml src/quick/SettingCheckBox.qml src/quick/SettingComboBox.qml
         src/quick/SettingSpinBox.qml src/quick/SettingTextField.qml src/quick/SettingSlider.qml
-        src/quick/SettingKeySequenceField.qml src/quick/SettingButton.qml src/quick/SettingTextArea.qml src/quick/SettingTable.qml)
+        src/quick/SettingKeySequenceField.qml src/quick/SettingButton.qml src/quick/SettingTextArea.qml src/quick/SettingTable.qml
+        src/quick/DialogView.qml)
 # WindowManager still lives in the Widgets library; 10.6 moves it out.
 target_link_libraries(WindowSystemQuick PUBLIC Qt6::Quick WindowSystem::Widgets PRIVATE Qt6::QuickControls2 WindowSystemPresentation WindowSystemSurfaces WindowSystemPlatform)
 qt_add_resources(window_system_masks src/quick/window_system_masks.qrc)

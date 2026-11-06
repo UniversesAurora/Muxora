@@ -15,7 +15,6 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
-#include <QMessageBox>
 #include <QQmlEngine>
 #include <QQuickWindow>
 #include <QSaveFile>
@@ -125,8 +124,12 @@ int main(int argc, char* argv[])
         }, {"layout"}, 1000});
     windows.commands().add({"help.about", QCoreApplication::translate("Muxora", "About Muxora"), "help", {}, {},
         [&windows](const window_system::CommandContext& ctx) {
-            QMessageBox::about(windows.windowWidget(ctx.window), QStringLiteral("Muxora"),
-                QCoreApplication::translate("Muxora", "Muxora 0.1.0\nFirst window system preview\n\nQt / Native C++, open source under MIT.\nRemote connections and file operations will follow after the window system is ready.")); return true;
+            window_system::DialogRequest about;
+            about.name = QStringLiteral("AboutDialog");
+            about.title = QStringLiteral("Muxora");
+            about.text = QCoreApplication::translate("Muxora", "Muxora 0.1.0\nFirst window system preview\n\nQt / Native C++, open source under MIT.\nRemote connections and file operations will follow after the window system is ready.");
+            about.cancellable = false;
+            return windows.openDialog(ctx.window, std::move(about)) != 0;
         }, {"help"}, 10});
     // Persist provider layouts before script owners unregister their chrome.
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, [&] { if (!parser.isSet("smoke")) save(); });

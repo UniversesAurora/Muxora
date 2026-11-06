@@ -7,6 +7,7 @@
 #include "style/tab_appearance_p.hpp"
 #include <QCursor>
 #include <QInputDialog>
+#include "dialogs.hpp"
 #include <QMenu>
 #include <QPointer>
 #include <cmath>
@@ -80,6 +81,14 @@ void WindowManager::registerTabGroupCommands()
         if (c.args.contains("name")) {
             if (c.args.value("name").metaType().id() != QMetaType::QString) return false;
             return renameGroup(c.group, c.args.value("name").toString());
+        }
+        if (d->presentation == Presentation::External) {
+            const QPointer<WindowManager> owner(this);
+            const auto group = c.group;
+            return askForText(*this, c.window, QStringLiteral("RenameGroupDialog"), QCoreApplication::translate("WindowSystem", "Rename tab group…"),
+                QCoreApplication::translate("WindowSystem", "Tab group name (empty for none)"), d->model.group(group)->name,
+                [owner, group] { return owner && owner->model().group(group); },
+                [owner, group](const QString& name) { if (owner) owner->renameGroup(group, name); });
         }
         const QPointer<WindowManager> self(this);
         bool accepted = false;

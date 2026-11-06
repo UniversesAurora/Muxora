@@ -3,7 +3,6 @@
 #include <window_system/window_manager.hpp>
 #include <QApplication>
 #include <QFileInfo>
-#include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
 #include <QSet>
@@ -60,7 +59,7 @@ class DetachedLauncher final : public QObject {
 
 struct AppScriptServices::Private {
     QPointer<window_system::WindowManager> manager;
-    QSet<QMessageBox *> notifications;
+    QSet<quint64> notifications; // Open notification dialogs.
     QSet<quint64> pending;
     quint64 nextLaunch = 0;
     std::shared_ptr<std::atomic<quint64>> generation = std::make_shared<std::atomic<quint64>>(1);
@@ -87,10 +86,10 @@ AppScriptServices::~AppScriptServices() {
 void AppScriptServices::reset() {
     ++*d->generation;
     d->pending.clear();
-    const auto notifications = d->notifications;
-    for (auto *notification : notifications)
-        delete notification;
-    d->notifications.clear();
+    const auto notifications = std::exchange(d->notifications, {});
+    if (d->manager)
+        for (const auto notification : notifications)
+            d->manager->closeDialog(notification);
 #ifdef Q_OS_WIN
     PlaySoundW(nullptr, nullptr, 0);
 #endif
@@ -127,19 +126,21 @@ lua_runtime::ScriptResult AppScriptServices::invoke(QString method, QVariantList
         if (d->notifications.size() >= maximumNotifications)
             return failure(QCoreApplication::translate("Muxora", "At most 16 script notifications may be shown at once."));
         const auto source = QUuid(context.value(QStringLiteral("window")).toString());
-        auto *parent = d->manager->windowWidget(source);
-        auto *box = new QMessageBox(QMessageBox::Information, title.toString(), message.toString(),
-                                    QMessageBox::Ok, parent);
-        box->setObjectName(QStringLiteral("LuaNotification"));
-        box->setTextFormat(Qt::PlainText);
-        box->setWindowModality(Qt::NonModal);
-        box->setAttribute(Qt::WA_DeleteOnClose);
-        window_system::applyTheme(box, d->manager->theme());
-        d->notifications.insert(box);
-        connect(box, &QObject::destroyed, this, [this, box] { d->notifications.remove(box); });
-        if (milliseconds > 0)
-            QTimer::singleShot(int(milliseconds), box, &QMessageBox::close);
-        box->show();
+        // A script without a window of its own notifies over the current one.
+        window_system::DialogRequest notification;
+        notification.name = QStringLiteral("LuaNotification");
+        notification.title = title.toString();
+        notification.text = message.toString();
+        notification.cancellable = false;
+        notification.modal = false;
+        notification.timeoutMs = int(milliseconds);
+        const auto id = std::make_shared<quint64>(0);
+        const QPointer<AppScriptServices> self(this);
+        notification.finished = [self, id] { if (self) self->d->notifications.remove(*id); };
+        *id = d->manager->openDialog(d->manager->context(source).window, std::move(notification));
+        if (!*id)
+            return failure(QCoreApplication::translate("Muxora", "Notifications need an open window."));
+        d->notifications.insert(*id);
         return success();
     }
     if (method == QStringLiteral("app.launch")) {

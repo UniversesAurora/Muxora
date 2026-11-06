@@ -5,6 +5,7 @@
 #include <window_system/theme.hpp>
 #include <window_system/toolbar_layout.hpp>
 #include <window_system/custom_chrome.hpp>
+#include <window_system/dialog_request.hpp>
 #include <window_system/view_state.hpp>
 #include <window_system/floating_panel.hpp>
 #include <window_system/tab_appearance.hpp>
@@ -125,6 +126,13 @@ public:
     bool requestNewTab(WindowId window, GroupId group = {}, QString command = {}, QUuid folder = {});
     void setContentFactory(ContentFactory factory);
     void setCloseGuard(CloseGuard guard);
+    // A dialog over the window, shown without blocking; the request says what
+    // accepting it does. Returns its ID, or 0 for an unknown window or when
+    // the presentation shows no dialogs.
+    quint64 openDialog(WindowId window, DialogRequest request);
+    void closeDialog(quint64 dialog);
+    // Brings an open dialog forward; false once it has closed.
+    bool raiseDialog(quint64 dialog);
     // The current visibility of every live pane is reported when the handler
     // is installed. Later changes are coalesced once per event-loop turn.
     // Cross-window moves report affected panes as hidden before reparenting.
@@ -364,6 +372,8 @@ private:
     Q_SIGNAL void commandPaletteRequested(const window_system::CommandContext& context, const window_system::FloatingPanelOptions& options);
     Q_SIGNAL void windowSelectorRequested(window_system::WindowId window, const window_system::FloatingPanelOptions& options);
     void setTransientStatus(WindowId window, const QString& text);
+    // The presentation's dialogs; none in an External presentation without them.
+    DialogPresenter* dialogPresenter();
     TabId addTabRecord(WindowId window, const TabOptions& options, GroupId group, int insertionIndex);
     // saveLayout() without the model: window placement, options, toolbars,
     // pane descriptors and profiles of the live (not drag-stable) state.

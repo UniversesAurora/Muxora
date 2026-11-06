@@ -206,6 +206,10 @@ end, { id = &apos;user.hello&apos;, title = &apos;Lua: 问候&apos; })
         <translation>最多同时显示 16 条脚本通知。</translation>
     </message>
     <message>
+        <source>Notifications need an open window.</source>
+        <translation>通知需要有打开的窗口。</translation>
+    </message>
+    <message>
         <source>Launching a program requires valid program and cwd strings.</source>
         <translation>启动程序需要有效的 program 和 cwd 字符串。</translation>
     </message>

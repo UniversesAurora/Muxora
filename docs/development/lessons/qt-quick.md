@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### 初始焦点在 QML 里由字段自己取
+
+- **现象**：Quick 对话框打开后第一个输入框没有焦点；多行文字的对话框按回车直接确定了。
+- **原因**：C++ 创建对话框内容后马上用 `findChild` 找第一个字段，Repeater 和 Loader 里的项那时还没建好，找不到。多行文字控件的外层是 ScrollView，焦点给了它，按键没有进编辑器，回车被对话框当成确定。
+- **做法**：由字段在 `Component.onCompleted` 里判断自己是不是第一个，再取焦点；外面包了 ScrollView 的，把焦点给里面的编辑器。测试先等编辑器 `hasActiveFocus()` 再按键。
+- **出处**：2026-11-06，10.4i，`QuickDialogsTest::renamingAsksForTheName`、`severalLinesAndRaising`，见 [记录](../verification-log/2026-11.md#quick-对话框2026-11-06)。
+
 ### 条件 Binding 停用时会把属性改回去
 
 - **现象**：Quick 设置页里点进输入框，原来的文字被清空。

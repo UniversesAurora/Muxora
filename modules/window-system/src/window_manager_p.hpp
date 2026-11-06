@@ -56,6 +56,13 @@ struct WindowManager::Private {
     // presentation committed it, and the presentation's editor of a window.
     QHash<WindowId, QHash<WindowKind, QJsonObject>> toolbarLayouts;
     std::function<ToolbarEditor*(WindowId)> toolbarEditors;
+    // The presentation's dialogs (External), or the Widgets ones; the open
+    // ones by ID with what makes them close as the layout changes.
+    DialogPresenter* dialogPresenter = nullptr;
+    std::unique_ptr<DialogPresenter> widgetDialogs;
+    QHash<quint64, std::function<bool()>> openDialogs;
+    quint64 nextDialog = 0;
+    bool watchingDialogs = false;
     // Each window's status message and transient message, for presentations
     // other than Widgets, which keep theirs in the status bar itself.
     QHash<WindowId, QString> statusMessages;

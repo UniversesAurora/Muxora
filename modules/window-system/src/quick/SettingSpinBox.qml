@@ -12,6 +12,8 @@ Basic.SpinBox {
     readonly property real unit: style.unit
     property int decimals: 0
     property string suffix: ""
+    // Shown for the minimum, which then means none (QSpinBox's special value).
+    property string emptyText: ""
     property real minimum: 0
     property real maximum: 100
     property real step: 1
@@ -30,12 +32,14 @@ Basic.SpinBox {
     leftPadding: 5 * unit
     rightPadding: up.indicator.width + 2 * unit
     validator: null
-    textFromValue: (value, locale) => (value / factor).toFixed(decimals) + suffix
+    textFromValue: (value, locale) => emptyText && value === from ? emptyText : (value / factor).toFixed(decimals) + suffix
     valueFromText: (text, locale) => {
+        if (emptyText && text === emptyText) return from
         const parsed = parseFloat(text)
         return isNaN(parsed) ? value : Math.round(Math.min(maximum, Math.max(minimum, parsed)) * factor)
     }
     onValueModified: edited(value / factor)
+    function selectAll() { contentItem.selectAll() }
     contentItem: TextInput {
         text: control.displayText
         font: control.font

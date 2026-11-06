@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QPointer>
 
-class QInputDialog;
 class QTimer;
 namespace window_system {
 class WindowManager;
@@ -45,7 +44,7 @@ class AppScriptingSetup final : public QObject {
     window_system_lua::ScriptHost *host_;
     AppScriptServices *services_;
     QTimer *saveTimer_;
-    QPointer<QInputDialog> input_;
+    quint64 input_ = 0; // The open script input, by its dialog ID.
     QString initializationError_;
     bool started_ = false;
     bool loading_ = false;

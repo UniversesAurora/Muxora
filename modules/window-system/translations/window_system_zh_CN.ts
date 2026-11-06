@@ -3417,5 +3417,9 @@ Ctrl+Shift+P 打开命令面板</translation>
         <source>More menus</source>
         <translation>更多菜单</translation>
     </message>
+    <message>
+        <source>OK</source>
+        <translation>确定</translation>
+    </message>
 </context>
 </TS>

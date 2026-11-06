@@ -49,9 +49,37 @@ bool dimension(const QVariant& value, int minimum, int& result)
     return true;
 }
 
+// Width and height of zero mean the default or filling the side.
+bool acceptableSize(int width, int height) { return (width == 0 || width >= 140) && (height == 0 || height >= 100); }
+
 bool chooseSize(WindowManager* manager, const CommandContext& context, TabId tab)
 {
     const QPointer<WindowManager> owner(manager);
+    if (manager->presentation() == WindowManager::Presentation::External) {
+        const auto edge = targetEdge(manager, tab);
+        const bool vertical = edge == Edge::Left || edge == Edge::Right;
+        const auto current = manager->peekSizePolicy(tab, edge);
+        DialogRequest request;
+        request.name = QStringLiteral("PeekSizeDialog");
+        request.title = QCoreApplication::translate("WindowSystem", "Auto-hide panel size");
+        const auto suffix = QCoreApplication::translate("WindowSystem", " px");
+        request.fields = {
+            {QStringLiteral("PeekWidthInput"), QCoreApplication::translate("WindowSystem", "&Width"), DialogField::Kind::Integer,
+             current.width.value_or(0), 0, QWIDGETSIZE_MAX, suffix,
+             vertical ? QCoreApplication::translate("WindowSystem", "Default width") : QCoreApplication::translate("WindowSystem", "Fill width")},
+            {QStringLiteral("PeekHeightInput"), QCoreApplication::translate("WindowSystem", "&Height"), DialogField::Kind::Integer,
+             current.height.value_or(0), 0, QWIDGETSIZE_MAX, suffix,
+             vertical ? QCoreApplication::translate("WindowSystem", "Fill height") : QCoreApplication::translate("WindowSystem", "Default height")}};
+        request.acceptable = [](const QVariantMap& values) {
+            return acceptableSize(values.value("PeekWidthInput").toInt(), values.value("PeekHeightInput").toInt());
+        };
+        request.applies = [owner, tab] { return owner && isAutoHideTab(owner, tab); };
+        request.accepted = [owner, tab, edge](const QVariantMap& values) {
+            const auto optional = [](int value) { return value == 0 ? std::optional<int>{} : std::optional<int>{value}; };
+            if (owner) owner->setPeekSizePolicy(tab, edge, {optional(values.value("PeekWidthInput").toInt()), optional(values.value("PeekHeightInput").toInt())});
+        };
+        return manager->openDialog(context.window, std::move(request)) != 0;
+    }
     const QPointer<QWidget> window(manager->windowWidget(context.window));
     if (!window) return false;
     const auto edge = targetEdge(manager, tab);
@@ -77,8 +105,7 @@ bool chooseSize(WindowManager* manager, const CommandContext& context, TabId tab
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     buttons->setObjectName("PeekSizeButtons"); form->addRow(buttons);
     const auto updateValidity = [width, height, buttons] {
-        buttons->button(QDialogButtonBox::Ok)->setEnabled((width->value() == 0 || width->value() >= 140)
-            && (height->value() == 0 || height->value() >= 100));
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(acceptableSize(width->value(), height->value()));
     };
     QObject::connect(width, &QSpinBox::valueChanged, &dialog, updateValidity);
     QObject::connect(height, &QSpinBox::valueChanged, &dialog, updateValidity);

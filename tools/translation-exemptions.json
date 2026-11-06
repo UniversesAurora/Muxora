@@ -60,5 +60,6 @@
   {"file": "modules/window-system/src/quick/command_panel.hpp", "text": "Created by the Quick workspace", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
   {"file": "modules/window-system/src/quick/settings_page_model.hpp", "text": "Created by the Quick workspace", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
   {"file": "modules/window-system/src/quick/settings_style.hpp", "text": "Created with a settings page", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
+  {"file": "modules/window-system/src/quick/dialog_window.hpp", "text": "Created by the Quick workspace", "count": 1, "reason": "QML type-registration diagnostic for an internal uncreatable type, not UI text."},
   {"file": "modules/window-system/src/settings/setting_description.cpp", "text": "Segoe UI, Microsoft YaHei, sans-serif", "count": 1, "reason": "Font family identifier passed to Qt or shown verbatim as a family-list example, not a translated UI label."}
 ]

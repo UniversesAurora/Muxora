@@ -12,6 +12,7 @@
 #include "status_bar_item.hpp"
 #include "command_panel.hpp"
 #include "settings_page_model.hpp"
+#include "dialog_window.hpp"
 #include "commands/command_dialogs.hpp"
 #include "window_manager_p.hpp"
 #ifdef Q_OS_WIN
@@ -375,6 +376,7 @@ struct QuickWorkspace::Private final : WindowPresenter {
     bool syncAfterProjection = false;
     PaneId focusedPane;
     QPointer<QQuickWindow> focusedWindow;
+    std::unique_ptr<quick::QuickDialogs> dialogs;
 
     // As the Widgets manager shows its windows; a minimized window comes
     // back in the state it had, maximized or full screen.
@@ -480,6 +482,9 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
                 it.value()->syncStatus(d->manager.d->statusMessages.value(it.key(), QCoreApplication::translate("WindowSystem", "Ready")),
                                        d->manager.d->transientStatus.value(it.key()));
     });
+    d->dialogs = std::make_unique<quick::QuickDialogs>(this, [this](WindowId window) -> QWindow* { return d->windows.value(window); },
+        [this] { return d->manager.interfaceTheme(); });
+    manager.d->dialogPresenter = d->dialogs.get();
     manager.d->toolbarEditors = [this](WindowId window) -> ToolbarEditor* {
         const auto view = d->windows.value(window);
         return view ? view->toolbarEditor() : nullptr;
@@ -538,6 +543,8 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
 QuickWorkspace::~QuickWorkspace()
 {
     d->manager.d->toolbarEditors = {};
+    d->manager.d->dialogPresenter = nullptr;
+    d->dialogs.reset();
     d->host.setVisibilityHandler({});
     d->manager.setPresenter(nullptr);
     d->drag.cancel();

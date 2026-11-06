@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QCoreApplication>
 #include <QInputDialog>
+#include "commands/dialogs.hpp"
 #include <QJsonArray>
 #include <QLineEdit>
 #include <QScopeGuard>
@@ -433,6 +434,13 @@ void WindowManager::registerCustomChromeCommands() {
                          if (!tab)
                              return false;
                          const auto current = tab->title;
+                         if (owner->presentation() == WindowManager::Presentation::External) {
+                             const auto id = c.tab;
+                             return askForText(*owner, c.window, QStringLiteral("RenameTabDialog"),
+                                 QCoreApplication::translate("WindowSystem", "Rename tab…"), QCoreApplication::translate("WindowSystem", "Tab name"), current,
+                                 [owner, id] { return owner && owner->model().tab(id); },
+                                 [owner, id](const QString& title) { if (owner) owner->renameTab(id, title); });
+                         }
                          bool accepted = false;
                          const auto title =
                              QInputDialog::getText(owner->windowWidget(c.window),

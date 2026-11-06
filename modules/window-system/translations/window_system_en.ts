@@ -3427,5 +3427,9 @@ Ctrl+Shift+P opens the command palette</translation>
         <source>More menus</source>
         <translation>More menus</translation>
     </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
+    </message>
 </context>
 </TS>

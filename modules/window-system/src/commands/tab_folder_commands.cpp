@@ -6,6 +6,7 @@
 #include "commands/tab_presentation_commands.hpp"
 #include <QCursor>
 #include <QInputDialog>
+#include "dialogs.hpp"
 #include <QPointer>
 
 namespace window_system {
@@ -80,6 +81,15 @@ void WindowManager::registerTabFolderCommands()
             if (c.args.value("name").metaType().id() != QMetaType::QString) return false;
             const auto name = c.args.value("name").toString();
             return changeFolder(c, [&](TabFolderRecord& folder) { folder.name = name; });
+        }
+        if (d->presentation == Presentation::External) {
+            const QPointer<WindowManager> owner(this);
+            return askForText(*this, c.window, QStringLiteral("RenameFolderDialog"), QCoreApplication::translate("WindowSystem", "Rename tab folder…"),
+                QCoreApplication::translate("WindowSystem", "Tab folder name (empty for none)"), record->name,
+                [owner, folderOf, c] { return owner && owner->model().folder(folderOf(c)); },
+                [owner, changeFolder, c](const QString& name) {
+                    if (owner) changeFolder(c, [&](TabFolderRecord& folder) { folder.name = name; });
+                });
         }
         const QPointer<WindowManager> self(this);
         bool accepted = false;

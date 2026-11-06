@@ -206,6 +206,10 @@ end, { id = &apos;user.hello&apos;, title = &apos;Lua: Hello&apos; })
         <translation>At most 16 script notifications may be shown at once.</translation>
     </message>
     <message>
+        <source>Notifications need an open window.</source>
+        <translation>Notifications need an open window.</translation>
+    </message>
+    <message>
         <source>Launching a program requires valid program and cwd strings.</source>
         <translation>Launching a program requires valid program and cwd strings.</translation>
     </message>
