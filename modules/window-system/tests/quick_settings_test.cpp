@@ -178,6 +178,10 @@ private slots:
         auto* textField = namedItem(page.get(), QStringLiteral("SettingControl/test.text"));
         QVERIFY(textField);
         QCOMPARE(textField->property("text").toString(), QStringLiteral("first"));
+        // Focusing the field keeps its text.
+        QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, centre(textField));
+        QTRY_VERIFY(textField->hasActiveFocus());
+        QCOMPARE(textField->property("text").toString(), QStringLiteral("first"));
         typeInto(&window, textField, QStringLiteral("second"));
         QTRY_COMPARE(text, QStringLiteral("second"));
 

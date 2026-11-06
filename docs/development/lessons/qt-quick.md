@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### 条件 Binding 停用时会把属性改回去
+
+- **现象**：Quick 设置页里点进输入框，原来的文字被清空。
+- **原因**：输入框用 `Binding on text { when: !activeFocus }`，想在聚焦时停止跟随设置值。Qt 6 的 `Binding` 默认 `restoreMode` 是 `RestoreBindingOrValue`，`when` 变成 false 时把属性恢复成绑定生效前的值，这里是空字符串。
+- **做法**：只想“暂停跟随、保留当前值”时写 `restoreMode: Binding.RestoreNone`。测试要先检查聚焦后值不变，再输入；先全选再输入会掩盖这个问题。
+- **出处**：2026-11-06，10.4h，`QuickSettingsTest::textDecimalAndSliderControls`，见 [记录](../verification-log/2026-11.md#quick-设置页输入框聚焦后清空2026-11-06)。
+
 ### 拼按键序列时空的段要写 0
 
 - **现象**：把按键录入规则抽成共用代码后，依次按 Ctrl+K、A、B，录到的是 “B, , , ”：每段都开始新序列，后面跟着三个空名字的键。

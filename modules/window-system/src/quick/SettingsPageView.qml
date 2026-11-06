@@ -238,7 +238,7 @@ Rectangle {
                             maximumLength: entry.modelData.maximumLength > 0 ? entry.modelData.maximumLength : 32767
                             placeholderText: entry.modelData.placeholder
                             // Typing keeps its text; a change made elsewhere shows once it leaves.
-                            Binding on text { value: control.value ?? ""; when: !textFieldItem.activeFocus }
+                            Binding on text { value: control.value ?? ""; when: !textFieldItem.activeFocus; restoreMode: Binding.RestoreNone }
                             id: textFieldItem
                             onEditingFinished: root.page.write(entry.setting, text)
                         }
