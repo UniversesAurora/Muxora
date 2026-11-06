@@ -49,6 +49,60 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-11-07 · Codex · 测试迁移清单、顶部切换基线与菜单延迟创建
+
+### 最后提交
+
+实现和测量记录截至 `0bb5d02`，本节随交接文档提交推送。交出时 `main` 与 `origin/main` 一致，工作区干净。Claude 的审查范围从 `86636a0` 之后开始。
+
+### 本轮完成
+
+- `4ed95f4` 完成 10.6 的 3.2 文档清单，覆盖实际检索到的全部源码和主用例，A／B／C 分类及各项去向写在 [计划清单](../roadmap/implementation/phase-10-qt-quick.md#32-测试清单)。计划原记源码数量与实际检索结果的差异也已说明。B 类目标逐项阅读了实际 Quick 断言，无法确认等价的列 C。分类核对方法、接手构建与三个定向套件的结果见 [接手记录](verification-log/2026-11.md#widgets-测试迁移清单与接手复核2026-11-07)。清单审定前未执行 3.3。
+- `d1a791d` 记录 10.5 后续第 1 项的顶部远距切换三轮接手基线。卡顿仍存在，第一轮另有长峰值，全部保留在 [测量记录](verification-log/2026-11.md#顶部远距切换接手基线2026-11-07)。该批末恢复桌面首次失败，单独以管理员权限运行恢复入口后成功。
+- `0b9ad34` 实现 10.5 后续第 4 项的菜单延迟创建。为保留 Qt 初次定位和键盘选择，父菜单展开时提前准备直接子菜单本级行，更深层只保存描述。对象量下降，冷创建耗时没有稳定改善。实现理由、Qt 源码依据、改前改后三轮数字和两个菜单套件结果见 [菜单记录](verification-log/2026-11.md#quick-菜单按展开层级创建2026-11-07)。代码在 `popup_menu.*` 和 `PopupMenuNode.qml`，新增用例在 `quick_popup_menu_test.cpp`，经验写入 [Qt Quick 经验](lessons/qt-quick.md#弹出菜单延迟创建要在定位和键盘选项之前准备)。
+- `0bb5d02` 记录临时清理被策略拦截，具体范围见下面待清理节。Debug 应用和相关菜单目标、Release 工作区基准构建成功。运行范围及首次失败均在上述记录中，未运行全量或大回归，未部署 Release、打包或在应用里试用。
+
+### 进行中
+
+- 10.6 的 3.2 已整理，等待 Claude 审表，3.3–3.7 尚未执行。C 类还包含旧控件内部结构依赖及需审定的外观混合断言，按计划合并、补充或审定，不逐条照搬。
+- 10.5 后续第 1 项只有接手基线，尚未定位顶部切换峰值所在函数；第 2 项多行展开、第 3 项 `GroupItem::pagePicture` 及第 5 项多窗口复测尚未开展。本轮菜单实现减少创建对象，冷初始化剩余成本尚未归因。
+
+### 下一步
+
+1. Claude 按项目 `review-handoff` 审查 `86636a0` 之后的提交，先答复下方 Q1。菜单重点核对提前一层准备、首次键盘选择、动态贡献刷新和所有权释放。
+2. 审定清单后，再把 3.3 起可执行的源码与边界交给执行者。保留原断言，一个源码一个提交，不能直接迁移的转 C 并写原因。
+3. 继续按 [10.5 后续优化顺序](../roadmap/implementation/phase-10-qt-quick.md#105-帧成本与资源调优) 安排测量与归因，优化改法仍由 Claude 决定。顶部切换和菜单冷初始化都没有性能验收结论。
+4. 清理下面列出的系统临时产物前重新核对内容，正式报告保留在 `out/test-results/`。
+
+### 待用户决定
+
+无新增。Quick 整体试用、真实读屏试用、全量回归单独授权、Release 预览更新，以及 8.27 的具体要求继续保留。当前 Release 预览是 11-04 的版本。
+
+### 请下一位回答
+
+Q1（Codex 问 Claude，2026-11-07）
+
+请审定 [3.2 测试清单](../roadmap/implementation/phase-10-qt-quick.md#32-测试清单)，确认哪些 A 类可进入 3.3，以及 C 类中需要补 Quick 行为覆盖或可按测试规范退役的范围。
+
+清单基于 `86636a0`，逐主用例列出分类与去向，数据函数并入所属主用例。B 类均列出已核对断言的具体 Quick 用例，方向导航里仍从 Widgets 取几何的路径保守列 C。材料为清单、对应源码和 [接手记录](verification-log/2026-11.md#widgets-测试迁移清单与接手复核2026-11-07)。建议先审定边界再按源码迁移，不以现有实现改变断言。请答复批准或要求修改，并列出允许进入 3.3 的源码及条件。
+
+### 本轮新决定
+
+无新增用户决定。优化方案及 Widgets 删除拆步仍由 Claude 决定，执行者按已安排的步骤执行。
+
+### 环境与注意事项
+
+- 没有本轮启动后仍在运行的程序或构建。正式测量报告及构建日志保留在 `out/test-results/`，路径见验证日志。
+- 菜单测量为真实管理器目录的独立菜单栏创建，包含首次初始化，统计会话拥有的全部 Quick 子对象。它不包含原生窗口显示或输入，也不等于完整窗口启动时间或帧率。
+- 构建中 Qt 生成代码的原有 C4702 警告保留，未屏蔽诊断。桌面恢复状态正常，清理阻碍仅为下述删除策略。
+
+### Codex 接手后待清理（2026-11-07）
+
+本轮系统临时文件删除被执行策略拦截，仅返回 `blocked by policy`，未提供更具体原因。没有绕过拦截。请 Claude 接手时重新核对路径、内容及用途后删除，保留 `out/test-results/` 中的正式测量和测试记录。
+
+- 系统临时目录下的 `muxora-menu-create-20261107/`，共 8 个文件，无子目录或重解析点。文件为 `build.cmd`、`build.ps1`、`menu_create.cpp`、`menu_create.exe`、`menu_create.exp`、`menu_create.lib`、`menu_create.obj`、`run.ps1`，均为菜单测量源码、构建或运行产物。
+- 同一临时目录中的 10 个本轮文件为 `muxora-far-top-baseline-20261107.ps1`、`muxora-far-top-commit-20261107.txt`、`muxora-inventory-chrome-20261107.json`、`muxora-inventory-commit-20261107.txt`、`muxora-inventory-docking-20261107.json`、`muxora-inventory-merged-20261107.json`、`muxora-inventory-root-20261107.json`、`muxora-inventory-runtime-20261107.json`、`muxora-widgets-inventory-20261107.json`、`muxora-menu-lazy-commit-20261107.txt`，用途为测试清单中间数据、测量入口与提交草稿。
+
 ## 2026-11-07 · Claude：审查 10.4h–10.5，10.5 第一项优化，10.6 单元 3 拆步
 
 ### 最后提交
@@ -67,8 +121,6 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 ### 进行中
 
 无。10.6 的 3.2 起由执行者做；10.5 后续优化未开始。
-
-执行者接手核对时，3.2 所列命令在当前版本及计划拆步提交 `22cab07` 均返回 57 个源码，与文中 58 不符。清单按当前实际匹配的文件逐用例整理，范围差异随表记录。
 
 ### 下一步
 
@@ -103,13 +155,6 @@ Claude 下次接手：审查执行者的提交和 3.2 的表；根据 10.5 的�
 
 - 用户 2026-11-07 要求 Claude 把自己负责的部分做完再交接。
 - 10.5 的优化顺序和分工、10.6 单元 3 的步骤由 Claude 定，写在 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md) 对应小节。
-
-### Codex 接手后待清理（2026-11-07）
-
-本轮系统临时文件删除被执行策略拦截，仅返回 `blocked by policy`，未提供更具体原因。没有绕过拦截。请 Claude 接手时重新核对路径、内容及用途后删除，保留 `out/test-results/` 中的正式测量和测试记录。
-
-- 系统临时目录下的 `muxora-menu-create-20261107/`，共 8 个文件，无子目录或重解析点。文件为 `build.cmd`、`build.ps1`、`menu_create.cpp`、`menu_create.exe`、`menu_create.exp`、`menu_create.lib`、`menu_create.obj`、`run.ps1`，均为菜单测量源码、构建或运行产物。
-- 同一临时目录中的 10 个本轮文件为 `muxora-far-top-baseline-20261107.ps1`、`muxora-far-top-commit-20261107.txt`、`muxora-inventory-chrome-20261107.json`、`muxora-inventory-commit-20261107.txt`、`muxora-inventory-docking-20261107.json`、`muxora-inventory-merged-20261107.json`、`muxora-inventory-root-20261107.json`、`muxora-inventory-runtime-20261107.json`、`muxora-widgets-inventory-20261107.json`、`muxora-menu-lazy-commit-20261107.txt`，用途为测试清单中间数据、测量入口与提交草稿。
 
 ### 环境与注意事项
 
@@ -161,40 +206,3 @@ Claude 下次接手：审查执行者的提交和 3.2 的表；根据 10.5 的�
 - 系统临时目录下 `muxora-quick-frame-measure-20261106`，仅含本轮采样源码、脚本、诊断日志与构建产物。交出前只读核实 91 个文件、无重解析点、无运行进程。此前递归删除被 `blocked by policy` 拦截，未给具体原因，未再次尝试。Claude 接手先核对实际路径、内容及用途，确认不含用户数据后删除。用户已收到绝对路径和无需管理员权限的手动命令。
 - 原始 JSON 和文本报告在 `out/test-results/`，命名与范围见验证日志。计时程序副本可以清理。`out/diagnostics/quick-migration/` 与 `quick-tab-strip/` 是此前保留的基准证据，按原计划处理。
 - 函数归因为包含子调用的 wall 时间，提交间隔来自 `frameSwapped`。GPU 执行时间、系统实际呈现及长期资源验收仍待完成。
-
-## 2026-11-06 · Claude：10.4e–i 完成，Quick 外观对齐 Widgets 参考版
-
-- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。
-- **本轮完成**（上次交接后 22 个提交加本节；每项的改动、排查和实际运行结果见链接）：
-  - 审查 Codex 的 10.3 子步 6 至 10.4e 提交并修正，见 [审查记录](verification-log/2026-11.md#审查-codex-的-103-子步-6-至-104e-提交2026-11-05)；10 月日志里错放的 11 月记录已移回。
-  - 10.4e 工具栏完成：[编辑与写回](verification-log/2026-11.md#quick-工具栏编辑与布局写回2026-11-05)、[区域菜单与选项菜单](verification-log/2026-11.md#quick-工具栏区域菜单与选项菜单2026-11-05)、[手柄拖动](verification-log/2026-11.md#quick-工具栏手柄拖动2026-11-05)、[悬停提示](verification-log/2026-11.md#quick-悬停提示2026-11-05)。
-  - 10.4f [状态栏](verification-log/2026-11.md#quick-状态栏2026-11-05)；10.4g [命令面板与窗口选择器](verification-log/2026-11.md#quick-命令面板与窗口选择器2026-11-05)、[拖动中按 Tab 选目标](verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
-  - 10.4h 中 Claude 的部分：[设置页与表单控件](verification-log/2026-11.md#quick-设置页与表单控件2026-11-06)、[标签配色编辑](verification-log/2026-11.md#quick-设置页的标签配色编辑2026-11-06)、[输入框聚焦清空的修复](verification-log/2026-11.md#quick-设置页输入框聚焦后清空2026-11-06)。
-  - 10.4i [对话框](verification-log/2026-11.md#quick-对话框2026-11-06)（管理器的 `openDialog`，不阻塞调用方）和 [选择菜单](verification-log/2026-11.md#quick-下的选择菜单2026-11-06)（Quick 下不再弹 Widgets 菜单，选择沿用原命令上下文）。
-  - Muxora [文件页的地址栏和信息栏](verification-log/2026-11.md#muxora-文件页的地址栏和信息栏2026-11-06)。
-  - 按用户指出的标签问题逐像素对齐 Widgets：[窗口先排好再显示](verification-log/2026-11.md#quick-窗口启动时标签先分离再接合2026-11-06)、[顶部边框与菜单项高度](verification-log/2026-11.md#quick-窗口顶部边框和菜单项高度对齐-widgets2026-11-06)、[工具栏按钮与菜单栏选项按钮](verification-log/2026-11.md#quick-工具栏按钮宽度和菜单栏选项按钮对齐-widgets2026-11-06)、[菜单标题被截断](verification-log/2026-11.md#quick-菜单栏标题被截断2026-11-06)、[访问键下划线](verification-log/2026-11.md#quick-菜单的访问键下划线照-windows-规则显示2026-11-06)。
-  - `quiet-desktop.ps1` 恢复窗口时仍按原顺序恢复，但不再检查顺序（用户决定，见 [记录](verification-log/2026-11.md#桌面隔离恢复时不再检查窗口顺序2026-11-05)）。
-  - 验证范围：每步只跑相关套件，最后一次全部 21 个 Quick 套件、`external-presentation` 和应用的 `localization` 在 `ec66ca3` 之前的 `5d33232` 上通过，`ec66ca3` 之后跑了菜单相关的 9 个套件；翻译检查和文档检查通过。没有跑全量，没有在应用里手动试用。
-- **进行中**：无。10.4h 剩下的部分属于执行者，见下一步。
-- **下一步**（给执行者，按顺序；每项的要求写在 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md#104-工具栏侧栏菜单与设置) 对应条目里）：
-  1. 先读 [助手协作经验](lessons/collaboration.md)、[Qt Quick 经验](lessons/qt-quick.md) 和阶段 10 的 10.4 状态段，特别是“和 Widgets 版对照的标准”。
-  2. **10.4h 其余分类**：把 `settings/settings_view_options.cpp`（“显示”分类 `window/display`）、`settings/settings_tab_appearance.cpp` 里标签外观的其余设置（放进已有的 `window/tabs` 分类、排在标签配色前面）和“置顶标签”分类（`window/tabs/sticky`）改写成 `settings/setting_description.cpp` 里的描述，Quick 设置页自动显示。栏显隐只作用于设置页所在的窗口：给 `describeSettings` 加窗口参数，`quick::createSettingsContent` 从窗格所在窗口传入。控件类型按 [设置设计 §3](../design/settings-and-commands-design.md#3-全局设置与编辑) 选，已有类型够用；遇到现有类型表达不了的控件就停下，写进交接记录。用例加在 `quick-settings`：每个分类挑一两个设置，检查改动写回管理器、别处的改动回到控件、不可编辑时控件禁用（例如标题裁切关闭时长度控件）。
-  3. **10.4h 快捷键页**：照 `settings/shortcuts_page.cpp` 做 Quick 页面，用已有的 `SettingTable`（命令列表、绑定列表）、`SettingKeySequenceField`（录键，录键时不触发快捷键已经做好）、`SettingButton`、`SettingTextArea`（参数 JSON）、`SettingTextField`（搜索）和 `SettingsStyle`。先把冲突与前缀提示、参数校验、`runCommands` 校验这些规则从 `ShortcutsPage` 移到不依赖控件的代码里，两边共用（Widgets 页改为调用它，跑一次 `shortcut-settings` 确认行为不变）。内容按 `window_system.shortcuts` 类型由 `quick::createSettingsContent` 创建（现在这个类型在 Quick 下是空白标签）。用例加在 `quick-settings`：搜索、按键搜索、录入并应用一条绑定、冲突时不能应用、删除绑定。
-  4. **10.4k 菜单栏单按 Alt 的键盘导航**：要求和用例写在计划的 10.4k 条目里。
-  5. **10.4j 无障碍**：按计划条目。
-  6. 每项完成：更新计划状态、验证日志、变更记录和预览说明；只跑相关套件，桌面套件整批经 `quiet-desktop.ps1 -Elevate`。不要删 Widgets 代码：10.6 单元 2 已并入单元 3，等 Claude 拆好步骤。
-  7. 碰到新界面组件或新外观就停下写进交接记录；复用现有控件和样式的接入自己做。
-- **Claude 下次接手**：审查执行者的提交；拆 10.6 单元 3（管理器去掉 Widgets 呈现）为可单独提交的步骤；根据 10.5 的测量定优化方案。
-- **待用户决定**：无新问题。之前就有的：8.27 菜单与浮动面板重做的具体要求；Quick 版整体试用（拖动、布局、视图模式、工具栏编辑、设置页、对话框）。Release 预览（`out/package/muxora-preview/`）仍是 11-04 的版本，没有更新，未打包。
-- **请下一位回答**：无。
-- **本轮新决定**（用户 2026-11-06，写在 [阶段 10 · 10.4](../roadmap/implementation/phase-10-qt-quick.md#104-工具栏侧栏菜单与设置)）：
-  - Quick 的窗口框架、标签、菜单、工具栏等要和 Widgets 参考版一比一一致，以同一进程里的 Widgets 窗口为准。
-  - Muxora 的占位内容页以后会重写，不要求还原；文字纵向位置只要合理，不要求逐像素一致。
-  - 要有菜单栏单按 Alt 的键盘导航（10.4k）。
-  - 10.6 单元 2 并入单元 3（Claude 根据现状改的计划，理由写在表里）。
-- **环境与注意事项**：
-  - 用 `Start-Process` 在 `quiet-desktop.ps1` 会话里启动应用截图或冒烟后，有两次桌面没有恢复，按提示单独跑 `quiet-desktop.ps1 -Elevate -Restore` 就好。
-  - 应用的 `--screenshot` 截完不退出，要关窗口；它在启动后 700 毫秒拍，适合检查第一帧。和 Widgets 参考版对比时两边都用 `--fresh --state-dir <临时目录>`，不要碰参考包自带的 `data/`。
-  - 测试进程崩溃时，`-o 文件` 的输出不完整，去掉 `-o`、把标准输出重定向到文件才能看到调用栈，见 [调试经验](lessons/debugging.md#测试进程崩溃时看标准输出里的调用栈)。
-  - `out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 仍是 10.5 的基准证据，保留；本轮的对比截图目录已删除。
-  - 没有运行中的预览或测试。
