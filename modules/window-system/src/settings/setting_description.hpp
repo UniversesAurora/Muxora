@@ -8,14 +8,15 @@
 
 namespace window_system {
 class WindowManager;
+struct TabAppearance;
 
 // One built-in setting as a settings page lists it, independent of the
 // presentation. The control follows the kind (settings design §3): a check
 // box, a drop-down marking the default, a number box with an optional unit,
-// a text field, or a slider over the common part of a number's range next to
-// a number box for all of it.
+// a text field, a slider over the common part of a number's range next to a
+// number box for all of it, or a JSON text applied with a button.
 struct SettingDescription {
-    enum class Kind { Toggle, Choice, Integer, Real, Text, IntegerSlider };
+    enum class Kind { Toggle, Choice, Integer, Real, Text, IntegerSlider, Json };
     struct Choice {
         QString label;
         QVariant value;
@@ -39,6 +40,10 @@ struct SettingDescription {
     std::function<bool(const QVariant&)> write;
     // Whether the control can be edited now; always when unset.
     std::function<bool()> enabled;
+    // Json: read gives the text; apply checks and applies an edited text and
+    // says what happened in `message`. False leaves the setting as it was.
+    QString applyLabel;
+    std::function<bool(const QString& text, QString& message)> apply;
 };
 
 struct SettingCategory {
@@ -50,5 +55,10 @@ struct SettingCategory {
 // Sections are added here as they move from the Widgets page (10.4h).
 [[nodiscard]] QVector<SettingCategory> settingCategories(WindowManager* manager);
 [[nodiscard]] QVector<SettingDescription> describeSettings(WindowManager* manager);
+
+// The tab color list as both settings pages edit it: an indented JSON array,
+// applied over the other tab appearance settings.
+[[nodiscard]] QString tabColorsText(const TabAppearance& appearance);
+bool applyTabColorsText(WindowManager& manager, const QString& text, QString& message);
 
 } // namespace window_system

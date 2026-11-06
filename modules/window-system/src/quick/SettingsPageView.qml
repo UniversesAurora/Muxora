@@ -192,7 +192,8 @@ Rectangle {
                                 : entry.modelData.kind === "toggle" ? toggle
                                 : entry.modelData.kind === "choice" ? choice
                                 : entry.modelData.kind === "text" ? textField
-                                : entry.modelData.kind === "slider" ? slider : number
+                                : entry.modelData.kind === "slider" ? slider
+                                : entry.modelData.kind === "json" ? json : number
                         }
                         TextEdit {
                             text: entry.modelData.id ?? ""
@@ -256,6 +257,53 @@ Rectangle {
                             suffix: entry.modelData.suffix
                             number: control.value ?? 0
                             onEdited: (number) => root.page.write(entry.setting, entry.modelData.kind === "integer" ? Math.round(number) : number)
+                        }
+                    }
+                    Component {
+                        id: json
+                        // The text, a message under it and the apply button,
+                        // as the Widgets editor. Edited text stays until it is
+                        // applied; a change made elsewhere shows while unedited.
+                        Column {
+                            id: editor
+                            objectName: "SettingControl/" + entry.modelData.id
+                            property bool edited: false
+                            property string message
+                            width: Math.min(560 * root.unit, body.width)
+                            spacing: 4 * root.unit
+                            function show() { jsonText.text = control.value ?? ""; edited = false }
+                            Component.onCompleted: show()
+                            Connections { target: control; function onValueChanged() { if (!editor.edited) editor.show() } }
+                            SettingTextArea {
+                                id: jsonText
+                                objectName: "SettingJson/" + entry.modelData.id
+                                width: parent.width
+                                style: root.style
+                                minimumHeight: 150 * root.unit
+                                maximumHeight: 240 * root.unit
+                                enabled: control.editable
+                                onTextChanged: editor.edited = text !== (control.value ?? "")
+                            }
+                            Text {
+                                objectName: "SettingMessage/" + entry.modelData.id
+                                width: parent.width
+                                visible: text.length > 0
+                                text: editor.message
+                                color: root.colors.text
+                                font: root.style.font
+                                wrapMode: Text.Wrap
+                            }
+                            SettingButton {
+                                objectName: "SettingApply/" + entry.modelData.id
+                                style: root.style
+                                text: entry.modelData.applyLabel
+                                enabled: control.editable
+                                onClicked: {
+                                    const result = root.page.apply(entry.setting, jsonText.text)
+                                    editor.message = result.message ?? ""
+                                    if (result.applied) editor.show()
+                                }
+                            }
                         }
                     }
                     Component {

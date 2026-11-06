@@ -11,8 +11,10 @@ Basic.ScrollView {
     property alias text: area.text
     property alias placeholderText: area.placeholderText
     readonly property alias editor: area
+    property real minimumHeight: 54 * unit
+    property real maximumHeight: 100 * unit
     implicitWidth: 320 * unit
-    implicitHeight: Math.min(100 * unit, Math.max(54 * unit, area.implicitHeight))
+    implicitHeight: Math.min(maximumHeight, Math.max(minimumHeight, area.implicitHeight + 2 * unit))
     padding: control.unit
     background: Rectangle {
         color: control.enabled ? control.style.colors.surface : control.style.colors.raised

@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: MIT
 #include <QCoreApplication>
 #include "settings_page.hpp"
+#include "setting_description.hpp"
 #include "style/themed_controls.hpp"
 #include "style/integer_slider.hpp"
-#include "style/tab_appearance_p.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -148,20 +146,12 @@ void SettingsPage::addTabAppearanceOptions(QWidget* parent, QVBoxLayout* rows)
     connect(tabColors_, &QPlainTextEdit::textChanged, this, [this] { tabColorsDirty_ = true; });
     connect(apply, &QPushButton::clicked, this, [this] {
         if (!manager_) return;
-        QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(tabColors_->toPlainText().toUtf8(), &error);
-        if (error.error != QJsonParseError::NoError || !document.isArray()) {
-            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "Color list unchanged: enter a valid JSON array.")); return;
-        }
-        auto definition = tabAppearanceToJson(manager_->tabAppearance()); definition.insert("colors", document.array());
-        TabAppearance next;
-        const auto parsed = parseTabAppearance(definition, next);
-        if (!parsed) { tabColorDiagnostic_->setText(parsed.error); return; }
         const QPointer<SettingsPage> self(this);
-        tabColorsDirty_ = false;
-        if (manager_->setTabAppearance(next) && self) {
-            tabColorDiagnostic_->setText(QCoreApplication::translate("WindowSystem", "Color list applied.")); syncTabAppearanceOptions();
-        }
+        QString message;
+        const bool applied = applyTabColorsText(*manager_, tabColors_->toPlainText(), message);
+        if (!self) return;
+        tabColorDiagnostic_->setText(message);
+        if (applied) { tabColorsDirty_ = false; syncTabAppearanceOptions(); }
     });
 
     // The sticky tab options follow VS Code's pinned editor settings.
@@ -270,7 +260,7 @@ void SettingsPage::syncTabAppearanceOptions()
     }
     if (!tabColorsDirty_) {
         const QSignalBlocker block(tabColors_);
-        tabColors_->setPlainText(QString::fromUtf8(QJsonDocument(tabAppearanceToJson(appearance).value("colors").toArray()).toJson(QJsonDocument::Indented)));
+        tabColors_->setPlainText(tabColorsText(appearance));
     }
 }
 

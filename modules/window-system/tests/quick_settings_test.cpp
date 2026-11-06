@@ -2,11 +2,13 @@
 // Phase 10.4h: the Quick settings page from presentation-free descriptions,
 // and the controls the shortcuts page needs. Dimensions: control kind (check
 // box, drop-down, whole and decimal number with unit, text, slider with
-// number, key recorder, list, button, text area), edited here or elsewhere,
+// number, JSON text with apply button, key recorder, list, button, text
+// area), edited here or elsewhere,
 // search, opening an open page again, shortcuts while recording keys.
 #include "quick/settings_page_model.hpp"
 #include "quick/qml_scene_component.hpp"
 #include "quick/settings_style.hpp"
+#include "settings/setting_description.hpp"
 #include "quick_menu_test_support.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
@@ -206,6 +208,60 @@ private slots:
         bar->forceActiveFocus();
         QTest::keyClick(&window, Qt::Key_Left);
         QTRY_COMPARE(width, 999);
+    }
+
+    // The tab color list is JSON applied with a button, as on the Widgets
+    // page: edited text stays until applied, an invalid text is reported and
+    // changes nothing, an applied one shows as saved.
+    void tabColorsApplyEditedJson()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1000, 900)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        manager.showSettings(window);
+        QQuickItem* page = nullptr;
+        QTRY_VERIFY((page = namedItem(view->contentItem(), QStringLiteral("SettingsPage"))) && page->width() > 0);
+        auto* text = namedItem(page, QStringLiteral("SettingJson/tabs.colors"));
+        auto* apply = namedItem(page, QStringLiteral("SettingApply/tabs.colors"));
+        auto* message = namedItem(page, QStringLiteral("SettingMessage/tabs.colors"));
+        QVERIFY(text && apply && message);
+        QCOMPARE(text->property("text").toString(), tabColorsText(manager.tabAppearance()));
+        scrollTo(page, apply);
+
+        const auto original = manager.tabAppearance();
+        auto* editor = text->property("editor").value<QQuickItem*>();
+        // The text is taller than the box; click its visible part.
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(text));
+        QTRY_VERIFY(editor->hasActiveFocus());
+        QTest::keyClick(view, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClick(view, 'x');
+        QCOMPARE(text->property("text").toString(), QStringLiteral("x"));
+        // A change made elsewhere leaves the edited text.
+        auto other = original;
+        other.colors.first().name = QStringLiteral("Elsewhere");
+        QVERIFY(manager.setTabAppearance(other));
+        QCOMPARE(text->property("text").toString(), QStringLiteral("x"));
+        scrollTo(page, apply);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(apply));
+        QTRY_VERIFY(message->isVisible());
+        QCOMPARE(message->property("text").toString(), QStringLiteral("Color list unchanged: enter a valid JSON array."));
+        QCOMPARE(manager.tabAppearance(), other);
+
+        auto renamed = original;
+        renamed.colors.first().name = QStringLiteral("Renamed");
+        text->setProperty("text", tabColorsText(renamed));
+        scrollTo(page, apply);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(apply));
+        QTRY_COMPARE(manager.tabAppearance().colors.first().name, QStringLiteral("Renamed"));
+        QCOMPARE(message->property("text").toString(), QStringLiteral("Color list applied."));
+        // Unedited again, it follows changes made elsewhere.
+        QVERIFY(manager.setTabAppearance(original));
+        QTRY_COMPARE(text->property("text").toString(), tabColorsText(original));
     }
 
     // While the recorder has the focus, keys bound to commands are recorded

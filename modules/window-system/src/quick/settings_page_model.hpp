@@ -54,6 +54,8 @@ public:
     Q_INVOKABLE void search(const QString& query);
     // A control's value for one setting, by its index in the settings.
     Q_INVOKABLE void write(int setting, const QVariant& value);
+    // Applies a JSON setting's edited text: {applied, message}.
+    Q_INVOKABLE QVariantMap apply(int setting, const QString& text);
     // Reads every setting again, after a change made elsewhere.
     Q_INVOKABLE void refresh();
 

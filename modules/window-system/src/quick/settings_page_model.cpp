@@ -32,12 +32,13 @@ QVariantMap describe(const SettingDescription& setting, int index)
     for (const auto& choice : setting.choices)
         choices.append(QVariantMap{{"label", choice.label}, {"value", choice.value},
             {"isDefault", setting.defaultValue.isValid() && choice.value == setting.defaultValue}});
-    static const char* kinds[] = {"toggle", "choice", "integer", "real", "text", "slider"};
+    static const char* kinds[] = {"toggle", "choice", "integer", "real", "text", "slider", "json"};
     return {{"type", "setting"}, {"setting", index}, {"id", setting.id}, {"category", setting.category},
         {"title", setting.title}, {"description", setting.description}, {"kind", kinds[int(setting.kind)]},
         {"checkLabel", setting.checkLabel}, {"choices", choices}, {"minimum", setting.minimum}, {"maximum", setting.maximum},
         {"step", setting.step}, {"decimals", setting.decimals}, {"suffix", setting.suffix},
-        {"sliderMaximum", setting.sliderMaximum}, {"maximumLength", setting.maximumLength}, {"placeholder", setting.placeholder}};
+        {"sliderMaximum", setting.sliderMaximum}, {"maximumLength", setting.maximumLength}, {"placeholder", setting.placeholder},
+        {"applyLabel", setting.applyLabel}};
 }
 
 } // namespace
@@ -125,6 +126,17 @@ void SettingsPageModel::write(int setting, const QVariant& value)
     // The write may change other settings; their controls follow.
     if (description.write) description.write(value);
     refresh();
+}
+
+QVariantMap SettingsPageModel::apply(int setting, const QString& text)
+{
+    if (setting < 0 || setting >= settings_.size() || !settings_.at(setting).apply) return {};
+    const auto& description = settings_.at(setting);
+    if (description.enabled && !description.enabled()) return {};
+    QString message;
+    const bool applied = description.apply(text, message);
+    refresh();
+    return {{"applied", applied}, {"message", message}};
 }
 
 void SettingsPageModel::refresh()

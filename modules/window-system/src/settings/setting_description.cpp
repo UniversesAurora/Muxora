@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include "setting_description.hpp"
+#include "style/tab_appearance_p.hpp"
 #include <window_system/interface_appearance.hpp>
 #include <window_system/localization.hpp>
 #include <window_system/window_manager.hpp>
 #include <QCoreApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QPointer>
 #include <algorithm>
 #include <cmath>
@@ -33,6 +36,7 @@ QVector<SettingCategory> settingCategories(WindowManager*)
     if (InterfaceAppearanceController::applicationInstance()) result.append({QStringLiteral("interface"), QCoreApplication::translate("WindowSystem", "Interface")});
     result.append({QStringLiteral("window"), QCoreApplication::translate("WindowSystem", "Window")});
     result.append({QStringLiteral("window/drag"), QCoreApplication::translate("WindowSystem", "Dragging")});
+    result.append({QStringLiteral("window/tabs"), QCoreApplication::translate("WindowSystem", "Tab appearance")});
     return result;
 }
 
@@ -153,7 +157,37 @@ QVector<SettingDescription> describeSettings(WindowManager* manager)
     delay.write = behaviorWriter(owner, [](WindowBehavior& next, const QVariant& value) { next.revealDelayMs = value.toInt(); });
     delay.enabled = [behavior] { return behavior().revealDuringDrag; };
     result.append(std::move(delay));
+
+    SettingDescription colors{QStringLiteral("window/tabs"), QStringLiteral("tabs.colors"), QCoreApplication::translate("WindowSystem", "Tab colors"),
+        QCoreApplication::translate("WindowSystem", "Edit a strict JSON array to override the default palette. Each entry has a stable ID, name, and active/inactive states for central and auto-hide bars. Each state contains background, text, underline, and icon colors in #RRGGBB or #AARRGGBB format."), Kind::Json};
+    colors.applyLabel = QCoreApplication::translate("WindowSystem", "Apply color list");
+    colors.read = [owner] { return owner ? QVariant(tabColorsText(owner->tabAppearance())) : QVariant(); };
+    colors.apply = [owner](const QString& text, QString& message) { return owner && applyTabColorsText(*owner, text, message); };
+    result.append(std::move(colors));
     return result;
+}
+
+QString tabColorsText(const TabAppearance& appearance)
+{
+    return QString::fromUtf8(QJsonDocument(tabAppearanceToJson(appearance).value("colors").toArray()).toJson(QJsonDocument::Indented));
+}
+
+bool applyTabColorsText(WindowManager& manager, const QString& text, QString& message)
+{
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(text.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isArray()) {
+        message = QCoreApplication::translate("WindowSystem", "Color list unchanged: enter a valid JSON array.");
+        return false;
+    }
+    auto definition = tabAppearanceToJson(manager.tabAppearance());
+    definition.insert("colors", document.array());
+    TabAppearance next;
+    const auto parsed = parseTabAppearance(definition, next);
+    if (!parsed) { message = parsed.error; return false; }
+    if (!manager.setTabAppearance(next)) return false;
+    message = QCoreApplication::translate("WindowSystem", "Color list applied.");
+    return true;
 }
 
 } // namespace window_system
