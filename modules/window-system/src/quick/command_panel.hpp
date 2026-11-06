@@ -8,6 +8,7 @@
 #include <QFont>
 #include <QObject>
 #include <QPointer>
+#include <QQuickItem>
 #include <QVariantList>
 #include <functional>
 #include <qqmlintegration.h>
@@ -16,6 +17,7 @@ class QQuickWindow;
 class QWindow;
 
 namespace window_system::quick {
+class TabIconItem;
 
 // A search panel over a list, as the Widgets command palette and window
 // selector: a frameless window centred on its owner, a search field, a
@@ -73,6 +75,7 @@ public:
     qreal rowHeight() const;
     qreal controlHeight() const;
     QVariantMap colors() const;
+    [[nodiscard]] const Theme& theme() const { return theme_; }
 
     Q_INVOKABLE void search(const QString& query);
     Q_INVOKABLE void move(int step);
@@ -100,6 +103,28 @@ private:
     int current_ = -1;
     QPointer<QQuickWindow> window_;
     bool closing_ = false;
+};
+
+// A row's icon in the panel list. As in the Widgets list, the selected row
+// draws it in the selection text color.
+class PanelIcon : public QQuickItem {
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(window_system::quick::CommandPanel* panel MEMBER panel_ WRITE setPanel)
+    Q_PROPERTY(QString name MEMBER name_ WRITE setName)
+    Q_PROPERTY(bool selected MEMBER selected_ WRITE setSelected)
+public:
+    explicit PanelIcon(QQuickItem* parent = nullptr);
+    void setPanel(CommandPanel* panel);
+    void setName(const QString& name);
+    void setSelected(bool selected);
+
+private:
+    void refresh();
+    QPointer<CommandPanel> panel_;
+    QString name_;
+    bool selected_ = false;
+    TabIconItem* icon_;
 };
 
 } // namespace window_system::quick

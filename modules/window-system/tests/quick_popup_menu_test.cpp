@@ -723,7 +723,20 @@ private slots:
         QTRY_VERIFY(panel("WindowSelector"));
         QPointer<QQuickWindow> selector(panel("WindowSelector"));
         QVERIFY(QTest::qWaitForWindowActive(selector));
-        QVERIFY(namedItem(selector->contentItem(), QStringLiteral("PanelRow/") + floating.toString(QUuid::WithoutBraces)));
+        auto* floatingRow = namedItem(selector->contentItem(), QStringLiteral("PanelRow/") + floating.toString(QUuid::WithoutBraces));
+        QVERIFY(floatingRow);
+        // As the Widgets list, each window shows its kind's icon before its
+        // title, which starts after it.
+        auto* icon = namedItem(floatingRow, QStringLiteral("PanelRowIcon"));
+        QVERIFY(icon && icon->isVisible() && icon->width() > 0);
+        QQuickItem* title = nullptr;
+        for (QList<QQuickItem*> items{floatingRow}; !items.isEmpty() && !title;) {
+            auto* item = items.takeFirst();
+            if (item->property("text").toString() == manager.windowCaption(floating)) title = item;
+            items += item->childItems();
+        }
+        QVERIFY(title);
+        QVERIFY(title->mapToItem(floatingRow, QPointF(title->property("leftPadding").toReal(), 0)).x() >= icon->x() + icon->width());
         QTest::keyClick(selector.data(), Qt::Key_Down);
         QTest::keyClick(selector.data(), Qt::Key_Return);
         QTRY_VERIFY(!selector);

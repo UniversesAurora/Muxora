@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "command_panel.hpp"
 #include "qml_scene_component.hpp"
+#include "tab_icon_item.hpp"
 #include <window_system/ui_scale.hpp>
 #include <QFontMetrics>
 #include <QGuiApplication>
@@ -78,7 +79,7 @@ void CommandPanel::refresh()
     for (int column = 1; column < setup_.columns.size(); ++column)
         widths[column] = metrics.horizontalAdvance(setup_.columns.at(column)) + padding;
     for (const auto& row : std::as_const(rows_)) {
-        rowValues_.append(QVariantMap{{"id", row.id}, {"cells", row.cells}, {"tooltip", row.tooltip}, {"enabled", row.enabled}});
+        rowValues_.append(QVariantMap{{"id", row.id}, {"cells", row.cells}, {"tooltip", row.tooltip}, {"enabled", row.enabled}, {"icon", row.iconName}});
         for (int column = 1; column < std::min<qsizetype>(row.cells.size(), widths.size()); ++column)
             widths[column] = std::max(widths.at(column), metrics.horizontalAdvance(row.cells.at(column)) + padding);
     }
@@ -200,6 +201,21 @@ bool CommandPanel::eventFilter(QObject* watched, QEvent* event)
         if (!window_->geometry().contains(mouse->globalPosition().toPoint())) reject();
     }
     return false;
+}
+
+PanelIcon::PanelIcon(QQuickItem* parent) : QQuickItem(parent), icon_(new TabIconItem(this)) {}
+
+void PanelIcon::setPanel(CommandPanel* panel) { panel_ = panel; refresh(); }
+void PanelIcon::setName(const QString& name) { name_ = name; refresh(); }
+void PanelIcon::setSelected(bool selected) { selected_ = selected; refresh(); }
+
+void PanelIcon::refresh()
+{
+    if (!panel_ || name_.isEmpty()) { icon_->clearIcon(); return; }
+    const auto& theme = panel_->theme();
+    const int extent = uiPixels(16);
+    icon_->setIcon(iconFor(name_, theme), {extent, extent}, selected_ ? theme.selectionText : QColor(), true, false);
+    setImplicitSize(extent, extent);
 }
 
 } // namespace window_system::quick

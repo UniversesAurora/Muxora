@@ -128,6 +128,16 @@ Rectangle {
                 width: list.width
                 height: root.panel.rowHeight
                 color: selected ? root.colors.selection : index % 2 ? root.colors.raised : root.colors.surface
+                PanelIcon {
+                    id: icon
+                    objectName: "PanelRowIcon"
+                    x: 4 * root.unit
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: row.modelData.icon.length > 0
+                    panel: root.panel
+                    name: row.modelData.icon
+                    selected: row.selected
+                }
                 Row {
                     Repeater {
                         model: row.modelData.cells
@@ -136,7 +146,7 @@ Rectangle {
                             required property string modelData
                             width: index === 0 ? list.firstColumn : root.panel.columnWidths[index]
                             height: row.height
-                            leftPadding: 6 * root.unit
+                            leftPadding: index === 0 && icon.visible ? icon.x + icon.width + 4 * root.unit : 6 * root.unit
                             rightPadding: 6 * root.unit
                             text: modelData
                             font: root.panel.font
