@@ -58,6 +58,7 @@ private:
     CaptionButtonOrder order_ = CaptionButtonOrder::Windows;
     bool expanded_ = false;
     bool layoutPending_ = false;
+    QObject* accessibility_;
 };
 
 } // namespace window_system::quick

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "rail_item.hpp"
+#include "accessibility.hpp"
 #include "button_item.hpp"
 #include "path_item.hpp"
 #include "rail_button_item.hpp"
@@ -7,6 +8,7 @@
 #include <window_system/ui_scale.hpp>
 
 #include <QPainterPath>
+#include <QCoreApplication>
 #include <QQuickWindow>
 #include <QWheelEvent>
 #include <algorithm>
@@ -24,6 +26,7 @@ RailItem::RailItem(Edge edge, const Theme& theme, QQuickItem* parent)
     : QQuickItem(parent), edge_(edge), vertical_(edge == Edge::Left || edge == Edge::Right), theme_(theme),
       viewport_(new QQuickItem(this)), track_(new QQuickItem(viewport_)), thumb_(new PathItem(this))
 {
+    attachAccessibility(this, QAccessible::ToolBar, QCoreApplication::translate("WindowSystem", "Auto-hide sidebars"));
     setAcceptHoverEvents(true);
     viewport_->setClip(true);
     thumb_->setZ(2); thumb_->setVisible(false);

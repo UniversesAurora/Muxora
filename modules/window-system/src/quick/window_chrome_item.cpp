@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "window_chrome_item.hpp"
+#include "accessibility.hpp"
 #include "button_item.hpp"
 #include "tab_label_text_item.hpp"
 #include <window_system/ui_scale.hpp>
@@ -21,6 +22,8 @@ WindowChromeItem::WindowChromeItem(const Theme& theme, QQuickItem* parent)
     : WindowDragAreaItem(parent), theme_(theme), caption_(new QQuickItem(this)), minimize_(new ButtonItem(theme, caption_)),
       maximize_(new ButtonItem(theme, caption_)), close_(new ButtonItem(theme, caption_)), title_(new TabLabelTextItem(this))
 {
+    accessibility_ = attachAccessibility(this, QAccessible::TitleBar);
+    attachAccessibility(caption_, QAccessible::ToolBar, QCoreApplication::translate("WindowSystem", "Window controls"));
     caption_->setObjectName(QStringLiteral("CaptionControls"));
     minimize_->setProperty("role", QStringLiteral("minimize"));
     maximize_->setProperty("role", QStringLiteral("maximize"));
@@ -60,6 +63,7 @@ void WindowChromeItem::setTitle(const QString& title)
 {
     if (titleText_ == title) return;
     titleText_ = title;
+    accessibility_->setProperty("name", title);
     measureTitle();
     relayout();
 }

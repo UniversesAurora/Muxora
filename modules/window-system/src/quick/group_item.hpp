@@ -184,6 +184,7 @@ private:
     bool reflowQueued_ = false;
     bool createsHovered_ = false;
     bool newTabMenuOpen_ = false;
+    QObject* accessibility_;
 };
 
 } // namespace window_system::quick

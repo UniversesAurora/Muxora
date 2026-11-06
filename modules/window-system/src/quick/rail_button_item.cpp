@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "rail_button_item.hpp"
+#include "accessibility.hpp"
 #include "path_item.hpp"
 #include "tab_icon_item.hpp"
 #include "tab_label_text_item.hpp"
@@ -8,6 +9,8 @@
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QMouseEvent>
+#include <QKeyEvent>
+#include <QFocusEvent>
 #include <QPointer>
 #include <QPainterPath>
 #include <QStyleHints>
@@ -20,6 +23,9 @@ RailButtonItem::RailButtonItem(const Theme& theme, TabId tab, QString title, boo
       fill_(new PathItem(this)), line_(new PathItem(this)), content_(new QQuickItem(this)),
       numberText_(new TabLabelTextItem(content_)), iconItem_(new TabIconItem(content_)), titleText_(new TabLabelTextItem(content_))
 {
+    setFocusPolicy(Qt::StrongFocus);
+    accessibility_ = attachAccessibility(this, QAccessible::Button, title_);
+    accessibility_->setProperty("checkable", true);
     setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     line_->setZ(1); content_->setZ(2);
@@ -45,7 +51,13 @@ void RailButtonItem::setTitleClipping(bool enabled, int maximumWidth)
     if (clipTitles_ == enabled && maximumTitleWidth_ == maximumWidth) return;
     clipTitles_ = enabled; maximumTitleWidth_ = maximumWidth; refresh();
 }
-void RailButtonItem::setChecked(bool checked) { if (checked_ != checked) { checked_ = checked; refresh(); } }
+void RailButtonItem::setChecked(bool checked)
+{
+    if (checked_ == checked) return;
+    checked_ = checked;
+    accessibility_->setProperty("checked", checked);
+    refresh();
+}
 
 namespace {
 QSize measure(TabTitleLayout& layout, const QString& title, bool icon, int number, int thickness, bool clip, int maximumTitleWidth)
@@ -82,7 +94,7 @@ void RailButtonItem::refresh()
     const auto colors = preset_ ? std::optional(checked_ ? preset_->autoHideActive : preset_->autoHideInactive) : std::nullopt;
     QPainterPath body; body.addRect(area);
     fill_->setSize(size());
-    fill_->setFill(colors ? colors->background : hovered_ ? theme_.edgeTabHover : theme_.edgeTabBackground);
+    fill_->setFill(colors ? colors->background : (hovered_ || hasActiveFocus()) ? theme_.edgeTabHover : theme_.edgeTabBackground);
     fill_->setPath(body);
     line_->setVisible(bool(colors) && !area.isEmpty());
     if (colors && !area.isEmpty()) {
@@ -162,5 +174,47 @@ void RailButtonItem::mouseReleaseEvent(QMouseEvent* event)
 
 void RailButtonItem::hoverEnterEvent(QHoverEvent*) { hovered_ = true; refresh(); }
 void RailButtonItem::hoverLeaveEvent(QHoverEvent*) { hovered_ = false; refresh(); }
+
+void RailButtonItem::accessiblePressAction()
+{
+    if (isEnabled() && isVisible()) if (const auto callback = clicked) callback();
+}
+
+void RailButtonItem::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Space || event->key() == Qt::Key_Select) {
+        event->accept();
+        if (!event->isAutoRepeat()) keyboardPressed_ = true;
+        return;
+    }
+    if (event->key() == Qt::Key_Escape && keyboardPressed_) { keyboardPressed_ = false; event->accept(); return; }
+    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down || event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
+        const bool reverse = QGuiApplication::layoutDirection() == Qt::RightToLeft;
+        const bool forward = event->key() == Qt::Key_Down || event->key() == (reverse ? Qt::Key_Left : Qt::Key_Right);
+        auto* target = nextItemInFocusChain(forward);
+        event->accept();
+        if (target) target->forceActiveFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+        return;
+    }
+    QQuickItem::keyPressEvent(event);
+}
+
+void RailButtonItem::keyReleaseEvent(QKeyEvent* event)
+{
+    if (!keyboardPressed_ || (event->key() != Qt::Key_Space && event->key() != Qt::Key_Select))
+        return QQuickItem::keyReleaseEvent(event);
+    event->accept();
+    if (event->isAutoRepeat()) return;
+    keyboardPressed_ = false;
+    accessiblePressAction();
+}
+
+void RailButtonItem::focusInEvent(QFocusEvent* event) { QQuickItem::focusInEvent(event); refresh(); }
+void RailButtonItem::focusOutEvent(QFocusEvent* event)
+{
+    keyboardPressed_ = false;
+    QQuickItem::focusOutEvent(event);
+    refresh();
+}
 
 } // namespace window_system::quick

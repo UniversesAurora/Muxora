@@ -34,6 +34,7 @@ public:
     void setTitleClipping(bool enabled, int maximumWidth);
     void setChecked(bool checked);
     [[nodiscard]] bool isChecked() const { return checked_; }
+    Q_INVOKABLE void accessiblePressAction();
     // Along the rail and across it; the rail sizes its buttons from this.
     [[nodiscard]] QSize preferredSize() const;
     // The length along the rail of a button with this content, for a tab
@@ -53,6 +54,10 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void hoverEnterEvent(QHoverEvent* event) override;
     void hoverLeaveEvent(QHoverEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
+    void focusInEvent(QFocusEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
 
 private:
     void refresh();
@@ -71,6 +76,8 @@ private:
     bool hovered_ = false;
     bool pressed_ = false;
     bool middlePressed_ = false;
+    bool keyboardPressed_ = false;
+    QObject* accessibility_;
     DragStart start_;
     mutable TabTitleLayout titleLayout_;
     PathItem* fill_;

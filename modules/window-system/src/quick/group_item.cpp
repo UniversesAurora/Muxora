@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "group_item.hpp"
+#include "accessibility.hpp"
 #include "button_item.hpp"
 #include "group_surface_item.hpp"
 #include "path_item.hpp"
@@ -81,6 +82,11 @@ GroupItem::GroupItem(const Theme& theme, QQuickItem* parent)
       iconMode_(new ButtonItem(theme, this)), name_(new TabLabelTextItem(this)),
       title_(new TabLabelTextItem(this)), resizeHandle_(new ColumnResizeHandle(this))
 {
+    accessibility_ = attachAccessibility(this, QAccessible::Grouping, QCoreApplication::translate("WindowSystem", "Tab group"));
+    // The focus chain follows child order; Z determines the painting order.
+    // Visit the strip controls before its page, as in the Widgets layout.
+    count_->stackAfter(bar_);
+    content_->stackAfter(resizeHandle_);
     setAcceptHoverEvents(true);
     group_ = std::make_unique<TabGroupController>(theme, bar_->controller());
     clock_.start();
@@ -338,8 +344,10 @@ void GroupItem::setTabMetadata(int index, const TabRecord& tab)
 
 void GroupItem::setGroupName(const QString& name)
 {
+    accessibility_->setProperty("name", name.isEmpty() ? QCoreApplication::translate("WindowSystem", "Tab group") : name);
+    const QPointer<GroupItem> alive(this);
     edit([&] { group_->setGroupName(name); });
-    applyStripControls();
+    if (alive) applyStripControls();
 }
 
 void GroupItem::setVerticalState(int width, bool iconMode) { edit([&] { group_->setVerticalState(width, iconMode); }); }
@@ -358,6 +366,7 @@ void GroupItem::setPinnedActions(std::function<void()> current, std::function<vo
         button->setToolTip(std::get<1>(item));
         connect(button, &ButtonItem::clicked, this, [callback = std::move(std::get<0>(item))] { if (callback) callback(); });
         sidebar_.append(button);
+        content_->stackAfter(button);
     }
     applyStripControls();
 }

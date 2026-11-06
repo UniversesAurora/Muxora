@@ -49,6 +49,7 @@ ButtonItem::ButtonItem(const Theme& theme, QQuickItem* parent)
     : QQuickItem(parent), theme_(theme), fill_(new PathItem(this)), border_(new PathItem(this)),
       icon_(new TabIconItem(this)), text_(new TabLabelTextItem(this))
 {
+    setFocusPolicy(Qt::TabFocus);
     accessibility_ = attachAccessibility(this, QAccessible::Button);
     accessibility_->setProperty("focusable", focusPolicy() != Qt::NoFocus);
     connect(this, &QQuickItem::focusPolicyChanged, this, [this](Qt::FocusPolicy policy) {
