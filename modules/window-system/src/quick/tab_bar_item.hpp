@@ -43,6 +43,8 @@ public:
 
 signals:
     void currentChanged(int index);
+    void structureChanged();
+    void contentsChanged();
     void viewChanged();
     void surfaceChanged();
     void reservedSizeChanged();

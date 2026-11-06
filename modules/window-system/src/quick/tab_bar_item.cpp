@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "tab_bar_item.hpp"
+#include "tab_accessibility.hpp"
 #include "tool_tip.hpp"
 #include "tab_foreground_item.hpp"
 #include "tab_strip_item.hpp"
@@ -32,6 +33,7 @@ TabBarItem::TabBarItem(const Theme& theme, QQuickItem* parent)
     connect(&wakeTimer_, &QTimer::timeout, this, &TabBarItem::advance);
     qGuiApp->installEventFilter(this);
     attachWindow(window());
+    installTabAccessibility(this);
 }
 
 TabBarItem::~TabBarItem() { qGuiApp->removeEventFilter(this); }
@@ -138,6 +140,10 @@ void TabBarItem::synchronize()
         else foreground_->setPosition({});
         foreground_->setVisible(isVisible());
         schedule();
+        if (changes.structure) emit structureChanged();
+        if (!alive) return;
+        if (changes.contents) emit contentsChanged();
+        if (!alive) return;
         if (changes.controls) emit controlsChanged();
         if (!alive) return;
         if (changes.surface) emit surfaceChanged();
@@ -149,7 +155,8 @@ void TabBarItem::synchronize()
         if (changes.current) emit currentChanged(*changes.current);
         if (!alive) return;
         if (!changes.presentation && !changes.repaint && !changes.controls && !changes.surface
-            && !changes.view && !changes.reservedSize && !changes.current) break;
+            && !changes.view && !changes.reservedSize && !changes.current
+            && !changes.structure && !changes.contents) break;
     }
     synchronizing_ = false;
 }

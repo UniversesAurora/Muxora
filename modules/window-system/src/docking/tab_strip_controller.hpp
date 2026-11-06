@@ -92,6 +92,8 @@ struct TabStripEnvironment {
 // Notifications are consumed after a controller operation returns. Host
 // callbacks may destroy their view without re-entering a controller stack.
 struct TabStripChanges {
+    bool structure = false;
+    bool contents = false;
     bool repaint = false;
     bool presentation = false;
     bool carrier = false;

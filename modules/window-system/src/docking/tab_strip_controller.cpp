@@ -9,6 +9,7 @@ namespace window_system {
 int TabStripController::addTab(const QIcon& icon, const QString& title)
 {
     tabs_.append(icon, title);
+    changes_.structure = true;
     if (current_ < 0) current_ = 0;
     surfaceMotion_.bindCurrent(currentLabelId());
     relayout(true);
@@ -22,6 +23,7 @@ void TabStripController::removeTab(int index)
     presence_.remove(id); departing_.remove(id);
     const bool wasCurrent = index == current_;
     tabs_.removeAt(index);
+    changes_.structure = true;
     if (index < stickyCount_) --stickyCount_;
     if (dragged_ == index) dragged_ = -1; else if (dragged_ > index) --dragged_;
     hover_.removedTab(index);
@@ -41,6 +43,7 @@ QVariant TabStripController::tabData(int index) const { return tabs_.data(index)
 void TabStripController::setTabData(int index, const QVariant& value)
 {
     if (!tabs_.setData(index, value)) return;
+    changes_.structure = true;
     if (index == current_) surfaceMotion_.bindCurrent(currentLabelId());
     invalidateCarrier(true);
 }
@@ -49,7 +52,9 @@ QString TabStripController::tabText(int index) const { return tabs_.title(index)
 
 void TabStripController::setTabText(int index, const QString& text)
 {
-    if (tabs_.setTitle(index, text)) relayout(true);
+    if (!tabs_.setTitle(index, text)) return;
+    changes_.contents = true;
+    relayout(true);
 }
 
 QIcon TabStripController::tabIcon(int index) const { return tabs_.icon(index); }
@@ -61,7 +66,12 @@ void TabStripController::setTabIcon(int index, const QIcon& icon)
 
 QString TabStripController::tabToolTip(int index) const { return tabs_.toolTip(index); }
 
-void TabStripController::setTabToolTip(int index, const QString& tip) { tabs_.setToolTip(index, tip); }
+void TabStripController::setTabToolTip(int index, const QString& tip)
+{
+    if (tabs_.toolTip(index) == tip) return;
+    tabs_.setToolTip(index, tip);
+    changes_.contents = true;
+}
 
 void TabStripController::setTabMetadata(int index, const TabRecord& tab)
 {
@@ -153,6 +163,7 @@ void TabStripController::setFolders(QVector<TabStripFolder> folders)
     if (folders_ == folders) return;
     const auto dragged = draggedFolder_ >= 0 && draggedFolder_ < folders_.size() ? folders_.at(draggedFolder_).id : QUuid{};
     folders_ = std::move(folders);
+    changes_.structure = true;
     draggedFolder_ = -1;
     for (int folder = 0; folder < folders_.size(); ++folder) if (folders_.at(folder).id == dragged) draggedFolder_ = folder;
     hover_.clearFolder(); pointer_.cancelFolders();

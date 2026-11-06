@@ -2,6 +2,7 @@
 // Phase 10.4j: the accessibility tree, names, states, native accessible
 // actions and ownership. No rendering or static appearance assertions.
 #include "quick/button_item.hpp"
+#include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
 #include "quick/tab_bar_item.hpp"
 #include "quick/rail_button_item.hpp"
@@ -9,6 +10,8 @@
 #include "quick/window_chrome_item.hpp"
 #include "quick_menu_test_support.hpp"
 #include <window_system/theme.hpp>
+#include <window_system/quick_workspace.hpp>
+#include <window_system/window_manager.hpp>
 #include <QAccessible>
 #include <QQuickWindow>
 #include <QSignalSpy>
@@ -151,6 +154,94 @@ private slots:
         QCOMPARE(QAccessible::queryAccessibleInterface(maximize)->text(QAccessible::Name), QStringLiteral("Restore"));
         title->setExpanded(false);
         QCOMPARE(QAccessible::queryAccessibleInterface(maximize)->text(QAccessible::Name), QStringLiteral("Maximize"));
+    }
+
+    void tabAndFolderActionsFollowStableIdentities()
+    {
+        QAccessible::Id listId = 0, folderNodeId = 0;
+        {
+            WindowManager manager(WindowManager::Presentation::External);
+            QuickWorkspace workspace(manager);
+            workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+            const auto window = manager.createWindow();
+            const auto first = manager.addTab(window, {QStringLiteral("First")});
+            const auto second = manager.addTab(window, {QStringLiteral("Second")});
+            const auto target = manager.addTab(window, {QStringLiteral("Full target title & text")});
+            const auto folder = manager.createTabFolder({first, second}, QStringLiteral("Work"));
+            QVERIFY(!folder.isNull());
+            QVERIFY(manager.activateTab(first));
+            QTRY_VERIFY(workspace.window(window));
+            auto* view = workspace.window(window);
+            QVERIFY(QTest::qWaitForWindowExposed(view));
+            auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>();
+            QVERIFY(dock);
+            const auto groupId = manager.model().groupForTab(first);
+            auto* group = dock->group(groupId);
+            QVERIFY(group);
+            auto* bar = group->tabBar();
+            auto* list = QAccessible::queryAccessibleInterface(bar);
+            QVERIFY(list && list->parent() == QAccessible::queryAccessibleInterface(group));
+            QCOMPARE(list->role(), QAccessible::PageTabList);
+            QCOMPARE(list->childCount(), 4);
+            auto* selection = list->selectionInterface();
+            QVERIFY(selection && selection->selectedItemCount() == 1);
+            auto* tab = list->child(2);
+            auto* header = list->child(3);
+            const auto targetId = QAccessible::uniqueId(tab);
+            listId = QAccessible::uniqueId(list); folderNodeId = QAccessible::uniqueId(header);
+            QCOMPARE(tab->text(QAccessible::Name), QStringLiteral("Full target title & text"));
+            QVERIFY(selection->select(tab));
+            QCOMPARE(manager.model().group(groupId)->activeTab, target);
+            QVERIFY(tab->state().selected);
+            QCOMPARE(selection->selectedItems(), QList<QAccessibleInterface*>{tab});
+            QVERIFY(!selection->clear() && !selection->unselect(tab) && !selection->selectAll());
+            QVERIFY(!selection->select(header));
+            // Move past the folder as a whole; inserting into its run is a
+            // different operation. Quick projects manager changes queued.
+            QVERIFY(manager.reorderTab(target, true));
+            QCOMPARE(manager.model().group(groupId)->tabs.first(), target);
+            QTRY_COMPARE(bar->controller().indexOf(target), 0);
+            QCOMPARE(list->child(0), tab);
+            QCOMPARE(list->indexOfChild(tab), 0);
+            QCOMPARE(QAccessible::uniqueId(tab), targetId);
+            QVERIFY(manager.renameTab(target, QStringLiteral("Renamed target")));
+            QTRY_COMPARE(tab->text(QAccessible::Name), QStringLiteral("Renamed target"));
+            QCOMPARE(header->role(), QAccessible::Button);
+            QVERIFY(header->text(QAccessible::Name).contains(QStringLiteral("Work")));
+            QVERIFY(header->state().expandable && header->state().expanded);
+            header->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+            QVERIFY(manager.model().folder(folder)->collapsed);
+            QTRY_VERIFY(header->state().collapsed && !header->state().expanded);
+            header->actionInterface()->doAction(QAccessibleActionInterface::toggleAction());
+            QVERIFY(!manager.model().folder(folder)->collapsed);
+            QTRY_VERIFY(header->state().expanded);
+            QVERIFY(manager.closeTab(target));
+            QTRY_VERIFY(!QAccessible::accessibleInterface(targetId));
+            QCOMPARE(list->childCount(), 3);
+            QCOMPARE(QAccessible::uniqueId(list->child(2)), folderNodeId);
+        }
+        QVERIFY(!QAccessible::accessibleInterface(listId));
+        QVERIFY(!QAccessible::accessibleInterface(folderNodeId));
+    }
+
+    void tabActivationMayDestroyItsGroup()
+    {
+        QQuickWindow window;
+        window.resize(500, 300);
+        QPointer<quick::GroupItem> group = new quick::GroupItem(defaultTheme(), window.contentItem());
+        group->setSize(window.size());
+        group->addTab(nullptr, {}, QStringLiteral("First"), QUuid::createUuid());
+        group->addTab(nullptr, {}, QStringLiteral("Second"), QUuid::createUuid());
+        group->setCurrentIndex(0);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto* list = QAccessible::queryAccessibleInterface(group->tabBar());
+        auto* tab = list->child(1);
+        const auto id = QAccessible::uniqueId(tab);
+        group->currentChanged = [&group](int) { delete group; };
+        tab->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        QVERIFY(!group);
+        QVERIFY(!QAccessible::accessibleInterface(id));
     }
 };
 
