@@ -172,6 +172,40 @@ private slots:
         }
     }
 
+    // Scripts set text bars through the manager; the Quick page shows them
+    // above or below the content, replaces and removes them.
+    void textBarsShowAroundTheContent()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, TabOptions{QStringLiteral("Text bars")});
+        const auto pane = manager.model().tab(tab)->activePane;
+        QTRY_VERIFY(workspace.content(pane));
+        auto* view = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(view));
+        const auto bar = [&](const QString& text) -> QQuickItem* {
+            for (QList<QQuickItem*> items{view->contentItem()}; !items.isEmpty();) {
+                auto* item = items.takeFirst();
+                if (item->property("text").toString() == text && item->isVisible() && item->height() > 0) return item;
+                items += item->childItems();
+            }
+            return nullptr;
+        };
+        QVERIFY(manager.setTabTextBar(tab, true, TextBar{QStringLiteral("Tab & status"), QStringLiteral("Tip")}));
+        QVERIFY(manager.setPaneTextBar(pane, false, TextBar{QStringLiteral("Pane status"), {}}));
+        QTRY_VERIFY(bar(QStringLiteral("Tab & status")) && bar(QStringLiteral("Pane status")));
+        const auto content = area(workspace.content(pane));
+        QVERIFY(area(bar(QStringLiteral("Tab & status"))).bottom() <= content.top());
+        QVERIFY(area(bar(QStringLiteral("Pane status"))).top() >= content.bottom());
+        QVERIFY(manager.setTabTextBar(tab, true, TextBar{QStringLiteral("Replaced"), {}}));
+        QTRY_VERIFY(bar(QStringLiteral("Replaced")) && !bar(QStringLiteral("Tab & status")));
+        QVERIFY(manager.setPaneTextBar(pane, false, std::nullopt));
+        QTRY_VERIFY(!bar(QStringLiteral("Pane status")));
+        QVERIFY(!manager.setTabTextBar(TabId::createUuid(), true, TextBar{QStringLiteral("Lost"), {}}));
+    }
+
     void barOwnershipFollowsTabsAndPanesRatherThanPages()
     {
         WindowManager manager(WindowManager::Presentation::External);

@@ -4,6 +4,7 @@
 #include "button_item.hpp"
 #include "content_host.hpp"
 #include "content_bars.hpp"
+#include "text_bar_item.hpp"
 #include "dock_surface_item.hpp"
 #include "popup_menu.hpp"
 #include "menu_bar_overflow.hpp"
@@ -612,6 +613,16 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
         const bool outerProjection = std::exchange(d->projecting, true);
         d->bars.transferToPanes(sources);
         if (self && !outerProjection) finishProjection();
+    });
+    connect(&manager, &WindowManager::textBarRequested, this,
+        [this](QUuid owner, bool pane, bool top, const std::optional<TextBar>& bar) {
+            auto* item = bar ? new quick::TextBarItem(*bar, d->manager.interfaceTheme()) : nullptr;
+            if (!(pane ? setPaneBar(owner, item, top) : setTabBar(owner, item, top))) delete item;
+        });
+    // Text bars follow theme and interface font changes, which the manager
+    // publishes with its layouts.
+    connect(&manager, &WindowManager::layoutChanged, this, [this] {
+        for (auto* item : d->bars.findChildren<quick::TextBarItem*>()) item->setTheme(d->manager.interfaceTheme());
     });
     sync();
 }

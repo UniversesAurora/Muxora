@@ -2,7 +2,6 @@
 #include <QCoreApplication>
 #include "script_host_p.hpp"
 #include <window_system/localization.hpp>
-#include <QLabel>
 #include <array>
 
 namespace window_system_lua {
@@ -369,24 +368,16 @@ void ScriptHost::Private::installAppearanceApi() {
         const auto side = text(a, 1);
         if (side != "top" && side != "bottom")
             throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar must be top or bottom").toUtf8().constData());
-        QPointer<QLabel> bar;
+        std::optional<window_system::TextBar> bar;
         if (a.size() > 2 && a[2].isValid() && !a[2].isNull()) {
             const auto spec =
                 a[2].metaType().id() == QMetaType::QString ? QVariantMap{{"text", a[2]}} : object(a, 2);
             const auto label = text({spec.value("text")}, 0);
             if (label.size() > 8192)
                 throw std::runtime_error(QCoreApplication::translate("WindowSystem", "Bar text is too long").toUtf8().constData());
-            bar = new QLabel(label);
-            bar->setTextFormat(Qt::PlainText);
-            bar->setToolTip(text({spec.value("tooltip")}, 0));
-            bar->setContentsMargins(6, 0, 6, 0);
+            bar = window_system::TextBar{label, text({spec.value("tooltip")}, 0)};
         }
-        const bool ok =
-            pane ? (side == "top" ? manager->setPaneTopBar(id, bar) : manager->setPaneBottomBar(id, bar))
-                 : (side == "top" ? manager->setTabTopBar(id, bar) : manager->setTabBottomBar(id, bar));
-        if (!ok && bar)
-            delete bar.data();
-        return result(ok);
+        return result(pane ? manager->setPaneTextBar(id, side == "top", bar) : manager->setTabTextBar(id, side == "top", bar));
     };
     handlers["tabs.set_bar"] = [setBar](const Args &a, const Context &c) { return setBar(a, c, false); };
     handlers["panes.set_bar"] = [setBar](const Args &a, const Context &c) { return setBar(a, c, true); };

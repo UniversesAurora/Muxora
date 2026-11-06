@@ -159,7 +159,7 @@
 
 | 步骤 | 内容 | 负责 | 完成标准 |
 | --- | --- | --- | --- |
-| 3.1 | Lua 的 `tabs.set_bar`／`panes.set_bar` 改用与呈现无关的文字栏：管理器加文字栏描述（文字、提示），Quick 工作区画成一条文字栏，外观照 Widgets 的 `QLabel`（左右各 6 像素边距、界面字体和文字颜色）。Quick 下这两个接口现在不显示（见 [记录](../../development/verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)） | Claude（新界面元素） | Quick 下 Lua 设置、替换、清除两种栏，有 `quick-*` 用例 |
+| 3.1 | Lua 的 `tabs.set_bar`／`panes.set_bar` 改用与呈现无关的文字栏：管理器加文字栏描述（文字、提示），Quick 工作区画成一条文字栏，外观照 Widgets 的 `QLabel`（左右各 6 像素边距、界面字体和文字颜色）。Quick 下这两个接口现在不显示（见 [记录](../../development/verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)） | Claude（新界面元素） | Quick 下 Lua 设置、替换、清除两种栏，有 `quick-*` 用例。**已完成**（2026-11-07），见 [记录](../../development/verification-log/2026-11.md#lua-文字栏在-quick-下显示2026-11-07) |
 | 3.2 | 测试清单：上面 58 个源码逐个用例分三类，写成表格放进本节（每行：源码、用例、类别、去向）。A：测管理器或模型行为，不依赖 Widgets 控件，换成 `Presentation::External`（要窗口时加 `QuickWorkspace`）就能测；B：测 Widgets 控件本身，Quick 已有等价用例（写出是哪个 `quick-*` 用例），随单元 4 删除；C：行为 Quick 还没有用例，要补到 `quick-*` 套件。只写表，不改代码 | 执行者 | 表格完整，每个用例都有类别；拿不准的标 C。Claude 审过表再做 3.3 |
 | 3.3 | 按表把 A 类迁到 External：一个源码一个提交，断言不改，只换建窗口的方式和取控件的方式（例如 `windowWidget` 换成 `QuickWorkspace::window`）。改不动的（断言依赖 Widgets 控件）改标 C，写明原因 | 执行者 | 迁过的套件在 External 下通过；不删断言、不放宽时限 |
 | 3.4 | C 类补到对应 `quick-*` 套件，按 [测试的分量](../../development/testing-design.md#测试的分量) 合并成行为用例，不逐条照搬。Quick 行为和 Widgets 不一致的，先写进交接记录问 Claude，不改预期迁就 | 执行者 | 每个 C 类都有 Quick 用例或写明的放弃理由 |

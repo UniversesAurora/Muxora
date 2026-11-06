@@ -154,7 +154,7 @@ add_library(WindowSystemQuick STATIC
     src/quick/window_drag_area_item.cpp
     src/quick/text_edit_menu.cpp
     src/quick/tool_tip.cpp
-    src/quick/status_bar_item.cpp
+    src/quick/status_bar_item.cpp src/quick/text_bar_item.cpp
     src/quick/command_panel.cpp
       src/quick/settings_page_model.cpp src/quick/shortcuts_page_model.cpp src/quick/settings_style.cpp src/quick/key_sequence_capture.cpp
       src/quick/accessibility.cpp src/quick/tab_accessibility.cpp

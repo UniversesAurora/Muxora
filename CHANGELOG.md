@@ -4,7 +4,7 @@
 
 ## 未发布
 
-- Lua 的 `windows.resize`、`windows.move` 和 `windows.state` 在 Quick 窗口里恢复可用（之前一直返回失败）。
+- Lua 的 `windows.resize`、`windows.move` 和 `windows.state` 在 Quick 窗口里恢复可用（之前一直返回失败）；`tabs.set_bar` 和 `panes.set_bar` 设置的文字栏在 Quick 窗口里也能显示了。
 
 - Quick 窗口选择器每行标题前显示窗口种类的图标，和原版一致。
 

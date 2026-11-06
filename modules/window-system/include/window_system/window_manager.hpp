@@ -13,6 +13,7 @@
 #include <QObject>
 #include <QSize>
 #include <memory>
+#include <optional>
 
 class QKeyEvent;
 class QWidget;
@@ -55,6 +56,13 @@ struct WindowBehavior {
     bool hideToolbarOptionsWhenLocked = false;
     CaptionButtonOrder captionButtonOrder = CaptionButtonOrder::Windows;
     ViewMode zenFullscreenMode = ViewMode::WindowFullscreen;
+};
+
+// A line of plain text above or below a tab or pane, for scripts and hosts
+// without a bar of their own. Each presentation draws it as a label.
+struct TextBar {
+    QString text;
+    QString toolTip;
 };
 
 // The windows of a Presentation::External view, as the manager's window
@@ -147,6 +155,10 @@ public:
     bool setTabBottomBar(TabId tab, QWidget* bar);
     bool setPaneTopBar(PaneId pane, QWidget* bar);
     bool setPaneBottomBar(PaneId pane, QWidget* bar);
+    // A text bar on one side of a tab or pane, replacing the bar there;
+    // nullopt removes it. False when the owner does not exist.
+    bool setTabTextBar(TabId tab, bool top, const std::optional<TextBar>& bar);
+    bool setPaneTextBar(PaneId pane, bool top, const std::optional<TextBar>& bar);
     bool setTabTopBarSharing(TabId tab, PaneBarSharing sharing);
     bool setTabBottomBarSharing(TabId tab, PaneBarSharing sharing);
     // Central group headers only. Pinned panels, auto-hide rails and peek
@@ -337,6 +349,8 @@ public:
     [[nodiscard]] bool statusItemVisible(WindowId window, const QString& item) const;
 
 signals:
+    // External presentations draw a requested text bar, or remove it.
+    void textBarRequested(QUuid owner, bool pane, bool top, const std::optional<window_system::TextBar>& bar);
     void commandsChanged();
     void layoutChanged();
     void commandFailed(const QString& message);

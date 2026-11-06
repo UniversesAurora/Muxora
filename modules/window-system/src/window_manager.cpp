@@ -28,6 +28,7 @@
 #include <QContextMenuEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QLabel>
 #include <QPointer>
 #include <QScreen>
 #include <QScopeGuard>
@@ -445,6 +446,39 @@ bool WindowManager::setPaneBar(PaneId pane, QWidget* bar, bool top)
     }
     refresh(); return true;
 }
+namespace {
+// As Lua bars were built: a plain-text label with a small side margin.
+QWidget* textBarLabel(const std::optional<TextBar>& bar)
+{
+    if (!bar) return nullptr;
+    auto* label = new QLabel(bar->text);
+    label->setTextFormat(Qt::PlainText);
+    label->setToolTip(bar->toolTip);
+    label->setContentsMargins(6, 0, 6, 0);
+    return label;
+}
+} // namespace
+
+bool WindowManager::setTabTextBar(TabId tab, bool top, const std::optional<TextBar>& bar)
+{
+    if (!d->model.tab(tab)) return false;
+    if (d->presentation == Presentation::External) { emit textBarRequested(tab, false, top, bar); return true; }
+    auto* label = textBarLabel(bar);
+    const bool accepted = setTabBar(tab, label, top);
+    if (!accepted) delete label;
+    return accepted;
+}
+
+bool WindowManager::setPaneTextBar(PaneId pane, bool top, const std::optional<TextBar>& bar)
+{
+    if (d->model.tabForPane(pane).isNull()) return false;
+    if (d->presentation == Presentation::External) { emit textBarRequested(pane, true, top, bar); return true; }
+    auto* label = textBarLabel(bar);
+    const bool accepted = setPaneBar(pane, label, top);
+    if (!accepted) delete label;
+    return accepted;
+}
+
 WindowOptions WindowManager::windowOptions(WindowId window) const { return d->options.value(window); }
 
 TabOptions WindowManager::tabOptions(TabId tab) const
