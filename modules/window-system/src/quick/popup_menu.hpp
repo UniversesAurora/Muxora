@@ -47,6 +47,7 @@ public:
     bool checked() const { return description_.action.checked.value_or(false); }
     bool persistentHighlight() const { return description_.kind == MenuItemDescription::Kind::Tab && checked(); }
     QQuickItem* content() const;
+    const QVector<MenuItemDescription>& childDescriptions() const { return description_.children; }
     void updateDescription(MenuItemDescription description);
     void updatePresentation(const Theme& theme, const QFont& font, bool remeasure);
     Q_INVOKABLE void setHighlighted(bool highlighted);
@@ -98,6 +99,7 @@ public:
     void activateAction(const MenuItemDescription& item, const QString& action);
     void setRefreshHandler(std::function<QVector<MenuItemDescription>()> handler);
     Q_INVOKABLE void finished();
+    Q_INVOKABLE void prepareSubmenus(QObject* menu);
 public slots:
     void requestRefresh();
     void requestCatalogRefresh();
@@ -117,8 +119,10 @@ private:
         QPointer<QQuickItem> item;
         QPointer<QObject> submenu;
         QVector<Row> children;
+        bool childrenPrepared = false;
     };
-    QObject* buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, QVector<Row>& rows);
+    QObject* buildMenu(MenuEntry* entry, QObject* parent);
+    void prepareChildren(QVector<Row>& rows);
     Row createRow(QObject* menu, const MenuItemDescription& item, int index, bool menuBar);
     void syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuItemDescription>& items, bool menuBar = false);
     void removeRow(QObject* menu, const Row& row);

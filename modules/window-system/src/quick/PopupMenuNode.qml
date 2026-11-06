@@ -36,7 +36,12 @@ Basic.Menu {
     // Submenus query current state as they open; a root was described just
     // before open(). A host query can destroy the workspace, and Qt continues
     // using this popup after aboutToShow returns, so query after it unwinds.
-    onAboutToShow: if (entry) session.requestCatalogRefresh()
+    onAboutToShow: {
+        // Qt measures and selects a submenu before opening it. Prepare its
+        // rows one level ahead, using the retained description only.
+        session.prepareSubmenus(control)
+        if (entry) session.requestCatalogRefresh()
+    }
     function insertBranch(index: int, child: QtObject): Item {
         insertMenu(index, child as PopupMenuNode)
         return itemAt(index)

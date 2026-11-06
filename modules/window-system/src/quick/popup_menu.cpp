@@ -343,12 +343,11 @@ void PopupMenu::setPresentation(const Theme& theme)
     emit presentationChanged();
 }
 
-QObject* PopupMenu::buildMenu(const QVector<MenuItemDescription>& items, MenuEntry* entry, QObject* parent, QVector<Row>& rows)
+QObject* PopupMenu::buildMenu(MenuEntry* entry, QObject* parent)
 {
     auto* menu = create(SceneComponent::Menu,
         {{"session", QVariant::fromValue(this)}, {"entry", QVariant::fromValue(entry)}, {"maximumSize", maximumSize_}}, parent);
     watchWindow(menu, menu->property("contentItem").value<QQuickItem*>());
-    syncMenu(menu, rows, items);
     return menu;
 }
 
@@ -358,7 +357,7 @@ PopupMenu::Row PopupMenu::createRow(QObject* menu, const MenuItemDescription& it
     row.key = rowKey(item, index);
     row.entry = new MenuEntry(item, *this, menuBar);
     if (item.kind == MenuItemDescription::Kind::Submenu) {
-        row.submenu = buildMenu(item.children, row.entry, menu, row.children);
+        row.submenu = buildMenu(row.entry, menu);
         QQuickItem* delegate = nullptr;
         QMetaObject::invokeMethod(menu, "insertBranch", Q_RETURN_ARG(QQuickItem*, delegate),
             Q_ARG(int, index), Q_ARG(QObject*, row.submenu.data()));
@@ -414,7 +413,7 @@ void PopupMenu::syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuIt
             auto row = std::move(previous[*found]);
             remaining.erase(found);
             row.entry->updateDescription(item);
-            if (row.submenu) syncMenu(row.submenu, row.children, item.children);
+            if (row.childrenPrepared) syncMenu(row.submenu, row.children, item.children);
             QMetaObject::invokeMethod(menu, "placeItem", Q_ARG(int, index), Q_ARG(QQuickItem*, row.item.data()));
             rows.append(std::move(row));
         }
@@ -437,7 +436,30 @@ void PopupMenu::syncMenu(QObject* menu, QVector<Row>& rows, const QVector<MenuIt
                 break;
             }
     }
+    if (menuBar || menu->property("visible").toBool()) prepareChildren(rows);
     if (!menuBar) QMetaObject::invokeMethod(menu, "measureContent");
+}
+
+void PopupMenu::prepareChildren(QVector<Row>& rows)
+{
+    for (auto& row : rows) {
+        if (!row.submenu || row.childrenPrepared) continue;
+        row.childrenPrepared = true;
+        syncMenu(row.submenu, row.children, row.entry->childDescriptions());
+    }
+}
+
+void PopupMenu::prepareSubmenus(QObject* menu)
+{
+    if (menu == menu_.get()) { prepareChildren(rows_); return; }
+    const auto prepare = [&](auto&& visit, QVector<Row>& rows) -> bool {
+        for (auto& row : rows) {
+            if (row.submenu == menu) { prepareChildren(row.children); return true; }
+            if (visit(visit, row.children)) return true;
+        }
+        return false;
+    };
+    prepare(prepare, rows_);
 }
 
 void PopupMenu::watchWindow(QObject* menu, QQuickItem* content)
@@ -508,7 +530,8 @@ bool PopupMenu::open(QQuickItem* anchor, QPoint globalPosition, const QVector<Me
     const auto* screen = QGuiApplication::screenAt(globalPosition);
     if (!screen) screen = anchor->window()->screen();
     maximumSize_ = screen->availableGeometry().size();
-    menu_.reset(buildMenu(items, nullptr, this, rows_));
+    menu_.reset(buildMenu(nullptr, this));
+    syncMenu(menu_.get(), rows_, items);
     const auto position = anchor->mapFromGlobal(globalPosition);
     return QMetaObject::invokeMethod(menu_.get(), "showAt", Q_ARG(QQuickItem*, anchor), Q_ARG(QPointF, position));
 }

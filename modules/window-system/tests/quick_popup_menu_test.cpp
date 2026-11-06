@@ -24,6 +24,7 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <functional>
+#include <memory>
 
 using namespace window_system;
 using window_system::quick::PopupMenu;
@@ -121,6 +122,62 @@ private slots:
         QCOMPARE(triggered.count(), execute ? 1 : 0);
         if (execute) QCOMPARE(triggered.first().first().value<MenuItemDescription>().commandId, QString("nested"));
         QTRY_VERIFY(input.hasActiveFocus());
+    }
+
+    void unopenedBranchesDeferRowsAndUseTheLatestCatalog()
+    {
+        QQuickWindow window;
+        window.resize(600, 400); window.show(); window.requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto deep = action("deep"); deep.kind = MenuItemDescription::Kind::Submenu;
+        deep.children = {action("old-leaf")};
+        auto branch = action("branch"); branch.kind = MenuItemDescription::Kind::Submenu;
+        branch.children = {deep};
+        auto root = action("root"); root.kind = MenuItemDescription::Kind::Submenu;
+        root.children = {branch, action("last")};
+        QVector<MenuItemDescription> items{root};
+        auto menu = std::make_unique<PopupMenu>(defaultTheme());
+        menu->setRefreshHandler([&] { return items; });
+        auto* bar = menu->createMenuBar(window.contentItem(), items);
+        bar->setSize({600, bar->implicitHeight()});
+        const auto entry = [&](const QString& id) -> quick::MenuEntry* {
+            for (auto* candidate : menu->findChildren<quick::MenuEntry*>())
+                if (candidate->id() == id) return candidate;
+            return nullptr;
+        };
+        QVERIFY(entry("branch"));
+        QVERIFY(!entry("deep"));
+        QVERIFY(!entry("old-leaf"));
+        items[0].action.title = "Updated root";
+        auto next = action("new-leaf"); next.arguments.insert("value", 42);
+        items[0].children[0].children[0].children = {next};
+        menu->requestCatalogRefresh();
+        QTRY_COMPARE(entry("root")->title(), QString("Updated root"));
+        QVERIFY(!entry("deep"));
+        QVERIFY(!entry("new-leaf"));
+        QSignalSpy triggered(menu.get(), &PopupMenu::triggered);
+        auto* button = namedItem(bar, QStringLiteral("root")); QVERIFY(button);
+        QVERIFY(QMetaObject::invokeMethod(button, "click"));
+        QTRY_VERIFY(popup(&window));
+        auto* first = popup(&window);
+        QVERIFY(entry("deep"));
+        QVERIFY(!entry("new-leaf"));
+        QTest::keyClick(first, Qt::Key_Down);
+        QTest::keyClick(first, Qt::Key_Right);
+        QTRY_VERIFY(popup(first));
+        auto* second = popup(first);
+        QPointer<quick::MenuEntry> leaf = entry("new-leaf"); QVERIFY(leaf);
+        QVERIFY(!entry("old-leaf"));
+        QTest::keyClick(second, Qt::Key_Right);
+        QTRY_VERIFY(popup(second));
+        QTest::keyClick(popup(second), Qt::Key_Return);
+        QTRY_COMPARE(triggered.count(), 1);
+        const auto invoked = triggered.first().first().value<MenuItemDescription>();
+        QCOMPARE(invoked.commandId, QString("new-leaf"));
+        QCOMPARE(invoked.arguments.value("value").toInt(), 42);
+        menu.reset();
+        QVERIFY(!leaf);
+        QTRY_VERIFY(!popup(&window));
     }
 
     void outsideClickOnlyDismissesAndReleasesCapture()
