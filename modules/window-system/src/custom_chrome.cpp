@@ -179,10 +179,10 @@ ToolbarEditor *WindowManager::toolbarEditor(WindowId window) const {
     return stripsFor(this, window);
 }
 
-void WindowManager::offerChoices(WindowId window, const QString &command, const CommandChoices &choices) {
+void WindowManager::offerChoices(const CommandContext &context, const QString &command, const CommandChoices &choices) {
     Q_ASSERT(d->presentation == Presentation::External);
-    if (d->model.window(window) && !choices.isEmpty())
-        emit choicesOffered(window, command, choices);
+    if (d->model.window(context.window) && !choices.isEmpty())
+        emit choicesOffered(context, command, choices);
 }
 
 std::optional<ToolbarState> WindowManager::toolbarState(WindowId window, const QString &id) const {

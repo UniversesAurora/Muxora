@@ -84,7 +84,7 @@ bool offerToolbarMoveChoices(WindowManager* manager, const CommandContext& conte
             }
         }
     }
-    manager->offerChoices(context.window, QStringLiteral("window.toolbar.move"), choices);
+    manager->offerChoices(context, QStringLiteral("window.toolbar.move"), choices);
     return true;
 }
 

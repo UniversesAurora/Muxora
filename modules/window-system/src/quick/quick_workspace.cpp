@@ -492,8 +492,8 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
     // Choices for a command run without arguments: picking one runs it again
     // with the choice's arguments, as the Widgets pickers do.
     connect(&manager, &WindowManager::choicesOffered, this,
-        [this](WindowId window, const QString& command, const WindowManager::CommandChoices& choices) {
-            const auto view = d->windows.value(window);
+        [this](const CommandContext& context, const QString& command, const WindowManager::CommandChoices& choices) {
+            const auto view = d->windows.value(context.window);
             if (!view) return;
             QVector<MenuItemDescription> items;
             for (const auto& [path, arguments] : choices) {
@@ -519,7 +519,7 @@ QuickWorkspace::QuickWorkspace(WindowManager& manager, QObject* parent)
                 item.arguments = arguments;
                 level->append(std::move(item));
             }
-            view->dock->showMenu(items, d->manager.context(window), QCursor::pos());
+            view->dock->showMenu(items, context, QCursor::pos());
         });
     connect(&manager, &WindowManager::contextMenuRequested, this,
         [this](CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source) {

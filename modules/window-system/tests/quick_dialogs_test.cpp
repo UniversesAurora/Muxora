@@ -2,7 +2,8 @@
 // Phase 10.4i: dialogs over Quick windows. Dimensions: field kind (text,
 // several lines, number with an empty value), accepting by key or button,
 // cancelling, a dialog that stops applying, one that closes by itself,
-// raising an open one, commands that ask (rename, auto-hide panel size).
+// raising an open one, commands that ask (rename, auto-hide panel size),
+// and pickers that list choices in a Quick menu for the tab they started on.
 #include "quick_menu_test_support.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
@@ -21,6 +22,16 @@ QQuickWindow* dialogWindow(const QString& name)
     return nullptr;
 }
 QPoint centre(const QQuickItem* item) { return item->mapToScene(item->boundingRect().center()).toPoint(); }
+QQuickItem* entry(QQuickWindow* menu, const QString& text)
+{
+    QList<QQuickItem*> items{menu->contentItem()};
+    while (!items.isEmpty()) {
+        auto* item = items.takeFirst();
+        if (item->property("text").toString() == text && item->isVisible()) return item;
+        items += item->childItems();
+    }
+    return nullptr;
+}
 
 struct Workspace {
     WindowManager manager{WindowManager::Presentation::External};
@@ -160,6 +171,31 @@ private slots:
         QTRY_COMPARE(finished, 1);
         QCOMPARE(accepted, QStringLiteral("a\nb"));
         QVERIFY(!w.manager.raiseDialog(id));
+    }
+
+    // A picker run for a tab other than the active one lists its choices in
+    // a Quick menu, and the choice applies to that tab.
+    void pickersApplyToTheTabTheyStartedOn()
+    {
+        Workspace w;
+        QVERIFY(w.show());
+        const auto active = w.manager.model().orderedTabs(w.window).last();
+        QVERIFY(w.manager.activateTab(active));
+        // As a tab's context menu targets it.
+        auto context = w.manager.context(w.window);
+        context.tab = w.tab;
+        context.pane = w.manager.model().tab(w.tab)->activePane;
+        QVERIFY(w.manager.commands().execute(QStringLiteral("tab.color.set"), context));
+        QQuickWindow* menu = nullptr;
+        QTRY_VERIFY((menu = popup(w.view)));
+        QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QVERIFY(entry(menu, QStringLiteral("Default color")));
+        const auto preset = w.manager.tabAppearance().colors.at(1);
+        QQuickItem* choice = nullptr;
+        QTRY_VERIFY((choice = entry(menu, preset.name)));
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, centre(choice));
+        QTRY_COMPARE(w.manager.model().tab(w.tab)->colorId, preset.id);
+        QVERIFY(w.manager.model().tab(active)->colorId.isEmpty());
     }
 
     // A notice without a cancel button closes by itself or with Esc, and

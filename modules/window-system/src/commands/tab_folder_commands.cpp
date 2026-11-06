@@ -39,6 +39,16 @@ void WindowManager::registerTabFolderCommands()
         auto changed = *record; change(changed);
         return updateTabFolder(changed);
     };
+    // Other presentations list the strip's other folders in their own menu;
+    // each runs the command again with its targetFolder.
+    const auto offerFolders = [this](const CommandContext& c, const QString& command, GroupId groupId, FolderId except) {
+        CommandChoices choices;
+        if (const auto* group = d->model.group(groupId))
+            for (const auto& folder : group->folders) if (folder.id != except)
+                choices.append({{tabFolderDisplayName(folder.id)}, {{"targetFolder", folder.id}}});
+        offerChoices(c, command, choices);
+        return !choices.isEmpty();
+    };
     // Picks one of the strip's folders other than `except`.
     const auto chooseFolder = [this](GroupId groupId, FolderId except) -> std::optional<FolderId> {
         const auto* group = d->model.group(groupId);
@@ -59,10 +69,11 @@ void WindowManager::registerTabFolderCommands()
         else tabs.append(c.tab);
         return !createTabFolder(tabs, c.args.value("name").toString(), c.args.value("color").toString()).isNull();
     }, foldable);
-    add("tabFolder.addTab", QCoreApplication::translate("WindowSystem", "Add tab to a tab folder…"), [this, chooseFolder](const CommandContext& c) {
+    add("tabFolder.addTab", QCoreApplication::translate("WindowSystem", "Add tab to a tab folder…"), [this, chooseFolder, offerFolders](const CommandContext& c) {
         const auto* tab = d->model.tab(c.tab);
         if (!tab) return false;
         if (c.args.contains("targetFolder")) return addTabToFolder(c.tab, c.args.value("targetFolder").toUuid());
+        if (d->presentation == Presentation::External) return offerFolders(c, "tabFolder.addTab", d->model.groupForTab(c.tab), tab->folder);
         const QPointer<WindowManager> self(this);
         const auto target = chooseFolder(d->model.groupForTab(c.tab), tab->folder);
         return self && target && addTabToFolder(c.tab, *target);
@@ -101,7 +112,10 @@ void WindowManager::registerTabFolderCommands()
     add("tabFolder.setColor", QCoreApplication::translate("WindowSystem", "Set tab folder color…"), [this, changeFolder](const CommandContext& c) {
         std::optional<QString> color;
         if (c.args.contains("color")) color = c.args.value("color").toString();
-        else {
+        else if (d->presentation == Presentation::External) {
+            offerChoices(c, "tabFolder.setColor", tabColorChoices(this, QCoreApplication::translate("WindowSystem", "Automatic color")));
+            return true;
+        } else {
             const QPointer<WindowManager> self(this);
             color = pickTabColor(this, QCoreApplication::translate("WindowSystem", "Automatic color"));
             if (!self) return false;
@@ -179,6 +193,12 @@ void WindowManager::registerTabFolderCommands()
         if (c.args.contains("targetWindow")) return moveTabFolderToWindow(folderOf(c), c.args.value("targetWindow").toUuid());
         const auto* group = d->model.group(d->model.groupForFolder(folderOf(c)));
         if (!group) return false;
+        if (d->presentation == Presentation::External) {
+            CommandChoices choices;
+            for (const auto id : d->model.windowOrder()) if (id != group->windowId) choices.append({{windowCaption(id)}, {{"targetWindow", id}}});
+            offerChoices(c, "tabFolder.moveWindow", choices);
+            return !choices.isEmpty();
+        }
         DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != group->windowId) menu.addAction(windowCaption(id))->setData(id);
         const QPointer<WindowManager> self(this); const auto* action = menu.exec(QCursor::pos());
@@ -197,8 +217,10 @@ void WindowManager::registerTabFolderCommands()
                 const auto target = adjacentTabFolder(folderOf(c), forward);
                 return !target.isNull() && mergeTabFolders(folderOf(c), target);
             }, hasOther);
-    add("tabFolder.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab folder…"), [this, folderOf, chooseFolder](const CommandContext& c) {
+    add("tabFolder.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab folder…"), [this, folderOf, chooseFolder, offerFolders](const CommandContext& c) {
         if (c.args.contains("targetFolder")) return mergeTabFolders(folderOf(c), c.args.value("targetFolder").toUuid());
+        if (d->presentation == Presentation::External)
+            return offerFolders(c, "tabFolder.merge", d->model.groupForFolder(folderOf(c)), folderOf(c));
         const QPointer<WindowManager> self(this);
         const auto target = chooseFolder(d->model.groupForFolder(folderOf(c)), folderOf(c));
         return self && target && mergeTabFolders(folderOf(c), *target);
@@ -227,6 +249,14 @@ void WindowManager::registerTabFolderCommands()
     add("group.convertToFolder", QCoreApplication::translate("WindowSystem", "Convert tab group to a tab folder of a selected group…"), [this, groupOf](const CommandContext& c) {
         const auto source = groupOf(c);
         if (c.args.contains("targetGroup")) return !convertGroupToFolder(source, c.args.value("targetGroup").toUuid()).isNull();
+        if (d->presentation == Presentation::External) {
+            CommandChoices choices;
+            for (const auto windowId : d->model.windowOrder())
+                for (const auto id : d->model.centralGroups(windowId)) if (id != source)
+                    choices.append({{groupDisplayName(id)}, {{"targetGroup", id}}});
+            offerChoices(c, "group.convertToFolder", choices);
+            return !choices.isEmpty();
+        }
         DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, interfaceTheme());
         for (const auto windowId : d->model.windowOrder())
             for (const auto id : d->model.centralGroups(windowId)) if (id != source) menu.addAction(groupDisplayName(id))->setData(id);

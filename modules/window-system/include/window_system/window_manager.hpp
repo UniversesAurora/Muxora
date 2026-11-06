@@ -360,11 +360,11 @@ private:
     Q_SIGNAL void hierarchyBarsRequested(const QVector<QPair<TabId, PaneId>>& sources);
     Q_SIGNAL void contextMenuRequested(CommandMenuSurface surface, const CommandContext& context, QPoint global, QObject* source = nullptr);
     // A command run without its arguments, in a presentation without modal
-    // pickers: each choice runs the same command with its arguments. Its
-    // path holds the submenu titles, then its own title.
+    // pickers: each choice runs the same command in the same context with
+    // its arguments added. Its path holds the submenu titles, then its own.
     using CommandChoices = QVector<QPair<QStringList, QVariantMap>>;
-    void offerChoices(WindowId window, const QString& command, const CommandChoices& choices);
-    Q_SIGNAL void choicesOffered(WindowId window, const QString& command, const window_system::WindowManager::CommandChoices& choices);
+    void offerChoices(const CommandContext& context, const QString& command, const CommandChoices& choices);
+    Q_SIGNAL void choicesOffered(const window_system::CommandContext& context, const QString& command, const window_system::WindowManager::CommandChoices& choices);
     // A window's status message, its transient message (a pending key chord)
     // or the status items changed; a null window means every window.
     Q_SIGNAL void statusChanged(WindowId window);

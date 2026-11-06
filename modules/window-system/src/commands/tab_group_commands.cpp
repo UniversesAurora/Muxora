@@ -39,6 +39,12 @@ std::optional<QString> pickTabColor(WindowManager* manager, const QString& reset
     const auto* selected = menu.exec(QCursor::pos());
     return self && selected ? std::optional<QString>(selected->data().toString()) : std::nullopt;
 }
+QVector<QPair<QStringList, QVariantMap>> tabColorChoices(const WindowManager* manager, const QString& reset)
+{
+    QVector<QPair<QStringList, QVariantMap>> choices{{{reset}, {{"color", QString()}}}};
+    for (const auto& preset : manager->tabAppearance().colors) choices.append({{tabColorDisplayName(preset)}, {{"color", preset.id}}});
+    return choices;
+}
 void WindowManager::registerTabGroupCommands()
 {
     const auto add = [this](QString id, QString title, QStringList path,
@@ -66,6 +72,10 @@ void WindowManager::registerTabGroupCommands()
         return pickTabColor(this, QCoreApplication::translate("WindowSystem", "Default color"));
     };
     add("tab.color.set", QCoreApplication::translate("WindowSystem", "Set tab color…"), {"layout", "tabAppearance"}, [this, chooseColor](const CommandContext& c) {
+        if (d->presentation == Presentation::External && !c.args.contains("color")) {
+            offerChoices(c, "tab.color.set", tabColorChoices(this, QCoreApplication::translate("WindowSystem", "Default color")));
+            return true;
+        }
         const QPointer<WindowManager> self(this); const auto color = chooseColor(c);
         return self && color && setTabColor(c.tab, *color);
     }, [this](const CommandContext& c) { return d->model.tab(c.tab); });
@@ -112,6 +122,7 @@ void WindowManager::registerTabGroupCommands()
             const auto target = c.args.value("targetGroup").toUuid();
             return QPair{target, placement};
         }
+        if (d->presentation == Presentation::External) return std::nullopt; // offerTargets lists them.
         DismissOnlyMenu menu; menu.setObjectName(QStringLiteral("GroupTargetPicker")); applyTheme(&menu, interfaceTheme());
         for (const auto windowId : d->model.windowOrder()) {
             const auto* window = d->model.window(windowId);
@@ -144,6 +155,29 @@ void WindowManager::registerTabGroupCommands()
         return QPair{selected->data().toUuid(), choosePlacement
             ? Placement(selected->property("groupPlacement").toInt()) : Placement::Center};
     };
+    // Other presentations list the target groups by window in their own
+    // menu, with the side to move to when it is chosen too.
+    const auto offerTargets = [this](const CommandContext& c, const QString& command, bool choosePlacement) {
+        const QStringList sides{QCoreApplication::translate("WindowSystem", "Left"), QCoreApplication::translate("WindowSystem", "Right"),
+            QCoreApplication::translate("WindowSystem", "Above"), QCoreApplication::translate("WindowSystem", "Below")};
+        CommandChoices choices;
+        for (const auto windowId : d->model.windowOrder()) {
+            const auto* window = d->model.window(windowId);
+            if (!window) continue;
+            auto order = d->model.centralGroups(windowId); order += window->edgeGroups;
+            for (const auto id : order) {
+                const auto* group = d->model.group(id);
+                if (!group || id == c.group || group->location == GroupLocation::AutoHide) continue;
+                const QStringList path{windowCaption(windowId), groupDisplayName(id)
+                    + QCoreApplication::translate("WindowSystem", "(%n tabs)", nullptr, int(group->tabs.size()))};
+                if (!choosePlacement) { choices.append({path, {{"targetGroup", id}}}); continue; }
+                for (int side = 0; side < 4; ++side)
+                    choices.append({path + QStringList{sides.at(side)}, {{"targetGroup", id}, {"placement", side + int(Placement::Left)}}});
+            }
+        }
+        offerChoices(c, command, choices);
+        return !choices.isEmpty();
+    };
     // Whole titles per direction, ordered left, right, up, down; joining
     // translated fragments would fix one language's word order.
     struct GroupTitles { const char* swap[4]; const char* merge[4]; const char* move[4]; const char* pin[4]; const char* hide[4]; };
@@ -174,11 +208,14 @@ void WindowManager::registerTabGroupCommands()
         add(QStringLiteral("group.hideEdge.") + direction.id, title(groupTitles.hide), {"layout", "moveGroups"},
             [this, edge](const CommandContext& c) { return moveGroupToEdge(c.group, c.window, edge, false); }, visible);
     }
-    add("group.swap", QCoreApplication::translate("WindowSystem", "Swap with a selected tab group…"), {"layout", "swapGroups"}, [this, chooseTarget](const CommandContext& c) {
+    const auto offering = [this](const CommandContext& c) { return d->presentation == Presentation::External && !c.args.contains("targetGroup"); };
+    add("group.swap", QCoreApplication::translate("WindowSystem", "Swap with a selected tab group…"), {"layout", "swapGroups"}, [this, chooseTarget, offerTargets, offering](const CommandContext& c) {
+        if (offering(c)) return offerTargets(c, "group.swap", false);
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, false);
         return self && target && swapGroups(c.group, target->first);
     }, hasTarget);
-    add("group.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab group…"), {"layout", "mergeGroups"}, [this, chooseTarget](const CommandContext& c) {
+    add("group.merge", QCoreApplication::translate("WindowSystem", "Merge into a selected tab group…"), {"layout", "mergeGroups"}, [this, chooseTarget, offerTargets, offering](const CommandContext& c) {
+        if (offering(c)) return offerTargets(c, "group.merge", false);
         int insertionIndex = -1;
         if (c.args.contains("insertionIndex")) {
             const auto parsed = integerArgument(c.args.value("insertionIndex"), -1, std::numeric_limits<int>::max());
@@ -188,7 +225,8 @@ void WindowManager::registerTabGroupCommands()
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, false);
         return self && target && mergeGroups(c.group, target->first, insertionIndex);
     }, hasTarget);
-    add("group.moveToGroup", QCoreApplication::translate("WindowSystem", "Move beside a selected tab group…"), {"layout", "moveGroups"}, [this, chooseTarget](const CommandContext& c) {
+    add("group.moveToGroup", QCoreApplication::translate("WindowSystem", "Move beside a selected tab group…"), {"layout", "moveGroups"}, [this, chooseTarget, offerTargets, offering](const CommandContext& c) {
+        if (offering(c)) return offerTargets(c, "group.moveToGroup", true);
         const QPointer<WindowManager> self(this); const auto target = chooseTarget(c, true);
         return self && target && moveGroup(c.group, target->first, target->second);
     }, hasTarget);
@@ -197,6 +235,12 @@ void WindowManager::registerTabGroupCommands()
             {"layout", "moveGroups"}, [this, forward](const CommandContext& c) { return moveGroupToWindowCycle(c.group, forward); }, hasWindow);
     add("group.moveWindow", QCoreApplication::translate("WindowSystem", "Move tab group to a selected window…"), {"layout", "moveGroups"}, [this](const CommandContext& c) {
         if (c.args.contains("targetWindow")) return moveGroupToWindow(c.group, c.args.value("targetWindow").toUuid());
+        if (d->presentation == Presentation::External) {
+            CommandChoices choices;
+            for (const auto id : d->model.windowOrder()) if (id != c.window) choices.append({{windowCaption(id)}, {{"targetWindow", id}}});
+            offerChoices(c, "group.moveWindow", choices);
+            return !choices.isEmpty();
+        }
         DismissOnlyMenu menu; applyTheme(&menu, interfaceTheme());
         for (const auto id : d->model.windowOrder()) if (id != c.window) {
             auto* action = menu.addAction(windowCaption(id)); action->setData(id);

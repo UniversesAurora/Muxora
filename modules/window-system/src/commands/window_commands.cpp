@@ -52,6 +52,14 @@ void WindowManager::registerWindowCommands()
     auto hasPane = [this](const CommandContext& c) {
         return d->model.panes(c.args.value("tab", c.tab).toUuid()).contains(c.args.value("pane", c.pane).toUuid());
     };
+    // Other presentations list the windows in their own menu; each runs the
+    // command again with its targetWindow.
+    const auto offerWindows = [this](const CommandContext& c, const QString& command, const std::function<bool(WindowId)>& eligible) {
+        CommandChoices choices;
+        for (const auto id : d->model.windowOrder()) if (eligible(id)) choices.append({{windowCaption(id)}, {{"targetWindow", id}}});
+        offerChoices(c, command, choices);
+        return !choices.isEmpty();
+    };
     auto chooseWindow = [this](WindowId source, const CommandContext& c) -> WindowId {
         if (c.args.contains("targetWindow")) return c.args.value("targetWindow").toUuid();
         QPointer<QWidget> owner(windowWidget(c.window));
@@ -155,7 +163,7 @@ void WindowManager::registerWindowCommands()
                         choices.append({{editor->toolbarTitle(strip)}, args});
                     }
                     if (choices.isEmpty()) return false;
-                    offerChoices(c.window, "window.toolbar.setSizing", choices);
+                    offerChoices(c, "window.toolbar.setSizing", choices);
                     return true;
                 }
                 const auto state = editor->toolbarState(id);
@@ -203,7 +211,7 @@ void WindowManager::registerWindowCommands()
                 if (!editor) return false;
                 CommandChoices choices;
                 for (const auto& id : editor->toolbarIds()) choices.append({{editor->toolbarTitle(id)}, {{"strip", id}}});
-                offerChoices(c.window, "window.toolbar.resetSize", choices);
+                offerChoices(c, "window.toolbar.resetSize", choices);
                 return true;
             }
             QPointer<WorkspaceWindow> window = d->windows.value(c.window);
@@ -301,11 +309,22 @@ void WindowManager::registerWindowCommands()
         if (auto* action = menu.exec(QCursor::pos())) return action->data().toUuid();
         return {};
     };
+    const auto otherWorkbench = [this](const CommandContext& c) {
+        return [this, c](WindowId id) { return id != c.window && d->model.window(id)->kind == WindowKind::Workbench; };
+    };
     add("window.demote", QCoreApplication::translate("WindowSystem", "Convert to another window's floating window…"), "window", {},
-        [this, chooseWorkbench](const CommandContext& c) { const auto target = chooseWorkbench(c); return !target.isNull() && demoteWindow(c.window, target); },
+        [this, chooseWorkbench, offerWindows, otherWorkbench](const CommandContext& c) {
+            if (d->presentation == Presentation::External && c.args.value("targetWindow").toUuid().isNull())
+                return offerWindows(c, "window.demote", otherWorkbench(c));
+            const auto target = chooseWorkbench(c); return !target.isNull() && demoteWindow(c.window, target);
+        },
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Workbench && d->model.windowOrder().size() > 1; });
     add("window.reassignFamily", QCoreApplication::translate("WindowSystem", "Change the floating window's owner…"), "window", {},
-        [this, chooseWorkbench](const CommandContext& c) { const auto target = chooseWorkbench(c); return !target.isNull() && reassignFamily(c.window, target); },
+        [this, chooseWorkbench, offerWindows, otherWorkbench](const CommandContext& c) {
+            if (d->presentation == Presentation::External && c.args.value("targetWindow").toUuid().isNull())
+                return offerWindows(c, "window.reassignFamily", otherWorkbench(c));
+            const auto target = chooseWorkbench(c); return !target.isNull() && reassignFamily(c.window, target);
+        },
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Floating; });
     add("window.focusOwner", QCoreApplication::translate("WindowSystem", "Return to owner workbench"), "window", QKeySequence("Ctrl+Alt+Home"),
         [this](const CommandContext& c) { const auto* w = d->model.window(c.window); if (!w) return false; const auto root = d->model.familyRoot(w->familyId); showWindow(root); activateTab(context(root).tab); return true; }, hasWindow);
@@ -332,9 +351,11 @@ void WindowManager::registerWindowCommands()
             return true;
         }, [this](const CommandContext& c) { const auto* w = d->model.window(c.window); return w && w->kind == WindowKind::Floating; });
     add("window.moveAllTabs", QCoreApplication::translate("WindowSystem", "Move all tabs in this window…"), "window", {},
-        [this](const CommandContext& c) {
+        [this, offerWindows](const CommandContext& c) {
             const auto source = c.args.value("source", c.window).toUuid();
             auto target = c.args.value("targetWindow").toUuid();
+            if (target.isNull() && d->presentation == Presentation::External)
+                return offerWindows(c, "window.moveAllTabs", [source](WindowId id) { return id != source; });
             if (target.isNull()) {
                 DismissOnlyMenu menu(windowWidget(c.window)); applyTheme(&menu, interfaceTheme());
                 for (const auto id : d->model.windowOrder()) if (id != source) { auto* action = menu.addAction(windowCaption(id)); action->setData(id); }
@@ -354,21 +375,25 @@ void WindowManager::registerWindowCommands()
             return true;
         }, hasWindow);
     add("workspace.moveTabToWindow", QCoreApplication::translate("WindowSystem", "Move current tab to another window…"), "window", {},
-        [this, chooseWindow](const CommandContext& c) {
+        [this, chooseWindow, offerWindows](const CommandContext& c) {
             const auto tab = c.args.value("tab", c.tab).toUuid();
             const auto* source = d->model.group(d->model.groupForTab(tab));
             if (!source) return false;
+            if (d->presentation == Presentation::External && !c.args.contains("targetWindow"))
+                return offerWindows(c, "workspace.moveTabToWindow", [from = source->windowId](WindowId id) { return id != from; });
             const auto target = chooseWindow(source->windowId, c);
             if (target.isNull()) return false;
             const auto place = static_cast<Placement>(c.args.value("placement", int(Placement::Center)).toInt());
             return moveTabToWindow(tab, target, place);
         }, hasTab);
     add("pane.moveToWindow", QCoreApplication::translate("WindowSystem", "Merge current pane into active tab of a selected window…"), "window", {},
-        [this, chooseWindow](const CommandContext& c) {
+        [this, chooseWindow, offerWindows](const CommandContext& c) {
             const auto tab = c.args.value("tab", c.tab).toUuid();
             const auto pane = c.args.value("pane", c.pane).toUuid();
             const auto* source = d->model.group(d->model.groupForTab(tab));
             if (!source) return false;
+            if (d->presentation == Presentation::External && !c.args.contains("targetWindow"))
+                return offerWindows(c, "pane.moveToWindow", [from = source->windowId](WindowId id) { return id != from; });
             const auto target = chooseWindow(source->windowId, c);
             return !target.isNull() && movePaneToWindow(tab, pane, target,
                 static_cast<Placement>(c.args.value("placement", int(Placement::Right)).toInt()));
@@ -378,6 +403,14 @@ void WindowManager::registerWindowCommands()
             const auto sourceTab = c.args.value("tab", c.tab).toUuid();
             const auto sourcePane = c.args.value("pane", c.pane).toUuid();
             auto target = c.args.value("targetTab").toUuid();
+            if (!c.args.contains("targetTab") && d->presentation == Presentation::External) {
+                CommandChoices choices;
+                for (const auto window : d->model.windowOrder())
+                    for (const auto tab : d->model.orderedTabs(window)) if (tab != sourceTab)
+                        choices.append({{QStringLiteral("%1 — %2").arg(d->model.tab(tab)->title, windowCaption(window))}, {{"targetTab", tab}}});
+                offerChoices(c, "pane.moveToTab", choices);
+                return !choices.isEmpty();
+            }
             if (!c.args.contains("targetTab")) {
                 QPointer<QWidget> owner(windowWidget(c.window));
                 DismissOnlyMenu picker;
