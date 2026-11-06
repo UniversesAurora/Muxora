@@ -104,6 +104,13 @@ Claude 下次接手：审查执行者的提交和 3.2 的表；根据 10.5 的�
 - 用户 2026-11-07 要求 Claude 把自己负责的部分做完再交接。
 - 10.5 的优化顺序和分工、10.6 单元 3 的步骤由 Claude 定，写在 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md) 对应小节。
 
+### Codex 接手后待清理（2026-11-07）
+
+本轮系统临时文件删除被执行策略拦截，仅返回 `blocked by policy`，未提供更具体原因。没有绕过拦截。请 Claude 接手时重新核对路径、内容及用途后删除，保留 `out/test-results/` 中的正式测量和测试记录。
+
+- 系统临时目录下的 `muxora-menu-create-20261107/`，共 8 个文件，无子目录或重解析点。文件为 `build.cmd`、`build.ps1`、`menu_create.cpp`、`menu_create.exe`、`menu_create.exp`、`menu_create.lib`、`menu_create.obj`、`run.ps1`，均为菜单测量源码、构建或运行产物。
+- 同一临时目录中的 10 个本轮文件为 `muxora-far-top-baseline-20261107.ps1`、`muxora-far-top-commit-20261107.txt`、`muxora-inventory-chrome-20261107.json`、`muxora-inventory-commit-20261107.txt`、`muxora-inventory-docking-20261107.json`、`muxora-inventory-merged-20261107.json`、`muxora-inventory-root-20261107.json`、`muxora-inventory-runtime-20261107.json`、`muxora-widgets-inventory-20261107.json`、`muxora-menu-lazy-commit-20261107.txt`，用途为测试清单中间数据、测量入口与提交草稿。
+
 ### 环境与注意事项
 
 - 本轮基准报告在 `out/test-results/quick-workspace-<场景>-<位置>-<轮>-<before|loops|after>.json`，是 10.5 的对照证据，保留。`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 仍按原计划保留。
