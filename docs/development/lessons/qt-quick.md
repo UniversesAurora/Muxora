@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### 新的 Quick 窗口先排好再显示
+
+- **现象**：启动时选中的标签先是独立的圆角块，几百毫秒后才接到卡片上。
+- **原因**：窗口先 `show()` 后建内容。Windows 上 `show()` 会同步上屏、渲染第一帧，内容在那之后才建好；控制器把之后的布局变化当成可见窗口里的变化，播了过渡。
+- **做法**：新窗口在内容建好、布局完成后再显示，像 Widgets 那样。启动截图要和 Widgets 版在同一时刻对比；测试在显示事件里检查内容已经排好。
+- **出处**：2026-11-06，`QuickWorkspaceTest::windowsShowWithTheirGroupsLaidOut`，见 [记录](../verification-log/2026-11.md#quick-窗口启动时标签先分离再接合2026-11-06)。
+
 ### Basic 控件的 padding 盖不掉单独设的边距
 
 - **现象**：Quick 菜单栏的中文标题只显示第一个字，其余被淡出。

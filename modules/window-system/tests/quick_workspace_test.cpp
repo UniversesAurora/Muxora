@@ -61,6 +61,26 @@ QPoint tabPoint(quick::GroupItem* group, TabId tab)
     return bar->mapToScene(QPointF(label.center())).toPoint();
 }
 
+// What a Quick window holds at the moment it is shown.
+class ShowProbe final : public QObject {
+public:
+    struct Shown { int groups = 0; bool laidOut = false; };
+    QVector<Shown> shown;
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        auto* window = qobject_cast<QQuickWindow*>(watched);
+        if (event->type() != QEvent::Show || !window) return false;
+        const auto groups = window->contentItem()->findChildren<quick::GroupItem*>();
+        Shown state{int(groups.size()), !groups.isEmpty()};
+        for (auto* group : groups)
+            state.laidOut = state.laidOut && group->width() > 0 && group->height() > 0
+                && group->tabBar()->width() > 0 && group->tabBar()->height() > 0;
+        shown.append(state);
+        return false;
+    }
+};
+
 // Moves the held mouse in steps, as a hand does.
 void moveHeld(QWindow* window, QPoint from, QPoint to)
 {
@@ -72,6 +92,27 @@ void moveHeld(QWindow* window, QPoint from, QPoint to)
 class QuickWorkspaceTest final : public QObject {
     Q_OBJECT
 private slots:
+    // A new window shows its groups laid out, as a widget window shows its
+    // laid-out children: its first frame is not a layout in progress whose
+    // later steps (a selected tab joining its card) would then animate.
+    void windowsShowWithTheirGroupsLaidOut()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        ShowProbe probe;
+        qApp->installEventFilter(&probe);
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(900, 700)});
+        const auto first = manager.addTab(window, named(QStringLiteral("First")));
+        const auto second = manager.addTab(window, named(QStringLiteral("Second")));
+        QVERIFY(manager.moveTab(second, manager.model().groupForTab(first), Placement::Right));
+        QTRY_VERIFY(workspace.window(window) && workspace.window(window)->isVisible());
+        qApp->removeEventFilter(&probe);
+        QVERIFY(!probe.shown.isEmpty());
+        QCOMPARE(probe.shown.first().groups, 2);
+        QVERIFY(probe.shown.first().laidOut);
+    }
+
     void activeTabsShowTheirPanes()
     {
         WindowManager manager(WindowManager::Presentation::External);

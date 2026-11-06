@@ -662,15 +662,21 @@ void QuickWorkspace::sync()
             window->syncStatus(d->manager.d->statusMessages.value(id, QCoreApplication::translate("WindowSystem", "Ready")),
                                d->manager.d->transientStatus.value(id));
             if (!model.window(id)) continue;
-            if (const auto placement = d->placements.take(id); placement.first.isValid())
-                window->place(placement.first, placement.second);
-            else window->show();
         }
         if (!creating) window->syncToolbars(toolbars, d->manager.toolbarLayout(id));
         if (!self) return;
         window->dock->sync();
         window->updateCaption();
         window->applyViewState();
+        // A new window shows once its groups are laid out, as a widget window
+        // shows its laid-out children. Showing renders the first frame at once
+        // on some platforms; before the groups exist it would be a layout in
+        // progress, which later changes would then animate away from.
+        if (creating && window) {
+            if (const auto placement = d->placements.take(id); placement.first.isValid())
+                window->place(placement.first, placement.second);
+            else window->show();
+        }
     }
     for (auto it = d->panes.begin(); it != d->panes.end();) {
         if (live.contains(*it)) { ++it; continue; }
