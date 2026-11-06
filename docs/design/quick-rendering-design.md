@@ -1,6 +1,6 @@
 # Qt Quick 呈现与高刷新率
 
-状态：设计要求，实施见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md)。当前默认预览仍为 Widgets。采用理由见 [ADR 0013](../adr/0013-qt-quick-rendering.md)。
+状态：设计要求，实施见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md)。Muxora 默认使用 Quick，Widgets 删除与整体调优继续按计划推进。采用理由见 [ADR 0013](../adr/0013-qt-quick-rendering.md)。
 
 ## 1. 外观与交互
 
