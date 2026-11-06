@@ -137,7 +137,7 @@
 
 **状态**：进行中。Widgets 不再是默认，按下面的单元分块删除，不等到最后一次删光；删除前确认 Quick 一侧已有等价行为和用例，缺的用例补到 `quick-*` 套件（按 [测试的分量](../../development/testing-design.md#测试的分量)，不逐条照搬）。
 
-删除单元 1 已完成：Muxora 只保留 Quick 占位页，本地化套件检查同一份编译后的 QML 和文字函数，见 [验证记录](../../development/verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。下一步为 10.3 子步 6。
+删除单元 1 已完成：Muxora 只保留 Quick 占位页，本地化套件检查同一份编译后的 QML 和文字函数，见 [验证记录](../../development/verification-log/2026-11.md#删除-muxora-的-widgets-占位内容2026-11-04)。10.4h、10.4j 与 10.4k 已接入并定向验证，下一步由 Claude 拆分删除单元 3–5，单元 2 随单元 3 执行。
 
 | 单元 | 删除内容 | 时机 |
 | --- | --- | --- |

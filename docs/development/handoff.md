@@ -49,6 +49,50 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-11-06 · Codex · 设置、Alt 导航与无障碍接入，性能归因完成
+
+### 最后提交
+
+实现与测量记录截至 `9730ad2`，本节随交接文档提交推送到 `main`。交出时与 `origin/main` 一致，工作区干净。审查范围从 `69a037a` 之后开始。
+
+### 本轮完成
+
+- 10.4h 补齐显示、标签外观、置顶分类及设置页当前窗口的栏显隐，见 [设置分类记录](verification-log/2026-11.md#quick-设置页补齐显示与标签分类2026-11-06)。快捷键编辑规则抽到 `settings/shortcut_edit`，Quick 页复用现有控件，保留搜索、录键、参数、冲突与前缀提示、外部修改时的未应用编辑，见 [规则分离](verification-log/2026-11.md#快捷键编辑规则脱离控件2026-11-06) 和 [快捷键页](verification-log/2026-11.md#quick-快捷键页2026-11-06)。对应提交为 `7c34ee6`、`2bac4a5`、`c11f042`。
+- 10.4k 单按 Alt 进入导航、可见菜单与收纳入口循环、展开、退出及原焦点返回，见 [导航记录](verification-log/2026-11.md#quick-菜单栏单按-alt-导航2026-11-06)，实现为 `749370b`。菜单套件按职责拆成 `quick-popup-menu` 和 `quick-menu-bar`，断言和原时限保留。误运行的旧静态菜单标题宽度用例另以 `8552a3b` 退役，见 [退役记录](verification-log/2026-11.md#退役菜单标题宽度外观检查2026-11-06)。
+- 10.4j 按钮、侧栏、组和标题使用 Qt 公开 `Accessible`，标签栏用公开工厂按稳定身份提供标签、标签夹及单选接口，动作仍经控制器和管理器。移除和销毁释放虚拟节点，键盘顺序已接线。实现为 `6e489fb`、`83d0563`、`a600144`，见 [按钮](verification-log/2026-11.md#quick-按钮的读屏信息与动作2026-11-06)、[侧栏与焦点](verification-log/2026-11.md#quick-侧栏标签组与标题的读屏接线2026-11-06)、[标签身份与释放](verification-log/2026-11.md#quick-标签与标签夹的读屏身份2026-11-06)。
+- 10.5 已测完整窗口的分隔条、标签切换、多行／侧栏开合，两窗同时更新及真实拖动，并分层归因阴影、拆出和内容截图。数据为 `a600144` 的 Release 模块，文档提交为 `fdef787`、`9730ad2`，见 [完整窗口与阴影](verification-log/2026-11.md#quick-完整窗口帧成本与阴影归因2026-11-06) 和 [多窗口与真实拖动](verification-log/2026-11.md#quick-多窗口与真实拖动耗时2026-11-06)。测量程序和带计时的源文件副本均在系统临时目录。
+- 验证按小步运行。Debug 应用和相关目标构建成功，Release 模块与采样目标构建成功。菜单、设置、快捷键和无障碍各次定向结果及首报失败分别在上述日志中，版本与范围不能合并成当前版本的全套通过。桌面恢复失败时单独恢复，最近采样批次恢复成功。未运行全量或大回归，未进行真实读屏、输入法和整体外观试用，未打包部署。
+
+### 进行中
+
+10.5 尚待优化方案和实现，整体高刷新验收待完成。10.6 管理器仍有 Widgets 模式和 `QWidget` 接口，Quick 仍经管理器链接 Widgets，应用仍用 `QApplication`。删除单元 2 已并入单元 3，随后还有旧窗口／停靠区及构建部署清理。窗口选择器行前图标等既有差别、混合 DPI、资源回落和最终试用仍需收尾。具体状态见 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md)。
+
+### 下一步
+
+1. Claude 按仓库接手流程审查本轮提交，先读 [协作经验](lessons/collaboration.md)、[Qt Quick 经验](lessons/qt-quick.md)、[工程设计](engineering-design.md) 和 [测试要求](testing-design.md)。本轮新增无障碍接口和菜单焦点返回涉及生命周期，相关失败和源码依据在日志中。
+2. 根据 10.5 的测量定优化方案。已定位的入口为 `GroupSurfaceItem::prepareFrame` 到 `ElevationRenderer::anchorPatches`／`anchorPatch` 的 CPU 阴影准备，以及 `TabDrag::detach` 和 `GroupItem::pagePicture` 的转换峰值。两窗同时更新的提交节奏也已记录，保持既有外观和交互要求。
+3. 把 [10.6 删除单元 3–5](../roadmap/implementation/phase-10-qt-quick.md#106-分块删除-widgets-与收尾) 拆成可单独提交的步骤，覆盖管理器纯 Quick 接口、Lua／Muxora 调用方、旧实现与专属测试、`QGuiApplication` 和部署依赖。用户要求最终彻底迁移到 Quick。
+4. 核对待补的功能差别和验收范围，更新计划中早期尚未同步的描述。Muxora 文件页地址栏和信息栏已在上一轮实现，见 [记录](verification-log/2026-11.md#muxora-文件页的地址栏和信息栏2026-11-06)。
+
+### 待用户决定
+
+无新问题。整体试用、真实输入法／读屏及最终全量回归尚待安排，全量运行仍须用户单独授权。8.27 的具体要求继续按原计划待定。
+
+### 请下一位回答
+
+无独立问答，接手后按上述步骤审查、定优化方案和拆分删除工作。
+
+### 本轮新决定
+
+用户明确保留原分工，性能优化方案与 Widgets 删除的拆步由 Claude 决定，执行者按拆好的步骤继续。决定及当时工作范围已写入 [测量记录](verification-log/2026-11.md#quick-完整窗口帧成本与阴影归因2026-11-06) 和阶段 10。
+
+### 环境与注意事项
+
+- 没有本轮测量程序或测试进程仍在运行。固定 Release 预览未更新，Widgets 参考包继续独立保留。
+- 系统临时目录下 `muxora-quick-frame-measure-20261106`，仅含本轮采样源码、脚本、诊断日志与构建产物。交出前只读核实 91 个文件、无重解析点、无运行进程。此前递归删除被 `blocked by policy` 拦截，未给具体原因，未再次尝试。Claude 接手先核对实际路径、内容及用途，确认不含用户数据后删除。用户已收到绝对路径和无需管理员权限的手动命令。
+- 原始 JSON 和文本报告在 `out/test-results/`，命名与范围见验证日志。计时程序副本可以清理。`out/diagnostics/quick-migration/` 与 `quick-tab-strip/` 是此前保留的基准证据，按原计划处理。
+- 函数归因为包含子调用的 wall 时间，提交间隔来自 `frameSwapped`。GPU 执行时间、系统实际呈现及长期资源验收仍待完成。
+
 ## 2026-11-06 · Claude：10.4e–i 完成，Quick 外观对齐 Widgets 参考版
 
 - **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。
@@ -80,7 +124,6 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - 要有菜单栏单按 Alt 的键盘导航（10.4k）。
   - 10.6 单元 2 并入单元 3（Claude 根据现状改的计划，理由写在表里）。
 - **环境与注意事项**：
-  - **待清理（Codex，2026-11-06）**：系统临时目录下 `muxora-quick-frame-measure-20261106`，仅含完整 Quick、原生拖动和多窗口采样的源码、脚本、误写的诊断日志与构建目录。补充测量后已只读核实 91 个文件、无重解析点、无运行中的程序；此前递归删除被 `blocked by policy` 拦截，未给具体原因，未再次尝试或绕过。按仓库删除受阻规则补充此项，Claude 下次接手时先核对目录、内容和用途，再删除；结论见 [完整窗口](verification-log/2026-11.md#quick-完整窗口帧成本与阴影归因2026-11-06) 和 [拖动与多窗口](verification-log/2026-11.md#quick-多窗口与真实拖动耗时2026-11-06)。
   - 用 `Start-Process` 在 `quiet-desktop.ps1` 会话里启动应用截图或冒烟后，有两次桌面没有恢复，按提示单独跑 `quiet-desktop.ps1 -Elevate -Restore` 就好。
   - 应用的 `--screenshot` 截完不退出，要关窗口；它在启动后 700 毫秒拍，适合检查第一帧。和 Widgets 参考版对比时两边都用 `--fresh --state-dir <临时目录>`，不要碰参考包自带的 `data/`。
   - 测试进程崩溃时，`-o 文件` 的输出不完整，去掉 `-o`、把标准输出重定向到文件才能看到调用栈，见 [调试经验](lessons/debugging.md#测试进程崩溃时看标准输出里的调用栈)。
@@ -108,38 +151,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - `quick-toolbar` 已承接工具栏行为场景，`quick-popup-menu` 保留菜单场景；只是按职责拆开，未改超时或覆盖要求。字体／窗口控件函数也已定向通过。桌面曾首次恢复失败，单独管理员恢复成功，最近会话恢复成功；没有正在运行的检查。桌面检查仍须整批经 `quiet-desktop.ps1 -Elevate`；不得沿用用户之前清除旧快照的授权来清除新快照。
   - 不在桌面隔离会话内编译；只运行已准备好的目标，避免编译服务留在 runner 后代树中。
   - **待清理，禁止 Codex 绕过策略**：系统临时目录下 `Muxora-toolbar-measure-bb214121144a4599883aa3886ace6300`（此前工具栏取样）与 `muxora-title-cost-54652cf54f054cdfb7f6545378a43dcd`（本轮标题取样）递归删除被 `blocked by policy` 拦截，均未给具体原因。本轮目录已只读核实仅有 `title_cost.cpp`、`title_cost.obj`、`title_cost.exe`，无子目录，已给用户绝对路径及无需管理员权限的手动命令。Claude 删除前再核对实际目录与内容，确认无用户数据；前一目录按原记录核查，不盲删。没有将临时测量源码加入项目。
-
-## 2026-11-04 · Claude：Quick 迁移推进，Muxora 改为只用 Quick 启动
-
-- **最后提交**：`main` 已推送，与 `origin/main` 一致；工作区干净。另推送了标签 `widgets-reference`，指向切换前最后一个提交。
-- **本轮完成**（10-30 交接之后约 75 个提交，每项的改动和验证见链接）：
-  - 10.3 子步 1–5：Quick 标签组、停靠表面（中央、固定区域、自动隐藏侧栏和展开面板）、整窗原生框架与标题行、管理器 External 模式，见 [工作区](verification-log/2026-10.md#quick-工作区按模型建窗口2026-10-31)、[固定区域](verification-log/2026-10.md#quick-停靠区的固定区域2026-10-31)、[侧栏](verification-log/2026-10.md#quick-停靠区的自动隐藏侧栏2026-10-31)、[标题栏](verification-log/2026-10.md#quick-窗口的标题栏和原生框架2026-10-31)。
-  - 拖动全部对齐 Widgets（只差按 Tab 选目标，挪到 10.4）：[栏内与跨窗口](verification-log/2026-11.md#quick-标签在栏内组间和窗口间拖动2026-11-01)、[拖出浮窗](verification-log/2026-11.md#quick-标签拖出成浮窗2026-11-01)、[系统移动与拖标题停靠](verification-log/2026-11.md#quick-拖动交给系统移动浮窗拖标题可停靠2026-11-03)、[目标栏画载体](verification-log/2026-11.md#quick-标签栏上方由目标栏画载体2026-11-03)、[标签夹](verification-log/2026-11.md#quick-标签夹拖出成浮窗2026-11-03)、[侧栏](verification-log/2026-11.md#quick-侧栏的拖入和拖出2026-11-03)、[落位动画](verification-log/2026-11.md#quick-标签落下时滑到位2026-11-04)、[侧栏载体](verification-log/2026-11.md#quick-侧栏上方画出侧栏按钮2026-11-04)、[标签夹停靠](verification-log/2026-11.md#quick-拆出的标签夹放到引导和侧栏上2026-11-04)、[唤起目标](verification-log/2026-11.md#quick-拖动中唤起目标窗口2026-11-04)、[滚轮](verification-log/2026-11.md#quick-拖动中滚轮滚动指针下的标签栏2026-11-04)、[内容预览](verification-log/2026-11.md#quick-拖到标签栏上时显示内容画面2026-11-04)。
-  - 窗口层面：[面板手柄与标题拖动](verification-log/2026-11.md#quick-展开面板的尺寸手柄和标题拖动2026-11-04)、[显示与激活（`WindowPresenter`）](verification-log/2026-11.md#quick-窗口接收管理器的显示和激活2026-11-04)、[视图模式与栏显隐](verification-log/2026-11.md#quick-窗口按视图状态显示2026-11-04)、[标题与窗口族](verification-log/2026-11.md#quick-窗口标题跟随活动标签2026-11-04)、[布局保存与恢复](verification-log/2026-11.md#quick-恢复和保存布局2026-11-04)。
-  - 修好此前一直失败的套件：[Debug 下失败的套件](verification-log/2026-11.md#debug-下失败的三个套件2026-11-03)、[`menu-structure`](verification-log/2026-11.md#menu-structure-跟上-10-月-26-日的标签行设置2026-11-04)。
-  - [切换](verification-log/2026-11.md#muxora-切换为只用-quick-启动2026-11-04)：Muxora 只用 Quick 启动；原 Widgets 版的 Release 包放在 `out/package/muxora-widgets-reference/` 供对比；日常 Release 预览已按 `d966723` 重新部署。
-  - [后续计划](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起)：剩余工作、顺序、负责人和每一项的完成标准都写在阶段 10，10.6 改成分块删除 Widgets 的五个单元。
-  - 验证范围：每步只跑相关套件，Quick 16 个套件最后一次全部通过；没有跑全量，没有在应用里试用。
-- **进行中**：无。10.3 子步 6 尚未开始。
-- **下一步**（给执行者，按 [剩余工作与分工](../roadmap/implementation/phase-10-qt-quick.md#剩余工作与分工2026-11-04-起) 表里 1–5 的顺序；每项的范围、完成标准和要跑的套件写在对应子步里）：
-  1. 先读 [助手协作经验](lessons/collaboration.md) 和阶段 10 的“剩余工作与分工”。
-  2. 删除 Widgets 占位内容（10.6 单元 1），`localization` 测试改为检查文字函数和 QML 占位页。
-  3. 10.3 子步 6：标签和窗格的上下栏接口、Quick 内容的焦点与输入法作用域。Muxora 文件标签的两条栏要新外观，留给 Claude。
-  4. 10.4a 命令菜单数据模型；10.4e 前半工具栏排布规则抽离。这两项改到 Widgets 代码，行为不变的依据是对应的 Widgets 套件，这几个要跑。
-  5. 10.5 的工具项：`quiet-desktop.ps1` 运行期间保持屏幕亮着。
-  6. 碰到新界面组件或新外观（菜单、工具栏、状态栏、对话框、设置控件的样子）就停下，写进交接记录，由 Claude 做 10.4b–i。
-- **待用户决定**：无新问题。之前就有的：8.27 菜单与浮动面板重做的具体要求仍等用户补充；Quick 版的拖动、布局和视图模式等用户试用。
-- **请下一位回答**：无。
-- **本轮新决定**：
-  - 用户 2026-11-04：Muxora 现在就切到 Quick；先保留一份能启动原版的 Release 包用来对比，之后不再做 Widgets 版。记在 [阶段 10 · 10.3](../roadmap/implementation/phase-10-qt-quick.md#103-quick-窗口内容与原生交互) 的切换决定和“剩余工作与分工”。
-  - 由此定下：Widgets 套件不再运行；每补齐一块 Quick 功能，就删掉对应的 Widgets 代码和用例（10.6 的删除单元）。
-  - 用户 2026-10-30 定的“整个界面必须完全迁移到 Quick”仍然有效。
-- **环境与注意事项**：
-  - **屏幕休眠**：休眠时 Qt Quick 不出新帧，依赖动画结束或帧数的断言会一直失败，换成一个空的 `QQuickWindow` 也一样，不是代码问题。先唤醒屏幕并保持亮着再跑，见 [Qt Quick 经验](lessons/qt-quick.md#测量帧率前先确认屏幕处于工作状态)；把这一步做进 `quiet-desktop.ps1` 是上面的第 5 项。
-  - **桌面恢复**：`quiet-desktop.ps1` 偶尔报“部分窗口没有恢复”，按提示再跑一次 `-Elevate -Restore` 就好。
-  - **偶发失败**：`quick-native-drag` 在一次整批运行里超时过一次，单独重复都通过，见 10.5 的偶发问题。
-  - **对比包**：`out/package/muxora-widgets-reference/` 自带 `data/`，布局独立保存。日常 Release 部署不要覆盖或删除它。
-  - **程序位置**：Debug 版程序在 `out/build/dev-debug/bin/muxora.exe`，不带 Qt 运行库，要经 `tools/build.ps1 -Run` 或先载入工具链再启动。
-  - **换行符**：在 Windows 上用 Python `write_text` 改文件会写成 CRLF，git 提交时会改回 LF；用 `write_bytes` 或指定 `newline` 可以避免。
-  - **诊断目录**：`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 是 10.5 要对照的基准证据，暂时保留。
-  - **运行状态**：没有运行中的预览或测试。
