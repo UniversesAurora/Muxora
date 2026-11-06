@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "button_item.hpp"
+#include "accessibility.hpp"
 #include "tool_tip.hpp"
 #include "path_item.hpp"
 #include "tab_icon_item.hpp"
@@ -48,6 +49,11 @@ ButtonItem::ButtonItem(const Theme& theme, QQuickItem* parent)
     : QQuickItem(parent), theme_(theme), fill_(new PathItem(this)), border_(new PathItem(this)),
       icon_(new TabIconItem(this)), text_(new TabLabelTextItem(this))
 {
+    accessibility_ = attachAccessibility(this, QAccessible::Button);
+    accessibility_->setProperty("focusable", focusPolicy() != Qt::NoFocus);
+    connect(this, &QQuickItem::focusPolicyChanged, this, [this](Qt::FocusPolicy policy) {
+        accessibility_->setProperty("focusable", policy != Qt::NoFocus);
+    });
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     border_->setZ(1); icon_->setZ(2); text_->setZ(2);
@@ -73,13 +79,26 @@ void ButtonItem::setText(const QString& text, const QFont& font)
 {
     if (label_ == text && font_ == font) return;
     label_ = text; font_ = font; refresh();
+    updateAccessibleName();
 }
 void ButtonItem::setIconRail(std::optional<int> inset, Qt::Edge edge)
 {
     if (iconRail_ == inset && iconEdge_ == edge) return;
     iconRail_ = inset; iconEdge_ = edge; refresh();
 }
-void ButtonItem::setChecked(bool checked) { if (checked_ != checked) { checked_ = checked; refresh(); } }
+void ButtonItem::setCheckable(bool checkable)
+{
+    if (checkable_ == checkable) return;
+    checkable_ = checkable;
+    accessibility_->setProperty("checkable", checkable);
+}
+void ButtonItem::setChecked(bool checked)
+{
+    if (checked_ == checked) return;
+    checked_ = checked;
+    accessibility_->setProperty("checked", checked);
+    refresh();
+}
 void ButtonItem::setDown(bool down) { if (down_ != down) { down_ = down; refresh(); } }
 void ButtonItem::setEmphasized(bool emphasized) { if (emphasized_ != emphasized) { emphasized_ = emphasized; refresh(); } }
 
@@ -165,9 +184,7 @@ void ButtonItem::mouseReleaseEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton || !pressed_) return;
     pressed_ = false; event->accept();
     const bool inside = contains(event->position());
-    if (inside && checkable_) checked_ = !checked_;
-    refresh();
-    if (inside) emit clicked();
+    if (inside) activate(); else refresh();
 }
 
 void ButtonItem::mouseUngrabEvent() { pressed_ = false; refresh(); }
@@ -188,8 +205,22 @@ void ButtonItem::keyReleaseEvent(QKeyEvent* event)
     event->accept();
     if (event->isAutoRepeat()) return;
     keyboardPressed_ = pressed_ = false;
-    if (checkable_) checked_ = !checked_;
-    refresh(); emit clicked();
+    activate();
+}
+
+void ButtonItem::activate()
+{
+    if (checkable_) {
+        checked_ = !checked_;
+        accessibility_->setProperty("checked", checked_);
+    }
+    refresh();
+    emit clicked();
+}
+
+void ButtonItem::accessiblePressAction()
+{
+    if (isEnabled() && isVisible()) activate();
 }
 
 void ButtonItem::focusOutEvent(QFocusEvent* event)
@@ -216,8 +247,16 @@ void ButtonItem::hoverLeaveEvent(QHoverEvent*) { setHovered(false); }
 
 void ButtonItem::setToolTip(QString tip)
 {
+    if (toolTip_ == tip) return;
     toolTip_ = std::move(tip);
+    updateAccessibleName();
     if (hovered_) showToolTip(this, theme_, toolTip_);
+}
+
+void ButtonItem::updateAccessibleName()
+{
+    accessibility_->setProperty("name", label_.isEmpty() ? toolTip_.section(QLatin1Char('\n'), 0, 0) : label_);
+    accessibility_->setProperty("description", toolTip_);
 }
 
 } // namespace window_system::quick

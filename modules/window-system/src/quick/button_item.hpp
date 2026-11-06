@@ -35,7 +35,7 @@ public:
     void setText(const QString& text, const QFont& font);
     // Keep the icon at a fixed distance from one edge while text appears.
     void setIconRail(std::optional<int> inset, Qt::Edge edge = Qt::LeftEdge);
-    void setCheckable(bool checkable) { checkable_ = checkable; }
+    void setCheckable(bool checkable);
     void setChecked(bool checked);
     [[nodiscard]] bool isChecked() const { return checked_; }
     void setDown(bool down);
@@ -48,6 +48,7 @@ public:
     void setHovered(bool hovered);
     void setPressed(bool pressed);
     void click() { emit clicked(); }
+    Q_INVOKABLE void accessiblePressAction();
 
 signals:
     void clicked();
@@ -68,6 +69,8 @@ protected:
     void itemChange(ItemChange change, const ItemChangeData& data) override;
 
 private:
+    void activate();
+    void updateAccessibleName();
     void refresh();
 
     Theme theme_;
@@ -92,6 +95,7 @@ private:
     bool destructive_ = false;
     int iconExtent_ = 14;
     bool keyboardPressed_ = false;
+    QObject* accessibility_;
 };
 
 } // namespace window_system::quick

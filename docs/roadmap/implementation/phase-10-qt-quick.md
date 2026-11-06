@@ -84,7 +84,7 @@
 
 ## 10.4 工具栏、侧栏、菜单与设置
 
-**状态**：进行中（2026-11-06）。10.4a–i 已完成；10.4k 菜单栏键盘导航已实现，10.4j 无障碍未开始。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
+**状态**：进行中（2026-11-06）。10.4a–i 已完成；10.4k 菜单栏键盘导航已实现，10.4j 无障碍进行中。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
 
 **和 Widgets 版对照的标准**（用户 2026-11-06）：窗口框架、标签、标签栏、菜单、工具栏、状态栏、面板和对话框要和 Widgets 参考版一比一一致，位置和尺寸以同一进程里的 Widgets 窗口为准（`QuickWorkspaceTest::rowsMatchTheWidgetsWindow` 的做法），截图对比要在同一时刻拍。例外：Muxora 的占位内容页（欢迎、会话、文件、传输）以后会重写，不要求还原；文字的纵向位置只要合理，不要求和原版逐像素一致（现在比原版高 1 个物理像素，是两套渲染器给基线取整不同）。
 
@@ -111,6 +111,7 @@
 - **10.4i 对话框（Claude）**：重命名标签／组／标签夹（现用 `QInputDialog`）、侧栏面板尺寸（`peek_size_command.cpp`）、关于、Lua 的输入框（`src/app/scripting_setup.cpp`）、Lua 父窗口查询（`src/app/script_services.cpp`）。宿主的关闭确认由宿主提供，Muxora 的那个也一起换。
   - 已完成：管理器的 `openDialog` 让对话框不依赖呈现、不阻塞调用方，Quick 下是带原生标题栏的独立窗口；重命名标签／组／标签夹、侧栏面板尺寸、关于、Lua 输入框和 Lua 通知已改用它，见 [记录](../../development/verification-log/2026-11.md#quick-对话框2026-11-06)。Muxora 没有设置关闭确认，无需替换。不带参数时仍弹 Widgets 菜单的选择命令（标签和标签夹颜色、选目标标签组／窗口／标签／标签夹）也改为在 Quick 菜单里列出选择，见 [选择菜单记录](../../development/verification-log/2026-11.md#quick-下的选择菜单2026-11-06)。Widgets 呈现下的旧对话框和菜单随 10.6 删除。
 - **10.4j 无障碍（执行者）**：Quick 的标签栏、标签组、侧栏按钮、按钮和标题行提供无障碍角色、名称和状态，照 Widgets 的 `TabBarAccessible`；键盘焦点顺序与 Widgets 一致。
+  - 进行中：按钮已通过 Qt 公开的 `Accessible` 接入名称、状态与原激活路径，读屏树可发现性和接口释放已定向验证；标签栏、标签组、侧栏、标题与焦点顺序继续，见 [记录](../../development/verification-log/2026-11.md#quick-按钮的读屏信息与动作2026-11-06)。
 - **10.4k 菜单栏单按 Alt 的键盘导航（执行者，用户 2026-11-06 要求）**：Widgets 的 QMenuBar 在 Windows 上单按一下 Alt（按下到松开之间没有别的键、没有鼠标操作）进入键盘导航，Quick 菜单栏还没有。照 Qt 源码 `qmenubar.cpp`（`QMenuBar::eventFilter` 的 `altPressed`、`QMenuBarPrivate::setKeyboardMode`、`keyPressEvent`）实现，外观复用现有的悬停底色，不做新样式：
   - 进入：Alt 松开时进入键盘导航，高亮第一个可见菜单，记下原来的焦点项，菜单栏取得键盘焦点；访问键下划线显示（`PopupMenu::setMnemonicsShown`，现在只跟 Alt 的按下松开和 Alt 打开的菜单，见 `WorkspaceQuickWindow::updateMnemonics`）。按 Alt 期间按了别的键、点了鼠标、窗口失去激活，都不进入。
   - 导航中：左右键在可见菜单间移动并循环，窄窗口时包括收纳按钮；下键、上键、回车、空格打开高亮的菜单并选中第一项；按某个菜单的访问键字母直接打开它；菜单打开后左右键切换到相邻菜单（现有行为）。
