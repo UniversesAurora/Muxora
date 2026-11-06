@@ -123,15 +123,6 @@ struct ShadowSample {
     }
 };
 
-QVector<ElevationPatchQuad> patchQuad(const ElevationAnchorPatch& patch)
-{
-    const auto target = patch.bounds.intersected(patch.clip);
-    if (patch.image.isNull() || target.isEmpty()) return {};
-    const qreal x = patch.image.width() / patch.bounds.width(), y = patch.image.height() / patch.bounds.height();
-    return {{target, {(target.left() - patch.bounds.left()) * x, (target.top() - patch.bounds.top()) * y,
-                      target.width() * x, target.height() * y}}};
-}
-
 struct BodyResource {
     ElevationBodyPatch patch;
     qreal radius = -1;
@@ -230,7 +221,7 @@ class PresenceNode final : public QSGTransformNode {
 public:
     PresenceNode()
     {
-        opacity = new QSGOpacityNode; shadow = new ShadowNode(1);
+        opacity = new QSGOpacityNode; shadow = new ShadowNode(elevationAnchorQuads);
         appendChildNode(opacity); opacity->appendChildNode(shadow);
     }
     void syncPose(const LabelPresencePose& pose)
@@ -389,12 +380,12 @@ bool GroupSurfaceItem::prepareFrame()
     }
     out.complete.resize(out.completePatches.size());
     for (qsizetype index = 0; index < out.complete.size(); ++index)
-        out.complete[index].update(out.completePatches[index].image, patchQuad(out.completePatches[index]), out.revision);
+        out.complete[index].update(out.completePatches[index].image, out.completePatches[index].quads(), out.revision);
     out.partialResources.resize(partial.size()); out.partial.resize(partial.size()); out.poses.resize(partial.size());
     for (qsizetype index = 0; index < partial.size(); ++index) {
         out.partialResources[index].prepare(renderer_, *partial[index], frame_.elevation, frame_.style, out.ratio);
         const auto& patch = out.partialResources[index].patch;
-        out.partial[index].update(patch.image, patchQuad(patch), out.revision); out.poses[index] = partial[index]->presence;
+        out.partial[index].update(patch.image, patch.quads(), out.revision); out.poses[index] = partial[index]->presence;
     }
     PathGeometryOptions options; options.devicePixelRatio = out.ratio;
     out.extension.update(frame_.extension.path, options);
@@ -475,7 +466,7 @@ QSGNode* GroupSurfaceItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeDat
         auto* node = root->complete.takeLast(); root->completeLayer->removeChildNode(node); delete node;
     }
     while (root->complete.size() < data.complete.size()) {
-        auto* node = new ShadowNode(1); root->complete.append(node); root->completeLayer->appendChildNode(node);
+        auto* node = new ShadowNode(elevationAnchorQuads); root->complete.append(node); root->completeLayer->appendChildNode(node);
     }
     for (qsizetype index = 0; index < data.complete.size(); ++index) syncShadow(*root->complete[index], data.complete[index]);
     while (root->presence.size() > data.partial.size()) {

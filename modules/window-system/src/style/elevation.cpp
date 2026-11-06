@@ -224,6 +224,79 @@ qreal anchorExtent(const ElevationProfile& body, const ElevationProfile& anchor)
     return qCeil(std::max({a.left(), a.top(), a.bottom(), b.left(), b.top(), b.bottom()})) + 1;
 }
 
+// A run of image lines across one axis that no path feature reaches: the
+// line at `at` repeats `count` more times in the full image. Along a tab's
+// edge, and for a vertical tab also along its length, between its ends.
+struct UniformRun {
+    bool horizontal = true;
+    int at = 0;
+    int count = 0;
+};
+
+UniformRun uniformRun(const SurfaceGeometry& geometry, const QRectF& bounds, qreal ratio, qreal reach, bool horizontal)
+{
+    const auto along = [horizontal](QPointF point) { return horizontal ? point.x() : point.y(); };
+    QVector<qreal> features;
+    for (const auto* path : {&geometry.bodyPath, &geometry.anchorPath, &geometry.mergedPath})
+        for (int index = 0; index < path->elementCount(); ++index) features.append(along(path->elementAt(index)));
+    std::sort(features.begin(), features.end());
+    const qreal start = horizontal ? bounds.left() : bounds.top();
+    const int lines = qCeil((horizontal ? bounds.width() : bounds.height()) * ratio);
+    int first = 0, last = -1;
+    for (qsizetype index = 0; index + 1 < features.size(); ++index) {
+        // Line centers at least `reach` from the features on both sides.
+        const int from = std::max(0, qCeil((features[index] + reach - start) * ratio - 0.5));
+        const int to = std::min(lines - 1, qFloor((features[index + 1] - reach - start) * ratio - 0.5));
+        if (to - from > last - first) { first = from; last = to; }
+    }
+    // Keep a uniform line on each side of the repeated one, for filtering.
+    UniformRun run{horizontal, first + 1, last - first - 2};
+    if (run.count < 4) return {};
+    // Only straight segments along the edge may cross the removed lines.
+    const qreal removedFrom = start + (run.at + 1) / ratio, removedTo = start + (run.at + 1 + run.count) / ratio;
+    for (const auto* path : {&geometry.bodyPath, &geometry.anchorPath, &geometry.mergedPath}) {
+        for (int index = 1; index < path->elementCount(); ++index) {
+            const auto element = path->elementAt(index);
+            if (element.isMoveTo()) continue;
+            const QPointF previous = path->elementAt(index - 1);
+            const bool crosses = std::min(along(previous), along(element)) < removedFrom
+                && std::max(along(previous), along(element)) > removedTo;
+            if (!crosses) continue;
+            const bool straight = element.isLineTo() && (horizontal ? previous.y() == element.y : previous.x() == element.x);
+            if (!straight) return {};
+        }
+    }
+    return run;
+}
+
+// The geometry with the run's repeated lines removed: features beyond them
+// move back by their length.
+SurfaceGeometry withoutRun(const SurfaceGeometry& geometry, const QRectF& bounds, qreal ratio, const UniformRun& run)
+{
+    const bool horizontal = run.horizontal;
+    const qreal cut = (horizontal ? bounds.left() : bounds.top()) + (run.at + 1) / ratio, length = run.count / ratio;
+    const auto shift = [&](QPainterPath path) {
+        for (int index = 0; index < path.elementCount(); ++index) {
+            const auto element = path.elementAt(index);
+            if (horizontal && element.x > cut) path.setElementPositionAt(index, element.x - length, element.y);
+            else if (!horizontal && element.y > cut) path.setElementPositionAt(index, element.x, element.y - length);
+        }
+        return path;
+    };
+    auto result = geometry;
+    result.bodyPath = shift(geometry.bodyPath);
+    result.anchorPath = shift(geometry.anchorPath);
+    result.mergedPath = shift(geometry.mergedPath);
+    if (horizontal) {
+        if (result.body.left() > cut) result.body.setLeft(result.body.left() - length);
+        if (result.body.right() > cut) result.body.setRight(result.body.right() - length);
+    } else {
+        if (result.body.top() > cut) result.body.setTop(result.body.top() - length);
+        if (result.body.bottom() > cut) result.body.setBottom(result.body.bottom() - length);
+    }
+    return result;
+}
+
 void anchorBorder(QPainter& painter, const SurfaceGeometry& geometry,
                   const ElevationStyle& style, const QRectF& clip)
 {
@@ -382,6 +455,41 @@ ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationPro
     return *patch;
 }
 
+QVector<ElevationPatchQuad> ElevationAnchorPatch::quads() const
+{
+    if (image.isNull() || bounds.isEmpty()) return {};
+    const bool horizontal = axis == Qt::Horizontal;
+    const int stored = horizontal ? image.width() : image.height();
+    // Image lines per logical unit, as if the repeated lines were stored.
+    const qreal along = (stored + stretch) / (horizontal ? bounds.width() : bounds.height());
+    const qreal across = (horizontal ? image.height() / bounds.height() : image.width() / bounds.width());
+    const qreal origin = horizontal ? bounds.left() : bounds.top();
+    struct Piece { qreal from, to, sourceFrom, sourceTo; };
+    QVector<Piece> pieces;
+    if (!stretch) pieces.append({0, qreal(stored), 0, qreal(stored)});
+    else {
+        pieces.append({0, qreal(stretchAt), 0, qreal(stretchAt)});
+        pieces.append({qreal(stretchAt), qreal(stretchAt + 1 + stretch), qreal(stretchAt), qreal(stretchAt + 1)});
+        pieces.append({qreal(stretchAt + 1 + stretch), qreal(stored + stretch), qreal(stretchAt + 1), qreal(stored)});
+    }
+    QVector<ElevationPatchQuad> result;
+    for (const auto& piece : pieces) {
+        const QRectF target = horizontal
+            ? QRectF(origin + piece.from / along, bounds.top(), (piece.to - piece.from) / along, bounds.height())
+            : QRectF(bounds.left(), origin + piece.from / along, bounds.width(), (piece.to - piece.from) / along);
+        const QRectF shown = target.intersected(clip);
+        if (shown.isEmpty()) continue;
+        // The source follows the shown part of the target linearly.
+        const qreal scale = (piece.sourceTo - piece.sourceFrom) / (piece.to - piece.from) * along;
+        const qreal begin = piece.sourceFrom + ((horizontal ? shown.left() : shown.top()) - (horizontal ? target.left() : target.top())) * scale;
+        const qreal length = (horizontal ? shown.width() : shown.height()) * scale;
+        const qreal crossBegin = ((horizontal ? shown.top() : shown.left()) - (horizontal ? bounds.top() : bounds.left())) * across;
+        const qreal crossLength = (horizontal ? shown.height() : shown.width()) * across;
+        result.append({shown, horizontal ? QRectF(begin, crossBegin, length, crossLength) : QRectF(crossBegin, begin, crossLength, length)});
+    }
+    return result;
+}
+
 std::array<ElevationPatchQuad, 8> ElevationBodyPatch::quads(const QRectF& body, qreal radius) const
 {
     const qreal ratio = devicePixelRatio;
@@ -418,18 +526,32 @@ void ElevationRenderer::paintAnchor(QPainter& painter, const SurfaceGeometry& ge
     const auto patch = anchorPatch(geometry, bodyElevation, anchorElevation, style,
                                    painter.device()->devicePixelRatioF(), incremental);
     painter.save(); painter.setClipRect(patch.clip, Qt::IntersectClip);
-    painter.drawImage(patch.bounds, patch.image);
+    for (const auto& quad : patch.quads()) painter.drawImage(quad.target, patch.image, quad.sourcePixels);
     painter.restore();
 }
 
-ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& geometry,
+ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& placed,
     const ElevationProfile& bodyElevation, const ElevationProfile& anchorElevation,
     const ElevationStyle& style, qreal ratio, bool incremental)
 {
-    if (geometry.anchorPath.isEmpty() || (geometry.compact && anchorElevation.key.opacity <= 0)) return {};
+    if (placed.anchorPath.isEmpty() || (placed.compact && anchorElevation.key.opacity <= 0)) return {};
     const qreal extent = anchorExtent(bodyElevation, anchorElevation);
-    const QRectF bounds = geometry.anchorPath.boundingRect().adjusted(-extent, -extent, extent, extent);
-    const QRectF clip = surfaceShadowClip(geometry, extent);
+    const QRectF placedBounds = placed.anchorPath.boundingRect().adjusted(-extent, -extent, extent, extent);
+    const QRectF clip = surfaceShadowClip(placed, extent);
+    // Rasterize the anchor without its middle, where every line is the same;
+    // its length then does not change the image. The blur and the edge
+    // contour reach no farther than extent + 2.
+    UniformRun run;
+    if (!style.highContrast) {
+        const auto columns = uniformRun(placed, placedBounds, ratio, extent + 2, true);
+        const auto rows = uniformRun(placed, placedBounds, ratio, extent + 2, false);
+        run = columns.count >= rows.count ? columns : rows;
+    }
+    const bool horizontal = run.horizontal;
+    const SurfaceGeometry geometry = run.count ? withoutRun(placed, placedBounds, ratio, run) : placed;
+    QRectF bounds = placedBounds;
+    if (horizontal) bounds.setWidth(bounds.width() - run.count / ratio);
+    else bounds.setHeight(bounds.height() - run.count / ratio);
     const QPointF origin = bounds.topLeft();
     const auto localPath = geometry.anchorPath.translated(-origin);
     QString key = QStringLiteral("anchor:%1:%2:%3:%4:").arg(incremental).arg(geometry.joined).arg(geometry.covered).arg(geometry.compact)
@@ -488,7 +610,7 @@ ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& geome
         cache_->generated(owned->image, started);
         if (owned->cost() <= cacheBudgetKiB) cache_->patches.insert(key, owned.release(), patch->cost());
     }
-    return {patch->image, bounds, clip};
+    return {patch->image, placedBounds, clip, horizontal ? Qt::Horizontal : Qt::Vertical, run.at, run.count};
 }
 
 void ElevationRenderer::paintAnchors(QPainter& painter, const QVector<ElevatedAnchor>& anchors,

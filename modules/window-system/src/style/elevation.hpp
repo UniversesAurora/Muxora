@@ -76,11 +76,20 @@ struct ElevationBodyPatch {
 
 // Only the anchor's local neighborhood, including its share of the body
 // shadow. Bounds and clip move without copying the cached image's pixels.
+// Between an anchor's two ends every pixel line along `axis` is the same:
+// the image keeps one of them (`stretchAt`) for `stretch` more lines, so one
+// image serves every length of the anchor.
 struct ElevationAnchorPatch {
     QImage image;
     QRectF bounds;
     QRectF clip;
+    Qt::Orientation axis = Qt::Horizontal;
+    int stretchAt = 0;
+    int stretch = 0;
+    // At most elevationAnchorQuads pieces covering bounds within clip.
+    [[nodiscard]] QVector<ElevationPatchQuad> quads() const;
 };
+inline constexpr int elevationAnchorQuads = 3;
 
 [[nodiscard]] ElevationProfile elevationProfile(ElevationLevel level);
 [[nodiscard]] int elevationStep(qreal progress);

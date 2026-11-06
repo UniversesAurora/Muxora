@@ -1,5 +1,12 @@
 # Qt Quick
 
+### 测量程序用 exit() 结束，不用 quit()
+
+- **现象**：完整工作区基准采完样本后调用 `QGuiApplication::quit()`，程序却一直跑到 60 秒超时。
+- **原因**：Qt 6 的 `quit()` 先向所有窗口发关闭事件，有窗口拒绝就取消退出。工作区窗口把关闭交给管理器（它可能要问用户），这次关闭被拒绝。
+- **做法**：测量和测试程序结束事件循环用 `exit(code)`，它不关窗口；要真正关窗口时走管理器的关闭接口。
+- **出处**：2026-11-07，`window-system-quick-workspace-benchmark`，见 [记录](../verification-log/2026-11.md#quick-切换标签时接合阴影的生成成本2026-11-07)。
+
 ### 在自己的操作通知中检查重入销毁
 
 Qt 的焦点处理发出 `focusObjectChanged` 后，还会继续通知变更的焦点项，这段处理仍需要窗口存活。模块重入检查在自己发布的操作通知中触发，例如菜单导航状态变化，验证通知回调能销毁工作区。可能改变焦点的调用前保存弱引用，返回后检查存活，再继续操作。依据为 `QQuickDeliveryAgentPrivate::setFocusInScope` 和 `QObject` 析构说明，原始超时与修正见 [Alt 导航记录](../verification-log/2026-11.md#quick-菜单栏单按-alt-导航2026-11-06)。

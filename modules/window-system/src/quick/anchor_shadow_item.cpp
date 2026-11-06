@@ -21,7 +21,8 @@ void AnchorShadowItem::prepareResource()
     auto next = renderer_.anchorPatch(geometry_, body_, anchor_, style_,
         window() ? window()->effectiveDevicePixelRatio() : 1, incremental_);
     if (next.image.constBits() != patch_.image.constBits()) ++resourceRevision_;
-    if (next.bounds != patch_.bounds || next.clip != patch_.clip) ++geometryRevision_;
+    if (next.bounds != patch_.bounds || next.clip != patch_.clip || next.stretchAt != patch_.stretchAt
+        || next.stretch != patch_.stretch) ++geometryRevision_;
     patch_ = std::move(next);
     update();
 }
@@ -40,18 +41,14 @@ ShadowRenderStats AnchorShadowItem::renderStats() const
 
 QSGNode* AnchorShadowItem::updatePaintNode(QSGNode* previous, UpdatePaintNodeData*)
 {
-    const auto target = patch_.bounds.intersected(patch_.clip);
-    if (patch_.image.isNull() || target.isEmpty()) { delete previous; return nullptr; }
-    auto* node = previous ? static_cast<ShadowNode*>(previous) : new ShadowNode(1);
+    const auto quads = patch_.quads();
+    if (quads.isEmpty()) { delete previous; return nullptr; }
+    auto* node = previous ? static_cast<ShadowNode*>(previous) : new ShadowNode(elevationAnchorQuads);
     if (node->syncResource(*window(), patch_.image, resourceRevision_)) {
         textureUploads_.fetch_add(1, std::memory_order_relaxed);
         imageBytesUploaded_.fetch_add(quint64(patch_.image.sizeInBytes()), std::memory_order_relaxed);
     }
-    const auto& bounds = patch_.bounds;
-    const qreal x = patch_.image.width() / bounds.width(), y = patch_.image.height() / bounds.height();
-    const std::array<ElevationPatchQuad, 1> quads{{{target,
-        {(target.left() - bounds.left()) * x, (target.top() - bounds.top()) * y, target.width() * x, target.height() * y}}}};
-    if (node->syncGeometry(quads, geometryRevision_)) geometryUpdates_.fetch_add(1, std::memory_order_relaxed);
+    if (node->syncGeometry(std::span<const ElevationPatchQuad>(quads.constData(), size_t(quads.size())), geometryRevision_)) geometryUpdates_.fetch_add(1, std::memory_order_relaxed);
     return node;
 }
 
