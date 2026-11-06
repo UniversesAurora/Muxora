@@ -83,6 +83,8 @@ public:
     // A carried window over another window's strip: its strips show only
     // their tabs in that strip's look, and their label is painted there.
     void setDragPresentation(bool compact);
+    [[nodiscard]] bool dragPresentation() const { return dragPresentation_; }
+    std::function<void()> dragPresentationChanged;
     bool setDragTabStyle(const DockSurfaceItem& target, GroupId group, bool sticky);
     [[nodiscard]] TabDragVisual dragLabelVisual() const;
     // The carried tabs' rectangles relative to dragLabelVisual().
@@ -182,6 +184,7 @@ private:
     // Group or pane fullscreen: only this group fills the surface.
     GroupId focusGroup_;
     bool syncing_ = false;
+    bool dragPresentation_ = false;
 };
 
 } // namespace window_system::quick

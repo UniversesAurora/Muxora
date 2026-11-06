@@ -106,7 +106,12 @@ public:
             iconSource_ = iconFor(item_.iconName, theme_);
             setImplicitHeight(metrics.height() + uiPixels(10));
             setImplicitWidth(uiPixels(22 + 24) + titleWidth_ + (shortcutWidth_ ? uiPixels(20) + shortcutWidth_ : 0));
-            if (menuBar_) setImplicitWidth(item_.iconName == QStringLiteral("menu-overflow") ? uiPixels(22) : uiPixels(16) + titleWidth_);
+            if (menuBar_) {
+                // As QMenuBar: the title's mnemonic text size within the
+                // style's 5 by 8 padding.
+                setImplicitWidth(item_.iconName == QStringLiteral("menu-overflow") ? uiPixels(22) : uiPixels(16) + titleWidth_);
+                setImplicitHeight(metrics.size(Qt::TextShowMnemonic, item_.action.title.isEmpty() ? QStringLiteral(" ") : item_.action.title).height() + uiPixels(10));
+            }
             if (tab) {
                 const int icons = item_.iconName.isEmpty() ? 0 : uiPixels(16 + 7);
                 const int count = int(actions_.size());

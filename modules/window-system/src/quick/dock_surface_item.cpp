@@ -721,6 +721,8 @@ void DockSurfaceItem::clearGuides() { guides_->clear(); }
 void DockSurfaceItem::setDragPresentation(bool compact)
 {
     for (const auto& view : groups_) if (view) view->setDragPresentation(compact);
+    if (std::exchange(dragPresentation_, compact) == compact) return;
+    if (const auto changed = dragPresentationChanged) changed();
 }
 
 bool DockSurfaceItem::setDragTabStyle(const DockSurfaceItem& target, GroupId group, bool sticky)

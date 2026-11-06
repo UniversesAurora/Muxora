@@ -12,6 +12,7 @@
 #include "status_bar_item.hpp"
 #include "command_panel.hpp"
 #include "settings_page_model.hpp"
+#include "path_item.hpp"
 #include "dialog_window.hpp"
 #include "commands/command_dialogs.hpp"
 #include "window_manager_p.hpp"
@@ -78,6 +79,10 @@ public:
         chrome_->carryRequested = [this, &drag](QPoint press) { drag.beginWindow(id_, press); };
         dock = new quick::DockSurfaceItem(manager, host, bars, id, contentItem());
         dock->setTabDrag(&drag);
+        dock->dragPresentationChanged = [this] { layoutChildren(); };
+        frameLine_ = new quick::PathItem(contentItem());
+        frameLine_->setZ(1);
+        frameLine_->setFill(theme.border);
         toolbars_ = new quick::CommandStripHostItem(contentItem());
         toolbars_->maximizeRequested = chrome_->maximizeRequested;
         toolbars_->carriesTabs = chrome_->carriesTabs;
@@ -119,6 +124,7 @@ public:
         });
         connect(this, &QWindow::windowStateChanged, this, [this](Qt::WindowState state) {
             chrome_->setExpanded(state == Qt::WindowMaximized || state == Qt::WindowFullScreen);
+            layoutChildren();
             // As the Widgets window: leaving full screen some other way ends
             // the view mode.
             if (applyingViewState_ || state == Qt::WindowFullScreen || state == Qt::WindowMinimized) return;
@@ -273,6 +279,7 @@ private:
             if (!self) return;
             chrome_->setTheme(menus_->theme());
             status_->setTheme(menus_->theme());
+            frameLine_->setFill(menus_->theme().border);
             layoutChildren();
         }, Qt::QueuedConnection);
         connect(menus_, &quick::PopupMenu::contextMenuRequested, dock, [this](QPoint global) {
@@ -301,16 +308,29 @@ private:
     // the status bar along the window's bottom edge.
     void layoutChildren()
     {
+        // As the Widgets window: inside the native frame a normal window
+        // keeps a border line along its top; an expanded or carried window
+        // has none.
+        const bool framed = !(windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen))
+            && manager_.viewMode(id_) == ViewMode::Normal && !dock->dragPresentation();
+        const int inset = framed ? 1 : 0;
+        frameLine_->setVisible(framed);
+        if (framed) {
+            frameLine_->setSize(QSizeF(width(), inset));
+            QPainterPath line;
+            line.addRect(QRectF(0, 0, width(), inset));
+            frameLine_->setPath(line);
+        }
         const int top = toolbars_->isVisible() ? qCeil(toolbars_->implicitHeight()) : 0;
         const int bottom = toolbars_->bottomArea()->isVisible() ? qCeil(toolbars_->bottomArea()->implicitHeight()) : 0;
         const int status = status_->isVisible() ? qCeil(status_->implicitHeight()) : 0;
-        toolbars_->setPosition({0, 0});
+        toolbars_->setPosition({0, qreal(inset)});
         toolbars_->setSize({qreal(width()), qreal(top)});
         toolbars_->bottomArea()->setPosition({0, qreal(height() - status - bottom)});
         status_->setPosition({0, qreal(height() - status)});
         status_->setSize({qreal(width()), qreal(status)});
-        dock->setPosition(QPointF(0, top));
-        dock->setSize(QSizeF(width(), std::max(0, height() - top - bottom - status)));
+        dock->setPosition(QPointF(0, inset + top));
+        dock->setSize(QSizeF(width(), std::max(0, height() - inset - top - bottom - status)));
     }
 
     // Each status entry with whether it shows, as the Widgets bar's menu.
@@ -344,6 +364,7 @@ private:
     quick::WindowChromeItem* chrome_;
     quick::CommandStripHostItem* toolbars_;
     quick::StatusBarItem* status_;
+    quick::PathItem* frameLine_ = nullptr;
     quick::PopupMenu* menus_ = nullptr;
     QPointer<QQuickItem> menuBar_;
     Qt::WindowStates normalStates_;

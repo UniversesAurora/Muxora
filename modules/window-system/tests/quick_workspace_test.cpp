@@ -18,10 +18,13 @@
 #include "quick/window_chrome_item.hpp"
 #include "platform/window_order.hpp"
 #include "style/frame_motion.hpp"
+#include <window_system/interface_appearance.hpp>
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 
 #include <QJsonArray>
+#include <QMenuBar>
+#include <QWidget>
 #include <QJsonObject>
 #include <QPointer>
 #include <QQuickItem>
@@ -81,6 +84,27 @@ protected:
     }
 };
 
+// The first visible descendant whose class name contains `type`, with its
+// rectangle in the window.
+QRect widgetIn(QWidget* window, const char* type, const QString& name = {})
+{
+    for (auto* child : window->findChildren<QWidget*>())
+        if (child->isVisible() && QByteArray(child->metaObject()->className()).contains(type) && (name.isEmpty() || child->objectName() == name))
+            return QRect(child->mapTo(window, QPoint()), child->size());
+    return {};
+}
+QRect itemIn(QQuickWindow* window, const char* type, const QString& name = {})
+{
+    QList<QQuickItem*> items{window->contentItem()};
+    while (!items.isEmpty()) {
+        auto* item = items.takeFirst();
+        if (item->isVisible() && QByteArray(item->metaObject()->className()).contains(type) && (name.isEmpty() || item->objectName() == name))
+            return QRectF(item->mapToScene(QPointF()), item->size()).toRect();
+        items += item->childItems();
+    }
+    return {};
+}
+
 // Moves the held mouse in steps, as a hand does.
 void moveHeld(QWindow* window, QPoint from, QPoint to)
 {
@@ -111,6 +135,42 @@ private slots:
         QVERIFY(!probe.shown.isEmpty());
         QCOMPARE(probe.shown.first().groups, 2);
         QVERIFY(probe.shown.first().laidOut);
+    }
+
+    // The rows sit where the Widgets window puts them: below a one-pixel
+    // border along the top of a normal window, none when maximized; menu
+    // titles as high as QMenuBar makes them.
+    void rowsMatchTheWidgetsWindow()
+    {
+        InterfaceAppearanceController appearance;
+        WindowManager widgets;
+        const auto widgetsWindow = widgets.createWindow(WindowKind::Workbench, {QStringLiteral("Widgets"), QSize(900, 700)});
+        widgets.addTab(widgetsWindow, new QWidget, named(QStringLiteral("First")));
+        widgets.showWindow(widgetsWindow);
+        auto* top = widgets.windowWidget(widgetsWindow);
+        QVERIFY(QTest::qWaitForWindowExposed(top));
+        QTRY_VERIFY(widgetIn(top, "DockSurface").height() > 0 && widgetIn(top, "TabBar").height() > 0);
+        auto* menuBar = top->findChild<QMenuBar*>(QStringLiteral("MenuStrip"));
+        QVERIFY(menuBar && !menuBar->actions().isEmpty());
+
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Quick"), QSize(900, 700)});
+        manager.addTab(window, named(QStringLiteral("First")));
+        QTRY_VERIFY(workspace.window(window) && workspace.window(window)->isVisible());
+        auto* view = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(view));
+        QTRY_VERIFY(itemIn(view, "TabBarItem").height() > 0);
+        QCOMPARE(itemIn(view, "ApplicationMenuBar", QStringLiteral("MenuStrip")).topLeft(), widgetIn(top, "QMenuBar", QStringLiteral("MenuStrip")).topLeft());
+        QCOMPARE(itemIn(view, "DockSurfaceItem").top(), widgetIn(top, "DockSurface").top());
+        QCOMPARE(itemIn(view, "TabBarItem"), widgetIn(top, "TabBar"));
+        QCOMPARE(itemIn(view, "MenuBarItem", QStringLiteral("file")).size(), menuBar->actionGeometry(menuBar->actions().first()).size());
+
+        const int toolbars = itemIn(view, "CommandStripHostItem", QStringLiteral("CommandToolbars")).height();
+        QCOMPARE(itemIn(view, "DockSurfaceItem").top(), 1 + toolbars);
+        view->showMaximized();
+        QTRY_COMPARE(itemIn(view, "DockSurfaceItem").top(), toolbars);
     }
 
     void activeTabsShowTheirPanes()
