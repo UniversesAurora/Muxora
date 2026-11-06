@@ -84,7 +84,7 @@
 
 ## 10.4 工具栏、侧栏、菜单与设置
 
-**状态**：进行中（2026-11-06）。10.4a–i 已完成；10.4k 菜单栏键盘导航已实现，10.4j 无障碍进行中。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
+**状态**：已完成（2026-11-07）。10.4a–k 都已完成，Claude 审查过执行者的部分，见 [审查记录](../../development/verification-log/2026-11.md#审查-codex-的-104h-至-105-提交2026-11-07)；真实读屏软件的试用并入 10.6 收尾的用户试用。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
 
 **和 Widgets 版对照的标准**（用户 2026-11-06）：窗口框架、标签、标签栏、菜单、工具栏、状态栏、面板和对话框要和 Widgets 参考版一比一一致，位置和尺寸以同一进程里的 Widgets 窗口为准（`QuickWorkspaceTest::rowsMatchTheWidgetsWindow` 的做法），截图对比要在同一时刻拍。例外：Muxora 的占位内容页（欢迎、会话、文件、传输）以后会重写，不要求还原；文字的纵向位置只要合理，不要求和原版逐像素一致（现在比原版高 1 个物理像素，是两套渲染器给基线取整不同）。
 
