@@ -155,12 +155,12 @@
 
 ### 单元 3 的步骤（Claude 2026-11-07 拆）
 
-现状：管理器的 Widgets 呈现只剩测试在用。2026-11-07 时 58 个测试源码（`rg -l "Presentation::Widgets|WindowManager manager;" modules/window-system/tests modules/window-system-lua/tests src/app/tests`；默认构造就是 Widgets 呈现）还建 Widgets 窗口，其中很多测的是管理器行为，不是 Widgets 外观。所以先迁测试，再删代码；每步完成时构建和相关套件保持通过。
+现状：管理器的 Widgets 呈现只剩测试在用。2026-11-07 时 57 个测试源码（原记 58，数错了）（`rg -l "Presentation::Widgets|WindowManager manager;" modules/window-system/tests modules/window-system-lua/tests src/app/tests`；默认构造就是 Widgets 呈现）还建 Widgets 窗口，其中很多测的是管理器行为，不是 Widgets 外观。所以先迁测试，再删代码；每步完成时构建和相关套件保持通过。
 
 | 步骤 | 内容 | 负责 | 完成标准 |
 | --- | --- | --- | --- |
 | 3.1 | Lua 的 `tabs.set_bar`／`panes.set_bar` 改用与呈现无关的文字栏：管理器加文字栏描述（文字、提示），Quick 工作区画成一条文字栏，外观照 Widgets 的 `QLabel`（左右各 6 像素边距、界面字体和文字颜色）。Quick 下这两个接口现在不显示（见 [记录](../../development/verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)） | Claude（新界面元素） | Quick 下 Lua 设置、替换、清除两种栏，有 `quick-*` 用例。**已完成**（2026-11-07），见 [记录](../../development/verification-log/2026-11.md#lua-文字栏在-quick-下显示2026-11-07) |
-| 3.2 | 测试清单：上面 58 个源码逐个用例分三类，写成表格放进本节（每行：源码、用例、类别、去向）。A：测管理器或模型行为，不依赖 Widgets 控件，换成 `Presentation::External`（要窗口时加 `QuickWorkspace`）就能测；B：测 Widgets 控件本身，Quick 已有等价用例（写出是哪个 `quick-*` 用例），随单元 4 删除；C：行为 Quick 还没有用例，要补到 `quick-*` 套件。只写表，不改代码 | 执行者 | 表格完整，每个用例都有类别；拿不准的标 C。Claude 审过表再做 3.3 |
+| 3.2 | 测试清单：上面 57 个源码逐个用例分三类，写成表格放进本节（每行：源码、用例、类别、去向）。A：测管理器或模型行为，不依赖 Widgets 控件，换成 `Presentation::External`（要窗口时加 `QuickWorkspace`）就能测；B：测 Widgets 控件本身，Quick 已有等价用例（写出是哪个 `quick-*` 用例），随单元 4 删除；C：行为 Quick 还没有用例，要补到 `quick-*` 套件。只写表，不改代码 | 执行者 | 表格完整，每个用例都有类别；拿不准的标 C。Claude 审过表再做 3.3 |
 | 3.3 | 按表把 A 类迁到 External：一个源码一个提交，断言不改，只换建窗口的方式和取控件的方式（例如 `windowWidget` 换成 `QuickWorkspace::window`）。改不动的（断言依赖 Widgets 控件）改标 C，写明原因 | 执行者 | 迁过的套件在 External 下通过；不删断言、不放宽时限 |
 | 3.4 | C 类补到对应 `quick-*` 套件，按 [测试的分量](../../development/testing-design.md#测试的分量) 合并成行为用例，不逐条照搬。Quick 行为和 Widgets 不一致的，先写进交接记录问 Claude，不改预期迁就 | 执行者 | 每个 C 类都有 Quick 用例或写明的放弃理由 |
 | 3.5 | 删除单元 2 的内容：命令里的 Widgets 分支（`tab_group_commands`、`tab_folder_commands`、`window_commands`、`peek_size_command`、`command_dialogs` 里 `presentation == External` 之外的分支）、`WidgetDialogs`、`QMenu` 选择器、Widgets 设置页和快捷键页、`floating_panel`、`chrome/status_bar`、`chrome/command_strip`，以及表里只测它们的 B 类用例 | 执行者 | 全模块构建通过，剩下的 Widgets 呈现只在管理器内部 |
@@ -171,11 +171,33 @@
 
 #### 3.2 测试清单
 
-**状态**为已整理、待 Claude 审表。基于 `86636a0` 的源码，指定检索实际匹配 57 个文件，计划拆步提交 `22cab07` 的结果也是 57。下表覆盖其中 56 个 QtTest 源码的 777 个主用例，以及一个子进程辅助入口。`_data` 的全部数据行随主用例归类，`init`、`cleanup`、`initTestCase` 和 `cleanupTestCase` 随所属夹具保留。
+**状态**：已整理，Claude 2026-11-07 审定，结论见下面“审定结论”，3.3 可以开始。基于 `86636a0` 的源码，指定检索实际匹配 57 个文件，计划拆步提交 `22cab07` 的结果也是 57。下表覆盖其中 56 个 QtTest 源码的 777 个主用例，以及一个子进程辅助入口。`_data` 的全部数据行随主用例归类，`init`、`cleanup`、`initTestCase` 和 `cleanupTestCase` 随所属夹具保留。
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
 本表共 778 行，A 235、B 3、C 540，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+
+##### 审定结论（Claude 2026-11-07）
+
+分类整体批准，作为 3.3 和 3.4 的依据。3 条 B 类照列，随所测的 Widgets 代码在 3.5 或单元 4 删除。
+
+**3.3 可以开始，范围是全部 A 类**，条件：
+
+1. 一个源码一个提交，只换建窗口和取控件的方式，断言不改，时限不放宽。
+2. 先做整份都是 A 的 `WS/visibility_profile_test.cpp`、`App/layout_file_test.cpp`、`App/scripting_test.cpp`（连同 `scripting_exit_child.cpp`），再做 A 多的 `Lua/script_host_test.cpp`、`WS/workspace_test.cpp`、`WS/view_state_test.cpp`、`WS/shortcut_dispatch_test.cpp`、`WS/tab_group_test.cpp`，其余按表的顺序。
+3. 同一源码里 A、C 都有时，这一步只迁 A 用例，C 用例保持原样，留到 3.4。
+4. 迁不动的改标 C，把原因写进表里。不在产品代码里为迁移加特殊分支；迁移暴露出产品缺陷（例如又遇到只读 Widgets 视图的代码）时停下，写进交接记录交给 Claude。
+5. 迁移后套件仍在 60 秒上限内，超出就按职责拆分。
+
+**因方向导航只读 Widgets 几何而标 C 的行**：`d14f781` 已改成向呈现取几何（见 [记录](../../development/verification-log/2026-11.md#方向导航和窗口状态命令在-quick-下失效2026-11-07)）。`tab_group_test` 的 `directionalGroupExchangeWrapsWithinTheVisibleGroupLayer`、`directionalMergeIncludesPinnedGroupsAndAppendsInStableOrder`、`wholeGroupExchangeIncludesPinnedNeighbors`，以及 `movement_test` 的 `directionalGroupTransfersWrapByVisibleGeometry`、`groupFocusWrapsWithoutEnteringHiddenRail`、`paneSwapAndFocusWrapWithinCurrentTab`、`tLayoutNavigationRetainsOrthogonalAnchor`，在 3.3 按 A 试迁，几何由 Quick 窗口的实际布局给出。手工设置 `QWidget` 几何的 `directionalTiesFollowStableModelOrder` 和 `splitterGapSelectsNearestProjection` 仍是 C。
+
+**3.4 处理 C 类的规则**，执行者逐行套用，表里写着“请 Claude 审定”的部分也按这里处理，不再逐条交回：
+
+1. 静态外观断言直接退役，不找替代：尺寸、间距、写死的数值、像素、颜色、边框、悬停图像、计时器名称和间隔。依据是 [测试要求 §1](../../development/testing-design.md#1-必须遵守的规则) 和 [退役与重写](../../development/testing-design.md#退役与重写) 第 4 条；混合用例只保留功能断言。
+2. 下面这些不算外观，必须保留：文字显示完整（标题、读屏名称）、能点到和命中（屏幕最后一个物理像素、缩放边角）、内容身份和焦点、模型和保存结果、按键不漏进编辑器、生命周期和重入销毁。
+3. 只测 Widgets 机制本身的（`QWidget` 接管属性、宿主样式表、原生子窗口、`QSplitter`、Widgets 容器的恢复），按退役条件 1 随 Widgets 删除。背后有用户能看到的错误时（例如状态栏空白、Snap 失效、内容被释放两次），在 Quick 的对应入口补一条行为用例，不照搬机制。
+4. 同一功能的多条 C 合成一两个数据驱动的行为用例（[测试的分量](../../development/testing-design.md#测试的分量)），一个功能一个提交，验证日志列出“原用例 → 新用例或退役依据”。建议顺序：内容与生命周期（`workspace`、`tab_group`、`view_reuse`、`memory_lifecycle`），快捷键，标签栏（`tab_strip_layout`、`tab_viewport`、`sticky_tabs`、`tab_bar_presentation`、`tab_carrier_source`），拖动（`drag_*`、`strip_drag`、`edge_*`），工具栏与标题（`chrome_interaction`、`multirow_toolbar`、`toolbar_*`、`caption_strip`、`native_frame`、`compact_ui`），设置页（`pane_settings`、`shortcut_settings`、`peek_size`），其余。
+5. Quick 根本没有这个行为（不只是缺用例），或者行为和 Widgets 不同的：不实现，不改预期去迁就，写进交接记录的“Quick 缺的行为”交给 Claude，因为可能涉及界面。
 
 ##### 窗口系统
 
