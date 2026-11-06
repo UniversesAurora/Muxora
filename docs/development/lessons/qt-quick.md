@@ -1,5 +1,13 @@
 # Qt Quick
 
+### 管理器里读 Widgets 视图的代码，在 Quick 下要逐处找出来
+
+- **现象**：Quick 版里按方向切换组和窗格（Ctrl+Alt+方向键、Alt+方向键）、把标签或窗格移到相邻组、按方向交换或合并组，以及“窗口状态”菜单的最小化、最大化、还原，都没有反应；菜单项照样显示为可用。上一轮 Lua 的 `windows.resize`／`move`／`state` 也是同样的问题。
+- **原因**：这些代码从 `d->windows`、`d->tabs` 或 `windowWidget()` 取 Widgets 窗口和窗格来算位置、改状态。外部呈现不建这些视图，取到的是空值，函数安静地返回失败。相关测试都用 Widgets 呈现，所以没有发现。
+- **做法**：管理器里需要窗口几何或窗口状态的地方，经 `WindowPresenter` 向呈现询问或下达，两种呈现各自实现，不在命令里直接读 Widgets 视图。删除 Widgets 呈现前，用 `rg "d->windows\.value|d->tabs\.value|windowWidget\(|paneWidget\(" modules/window-system/src` 逐处确认前面有外部呈现的分支。
+- **验证**：`quick-workspace` 的 `directionalCommandsReachTheNeighbourOnScreen` 在旧代码上失败（Alt+上不移动焦点），修复后通过；`windowRequestsReachTheQuickWindows` 加了三条窗口状态命令。
+- **出处**：2026-11-07，审 10.6 的 3.2 清单时由清单里的一条备注查到，见 [记录](../verification-log/2026-11.md#方向导航和窗口状态命令在-quick-下失效2026-11-07)。
+
 ### 弹出菜单延迟创建要在定位和键盘选项之前准备
 
 Qt 6.12 的菜单在 `popup()` 之前取首个启用项，在 `open()` 之前算位置和设置当前项；原生弹窗也在 `aboutToShow` 前创建并显示。只在当前菜单的 `aboutToShow` 才填当前菜单，会错过这些步骤。父菜单展开时从缓存描述准备下一层，保留 Qt 原有的键盘选择和悬停行为；宿主状态查询仍延迟到展开调用返回后，避免在 Qt 栈内销毁工作区。行树会在同步和重排中移动，回调通过菜单对象找当前行树，不能捕获容器元素引用。源码依据、对象数量及定向结果见 [记录](../verification-log/2026-11.md#quick-菜单按展开层级创建2026-11-07)。

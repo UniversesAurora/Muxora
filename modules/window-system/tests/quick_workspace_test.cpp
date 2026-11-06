@@ -494,9 +494,14 @@ private slots:
         QVERIFY(manager.moveWindow(second, place));
         QTRY_COMPARE(two->frameGeometry().topLeft(), place);
         QVERIFY(!manager.isWindowMinimized(second) && !manager.isWindowMaximized(second));
-        two->showMaximized();
-        QTRY_VERIFY(manager.isWindowMaximized(second));
         QVERIFY(!manager.moveWindow(WindowId::createUuid(), place));
+        // The window state menu's commands reach the Quick window.
+        QVERIFY(manager.execute(QStringLiteral("window.maximize"), {}, second));
+        QTRY_VERIFY(manager.isWindowMaximized(second));
+        QVERIFY(manager.execute(QStringLiteral("window.restore"), {}, second));
+        QTRY_VERIFY(!manager.isWindowMaximized(second));
+        QVERIFY(manager.execute(QStringLiteral("window.minimize"), {}, second));
+        QTRY_VERIFY(manager.isWindowMinimized(second));
     }
 
     void viewModesShapeTheQuickWindow()
@@ -646,6 +651,41 @@ private slots:
         QVERIFY(QTest::qWaitForWindowActive(quickWindow));
         QTest::keyClick(quickWindow, Qt::Key_F7, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(ran, window);
+    }
+
+    // Directional commands pick neighbours from the Quick window's geometry.
+    void directionalCommandsReachTheNeighbourOnScreen()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto left = manager.addTab(window, named(QStringLiteral("Left")));
+        const auto right = manager.addTab(window, named(QStringLiteral("Right")));
+        QVERIFY(manager.moveTab(right, manager.model().groupForTab(left), Placement::Right));
+        const auto leftGroup = manager.model().groupForTab(left), rightGroup = manager.model().groupForTab(right);
+        const auto upper = manager.model().tab(left)->activePane;
+        const auto lower = manager.splitPane(left, upper, Placement::Bottom);
+        QVERIFY(manager.activateTab(left));
+        QTRY_VERIFY(workspace.window(window));
+        auto* quickWindow = workspace.window(window);
+        quickWindow->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(quickWindow));
+        const auto other = manager.model().tab(right)->activePane;
+        QTRY_VERIFY(shownIn(workspace.content(lower), quickWindow) && shownIn(workspace.content(other), quickWindow));
+
+        QVERIFY(manager.focusPane(left, lower));
+        QTest::keyClick(quickWindow, Qt::Key_Up, Qt::AltModifier);
+        QCOMPARE(manager.model().tab(left)->activePane, upper);
+        QTest::keyClick(quickWindow, Qt::Key_Right, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(manager.model().window(window)->activeGroup, rightGroup);
+        QTest::keyClick(quickWindow, Qt::Key_Left, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(manager.model().window(window)->activeGroup, leftGroup);
+
+        QVERIFY(manager.execute(QStringLiteral("pane.swap.down"), {}, window));
+        QCOMPARE(manager.model().panes(left), (QVector<PaneId>{lower, upper}));
+        QVERIFY(manager.execute(QStringLiteral("group.swap.right"), {}, window));
+        QCOMPARE(manager.model().centralGroups(window), (QVector<GroupId>{rightGroup, leftGroup}));
     }
 
     void closingAWindowAsksTheManager()

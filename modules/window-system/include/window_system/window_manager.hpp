@@ -82,6 +82,12 @@ public:
     // Moves the window's frame to `position`, or sets its content size.
     virtual bool moveWindow(WindowId window, QPoint position) = 0;
     virtual bool resizeWindow(WindowId window, QSize size) = 0;
+    // Minimizes, maximizes or restores (Qt::WindowNoState) the window.
+    virtual bool setWindowState(WindowId window, Qt::WindowState state) = 0;
+    // Global rectangles of the window's visible groups and of the tab's
+    // visible panes, which directional navigation picks neighbours from.
+    [[nodiscard]] virtual QHash<GroupId, QRect> groupRects(WindowId window) const = 0;
+    [[nodiscard]] virtual QHash<PaneId, QRect> paneRects(TabId tab) const = 0;
 };
 
 class WorkspaceWindow;

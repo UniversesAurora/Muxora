@@ -304,6 +304,8 @@ void DockSurfaceItem::resizePinned(Edge edge, double ratio)
     }
 }
 
+TabContentItem* DockSurfaceItem::existingPage(TabId tab) const { return pages_.value(tab); }
+
 TabContentItem* DockSurfaceItem::page(TabId tab)
 {
     auto page = pages_.value(tab);

@@ -54,6 +54,8 @@ public:
     [[nodiscard]] RailItem* rail(Edge edge) const;
     [[nodiscard]] PeekItem* peek() const;
     [[nodiscard]] TabId peekTab() const { return peekTab_; }
+    // The tab's page when this surface built one.
+    [[nodiscard]] TabContentItem* existingPage(TabId tab) const;
     void showPeek(GroupId group, TabId tab);
     void closePeek();
     void showContextMenu(CommandMenuSurface surface, const CommandContext& context, QPoint global, TabBarItem* strip = nullptr, QQuickItem* source = nullptr);

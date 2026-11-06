@@ -102,6 +102,9 @@ struct WindowManager::Private {
         int coordinate = 0;
     };
     std::optional<NavigationAnchor> navigationAnchor;
+    // From the presentation, in global coordinates.
+    QHash<GroupId, QRect> groupRects(WindowId window) const;
+    QHash<PaneId, QRect> paneRects(TabId tab) const;
     bool directionalNavigation = false;
     std::function<void(const QVector<ContentVisibilityChange>&)> contentVisibilityHandler;
     QHash<PaneId, bool> contentVisibility;

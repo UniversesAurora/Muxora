@@ -30,6 +30,8 @@ public:
     // Rebuilds the pane tree from the model and mounts present content.
     void sync();
     [[nodiscard]] QSize minimumSize() const;
+    // Global rectangles of the visible panes.
+    [[nodiscard]] QHash<PaneId, QRect> paneRects() const;
 
 signals:
     void contextMenuRequested(TabId tab, PaneId pane, QPoint global, QQuickItem* source);

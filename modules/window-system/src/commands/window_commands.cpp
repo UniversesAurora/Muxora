@@ -253,25 +253,27 @@ void WindowManager::registerWindowCommands()
         [this, shortcutKeepsSticky](const CommandContext& c) { return shortcutKeepsSticky(c.tab) || closeTab(c.tab); }, hasTab);
     add("window.close", QCoreApplication::translate("WindowSystem", "Close current window"), "window", QKeySequence("Alt+F4"),
         [this](const CommandContext& c) { return requestCloseWindow(c.window); }, hasWindow);
-    const auto setDisplayState = [this](const CommandContext& c, const QString& state) {
+    const auto setDisplayState = [this](const CommandContext& c, Qt::WindowState state) {
         const QPointer<WindowManager> owner(this);
+        const bool external = d->presentation == Presentation::External;
         const QPointer<WorkspaceWindow> window(d->windows.value(c.window));
-        if (!window) return false;
-        if (state != "minimized" && viewMode(c.window) != ViewMode::Normal) {
+        if (external ? !d->presenter || !d->model.window(c.window) : !window) return false;
+        if (state != Qt::WindowMinimized && viewMode(c.window) != ViewMode::Normal) {
             if (!setViewMode(c.window, ViewMode::Normal)) return false;
-            if (!owner || !window || !owner->model().window(c.window)) return false;
+            if (!owner || !(external || window) || !owner->model().window(c.window)) return false;
         }
-        if (state == "minimized") window->showMinimized();
-        else if (state == "maximized") window->showMaximized();
+        if (external) return d->presenter && d->presenter->setWindowState(c.window, state);
+        if (state == Qt::WindowMinimized) window->showMinimized();
+        else if (state == Qt::WindowMaximized) window->showMaximized();
         else window->showNormal();
         return owner && window && owner->model().window(c.window);
     };
     add("window.minimize", QCoreApplication::translate("WindowSystem", "Minimize window"), "window", {},
-        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "minimized"); }, hasWindow);
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, Qt::WindowMinimized); }, hasWindow);
     add("window.maximize", QCoreApplication::translate("WindowSystem", "Maximize window"), "window", {},
-        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "maximized"); }, hasWindow);
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, Qt::WindowMaximized); }, hasWindow);
     add("window.restore", QCoreApplication::translate("WindowSystem", "Restore window"), "window", {},
-        [setDisplayState](const CommandContext& c) { return setDisplayState(c, "normal"); }, hasWindow);
+        [setDisplayState](const CommandContext& c) { return setDisplayState(c, Qt::WindowNoState); }, hasWindow);
     add("window.new", QCoreApplication::translate("WindowSystem", "New workbench window"), "file", QKeySequence("Ctrl+Shift+N"),
         [this](const CommandContext& c) {
             auto options = d->options.value(c.window);

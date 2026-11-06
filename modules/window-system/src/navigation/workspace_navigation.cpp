@@ -2,7 +2,6 @@
 #include "window_manager_p.hpp"
 #include <window_system/window_manager.hpp>
 
-#include <QPointer>
 #include <QRect>
 #include <QScopeGuard>
 #include <algorithm>
@@ -61,6 +60,23 @@ QUuid spatialNeighbor(const QHash<QUuid, QRect>& rectangles, const QVector<QUuid
     return {};
 }
 }
+QHash<GroupId, QRect> WindowManager::Private::groupRects(WindowId window) const
+{
+    if (presentation == Presentation::External) return presenter ? presenter->groupRects(window) : QHash<GroupId, QRect>{};
+    const auto view = windows.value(window);
+    return view ? view->surface()->groupRects() : QHash<GroupId, QRect>{};
+}
+QHash<PaneId, QRect> WindowManager::Private::paneRects(TabId tab) const
+{
+    if (presentation == Presentation::External) return presenter ? presenter->paneRects(tab) : QHash<PaneId, QRect>{};
+    QHash<PaneId, QRect> rectangles;
+    if (const auto view = tabs.value(tab)) {
+        const auto frames = view->paneFrames();
+        for (auto it = frames.cbegin(); it != frames.cend(); ++it)
+            if (it.value()->isVisible()) rectangles.insert(it.key(), QRect(it.value()->mapToGlobal(QPoint()), it.value()->size()));
+    }
+    return rectangles;
+}
 bool WindowManager::moveTabToWindow(TabId tab, WindowId target, Placement placement)
 {
     if (!applyResult(d->model.moveTabToWindow(tab, target, placement))) return false;
@@ -83,18 +99,15 @@ GroupId WindowManager::adjacentGroup(TabId tab, Placement direction, std::option
 {
     const auto source = d->model.groupForTab(tab);
     const auto* group = d->model.group(source);
-    const auto window = group ? d->windows.value(group->windowId) : QPointer<WorkspaceWindow>{};
-    if (!window) return {};
+    if (!group) return {};
     auto order = d->model.centralGroups(group->windowId);
     order += d->model.window(group->windowId)->edgeGroups;
-    return spatialNeighbor(window->surface()->groupRects(), order, source, direction, anchor);
+    return spatialNeighbor(d->groupRects(group->windowId), order, source, direction, anchor);
 }
 GroupId WindowManager::adjacentVisibleGroup(GroupId source, Placement direction, bool /*forMove*/) const
 {
     const auto* group = d->model.group(source);
     if (!group || group->location == GroupLocation::AutoHide || !isDirection(direction)) return {};
-    const auto window = d->windows.value(group->windowId);
-    if (!window) return {};
     auto order = d->model.centralGroups(group->windowId);
     const auto* record = d->model.window(group->windowId);
     for (const auto id : record->edgeGroups) {
@@ -102,17 +115,11 @@ GroupId WindowManager::adjacentVisibleGroup(GroupId source, Placement direction,
         if (!candidate || candidate->location != GroupLocation::Pinned) continue;
         order.append(id);
     }
-    return spatialNeighbor(window->surface()->groupRects(), order, source, direction);
+    return spatialNeighbor(d->groupRects(group->windowId), order, source, direction);
 }
 PaneId WindowManager::adjacentPane(TabId tab, PaneId pane, Placement direction, std::optional<int> anchor) const
 {
-    QHash<QUuid, QRect> rectangles;
-    if (const auto view = d->tabs.value(tab)) {
-        const auto frames = view->paneFrames();
-        for (auto it = frames.cbegin(); it != frames.cend(); ++it)
-            if (it.value()->isVisible()) rectangles.insert(it.key(), QRect(it.value()->mapToGlobal(QPoint()), it.value()->size()));
-    }
-    return spatialNeighbor(rectangles, d->model.panes(tab), pane, direction, anchor);
+    return spatialNeighbor(d->paneRects(tab), d->model.panes(tab), pane, direction, anchor);
 }
 WindowId WindowManager::adjacentWindow(WindowId window, bool forward) const
 {
@@ -198,11 +205,7 @@ bool WindowManager::navigate(Placement direction, bool panes, const CommandConte
     auto& anchor = d->navigationAnchor;
     if (!anchor || anchor->window != source.window || anchor->panes != panes || anchor->axis != axis
         || (panes && anchor->tab != source.tab)) {
-        QRect origin;
-        if (panes) {
-            if (const auto view = d->tabs.value(source.tab)) if (auto* frame = view->paneFrames().value(source.pane))
-                origin = QRect(frame->mapToGlobal(QPoint()), frame->size());
-        } else if (const auto view = d->windows.value(source.window)) origin = view->surface()->groupRects().value(source.group);
+        const auto origin = panes ? d->paneRects(source.tab).value(source.pane) : d->groupRects(source.window).value(source.group);
         if (origin.isEmpty()) return false;
         anchor = Private::NavigationAnchor{source.window, source.tab, panes, axis,
             axis == Qt::Horizontal ? origin.center().y() : origin.center().x()};

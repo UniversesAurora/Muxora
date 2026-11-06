@@ -133,6 +133,15 @@ TabContentItem::~TabContentItem()
         if (it.value() && host_.item(it.key()) && host_.item(it.key())->parentItem() == it.value()) host_.unmount(it.key());
 }
 
+QHash<PaneId, QRect> TabContentItem::paneRects() const
+{
+    QHash<PaneId, QRect> result;
+    for (auto it = frames_.cbegin(); it != frames_.cend(); ++it)
+        if (it.value() && it.value()->isVisible())
+            result.insert(it.key(), QRect(it.value()->mapToGlobal(QPointF()).toPoint(), it.value()->size().toSize()));
+    return result;
+}
+
 ContentColumnItem* TabContentItem::frame(PaneId pane)
 {
     auto& frame = frames_[pane];

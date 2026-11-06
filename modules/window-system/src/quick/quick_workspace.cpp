@@ -6,6 +6,7 @@
 #include "content_bars.hpp"
 #include "text_bar_item.hpp"
 #include "dock_surface_item.hpp"
+#include "tab_content_item.hpp"
 #include "popup_menu.hpp"
 #include "menu_bar_overflow.hpp"
 #include "tab_drag.hpp"
@@ -485,6 +486,27 @@ struct QuickWorkspace::Private final : WindowPresenter {
         auto* window = windows.value(id).data();
         if (window) window->resize(size);
         return window;
+    }
+    bool setWindowState(WindowId id, Qt::WindowState state) override
+    {
+        auto* window = windows.value(id).data();
+        if (!window) return false;
+        if (state == Qt::WindowMinimized) window->showMinimized();
+        else if (state == Qt::WindowMaximized) window->showMaximized();
+        else window->showNormal();
+        return true;
+    }
+    QHash<GroupId, QRect> groupRects(WindowId id) const override
+    {
+        const auto* window = windows.value(id).data();
+        return window ? window->dock->groupRects() : QHash<GroupId, QRect>{};
+    }
+    QHash<PaneId, QRect> paneRects(TabId tab) const override
+    {
+        const auto* group = manager.model().group(manager.model().groupForTab(tab));
+        const auto* window = group ? windows.value(group->windowId).data() : nullptr;
+        const auto* page = window ? window->dock->existingPage(tab) : nullptr;
+        return page ? page->paneRects() : QHash<PaneId, QRect>{};
     }
     // Restored places of windows not built yet.
     QHash<WindowId, std::pair<QRect, bool>> placements;
