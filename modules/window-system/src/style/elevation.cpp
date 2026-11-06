@@ -50,9 +50,11 @@ QImage mask(const QPainterPath& path, const QRectF& bounds, qreal ratio, bool co
 QVector<float> alpha(const QImage& image)
 {
     QVector<float> result(image.width() * image.height());
+    // Raw pointers: per-element QList access checks for sharing every time.
+    float* output = result.data();
     for (int y = 0; y < image.height(); ++y) {
         const auto* row = reinterpret_cast<const QRgb*>(image.constScanLine(y));
-        for (int x = 0; x < image.width(); ++x) result[y * image.width() + x] = qAlpha(row[x]) / 255.0f;
+        for (int x = 0; x < image.width(); ++x) *output++ = qAlpha(row[x]) / 255.0f;
     }
     return result;
 }
@@ -95,7 +97,8 @@ QVector<float> gaussian(const QVector<float>& source, QSize size, qreal blur)
             // accumulation precision, kernel extent or addition order.
             for (int x = begin; x < end; ++x) output[x] += input[x + tap] * weight;
         }
-        for (int x = left; x < right; ++x) horizontal[row + x] = float(accumulated[x]);
+        float* blurredRow = horizontal.data() + row;
+        for (int x = left; x < right; ++x) blurredRow[x] = float(accumulated[x]);
     }
     // Padding and the transparent corner bands have exactly zero support.
     // Skipping their zero products preserves the kernel and addition order.
@@ -108,18 +111,10 @@ QVector<float> gaussian(const QVector<float>& source, QSize size, qreal blur)
             const auto band = support[y + tap];
             for (int x = band.begin; x < band.end; ++x) output[x] += input[x] * weight;
         }
-        for (int x = 0; x < size.width(); ++x) result[y * size.width() + x] = float(accumulated[x]);
+        float* resultRow = result.data() + y * size.width();
+        for (int x = 0; x < size.width(); ++x) resultRow[x] = float(accumulated[x]);
     }
     return result;
-}
-
-qreal sample(const QVector<float>& values, QSize size, int x, qreal y)
-{
-    const int first = qFloor(y);
-    const qreal fraction = y - first;
-    const qreal a = first >= 0 && first < size.height() ? values[first * size.width() + x] : 0;
-    const qreal b = first + 1 >= 0 && first + 1 < size.height() ? values[(first + 1) * size.width() + x] : 0;
-    return mix(a, b, fraction);
 }
 
 struct Coverage {
@@ -156,11 +151,21 @@ Coverage coverage(const QPainterPath& path, const QRectF& bounds, qreal ratio,
         if (layer.opacity <= 0) continue;
         const auto blurred = gaussian(paddedInside, paddedMask.size(), layer.blur * ratio);
         const qreal opacity = std::min(qreal(0.5), layer.opacity * style.shadowMultiplier);
+        // The offset is vertical: each output row interpolates the same two
+        // blurred rows by the same fraction.
+        const int width = silhouette.width(), stride = paddedMask.width(), rows = paddedMask.height();
+        float* shadow = result.shadow.data();
         for (int y = 0; y < silhouette.height(); ++y) {
-            for (int x = 0; x < silhouette.width(); ++x) {
-                const int at = y * silhouette.width() + x;
-                const qreal added = sample(blurred, paddedMask.size(), x + padding, y + padding - layer.offset * ratio) * opacity;
-                result.shadow[at] = float(1 - (1 - result.shadow[at]) * (1 - added));
+            const qreal position = y + padding - layer.offset * ratio;
+            const int first = qFloor(position);
+            const qreal fraction = position - first;
+            const float* upper = first >= 0 && first < rows ? blurred.constData() + first * stride + padding : nullptr;
+            const float* lower = first + 1 >= 0 && first + 1 < rows ? blurred.constData() + (first + 1) * stride + padding : nullptr;
+            float* output = shadow + y * width;
+            for (int x = 0; x < width; ++x) {
+                const qreal a = upper ? upper[x] : 0, b = lower ? lower[x] : 0;
+                const qreal added = mix(a, b, fraction) * opacity;
+                output[x] = float(1 - (1 - output[x]) * (1 - added));
             }
         }
     }
