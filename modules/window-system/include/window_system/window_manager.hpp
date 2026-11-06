@@ -71,6 +71,9 @@ public:
     [[nodiscard]] virtual bool isWindowMaximized(WindowId window) const = 0;
     // A restored window's place; the window may not exist yet.
     virtual void restorePlacement(WindowId window, QRect normal, bool maximized) = 0;
+    // Moves the window's frame to `position`, or sets its content size.
+    virtual bool moveWindow(WindowId window, QPoint position) = 0;
+    virtual bool resizeWindow(WindowId window, QSize size) = 0;
 };
 
 class WorkspaceWindow;
@@ -271,6 +274,11 @@ public:
 
     void showWindow(WindowId window);
     bool activateWindow(WindowId window);
+    // A window's frame position and content size, in either presentation.
+    bool moveWindow(WindowId window, QPoint position);
+    bool resizeWindow(WindowId window, QSize size);
+    [[nodiscard]] bool isWindowMinimized(WindowId window) const;
+    [[nodiscard]] bool isWindowMaximized(WindowId window) const;
     bool setWindowTitle(WindowId window, QString title);
     bool activateTab(TabId tab);
     bool focusPane(TabId tab, PaneId pane);

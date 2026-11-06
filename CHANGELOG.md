@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- Lua 的 `windows.resize`、`windows.move` 和 `windows.state` 在 Quick 窗口里恢复可用（之前一直返回失败）。
+
 - Quick 窗口选择器每行标题前显示窗口种类的图标，和原版一致。
 
 - Quick 窗口切换标签更流畅：选中标签和卡片接合处的阴影生成快了很多，切换时的掉帧明显减少。

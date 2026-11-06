@@ -779,6 +779,38 @@ void WindowManager::showWindow(WindowId window)
         d->activeWindow = window;
     }
 }
+bool WindowManager::moveWindow(WindowId window, QPoint position)
+{
+    if (!d->model.window(window)) return false;
+    if (d->presentation == Presentation::External) return d->presenter && d->presenter->moveWindow(window, position);
+    auto view = d->windows.value(window);
+    if (view) view->move(position);
+    return view;
+}
+
+bool WindowManager::resizeWindow(WindowId window, QSize size)
+{
+    if (!d->model.window(window)) return false;
+    if (d->presentation == Presentation::External) return d->presenter && d->presenter->resizeWindow(window, size);
+    auto view = d->windows.value(window);
+    if (view) view->resize(size);
+    return view;
+}
+
+bool WindowManager::isWindowMinimized(WindowId window) const
+{
+    if (d->presentation == Presentation::External) return d->presenter && d->presenter->isWindowMinimized(window);
+    const auto view = d->windows.value(window);
+    return view && view->isMinimized();
+}
+
+bool WindowManager::isWindowMaximized(WindowId window) const
+{
+    if (d->presentation == Presentation::External) return d->presenter && d->presenter->isWindowMaximized(window);
+    const auto view = d->windows.value(window);
+    return view && view->isMaximized();
+}
+
 bool WindowManager::activateWindow(WindowId window)
 {
     if (!d->model.window(window)) return false;

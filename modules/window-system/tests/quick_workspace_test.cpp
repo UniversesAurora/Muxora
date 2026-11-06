@@ -484,6 +484,19 @@ private slots:
         QVERIFY(manager.execute(QStringLiteral("window.focusNext.all")));
         QCOMPARE(manager.context().window, second);
         QVERIFY(one->windowStates() & Qt::WindowMinimized);
+        QVERIFY(manager.isWindowMinimized(first));
+
+        // Scripts move, resize and read the state of a Quick window as they
+        // did a Widgets one: the frame's position, the content's size.
+        QVERIFY(manager.resizeWindow(second, QSize(500, 360)));
+        QTRY_COMPARE(two->size(), QSize(500, 360));
+        const QPoint place = two->frameGeometry().topLeft() + QPoint(30, 20);
+        QVERIFY(manager.moveWindow(second, place));
+        QTRY_COMPARE(two->frameGeometry().topLeft(), place);
+        QVERIFY(!manager.isWindowMinimized(second) && !manager.isWindowMaximized(second));
+        two->showMaximized();
+        QTRY_VERIFY(manager.isWindowMaximized(second));
+        QVERIFY(!manager.moveWindow(WindowId::createUuid(), place));
     }
 
     void viewModesShapeTheQuickWindow()

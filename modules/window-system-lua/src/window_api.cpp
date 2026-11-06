@@ -5,7 +5,6 @@
 #include <QApplication>
 #include <QJsonArray>
 #include <QLabel>
-#include <QWidget>
 
 namespace window_system_lua {
 using namespace window_system;
@@ -213,29 +212,22 @@ void ScriptHost::Private::installWindowApi() {
         return result(manager->zenMode(target(a, 0, c, Target::Window)));
     };
     handlers["windows.resize"] = [this](const Args &a, const Context &c) {
-        auto *widget = manager->windowWidget(target(a, 0, c, Target::Window));
-        if (!widget)
-            return result(false);
-        widget->resize(number(a.value(1), 1280, 200, 65536), number(a.value(2), 800, 100, 65536));
-        return result(true);
+        return result(manager->resizeWindow(target(a, 0, c, Target::Window),
+            QSize(number(a.value(1), 1280, 200, 65536), number(a.value(2), 800, 100, 65536))));
     };
     handlers["windows.move"] = [this](const Args &a, const Context &c) {
-        auto *widget = manager->windowWidget(target(a, 0, c, Target::Window));
-        if (!widget)
-            return result(false);
-        widget->move(number(a.value(1), 0, -65536, 65536), number(a.value(2), 0, -65536, 65536));
-        return result(true);
+        return result(manager->moveWindow(target(a, 0, c, Target::Window),
+            QPoint(number(a.value(1), 0, -65536, 65536), number(a.value(2), 0, -65536, 65536))));
     };
     handlers["windows.set_title"] = [this](const Args &a, const Context &c) {
         return result(manager->setWindowTitle(target(a, 0, c, Target::Window), text(a, 1)));
     };
     handlers["windows.state"] = [this](const Args &a, const Context &c) {
         const auto id = target(a, 0, c, Target::Window);
-        const auto *window = manager->windowWidget(id);
-        if (!window)
+        if (!manager->model().window(id))
             return result();
-        return result(QVariantMap{{"minimized", window->isMinimized()},
-                                  {"maximized", window->isMaximized()},
+        return result(QVariantMap{{"minimized", manager->isWindowMinimized(id)},
+                                  {"maximized", manager->isWindowMaximized(id)},
                                   {"mode", modeName(manager->viewMode(id))}});
     };
     handlers["windows.set_state"] = [this](const Args &a, const Context &c) {

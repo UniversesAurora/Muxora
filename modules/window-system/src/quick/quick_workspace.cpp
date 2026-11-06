@@ -472,6 +472,19 @@ struct QuickWorkspace::Private final : WindowPresenter {
         if (auto* window = windows.value(id).data()) window->place(normal, maximized);
         else placements.insert(id, {normal, maximized});
     }
+    // As QWidget::move() and resize(): the frame's position, the content's size.
+    bool moveWindow(WindowId id, QPoint position) override
+    {
+        auto* window = windows.value(id).data();
+        if (window) window->setFramePosition(position);
+        return window;
+    }
+    bool resizeWindow(WindowId id, QSize size) override
+    {
+        auto* window = windows.value(id).data();
+        if (window) window->resize(size);
+        return window;
+    }
     // Restored places of windows not built yet.
     QHash<WindowId, std::pair<QRect, bool>> placements;
 };
