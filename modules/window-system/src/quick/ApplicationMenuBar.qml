@@ -78,7 +78,11 @@ Basic.MenuBar {
         text: entry ? entry.title : ""
         visible: entry ? entry.visible && (barIndex < 0 || barIndex < control.firstHiddenIndex) : false
         enabled: entry ? entry.enabled && entry.visible : false
+        // The label lays out its own margins. Basic sets the side paddings
+        // apart, so padding alone would leave the title too narrow.
         padding: 0
+        leftPadding: 0
+        rightPadding: 0
         implicitWidth: contentItem ? contentItem.implicitWidth : 0
         implicitHeight: contentItem ? contentItem.implicitHeight : 0
         width: entry && entry.visible ? implicitWidth : 0

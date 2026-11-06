@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### Basic 控件的 padding 盖不掉单独设的边距
+
+- **现象**：Quick 菜单栏的中文标题只显示第一个字，其余被淡出。
+- **原因**：Qt Quick Controls Basic 样式的 `MenuBarItem` 单独设了 `leftPadding`、`rightPadding`。子类只写 `padding: 0` 时，单独设的那几个仍然生效，内容区比标签测量的宽度窄 28 像素。
+- **做法**：自定义 Basic 控件的内容时，先查样式文件里单独设了哪些边距，要清零就逐个写出；测试比较内容项的实际宽度和隐含宽度。
+- **出处**：2026-11-06，`QuickPopupMenuTest::menuBarTitlesHaveTheirWidth`，见 [记录](../verification-log/2026-11.md#quick-菜单栏标题被截断2026-11-06)。
+
 ### 初始焦点在 QML 里由字段自己取
 
 - **现象**：Quick 对话框打开后第一个输入框没有焦点；多行文字的对话框按回车直接确定了。

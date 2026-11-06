@@ -2,6 +2,7 @@
 // Phase 10.4b: popup input and lifetime. Dimensions: disabled/hidden/separator
 // rows, keyboard cascades, outside capture, screen edge, owner destruction.
 #include "quick/popup_menu.hpp"
+#include <window_system/localization.hpp>
 #include "quick/button_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
@@ -727,6 +728,35 @@ private slots:
         QTest::keyClick(selector.data(), Qt::Key_Return);
         QTRY_VERIFY(!selector);
         QTRY_COMPARE(manager.context().window, floating);
+    }
+    // Each menu title gets the width it measured: Chinese titles once showed
+    // only their first character, the rest faded out.
+    void menuBarTitlesHaveTheirWidth()
+    {
+        TranslationManager translations;
+        QVERIFY(translations.installLanguage(UiLanguage::SimplifiedChinese));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1200, 600)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(view));
+        // Titles that do not fit move to the overflow menu; the rest are checked.
+        QTRY_VERIFY(namedItem(view->contentItem(), QStringLiteral("file")) && namedItem(view->contentItem(), QStringLiteral("file"))->width() > 0);
+        int shown = 0;
+        for (const auto* id : {"file", "view", "layout", "window", "tools", "help"}) {
+            auto* item = namedItem(view->contentItem(), QString::fromLatin1(id));
+            QVERIFY(item);
+            if (item->width() <= 0) continue;
+            ++shown;
+            auto* label = item->property("contentItem").value<QQuickItem*>();
+            QVERIFY(label);
+            QVERIFY(item->property("text").toString().contains(QStringLiteral("(&")));
+            QCOMPARE(label->width(), label->implicitWidth());
+        }
+        QVERIFY(shown >= 4);
     }
     void menuBarUsesLateCommandsAndItsOwnWindow_data()
     {
