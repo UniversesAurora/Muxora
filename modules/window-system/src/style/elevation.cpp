@@ -4,6 +4,7 @@
 
 #include <QCache>
 #include <QImage>
+#include <QElapsedTimer>
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QRegion>
@@ -279,8 +280,10 @@ struct ElevationRenderer::Cache {
     QCache<QString, Patch> patches{cacheBudgetKiB};
     quint64 generatedImages = 0;
     qsizetype largestImageBytes = 0;
-    void generated(const QImage& image)
+    qint64 generationNs = 0;
+    void generated(const QImage& image, const QElapsedTimer& started)
     {
+        generationNs += started.nsecsElapsed();
         ++generatedImages;
         largestImageBytes = std::max(largestImageBytes, image.sizeInBytes());
     }
@@ -299,7 +302,7 @@ void ElevationRenderer::clear() { cache_->patches.clear(); }
 ElevationCacheStats ElevationRenderer::cacheStats() const
 {
     return {int(cache_->patches.size()), qsizetype(cache_->patches.totalCost()) * 1024,
-            cache_->generatedImages, cache_->largestImageBytes};
+            cache_->generatedImages, cache_->largestImageBytes, cache_->generationNs};
 }
 
 void ElevationRenderer::paintBody(QPainter& painter, const QRectF& body, qreal radius,
@@ -341,6 +344,7 @@ ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationPro
     const Patch* patch = cache_->patches.object(key);
     std::unique_ptr<Patch> owned;
     if (!patch) {
+        QElapsedTimer started; started.start();
         const auto margins = elevationMargins(elevation);
         const qreal spread = qCeil(std::max({margins.left(), margins.top(), margins.bottom()})) + 1;
         const qreal inset = qCeil(radius + spread);
@@ -367,7 +371,7 @@ ElevationBodyPatch ElevationRenderer::bodyPatch(qreal radius, const ElevationPro
             }
         }
         patch = owned.get();
-        cache_->generated(owned->image);
+        cache_->generated(owned->image, started);
         if (owned->cost() <= cacheBudgetKiB) cache_->patches.insert(key, owned.release(), patch->cost());
     }
     return *patch;
@@ -450,6 +454,7 @@ ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& geome
     const Patch* patch = cache_->patches.object(key);
     std::unique_ptr<Patch> owned;
     if (!patch) {
+        QElapsedTimer started; started.start();
         owned = std::make_unique<Patch>();
         owned->bounds = bounds.translated(-origin);
         owned->image = QImage(QSize(qCeil(bounds.width() * ratio), qCeil(bounds.height() * ratio)), QImage::Format_ARGB32_Premultiplied);
@@ -475,7 +480,7 @@ ElevationAnchorPatch ElevationRenderer::anchorPatch(const SurfaceGeometry& geome
             }
         }
         patch = owned.get();
-        cache_->generated(owned->image);
+        cache_->generated(owned->image, started);
         if (owned->cost() <= cacheBudgetKiB) cache_->patches.insert(key, owned.release(), patch->cost());
     }
     return {patch->image, bounds, clip};

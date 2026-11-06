@@ -50,6 +50,8 @@ struct ElevationCacheStats {
     qsizetype bytes = 0;
     quint64 generatedImages = 0;
     qsizetype largestImageBytes = 0;
+    // Wall time spent generating those images on this thread.
+    qint64 generationNs = 0;
 };
 
 struct ElevatedAnchor {

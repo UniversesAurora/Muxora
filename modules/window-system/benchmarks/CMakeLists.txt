@@ -31,6 +31,11 @@ target_link_libraries(window-system-quick-frame-benchmark PRIVATE WindowSystemQu
 target_include_directories(window-system-quick-frame-benchmark PRIVATE ../src)
 target_compile_features(window-system-quick-frame-benchmark PRIVATE cxx_std_20)
 
+qt_add_executable(window-system-quick-workspace-benchmark quick_workspace_benchmark.cpp)
+target_link_libraries(window-system-quick-workspace-benchmark PRIVATE WindowSystemQuick)
+target_include_directories(window-system-quick-workspace-benchmark PRIVATE ../src)
+target_compile_features(window-system-quick-workspace-benchmark PRIVATE cxx_std_20)
+
 # MSVC reads sources in the system code page unless told otherwise; these
 # sources are UTF-8 (Chinese interface text and test data).
 if(MSVC)

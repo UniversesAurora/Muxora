@@ -31,7 +31,7 @@
 
 Quick 宿主用 `QuickWorkspace::setTabBar(tab, item, top)` 和 `setPaneBar(pane, item, top)` 设置附加栏，`top` 区分上下栏，传空移除。成功时工作区接管项，失败时仍由调用者持有；栏高取隐含高度。共享方式与显隐规则见 [附加栏设计](../../docs/design/window-system-design.md#71-标签自己的上下附加栏)。
 
-同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。可选择填充、保留阴影、标签组背板缩放、展开、30 标签整栏或 28 标签拖动前景场景；`split-resize` 额外包含真实模型比例事务和 Quick 分割布局；参数见 [测试要求](../../docs/development/testing-design.md#8-性能压力与内存)。`tab-strip` 含文字和基础表面；`tab-foreground` 含外部载荷、提起/落位、文件夹及独立阴影，显式请求四样本 MSAA。两者仍不含宿主内容、输入或完整窗口交互，不能与完整 Widgets 窗口直接计算性能提升比例。
+同时启用 `WINDOW_SYSTEM_BUILD_BENCHMARKS` 后可构建 `window-system-quick-frame-benchmark`。在桌面隔离入口内运行，使用 `--commit <revision> --out <report.json>`，可用 `--frames <count>` 指定提交间隔样本数。可选择填充、保留阴影、标签组背板缩放、展开、30 标签整栏或 28 标签拖动前景场景；`split-resize` 额外包含真实模型比例事务和 Quick 分割布局；参数见 [测试要求](../../docs/development/testing-design.md#8-性能压力与内存)。`tab-strip` 含文字和基础表面；`tab-foreground` 含外部载荷、提起/落位、文件夹及独立阴影，显式请求四样本 MSAA。两者仍不含宿主内容、输入或完整窗口交互，不能与完整 Widgets 窗口直接计算性能提升比例。`window-system-quick-workspace-benchmark` 运行完整的管理器和 Quick 工作区（菜单、工具栏、状态栏、标签组，内容为空白项），每 30 次提交切换一次标签：`--scene far` 在 30 个标签的首尾之间切换（标签栏要滚动），`--scene near` 在 6 个可见标签之间切换，`--placement top|left` 选标签栏位置；报告提交间隔和 GUI 线程生成阴影图片的次数与耗时。
 
 ## 公开 API
 
