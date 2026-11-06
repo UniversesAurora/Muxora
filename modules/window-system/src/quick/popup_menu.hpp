@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "platform/keyboard_cues.hpp"
+
 #include "commands/menu_description.hpp"
 #include "menu_bar_overflow.hpp"
 #include <window_system/theme.hpp>
@@ -49,6 +51,7 @@ public:
     void updatePresentation(const Theme& theme, const QFont& font, bool remeasure);
     Q_INVOKABLE void setHighlighted(bool highlighted);
     Q_INVOKABLE void setHovered(bool hovered);
+    void setMnemonicsShown(bool shown);
     Q_INVOKABLE void activate();
     Q_INVOKABLE void activateAction(const QString& action);
 signals:
@@ -81,6 +84,10 @@ public:
     void setPresentation(const Theme& theme);
     void dismiss();
     bool isOpen() const;
+    // Whether titles underline their access keys: when the system asks for
+    // it, or while the keyboard drives the menus.
+    void setMnemonicsShown(bool shown);
+    [[nodiscard]] bool mnemonicsShown() const { return mnemonicsShown_; }
     QFont menuFont() const { return font_; }
     QPalette menuPalette() const;
     qreal scale() const;
@@ -122,6 +129,7 @@ private:
     Theme theme_;
     QFont font_;
     qreal scale_ = 1;
+    bool mnemonicsShown_ = keyboardCuesAlwaysShown();
     QSize maximumSize_;
     std::unique_ptr<QObject> menu_;
     QHash<QObject*, QPointer<QObject>> menuWindows_;

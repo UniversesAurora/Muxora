@@ -13,6 +13,7 @@
 #include "command_panel.hpp"
 #include "settings_page_model.hpp"
 #include "path_item.hpp"
+#include "platform/keyboard_cues.hpp"
 #include "dialog_window.hpp"
 #include "commands/command_dialogs.hpp"
 #include "window_manager_p.hpp"
@@ -244,6 +245,14 @@ protected:
             return true;
         }
         if (event->type() == QEvent::Resize) layoutChildren();
+        // As Windows menus: access keys show while Alt is held, and in a menu
+        // opened with it (keyboardCuesAlwaysShown() shows them always).
+        if ((event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)
+            && static_cast<QKeyEvent*>(event)->key() == Qt::Key_Alt && !static_cast<QKeyEvent*>(event)->isAutoRepeat()) {
+            altHeld_ = event->type() == QEvent::KeyPress;
+            if (altHeld_) keyboardMenu_ = true;
+            updateMnemonics();
+        }
         if ((event->type() == QEvent::Resize || event->type() == QEvent::Move)
             && !(windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized)) && isVisible())
             normalGeometry_ = geometry();
@@ -282,6 +291,12 @@ private:
             frameLine_->setFill(menus_->theme().border);
             layoutChildren();
         }, Qt::QueuedConnection);
+        // A menu opened from the keyboard underlines access keys until it closes.
+        connect(menus_, &quick::PopupMenu::closed, this, [this] {
+            keyboardMenu_ = false;
+            altHeld_ = QGuiApplication::queryKeyboardModifiers() & Qt::AltModifier;
+            updateMnemonics();
+        });
         connect(menus_, &quick::PopupMenu::contextMenuRequested, dock, [this](QPoint global) {
             dock->showContextMenu(CommandMenuSurface::Group, manager_.context(id_), global);
         });
@@ -307,6 +322,13 @@ private:
 
     // As the Widgets column: toolbars, the dock, the bottom toolbars, then
     // the status bar along the window's bottom edge.
+    void updateMnemonics()
+    {
+        if (!menus_) return;
+        if (!altHeld_ && !menus_->isOpen()) keyboardMenu_ = false;
+        menus_->setMnemonicsShown(keyboardCuesAlwaysShown() || altHeld_ || keyboardMenu_);
+    }
+
     void layoutChildren()
     {
         // As the Widgets window: inside the native frame a normal window
@@ -366,6 +388,8 @@ private:
     quick::CommandStripHostItem* toolbars_;
     quick::StatusBarItem* status_;
     quick::PathItem* frameLine_ = nullptr;
+    bool altHeld_ = false;
+    bool keyboardMenu_ = false;
     quick::PopupMenu* menus_ = nullptr;
     QPointer<QQuickItem> menuBar_;
     Qt::WindowStates normalStates_;

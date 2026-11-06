@@ -25,6 +25,9 @@ struct TabLabelState {
     bool compactSticky = false;
     // Only the icon, or the title's initial without one, centered.
     bool iconOnly = false;
+    // A title's & markers are removed without underlining the access key,
+    // as Windows draws menus until the keyboard drives them.
+    bool mnemonicHidden = false;
     bool lifted = false;
     bool elevationManaged = false;
     // 0..1 while a lifted tab's shadow fades in.

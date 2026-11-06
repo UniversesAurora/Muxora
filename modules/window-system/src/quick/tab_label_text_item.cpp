@@ -125,7 +125,7 @@ std::shared_ptr<ShapedText> shapeText(const TabLabelPresentation& label, TabText
         for (qsizetype index = 0; index < variant.size(); ++index) {
             if (mnemonic && variant[index] == QLatin1Char('&')) {
                 if (++index == variant.size()) break;
-                if (variant[index] != QLatin1Char('&')) {
+                if (variant[index] != QLatin1Char('&') && !label.state.mnemonicHidden) {
                     QTextLayout::FormatRange format;
                     format.start = text.size();
                     format.length = 1;
@@ -236,7 +236,7 @@ bool sameSource(const TabLabelPresentation& a, const TabLabelPresentation& b,
 {
     // A viewport change moves/clips already shaped glyphs. Only explicit line
     // separators make its height part of Qt's single-line formatting input.
-    return aRole == bRole && a.state.title == b.state.title && a.font == b.font
+    return aRole == bRole && a.state.title == b.state.title && a.state.mnemonicHidden == b.state.mnemonicHidden && a.font == b.font
         && a.direction == b.direction && initialOnly(a, aRole) == initialOnly(b, bRole)
         && (!multiline || a.parts.title.height() == b.parts.title.height());
 }

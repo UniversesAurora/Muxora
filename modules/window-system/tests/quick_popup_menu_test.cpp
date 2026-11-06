@@ -3,6 +3,7 @@
 // rows, keyboard cascades, outside capture, screen edge, owner destruction.
 #include "quick/popup_menu.hpp"
 #include <window_system/localization.hpp>
+#include "platform/keyboard_cues.hpp"
 #include "quick/button_item.hpp"
 #include "quick/dock_surface_item.hpp"
 #include "quick/group_item.hpp"
@@ -729,6 +730,40 @@ private slots:
         QTRY_VERIFY(!selector);
         QTRY_COMPARE(manager.context().window, floating);
     }
+    // As Windows menus: access keys are underlined only while Alt is held,
+    // and in a menu opened with it until it closes, unless the system asks
+    // for them always.
+    void menuAccessKeysShowWithTheKeyboard()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1000, 600)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        auto* bar = namedItem(view->contentItem(), QStringLiteral("MenuStrip"));
+        QVERIFY(bar);
+        auto* session = qobject_cast<quick::PopupMenu*>(bar->property("session").value<QObject*>());
+        QVERIFY(session);
+        const bool always = keyboardCuesAlwaysShown();
+        QCOMPARE(session->mnemonicsShown(), always);
+        QTest::keyPress(view, Qt::Key_Alt, Qt::AltModifier);
+        QVERIFY(session->mnemonicsShown());
+        QTest::keyRelease(view, Qt::Key_Alt, Qt::NoModifier);
+        QCOMPARE(session->mnemonicsShown(), always);
+        // Alt+F opens the File menu; it keeps the underlines after Alt goes up.
+        QTest::keyPress(view, Qt::Key_Alt, Qt::AltModifier);
+        QTest::keyClick(view, Qt::Key_F, Qt::AltModifier);
+        QTRY_VERIFY(popup(view));
+        QTest::keyRelease(popup(view), Qt::Key_Alt, Qt::NoModifier);
+        QVERIFY(session->mnemonicsShown());
+        QTest::keyClick(popup(view), Qt::Key_Escape);
+        QTRY_VERIFY(!popup(view));
+        QTRY_COMPARE(session->mnemonicsShown(), always);
+    }
+
     // Each menu title gets the width it measured: Chinese titles once showed
     // only their first character, the rest faded out.
     void menuBarTitlesHaveTheirWidth()

@@ -53,6 +53,8 @@ Basic.MenuBar {
         }
         return false
     }
+    // Its menus have closed, as a context menu's do.
+    onPopupOpenChanged: if (!popupOpen) session.finished()
     function insertBranch(index: int, child: QtObject): Item {
         insertMenu(index, child as PopupMenuNode)
         return itemAt(index)

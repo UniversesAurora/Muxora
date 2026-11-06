@@ -170,6 +170,13 @@ Quick 内容收到几何变化后，宿主可能立即修改模型或关闭视�
 - **做法**：拖动中打开的菜单挂在源窗口这类不会被拖动改变的窗口上，由拖动控制器持有；结束拖动时只请求关闭，让菜单按关闭流程自己删除，不直接 `delete`。
 - **出处**：2026-11-05，10.4g，`QuickWorkspaceTest::tabDuringADragChoosesTheTargetWindow`，见 [记录](../verification-log/2026-11.md#quick-拖动中按-tab-选目标窗口2026-11-05)。
 
+### 判断平台宏前先包含 Qt 头文件
+
+- **现象**：新写的读取 Windows 系统设置的函数在 Windows 上总是返回非 Windows 分支的结果。
+- **原因**：`Q_OS_WIN` 由 Qt 头文件定义。源文件在 `#ifdef Q_OS_WIN` 之前只包含了自己的头文件，宏还没定义，整段 Windows 代码被跳过，编译也不报错。
+- **做法**：用 `Q_OS_*` 之前先包含 `<QtGlobal>`；读系统设置的函数要和已知结果对照一次（这里和同一进程里 Qt 样式读到的值对照）。
+- **出处**：2026-11-06，`QuickPopupMenuTest::menuAccessKeysShowWithTheKeyboard`，见 [记录](../verification-log/2026-11.md#quick-菜单的访问键下划线照-windows-规则显示2026-11-06)。
+
 ### 新的 Quick 窗口先排好再显示
 
 - **现象**：启动时选中的标签先是独立的圆角块，几百毫秒后才接到卡片上。

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "popup_menu.hpp"
+#include "platform/keyboard_cues.hpp"
 #include "button_item.hpp"
 #include "path_item.hpp"
 #include "qml_scene_component.hpp"
@@ -133,6 +134,10 @@ public:
         hovered_ = hovered;
         refreshActions();
     }
+    void setMnemonicsShown(bool shown)
+    {
+        if (std::exchange(mnemonicsShown_, shown) != shown) refresh();
+    }
 private:
     void refreshActions()
     {
@@ -161,6 +166,7 @@ private:
         TabLabelPresentation label;
         label.parts.tab = area; label.parts.title = area;
         label.state.shape = TabShape::Row; label.state.selected = true; label.state.title = std::move(value);
+        label.state.mnemonicHidden = !mnemonicsShown_;
         label.font = font_; label.naturalWidth = naturalWidth;
         TabStripLabelStyle style; style.palette.text = color;
         target->setLabel(label, style, role); target->setPosition(area.topLeft());
@@ -245,6 +251,7 @@ private:
     int titleWidth_ = 0, shortcutWidth_ = 0, checkWidth_ = 0;
     bool selected_ = false, hovered_ = false;
     bool menuBar_ = false;
+    bool mnemonicsShown_ = true;
 };
 
 MenuEntry::MenuEntry(MenuItemDescription description, PopupMenu& owner, bool menuBar)
@@ -252,11 +259,12 @@ MenuEntry::MenuEntry(MenuItemDescription description, PopupMenu& owner, bool men
       label_(description_.kind == MenuItemDescription::Kind::Separator ? nullptr
           : new MenuLabelItem(description_, owner.theme(), owner.menuFont(), *this, menuBar))
 {
-    if (label_) label_->setParent(this);
+    if (label_) { label_->setParent(this); label_->setMnemonicsShown(owner.mnemonicsShown()); }
 }
 QQuickItem* MenuEntry::content() const { return label_; }
 void MenuEntry::setHighlighted(bool highlighted) { if (label_) label_->setHighlighted(highlighted); }
 void MenuEntry::setHovered(bool hovered) { if (label_) label_->setHovered(hovered); }
+void MenuEntry::setMnemonicsShown(bool shown) { if (label_) label_->setMnemonicsShown(shown); }
 void MenuEntry::activate() { owner_.activate(description_); }
 void MenuEntry::activateAction(const QString& action) { owner_.activateAction(description_, action); }
 void MenuEntry::updatePresentation(const Theme& theme, const QFont& font, bool remeasure)
@@ -299,6 +307,17 @@ QPalette PopupMenu::menuPalette() const
     result.setColor(QPalette::Highlight, theme_.selection);
     result.setColor(QPalette::HighlightedText, theme_.selectionText);
     return result;
+}
+
+void PopupMenu::setMnemonicsShown(bool shown)
+{
+    if (mnemonicsShown_ == shown) return;
+    mnemonicsShown_ = shown;
+    const auto update = [&](auto&& visit, const QVector<Row>& rows) -> void {
+        for (const auto& row : rows) { row.entry->setMnemonicsShown(shown); visit(visit, row.children); }
+    };
+    update(update, rows_);
+    if (overflow_) overflow_->entry()->setMnemonicsShown(shown);
 }
 
 void PopupMenu::setPresentation(const Theme& theme)
