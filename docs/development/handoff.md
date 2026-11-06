@@ -49,6 +49,66 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
 
 ---
 
+## 2026-11-07 · Claude：审查 10.4h–10.5，10.5 第一项优化，10.6 单元 3 拆步
+
+### 最后提交
+
+`main` 已推送，与 `origin/main` 一致，工作区干净。本节随交接文档提交一起推送。
+
+### 本轮完成
+
+- 审查 Codex 从 `69a037a` 之后的 11 个提交，实现没有要改的。修了两处测试问题：`ee43ccb` 把超过 60 秒上限的 `quick-workspace` 拆出 `quick-workspace-drag`；`6416eff` 恢复被误当外观检查退役的 `menuBarTitlesHaveTheirWidth`。见 [审查记录](verification-log/2026-11.md#审查-codex-的-104h-至-105-提交2026-11-07)。协作经验“退役断言前先说清它防的是什么”补了复发，审查清单加了两项检查。上一轮被拦截的临时测量目录已删除。
+- 10.5：`43caf3f` 加了可重复运行的完整工作区基准 `window-system-quick-workspace-benchmark`；`b4df0f6` 和 `842a604` 让接合阴影生成更快，只存两端。Release 三轮下，左侧标签栏切换时超过两个刷新周期的帧从每轮 8–15 个降到 0，阴影生成耗时降到原来的 1/3–1/4。顶部远距切换每次仍有一帧超时。见 [记录](verification-log/2026-11.md#quick-切换标签时接合阴影的生成成本2026-11-07)；后续优化按 [10.5 “后续优化”](../roadmap/implementation/phase-10-qt-quick.md#105-帧成本与资源调优) 的顺序做。
+- `e5c9001` Quick 窗口选择器补上行前窗口图标（10.4g 留下的差别）。
+- `0d35d1e` 修复 Lua 的 `windows.resize`／`move`／`state` 在 Quick 下一直失效的问题；`c4a1b96` 让 Lua 的 `tabs.set_bar`／`panes.set_bar` 在 Quick 下显示，这是 10.6 的 3.1。见 [窗口接口](verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)、[文字栏](verification-log/2026-11.md#lua-文字栏在-quick-下显示2026-11-07)。
+- `22cab07` 把 10.6 单元 3 拆成 3.1–3.7，见 [单元 3 的步骤](../roadmap/implementation/phase-10-qt-quick.md#单元-3-的步骤claude-2026-11-07-拆)。
+- 验证范围：每步经 `quiet-desktop.ps1 -Elevate` 跑相关套件，全部通过，各次范围和数字写在上面链接的记录里。翻译检查、文档检查通过。没有跑全量，没有在应用里试用，Release 预览没有更新，窗口图标和文字栏没有和 Widgets 截图对比。
+
+### 进行中
+
+无。10.6 的 3.2 起由执行者做；10.5 后续优化未开始。
+
+### 下一步
+
+给执行者，按顺序：
+
+1. 先读 [助手协作经验](lessons/collaboration.md)（本轮补了“退役断言”的复发）和 [Qt Quick 经验](lessons/qt-quick.md)。
+2. **10.6 的 3.2 测试清单**：按 [单元 3 的步骤](../roadmap/implementation/phase-10-qt-quick.md#单元-3-的步骤claude-2026-11-07-拆) 给 58 个还用 Widgets 呈现的测试源码逐个用例分 A／B／C 三类，表格写进计划的那一节。命令是 `rg -l "Presentation::Widgets|WindowManager manager;" modules/window-system/tests modules/window-system-lua/tests src/app/tests`（默认构造就是 Widgets 呈现）。这一步只写表，不改代码，不删用例。B 类必须写出对应的 `quick-*` 用例名，拿不准的标 C。写完停下，等 Claude 审表，再做 3.3。
+3. 等审表期间做 **10.5 后续优化** 的测量：
+   - 第 1 项：用基准的 `--scene far --placement top`，定位每次切换那一帧在做什么。
+   - 第 2 项：重测多行展开。
+   - 第 3 项：测 `GroupItem::pagePicture`。
+   - 只测量和归因到具体函数，结论写进验证日志，不改产品代码。
+   - 第 4 项（菜单改为子菜单第一次打开时再建）不改外观，可以直接做：用例保证菜单内容、快捷键文字和访问键不变，并测窗口创建的耗时和项数前后对比。
+   - 基准用法见 [模块说明](../../modules/window-system/README.md)，要在 `out/build/bench-release` 构建并经 `quiet-desktop.ps1 -Elevate` 运行；每项三轮，报告放 `out/test-results/`。
+4. 每项完成后：更新计划状态、验证日志、预览说明，用户能感觉到的变化写进变更记录；只跑相关套件。遇到新界面或新外观就停下写进这里。
+
+Claude 下次接手：审查执行者的提交和 3.2 的表；根据 10.5 的定位决定改法。
+
+### 待用户决定
+
+没有新问题。之前就有的：
+- Quick 版整体试用，包括本轮的标签切换流畅度、窗口选择器图标和 Lua 文字栏。
+- 全量回归需要用户单独授权。
+- Release 预览（`out/package/muxora-preview/`）仍是 11-04 的版本，是否更新。
+- 8.27 菜单与浮动面板重做的具体要求。
+
+### 请下一位回答
+
+无。
+
+### 本轮新决定
+
+- 用户 2026-11-07 要求 Claude 把自己负责的部分做完再交接。
+- 10.5 的优化顺序和分工、10.6 单元 3 的步骤由 Claude 定，写在 [阶段 10](../roadmap/implementation/phase-10-qt-quick.md) 对应小节。
+
+### 环境与注意事项
+
+- 本轮基准报告在 `out/test-results/quick-workspace-<场景>-<位置>-<轮>-<before|loops|after>.json`，是 10.5 的对照证据，保留。`out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 仍按原计划保留。
+- 测量和测试程序结束事件循环要用 `exit()`，不能用 `quit()`：工作区窗口会拒绝关闭，`quit()` 因此被取消，程序一直挂着，见 [Qt Quick 经验](lessons/qt-quick.md#测量程序用-exit-结束不用-quit)。
+- Debug 构建出现过一次 `command_strip.cpp.obj` 调试信息损坏（LNK1103），删掉该目标文件重新编译就好，和代码无关。
+- 没有运行中的程序。
+
 ## 2026-11-06 · Codex · 设置、Alt 导航与无障碍接入，性能归因完成
 
 ### 最后提交
@@ -129,25 +189,3 @@ A<编号>（<答复方>，<日期>，基于提交 <提交号>）
   - 测试进程崩溃时，`-o 文件` 的输出不完整，去掉 `-o`、把标准输出重定向到文件才能看到调用栈，见 [调试经验](lessons/debugging.md#测试进程崩溃时看标准输出里的调用栈)。
   - `out/diagnostics/quick-migration/` 和 `quick-tab-strip/` 仍是 10.5 的基准证据，保留；本轮的对比截图目录已删除。
   - 没有运行中的预览或测试。
-
-## 2026-11-05 · Codex：Quick 菜单与统一工具栏布局，继续 10.4e
-
-- **最后提交**：实现截至 `2baa71c`，本节随后的记录提交一起推送到 `main`；没有其他分支推送。用户要求立即交接，未再运行验证。
-- **本轮完成**：
-  - 10.4b–d：Quick 共用菜单、右键入口、标签列表、文本编辑、浮窗标题、动态状态、增量树、菜单栏及窄窗口收纳已接入；沿用原外观和交互，不是新增菜单设计。相关修订和各次实际结果见 [11 月验证日志](verification-log/2026-11.md)。
-  - 10.4e：共用工具栏布局和 JSON 合并规则；工作区与宿主／Lua 命令栏；菜单、标题、窗口按钮统一注册表、上下区域、保存布局读取和内容显隐已接入。标题和空白区域共用拖窗输入，caption 保留独立视觉归属和原生命中。当前位置与范围见 [10.4e](../roadmap/implementation/phase-10-qt-quick.md#104-工具栏侧栏菜单与设置)。
-  - 标题全文测量已移出 resize，缓存随标题、字体、字体数据库及 DPR 失效，见 [测量记录](verification-log/2026-11.md#quick-标题测量移出尺寸变化2026-11-05)。局部取样不能证明整窗帧率。
-- **进行中**：10.4e 未完成。统一布局目前读取保存状态；管理器／Lua 的工具栏状态编辑仍主要走 Widgets，Quick 的实际编辑与保存写回、窗口种类的布局归属、手柄拖动、完整选项菜单和提示尚未接通。`keptStrips`／`keptInactiveStrips` 仍在，不能直接删除或宣称迁移完成。最终目标是彻底移除 Widgets 呈现，不保留薄适配作为最终方案。
-- **下一步**：
-  1. 按角色执行接手流程；Claude 接手时先审查本轮提交。先读工程、测试规范及 [Qt Quick 经验](lessons/qt-quick.md)，复用现有阶段计划。
-  2. 继续 10.4e，接通当前注册表的状态查询、编辑、保存和按 WindowKind 区分的当前／非活动布局。入口看 `custom_chrome.cpp`、`chrome/toolbar_api.cpp`、`commands/toolbar_move_command.cpp`、`layout_persistence.cpp`、`WindowPresenter`；`WindowManager::initialToolbarLayout` 目前优先取按 WindowId 原样保留的布局，种类切换归属尚未接好。
-  3. 使用 `strip_layout_state` 的合并规则保留迟加载提供者及多窗口编辑；不能让普通同步覆盖未提交的拖动预览，也不能让旧窗口覆盖新默认。再接手柄拖动、边界调整与取消，复用 `strip_layout` 的空位回收、弹性与优先权规则。
-  4. 完整选项菜单接入时，合并菜单自己的 More 与 strip options，保留一个入口；当前菜单内容不额外创建 options tail。内容开关与菜单项排除的区别见 [统一记录](verification-log/2026-11.md#quick-窗口内容并入工具栏注册表2026-11-05)。完成条件满足后按 10.6 删除相应 Widgets 代码，后续仍有状态栏、面板、设置、对话框、无障碍和完整性能调优。
-- **待用户决定**：无新的设计问题。真实外观／交互试用与完整应用高刷新验收仍未完成。Release 预览未更新，未打包。用户要求不要再做多余验证、立即交接；不准备对比测试或额外测试框架。
-- **请下一位回答**：无独立问题，按接手审查结果继续。
-- **本轮新决定**：现有菜单与工具栏按既有设计迁移，继续执行，不以新组件为由停工；未修改 AGENTS.md。全量／大回归仍须用户单独授权，不做静态外观测试或无必要哈希校验。
-- **环境与注意事项**：
-  - 最新四套相关检查同批通过：内容 12、菜单 38、工具栏 8、原生拖动 3；菜单内容开关修复后，仅定向复核工具栏 8 与菜单函数 8，均无失败或跳过。各次时间、首报失败、恢复经过及验证范围见 [统一记录](verification-log/2026-11.md#quick-窗口内容并入工具栏注册表2026-11-05)。未跑全量、大回归或外观检查。
-  - `quick-toolbar` 已承接工具栏行为场景，`quick-popup-menu` 保留菜单场景；只是按职责拆开，未改超时或覆盖要求。字体／窗口控件函数也已定向通过。桌面曾首次恢复失败，单独管理员恢复成功，最近会话恢复成功；没有正在运行的检查。桌面检查仍须整批经 `quiet-desktop.ps1 -Elevate`；不得沿用用户之前清除旧快照的授权来清除新快照。
-  - 不在桌面隔离会话内编译；只运行已准备好的目标，避免编译服务留在 runner 后代树中。
-  - **待清理，禁止 Codex 绕过策略**：系统临时目录下 `Muxora-toolbar-measure-bb214121144a4599883aa3886ace6300`（此前工具栏取样）与 `muxora-title-cost-54652cf54f054cdfb7f6545378a43dcd`（本轮标题取样）递归删除被 `blocked by policy` 拦截，均未给具体原因。本轮目录已只读核实仅有 `title_cost.cpp`、`title_cost.obj`、`title_cost.exe`，无子目录，已给用户绝对路径及无需管理员权限的手动命令。Claude 删除前再核对实际目录与内容，确认无用户数据；前一目录按原记录核查，不盲删。没有将临时测量源码加入项目。
