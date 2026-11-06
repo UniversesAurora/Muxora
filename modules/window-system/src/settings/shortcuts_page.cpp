@@ -30,14 +30,6 @@ QString titleFor(const Command& command)
     return command.title.isEmpty() ? command.id : command.title;
 }
 
-QString bindingText(const QVector<CommandBinding>& bindings)
-{
-    QStringList text;
-    for (const auto& binding : bindings)
-        text.append(binding.sequence.toString(QKeySequence::NativeText));
-    return text.join(QStringLiteral(" / "));
-}
-
 // QKeySequenceEdit remains the public widget type, so host shortcut routing
 // recognizes this as a capture control. Every stroke is recorded explicitly:
 // unmodified continuation letters/digits never become editable text instead.
@@ -228,7 +220,7 @@ ShortcutsPage::ShortcutsPage(WindowManager* manager, QWidget* parent)
         // updates the registry. Applying verifies the original binding again.
         for (int row = 0; row < commands_->topLevelItemCount(); ++row) {
             auto* item = commands_->topLevelItem(row);
-            item->setText(1, bindingText(manager_->commands().bindings(item->data(0, Qt::UserRole).toString())));
+            item->setText(1, shortcutBindingText(manager_->commands().bindings(item->data(0, Qt::UserRole).toString())));
         }
         updateDiagnostic();
     });

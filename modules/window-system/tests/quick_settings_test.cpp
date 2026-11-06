@@ -4,7 +4,8 @@
 // box, drop-down, whole and decimal number with unit, text, slider with
 // number, JSON text with apply button, key recorder, list, button, text
 // area), edited here or elsewhere,
-// search, opening an open page again, shortcuts while recording keys.
+// search, opening an open page again, shortcuts while recording keys,
+// binding conflicts, arguments, external edits and removing bindings.
 #include "quick/settings_page_model.hpp"
 #include "quick/qml_scene_component.hpp"
 #include "quick/settings_style.hpp"
@@ -48,7 +49,7 @@ std::unique_ptr<QQuickItem> createControls(quick::SettingsStyle& style, const QB
 }
 void typeInto(QQuickWindow* window, QQuickItem* field, const QString& text)
 {
-    QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, centre(field));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, centre(field));
     QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
     for (const auto letter : text) QTest::keyClick(window, letter.toLatin1());
     QTest::keyClick(window, Qt::Key_Return);
@@ -262,6 +263,105 @@ private slots:
         QTRY_COMPARE(sizing->property("currentText").toString(), QStringLiteral("Compact: icon or first letter only"));
         QVERIFY(manager.tabAppearance().multiline);
         QCOMPARE(manager.tabAppearance().maximumTitleWidth, 420);
+    }
+
+    void shortcutKeySearchKeepsCommandsInactive()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        int executed = 0;
+        const QString id = QStringLiteral("test.recorded");
+        const QKeySequence keys(QStringLiteral("Ctrl+Alt+F10, Ctrl+Alt+F11"));
+        QVERIFY(manager.commands().add({id, QStringLiteral("Recorded"), {}, keys, {},
+            [&executed](const CommandContext&) { ++executed; return true; }}));
+        QVERIFY(manager.commands().add({QStringLiteral("test.otherModifiers"), QStringLiteral("Other modifiers"), {},
+            QKeySequence(QStringLiteral("Ctrl+Alt+Shift+F10")), {}, [&executed](const CommandContext&) { ++executed; return true; }}));
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1000, 900)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        QVERIFY(manager.execute(QStringLiteral("preferences.openKeyboardShortcuts"), {}, window));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QQuickItem* page = nullptr;
+        QTRY_VERIFY((page = namedItem(view->contentItem(), QStringLiteral("ShortcutsPage"))) && page->width() > 0);
+        auto* search = namedItem(page, QStringLiteral("ShortcutSearch"));
+        auto* record = namedItem(page, QStringLiteral("RecordShortcutSearch"));
+        auto* capture = namedItem(page, QStringLiteral("ShortcutSearchCapture"));
+        auto* commands = namedItem(page, QStringLiteral("ShortcutCommands"));
+        QVERIFY(search && record && capture && commands);
+        QTRY_VERIFY(search->hasActiveFocus());
+        typeInto(view, search, id);
+        QTRY_COMPARE(commands->property("count").toInt(), 1);
+        QCOMPARE(commands->property("rows").toList().first().toMap().value("id").toString(), id);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(record));
+        QTRY_VERIFY(capture->hasActiveFocus());
+        QTest::keyClick(view, Qt::Key_F10, Qt::ControlModifier | Qt::AltModifier);
+        QTest::keyClick(view, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+        QTRY_COMPARE(commands->property("count").toInt(), 1);
+        QCOMPARE(commands->property("rows").toList().first().toMap().value("id").toString(), id);
+        QCOMPARE(executed, 0);
+        QCOMPARE(manager.commands().bindings(id).first().sequence, keys);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(record));
+        QTRY_VERIFY(!capture->isVisible());
+        QTRY_VERIFY(search->hasActiveFocus());
+    }
+
+    void shortcutBindingsValidateAndPreserveDrafts()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        const QString id = QStringLiteral("test.editable");
+        QVERIFY(manager.commands().add({id, QStringLiteral("Editable"), {}, {}, {}, [](const CommandContext&) { return true; }}));
+        QVERIFY(manager.commands().add({QStringLiteral("test.conflict"), QStringLiteral("Conflict"), {},
+            QKeySequence(QStringLiteral("Ctrl+Alt+F12")), {}, [](const CommandContext&) { return true; }}));
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(WindowKind::Workbench, {QStringLiteral("Main"), QSize(1000, 900)});
+        manager.addTab(window, {QStringLiteral("Content")});
+        QVERIFY(manager.execute(QStringLiteral("preferences.openKeyboardShortcuts"), {}, window));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(view));
+        QQuickItem* page = nullptr;
+        QTRY_VERIFY((page = namedItem(view->contentItem(), QStringLiteral("ShortcutsPage"))) && page->width() > 0);
+        auto* search = namedItem(page, QStringLiteral("ShortcutSearch"));
+        auto* add = namedItem(page, QStringLiteral("AddShortcut"));
+        auto* apply = namedItem(page, QStringLiteral("ApplyShortcut"));
+        auto* remove = namedItem(page, QStringLiteral("ClearShortcut"));
+        auto* capture = namedItem(page, QStringLiteral("ShortcutCapture"));
+        auto* arguments = namedItem(page, QStringLiteral("ShortcutArguments"));
+        QVERIFY(search && add && apply && remove && capture && arguments);
+        typeInto(view, search, id);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(add));
+        QTRY_VERIFY(capture->hasActiveFocus());
+        QTest::keyClick(view, Qt::Key_F10, Qt::ControlModifier | Qt::AltModifier);
+        auto* editor = arguments->property("editor").value<QQuickItem*>();
+        QVERIFY(editor);
+        typeInto(view, editor, QStringLiteral("{"));
+        QTRY_VERIFY(!apply->isEnabled());
+        typeInto(view, editor, QStringLiteral("{\"value\":2}"));
+        QTRY_VERIFY(apply->isEnabled());
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(apply));
+        QTRY_COMPARE(manager.commands().bindings(id).size(), 1);
+        QCOMPARE(manager.commands().bindings(id).first().args.value("value").toInt(), 2);
+
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(add));
+        QTest::keyClick(view, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
+        QTRY_VERIFY(!apply->isEnabled());
+        QCOMPARE(manager.commands().bindings(id).size(), 1);
+        // Reselect the command and edit the existing binding. An external
+        // change preserves the draft and blocks overwriting that binding.
+        typeInto(view, search, id);
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(capture));
+        QTest::keyClick(view, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+        QVERIFY(manager.commands().setShortcut(id, QKeySequence(QStringLiteral("Ctrl+Alt+F9"))));
+        QTRY_COMPARE(capture->property("sequence").toString(), QStringLiteral("Ctrl+Alt+F11"));
+        QTRY_VERIFY(!apply->isEnabled() && !remove->isEnabled());
+        typeInto(view, search, QStringLiteral("test."));
+        typeInto(view, search, id);
+        QTRY_COMPARE(capture->property("sequence").toString(), QStringLiteral("Ctrl+Alt+F9"));
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, centre(remove));
+        QTRY_VERIFY(manager.commands().bindings(id).isEmpty());
     }
 
     // Text, decimal and slider controls, from descriptions made up here.

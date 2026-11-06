@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "settings_page_model.hpp"
 #include "qml_scene_component.hpp"
+#include "shortcuts_page_model.hpp"
 #include <window_system/interface_appearance.hpp>
 #include <window_system/localization.hpp>
 #include <window_system/window_manager.hpp>
@@ -154,6 +155,7 @@ void SettingsPageModel::refresh()
 
 QQuickItem* createSettingsContent(WindowManager& manager, const TabOptions& options, PaneId pane)
 {
+    if (options.contentType == QStringLiteral("window_system.shortcuts")) return createShortcutsContent(manager);
     if (options.contentType != QStringLiteral("window_system.settings")) return nullptr;
     const auto currentWindow = [owner = QPointer<WindowManager>(&manager), pane]() -> WindowId {
         if (!owner) return {};

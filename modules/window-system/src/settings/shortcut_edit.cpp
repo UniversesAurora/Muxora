@@ -53,6 +53,13 @@ QString shortcutArgumentText(const QVariantMap& arguments, QJsonDocument::JsonFo
     return QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(arguments)).toJson(format)).trimmed();
 }
 
+QString shortcutBindingText(const QVector<CommandBinding>& bindings)
+{
+    QStringList sequences;
+    for (const auto& binding : bindings) sequences.append(binding.sequence.toString(QKeySequence::NativeText));
+    return sequences.join(QStringLiteral(" / "));
+}
+
 QVector<PanelRow> shortcutCommandRows(const CommandRegistry& registry, const QString& query)
 {
     const auto text = query.trimmed();
@@ -62,9 +69,7 @@ QVector<PanelRow> shortcutCommandRows(const CommandRegistry& registry, const QSt
     QVector<PanelRow> rows;
     for (const auto& command : registry.commands()) {
         const auto bindings = registry.bindings(command.id);
-        QStringList sequences;
-        for (const auto& binding : bindings) sequences.append(binding.sequence.toString(QKeySequence::NativeText));
-        const auto shortcut = sequences.join(QStringLiteral(" / "));
+        const auto shortcut = shortcutBindingText(bindings);
         const auto category = commandCategoryDisplayName(command.category);
         if (exactCommand && command.id != text) continue;
         if (keyQuery) {

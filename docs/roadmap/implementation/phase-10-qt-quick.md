@@ -84,7 +84,7 @@
 
 ## 10.4 工具栏、侧栏、菜单与设置
 
-**状态**：进行中（2026-11-06）。10.4a–g、10.4i 已完成；10.4h 中 Claude 的部分已完成，其余分类和快捷键页由执行者迁移；10.4j 无障碍和新增的 10.4k 菜单栏键盘导航未开始。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
+**状态**：进行中（2026-11-06）。10.4a–i 已完成；10.4j 无障碍和新增的 10.4k 菜单栏键盘导航未开始。各项的记录在下面的条目里。外观照 Widgets 参考版（`out/package/muxora-widgets-reference/`）和 [界面设计规范](../../design/ui-design-system.md)，不借此重新设计；[8.27 菜单与浮动面板重做](phase-8-ui-quality.md#827-菜单与浮动面板重做) 的新要求仍等用户细化，不在本步做。
 
 **和 Widgets 版对照的标准**（用户 2026-11-06）：窗口框架、标签、标签栏、菜单、工具栏、状态栏、面板和对话框要和 Widgets 参考版一比一一致，位置和尺寸以同一进程里的 Widgets 窗口为准（`QuickWorkspaceTest::rowsMatchTheWidgetsWindow` 的做法），截图对比要在同一时刻拍。例外：Muxora 的占位内容页（欢迎、会话、文件、传输）以后会重写，不要求还原；文字的纵向位置只要合理，不要求和原版逐像素一致（现在比原版高 1 个物理像素，是两套渲染器给基线取整不同）。
 
@@ -106,8 +106,8 @@
 - **10.4h 设置页与快捷键页（Claude 后执行者）**：Claude 先做 Quick 表单控件（开关、下拉、数值、滑块、列表、快捷键录入，类型选择按 [设置设计 §3](../../design/settings-and-commands-design.md#3-全局设置与编辑)）和第一个分区的样板；执行者照样板迁移其余分区和快捷键页，遇到样板里没有的控件停下。
   - Claude 部分已完成：设置项改为不依赖界面的 `SettingDescription`，Quick 设置页按描述生成，应用、界面、窗口行为和拖动分类已迁移；表单控件含复选框、下拉框、数字框、输入框、滑条加数字框、按键录入框、列表、按钮和多行输入框，外观由 `SettingsStyle` 统一提供；按键录入规则与 Widgets 共用，录入时不触发快捷键，见 [记录](../../development/verification-log/2026-11.md#quick-设置页与表单控件2026-11-06)。标签配色用新的 JSON 类型（多行文本、提示和应用按钮）放在“标签外观”分类，见 [配色记录](../../development/verification-log/2026-11.md#quick-设置页的标签配色编辑2026-11-06)。
   - 显示、标签外观和置顶标签分类已迁移为描述，控件沿用既有类型，标签外观排在配色前。栏显隐按设置页当前所属窗口读写，跨窗口移动保留页面与控件；标题裁切、多行及置顶尺寸的依赖保持原行为，见 [记录](../../development/verification-log/2026-11.md#quick-设置页补齐显示与标签分类2026-11-06)。
-  - 剩余（执行者）：快捷键页用列表、录入框、按钮和多行输入框照 `shortcuts_page.cpp` 做成 Quick 页面，冲突和前缀提示的规则移到不依赖界面的代码里两边共用。遇到现有描述类型覆盖不了的控件时停下交给 Claude。全部迁移后删除 Widgets 的设置页和快捷键页随 10.6。
-  - 快捷键页的搜索、参数 JSON 与 `runCommands` 校验、冲突与前缀提示、外部绑定修改检查已从 Widgets 页移到 `settings/shortcut_edit`，旧页调用共用规则，原套件通过。Quick 页接线继续进行，见 [记录](../../development/verification-log/2026-11.md#快捷键编辑规则脱离控件2026-11-06)。
+  - 快捷键页已迁移为 Quick，复用既有控件和共用校验，支持搜索、录键、参数、增删绑定和外部修改时保留未应用编辑。10.4h 完成，见 [记录](../../development/verification-log/2026-11.md#quick-快捷键页2026-11-06)。Widgets 设置页和快捷键页随 10.6 删除。
+  - 快捷键页的搜索、参数 JSON 与 `runCommands` 校验、冲突与前缀提示、外部绑定修改检查已从 Widgets 页移到 `settings/shortcut_edit`，旧页调用共用规则，原套件通过。Quick 页也已接入，见 [记录](../../development/verification-log/2026-11.md#快捷键编辑规则脱离控件2026-11-06)。
 - **10.4i 对话框（Claude）**：重命名标签／组／标签夹（现用 `QInputDialog`）、侧栏面板尺寸（`peek_size_command.cpp`）、关于、Lua 的输入框（`src/app/scripting_setup.cpp`）、Lua 父窗口查询（`src/app/script_services.cpp`）。宿主的关闭确认由宿主提供，Muxora 的那个也一起换。
   - 已完成：管理器的 `openDialog` 让对话框不依赖呈现、不阻塞调用方，Quick 下是带原生标题栏的独立窗口；重命名标签／组／标签夹、侧栏面板尺寸、关于、Lua 输入框和 Lua 通知已改用它，见 [记录](../../development/verification-log/2026-11.md#quick-对话框2026-11-06)。Muxora 没有设置关闭确认，无需替换。不带参数时仍弹 Widgets 菜单的选择命令（标签和标签夹颜色、选目标标签组／窗口／标签／标签夹）也改为在 Quick 菜单里列出选择，见 [选择菜单记录](../../development/verification-log/2026-11.md#quick-下的选择菜单2026-11-06)。Widgets 呈现下的旧对话框和菜单随 10.6 删除。
 - **10.4j 无障碍（执行者）**：Quick 的标签栏、标签组、侧栏按钮、按钮和标题行提供无障碍角色、名称和状态，照 Widgets 的 `TabBarAccessible`；键盘焦点顺序与 Widgets 一致。

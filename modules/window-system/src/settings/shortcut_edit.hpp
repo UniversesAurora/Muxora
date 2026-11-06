@@ -25,6 +25,7 @@ struct ShortcutEditCheck {
 // Both settings pages use the same search, argument checks, conflict and
 // prefix messages. Checking an edit never changes or executes a command.
 [[nodiscard]] QVector<PanelRow> shortcutCommandRows(const CommandRegistry& registry, const QString& query);
+[[nodiscard]] QString shortcutBindingText(const QVector<CommandBinding>& bindings);
 [[nodiscard]] QString shortcutArgumentText(const QVariantMap& arguments, QJsonDocument::JsonFormat format);
 [[nodiscard]] ShortcutEditCheck checkShortcutEdit(const CommandRegistry& registry, const ShortcutEdit& edit);
 
