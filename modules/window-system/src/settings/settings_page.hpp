@@ -23,6 +23,7 @@ namespace window_system {
 
 class IntegerSlider;
 class ThemedComboBox;
+struct ShortcutEditCheck;
 
 // Built-in window-system preferences remain independent of the host's settings
 // service. The host saves the manager snapshot; this page edits the live model.
@@ -122,8 +123,7 @@ private:
     void rebuildBindings(int preferred = 0);
     void selectBinding();
     void startAdding();
-    void updateDiagnostic();
-    [[nodiscard]] bool readArguments(QVariantMap& args, QString& error) const;
+    ShortcutEditCheck updateDiagnostic();
     void applyBinding();
     void removeBinding();
 
