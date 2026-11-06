@@ -52,6 +52,16 @@
 - **验证**：`NativeFrameTest::expandedModesFillNativeClientWithoutFrameOrRoundCorners` 的浮动窗口三行，以及 `FocusModeTest::paneScopePreservesNestedSplitsAndBars` 退出全屏后的窗格位置；按 Qt 状态判断时两者都失败。
 - **出处**：2026-10-24，8.1。
 
+## 字体
+
+### 多字体的界面字体会在第一次量字时加载全部字体族
+
+- **现象**：Muxora 从建管理器到第一个窗口出第一帧约 1.5 秒。菜单栏冷创建约 1 秒，而且改成按需创建条目后也没变快。
+- **原因**：Qt 6.12 的 Windows DirectWrite 字体库分两步加载。第一次用字体时枚举全部字体族名，本机约 0.3 秒。字体请求列了不止一个字体（`QFont::setFamilies`，应用的默认界面字体就是 “Segoe UI, Microsoft YaHei, sans-serif”）时，`QFontDatabasePrivate::loadEngine` 会立刻算后备字体表；`QPlatformFontDatabase::fallbacksForFamily` 对数据库里每个字体族调用 `ensurePopulated()`，本机 720 个字体族，约 0.9 秒。单个字体时这一步推迟到第一次遇到缺字，中文界面一般很快就会遇到；系统默认的“微软雅黑 UI”自带中英文，要等到遇见 ✓ 这类符号才触发。耗时与装的字体族数量成正比，每个进程只付一次，每个字体族约 1.2 毫秒。
+- **做法**：启动慢、第一次量字慢时，先单独计时 `QFontMetrics` 的第一次调用，不要先怀疑 QML 或控件数量。这笔开销在 Qt 里，我们的代码只能决定它什么时候发生；要绕开它只能换界面字体设置，那会改变外观，要交给用户决定。
+- **验证**：临时测量程序分别计时，三种字体设置各跑两种测量顺序，数字见 [记录](../verification-log/2026-11.md#quick-启动和顶部远距切换的耗时归因2026-11-07)。
+- **出处**：2026-11-07，Claude 排查 10.5 后续第 4 项的冷创建耗时。
+
 ## DPI
 
 ### 最大化时屏幕最后一个物理像素落在所有子控件之外
