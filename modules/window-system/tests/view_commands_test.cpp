@@ -40,6 +40,13 @@ struct Fixture {
 Fixture createFixture(WindowManager& manager)
 {
     const auto window = manager.createWindow();
+    if (manager.presentation() == WindowManager::Presentation::External) {
+        const auto tab = manager.addTab(window, {"Keyboard target", "test.edit", {}});
+        const auto pane = manager.model().tab(tab)->activePane;
+        manager.splitPane(tab, pane, Placement::Right);
+        manager.focusPane(tab, pane);
+        return {window, tab, pane, nullptr};
+    }
     auto* editor = new QPlainTextEdit(QStringLiteral("Keyboard content remains unchanged"));
     const auto tab = manager.addTab(window, editor, {"Keyboard target", "test.edit", {}});
     const auto pane = manager.model().tab(tab)->activePane;
@@ -572,7 +579,7 @@ void ViewCommandsTest::closingTheWindowSafelyDismissesEitherToolbarMovePicker()
 
 void ViewCommandsTest::registryEnabledCanRegisterCommandsWithoutInvalidatingItsHandler()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto fixture = createFixture(manager);
     int enabled = 0, executed = 0; bool registered = true;
     QVERIFY(manager.commands().add({"test.reentrant-enabled", "Reentrant command", "test", {},
