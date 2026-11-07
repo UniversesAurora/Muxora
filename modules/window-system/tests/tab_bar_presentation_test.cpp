@@ -6,6 +6,7 @@
 #include "docking/edge_strip.hpp"
 #include "commands/popup_menu.hpp"
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <QApplication>
 #include <QLabel>
 #include <QEnterEvent>
@@ -14,6 +15,8 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
@@ -259,9 +262,13 @@ void TabBarPresentationTest::invalidPresentationSettingsLeaveTheLayoutUnchanged(
 
 void TabBarPresentationTest::lastClosePublishesTheFinalGeometryBeforeRemoval()
 {
-    WindowManager manager; const auto root = manager.createWindow();
-    manager.addTab(root, new QLabel("Content"), {"one", "label", {}});
-    manager.showWindow(root); auto* window = manager.windowWidget(root);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto root = manager.createWindow();
+    manager.addTab(root, {"one", "label", {}});
+    QTRY_VERIFY(workspace.window(root));
+    manager.showWindow(root); auto* window = workspace.window(root);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     QJsonObject saved;
     connect(&manager, &WindowManager::lastWindowAboutToClose, this, [&] { saved = manager.saveLayout(); });
