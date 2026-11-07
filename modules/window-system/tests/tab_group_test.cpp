@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
+#include "quick/dock_surface_item.hpp"
 #include "chrome/workspace_window.hpp"
 #include "docking/dock_surface.hpp"
 #include <QApplication>
@@ -9,6 +11,8 @@
 #include "docking/tab_bar.hpp"
 #include <QMouseEvent>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
@@ -40,18 +44,21 @@ private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
     void newCompleteWindowStartsItsHostTabBeforeCloseEmptyPolicy()
     {
-        WindowManager manager; const auto original=manager.createWindow(); manager.addTab(original,new QLabel("old"),{"old","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto original=manager.createWindow(); manager.addTab(original,{"old","notes",{}});
         auto behavior=manager.behavior();behavior.closeEmptyWorkbench=true;manager.setBehavior(behavior);
-        int created=0; QVERIFY(manager.commands().add({"host.new","new","file",{},{},[&](const CommandContext& c){++created;return !manager.addTab(c.window,new QLabel("new"),{"new","notes",{}},c.group).isNull();}}));
+        int created=0; QVERIFY(manager.commands().add({"host.new","new","file",{},{},[&](const CommandContext& c){++created;return !manager.addTab(c.window,{"new","notes",{}},c.group).isNull();}}));
         QVERIFY(manager.setTabCreationCommands("host.new",{"host.new"})); QVERIFY(manager.execute("window.new",{},original));
         QCoreApplication::processEvents(); QCOMPARE(created,1); QCOMPARE(manager.model().windows().size(),2);
         const auto fresh=manager.model().windowOrder().last(); QVERIFY(fresh!=original);
-        QCOMPARE(manager.model().orderedTabs(fresh).size(),1); QVERIFY(manager.windowWidget(fresh)->isVisible());
+        QCOMPARE(manager.model().orderedTabs(fresh).size(),1); QVERIFY(workspace.window(fresh)->isVisible());
         QVERIFY(manager.model().tab(manager.model().orderedTabs(original).first()));
     }
     void newWindowCreationChecksFactoryLifetime()
     {
-        auto manager=std::make_unique<WindowManager>(); const auto w=manager->createWindow(); manager->addTab(w,new QLabel("a"),{"a","notes",{}});
+        auto manager=std::make_unique<WindowManager>(WindowManager::Presentation::External); const auto w=manager->createWindow(); manager->addTab(w,{"a","notes",{}});
         QPointer<WindowManager> observed(manager.get()); QVERIFY(manager->commands().add({"host.new","new","file",{},{},[&](const CommandContext&){manager.reset();return true;}}));
         QVERIFY(manager->setTabCreationCommands("host.new",{"host.new"})); QVERIFY(!manager->execute("window.new",{},w)); QVERIFY(!observed);
     }
@@ -209,16 +216,21 @@ private slots:
     }
     void colorCommandsRejectUnknownPresetsAndPersistSelections()
     {
-        WindowManager manager;const auto w=manager.createWindow();const auto a=manager.addTab(w,new QLabel("a"),{"a","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto w=manager.createWindow();const auto a=manager.addTab(w,{"a","notes",{}});
         QVERIFY(manager.execute("tab.color.set",{{"color","red"}},w)); QCOMPARE(manager.model().tab(a)->colorId,QString("red"));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
         const auto snapshot=manager.saveLayout(); QVERIFY(!manager.setTabColor(a,"missing")); QCOMPARE(manager.saveLayout(),snapshot);
         QVERIFY(manager.setTabColor(a,{})); QVERIFY(manager.model().tab(a)->colorId.isEmpty());
     }
     void groupMovementAndCloseUseTheCapturedGroup()
     {
-        WindowManager manager;const auto first=manager.createWindow(),second=manager.createWindow();
-        const auto a=manager.addTab(first,new QLabel("a"),{"a","notes",{}}),b=manager.addTab(first,new QLabel("b"),{"b","notes",{}});
-        manager.addTab(second,new QLabel("target"),{"target","notes",{}}); const auto group=manager.model().groupForTab(a);
+        WindowManager manager(WindowManager::Presentation::External);
+        const auto first=manager.createWindow(),second=manager.createWindow();
+        const auto a=manager.addTab(first,{"a","notes",{}}),b=manager.addTab(first,{"b","notes",{}});
+        manager.addTab(second,{"target","notes",{}}); const auto group=manager.model().groupForTab(a);
         QVERIFY(manager.execute("group.moveWindow",{{"targetWindow",second}},first)); QCOMPARE(manager.model().groupForTab(a),group);
         QCOMPARE(manager.model().group(group)->windowId,second); QCOMPARE(manager.model().groupForTab(b),group);
         QVERIFY(manager.execute("group.close",{},second)); QVERIFY(!manager.model().group(group)); QVERIFY(!manager.model().tab(a)); QVERIFY(!manager.model().tab(b));
@@ -232,41 +244,57 @@ private slots:
     void sortCommandsUseAllSixRecordedOrders()
     {
         QFETCH(QString, command); QFETCH(int, sorting);
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto z = manager.addTab(window, new QLabel("z"), {"z","notes",{}});
-        const auto a = manager.addTab(window, new QLabel("a"), {"a","notes",{}});
-        const auto m = manager.addTab(window, new QLabel("m"), {"m","notes",{}});
-        const auto n = manager.addTab(window, new QLabel("n"), {"n","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto z = manager.addTab(window, {"z","notes",{}});
+        const auto a = manager.addTab(window, {"a","notes",{}});
+        const auto m = manager.addTab(window, {"m","notes",{}});
+        const auto n = manager.addTab(window, {"n","notes",{}});
         const auto group = manager.model().groupForTab(z), pane = manager.model().tab(m)->activePane;
-        QPointer<QWidget> content(manager.paneWidget(pane));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> content(workspace.content(pane));
         QVERIFY(manager.activateTab(z)); QVERIFY(manager.activateTab(a));
         QVERIFY(manager.execute(command, {}, window));
         const QVector<QVector<TabId>> expected{{a,m,n,z}, {z,n,m,a}, {z,a,m,n}, {n,m,a,z}, {m,n,z,a}, {a,z,n,m}};
         QCOMPARE(manager.model().group(group)->tabs, expected[sorting]);
-        QCOMPARE(manager.model().group(group)->activeTab, a); QCOMPARE(manager.paneWidget(pane), content.data());
+        QCOMPARE(manager.model().group(group)->activeTab, a);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(pane), content.data());
         QCOMPARE(manager.model().groupForTab(m), group); QVERIFY(manager.model().validate());
     }
     void groupMovesPreserveAllLiveWidgets()
     {
-        WindowManager manager; const auto first = manager.createWindow(), second = manager.createWindow();
-        const auto a = manager.addTab(first, new QLabel("a"), {"a","notes",{}});
-        const auto b = manager.addTab(first, new QLabel("b"), {"b","notes",{}});
-        const auto target = manager.addTab(second, new QLabel("target"), {"target","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow(), second = manager.createWindow();
+        const auto a = manager.addTab(first, {"a","notes",{}});
+        const auto b = manager.addTab(first, {"b","notes",{}});
+        const auto target = manager.addTab(second, {"target","notes",{}});
         const auto group = manager.model().groupForTab(a), destination = manager.model().groupForTab(target);
         const auto paneA = manager.model().tab(a)->activePane, paneB = manager.model().tab(b)->activePane;
-        QPointer<QWidget> contentA(manager.paneWidget(paneA)), contentB(manager.paneWidget(paneB));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> contentA(workspace.content(paneA)), contentB(workspace.content(paneB));
         QVERIFY(manager.moveGroup(group, destination, Placement::Left));
         QCOMPARE(manager.model().centralGroups(second), QVector<GroupId>({group,destination}));
         QCOMPARE(manager.model().group(group)->tabs, QVector<TabId>({a,b}));
         QVERIFY(manager.moveGroupToWindow(group, first));
-        QCOMPARE(manager.paneWidget(paneA), contentA.data()); QCOMPARE(manager.paneWidget(paneB), contentB.data());
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(paneA), contentA.data()); QCOMPARE(workspace.content(paneB), contentB.data());
         QCOMPARE(manager.model().group(group)->windowId, first); QVERIFY(manager.model().validate());
     }
     void groupCloseRespectsGuardAndCopiedMembership()
     {
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto a = manager.addTab(window, new QLabel("a"), {"a","notes",{}}), b = manager.addTab(window, new QLabel("b"), {"b","notes",{}});
-        const auto group = manager.model().groupForTab(a); const auto original = manager.saveLayout();
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto a = manager.addTab(window, {"a","notes",{}}), b = manager.addTab(window, {"b","notes",{}});
+        const auto group = manager.model().groupForTab(a);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        const auto original = manager.saveLayout();
         QVector<TabId> requested;
         manager.setCloseGuard([&](const QVector<TabId>& tabs) { requested = tabs; return false; });
         QVERIFY(!manager.closeGroup(group)); QCOMPARE(requested, QVector<TabId>({a,b})); QCOMPARE(manager.saveLayout(), original);
@@ -275,17 +303,28 @@ private slots:
     }
     void colorSelectionSurvivesLayoutRestart()
     {
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto tab = manager.addTab(window, new QLabel("content"), {"tab","notes",{}}); const auto pane = manager.model().tab(tab)->activePane;
-        QVERIFY(manager.setTabColor(tab, "green")); const auto snapshot = manager.saveLayout();
-        WindowManager restored; int calls = 0;
-        restored.setContentFactory([&](const TabOptions&, PaneId) { ++calls; return new QLabel("restored"); });
-        QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(calls,1); QCOMPARE(restored.model().tab(tab)->colorId,QString("green"));
-        QVERIFY(restored.paneWidget(pane)); QCOMPARE(restored.model().groupForTab(tab),manager.model().groupForTab(tab));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {"tab","notes",{}});
+        const auto pane = manager.model().tab(tab)->activePane;
+        QVERIFY(manager.setTabColor(tab, "green"));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        const auto snapshot = manager.saveLayout();
+        WindowManager restored(WindowManager::Presentation::External);
+        int calls = 0;
+        QuickWorkspace restoredWorkspace(restored);
+        restoredWorkspace.setContentFactory([&](const TabOptions&, PaneId) { ++calls; return new QQuickItem; });
+        QVERIFY(restored.restoreLayout(snapshot));
+        QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+        QCOMPARE(calls,1); QCOMPARE(restored.model().tab(tab)->colorId,QString("green"));
+        QVERIFY(restoredWorkspace.content(pane)); QCOMPARE(restored.model().groupForTab(tab),manager.model().groupForTab(tab));
     }
     void validColorIdMatchingOldCancelMarkerWorksThroughCommand()
     {
-        WindowManager manager; const auto window = manager.createWindow(); const auto tab = manager.addTab(window,new QLabel("a"),{"a","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        const auto window = manager.createWindow(); const auto tab = manager.addTab(window,{"a","notes",{}});
         auto appearance = manager.tabAppearance(); auto preset = appearance.colors.first(); preset.id = "__cancel__"; preset.name = "Custom";
         appearance.colors.append(preset); QVERIFY(manager.setTabAppearance(appearance));
         QVERIFY(manager.execute("tab.color.set",{{"color","__cancel__"}},window)); QCOMPARE(manager.model().tab(tab)->colorId,QString("__cancel__"));
@@ -312,30 +351,41 @@ private slots:
     }
     void pinnedTabBarsAcceptAllSixSortCommands()
     {
-        QFETCH(int,edge); QFETCH(int,sorting); WindowManager manager; const auto window = manager.createWindow();
-        const auto z = manager.addTab(window,new QLabel("z"),{"z","notes",{}}); QVERIFY(manager.moveTabToEdge(z,Edge(edge),true));
+        QFETCH(int,edge); QFETCH(int,sorting);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto z = manager.addTab(window,{"z","notes",{}}); QVERIFY(manager.moveTabToEdge(z,Edge(edge),true));
         const auto group = manager.model().groupForTab(z);
-        const auto a = manager.addTab(window,new QLabel("a"),{"a","notes",{}},group);
-        const auto m = manager.addTab(window,new QLabel("m"),{"m","notes",{}},group);
-        const auto n = manager.addTab(window,new QLabel("n"),{"n","notes",{}},group);
-        const QVector<TabId> tabs{z,a,m,n}; QVector<PaneId> panes; QVector<QPointer<QWidget>> contents;
-        for (const auto tab : tabs) { const auto pane = manager.model().tab(tab)->activePane; panes.append(pane); contents.append(manager.paneWidget(pane)); }
+        const auto a = manager.addTab(window,{"a","notes",{}},group);
+        const auto m = manager.addTab(window,{"m","notes",{}},group);
+        const auto n = manager.addTab(window,{"n","notes",{}},group);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        const QVector<TabId> tabs{z,a,m,n}; QVector<PaneId> panes; QVector<QPointer<QQuickItem>> contents;
+        for (const auto tab : tabs) { const auto pane = manager.model().tab(tab)->activePane; panes.append(pane); contents.append(workspace.content(pane)); }
         QVERIFY(manager.activateTab(z)); QVERIFY(manager.activateTab(a));
         const QStringList suffixes{"alphabeticalAscending","alphabeticalDescending","openedAscending","openedDescending","visitedAscending","visitedDescending"};
         QVERIFY(manager.execute("group.sort."+suffixes[sorting],{},window));
         const QVector<QVector<TabId>> expected{{a,m,n,z},{z,n,m,a},{z,a,m,n},{n,m,a,z},{m,n,z,a},{a,z,n,m}};
         QCOMPARE(manager.model().group(group)->tabs,expected[sorting]); QCOMPARE(manager.model().group(group)->activeTab,a);
         QCOMPARE(manager.model().group(group)->location,GroupLocation::Pinned); QCOMPARE(manager.model().group(group)->edge,Edge(edge));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
         for (qsizetype index = 0; index < tabs.size(); ++index) {
             QCOMPARE(manager.model().groupForTab(tabs[index]),group); QCOMPARE(manager.model().tab(tabs[index])->activePane,panes[index]);
-            QVERIFY(contents[index]); QCOMPARE(manager.paneWidget(panes[index]),contents[index].data());
+            QVERIFY(contents[index]); QCOMPARE(workspace.content(panes[index]),contents[index].data());
         }
         QVERIFY(manager.model().validate());
     }
     void autoHideRailDoesNotAdvertiseHiddenInternalGroupSort()
     {
-        WindowManager manager; const auto window = manager.createWindow(); const auto tab = manager.addTab(window,new QLabel("a"),{"a","notes",{}});
-        QVERIFY(manager.moveTabToEdge(tab,Edge::Left)); QVERIFY(manager.activateTab(tab)); const auto before = manager.saveLayout();
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow(); const auto tab = manager.addTab(window,{"a","notes",{}});
+        QVERIFY(manager.moveTabToEdge(tab,Edge::Left)); QVERIFY(manager.activateTab(tab));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        const auto before = manager.saveLayout();
         QVERIFY(!manager.execute("group.sort.alphabeticalAscending",{},window)); QCOMPARE(manager.saveLayout(),before);
     }
     void wholeGroupExchangeIncludesPinnedNeighbors_data()
@@ -345,22 +395,32 @@ private slots:
     }
     void wholeGroupExchangeIncludesPinnedNeighbors()
     {
-        QFETCH(int,direction); WindowManager manager; const auto window = manager.createWindow();
-        const auto first = manager.addTab(window,new QLabel("first"),{"first","notes",{}});
-        const auto second = manager.addTab(window,new QLabel("second"),{"second","notes",{}});
+        QFETCH(int,direction);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window,{"first","notes",{}});
+        const auto second = manager.addTab(window,{"second","notes",{}});
         const bool horizontal = direction == int(Placement::Left) || direction == int(Placement::Right);
         QVERIFY(manager.moveTab(second,manager.model().groupForTab(first),horizontal ? Placement::Right : Placement::Bottom));
-        const auto sidebar = manager.addTab(window,new QLabel("side"),{"side","notes",{}});
+        const auto sidebar = manager.addTab(window,{"side","notes",{}});
         const auto side = direction == int(Placement::Left) ? Edge::Left : direction == int(Placement::Right) ? Edge::Right
             : direction == int(Placement::Top) ? Edge::Top : Edge::Bottom;
         QVERIFY(manager.moveTabToEdge(sidebar,side,true));
         const auto source = direction == int(Placement::Left) || direction == int(Placement::Top) ? first : second;
         const auto other = source == first ? second : first;
         const auto group = manager.model().groupForTab(source), target = manager.model().groupForTab(other), pinned = manager.model().groupForTab(sidebar);
-        const auto pane = manager.model().tab(source)->activePane; QPointer<QWidget> content(manager.paneWidget(pane));
-        auto* view = static_cast<WorkspaceWindow*>(manager.windowWidget(window)); view->resize(1100,740); manager.showWindow(window);
-        QTRY_COMPARE(view->surface()->groupRects().size(),3);
-        const auto originalRects = view->surface()->groupRects();
+        const auto pane = manager.model().tab(source)->activePane;
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> content(workspace.content(pane));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->resize(1100,740); manager.showWindow(window);
+        auto* surface = view->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(surface);
+        QTRY_COMPARE(surface->groupRects().size(),3);
+        const auto originalRects = surface->groupRects();
         if (horizontal) QVERIFY(originalRects[pinned].center().x() != originalRects[group].center().x());
         else QVERIFY(originalRects[pinned].center().y() != originalRects[group].center().y());
         QVERIFY(manager.activateTab(source));
@@ -373,17 +433,23 @@ private slots:
         QCOMPARE(manager.model().group(group)->location,GroupLocation::Pinned);
         QCOMPARE(manager.model().group(group)->edge,side);
         QCOMPARE(manager.model().groupForTab(source),group); QCOMPARE(manager.model().groupForTab(other),target);
-        QCOMPARE(manager.model().groupForTab(sidebar),pinned); QCOMPARE(manager.paneWidget(pane),content.data()); QVERIFY(content);
+        QCOMPARE(manager.model().groupForTab(sidebar),pinned);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(pane),content.data()); QVERIFY(content);
         QVERIFY(manager.model().validate());
     }
     void exchangeAndMergeCommandsUseExplicitTargetWithoutRecreatingContent()
     {
-        WindowManager manager; const auto first = manager.createWindow(), second = manager.createWindow();
-        const auto a = manager.addTab(first,new QLabel("a"),{"a","notes",{}}), b = manager.addTab(first,new QLabel("b"),{"b","notes",{}});
-        const auto t = manager.addTab(second,new QLabel("t"),{"t","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto first = manager.createWindow(), second = manager.createWindow();
+        const auto a = manager.addTab(first,{"a","notes",{}}), b = manager.addTab(first,{"b","notes",{}});
+        const auto t = manager.addTab(second,{"t","notes",{}});
         QVERIFY(manager.moveTabToEdge(t,Edge::Right,true)); const auto source = manager.model().groupForTab(a), target = manager.model().groupForTab(t);
         const auto paneA = manager.model().tab(a)->activePane, paneB = manager.model().tab(b)->activePane;
-        QPointer<QWidget> widgetA(manager.paneWidget(paneA)), widgetB(manager.paneWidget(paneB));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> widgetA(workspace.content(paneA)), widgetB(workspace.content(paneB));
         auto captured = manager.context(first); captured.group = source; captured.tab = b; captured.pane = paneB;
         QVERIFY(manager.executeInContext("group.swap",CommandContext{captured.window,captured.group,captured.tab,captured.pane,{{"targetGroup",target}}}));
         QCOMPARE(manager.model().group(source)->windowId,second); QCOMPARE(manager.model().group(source)->location,GroupLocation::Pinned);
@@ -391,7 +457,8 @@ private slots:
         captured = manager.context(second); captured.group = source; captured.tab = b; captured.pane = paneB; captured.args = {{"targetGroup",target},{"insertionIndex",0}};
         QVERIFY(manager.executeInContext("group.merge",captured)); QVERIFY(!manager.model().group(source));
         QCOMPARE(manager.model().group(target)->tabs,QVector<TabId>({a,b,t})); QCOMPARE(manager.model().group(target)->activeTab,b);
-        QCOMPARE(manager.paneWidget(paneA),widgetA.data()); QCOMPARE(manager.paneWidget(paneB),widgetB.data()); QVERIFY(widgetA); QVERIFY(widgetB);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(paneA),widgetA.data()); QCOMPARE(workspace.content(paneB),widgetB.data()); QVERIFY(widgetA); QVERIFY(widgetB);
         QVERIFY(manager.model().validate());
     }
     void directionalMergeIncludesPinnedGroupsAndAppendsInStableOrder_data()
@@ -401,22 +468,33 @@ private slots:
     }
     void directionalMergeIncludesPinnedGroupsAndAppendsInStableOrder()
     {
-        QFETCH(int,direction); WindowManager manager; const auto window = manager.createWindow();
-        const auto a = manager.addTab(window,new QLabel("a"),{"a","notes",{}}), b = manager.addTab(window,new QLabel("b"),{"b","notes",{}});
+        QFETCH(int,direction);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto a = manager.addTab(window,{"a","notes",{}}), b = manager.addTab(window,{"b","notes",{}});
         const auto source = manager.model().groupForTab(a);
-        const auto t = manager.addTab(window,new QLabel("target"),{"target","notes",{}});
+        const auto t = manager.addTab(window,{"target","notes",{}});
         const auto edge = direction == int(Placement::Left) ? Edge::Left : direction == int(Placement::Right) ? Edge::Right
             : direction == int(Placement::Top) ? Edge::Top : Edge::Bottom;
         QVERIFY(manager.moveTabToEdge(t,edge,true)); const auto target = manager.model().groupForTab(t);
-        const auto pane = manager.model().tab(a)->activePane; QPointer<QWidget> content(manager.paneWidget(pane));
-        auto* view = static_cast<WorkspaceWindow*>(manager.windowWidget(window)); view->resize(1100,740); manager.showWindow(window);
-        QTRY_COMPARE(view->surface()->groupRects().size(),2); QVERIFY(manager.activateTab(b));
+        const auto pane = manager.model().tab(a)->activePane;
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> content(workspace.content(pane));
+        QTRY_VERIFY(workspace.window(window));
+        auto* view = workspace.window(window);
+        view->resize(1100,740); manager.showWindow(window);
+        auto* surface = view->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(surface);
+        QTRY_COMPARE(surface->groupRects().size(),2); QVERIFY(manager.activateTab(b));
         const QString command = direction == int(Placement::Left) ? "left" : direction == int(Placement::Right) ? "right"
             : direction == int(Placement::Top) ? "up" : "down";
         QVERIFY(manager.execute("group.merge."+command,{},window));
         QVERIFY(!manager.model().group(source)); QCOMPARE(manager.model().group(target)->tabs,QVector<TabId>({t,a,b}));
         QCOMPARE(manager.model().group(target)->activeTab,b); QCOMPARE(manager.model().group(target)->location,GroupLocation::Pinned);
-        QCOMPARE(manager.paneWidget(pane),content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(pane),content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
     }
     void groupTargetPickerCancellationDoesNotChangeTheLayout_data()
     {
@@ -438,11 +516,15 @@ private slots:
     }
     void fixedGroupsParticipateInExplicitReparentAndDetachCommands()
     {
-        WindowManager manager; const auto root = manager.createWindow(), targetWindow = manager.createWindow();
-        const auto tab = manager.addTab(root,new QLabel("moved"),{"moved","notes",{}});
-        const auto target = manager.addTab(targetWindow,new QLabel("target"),{"target","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto root = manager.createWindow(), targetWindow = manager.createWindow();
+        const auto tab = manager.addTab(root,{"moved","notes",{}});
+        const auto target = manager.addTab(targetWindow,{"target","notes",{}});
         const auto group = manager.model().groupForTab(tab), targetGroup = manager.model().groupForTab(target), pane = manager.model().tab(tab)->activePane;
-        QPointer<QWidget> content(manager.paneWidget(pane));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> content(workspace.content(pane));
         QVERIFY(manager.execute("group.moveEdge.left",{},root)); QCOMPARE(manager.model().group(group)->location,GroupLocation::Pinned);
         QVERIFY(manager.execute("group.moveToGroup",{{"targetGroup",targetGroup},{"placement",int(Placement::Bottom)}},root));
         QCOMPARE(manager.model().group(group)->location,GroupLocation::Central); QCOMPARE(manager.model().group(group)->windowId,targetWindow);
@@ -457,8 +539,10 @@ private slots:
         QVERIFY(manager.execute("group.detachWorkbench",{},root)); const auto complete = manager.model().group(group)->windowId;
         QCOMPARE(manager.model().window(complete)->kind,WindowKind::Workbench);
         QVERIFY(manager.execute("group.hideEdge.right",{},complete)); QCOMPARE(manager.model().group(group)->location,GroupLocation::AutoHide);
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
         const auto before = manager.saveLayout(); QVERIFY(!manager.execute("group.swap",{{"targetGroup",targetGroup}},complete)); QCOMPARE(manager.saveLayout(),before);
-        QCOMPARE(manager.paneWidget(pane),content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(pane),content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
     }
     void directionalGroupExchangeWrapsWithinTheVisibleGroupLayer_data()
     {
@@ -506,16 +590,20 @@ private slots:
     void detachedGroupsInheritTheDestinationKindVisibilityDefaults()
     {
         QFETCH(bool, floating);
-        WindowManager manager; const auto source = manager.createWindow();
-        const auto first = manager.addTab(source, new QLabel("first"), {"first", "label", {}});
-        const auto second = manager.addTab(source, new QLabel("second"), {"second", "label", {}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto source = manager.createWindow();
+        const auto first = manager.addTab(source, {"first", "label", {}});
+        const auto second = manager.addTab(source, {"second", "label", {}});
         const auto group = manager.model().groupForTab(first);
         const auto firstPane = manager.model().tab(first)->activePane, secondPane = manager.model().tab(second)->activePane;
-        QPointer<QWidget> firstContent(manager.paneWidget(firstPane)), secondContent(manager.paneWidget(secondPane));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QPointer<QQuickItem> firstContent(workspace.content(firstPane)), secondContent(workspace.content(secondPane));
         const auto otherWorkbench = manager.createWindow();
-        manager.addTab(otherWorkbench, new QLabel("workbench"), {"workbench", "label", {}});
+        manager.addTab(otherWorkbench, {"workbench", "label", {}});
         const auto otherFloating = manager.createWindow(WindowKind::Floating, {}, source);
-        manager.addTab(otherFloating, new QLabel("floating"), {"floating", "label", {}});
+        manager.addTab(otherFloating, {"floating", "label", {}});
         const BarVisibility workbenchDefault{false, true, false, true};
         const BarVisibility floatingDefault{true, false, true, false};
         const auto setVisibility = [&manager](WindowId window, const BarVisibility& visibility) {
@@ -532,26 +620,36 @@ private slots:
         QCOMPARE(manager.model().group(group)->windowId, created); QCOMPARE(manager.model().groupForTab(first), group);
         QCOMPARE(manager.model().groupForTab(second), group); QCOMPARE(manager.model().group(group)->location, GroupLocation::Central);
         QCOMPARE(manager.model().tab(first)->activePane, firstPane); QCOMPARE(manager.model().tab(second)->activePane, secondPane);
-        QCOMPARE(manager.paneWidget(firstPane), firstContent.data()); QCOMPARE(manager.paneWidget(secondPane), secondContent.data());
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(workspace.content(firstPane), firstContent.data()); QCOMPARE(workspace.content(secondPane), secondContent.data());
         QVERIFY(firstContent); QVERIFY(secondContent); QVERIFY(manager.model().validate());
     }
     void directionalGroupExchangeWrapsWithinTheVisibleGroupLayer()
     {
-        QFETCH(int,direction); WindowManager manager; const auto window = manager.createWindow();
-        const auto first = manager.addTab(window,new QLabel("first"),{"first","notes",{}}), second = manager.addTab(window,new QLabel("second"),{"second","notes",{}});
+        QFETCH(int,direction);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window,{"first","notes",{}}), second = manager.addTab(window,{"second","notes",{}});
         const bool horizontal = direction == int(Placement::Left) || direction == int(Placement::Right);
         const auto firstGroup = manager.model().groupForTab(first);
         QVERIFY(manager.moveTab(second,firstGroup,horizontal ? Placement::Right : Placement::Bottom));
         const auto secondGroup = manager.model().groupForTab(second);
-        auto* windowView = static_cast<WorkspaceWindow*>(manager.windowWidget(window)); windowView->resize(1000,700); manager.showWindow(window);
-        QTRY_COMPARE(windowView->surface()->groupRects().size(),2);
+        QTRY_VERIFY(workspace.window(window));
+        auto* windowView = workspace.window(window);
+        windowView->resize(1000,700); manager.showWindow(window);
+        auto* surface = windowView->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(surface);
+        QTRY_COMPARE(surface->groupRects().size(),2);
         const auto source = direction == int(Placement::Left) || direction == int(Placement::Top) ? firstGroup : secondGroup;
         QVERIFY(manager.swapGroupDirection(source,Placement(direction)));
         QCOMPARE(manager.model().centralGroups(window),QVector<GroupId>({secondGroup,firstGroup})); QVERIFY(manager.model().validate());
     }
     void canceledNamedCollectionLayerRegistersNoCommandsOrStorage()
     {
-        WindowManager manager; const auto window = manager.createWindow(); manager.addTab(window,new QLabel("a"),{"a","notes",{}});
+        WindowManager manager(WindowManager::Presentation::External);
+        const auto window = manager.createWindow(); manager.addTab(window,{"a","notes",{}});
         for (const auto& command : manager.commands().commands()) QVERIFY(!command.id.startsWith("collection."));
         const auto snapshot = manager.saveLayout(); QVERIFY(!snapshot.contains("savedCollections"));
         QVERIFY(!snapshot.value("model").toObject().contains("collections"));
@@ -571,15 +669,19 @@ private slots:
     void groupTargetArgumentsRejectInvalidNumbersAtomically()
     {
         QFETCH(QString, command); QFETCH(QString, argument); QFETCH(QVariant, invalid);
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto a = manager.addTab(window, new QLabel("a"), {"a", "label", {}});
-        const auto b = manager.addTab(window, new QLabel("b"), {"b", "label", {}});
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto a = manager.addTab(window, {"a", "label", {}});
+        const auto b = manager.addTab(window, {"b", "label", {}});
         const auto source = manager.model().groupForTab(a);
         QVERIFY(manager.moveTab(b, source, Placement::Right));
         const auto target = manager.model().groupForTab(b);
         auto captured = manager.context(window); captured.group = source; captured.tab = a;
         captured.pane = manager.model().tab(a)->activePane;
         captured.args = {{"targetGroup", target}, {argument, invalid}};
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
         const auto before = manager.saveLayout();
         QSignalSpy changes(&manager, &WindowManager::layoutChanged);
         QVERIFY(!manager.executeInContext(command, captured));

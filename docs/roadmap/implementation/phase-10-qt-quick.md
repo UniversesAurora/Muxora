@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 233、B 3、C 542，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 236、B 3、C 539，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -719,8 +719,8 @@
 | `WS/tab_group_test.cpp` | `colorCommandsRejectUnknownPresetsAndPersistSelections` | A | 迁至 Presentation::External。只检查管理器颜色命令、未知预设拒绝和清除后的保存结果，颜色值为配置传递契约，使用External即可保留。 |
 | `WS/tab_group_test.cpp` | `colorSelectionSurvivesLayoutRestart` | A | 迁至 Presentation::External + QuickWorkspace。颜色、组ID、恢复内容工厂调用一次及内容存在为保存恢复契约，QuickWorkspace可承接内容工厂和查询，保留原检查值。 |
 | `WS/tab_group_test.cpp` | `detachedGroupsInheritTheDestinationKindVisibilityDefaults` | A | 迁至 Presentation::External + QuickWorkspace。按目标窗口类型继承栏显隐偏好以及组/窗格/内容身份稳定，管理器API和Quick内容查询即可保留全部语义。 |
-| `WS/tab_group_test.cpp` | `directionalGroupExchangeWrapsWithinTheVisibleGroupLayer` | C | 补 quick-workspace 的方向交换／合并接线。swapGroupDirection／mergeGroupDirection 调用 adjacentVisibleGroup，当前仍从 d->windows 读取 Widgets surface，External 下不能仅改测试构造即保留方向契约 |
-| `WS/tab_group_test.cpp` | `directionalMergeIncludesPinnedGroupsAndAppendsInStableOrder` | C | 补 quick-workspace 的方向交换／合并接线。swapGroupDirection／mergeGroupDirection 调用 adjacentVisibleGroup，当前仍从 d->windows 读取 Widgets surface，External 下不能仅改测试构造即保留方向契约 |
+| `WS/tab_group_test.cpp` | `directionalGroupExchangeWrapsWithinTheVisibleGroupLayer` | A | 已按审定要求试迁 External，中央组的四向循环交换使用实际 Quick 停靠区几何，保留稳定顺序及模型有效性断言。 |
+| `WS/tab_group_test.cpp` | `directionalMergeIncludesPinnedGroupsAndAppendsInStableOrder` | A | 已按审定要求试迁 External，四向合并包含固定组，使用实际 Quick 停靠区几何，保留追加顺序、活动标签及内容身份断言。 |
 | `WS/tab_group_test.cpp` | `exchangeAndMergeCommandsUseExplicitTargetWithoutRecreatingContent` | A | 迁至 Presentation::External + QuickWorkspace。显式目标的捕获上下文交换/合并、稳定顺序及内容身份均为管理器契约，Quick替换内容供给与查询即可。 |
 | `WS/tab_group_test.cpp` | `fixedGroupsParticipateInExplicitReparentAndDetachCommands` | A | 迁至 Presentation::External + QuickWorkspace。固定组、中央组及自动隐藏组经显式命令重挂/拆出，断言仅模型、上下文和内容身份，可用Quick承接内容并保持语义。 |
 | `WS/tab_group_test.cpp` | `groupCloseRespectsGuardAndCopiedMembership` | A | 迁至 Presentation::External。关闭守卫接收复制成员列表、拒绝无改变及守卫重入改色后关闭，全部为管理器模型契约，可迁External。 |
@@ -735,7 +735,7 @@
 | `WS/tab_group_test.cpp` | `splitFactoriesCanDestroyTheirManagerBeforeReturning` | C | 补入 quick-workspace-content/quick-popup-menu。原例QWidget工厂返回前销毁作为其父对象的窗口与管理器，Quick工厂属于QuickWorkspace且创建时序不同，不能直接迁A，需补两种分割命令的安全释放。 |
 | `WS/tab_group_test.cpp` | `stickyTabsLeadTheirStripAndSurviveRangeCloses` | C | 补入 quick-workspace-content/quick-popup-menu。前半为管理器置顶/范围关闭/持久化，末尾通过真实标签栏固定图标取消置顶。Quick缺范围关闭与图标接线的完整组合，需保留前半并补quick-tab-bar-input/quick-workspace。 |
 | `WS/tab_group_test.cpp` | `validColorIdMatchingOldCancelMarkerWorksThroughCommand` | A | 迁至 Presentation::External。显式颜色参数允许__cancel__作为合法预设ID且清除有效，直接用External保留命令和模型检查。 |
-| `WS/tab_group_test.cpp` | `wholeGroupExchangeIncludesPinnedNeighbors` | C | 补 quick-workspace 的方向交换／合并接线。swapGroupDirection／mergeGroupDirection 调用 adjacentVisibleGroup，当前仍从 d->windows 读取 Widgets surface，External 下不能仅改测试构造即保留方向契约 |
+| `WS/tab_group_test.cpp` | `wholeGroupExchangeIncludesPinnedNeighbors` | A | 已按审定要求试迁 External，四向交换包含固定组，使用实际 Quick 停靠区几何，保留中央／固定位置和内容身份断言。 |
 | `WS/tab_strip_layout_test.cpp` | `accessibilityListsTabsAndFolders` | C | 补入 quick-accessibility。已有tabAndFolderActionsFollowStableIdentities检查身份与动作，但未检查所有标签role/名称/选择及标签、夹标题的childAt命中。 |
 | `WS/tab_strip_layout_test.cpp` | `activationCanDestroyTheStrip` | C | 补入 quick-group/quick-tab-bar-input。Quick的inputsAndFramesDriveTheSharedController有鼠标激活删除TabBarItem，但没有键盘激活同步删除。需保留pointer/keyboard两分支生命周期覆盖。 |
 | `WS/tab_strip_layout_test.cpp` | `clippedTitlesKeepTheirFullText` | C | 补入 quick-group/quick-tab-bar-input。Quick的无障碍用例保留完整标题但没有标题裁剪开启/关闭场景，缺裁剪后完整标题仍供列表/无障碍使用及解除裁剪恢复。 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定顺序迁移 `WS/tab_group_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/custom_chrome_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1005,5 +1005,6 @@
 | `WS/workspace_test.cpp` | 22 项 A 已迁，13 项 C 保留 | [记录](../../development/verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07) |
 | `WS/view_state_test.cpp` | 18 项 A 已迁，两个 C 主用例保留 | [记录](../../development/verification-log/2026-11.md#视图状态的-a-类测试迁到-external2026-11-07) |
 | `WS/shortcut_dispatch_test.cpp` | 16 项 A 已迁，内置分割命令依赖 Widgets 的一项改 C，等待 Claude 处理；原九项 C 保留 | [记录](../../development/verification-log/2026-11.md#快捷键分发的-a-类测试迁到-external2026-11-07) |
+| `WS/tab_group_test.cpp` | 原 16 项 A 及三个审定允许试迁的方向用例已迁，十项 C 保留 | [记录](../../development/verification-log/2026-11.md#标签组的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
