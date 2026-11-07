@@ -43,7 +43,7 @@ private slots:
 
 void TabAppearanceTest::defaultsHaveSeparatePlacementAndConservativeFlags()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto appearance = manager.tabAppearance();
     QCOMPARE(appearance.centralPlacement, TabBarPlacement::Top);
     QCOMPARE(appearance.pinnedPlacement, TabBarPlacement::Top);
@@ -90,10 +90,10 @@ void TabAppearanceTest::stickySizingRoundTripsThroughJsonAndLayout()
     TabAppearance parsed; parsed.stickySizing = StickyTabSizing::Shrink; parsed.shrinkStickyTitleWidth = 200;
     QVERIFY(parseTabAppearance(json, parsed)); QCOMPARE(parsed.stickySizing, StickyTabSizing::Normal);
     QCOMPARE(parsed.shrinkStickyTitleWidth, defaultShrinkStickyTitleWidth); QCOMPARE(defaultShrinkStickyTitleWidth, 40);
-    WindowManager manager; manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External); manager.createWindow();
     auto appearance = manager.tabAppearance(); appearance.stickySizing = StickyTabSizing::Compact;
     QVERIFY(manager.setTabAppearance(appearance));
-    WindowManager restored; QVERIFY(restored.restoreLayout(manager.saveLayout()));
+    WindowManager restored(WindowManager::Presentation::External); QVERIFY(restored.restoreLayout(manager.saveLayout()));
     QCOMPARE(restored.tabAppearance().stickySizing, StickyTabSizing::Compact);
     appearance.stickySizing = StickyTabSizing(7);
     QVERIFY(!manager.setTabAppearance(appearance)); QCOMPARE(manager.tabAppearance().stickySizing, StickyTabSizing::Compact);
@@ -116,10 +116,10 @@ void TabAppearanceTest::explicitPaletteValuesRoundTripWithBuiltinIds()
     QCOMPARE(restored, saved);
     TabAppearance again;
     QVERIFY(parseTabAppearance(tabAppearanceToJson(restored), again)); QCOMPARE(again, restored);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     QVERIFY(manager.setTabAppearance(saved));
     const auto snapshot = manager.saveLayout();
-    WindowManager restoredManager;
+    WindowManager restoredManager(WindowManager::Presentation::External);
     QVERIFY(restoredManager.restoreLayout(snapshot));
     QCOMPARE(restoredManager.tabAppearance(), saved);
     QCOMPARE(restoredManager.saveLayout().value("tabAppearance"), snapshot.value("tabAppearance"));
@@ -127,7 +127,7 @@ void TabAppearanceTest::explicitPaletteValuesRoundTripWithBuiltinIds()
 
 void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto appearance = manager.tabAppearance();
     appearance.centralPlacement = TabBarPlacement::Bottom;
     appearance.pinnedPlacement = TabBarPlacement::Top;
@@ -154,7 +154,7 @@ void TabAppearanceTest::appearanceAndEveryPaletteStateRoundTrip()
         for (const auto* channel : {"background", "text", "line", "icon"})
             QVERIFY(QColor(colors.value(channel).toString()).isValid());
     }
-    WindowManager restored;
+    WindowManager restored(WindowManager::Presentation::External);
     QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.tabAppearance(), appearance);
     QCOMPARE(restored.saveLayout().value("tabAppearance"), snapshot.value("tabAppearance"));
     auto omittedAppearance = snapshot; omittedAppearance.remove("tabAppearance");
@@ -183,7 +183,7 @@ void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate_data()
 void TabAppearanceTest::invalidPublicAppearanceDoesNotEmitOrMutate()
 {
     QFETCH(int, fault);
-    WindowManager manager; const auto before = manager.saveLayout();
+    WindowManager manager(WindowManager::Presentation::External); const auto before = manager.saveLayout();
     auto candidate = manager.tabAppearance();
     switch (fault) {
     case 0: candidate.centralPlacement = static_cast<TabBarPlacement>(-1); break;
@@ -271,7 +271,7 @@ void TabAppearanceTest::invalidAppearanceIsAtomic_data()
 void TabAppearanceTest::invalidAppearanceIsAtomic()
 {
     QFETCH(QString, field); QFETCH(QJsonValue, value);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto before = manager.saveLayout(); auto invalid = before;
     if (field.isEmpty()) invalid.insert("tabAppearance", value);
     else { auto appearance = invalid.value("tabAppearance").toObject(); appearance.insert(field, value); invalid.insert("tabAppearance", appearance); }
@@ -281,7 +281,7 @@ void TabAppearanceTest::invalidAppearanceIsAtomic()
 
 void TabAppearanceTest::flagCommandsUseSameAppearanceAndValidateArguments()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     for (const auto& item : {std::pair{"presentation.toggleIcons", &TabAppearance::showIcons},
         std::pair{"presentation.toggleNewTabButton", &TabAppearance::showNewTabButton},
         std::pair{"presentation.toggleNumbers", &TabAppearance::showNumbers},
@@ -474,13 +474,13 @@ void TabAppearanceTest::titleClippingRetainsWidthAndDefaultsOmittedFields()
 
 void TabAppearanceTest::sidebarTitleClippingIsIndependentInLayoutSnapshots()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto appearance = manager.tabAppearance();
     appearance.clipTitles = true; appearance.maximumTitleWidth = 91;
     appearance.clipSidebarTitles = false; appearance.maximumSidebarTitleWidth = 243;
     QVERIFY(manager.setTabAppearance(appearance));
     const auto snapshot = manager.saveLayout();
-    WindowManager restored; QVERIFY(restored.restoreLayout(snapshot));
+    WindowManager restored(WindowManager::Presentation::External); QVERIFY(restored.restoreLayout(snapshot));
     QCOMPARE(restored.tabAppearance(), appearance);
     const auto json = snapshot.value("tabAppearance").toObject();
     QCOMPARE(json.value("clipSidebarTitles"), QJsonValue(false));
