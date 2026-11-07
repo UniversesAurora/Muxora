@@ -373,9 +373,9 @@ void PaneBarPolicyTest::layoutRestoresPolicyWithoutSerializingWidgets()
 
 void PaneBarPolicyTest::invalidCallsLeaveThePoliciesUnchanged()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = manager.addTab(window, new QPlainTextEdit, {QStringLiteral("invalid"), {}, {}});
+    const auto tab = manager.addTab(window, {QStringLiteral("invalid"), {}, {}});
     const auto snapshot = manager.saveLayout();
     QVERIFY(!manager.setTabTopBarSharing(QUuid::createUuid(), PaneBarSharing::PerPane));
     QVERIFY(!manager.setTabBottomBarSharing(QUuid::createUuid(), PaneBarSharing::PerPane));
