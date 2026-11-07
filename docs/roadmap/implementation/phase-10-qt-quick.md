@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 236、B 3、C 539，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 239、B 3、C 536，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -441,18 +441,18 @@
 | `WS/menu_structure_test.cpp` | `windowListActivatesAndRestoresTheChosenWindow` | C | 拟补 WS/quick_menu_bar_test.cpp（quick-menu-bar）及 WS/quick_popup_menu_test.cpp（quick-popup-menu）。Quick 菜单窗口列表已测激活，普通工作区已测恢复最小化，但缺少菜单路径直接恢复最小化目标、保留目标标签、刷新勾选及非法目标拒绝的组合覆盖。 |
 | `WS/menu_structure_test.cpp` | `windowListGroupsFamiliesAtTheEndAndRefreshesStableItems` | C | 拟补 WS/quick_menu_bar_test.cpp（quick-menu-bar）及 WS/quick_popup_menu_test.cpp（quick-popup-menu）。Quick 动态窗口列表用例未覆盖按家族分组顺序、缩进深度、重新归属家族、移除旧项且保留其余项身份及尾部分隔符唯一。 |
 | `WS/movement_test.cpp` | `commandParametersAndInvalidCallsAreAtomic` | A | External，内容由 QuickWorkspace 工厂创建。参数执行、零关闭检查及非法调用的快照原子性为管理器契约 |
-| `WS/movement_test.cpp` | `directionalGroupTransfersWrapByVisibleGeometry` | C | 补 quick-workspace 的四向组转移与隐藏轨道排除。管理器相邻组查询仍读取 d->windows 的 Widgets 几何，不能仅更换构造方式 |
+| `WS/movement_test.cpp` | `directionalGroupTransfersWrapByVisibleGeometry` | A | 已按审定要求试迁 External，实际 Quick 组几何驱动四方向标签／窗格循环移动，保留目标、隐藏侧栏不介入及内容身份断言。 |
 | `WS/movement_test.cpp` | `directionalTiesFollowStableModelOrder` | C | 补 quick-workspace 的方向距离相等选择。原例手工设置 QWidget 全局几何并验证模型稳定顺序，需 Quick 几何入口 |
 | `WS/movement_test.cpp` | `emptyWindowReceivesSamePaneAndSourceSharing` | C | 补 quick-workspace-content 的移入空窗口。需覆盖拆出 pane 的新标签策略、原内容及栏位重挂载和源窗口释放 |
 | `WS/movement_test.cpp` | `existingWindowMovementIncludesBothKindsAndWraps` | A | External + QuickWorkspace 和栏位工厂。目标窗口选择、原内容及栏位 window 身份无需 Widgets 控件内部结构 |
-| `WS/movement_test.cpp` | `groupFocusWrapsWithoutEnteringHiddenRail` | C | 补 quick-workspace 的组方向焦点循环。adjacentVisibleGroup 仍取 Widgets surface 几何，Quick 缺完整接线及边界覆盖 |
-| `WS/movement_test.cpp` | `paneSwapAndFocusWrapWithinCurrentTab` | C | 补 quick-workspace-content 的四向窗格焦点及互换。涉及原 PaneHost 几何、栏父项与内容身份，相邻窗格入口仍依赖 Widgets 视图 |
+| `WS/movement_test.cpp` | `groupFocusWrapsWithoutEnteringHiddenRail` | A | 已按审定要求试迁 External，实际 Quick 布局驱动四方向焦点循环，保留活动标签及排除隐藏侧栏的原断言。 |
+| `WS/movement_test.cpp` | `paneSwapAndFocusWrapWithinCurrentTab` | A | 已按审定要求试迁 External，实际 Quick 窗格几何驱动四方向焦点及交换，保留交换后的矩形、栏归属及内容身份断言。 |
 | `WS/movement_test.cpp` | `paneTransfersToAdjacentTabKeepBarsAndAdoptTargetPolicy` | C | 补 quick-workspace-content 的相邻标签转移。需保留顶部底部独立策略、栏父项、活动栏显隐与来源标签循环 |
 | `WS/movement_test.cpp` | `ratioCommandUpdatesExistingSplitterWithoutRebuilding` | C | 补 quick-workspace 的 layout.setRatio 接线。quick-split-tree 仅直连 LayoutModel，未覆盖管理器命令及已有分割项身份 |
 | `WS/movement_test.cpp` | `ratioCommandUpdatesOnlyTheOwningSplitter` | C | 补 quick-workspace 的分割比例局部更新。需确认中央与固定区域命令仅改变所属分割树及保留其他几何 |
 | `WS/movement_test.cpp` | `reorderingWrapsWithinItsOwnSequence` | A | External + QuickWorkspace 内容身份查询。保留中央、固定和自动隐藏序列的首尾循环及内容身份 |
 | `WS/movement_test.cpp` | `splitterGapSelectsNearestProjection` | C | 补 quick-workspace 的分割间隙方向命中。原例手工注入组和 PaneHost 几何，Quick 尚缺最近投影选择覆盖 |
-| `WS/movement_test.cpp` | `tLayoutNavigationRetainsOrthogonalAnchor` | C | 补 quick-workspace 的 T 布局方向锚点。组与窗格方向导航的正交锚点序列尚无已确认的 Quick 覆盖 |
+| `WS/movement_test.cpp` | `tLayoutNavigationRetainsOrthogonalAnchor` | C | 已按审定要求试迁，Quick 下组／窗格两行均在鼠标焦点通知后返回错误行。导航锚点的 MouseFocusReason 重置仍限 QWidget，旧 FocusIn 输入不能平迁；原 Widgets 用例与断言保留，见交接 Q3。 |
 | `WS/multirow_toolbar_test.cpp` | `aNewRowCanBeCommittedBeyondTheFormerSecondRow` | C | 拟补 WS/quick_toolbar_test.cpp（quick-toolbar）。缺少上下区域已有四行后把拖动栏提交到第五行，逻辑行顺序、占用行数和呈现行数一致的覆盖。 |
 | `WS/multirow_toolbar_test.cpp` | `arbitraryRowsGrowFromTheOuterEdge` | C | 拟补 WS/quick_toolbar_test.cpp（quick-toolbar）。缺少上下区域任意六行的实际呈现及每行稳定顺序覆盖，Quick 现有工具栏用例仅覆盖默认与新增一行。 |
 | `WS/multirow_toolbar_test.cpp` | `bothAreasRoundTripAndRejectAmbiguousLayouts` | C | 拟补 WS/quick_toolbar_test.cpp（quick-toolbar）。缺少上下稀疏多行同时保存恢复、跨区域重复ID与行非数组原子拒绝、缺 bottomRows 默认仅顶部的容器覆盖。 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/movement_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/pane_bar_policy_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1016,5 +1016,6 @@
 | `WS/localization_test.cpp` | 六项 A 无旧视图依赖，原样保留并定向验证；五项 C 保留 | [记录](../../development/verification-log/2026-11.md#本地化的-a-类无需呈现迁移2026-11-07) |
 | `WS/memory_lifecycle_test.cpp` | 唯一 A 已迁，保留 12 轮替换释放，四项 C 正文保留 | [记录](../../development/verification-log/2026-11.md#布局替换释放的-a-类测试迁到-external2026-11-07) |
 | `WS/menu_structure_test.cpp` | 四项 A 已使用 External 菜单描述树，原样保留并定向验证；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#菜单描述的-a-类已使用-external2026-11-07) |
+| `WS/movement_test.cpp` | 原三项 A 及三个方向试迁用例已迁；T 形鼠标焦点通知试迁失败，保持 C，七项 C 正文保留 | [记录](../../development/verification-log/2026-11.md#移动命令的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

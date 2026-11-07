@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "docking/dock_surface.hpp"
 #include "chrome/workspace_window.hpp"
 #include "panes/tab_content.hpp"
@@ -9,6 +10,8 @@
 #include <QFocusEvent>
 #include <QLabel>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSplitter>
 #include <QTest>
 #include <cmath>
@@ -18,6 +21,8 @@ using namespace window_system;
 namespace {
 TabId add(WindowManager& manager, WindowId window, const QString& title, GroupId group = {})
 {
+    if (manager.presentation() == WindowManager::Presentation::External)
+        return manager.addTab(window, {title, "test.text", {}}, group);
     return manager.addTab(window, new QLabel(title), {title, "test.text", {}}, group);
 }
 struct Grid {
@@ -53,6 +58,10 @@ QWidget* frameFor(QWidget* content)
     for (auto* widget = content; widget; widget = widget->parentWidget())
         if (widget->objectName() == QStringLiteral("PaneHost")) return widget;
     return nullptr;
+}
+QQuickItem* frameFor(QQuickItem* content)
+{
+    return content->parentItem();
 }
 void settle()
 {
@@ -104,7 +113,9 @@ void MovementTest::reorderingWrapsWithinItsOwnSequence()
 {
     QFETCH(int, location);
     QFETCH(bool, forward);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
     const auto a = add(manager, window, "a");
     const auto b = add(manager, window, "b");
@@ -117,7 +128,8 @@ void MovementTest::reorderingWrapsWithinItsOwnSequence()
     }
     const auto source = forward ? c : a;
     const auto pane = manager.model().tab(source)->activePane;
-    const auto content = manager.paneWidget(pane);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    const auto content = workspace.content(pane);
     const auto group = manager.model().groupForTab(source);
     QVERIFY(manager.activateTab(source));
     const auto command = forward ? "workspace.reorderTab.next" : "workspace.reorderTab.previous";
@@ -125,7 +137,8 @@ void MovementTest::reorderingWrapsWithinItsOwnSequence()
     const auto expected = forward ? QVector<TabId>{c, a, b} : QVector<TabId>{b, c, a};
     QCOMPARE(manager.model().group(group)->tabs, expected);
     QCOMPARE(manager.model().tab(source)->activePane, pane);
-    QCOMPARE(manager.paneWidget(pane), content);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), content);
     QVERIFY(manager.model().validate());
 }
 
@@ -191,7 +204,9 @@ void MovementTest::directionalGroupTransfersWrapByVisibleGeometry()
 {
     QFETCH(int, direction);
     QFETCH(bool, paneTransfer);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
     const auto grid = createGrid(manager, window);
     const auto [source, target] = wrapPair(grid, static_cast<Placement>(direction));
@@ -199,14 +214,16 @@ void MovementTest::directionalGroupTransfersWrapByVisibleGeometry()
     const auto targetGroup = manager.model().groupForTab(target);
     const auto keepTab = add(manager, window, "keep-source-group", sourceGroup);
     const auto pane = manager.model().tab(source)->activePane;
-    const auto content = manager.paneWidget(pane);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    const auto content = workspace.content(pane);
     PaneId keptPane;
-    if (paneTransfer) keptPane = manager.splitPane(source, pane, new QLabel("kept-pane"), Placement::Right);
+    if (paneTransfer) keptPane = manager.splitPane(source, pane, Placement::Right);
     const auto hidden = add(manager, window, "hidden");
     QVERIFY(manager.moveTabToEdge(hidden, Edge::Left));
     const auto hiddenGroup = manager.model().groupForTab(hidden);
+    QTRY_VERIFY(workspace.window(window));
     manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(window)));
     settle();
     QVERIFY(manager.activateTab(source));
     QVERIFY(manager.focusPane(source, pane));
@@ -218,7 +235,8 @@ void MovementTest::directionalGroupTransfersWrapByVisibleGeometry()
         QCOMPARE(manager.model().groupForTab(source), targetGroup);
         QCOMPARE(manager.model().group(sourceGroup)->tabs, QVector<TabId>{keepTab});
     }
-    QCOMPARE(manager.paneWidget(pane), content);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), content);
     QCOMPARE(manager.model().groupForTab(hidden), hiddenGroup);
     QCOMPARE(manager.model().group(manager.model().groupForTab(hidden))->location, GroupLocation::AutoHide);
     QVERIFY(manager.model().validate());
@@ -234,25 +252,31 @@ void MovementTest::paneSwapAndFocusWrapWithinCurrentTab()
 {
     QFETCH(int, direction);
     const auto placement = static_cast<Placement>(direction);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
     const auto tab = add(manager, window, "pane-grid");
     const auto tl = manager.model().tab(tab)->activePane;
-    const auto tr = manager.splitPane(tab, tl, new QLabel("tr"), Placement::Right);
-    const auto bl = manager.splitPane(tab, tl, new QLabel("bl"), Placement::Bottom);
-    const auto br = manager.splitPane(tab, tr, new QLabel("br"), Placement::Bottom);
+    const auto tr = manager.splitPane(tab, tl, Placement::Right);
+    const auto bl = manager.splitPane(tab, tl, Placement::Bottom);
+    const auto br = manager.splitPane(tab, tr, Placement::Bottom);
     const auto [source, target] = wrapPair({tl, tr, bl, br}, placement);
-    const auto sourceContent = manager.paneWidget(source);
-    const auto targetContent = manager.paneWidget(target);
-    QPointer<QLabel> sourceBar = new QLabel("source-bar");
-    QPointer<QLabel> targetBar = new QLabel("target-bar");
-    QVERIFY(manager.setPaneTopBar(source, sourceBar));
-    QVERIFY(manager.setPaneTopBar(target, targetBar));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    const auto sourceContent = workspace.content(source);
+    const auto targetContent = workspace.content(target);
+    QPointer<QQuickItem> sourceBar = new QQuickItem;
+    sourceBar->setImplicitHeight(20);
+    QPointer<QQuickItem> targetBar = new QQuickItem;
+    targetBar->setImplicitHeight(20);
+    QVERIFY(workspace.setPaneBar(source, sourceBar, true));
+    QVERIFY(workspace.setPaneBar(target, targetBar, true));
     QVERIFY(manager.setTabTopBarSharing(tab, PaneBarSharing::PerPane));
+    QTRY_VERIFY(workspace.window(window));
     manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(window)));
     settle();
-    const auto sourceRect = frameFor(sourceContent)->geometry();
+    const auto sourceRect = QRectF(frameFor(sourceContent)->position(), frameFor(sourceContent)->size());
     const auto sourceGlobal = frameFor(sourceContent)->mapToGlobal(QPoint());
     const auto targetGlobal = frameFor(targetContent)->mapToGlobal(QPoint());
     QVERIFY(manager.focusPane(tab, source));
@@ -264,11 +288,12 @@ void MovementTest::paneSwapAndFocusWrapWithinCurrentTab()
     QCOMPARE(manager.model().tab(tab)->activePane, source);
     QCOMPARE(frameFor(sourceContent)->mapToGlobal(QPoint()), targetGlobal);
     QCOMPARE(frameFor(targetContent)->mapToGlobal(QPoint()), sourceGlobal);
-    QCOMPARE(frameFor(targetContent)->geometry().size(), sourceRect.size());
-    QCOMPARE(sourceBar->parentWidget(), frameFor(sourceContent));
-    QCOMPARE(targetBar->parentWidget(), frameFor(targetContent));
-    QCOMPARE(manager.paneWidget(source), sourceContent);
-    QCOMPARE(manager.paneWidget(target), targetContent);
+    QCOMPARE(frameFor(targetContent)->size(), sourceRect.size());
+    QCOMPARE(sourceBar->parentItem(), frameFor(sourceContent));
+    QCOMPARE(targetBar->parentItem(), frameFor(targetContent));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(source), sourceContent);
+    QCOMPARE(workspace.content(target), targetContent);
     QVERIFY(manager.model().validate());
 }
 
@@ -281,14 +306,17 @@ void MovementTest::groupFocusWrapsWithoutEnteringHiddenRail_data()
 void MovementTest::groupFocusWrapsWithoutEnteringHiddenRail()
 {
     QFETCH(int, direction);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
     const auto grid = createGrid(manager, window);
     const auto [source, target] = wrapPair(grid, static_cast<Placement>(direction));
     const auto hidden = add(manager, window, "hidden");
     QVERIFY(manager.moveTabToEdge(hidden, Edge::Left));
+    QTRY_VERIFY(workspace.window(window));
     manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(window)));
     settle();
     QVERIFY(manager.activateTab(source));
     QVERIFY(manager.execute("workspace.focusGroup." + directionName(static_cast<Placement>(direction)), {}, window));
@@ -309,7 +337,9 @@ void MovementTest::existingWindowMovementIncludesBothKindsAndWraps()
     QFETCH(bool, paneTransfer);
     QFETCH(bool, floating);
     QFETCH(bool, forward);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto first = manager.createWindow();
     const auto middle = manager.createWindow();
     const auto last = manager.createWindow(floating ? WindowKind::Floating : WindowKind::Workbench, {}, first);
@@ -319,10 +349,12 @@ void MovementTest::existingWindowMovementIncludesBothKindsAndWraps()
     const auto targetTab = add(manager, targetWindow, "target");
     const auto source = add(manager, sourceWindow, "source");
     const auto pane = manager.model().tab(source)->activePane;
-    QPointer<QWidget> content = manager.paneWidget(pane);
-    QPointer<QLabel> bar = new QLabel("carried-pane-bar");
-    QVERIFY(manager.setPaneTopBar(pane, bar));
-    if (paneTransfer) QVERIFY(!manager.splitPane(source, pane, new QLabel("retained"), Placement::Right).isNull());
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QPointer<QQuickItem> content = workspace.content(pane);
+    QPointer<QQuickItem> bar = new QQuickItem;
+    bar->setImplicitHeight(20);
+    QVERIFY(workspace.setPaneBar(pane, bar, true));
+    if (paneTransfer) QVERIFY(!manager.splitPane(source, pane, Placement::Right).isNull());
     manager.showWindow(sourceWindow);
     QVERIFY(manager.activateTab(source));
     QVERIFY(manager.focusPane(source, pane));
@@ -332,9 +364,10 @@ void MovementTest::existingWindowMovementIncludesBothKindsAndWraps()
     const auto destination = manager.model().tabForPane(pane);
     QCOMPARE(manager.model().group(manager.model().groupForTab(destination))->windowId, targetWindow);
     QCOMPARE(destination, paneTransfer ? targetTab : source);
-    QCOMPARE(manager.paneWidget(pane), content.data());
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), content.data());
     QVERIFY(bar);
-    QCOMPARE(bar->window(), manager.windowWidget(targetWindow));
+    QCOMPARE(bar->window(), workspace.window(targetWindow));
     QCOMPARE(manager.model().tab(destination)->activePane, pane);
     if (floating && forward && !paneTransfer) QVERIFY(!manager.model().window(sourceWindow));
     QVERIFY(manager.model().validate());
@@ -365,11 +398,13 @@ void MovementTest::emptyWindowReceivesSamePaneAndSourceSharing()
 
 void MovementTest::commandParametersAndInvalidCallsAreAtomic()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto root = manager.createWindow();
     const auto source = add(manager, root, "source");
     const auto pane = manager.model().tab(source)->activePane;
-    const auto retained = manager.splitPane(source, pane, new QLabel("retained"), Placement::Right);
+    const auto retained = manager.splitPane(source, pane, Placement::Right);
     const auto targetWindow = manager.createWindow(WindowKind::Floating, {}, root);
     const auto target = add(manager, targetWindow, "target");
     const auto targetPane = manager.model().tab(target)->activePane;
@@ -381,6 +416,7 @@ void MovementTest::commandParametersAndInvalidCallsAreAtomic()
     QCOMPARE(manager.model().tabForPane(pane), target);
     QCOMPARE(manager.model().panes(source), QVector<PaneId>{retained});
     QCOMPARE(closeCalls, 0);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
     const auto snapshot = manager.saveLayout();
     QVERIFY(!manager.movePane(source, retained, source));
     QVERIFY(!manager.movePaneToWindow(source, retained, root));

@@ -124,6 +124,16 @@ Q2（Codex 问 Claude，2026-11-07）
 
 材料为该源码用例、上述处理器和 WindowManager 已有的无 QWidget 分割接口；首次报告在 `out/diagnostics/step-10.6-3.3/shortcut-external-first.txt`。复现版本为 `b66028e` 加本轮快捷键夹具迁移，失败断言为 `manager.execute("runCommands", batch({"host.new", "pane.split.right"}), fixture.window)` 返回 FALSE。其他已迁移 A 继续独立处理。
 
+Q3（Codex 问 Claude，2026-11-07）
+
+方向移动试迁时，`movement_test.cpp` 的 `tLayoutNavigationRetainsOrthogonalAnchor` 在组／窗格两个数据行的最后一条原断言失败：按鼠标原因重新发送焦点通知后向左返回，Quick 仍回到先前的上行，预期应由当前高窗格中心重新选下行。其余方向来回、换轴及主动重选起点的断言通过。本轮七个主函数及数据行共 33 通过、2 失败，QtTest 22,392 毫秒，进程墙钟 22,599 毫秒；未在应用里实际点击鼠标试用。
+
+具体迁移仅把原 `QFocusEvent(FocusIn, MouseFocusReason)` 的接收者从 QWidget 换成 Quick 内容项，原预期未改。`WindowManager::eventFilter` 中丢弃导航锚点的 MouseFocusReason 分支以 `QWidget*` 为条件；Quick 的 `ContentHost::rememberFocus` 通过 activeFocusItemChanged 调用 `contentFocused`，后者在当前 PaneId 没变时不调用 focusPane，也没有相应重置。源码路径位于 `modules/window-system/src/window_manager.cpp`、`src/quick/content_host.cpp` 和 `src/quick/quick_workspace.cpp`。旧焦点通知不能原样平迁，真实 Quick 鼠标焦点路径及等价输入方式仍需确认。
+
+按审定条件，保留原 Widgets 函数及全部数据／断言，该项仍列 C；另三项方向用例试迁通过，与原三项 A 继续完成本步。未改产品或替换为直接调用 focusPane 以绕过失败。请 Claude 确认并修复 Quick 鼠标重新定位时的导航锚点处理，同时明确此项应使用的等价 Quick 输入入口，再安排重试。
+
+材料为上述源码、该用例及 `out/diagnostics/step-10.6-3.3/movement-external-first.txt`。基线为 `ebcb719` 加本轮七项夹具试迁，失败在最后的 `QCOMPARE(active(), panes ? bottomPane : bottomTab)`，不涉及桌面弹窗拦截。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。
