@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定顺序迁移 `WS/view_state_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定顺序迁移 `WS/shortcut_dispatch_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1003,5 +1003,6 @@
 | `App/scripting_test.cpp` 及 `scripting_exit_child.cpp` | 全部迁到 External，通知及窗口快照接入 Quick | [记录](../../development/verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07) |
 | `Lua/script_host_test.cpp` | 39 项 A 已迁，工具栏卸载保存缺陷对应的一项改 C，等待 Claude 处理；原三项 C 保留 | [记录](../../development/verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07) |
 | `WS/workspace_test.cpp` | 22 项 A 已迁，13 项 C 保留 | [记录](../../development/verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07) |
+| `WS/view_state_test.cpp` | 18 项 A 已迁，两个 C 主用例保留 | [记录](../../development/verification-log/2026-11.md#视图状态的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

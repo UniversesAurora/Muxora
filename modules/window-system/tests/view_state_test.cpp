@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "chrome/workspace_window.hpp"
 
 #include <QApplication>
@@ -7,6 +8,8 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
@@ -34,6 +37,19 @@ Fixture createFixture(WindowManager& manager, const WindowOptions& options = {})
     result.pane = manager.model().tab(result.tab)->activePane;
     result.otherPane = manager.splitPane(result.tab, result.pane, new QPlainTextEdit("Retained second content"), Placement::Right);
     result.otherTab = manager.addTab(result.window, new QPlainTextEdit("Retained other content"), {"Other", "test.edit", {}});
+    manager.moveTab(result.otherTab, manager.model().groupForTab(result.tab), Placement::Right);
+    manager.focusPane(result.tab, result.pane);
+    return result;
+}
+
+Fixture createModelFixture(WindowManager& manager, const WindowOptions& options = {})
+{
+    Fixture result;
+    result.window = manager.createWindow(WindowKind::Workbench, options);
+    result.tab = manager.addTab(result.window, {"First", "test.edit", {}});
+    result.pane = manager.model().tab(result.tab)->activePane;
+    result.otherPane = manager.splitPane(result.tab, result.pane, Placement::Right);
+    result.otherTab = manager.addTab(result.window, {"Other", "test.edit", {}});
     manager.moveTab(result.otherTab, manager.model().groupForTab(result.tab), Placement::Right);
     manager.focusPane(result.tab, result.pane);
     return result;
@@ -158,9 +174,9 @@ private slots:
 void ViewStateTest::fullscreenScopesPreserveWindowVisibility()
 {
     QFETCH(ViewMode, mode);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     WindowOptions options; options.toolbarsVisible = options.statusBarVisible = options.tabBarsVisible = options.sideBarsVisible = false;
-    const auto fixture = createFixture(manager, options);
+    const auto fixture = createModelFixture(manager, options);
     const BarVisibility hidden{false, false, false, false};
     QCOMPARE(manager.barVisibility(fixture.window), hidden);
     const auto model = manager.model().toJson();
@@ -177,9 +193,9 @@ void ViewStateTest::fullscreenScopesPreserveWindowVisibility()
 void ViewStateTest::explicitBarChangesApplyAcrossScopesOnlyInThisWindow()
 {
     QFETCH(ViewMode, mode); QFETCH(WindowBar, bar);
-    WindowManager manager;
-    const auto first = createFixture(manager);
-    const auto second = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto first = createModelFixture(manager);
+    const auto second = createModelFixture(manager);
     const auto preferences = manager.preferredBarVisibility(first.window);
     const auto otherBefore = manager.barVisibility(second.window);
     QVERIFY(manager.setViewMode(first.window, mode));
@@ -204,9 +220,9 @@ void ViewStateTest::explicitBarChangesApplyAcrossScopesOnlyInThisWindow()
 void ViewStateTest::zenPreservesPreferencesAndShowRestoresThem()
 {
     QFETCH(ViewMode, mode); QFETCH(WindowBar, bar);
-    WindowManager manager;
-    const auto first = createFixture(manager);
-    const auto second = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto first = createModelFixture(manager);
+    const auto second = createModelFixture(manager);
     QVERIFY(manager.setViewMode(first.window, mode));
     QVERIFY(manager.setViewMode(second.window, mode));
     QVERIFY(setBar(manager, first.window, bar, false));
@@ -241,17 +257,20 @@ void ViewStateTest::zenPreservesPreferencesAndShowRestoresThem()
 
 void ViewStateTest::changingScopeRetainsContentAndExitingRestoresNormalBars()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     QVERIFY(manager.setToolbarsVisible(fixture.window, false));
     const auto preferences = manager.preferredBarVisibility(fixture.window);
     const auto model = manager.model().toJson();
-    QPointer<QWidget> first = manager.paneWidget(fixture.pane), second = manager.paneWidget(fixture.otherPane);
+    QPointer<QQuickItem> first = workspace.content(fixture.pane), second = workspace.content(fixture.otherPane);
     for (const auto mode : {ViewMode::WindowFullscreen, ViewMode::GroupFullscreen, ViewMode::PaneFullscreen}) {
         QVERIFY(manager.setViewMode(fixture.window, mode));
         QCOMPARE(manager.viewMode(fixture.window), mode);
         QCOMPARE(manager.model().toJson(), model);
-        QCOMPARE(manager.paneWidget(fixture.pane), first.data()); QCOMPARE(manager.paneWidget(fixture.otherPane), second.data());
+        QCOMPARE(workspace.content(fixture.pane), first.data()); QCOMPARE(workspace.content(fixture.otherPane), second.data());
     }
     QVERIFY(manager.setZenMode(fixture.window, true));
     QVERIFY(manager.setViewMode(fixture.window, ViewMode::Normal));
@@ -262,8 +281,8 @@ void ViewStateTest::changingScopeRetainsContentAndExitingRestoresNormalBars()
 
 void ViewStateTest::focusedTargetNavigationLeavesOnlyTheFocusedScope()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     QVERIFY(manager.setViewMode(fixture.window, ViewMode::GroupFullscreen));
     QVERIFY(manager.activateTab(fixture.otherTab));
     QCOMPARE(manager.viewMode(fixture.window), ViewMode::WindowFullscreen);
@@ -277,8 +296,8 @@ void ViewStateTest::focusedTargetNavigationLeavesOnlyTheFocusedScope()
 
 void ViewStateTest::groupScopeFollowsItsSelectedTab()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     QVERIFY(manager.moveTab(fixture.otherTab, manager.model().groupForTab(fixture.tab)));
     QVERIFY(manager.activateTab(fixture.tab));
     QVERIFY(manager.setViewMode(fixture.window, ViewMode::GroupFullscreen));
@@ -289,9 +308,12 @@ void ViewStateTest::groupScopeFollowsItsSelectedTab()
 
 void ViewStateTest::paneScopeFollowsItsStablePaneWithinTheWindow()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
-    auto* content = manager.paneWidget(fixture.pane);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
+    auto* content = workspace.content(fixture.pane);
     QVERIFY(manager.setViewMode(fixture.window, ViewMode::PaneFullscreen));
     const auto targetPane = manager.model().tab(fixture.otherTab)->activePane;
     QVERIFY(manager.movePane(fixture.tab, fixture.pane, fixture.otherTab, targetPane, Placement::Left));
@@ -299,7 +321,7 @@ void ViewStateTest::paneScopeFollowsItsStablePaneWithinTheWindow()
     QCOMPARE(state.mode, ViewMode::PaneFullscreen); QCOMPARE(state.pane, fixture.pane);
     QCOMPARE(state.tab, fixture.otherTab); QCOMPARE(state.group, manager.model().groupForTab(fixture.otherTab));
     QCOMPARE(manager.context(fixture.window).pane, fixture.pane);
-    QCOMPARE(manager.paneWidget(fixture.pane), content);
+    QCOMPARE(workspace.content(fixture.pane), content);
 }
 
 void ViewStateTest::removingFocusedTargetsRestoresNormalView_data()
@@ -310,8 +332,8 @@ void ViewStateTest::removingFocusedTargetsRestoresNormalView_data()
 void ViewStateTest::removingFocusedTargetsRestoresNormalView()
 {
     QFETCH(bool, pane);
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     QVERIFY(manager.setViewMode(fixture.window, pane ? ViewMode::PaneFullscreen : ViewMode::GroupFullscreen));
     QVERIFY(manager.setZenMode(fixture.window, true));
     QVERIFY(pane ? manager.closePane(fixture.tab, fixture.pane) : manager.closeTab(fixture.tab));
@@ -322,8 +344,11 @@ void ViewStateTest::removingFocusedTargetsRestoresNormalView()
 
 void ViewStateTest::invalidOperationsLeaveStateUnchanged()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     const auto before = manager.saveLayout();
     QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     QVERIFY(!manager.setViewMode(fixture.window, ViewMode(99))); QVERIFY(!manager.setViewMode({}, ViewMode::WindowFullscreen));
@@ -383,8 +408,11 @@ void ViewStateTest::fullscreenAndZenRestartPreserveNormalPlacement()
 void ViewStateTest::nonPersistentWindowFieldsAreRejected()
 {
     QFETCH(ViewMode, mode); QFETCH(bool, zen); QFETCH(bool, maximized);
-    WindowManager original;
-    const auto fixture = createFixture(original);
+    WindowManager original(WindowManager::Presentation::External);
+    QuickWorkspace workspace(original);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(original);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     auto snapshot = original.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [&](QJsonObject& record) {
         const auto name = mode == ViewMode::WindowFullscreen ? "windowFullscreen"
@@ -398,10 +426,13 @@ void ViewStateTest::nonPersistentWindowFieldsAreRejected()
         }
         record.insert("viewState", state);
     });
-    WindowManager restored;
-    int created = 0; factory(restored, &created);
+    WindowManager restored(WindowManager::Presentation::External);
+    int created = 0;
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([&](const TabOptions&, PaneId) { ++created; return new QQuickItem; });
     const auto before = restored.saveLayout();
     QVERIFY(!restored.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
     QCOMPARE(created, 0);
     QCOMPARE(restored.saveLayout(), before);
 }
@@ -474,14 +505,20 @@ void ViewStateTest::oversizedFullscreenSnapshotsRestoreVisibleNormalPlacement()
 
 void ViewStateTest::omittedOptionalDisplayFlagsUseDefaults()
 {
-    WindowManager original;
-    const auto fixture = createFixture(original);
+    WindowManager original(WindowManager::Presentation::External);
+    QuickWorkspace workspace(original);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(original);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     auto snapshot = original.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [](QJsonObject& record) {
         record.remove("toolbarsVisible"); record.remove("statusBarVisible");
     });
-    WindowManager restored; factory(restored);
+    WindowManager restored(WindowManager::Presentation::External);
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     QVERIFY(restored.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
     QCOMPARE(restored.viewMode(fixture.window), ViewMode::Normal); QVERIFY(!restored.zenMode(fixture.window));
     QVERIFY(restored.toolbarsVisible(fixture.window)); QVERIFY(restored.statusBarVisible(fixture.window));
     QCOMPARE(restored.barVisibility(fixture.window), BarVisibility{});
@@ -499,8 +536,16 @@ void ViewStateTest::malformedDisplaySnapshotsFailBeforeCreatingContent_data()
 void ViewStateTest::malformedDisplaySnapshotsFailBeforeCreatingContent()
 {
     QFETCH(QString, kind);
-    WindowManager manager; int created = 0; factory(manager, &created);
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    int created = 0;
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([&](const TabOptions&, PaneId) { ++created; return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
+    created = 0;
+    // Materialize the live defaults before editing a complete toolbar record.
+    QVERIFY(manager.setToolbarsLocked(fixture.window, false));
+    QVERIFY(manager.setToolbarsLocked(fixture.window, true));
     auto snapshot = manager.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [&](QJsonObject& record) {
         QJsonObject view{{"mode", "paneFullscreen"}, {"zen", false},
@@ -532,16 +577,23 @@ void ViewStateTest::malformedDisplaySnapshotsFailBeforeCreatingContent()
         }
     });
     const auto before = manager.saveLayout();
-    QPointer<QWidget> pane = manager.paneWidget(fixture.pane);
+    QPointer<QQuickItem> pane = workspace.content(fixture.pane);
     QVERIFY(!manager.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
     QCOMPARE(created, 0); QCOMPARE(manager.saveLayout(), before);
-    QCOMPARE(manager.paneWidget(fixture.pane), pane.data()); QVERIFY(pane);
+    QCOMPARE(workspace.content(fixture.pane), pane.data()); QVERIFY(pane);
 }
 
 void ViewStateTest::arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail()
 {
-    WindowManager original;
-    const auto fixture = createFixture(original);
+    WindowManager original(WindowManager::Presentation::External);
+    QuickWorkspace workspace(original);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(original);
+    QTRY_VERIFY(workspace.content(fixture.pane));
+    // Materialize the live defaults before editing a complete toolbar record.
+    QVERIFY(original.setToolbarsLocked(fixture.window, false));
+    QVERIFY(original.setToolbarsLocked(fixture.window, true));
     auto snapshot = original.saveLayout();
     changeWindowRecord(snapshot, fixture.window, [](QJsonObject& record) {
         auto strips = record.value("strips").toObject();
@@ -551,8 +603,11 @@ void ViewStateTest::arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail()
         settings.insert("future-one", QJsonObject{{"visible", true}, {"width", -1}, {"excluded", QJsonArray{"future-action"}}});
         strips.insert("strips", settings); record.insert("strips", strips);
     });
-    WindowManager restored; factory(restored);
+    WindowManager restored(WindowManager::Presentation::External);
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     QVERIFY(restored.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
     const auto saved = windowRecord(restored.saveLayout(), fixture.window).value("strips").toObject();
     QCOMPARE(saved.value("rows").toArray().size(), 4);
     QCOMPARE(saved.value("bottomRows").toArray().size(), 3);
@@ -563,13 +618,15 @@ void ViewStateTest::arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail()
         strips.insert("bottomRows", QJsonArray{QJsonArray{"future-one", "future-one"}}); record.insert("strips", strips);
     });
     const auto before = restored.saveLayout();
-    QVERIFY(!restored.restoreLayout(invalid)); QCOMPARE(restored.saveLayout(), before);
+    QVERIFY(!restored.restoreLayout(invalid));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+    QCOMPARE(restored.saveLayout(), before);
 }
 
 void ViewStateTest::viewNotificationAllowsManagerDestruction()
 {
-    auto manager = std::make_unique<WindowManager>();
-    const auto fixture = createFixture(*manager);
+    auto manager = std::make_unique<WindowManager>(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(*manager);
     QPointer<WindowManager> observer(manager.get());
     QObject::connect(manager.get(), &WindowManager::layoutChanged, qApp, [&] { manager.reset(); });
     auto* raw = manager.get();
@@ -580,11 +637,15 @@ void ViewStateTest::viewNotificationAllowsManagerDestruction()
 void ViewStateTest::zenFromNormalEntersTheConfiguredScopeAtomically()
 {
     QFETCH(ViewMode, mode);
-    WindowManager manager; const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     auto behavior = manager.behavior(); behavior.zenFullscreenMode = mode; manager.setBehavior(behavior);
     QVERIFY(manager.setToolbarsVisible(fixture.window, false));
     const auto preferred = manager.preferredBarVisibility(fixture.window); const auto model = manager.model().toJson();
-    QPointer<QWidget> content(manager.paneWidget(fixture.pane));
+    QPointer<QQuickItem> content(workspace.content(fixture.pane));
     QSignalSpy changed(&manager, &WindowManager::layoutChanged);
     QVector<WindowViewState> observed;
     connect(&manager, &WindowManager::layoutChanged, this, [&] { observed.append(manager.windowViewState(fixture.window)); });
@@ -596,7 +657,7 @@ void ViewStateTest::zenFromNormalEntersTheConfiguredScopeAtomically()
         QCOMPARE(observed[0].group, manager.model().groupForTab(fixture.tab));
         QCOMPARE(observed[0].tab, fixture.tab); QCOMPARE(observed[0].pane, fixture.pane);
     }
-    QCOMPARE(manager.model().toJson(), model); QCOMPARE(manager.paneWidget(fixture.pane), content.data()); QVERIFY(content);
+    QCOMPARE(manager.model().toJson(), model); QCOMPARE(workspace.content(fixture.pane), content.data()); QVERIFY(content);
     QCOMPARE(manager.preferredBarVisibility(fixture.window), preferred);
     QVERIFY(manager.setZenMode(fixture.window, false)); QCOMPARE(manager.viewMode(fixture.window), mode);
     QCOMPARE(manager.barVisibility(fixture.window), preferred);
@@ -605,7 +666,11 @@ void ViewStateTest::zenFromNormalEntersTheConfiguredScopeAtomically()
 
 void ViewStateTest::zenKeepsAnExistingScopeAndRequiresValidContent()
 {
-    WindowManager manager; const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen; manager.setBehavior(behavior);
     QVERIFY(manager.setViewMode(fixture.window, ViewMode::GroupFullscreen));
     QVERIFY(manager.setZenMode(fixture.window, true)); QCOMPARE(manager.viewMode(fixture.window), ViewMode::GroupFullscreen);
@@ -620,31 +685,44 @@ void ViewStateTest::zenKeepsAnExistingScopeAndRequiresValidContent()
 
 void ViewStateTest::zenDefaultScopePersistsAndRejectsInvalidValues()
 {
-    WindowManager manager; const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
+    QTRY_VERIFY(workspace.content(fixture.pane));
     QCOMPARE(manager.behavior().zenFullscreenMode, ViewMode::WindowFullscreen);
     auto behavior = manager.behavior(); behavior.zenFullscreenMode = ViewMode::PaneFullscreen; manager.setBehavior(behavior);
     auto snapshot = manager.saveLayout();
     QCOMPARE(snapshot.value("behavior").toObject().value("zenFullscreenMode"), QJsonValue(int(ViewMode::PaneFullscreen)));
-    WindowManager restored; int created = 0; factory(restored, &created);
-    QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::PaneFullscreen);
+    WindowManager restored(WindowManager::Presentation::External);
+    int created = 0;
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([&](const TabOptions&, PaneId) { ++created; return new QQuickItem; });
+    QVERIFY(restored.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+    QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::PaneFullscreen);
     const auto valid = restored.saveLayout(); created = 0;
     for (const auto& value : {QJsonValue(0), QJsonValue(99), QJsonValue(-1), QJsonValue(1.5), QJsonValue(true), QJsonValue("paneFullscreen"), QJsonValue(QJsonValue::Null)}) {
         auto invalid = snapshot; auto settings = invalid.value("behavior").toObject();
         settings.insert("zenFullscreenMode", value); invalid.insert("behavior", settings);
-        QVERIFY(!restored.restoreLayout(invalid)); QCOMPARE(restored.saveLayout(), valid); QCOMPARE(created, 0);
+        QVERIFY(!restored.restoreLayout(invalid));
+        QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+        QCOMPARE(restored.saveLayout(), valid); QCOMPARE(created, 0);
     }
     for (const auto mode : {ViewMode::Normal, ViewMode(99)}) {
         auto invalid = manager.behavior(); invalid.zenFullscreenMode = mode; const auto before = manager.saveLayout();
         manager.setBehavior(invalid); QCOMPARE(manager.saveLayout(), before);
     }
     auto settings = snapshot.value("behavior").toObject(); settings.remove("zenFullscreenMode"); snapshot.insert("behavior", settings);
-    QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::WindowFullscreen);
+    QVERIFY(restored.restoreLayout(snapshot));
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+    QCOMPARE(restored.behavior().zenFullscreenMode, ViewMode::WindowFullscreen);
     QVERIFY(restored.model().tab(fixture.tab));
 }
 
 void ViewStateTest::zenEntryNotificationAllowsManagerDestruction()
 {
-    auto manager = std::make_unique<WindowManager>(); const auto fixture = createFixture(*manager);
+    auto manager = std::make_unique<WindowManager>(WindowManager::Presentation::External); const auto fixture = createModelFixture(*manager);
     QPointer<WindowManager> retained(manager.get());
     connect(manager.get(), &WindowManager::layoutChanged, qApp, [&] { manager.reset(); });
     auto* raw = manager.get(); QVERIFY(raw->setZenMode(fixture.window, true)); QVERIFY(!retained);
