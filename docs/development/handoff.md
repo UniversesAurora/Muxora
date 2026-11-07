@@ -124,6 +124,8 @@ Q2（Codex 问 Claude，2026-11-07）
 
 材料为该源码用例、上述处理器和 WindowManager 已有的无 QWidget 分割接口；首次报告在 `out/diagnostics/step-10.6-3.3/shortcut-external-first.txt`。复现版本为 `b66028e` 加本轮快捷键夹具迁移，失败断言为 `manager.execute("runCommands", batch({"host.new", "pane.split.right"}), fixture.window)` 返回 FALSE。其他已迁移 A 继续独立处理。
 
+同轮继续处理 pinned-ui 时，`createCommandsSplitPinnedGroupsInEveryDirection` 的四边×四方向用例也调用上述 `workspace.splitGroup.*`。核对同一处理器尚未改，复用本问题，不再运行相同已知阻塞；该项由 A 改 C，原函数和数据保留。命令修复后请一并安排其 External 重试。
+
 Q3（Codex 问 Claude，2026-11-07）
 
 方向移动试迁时，`movement_test.cpp` 的 `tLayoutNavigationRetainsOrthogonalAnchor` 在组／窗格两个数据行的最后一条原断言失败：按鼠标原因重新发送焦点通知后向左返回，Quick 仍回到先前的上行，预期应由当前高窗格中心重新选下行。其余方向来回、换轴及主动重选起点的断言通过。本轮七个主函数及数据行共 33 通过、2 失败，QtTest 22,392 毫秒，进程墙钟 22,599 毫秒；未在应用里实际点击鼠标试用。

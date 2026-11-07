@@ -315,10 +315,10 @@ void PinnedUiTest::synchronousExtentSaversMayReplaceTheirOwningUi()
 
 void PinnedUiTest::resizeCommandUsesCapturedPinnedGroup()
 {
-    WindowManager manager; const auto id = manager.createWindow();
-    const auto central = manager.addTab(id, label("Central"), {"Central", "label", {}});
-    const auto first = manager.addTab(id, label("First"), {"First", "label", {}});
-    const auto second = manager.addTab(id, label("Second"), {"Second", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External); const auto id = manager.createWindow();
+    const auto central = manager.addTab(id, {"Central", "label", {}});
+    const auto first = manager.addTab(id, {"First", "label", {}});
+    const auto second = manager.addTab(id, {"Second", "label", {}});
     QVERIFY(manager.moveTabToEdge(first, Edge::Left, true));
     QVERIFY(manager.moveTab(second, manager.model().groupForTab(first), Placement::Right));
     QVERIFY(manager.activateTab(first)); const auto captured = manager.context(id);
