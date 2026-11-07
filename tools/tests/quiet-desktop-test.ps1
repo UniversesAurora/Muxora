@@ -466,18 +466,18 @@ try {
     Assert-That (-not [QuietDesktopFixture]::IsIconic([IntPtr]$owner.Handle)) 'Recovery left the surviving peer minimized.'
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$owner.Handle, 9)
     # An initially hidden window that appears during cleanup remains untouched;
-    # it blocks testing instead of joining the recovery snapshot.
-    $unexpectedCommand = Join-Path $taskTemporary 'unexpected-command-ran'
-    $taskBlockedCommand = "Set-Content -LiteralPath '$($unexpectedCommand.Replace("'", "''"))' -Value unexpected"
+    # it neither blocks the command nor joins the recovery snapshot.
+    $appearingCommand = Join-Path $taskTemporary 'command-under-new-window-ran'
+    $taskAppearingCommand = "Set-Content -LiteralPath '$($appearingCommand.Replace("'", "''"))' -Value expected"
     [QuietDesktopFixture]::ArmHiddenAppearance()
-    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -Command $taskBlockedCommand
-    Assert-That ($LASTEXITCODE -ne 0) 'A newly visible window did not block the test command.'
-    Assert-That (-not (Test-Path -LiteralPath $unexpectedCommand)) 'The test command ran under a newly visible application window.'
+    & $taskPwsh -NoProfile -File $taskWrapper -StateFile $taskRecovery -WindowProcessId $PID $taskPwsh -NoProfile -Command $taskAppearingCommand
+    Assert-That ($LASTEXITCODE -eq 0) 'A newly visible window blocked the test command.'
+    Assert-That (Test-Path -LiteralPath $appearingCommand) 'The test command did not run under a newly visible application window.'
     $appearing = $original | Where-Object Name -eq 'appearing-hidden'
     $currentAppearing = [QuietDesktopFixture]::Inspect($appearing.Handle, $appearing.Name)
     Assert-That ($currentAppearing.Visible -and -not $currentAppearing.Iconic) 'Cleanup changed a window that was hidden at the initial snapshot.'
     Assert-That ([QuietDesktopFixture]::AppearingMinimizations() -eq 0) 'A newly visible window was added to cleanup.'
-    Assert-That (-not (Test-Path -LiteralPath $taskRecovery)) 'Recovery of the initial windows did not finish after cleanup was blocked.'
+    Assert-That (-not (Test-Path -LiteralPath $taskRecovery)) 'Recovery of the initial windows did not finish after the command.'
     [void][QuietDesktopFixture]::ShowWindow([IntPtr]$appearing.Handle, 0)
 } finally {
     # Destroy every fixture before the worker returns to the outer runner.
@@ -492,4 +492,4 @@ try {
     if (-not $taskResolved.StartsWith($taskAllowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fixture cleanup path.' }
     Remove-Item -LiteralPath $taskResolved -Recurse -Force
 }
-Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry recovery, child failure and -Command forwarding, unsupported snapshot rejection, HWND identity and vanished-predecessor guards, a frozen initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'
+Write-Output 'PASS: the -Elevate session runs the command with administrator rights; owned/modal/tool windows, delayed and refused minimization, unchanged hidden/minimized windows and tooltips, geometry recovery, child failure and -Command forwarding, unsupported snapshot rejection, HWND identity and vanished-predecessor guards, new windows neither block the command nor join the initial snapshot, and fixture cleanup inside one outer desktop-isolation session.'

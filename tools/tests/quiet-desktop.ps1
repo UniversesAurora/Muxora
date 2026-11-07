@@ -344,9 +344,6 @@ public static class QuietDesktopNative {
     [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] static extern bool GetLayeredWindowAttributes(IntPtr window, out uint key, out byte alpha, out uint flags);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
-    [DllImport("dwmapi.dll")] static extern int DwmFlush();
-    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SendMessageTimeoutW(
-        IntPtr window, uint message, IntPtr first, IntPtr second, uint flags, uint timeout, out UIntPtr result);
 
     static readonly HashSet<string> excludedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
         "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "#32769",
@@ -446,36 +443,6 @@ public static class QuietDesktopNative {
                 remaining.Add("0x" + state.Handle.ToString("x") + " PID " + state.Process + " " + state.Class);
             throw new InvalidOperationException("Application windows could not be cleared; the test command was not started. Windows at a higher privilege level may require an authorized elevated run or manual minimization: " + string.Join("; ", remaining));
         }
-    }
-
-    public static void WaitUntilReady(WindowState[] states, uint processId) {
-        // IsIconic can change before the target thread finishes WM_SIZE. Drain
-        // each recorded UI thread before allowing any fixture to be created.
-        var elapsed = Stopwatch.StartNew();
-        long settledAt = -1;
-        do {
-            bool ready = true;
-            var threads = new HashSet<uint>();
-            foreach (var state in states) {
-                if (!SameWindow(state)) continue;
-                UIntPtr result;
-                if (!Cleared(state) || (threads.Add(state.Thread) &&
-                    SendMessageTimeoutW(new IntPtr(state.Handle), 0 /* WM_NULL */,
-                        IntPtr.Zero, IntPtr.Zero, 0x23 /* BLOCK | ABORTIFHUNG | ERRORONEXIT */,
-                        50, out result) == IntPtr.Zero)) { ready = false; break; }
-            }
-            if (Capture(processId).Length != 0) {
-                // Do not touch windows absent from the frozen initial snapshot.
-                throw new InvalidOperationException("Application windows appeared after the initial snapshot; the test command was not started.");
-            }
-            if (ready) {
-                DwmFlush(); // Present barrier supplements the per-thread barrier.
-                if (settledAt < 0) settledAt = elapsed.ElapsedMilliseconds;
-                if (elapsed.ElapsedMilliseconds - settledAt >= 250) return;
-            } else settledAt = -1;
-            Thread.Sleep(25);
-        } while (elapsed.ElapsedMilliseconds < 5000);
-        throw new InvalidOperationException("Application window minimization did not settle; the test command was not started.");
     }
 
     public static void Restore(WindowState[] states, WindowState foreground) {
@@ -742,15 +709,9 @@ function Initialize-WindowSnapshot {
 }
 
 function Clear-WindowSnapshot {
+    # Only the initial snapshot participates in hiding and recovery. Windows
+    # appearing later remain under user control and do not block the command.
     [QuietDesktopNative]::Clear([QuietDesktopNative+WindowState[]]$taskWindows)
-    $additional = @([QuietDesktopNative]::Capture($WindowProcessId))
-    if ($additional.Count -ne 0) {
-        # The initial snapshot is frozen: previously hidden/minimized windows
-        # and windows created during cleanup are never taken over or restored.
-        $identities = @($additional | ForEach-Object { '0x{0:x} PID {1} {2}' -f $_.Handle, $_.Process, $_.Class })
-        throw ('Application windows appeared after the initial snapshot; the test command was not started. Close or minimize them before retrying: ' + ($identities -join '; '))
-    }
-    [QuietDesktopNative]::WaitUntilReady([QuietDesktopNative+WindowState[]]$taskWindows, $WindowProcessId)
 }
 
 if ($Restore -or $List) {
