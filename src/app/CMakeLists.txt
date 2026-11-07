@@ -78,13 +78,13 @@ if(BUILD_TESTING)
     set_tests_properties(muxora.state-paths PROPERTIES LABELS model)
 
     qt_add_executable(muxora-layout-file-test tests/layout_file_test.cpp layout_file.cpp layout_file.hpp)
-    target_link_libraries(muxora-layout-file-test PRIVATE WindowSystem::Widgets Qt6::Test)
+    target_link_libraries(muxora-layout-file-test PRIVATE WindowSystemQuick Qt6::Test)
     target_compile_features(muxora-layout-file-test PRIVATE cxx_std_20)
     target_include_directories(muxora-layout-file-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set_target_properties(muxora-layout-file-test PROPERTIES AUTOMOC ON)
     add_test(NAME muxora.layout-file COMMAND muxora-layout-file-test
         -o ${CMAKE_CURRENT_BINARY_DIR}/layout-file-results.txt,txt)
-    set_tests_properties(muxora.layout-file PROPERTIES LABELS widget)
+    set_tests_properties(muxora.layout-file PROPERTIES TIMEOUT 60 LABELS desktop RUN_SERIAL TRUE)
 
     qt_add_executable(muxora-user-preferences-test tests/user_preferences_test.cpp user_preferences.cpp)
     target_link_libraries(muxora-user-preferences-test PRIVATE WindowSystem::Widgets Qt6::Test)

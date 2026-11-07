@@ -2,32 +2,32 @@
 #include "layout_file.hpp"
 
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLabel>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
 
 using namespace window_system;
 
 namespace {
-void useLabels(WindowManager& manager)
-{
-    manager.setContentFactory([](const TabOptions& options, PaneId) { return new QLabel(options.title); });
-}
-
 // A saved workspace with two tabs and a non-default title width.
 QJsonObject savedLayout()
 {
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    manager.addTab(window, new QLabel("First"), {"First", "label", {}});
-    manager.addTab(window, new QLabel("Second"), {"Second", "label", {}});
+    manager.addTab(window, {"First", "label", {}});
+    manager.addTab(window, {"Second", "label", {}});
     auto appearance = manager.tabAppearance(); appearance.maximumTitleWidth = 321;
     if (!manager.setTabAppearance(appearance)) return {};
+    if (!QTest::qWaitFor([&] { return workspace.window(window) != nullptr; })) return {};
     return manager.saveLayout();
 }
 
@@ -65,7 +65,7 @@ void LayoutFileTest::validFileRestoresWithoutCopy()
     QTemporaryDir directory; QVERIFY(directory.isValid());
     const auto path = directory.filePath("window-layout.json");
     QVERIFY(write(path, QJsonDocument(savedLayout()).toJson()));
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
     const auto result = muxora::restoreLayoutFile(manager, path);
     QVERIFY(result.restored); QVERIFY(result.message.isEmpty());
     QCOMPARE(manager.model().tabs().size(), 2); QCOMPARE(manager.tabAppearance().maximumTitleWidth, 321);
@@ -75,7 +75,7 @@ void LayoutFileTest::validFileRestoresWithoutCopy()
 void LayoutFileTest::missingFileIsNotAnError()
 {
     QTemporaryDir directory; QVERIFY(directory.isValid());
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
     const auto result = muxora::restoreLayoutFile(manager, directory.filePath("window-layout.json"));
     QVERIFY(!result.restored); QVERIFY(result.message.isEmpty()); QVERIFY(copies(directory).isEmpty());
 }
@@ -98,7 +98,7 @@ void LayoutFileTest::invalidSettingResetsOnlyItsSection()
     auto object = layout.value(section).toObject(); object.insert(field, value); layout.insert(section, object);
     const auto original = QJsonDocument(layout).toJson();
     QVERIFY(write(path, original));
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
     const auto result = muxora::restoreLayoutFile(manager, path);
     // The windows and tabs come back; only the broken section is reset.
     QVERIFY(result.restored);
@@ -117,7 +117,7 @@ void LayoutFileTest::invalidStructureKeepsTheFile()
     auto layout = savedLayout(); layout.insert("schemaVersion", 99);
     const auto original = QJsonDocument(layout).toJson();
     QVERIFY(write(path, original));
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
     const auto result = muxora::restoreLayoutFile(manager, path);
     QVERIFY(!result.restored); QVERIFY(manager.model().windows().isEmpty()); QVERIFY(!result.message.isEmpty());
     const auto kept = copies(directory);
@@ -129,7 +129,7 @@ void LayoutFileTest::unreadableFileKeepsTheFile()
     QTemporaryDir directory; QVERIFY(directory.isValid());
     const auto path = directory.filePath("window-layout.json");
     QVERIFY(write(path, "{ not json"));
-    WindowManager manager; useLabels(manager);
+    WindowManager manager(WindowManager::Presentation::External);
     const auto result = muxora::restoreLayoutFile(manager, path);
     QVERIFY(!result.restored); QVERIFY(!result.message.isEmpty());
     const auto kept = copies(directory);
