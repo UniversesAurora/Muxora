@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 
 #include <QApplication>
 #include <QAction>
@@ -13,6 +14,8 @@
 #include <QMenuBar>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSet>
 #include <QTest>
 
@@ -40,7 +43,7 @@ struct ObjectSnapshot {
     QHash<QString, qsizetype> classes;
 };
 
-ObjectSnapshot ownedObjects(WindowManager &manager) {
+ObjectSnapshot ownedObjects(WindowManager &manager, QuickWorkspace *workspace = nullptr) {
     QSet<QObject *> visited;
     const auto visit = [&visited](auto &&recurse, QObject *object) -> void {
         if (!object || visited.contains(object))
@@ -50,13 +53,15 @@ ObjectSnapshot ownedObjects(WindowManager &manager) {
             recurse(recurse, child);
     };
     visit(visit, &manager);
+    visit(visit, workspace);
     for (const auto id : manager.model().windowOrder())
-        visit(visit, manager.windowWidget(id));
+        visit(visit, workspace ? static_cast<QObject *>(workspace->window(id)) : manager.windowWidget(id));
     // Parked pane widgets live in the manager's separate hidden QWidget root.
     // Qt forbids giving that root the non-widget WindowManager as its parent.
-    for (auto *widget : QApplication::topLevelWidgets())
-        if (widget->objectName() == QStringLiteral("WindowSystemStorage"))
-            visit(visit, widget);
+    if (!workspace)
+        for (auto *widget : QApplication::topLevelWidgets())
+            if (widget->objectName() == QStringLiteral("WindowSystemStorage"))
+                visit(visit, widget);
     ObjectSnapshot result;
     result.objects = visited.size();
     for (auto *object : visited) {
@@ -92,9 +97,10 @@ QJsonObject nativeResources() {
     return result;
 }
 
-QJsonObject recordSample(WindowManager &manager, const char *scenario, int iteration) {
+QJsonObject recordSample(WindowManager &manager, const char *scenario, int iteration,
+                         QuickWorkspace *workspace = nullptr) {
     auto result = nativeResources();
-    const auto objects = ownedObjects(manager);
+    const auto objects = ownedObjects(manager, workspace);
     result.insert(QStringLiteral("scenario"), QString::fromLatin1(scenario));
     result.insert(QStringLiteral("iteration"), iteration);
     result.insert(QStringLiteral("ownedObjects"), objects.objects);
@@ -106,10 +112,11 @@ QJsonObject recordSample(WindowManager &manager, const char *scenario, int itera
 }
 
 QJsonObject freshLayout() {
-    WindowManager source;
+    WindowManager source(WindowManager::Presentation::External);
+    QuickWorkspace workspace(source);
     const auto window = source.createWindow();
-    source.addTab(window, new QLabel(QStringLiteral("Replacement")),
-                  {QStringLiteral("Replacement"), QStringLiteral("test.label"), {}});
+    source.addTab(window, {QStringLiteral("Replacement"), QStringLiteral("test.label"), {}});
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
     return source.saveLayout();
 }
 
@@ -166,14 +173,16 @@ void MemoryLifecycleTest::kindChangesKeepOneCommandSubscriptionPerWindow() {
 }
 
 void MemoryLifecycleTest::closedLayoutsReleaseTheirPaneTrees() {
-    WindowManager manager;
-    manager.setContentFactory([](const TabOptions &options, PaneId) { return new QLabel(options.title); });
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     QVERIFY(manager.restoreLayout(freshLayout()));
     settle();
     for (int iteration = 0; iteration < 12; ++iteration) {
         const auto oldTab = manager.model().tabs().cbegin().key();
         std::weak_ptr<const LayoutNode> oldTree = manager.model().tab(oldTab)->panes;
-        QPointer<QWidget> oldContent = manager.paneWidget(manager.model().tab(oldTab)->activePane);
+        QTRY_VERIFY(workspace.content(manager.model().tab(oldTab)->activePane));
+        QPointer<QQuickItem> oldContent = workspace.content(manager.model().tab(oldTab)->activePane);
         QVERIFY(!oldTree.expired());
         QVERIFY(manager.restoreLayout(freshLayout()));
         settle();
@@ -184,7 +193,7 @@ void MemoryLifecycleTest::closedLayoutsReleaseTheirPaneTrees() {
         QCOMPARE(manager.model().windows().size(), 1);
         QCOMPARE(manager.model().tabs().size(), 1);
     }
-    recordSample(manager, "replace-layout", 12);
+    recordSample(manager, "replace-layout", 12, &workspace);
 }
 
 void MemoryLifecycleTest::repeatedLayoutAndWindowCyclesReleaseOwnedResources() {
