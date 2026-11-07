@@ -4,12 +4,16 @@
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
+#include "quick/dock_surface_item.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QJsonArray>
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
 #include <QToolButton>
@@ -149,11 +153,11 @@ void SidebarPresentationTest::bulkFirstPinPreservesTheNewGroupOrder_data()
 void SidebarPresentationTest::bulkFirstPinPreservesTheNewGroupOrder()
 {
     QFETCH(int, edge);
-    WindowManager manager; const auto id = manager.createWindow();
-    const auto existing = manager.addTab(id, new QLabel("existing"), {"existing", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External); const auto id = manager.createWindow();
+    const auto existing = manager.addTab(id, {"existing", "label", {}});
     QVERIFY(manager.moveTabToEdge(existing, Edge(edge), true));
-    const auto a = manager.addTab(id, new QLabel("a"), {"a", "label", {}});
-    const auto b = manager.addTab(id, new QLabel("b"), {"b", "label", {}});
+    const auto a = manager.addTab(id, {"a", "label", {}});
+    const auto b = manager.addTab(id, {"b", "label", {}});
     QVERIFY(manager.moveTabToEdge(a, Edge(edge))); QVERIFY(manager.moveTabToEdge(b, Edge(edge)));
     const auto old = manager.model().groupForTab(existing);
     const auto first = manager.model().groupForTab(a); const auto second = manager.model().groupForTab(b);
@@ -166,14 +170,21 @@ void SidebarPresentationTest::bulkFirstPinPreservesTheNewGroupOrder()
 
 void SidebarPresentationTest::visibilityRestoresAndRejectsMalformedSnapshots()
 {
-    WindowManager manager; const auto id = manager.createWindow(WindowKind::Workbench, {"Hidden", {900, 600}, true, false});
-    const auto tab = manager.addTab(id, new QLabel("side"), {"side", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    const auto id = manager.createWindow(WindowKind::Workbench, {"Hidden", {900, 600}, true, false});
+    const auto tab = manager.addTab(id, {"side", "label", {}});
     QVERIFY(manager.moveTabToEdge(tab, Edge::Right));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
     auto snapshot = manager.saveLayout();
-    WindowManager restored; restored.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("restored"); });
+    WindowManager restored(WindowManager::Presentation::External);
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     QVERIFY(restored.restoreLayout(snapshot)); QVERIFY(!restored.sideBarsVisible(id));
-    auto* window = static_cast<WorkspaceWindow*>(restored.windowWidget(id));
-    QVERIFY(QTest::qWaitForWindowExposed(window)); QVERIFY(window->surface()->edgeBarRects().isEmpty());
+    QTRY_VERIFY(restoredWorkspace.window(id));
+    auto* window = restoredWorkspace.window(id);
+    auto* surface = window->findChild<quick::DockSurfaceItem*>(); QVERIFY(surface);
+    QVERIFY(QTest::qWaitForWindowExposed(window)); QVERIFY(surface->edgeBarRects().isEmpty());
     const auto before = restored.saveLayout();
     auto windows = snapshot.value("windows").toArray(); auto record = windows[0].toObject();
     record.insert("sideBarsVisible", "false"); windows[0] = record; snapshot.insert("windows", windows);
@@ -181,7 +192,8 @@ void SidebarPresentationTest::visibilityRestoresAndRejectsMalformedSnapshots()
     QVERIFY(!restored.setSideBarsVisible({}, true)); QVERIFY(!restored.sideBarsVisible({}));
     record.remove("sideBarsVisible"); windows[0] = record; snapshot.insert("windows", windows);
     QVERIFY(restored.restoreLayout(snapshot)); QVERIFY(restored.sideBarsVisible(id));
-    QCOMPARE(window->surface()->edgeBarRects().size(), 1);
+    QCoreApplication::sendPostedEvents(&restoredWorkspace, QEvent::MetaCall);
+    QCOMPARE(surface->edgeBarRects().size(), 1);
 }
 void SidebarPresentationTest::hiddenRailsDoNotOccupySpaceWhenExplicitlyOpeningATab()
 {

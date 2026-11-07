@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/sidebar_presentation_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/status_bar_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1021,5 +1021,6 @@
 | `WS/peek_size_test.cpp` | 两项 A 已迁 External，原参数数据及 C 保留 | [记录](../../development/verification-log/2026-11.md#临时面板尺寸的-a-类测试迁到-external2026-11-07) |
 | `WS/pinned_ui_test.cpp` | 一项 A 已迁；固定组创建依赖同一分割命令缺陷，改 C 并保留原用例，其余 C 保留 | [记录](../../development/verification-log/2026-11.md#固定组尺寸命令的-a-类测试迁到-external2026-11-07) |
 | `WS/popup_menu_test.cpp` | 唯一 A 已是纯定位逻辑，原样保留并定向验证；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#弹窗定位的-a-类无需控件夹具2026-11-07) |
+| `WS/sidebar_presentation_test.cpp` | 两项 A 已迁，显隐快照及实际侧栏查询接入 Quick，三个 C 保留 | [记录](../../development/verification-log/2026-11.md#侧栏显隐的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
