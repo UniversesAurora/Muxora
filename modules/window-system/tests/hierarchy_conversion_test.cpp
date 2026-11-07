@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "panes/tab_content.hpp"
 #include <QAction>
 #include <QApplication>
@@ -9,6 +10,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPointer>
+#include <QQuickItem>
 #include <QSignalSpy>
 #include <QTest>
 #include <functional>
@@ -239,28 +241,32 @@ void HierarchyConversionTest::widgetConversionKeepsContentBarsAndNeverClosesConn
 }
 
 void HierarchyConversionTest::extractingPaneCreatesATabInTheCurrentGroup() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    auto *first = new QLabel("First");
-    const auto tab = manager.addTab(window, first, {"Source", "test", {}});
+    const auto tab = manager.addTab(window, {"Source", "test", {}});
     const auto firstPane = manager.model().tab(tab)->activePane;
-    auto *second = new QLabel("Second");
-    const auto secondPane = manager.splitPane(tab, firstPane, second, Placement::Bottom);
+    const auto secondPane = manager.splitPane(tab, firstPane, Placement::Bottom);
+    QTRY_VERIFY(workspace.content(firstPane) && workspace.content(secondPane));
+    auto *first = workspace.content(firstPane);
+    auto *second = workspace.content(secondPane);
     const auto group = manager.model().groupForTab(tab);
     const auto extracted = manager.extractPaneToTab(tab, secondPane);
     QVERIFY(!extracted.isNull());
     QCOMPARE(manager.model().groupForTab(extracted), group);
     QCOMPARE(manager.model().panes(extracted), QVector<PaneId>{secondPane});
-    QCOMPARE(manager.paneWidget(secondPane), second);
-    QCOMPARE(manager.paneWidget(firstPane), first);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(secondPane), second);
+    QCOMPARE(workspace.content(firstPane), first);
     QCOMPARE(manager.extractPaneToTab(extracted, secondPane), extracted);
 }
 
 void HierarchyConversionTest::commandsUseExplicitSourceAndTargetWithoutChangingSelectionFirst() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto source = manager.addTab(window, new QLabel("Source"), {"Source", "test", {}});
-    const auto target = manager.addTab(window, new QLabel("Target"), {"Target", "test", {}});
+    const auto source = manager.addTab(window, {"Source", "test", {}});
+    const auto target = manager.addTab(window, {"Target", "test", {}});
     const auto targetPane = manager.model().tab(target)->activePane;
     auto context = manager.context(window);
     context.tab = source;
