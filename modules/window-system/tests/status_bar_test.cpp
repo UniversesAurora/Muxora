@@ -3,6 +3,7 @@
 #include "chrome/status_bar.hpp"
 #include "chrome/workspace_window.hpp"
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 
 #include <QAction>
 #include <QApplication>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
+#include <QQuickItem>
 #include <QTest>
 #include <QToolButton>
 #include <QDir>
@@ -117,13 +119,17 @@ void StatusBarTest::optionsAndWindowKindChangesKeepTheSamePreference()
 
 void StatusBarTest::preferencesRoundTripWithoutChangingOtherWindows()
 {
-    WindowManager manager; const auto first = manager.createWindow(); const auto second = manager.createWindow();
-    manager.addTab(first, new QLabel("One"), {"One", "label", {}});
-    manager.addTab(second, new QLabel("Two"), {"Two", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    const auto first = manager.createWindow(); const auto second = manager.createWindow();
+    manager.addTab(first, {"One", "label", {}});
+    manager.addTab(second, {"Two", "label", {}});
     QVERIFY(manager.setStatusItemVisible(first, "message", false));
     QVERIFY(manager.setStatusItemVisible(second, "workspace", false));
-    const auto snapshot = manager.saveLayout(); WindowManager restored;
-    restored.setContentFactory([](const TabOptions& options, PaneId) { return new QLabel(options.title); });
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    const auto snapshot = manager.saveLayout(); WindowManager restored(WindowManager::Presentation::External);
+    QuickWorkspace restoredWorkspace(restored);
+    restoredWorkspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     QVERIFY(restored.restoreLayout(snapshot));
     QVERIFY(!restored.statusItemVisible(first, "message")); QVERIFY(restored.statusItemVisible(first, "workspace"));
     QVERIFY(restored.statusItemVisible(second, "message")); QVERIFY(!restored.statusItemVisible(second, "workspace"));
@@ -132,7 +138,7 @@ void StatusBarTest::preferencesRoundTripWithoutChangingOtherWindows()
 
 void StatusBarTest::invalidIdsAndTypesDoNotMutatePreferences()
 {
-    WindowManager manager; const auto window = manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
     const auto before = manager.saveLayout();
     QVERIFY(!manager.setStatusItemVisible(window, "unknown", false));
     QVERIFY(!manager.setStatusItemVisible(QUuid::createUuid(), "message", false));
