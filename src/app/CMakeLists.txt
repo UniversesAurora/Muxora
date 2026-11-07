@@ -102,7 +102,7 @@ if(BUILD_TESTING)
     qt_add_executable(muxora-scripting-test tests/scripting_test.cpp
         scripting_setup.cpp scripting_setup.hpp script_services.cpp script_services.hpp user_preferences.cpp)
     muxora_use_utf8_process_manifest(muxora-scripting-test)
-    target_link_libraries(muxora-scripting-test PRIVATE WindowSystemLua::Host Qt6::Test)
+    target_link_libraries(muxora-scripting-test PRIVATE WindowSystemLua::Host WindowSystemQuick Qt6::Test)
     if(WIN32)
         target_link_libraries(muxora-scripting-test PRIVATE winmm)
     endif()

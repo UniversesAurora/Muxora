@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
         return 2;
     const auto directory = arguments[1];
     const QDir state(directory);
-    window_system::WindowManager manager;
+    window_system::WindowManager manager(window_system::WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences preferences(directory);
     QElapsedTimer shutdown;

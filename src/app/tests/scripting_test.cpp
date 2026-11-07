@@ -4,6 +4,7 @@
 #include "user_preferences.hpp"
 #include <window_system_lua/script_host.hpp>
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <window_system/localization.hpp>
 #include <QApplication>
 #include <QDir>
@@ -13,7 +14,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QPlainTextEdit>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QPointer>
 #include <QProcess>
 #include <QScopeGuard>
@@ -107,9 +109,9 @@ void ScriptingTest::startupLoadsScriptCommandsBeforeUserBindings() {
     const QByteArray rules =
         R"([{"key":"ctrl+alt+f7","command":"-user.action"},{"key":"ctrl+alt+f6","command":"user.action"}])";
     QVERIFY(write(dir.filePath("keybindings.json"), rules));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    manager.addTab(window, {"Editor", "notes", {}});
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
     QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
@@ -136,9 +138,9 @@ void ScriptingTest::reloadRetainsUserOverridesWithoutWritingIntermediateState() 
             .toUtf8();
     };
     QVERIFY(write(path, source(1)));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    manager.addTab(window, {"Editor", "notes", {}});
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
     QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
@@ -164,7 +166,7 @@ void ScriptingTest::reloadRetainsUserOverridesWithoutWritingIntermediateState() 
 void ScriptingTest::missingConfigurationDoesNotCreateUserFiles() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
@@ -189,7 +191,7 @@ void ScriptingTest::generatedConfigurationUsesRequestedLanguage() {
     QVERIFY(translations.installLanguage(chinese ? UiLanguage::SimplifiedChinese : UiLanguage::English));
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences preferences(directory.path());
     muxora::AppScriptingSetup setup(&manager, preferences);
@@ -219,7 +221,7 @@ void ScriptingTest::malformedConfigurationKeepsBuiltinCommandsAndUserFiles() {
     QVERIFY(write(dir.filePath("init.lua"), invalid));
     const QByteArray bindings = R"([{"key":"ctrl+alt+f4","command":"window.close"}])";
     QVERIFY(write(dir.filePath("keybindings.json"), bindings));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
@@ -235,9 +237,9 @@ void ScriptingTest::malformedConfigurationKeepsBuiltinCommandsAndUserFiles() {
 void ScriptingTest::runCommandAcceptsInlineAndFileScripts() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    manager.addTab(window, {"Editor", "notes", {}});
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
     QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
@@ -270,9 +272,9 @@ void ScriptingTest::invalidUtf8ScriptsAreRejected() {
     const auto fileName = startup ? QStringLiteral("init.lua") : QStringLiteral("invalid.lua");
     const QByteArray source = QByteArray("rejected_execution=true ") + invalidTail;
     QVERIFY(write(dir.filePath(fileName), source));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    manager.addTab(window, {"Editor", "notes", {}});
     muxora::UserPreferences prefs(dir.path());
     muxora::AppScriptingSetup setup(&manager, prefs);
     QSignalSpy initialized(&setup, &muxora::AppScriptingSetup::initialized);
@@ -321,8 +323,11 @@ void ScriptingTest::removedCommandDefaultsDoNotAccumulate() {
     QCOMPARE(prefs.trackedDefaultCommandCount(), base);
 }
 void ScriptingTest::notificationsHaveBoundedLifetimeAndPlainText() {
-    WindowManager manager;
-    manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto window = manager.createWindow();
+    QTRY_VERIFY(workspace.window(window));
     muxora::AppScriptServices services(&manager);
     for (int i = 0; i < 16; ++i)
         QVERIFY(services.invoke("ui.notify", {QVariantMap{{"text", "<b>literal</b>"}, {"timeout_ms", 0}}}, {})
@@ -337,7 +342,7 @@ void ScriptingTest::externalProgramArgumentsAreNotShellText() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const auto output = dir.filePath("参数 with spaces.json");
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::AppScriptServices services(&manager);
     QSignalSpy launched(&services, &muxora::AppScriptServices::launchCompleted);
@@ -357,7 +362,7 @@ void ScriptingTest::launchCompletedObserverMayDestroyServices() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const auto output = dir.filePath("launch-observer.json");
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     auto services = std::make_unique<muxora::AppScriptServices>(&manager);
     const QPointer<muxora::AppScriptServices> retained(services.get());
@@ -420,7 +425,7 @@ void ScriptingTest::standardLibraryHandlesChinesePathsAndEnvironment() {
             qunsetenv(variable);
     });
     QVERIFY(qputenv(variable, QStringLiteral("中文环境值").toUtf8()));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences preferences(directory);
     muxora::AppScriptingSetup setup(&manager, preferences);
@@ -455,7 +460,7 @@ void ScriptingTest::directScriptTransportAllowsFilesLargerThanOneMiB() {
     source += QByteArray(1024 * 1024 + 32, ' ');
     source += "\nlarge_script_ran=true";
     QVERIFY(write(directory.filePath("large.lua"), source));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
     muxora::UserPreferences preferences(directory.path());
     muxora::AppScriptingSetup setup(&manager, preferences);
@@ -470,9 +475,9 @@ void ScriptingTest::directScriptTransportAllowsFilesLargerThanOneMiB() {
 void ScriptingTest::osExitUsesApplicationCommandAndHonorsClosePermission() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}});
+    const auto tab = manager.addTab(window, {"Editor", "notes", {}});
     QVERIFY(!tab.isNull());
     int commands = 0;
     int closeRequests = 0;
@@ -521,9 +526,12 @@ void ScriptingTest::applicationRestorePreservesExplicitWindowTitle() {
     QVERIFY(directory.isValid());
     QVERIFY(QDir().mkpath(directory.filePath("User")));
     QVERIFY(write(directory.filePath("User/init.lua"), "os.exit(0,true)"));
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow(WindowKind::Workbench, {"WindowSystem", QSize(900, 600)});
-    QVERIFY(!manager.addTab(window, new QPlainTextEdit, {"Editor", "notes", {}}).isNull());
+    QVERIFY(!manager.addTab(window, {"Editor", "notes", {}}).isNull());
+    QTRY_VERIFY(workspace.window(window));
     const auto snapshot = manager.saveLayout();
     const auto savedWindows = snapshot.value("windows").toArray();
     QCOMPARE(savedWindows.size(), 1);
@@ -548,7 +556,7 @@ void ScriptingTest::applicationRestorePreservesExplicitWindowTitle() {
 void ScriptingTest::longRunningStatusOffersStopAndClearsAfterwards() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
     muxora::UserPreferences preferences(directory.path());
     muxora::AppScriptingSetup setup(&manager, preferences);
@@ -583,7 +591,7 @@ void ScriptingTest::longRunningStatusOffersStopAndClearsAfterwards() {
 void ScriptingTest::blockedReloadReportsThePendingStop() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     manager.createWindow();
     muxora::UserPreferences preferences(directory.path());
     muxora::AppScriptingSetup setup(&manager, preferences);
