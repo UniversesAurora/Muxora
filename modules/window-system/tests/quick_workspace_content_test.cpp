@@ -33,6 +33,37 @@ QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->bounding
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void contentFactoryMayReleaseItsWorkspace_data()
+    {
+        QTest::addColumn<int>("releaseOnCall");
+        QTest::newRow("first-content") << 1;
+        QTest::newRow("after-one-content") << 2;
+    }
+
+    void contentFactoryMayReleaseItsWorkspace()
+    {
+        QFETCH(int, releaseOnCall);
+        WindowManager manager(WindowManager::Presentation::External);
+        auto workspace = std::make_unique<QuickWorkspace>(manager);
+        int calls = 0, destroyed = 0;
+        QVector<QPointer<QQuickItem>> created;
+        workspace->setContentFactory([&](const TabOptions&, PaneId) {
+            if (++calls == releaseOnCall) workspace.reset();
+            auto* item = new QQuickItem;
+            created.append(item);
+            connect(item, &QObject::destroyed, this, [&] { ++destroyed; });
+            return item;
+        });
+        const auto window = manager.createWindow();
+        manager.addTab(window, {QStringLiteral("First")});
+        manager.addTab(window, {QStringLiteral("Second")});
+        QTRY_VERIFY(!workspace);
+        QCOMPARE(calls, releaseOnCall);
+        QCOMPARE(destroyed, releaseOnCall);
+        for (const auto& item : created) QVERIFY(!item);
+        QVERIFY(manager.model().validate());
+    }
+
     void liveEditorsSurviveWindowAndPaneTransfers_data()
     {
         QTest::addColumn<int>("route");

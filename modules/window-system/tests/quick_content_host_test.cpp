@@ -8,6 +8,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTest>
+#include <memory>
 
 using namespace window_system;
 using namespace window_system::quick;
@@ -120,6 +121,10 @@ private slots:
         auto rejected = std::make_unique<QQuickItem>();
         QVERIFY(!owner->adopt(pane, rejected.get()));
         QVERIFY(!rejected->parent());
+        QVERIFY(!owner->adopt({}, rejected.get()));
+        QVERIFY(!owner->adopt(QUuid::createUuid(), accepted));
+        QCOMPARE(owner->item(pane), accepted.data());
+        QVERIFY(!rejected->parent());
         owner.reset();
         QVERIFY(accepted.isNull());
 
@@ -132,6 +137,38 @@ private slots:
         });
         QVERIFY(!temporary->create(QUuid::createUuid(), {}));
         QVERIFY(abandoned.isNull());
+    }
+
+    void replacingTheFactoryKeepsItsCurrentCapturesAlive()
+    {
+        ContentHost host;
+        auto capture = std::make_shared<QString>(QStringLiteral("Original factory return"));
+        const std::weak_ptr<QString> observed = capture;
+        bool survived = false;
+        int firstCalls = 0, replacementCalls = 0;
+        host.setFactory([&, capture](const TabOptions&, PaneId) {
+            ++firstCalls;
+            host.setFactory([&](const TabOptions&, PaneId) {
+                ++replacementCalls;
+                auto* content = new QQuickItem;
+                content->setObjectName(QStringLiteral("Replacement factory return"));
+                return content;
+            });
+            survived = !observed.expired();
+            auto* content = new QQuickItem;
+            content->setObjectName(*capture);
+            return content;
+        });
+        capture.reset();
+        const auto first = QUuid::createUuid(), second = QUuid::createUuid();
+        QVERIFY(host.create(first, {}));
+        QVERIFY(survived);
+        QVERIFY(observed.expired());
+        QVERIFY(host.create(second, {}));
+        QCOMPARE(firstCalls, 1);
+        QCOMPARE(replacementCalls, 1);
+        QCOMPARE(host.item(first)->objectName(), QStringLiteral("Original factory return"));
+        QCOMPARE(host.item(second)->objectName(), QStringLiteral("Replacement factory return"));
     }
 
 

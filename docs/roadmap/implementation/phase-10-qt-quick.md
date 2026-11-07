@@ -896,7 +896,7 @@
 | `WS/workspace_test.cpp` | `detachPromoteDemoteAndRedockPreserveLiveContent` | C | 3.4 已合并到 quick-workspace-content 的 `liveEditorsSurviveWindowAndPaneTransfers`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `edgePinAndReturnToCenterPreserveTheSameWidget` | C | 3.4 已合并到 quick-workspace-content 的 `liveEditorsSurviveWindowAndPaneTransfers`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `emptyRootWithFloatingContentSurvivesAutomaticClosePolicy` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。根虽空但家庭有浮窗内容时保留，最后浮窗关闭后模型清空。 |
-| `WS/workspace_test.cpp` | `failedAdoptionLeavesCallerOwnershipIntact` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。依赖被删除的 QWidget* addTab/splitPane、parentWidget 和 windowSystemManaged。Quick ContentHost 有部分拒绝所有权，缺管理器无效目标/重复内容完整入口，需审定改写边界。 |
+| `WS/workspace_test.cpp` | `failedAdoptionLeavesCallerOwnershipIntact` | C | 3.4 已整理为 Quick 内容所有权与工厂重入；原 Widgets 接管／事务机制退役，具体映射见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `failedRestoreReleasesPreparedContentsAndPreservesCurrentContents` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。旧工厂在恢复返回前预制，第二次返回空导致恢复失败及预制清理。External 的 Quick 工厂不在管理器恢复事务中，缺同等失败/部分清理契约。 |
 | `WS/workspace_test.cpp` | `invalidRestorePreservesTheCurrentModelAndWidgets` | C | 3.4 已合并到 quick-workspace-content 的 `editorStateSurvivesCommandsAndRejectedRestore`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `invalidTabArgumentCannotChangeEdgeLayout` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。非法命令发失败信号，模型、内容身份和所属窗口不变，QuickWorkspace 可保留。 |
@@ -907,8 +907,8 @@
 | `WS/workspace_test.cpp` | `refusedCloseAllPreservesEveryFamily` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。全关拒绝保留家庭、内容和快照，不发最终保存/关闭通知。 |
 | `WS/workspace_test.cpp` | `refusedFamilyCloseLeavesEveryWindowAndContentAlive` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。拒绝关闭时家庭全部模型、内容/窗口存活，允许后全部释放，Quick 可保留身份和生命周期断言。 |
 | `WS/workspace_test.cpp` | `repeatedCrossWindowMovesDoNotRecreateOrDestroyContent` | C | 3.4 已合并到 quick-workspace-content 的 `liveEditorsSurviveWindowAndPaneTransfers`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
-| `WS/workspace_test.cpp` | `restoreFactoriesMayDestroyTheirManager` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。旧工厂第1/2次返回前销毁管理器，要求恢复失败、全部准备内容同步销毁。Quick 工厂独立于恢复事务，须明确等价生命周期入口。 |
-| `WS/workspace_test.cpp` | `restoreFactoryMayReplaceItselfWithoutDestroyingItsCaptures` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。一次恢复中后续窗格使用替换工厂，原捕获活到首回调返回，且正文正确。Quick 工厂尚无同等完整覆盖。 |
+| `WS/workspace_test.cpp` | `restoreFactoriesMayDestroyTheirManager` | C | 3.4 已整理为 Quick 内容所有权与工厂重入；原 Widgets 接管／事务机制退役，具体映射见 3.4 进度。 |
+| `WS/workspace_test.cpp` | `restoreFactoryMayReplaceItselfWithoutDestroyingItsCaptures` | C | 3.4 已整理为 Quick 内容所有权与工厂重入；原 Widgets 接管／事务机制退役，具体映射见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `restoredWindowTitlesSurviveFreshAndExistingHosts` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。恢复新/既有窗口标题及 window.new 的标题来源映射至 Quick 窗口，保留字符串断言。 |
 | `WS/workspace_test.cpp` | `splittingAndExtractingMovesExistingPaneWidgets` | C | 3.4 已合并到 quick-workspace-content 的 `liveEditorsSurviveWindowAndPaneTransfers`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `validRestoreCreatesContentsForExistingStableIds` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。同 ID 恢复要求重建内容、恰好调用工厂、保留正文/窗口并释放旧实例。Quick 按稳定 PaneId 保留内容，可能行为不同，不能仅换获取接口。 |
@@ -1040,5 +1040,6 @@
 | 功能 | 状态 | 证据与原用例映射 |
 | --- | --- | --- |
 | 编辑内容的身份、状态与输入 | 六项 workspace C 合并为两个 Quick 行为用例，原用例退役 | [记录](../../development/verification-log/2026-11.md#内容状态与转移的-c-类合并到-quick2026-11-07) |
+| 内容所有权与工厂重入 | 三项 workspace C 整理到 ContentHost 边界与 Quick 工作区工厂；旧同步恢复机制不移植 | [记录](../../development/verification-log/2026-11.md#内容所有权与工厂重入的-c-类整理2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
