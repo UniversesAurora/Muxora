@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/toolbar_reset_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/view_commands_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1028,5 +1028,6 @@
 | `WS/tab_bar_presentation_test.cpp` | 唯一 A 已迁 Quick，关闭前几何保存断言保留，其余 C 保留 | [记录](../../development/verification-log/2026-11.md#最后关闭保存几何的-a-类测试迁到-quick2026-11-07) |
 | `WS/tab_creation_test.cpp` | 九项 A 已迁，非法恢复的工厂检查接入 Quick，三个 C 保留 | [记录](../../development/verification-log/2026-11.md#新建标签的-a-类测试迁到-external2026-11-07) |
 | `WS/toolbar_profile_test.cpp` | 六项 A 已迁；完成通知内同步保存缺窗口记录的一项改 C，等待 Claude 处理，三个 C 正文保留 | [记录](../../development/verification-log/2026-11.md#工具栏档案的-a-类测试迁到-external2026-11-07) |
+| `WS/toolbar_reset_test.cpp` | 唯一 A 已迁 External，其余 C 保留 | [记录](../../development/verification-log/2026-11.md#工具栏重置的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

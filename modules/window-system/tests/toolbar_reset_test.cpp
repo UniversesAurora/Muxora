@@ -160,7 +160,7 @@ void ToolbarResetTest::pickerSupportsKeyboardSelectionAndCancellation()
 
 void ToolbarResetTest::invalidRequestsLeaveTheLayoutUnchanged()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto id = manager.createWindow();
     const auto before = manager.saveLayout();
     QVERIFY(!manager.resetToolbarWidth({}, "title"));
