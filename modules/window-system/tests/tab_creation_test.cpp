@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "docking/tab_strip.hpp"
 #include "commands/menu_description.hpp"
 
@@ -9,6 +10,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
+#include <QQuickItem>
 #include <QSignalSpy>
 #include <QTest>
 #include <QToolButton>
@@ -25,6 +27,8 @@ GroupTabs* groupView(WindowManager& manager, WindowId window, GroupId group)
 }
 TabId add(WindowManager& manager, WindowId window, const QString& title, GroupId group = {}, int index = -1)
 {
+    if (manager.presentation() == WindowManager::Presentation::External)
+        return manager.addTab(window, {title, "test.label", {}}, group, index);
     auto* content = new QLabel(title);
     const auto tab = manager.addTab(window, content, {title, "test.label", {}}, group, index);
     if (tab.isNull()) delete content;
@@ -71,7 +75,7 @@ void TabCreationTest::positionFollowsActiveTab_data()
 void TabCreationTest::positionFollowsActiveTab()
 {
     QFETCH(int, position); QFETCH(int, index);
-    WindowManager manager; const auto window = manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
     const auto first = add(manager, window, "First");
     const auto second = add(manager, window, "Second");
     const auto third = add(manager, window, "Third");
@@ -87,7 +91,7 @@ void TabCreationTest::positionFollowsActiveTab()
 }
 void TabCreationTest::explicitIndexOverridesBehaviorAndModelStillAppends()
 {
-    WindowManager manager; const auto window = manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
     const auto first = add(manager, window, "First"); const auto second = add(manager, window, "Second");
     const auto group = manager.model().groupForTab(first); QVERIFY(manager.activateTab(first));
     auto behavior = manager.behavior(); behavior.newTabPosition = NewTabPosition::Beginning; manager.setBehavior(behavior);
@@ -120,10 +124,10 @@ void TabCreationTest::invalidInsertionPreservesOwnershipAndSnapshot()
 }
 void TabCreationTest::settingRoundTripsAndOmissionDefaultsToAfterActive()
 {
-    WindowManager manager; const auto window = manager.createWindow(); add(manager, window, "Saved");
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow(); add(manager, window, "Saved");
     auto behavior = manager.behavior(); behavior.newTabPosition = NewTabPosition::BeforeActive; manager.setBehavior(behavior);
     auto snapshot = manager.saveLayout();
-    WindowManager restored; restored.setContentFactory([](const TabOptions&, PaneId) { return new QLabel; });
+    WindowManager restored(WindowManager::Presentation::External);
     QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().newTabPosition, NewTabPosition::BeforeActive);
     auto settings = snapshot.value("behavior").toObject(); settings.remove("newTabPosition"); snapshot.insert("behavior", settings);
     QVERIFY(restored.restoreLayout(snapshot)); QCOMPARE(restored.behavior().newTabPosition, NewTabPosition::AfterActive);
@@ -144,11 +148,18 @@ void TabCreationTest::invalidSettingRejectedBeforeFactory_data()
 void TabCreationTest::invalidSettingRejectedBeforeFactory()
 {
     QFETCH(QJsonValue, value);
-    WindowManager manager; const auto window = manager.createWindow(); add(manager, window, "Original");
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    int factoryCalls = 0;
+    workspace.setContentFactory([&](const TabOptions&, PaneId) { ++factoryCalls; return new QQuickItem; });
+    const auto window = manager.createWindow(); const auto tab = add(manager, window, "Original");
+    QTRY_VERIFY(workspace.content(manager.model().tab(tab)->activePane));
+    factoryCalls = 0;
     const auto before = manager.saveLayout(); auto malformed = before;
     auto settings = malformed.value("behavior").toObject(); settings.insert("newTabPosition", value); malformed.insert("behavior", settings);
-    int factoryCalls = 0; manager.setContentFactory([&](const TabOptions&, PaneId) { ++factoryCalls; return new QLabel; });
-    QVERIFY(!manager.restoreLayout(malformed)); QCOMPARE(factoryCalls, 0); QCOMPARE(manager.saveLayout(), before);
+    QVERIFY(!manager.restoreLayout(malformed));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(factoryCalls, 0); QCOMPARE(manager.saveLayout(), before);
 }
 void TabCreationTest::creationUsesClickedGroupInsteadOfFocusedGroup()
 {
@@ -181,7 +192,7 @@ void TabCreationTest::creationUsesClickedGroupInsteadOfFocusedGroup()
 }
 void TabCreationTest::catalogValidationIsAtomicAndDisabledCommandsDoNotCreate()
 {
-    WindowManager manager; const auto window = manager.createWindow(); const auto tab = add(manager, window, "Original");
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow(); const auto tab = add(manager, window, "Original");
     const auto group = manager.model().groupForTab(tab); QVector<CommandContext> received;
     registerCreation(manager, "test.new", received);
     int blockedExecutions = 0;
@@ -201,7 +212,7 @@ void TabCreationTest::catalogValidationIsAtomicAndDisabledCommandsDoNotCreate()
 }
 void TabCreationTest::creationCanStartInAnEmptyWindow()
 {
-    WindowManager manager; const auto window = manager.createWindow(); QVector<CommandContext> received;
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow(); QVector<CommandContext> received;
     registerCreation(manager, "test.new", received); QVERIFY(manager.setTabCreationCommands("test.new", {"test.new"}));
     QVERIFY(manager.model().orderedTabs(window).isEmpty()); QVERIFY(manager.requestNewTab(window));
     QCOMPARE(received.size(), 1); QCOMPARE(received.first().window, window);
@@ -213,7 +224,7 @@ void TabCreationTest::creationCanStartInAnEmptyWindow()
 }
 void TabCreationTest::staleTargetFromEnabledCallbackCannotCreateElsewhere()
 {
-    WindowManager manager; const auto window = manager.createWindow();
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
     const auto original = add(manager, window, "Original"); const auto removed = add(manager, window, "Remove");
     QVERIFY(manager.moveTab(removed, manager.model().groupForTab(original), Placement::Right));
     const auto target = manager.model().groupForTab(removed); int executions = 0;
@@ -237,7 +248,7 @@ void TabCreationTest::enabledCallbackMayDestroyManagerAndPopupParent()
 }
 void TabCreationTest::executionMayDestroyManager()
 {
-    auto manager = std::make_unique<WindowManager>(); const auto window = manager->createWindow();
+    auto manager = std::make_unique<WindowManager>(WindowManager::Presentation::External); const auto window = manager->createWindow();
     const auto tab = add(*manager, window, "Original"); const auto group = manager->model().groupForTab(tab);
     manager->commands().add({"test.destroy", "Destroy", "Test", {}, {},
         [&](const CommandContext&) { manager.reset(); return true; }});
@@ -247,7 +258,7 @@ void TabCreationTest::executionMayDestroyManager()
 }
 void TabCreationTest::explicitContextRejectsStaleTargetsAndDeletionDuringQuery()
 {
-    auto manager = std::make_unique<WindowManager>(); const auto window = manager->createWindow();
+    auto manager = std::make_unique<WindowManager>(WindowManager::Presentation::External); const auto window = manager->createWindow();
     add(*manager, window, "Original"); const auto target = manager->context(window); int executions = 0;
     manager->commands().add({"test.context", "Context", "Test", {}, {}, [&](const CommandContext&) { ++executions; return true; }});
     auto invalid = target; invalid.pane = QUuid::createUuid(); QVERIFY(!manager->executeInContext("test.context", invalid));
