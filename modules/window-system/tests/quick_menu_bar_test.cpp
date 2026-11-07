@@ -17,6 +17,7 @@
 #include <QQuickWindow>
 #include <QTest>
 #include <memory>
+#include <utility>
 
 using namespace window_system;
 using namespace quick_menu_test;
@@ -281,24 +282,113 @@ private slots:
         QTRY_VERIFY(workspace.window(target)->isActive());
     }
 
+    void menuBarReleasesRemovedRootContributions_data()
+    {
+        QTest::addColumn<bool>("selfUnloading");
+        QTest::newRow("register-remove") << false;
+        QTest::newRow("unload-from-enabled-query") << true;
+    }
+
     void menuBarReleasesRemovedRootContributions()
     {
+        QFETCH(bool, selfUnloading);
+        bool removeOnCheck = selfUnloading;
         WindowManager manager(WindowManager::Presentation::External);
         QuickWorkspace workspace(manager);
         workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
-        const auto window = manager.createWindow(); manager.addTab(window, {QStringLiteral("Content")});
-        QTRY_VERIFY(workspace.window(window));
-        auto* bar = namedItem(workspace.window(window)->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
-        Command command;
-        command.id = "test.temporary"; command.title = "Temporary action"; command.menuPath = {"temporary"};
-        command.execute = [](const CommandContext&) { return true; };
-        QVERIFY(manager.commands().add(std::move(command)));
-        QTRY_VERIFY(namedItem(bar, QStringLiteral("extension.temporary")));
-        const QPointer<QQuickItem> row(namedItem(bar, QStringLiteral("extension.temporary")));
-        const QPointer<QObject> menu(row->property("menu").value<QObject*>()); QVERIFY(menu);
-        QVERIFY(manager.commands().remove("test.temporary"));
-        QTRY_VERIFY(!row); QTRY_VERIFY(!menu);
-        QVERIFY(manager.model().window(window));
+        const auto root = manager.createWindow();
+        manager.addTab(root, {QStringLiteral("Owner")});
+        const auto floating = manager.createWindow(WindowKind::Floating, {}, root);
+        manager.addTab(floating, {QStringLiteral("Floating")});
+        Command retained;
+        retained.id = "test.retained"; retained.title = "Retained"; retained.menuPath = {"tools", "Shared"};
+        retained.execute = [](const CommandContext&) { return true; };
+        QVERIFY(manager.commands().add(std::move(retained)));
+        struct Owner {
+            QQuickWindow* window;
+            QQuickItem* bar;
+            QPointer<QQuickItem> tools;
+            qsizetype objects;
+            QPointer<QQuickItem> shared;
+            QPointer<QObject> sharedMenu;
+        };
+        QVector<Owner> owners;
+        for (const auto id : {root, floating}) {
+            QTRY_VERIFY(workspace.window(id));
+            auto* view = workspace.window(id);
+            auto* bar = namedItem(view->contentItem(), QStringLiteral("MenuStrip")); QVERIFY(bar);
+            auto* tools = namedItem(bar, QStringLiteral("tools")); QVERIFY(tools);
+            owners.append({view, bar, tools, view->findChildren<QObject*>().size(), {}, {}});
+        }
+        const auto containsCommand = [](auto&& self, const QVector<MenuItemDescription>& items, const QString& id) -> bool {
+            for (const auto& item : items) if (item.commandId == id || self(self, item.children, id)) return true;
+            return false;
+        };
+        for (int iteration = 0; iteration < (selfUnloading ? 1 : 100); ++iteration) {
+            const auto id = QStringLiteral("test.temporary.%1").arg(iteration);
+            const auto temporaryRoot = QStringLiteral("temporary%1").arg(iteration);
+            Command command;
+            command.id = id; command.title = "Temporary action";
+            command.menuPath = {temporaryRoot, "Nested", "Commands"};
+            const bool newRoot = selfUnloading || iteration % 3 == 0;
+            if (!newRoot) command.menuPath = {"tools", iteration % 3 == 1 ? temporaryRoot : QStringLiteral("Shared")};
+            command.execute = [](const CommandContext&) { return true; };
+            if (selfUnloading) command.enabled = [&, id](const CommandContext&) {
+                if (std::exchange(removeOnCheck, false)) manager.commands().remove(id);
+                return true;
+            };
+            QVERIFY(manager.commands().add(std::move(command)));
+            QVector<QPointer<QObject>> retired;
+            if (selfUnloading) {
+                QTRY_VERIFY(!removeOnCheck);
+                QVERIFY(!manager.commands().find(id));
+            } else {
+                for (auto& owner : owners) {
+                    const auto rowId = newRoot ? QStringLiteral("extension.") + temporaryRoot : QStringLiteral("tools");
+                    QTRY_VERIFY(namedItem(owner.bar, rowId));
+                    auto* row = namedItem(owner.bar, rowId);
+                    auto* entry = qobject_cast<quick::MenuEntry*>(row->property("entry").value<QObject*>()); QVERIFY(entry);
+                    QTRY_VERIFY(containsCommand(containsCommand, entry->childDescriptions(), id));
+                    auto* menu = row->property("menu").value<QObject*>(); QVERIFY(menu);
+                    if (newRoot) retired << row << menu;
+                    if (iteration == 0 || iteration == 1 || iteration == 99) {
+                        QVERIFY(QMetaObject::invokeMethod(menu, "open"));
+                        QQuickWindow* shown = nullptr;
+                        QTRY_VERIFY((shown = popup(owner.window)));
+                        QVERIFY(QTest::qWaitForWindowExposed(shown));
+                        if (iteration == 1) {
+                            owner.shared = namedItem(shown->contentItem(), QStringLiteral("extension.tools.Shared"));
+                            QVERIFY(owner.shared);
+                            owner.sharedMenu = owner.shared->property("subMenu").value<QObject*>();
+                            QVERIFY(owner.sharedMenu);
+                        }
+                        QTest::keyClick(shown, Qt::Key_Escape);
+                        QTRY_VERIFY(!popup(owner.window));
+                    }
+                }
+                QVERIFY(manager.commands().remove(id));
+            }
+            for (const auto& owner : owners) QTRY_VERIFY(!namedItem(owner.bar, QStringLiteral("extension.") + temporaryRoot));
+            for (const auto& object : retired) QTRY_VERIFY(!object);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            for (auto& owner : owners) {
+                QCOMPARE(namedItem(owner.bar, QStringLiteral("tools")), owner.tools.data());
+                QVERIFY(manager.commands().find(QStringLiteral("test.retained")));
+                auto* toolsEntry = qobject_cast<quick::MenuEntry*>(owner.tools->property("entry").value<QObject*>());
+                QVERIFY(toolsEntry);
+                QTRY_VERIFY(!containsCommand(containsCommand, toolsEntry->childDescriptions(), id));
+                QVERIFY(containsCommand(containsCommand, toolsEntry->childDescriptions(), QStringLiteral("test.retained")));
+                if (!selfUnloading && iteration >= 1) QVERIFY(owner.shared && owner.sharedMenu);
+                const auto objects = owner.window->findChildren<QObject*>().size();
+                if (!selfUnloading && iteration == 3) owner.objects = objects;
+                else if (selfUnloading || iteration > 3) QCOMPARE(objects, owner.objects);
+            }
+        }
+        QVERIFY(manager.commands().remove(QStringLiteral("test.retained")));
+        for (const auto& owner : owners) {
+            QTRY_VERIFY(!owner.shared && !owner.sharedMenu);
+            QVERIFY(owner.tools);
+        }
     }
 
     void foldedMenusKeepMouseMnemonicAndOwnerLifetime_data()

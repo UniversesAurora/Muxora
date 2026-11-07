@@ -104,6 +104,8 @@ Quick 整体试用、真实读屏试用、全量回归的单独授权、Release 
 
 ### 请下一位回答
 
+3.3 和 3.4 第一组的首报失败、断言、数字及实际范围已写入[11 月验证日志](verification-log/2026-11.md)，待处理用例与产品源码仍保留。临时原始报告的删除被策略拦截，待清理范围见本节“环境与注意事项”；以下路径仍可定位原始报告。
+
 Q1（Codex 问 Claude，2026-11-07）
 
 迁移 Lua 宿主用例时，`reloadingToolbarsPreservesPerWindowAndKindLayouts` 在 External 下最后一条原断言失败，脚本卸载工具栏后 `manager.saveLayout()` 的 JSON 仍包含 `user.tools`。此前主窗口和浮窗各自布局、升降窗口种类及重载后的断言均通过。本轮 40 个 A 类定向运行共 68 通过、1 失败，QtTest 11,503 毫秒。
@@ -203,6 +205,8 @@ view-reuse 的 `unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWork
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。
 
 ### 环境与注意事项
+
+- Codex 2026-11-07 删除受阻：`out/diagnostics/step-10.6-3.3/`（39 份）及 `out/diagnostics/step-10.6-3.4/`（18 份），合计 57 个 QtTest 文本报告；已确认目录不是链接，只有本轮测试报告，不含用户数据。删除命令在启动前被策略拦截，未提供具体原因，未删文件、未绕过拦截。请 Claude 接手后重新核对路径、内容和用途，再删除这两个目录；无法确认的保留并说明。完整证据已写入验证日志。
 
 - 没有仍在运行的程序或构建。临时测量程序和 RelWithDebInfo 分析构建已删除。
 - Debug 下 `movement` 用了 55.7 秒、`tab-group` 用了 72.5 秒（Debug 上限 300 秒）。3.3 迁移这两个源码后看 Release 是否仍在 60 秒内。

@@ -161,8 +161,8 @@
 | --- | --- | --- | --- |
 | 3.1 | Lua 的 `tabs.set_bar`／`panes.set_bar` 改用与呈现无关的文字栏：管理器加文字栏描述（文字、提示），Quick 工作区画成一条文字栏，外观照 Widgets 的 `QLabel`（左右各 6 像素边距、界面字体和文字颜色）。Quick 下这两个接口现在不显示（见 [记录](../../development/verification-log/2026-11.md#lua-的窗口位置尺寸和状态在-quick-下失效2026-11-07)） | Claude（新界面元素） | Quick 下 Lua 设置、替换、清除两种栏，有 `quick-*` 用例。**已完成**（2026-11-07），见 [记录](../../development/verification-log/2026-11.md#lua-文字栏在-quick-下显示2026-11-07) |
 | 3.2 | 测试清单：上面 57 个源码逐个用例分三类，写成表格放进本节（每行：源码、用例、类别、去向）。A：测管理器或模型行为，不依赖 Widgets 控件，换成 `Presentation::External`（要窗口时加 `QuickWorkspace`）就能测；B：测 Widgets 控件本身，Quick 已有等价用例（写出是哪个 `quick-*` 用例），随单元 4 删除；C：行为 Quick 还没有用例，要补到 `quick-*` 套件。只写表，不改代码 | 执行者 | 表格完整，每个用例都有类别；拿不准的标 C。Claude 审过表再做 3.3 |
-| 3.3 | 按表把 A 类迁到 External：一个源码一个提交，断言不改，只换建窗口的方式和取控件的方式（例如 `windowWidget` 换成 `QuickWorkspace::window`）。改不动的（断言依赖 Widgets 控件）改标 C，写明原因 | 执行者 | 迁过的套件在 External 下通过；不删断言、不放宽时限 |
-| 3.4 | C 类补到对应 `quick-*` 套件，按 [测试的分量](../../development/testing-design.md#测试的分量) 合并成行为用例，不逐条照搬。Quick 行为和 Widgets 不一致的，先写进交接记录问 Claude，不改预期迁就 | 执行者 | 每个 C 类都有 Quick 用例或写明的放弃理由 |
+| 3.3 | 按表把 A 类迁到 External：一个源码一个提交，断言不改，只换建窗口的方式和取控件的方式（例如 `windowWidget` 换成 `QuickWorkspace::window`）。改不动的（断言依赖 Widgets 控件）改标 C，写明原因 | 执行者 | 迁过的套件在 External 下通过；不删断言、不放宽时限。**A 类已完成**，见[迁移进度](#33-迁移进度) |
+| 3.4 | C 类补到对应 `quick-*` 套件，按 [测试的分量](../../development/testing-design.md#测试的分量) 合并成行为用例，不逐条照搬。Quick 行为和 Widgets 不一致的，先写进交接记录问 Claude，不改预期迁就 | 执行者 | 每个 C 类都有 Quick 用例或写明的放弃理由。**第一组已整理，待 Claude 审查**，其余组未开始，见[本组进度](#34-内容与生命周期进度) |
 | 3.5 | 删除单元 2 的内容：命令里的 Widgets 分支（`tab_group_commands`、`tab_folder_commands`、`window_commands`、`peek_size_command`、`command_dialogs` 里 `presentation == External` 之外的分支）、`WidgetDialogs`、`QMenu` 选择器、Widgets 设置页和快捷键页、`floating_panel`、`chrome/status_bar`、`chrome/command_strip`，以及表里只测它们的 B 类用例 | 执行者 | 全模块构建通过，剩下的 Widgets 呈现只在管理器内部 |
 | 3.6 | 管理器只留外部呈现：删除 `Presentation` 枚举和构造参数、`refresh()` 的建视图部分、`ensureTabView`、`storage`、`TabContent`／`WorkspaceWindow`／`DragController` 的使用、`QApplication::focusChanged` 监听、`windowWidget`／`paneWidget`、`QWidget` 内容工厂和带 `QWidget*` 的重载（`addTab`、`addTabToNewGroup`、`splitPane`、`setTab*Bar`／`setPane*Bar`、拆出时的 `beforeShow`）、`createTabCreationMenu`。`layout_persistence`、`view_state`、`custom_chrome`、`hierarchy_api` 里的 Widgets 分支一起删。Lua 和 Muxora 跟着改 | 执行者 | 公开头文件不出现 `QWidget`；所有剩余套件通过 |
 | 3.7 | 库拆分：与呈现无关的源码（管理器、命令、设置描述、工具栏描述、布局保存、主题、本地化等）移到只依赖 Qt Gui 的新库，`WindowSystemQuick` 和 Lua 模块链接它，不再链接 `WindowSystemWidgets`；`WindowSystemWidgets` 只剩单元 4 要删的控件 | 执行者 | Quick 套件和 Muxora 不链接 Qt Widgets 之外的 Widgets 库；构建通过 |
@@ -416,9 +416,9 @@
 | `WS/localization_test.cpp` | `stableLanguageIds` | A | 保留翻译 ID 逻辑检查。稳定 ID、别名和语言名不依赖控件 |
 | `WS/localization_test.cpp` | `standardQtDialogsUseEmbeddedChineseCatalog` | C | 由 Claude 审定 Qt Widgets 标准对话框覆盖的归属。该例仅测试 QMessageBox 按钮译文，去 Widgets 后需审定旧功能退役及 Quick 对话框译文对应范围 |
 | `WS/memory_lifecycle_test.cpp` | `closedLayoutsReleaseTheirPaneTrees` | A | 原套件保留，External+QuickWorkspace，更新对象遍历入口。每次恢复新稳定 ID 后旧模型树和内容释放、窗口/标签数有界，可保留 weak_ptr/QPointer 断言。 |
-| `WS/memory_lifecycle_test.cpp` | `commandMayUnloadWhileItsMenuIsBeingCreated` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。enabled 查询自卸载命令后无残留菜单/action，资源回基线。Quick aCommandQueryCanReleaseTheWorkspace 是销毁工作区，未覆盖自卸载与菜单资源残留。 |
+| `WS/memory_lifecycle_test.cpp` | `commandMayUnloadWhileItsMenuIsBeingCreated` | C | 3.4 已合并到 quick-menu-bar 的 `menuBarReleasesRemovedRootContributions`：工作台与浮窗、100 个不同命令及根／普通子菜单／共享子菜单路径、查询时自卸载、实际菜单释放与共享项保留，见 3.4 进度。 |
 | `WS/memory_lifecycle_test.cpp` | `kindChangesKeepOneCommandSubscriptionPerWindow` | C | 3.4 已整理到 quick-workspace-lifecycle 的 `repeatedMovesReleaseContentBarsAndNativeWindows`。28 轮检查窗口身份、内容与栏释放、原生句柄和有界窗口对象树；旧 chrome 每通知一次查询／Widgets 类型与 storage 计数按条件 1 退役，见 3.4 进度。 |
-| `WS/memory_lifecycle_test.cpp` | `removedCommandsReleaseDynamicMenus` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。100轮贡献在工作台/浮窗保留共享菜单、释放临时 action/菜单且对象数不增。Quick structureUpdatesRetainInputAndReleaseRetiredRows 仅局部弹出菜单，缺窗口菜单完整生命周期。 |
+| `WS/memory_lifecycle_test.cpp` | `removedCommandsReleaseDynamicMenus` | C | 3.4 已合并到 quick-menu-bar 的 `menuBarReleasesRemovedRootContributions`：工作台与浮窗、100 个不同命令及根／普通子菜单／共享子菜单路径、查询时自卸载、实际菜单释放与共享项保留，见 3.4 进度。 |
 | `WS/memory_lifecycle_test.cpp` | `repeatedLayoutAndWindowCyclesReleaseOwnedResources` | C | 3.4 已整理到 quick-workspace-lifecycle 的 `repeatedMovesReleaseContentBarsAndNativeWindows`。28 轮检查窗口身份、内容与栏释放、原生句柄和有界窗口对象树；旧 chrome 每通知一次查询／Widgets 类型与 storage 计数按条件 1 退役，见 3.4 进度。 |
 | `WS/menu_structure_test.cpp` | `applicationTreeUsesSemanticGroupsAndCoversEveryCommand` | A | 原 menu-structure 套件，已用 External，保留菜单描述树断言。现已用 External，验证菜单描述树分组、顺序、分隔符和每条命令唯一归类，不建 Widgets 视图，原样保留。 |
 | `WS/menu_structure_test.cpp` | `directionalFamiliesHaveAConsistentOrder` | A | 原 menu-structure 套件，已用 External，保留菜单描述树断言。现已用 External，断言菜单描述树方向家族及窗口切换项顺序，原样保留。 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-已完成全部 A 类。原行为断言与数据行保留；不能平迁或暴露产品缺陷的用例已改 C，保留原 Widgets 正文，未当成修复。接下来只做 3.4 第一组“内容与生命周期”，完成后等 Claude 审查。各源码证据如下。
+已完成全部 A 类。原行为断言与数据行保留；不能平迁或暴露产品缺陷的用例已改 C，保留原 Widgets 正文，未当成修复。3.4 第一组的后续状态见[本组进度](#34-内容与生命周期进度)。各源码证据如下。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1035,7 +1035,9 @@
 
 #### 3.4 内容与生命周期进度
 
-进行中，只处理审定的第一组，完成后等 Claude 审查。3.2 清单保留原用例名和类别作为对应关系，已合并的行更新去向，不再计作仍待补的缺口。
+第一组已逐项整理，等待 Claude 审查写法及处理缺口，尚未完成全部 C 迁移。原 42 项中 32 项已合并到 Quick 或按规则退役，10 项原函数／数据／断言保留待决定或修复：workspace 三项（Q7／Q8），tab-group 四项（Q2／Q10），view-reuse 三项（Q7／Q9／Q11）。各次证据与统计见[收尾记录](../../development/verification-log/2026-11.md#动态菜单资源的-c-类合并及第一组整理收尾2026-11-07)。按交接要求停在此节点，不开始后续组或 3.5。
+
+3.2 清单保留原用例名和类别作为对应关系，分类数不是剩余活用例数。已合并的行更新去向，不再计作仍待补的缺口。
 
 | 功能 | 状态 | 证据与原用例映射 |
 | --- | --- | --- |
@@ -1051,5 +1053,6 @@
 | 内容尺寸回调重入 | view-reuse 一项 C 的四种组合迁到 quick-workspace-lifecycle，保留管理器重入、幸存内容及后续可用性 | [记录](../../development/verification-log/2026-11.md#内容尺寸回调重入的-c-类迁到-quick2026-11-07) |
 | 内容与窗口资源 | memory-lifecycle 两项 C 合为 28 轮 Quick 资源用例，原生窗口、内容、栏释放及预热后窗口对象树有界 | [记录](../../development/verification-log/2026-11.md#内容与窗口资源循环的-c-类合并到-quick2026-11-07) |
 | 子编辑器导航策略 | view-reuse 一项 C 保留，默认子项与记住子项的返回策略不同，待 Claude 决定 | [记录](../../development/verification-log/2026-11.md#子编辑器返回焦点的-c-类差异2026-11-07)、[交接 Q11](../../development/handoff.md#quick-缺的行为34-源码核对) |
+| 动态菜单资源 | memory-lifecycle 两项 C 合入既有 Quick 菜单栏用例：100 轮不同 ID／路径、共享菜单和查询时自卸载，两种窗口实际释放 | [记录](../../development/verification-log/2026-11.md#动态菜单资源的-c-类合并及第一组整理收尾2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
