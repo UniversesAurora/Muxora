@@ -417,9 +417,9 @@
 | `WS/localization_test.cpp` | `standardQtDialogsUseEmbeddedChineseCatalog` | C | 由 Claude 审定 Qt Widgets 标准对话框覆盖的归属。该例仅测试 QMessageBox 按钮译文，去 Widgets 后需审定旧功能退役及 Quick 对话框译文对应范围 |
 | `WS/memory_lifecycle_test.cpp` | `closedLayoutsReleaseTheirPaneTrees` | A | 原套件保留，External+QuickWorkspace，更新对象遍历入口。每次恢复新稳定 ID 后旧模型树和内容释放、窗口/标签数有界，可保留 weak_ptr/QPointer 断言。 |
 | `WS/memory_lifecycle_test.cpp` | `commandMayUnloadWhileItsMenuIsBeingCreated` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。enabled 查询自卸载命令后无残留菜单/action，资源回基线。Quick aCommandQueryCanReleaseTheWorkspace 是销毁工作区，未覆盖自卸载与菜单资源残留。 |
-| `WS/memory_lifecycle_test.cpp` | `kindChangesKeepOneCommandSubscriptionPerWindow` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。逐窗口预条件恰调用一次依赖旧 chrome 订阅和 Widgets 统计。需审定 Quick 无重复资源/行为检查，不能改 External 变成零调用。 |
+| `WS/memory_lifecycle_test.cpp` | `kindChangesKeepOneCommandSubscriptionPerWindow` | C | 3.4 已整理到 quick-workspace-lifecycle 的 `repeatedMovesReleaseContentBarsAndNativeWindows`。28 轮检查窗口身份、内容与栏释放、原生句柄和有界窗口对象树；旧 chrome 每通知一次查询／Widgets 类型与 storage 计数按条件 1 退役，见 3.4 进度。 |
 | `WS/memory_lifecycle_test.cpp` | `removedCommandsReleaseDynamicMenus` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。100轮贡献在工作台/浮窗保留共享菜单、释放临时 action/菜单且对象数不增。Quick structureUpdatesRetainInputAndReleaseRetiredRows 仅局部弹出菜单，缺窗口菜单完整生命周期。 |
-| `WS/memory_lifecycle_test.cpp` | `repeatedLayoutAndWindowCyclesReleaseOwnedResources` | C | 补 WS/quick_toolbar_test.cpp、quick_menu_bar_test.cpp 与 quick_workspace_content_test.cpp 的生命周期。28轮操作精确检查 QObject/Widgets 类别数、原生句柄释放与最终一个 storage。Quick 现有身份例缺全链有界资源，统计口径需改写审定。 |
+| `WS/memory_lifecycle_test.cpp` | `repeatedLayoutAndWindowCyclesReleaseOwnedResources` | C | 3.4 已整理到 quick-workspace-lifecycle 的 `repeatedMovesReleaseContentBarsAndNativeWindows`。28 轮检查窗口身份、内容与栏释放、原生句柄和有界窗口对象树；旧 chrome 每通知一次查询／Widgets 类型与 storage 计数按条件 1 退役，见 3.4 进度。 |
 | `WS/menu_structure_test.cpp` | `applicationTreeUsesSemanticGroupsAndCoversEveryCommand` | A | 原 menu-structure 套件，已用 External，保留菜单描述树断言。现已用 External，验证菜单描述树分组、顺序、分隔符和每条命令唯一归类，不建 Widgets 视图，原样保留。 |
 | `WS/menu_structure_test.cpp` | `directionalFamiliesHaveAConsistentOrder` | A | 原 menu-structure 套件，已用 External，保留菜单描述树断言。现已用 External，断言菜单描述树方向家族及窗口切换项顺序，原样保留。 |
 | `WS/menu_structure_test.cpp` | `externalMenuHostCanOutliveItsManager` | C | 拟补 WS/quick_menu_bar_test.cpp（quick-menu-bar）及 WS/quick_popup_menu_test.cpp（quick-popup-menu）。缺少外部菜单宿主比管理器活得更久时排队命令取消、刷新禁用/隐藏保留项、销毁呈现后旧项仍不能执行的等价生命周期覆盖，Quick 所有者关闭释放测试不等价。 |
@@ -1049,5 +1049,6 @@
 | 置顶范围关闭 | tab-group 一项 C 接到 Quick 标签实际动作入口，原命令、顺序及恢复契约保留 | [记录](../../development/verification-log/2026-11.md#置顶范围关闭的-c-类迁到-quick2026-11-07) |
 | 相邻创建准备与命令重入 | 三项旧 QWidget 准备机制退役；另三项保留，等待 Q2 的真实 Quick 命令／创建入口 | [记录](../../development/verification-log/2026-11.md#相邻创建的-widgets-准备机制退役2026-11-07) |
 | 内容尺寸回调重入 | view-reuse 一项 C 的四种组合迁到 quick-workspace-lifecycle，保留管理器重入、幸存内容及后续可用性 | [记录](../../development/verification-log/2026-11.md#内容尺寸回调重入的-c-类迁到-quick2026-11-07) |
+| 内容与窗口资源 | memory-lifecycle 两项 C 合为 28 轮 Quick 资源用例，原生窗口、内容、栏释放及预热后窗口对象树有界 | [记录](../../development/verification-log/2026-11.md#内容与窗口资源循环的-c-类合并到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

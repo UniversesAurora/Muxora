@@ -12,7 +12,6 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
-#include <QPlainTextEdit>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -127,50 +126,10 @@ class MemoryLifecycleTest final : public QObject {
   private slots:
     void initTestCase() { qApp->setQuitOnLastWindowClosed(false); }
     void cleanup() { settle(); }
-    void kindChangesKeepOneCommandSubscriptionPerWindow();
     void closedLayoutsReleaseTheirPaneTrees();
-    void repeatedLayoutAndWindowCyclesReleaseOwnedResources();
     void removedCommandsReleaseDynamicMenus();
     void commandMayUnloadWhileItsMenuIsBeingCreated();
 };
-
-void MemoryLifecycleTest::kindChangesKeepOneCommandSubscriptionPerWindow() {
-    QHash<WindowId, int> checks;
-    WindowManager manager;
-    QVERIFY(manager.commands().add({QStringLiteral("test.memoryProbe"),
-                                    QStringLiteral("Lifecycle probe"),
-                                    QStringLiteral("Test"),
-                                    {},
-                                    [&checks](const CommandContext &context) {
-                                        ++checks[context.window];
-                                        return true;
-                                    },
-                                    [](const CommandContext &) { return true; },
-                                    {QStringLiteral("tools")}}));
-    const auto owner = manager.createWindow();
-    const auto target = manager.createWindow();
-    QVERIFY(!manager
-                 .addTab(target, new QLabel(QStringLiteral("Preserved")),
-                         {QStringLiteral("Preserved"), QStringLiteral("test.label"), {}})
-                 .isNull());
-    settle();
-    checks.clear();
-    manager.commandsChanged();
-    QCOMPARE(checks.value(owner), 1);
-    QCOMPARE(checks.value(target), 1);
-    for (int iteration = 0; iteration < 24; ++iteration) {
-        QVERIFY(manager.demoteWindow(target, owner));
-        QVERIFY(manager.promoteWindow(target));
-        settle();
-        checks.clear();
-        manager.commandsChanged();
-        // A subscription tied to each discarded chrome would produce 3, 5,
-        // 7... checks in the surviving target after each conversion pair.
-        QCOMPARE(checks.value(owner), 1);
-        QCOMPARE(checks.value(target), 1);
-    }
-    recordSample(manager, "kind-subscription", 24);
-}
 
 void MemoryLifecycleTest::closedLayoutsReleaseTheirPaneTrees() {
     WindowManager manager(WindowManager::Presentation::External);
@@ -194,92 +153,6 @@ void MemoryLifecycleTest::closedLayoutsReleaseTheirPaneTrees() {
         QCOMPARE(manager.model().tabs().size(), 1);
     }
     recordSample(manager, "replace-layout", 12, &workspace);
-}
-
-void MemoryLifecycleTest::repeatedLayoutAndWindowCyclesReleaseOwnedResources() {
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    QPointer<QWidget> anchorContent = new QLabel(QStringLiteral("Anchor"));
-    const auto anchor =
-        manager.addTab(root, anchorContent, {QStringLiteral("Anchor"), QStringLiteral("test.label"), {}});
-    const auto anchorGroup = manager.model().groupForTab(anchor);
-    manager.showWindow(root);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(root)));
-    settle();
-    ObjectSnapshot baseline;
-    // The first four cycles warm Qt's lazily created native/style resources.
-    // Counts are then compared exactly; private bytes and global OS handles
-    // are recorded rather than declared leak-free using a generous threshold.
-    for (int iteration = 0; iteration < 28; ++iteration) {
-        QPointer<QPlainTextEdit> content = new QPlainTextEdit;
-        content->setPlainText(QString(16384, QLatin1Char('x')));
-        const auto tab = manager.addTab(
-            root, content, {QStringLiteral("Temporary"), QStringLiteral("test.editor"), {}}, anchorGroup);
-        QVERIFY(!tab.isNull());
-        const auto pane = manager.model().tab(tab)->activePane;
-        QPointer<QWidget> second = new QLabel(QStringLiteral("Split pane"));
-        QVERIFY(!manager.splitPane(tab, pane, second, Placement::Right).isNull());
-        QPointer<QWidget> top = new QLabel(QStringLiteral("Top bar"));
-        QPointer<QWidget> bottom = new QLabel(QStringLiteral("Bottom bar"));
-        QVERIFY(manager.setPaneTopBar(pane, top));
-        QVERIFY(manager.setPaneBottomBar(pane, bottom));
-        QVERIFY(manager.moveTab(tab, anchorGroup, Placement::Right));
-        QVERIFY(manager.moveTabToEdge(tab, Edge(iteration % 4)));
-        QVERIFY(manager.activateTab(tab));
-        QVERIFY(manager.pinTab(tab, true));
-        QVERIFY(manager.pinTab(tab, false));
-        QVERIFY(manager.moveTab(tab, anchorGroup));
-        const auto floating = manager.detachTab(tab);
-        QVERIFY(!floating.isNull());
-        QPointer<QWidget> retiredWindow = manager.windowWidget(floating);
-#ifdef Q_OS_WIN
-        const auto retiredHandle = reinterpret_cast<HWND>(retiredWindow->effectiveWinId());
-        QVERIFY(IsWindow(retiredHandle));
-#endif
-        QVERIFY(manager.promoteWindow(floating));
-        QVERIFY(manager.demoteWindow(floating, root));
-        QVERIFY(manager.moveAllTabs(floating, anchorGroup));
-        QVERIFY(manager.closeTab(tab));
-        QVERIFY(manager.activateTab(anchor));
-        settle();
-        QVERIFY(retiredWindow.isNull());
-        QVERIFY(content.isNull());
-        QVERIFY(second.isNull());
-        QVERIFY(top.isNull());
-        QVERIFY(bottom.isNull());
-#ifdef Q_OS_WIN
-        QVERIFY(!IsWindow(retiredHandle));
-#endif
-        QCOMPARE(manager.model().windows().size(), 1);
-        QCOMPARE(manager.model().groups().size(), 1);
-        QCOMPARE(manager.model().tabs().size(), 1);
-        QCOMPARE(manager.paneWidget(manager.model().tab(anchor)->activePane), anchorContent.data());
-        const auto current = ownedObjects(manager);
-        if (iteration == 3)
-            baseline = current;
-        else if (iteration > 3) {
-            QCOMPARE(current.widgets, baseline.widgets);
-            QCOMPARE(current.objects, baseline.objects);
-            QCOMPARE(current.classes, baseline.classes);
-        }
-        if (iteration == 3 || iteration == 15 || iteration == 27) {
-            const auto sample = recordSample(manager, "open-move-close", iteration + 1);
-#ifdef Q_OS_WIN
-            QVERIFY(sample.value(QStringLiteral("nativeCountersAvailable")).toBool());
-#endif
-        }
-    }
-    QPointer<QWidget> rootWindow = manager.windowWidget(root);
-    QVERIFY(manager.requestCloseAllWindows());
-    settle();
-    QVERIFY(anchorContent.isNull());
-    QVERIFY(rootWindow.isNull());
-    QCOMPARE(manager.model().windows().size(), 0);
-    QCOMPARE(manager.model().tabs().size(), 0);
-    const auto final = ownedObjects(manager);
-    // Only the empty hidden storage and the manager's long-lived helpers remain.
-    QCOMPARE(final.widgets, 1);
-    recordSample(manager, "all-closed", 28);
 }
 
 void MemoryLifecycleTest::removedCommandsReleaseDynamicMenus() {
