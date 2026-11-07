@@ -61,6 +61,7 @@ window_system_add_suite(surface-transfer desktop LINK WindowSystemQuick)
 window_system_add_suite(tab-bar-presentation desktop LINK WindowSystemQuick)
 window_system_add_suite(tab-creation desktop LINK WindowSystemQuick)
 window_system_add_suite(toolbar-profile desktop LINK WindowSystemQuick)
+window_system_add_suite(view-reuse desktop LINK WindowSystemQuick)
 window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)
 window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
 window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
@@ -116,7 +117,7 @@ set(window_system_model_suites pinned-layout pinned-positions tab-layout)
 set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixed-tab-rows tab-appearance tab-title-layout shortcut-settings localization input-method-scope
     interface-appearance tab-label-presentation tab-carrier-source tab-presentation-source tab-reorder-wiring edge-reorder
     external-presentation)
-set(window_system_desktop_suites pane-settings pane-bar-policy pane-minimum pinned-ui window-placement chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu presentation compact-ui edge-strip drag-presentation strip-drag menu-structure focus-mode multirow-toolbar view-commands peek-size tab-viewport floating-panel tab-strip-layout sticky-tabs popup-menu view-reuse
+set(window_system_desktop_suites pane-settings pane-bar-policy pane-minimum pinned-ui window-placement chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu presentation compact-ui edge-strip drag-presentation strip-drag menu-structure focus-mode multirow-toolbar view-commands peek-size tab-viewport floating-panel tab-strip-layout sticky-tabs popup-menu
     integer-slider input-method-native)
 if(WIN32)
     list(APPEND window_system_desktop_suites native-drag)

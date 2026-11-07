@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
 
@@ -9,11 +10,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSplitter>
 #include "docking/tab_bar.hpp"
 #include <QTest>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <memory>
 
 using namespace window_system;
 
@@ -58,7 +62,8 @@ struct TwoGroups {
     GroupId first, second;
     QVector<TabId> firstTabs, secondTabs;
 };
-QJsonObject snapshotWithInactiveTabs(int count)
+QJsonObject snapshotWithInactiveTabs(int count,
+                                    WindowManager::Presentation presentation = WindowManager::Presentation::Widgets)
 {
     LayoutModel model;
     const auto window = model.createWindow();
@@ -72,8 +77,12 @@ QJsonObject snapshotWithInactiveTabs(int count)
         group = model.groupForTab(tab);
         tabs.append(tab);
     }
-    WindowManager seed;
+    WindowManager seed(presentation);
+    std::unique_ptr<QuickWorkspace> workspace;
+    if (presentation == WindowManager::Presentation::External)
+        workspace = std::make_unique<QuickWorkspace>(seed);
     seed.createWindow(WindowKind::Workbench);
+    if (workspace) QCoreApplication::sendPostedEvents(workspace.get(), QEvent::MetaCall);
     auto snapshot = seed.saveLayout();
     snapshot.insert(QStringLiteral("model"), model.toJson());
     QJsonArray panes;
@@ -326,12 +335,15 @@ void ViewReuseTest::restoringLayoutDiscardsPendingTabBars()
 
 void ViewReuseTest::contentVisibilityNotificationsAreCoalesced()
 {
-    const auto snapshot = snapshotWithInactiveTabs(3);
-    WindowManager manager;
-    QVERIFY(restoreTabs(manager, snapshot));
+    const auto snapshot = snapshotWithInactiveTabs(3, WindowManager::Presentation::External);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    QVERIFY(manager.restoreLayout(snapshot));
     const auto window = manager.model().windowOrder().first();
+    QTRY_VERIFY(workspace.window(window));
     manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(window)));
     settle();
     QVector<QVector<ContentVisibilityChange>> batches;
     manager.setContentVisibilityHandler([&batches](const QVector<ContentVisibilityChange>& changes) {
