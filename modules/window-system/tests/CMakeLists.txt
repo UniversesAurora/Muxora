@@ -91,12 +91,12 @@ if(WIN32)
 endif()
 
 qt_add_executable(window-system-custom-chrome-test custom_chrome_test.cpp)
-target_link_libraries(window-system-custom-chrome-test PRIVATE WindowSystem::Widgets Qt6::Test)
+target_link_libraries(window-system-custom-chrome-test PRIVATE WindowSystemQuick Qt6::Test)
 target_include_directories(window-system-custom-chrome-test PRIVATE ../src)
 set_target_properties(window-system-custom-chrome-test PROPERTIES AUTOMOC ON)
 add_test(NAME window-system.custom-chrome COMMAND window-system-custom-chrome-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/custom-chrome-results.txt,txt)
-set_tests_properties(window-system.custom-chrome PROPERTIES TIMEOUT 60 LABELS widget)
+set_tests_properties(window-system.custom-chrome PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
 add_dependencies(window-system-drag-test window-system-overlay-fixture)
 
 # Layers follow docs/development/testing-design.md: desktop suites show
@@ -165,7 +165,7 @@ set_tests_properties(window-system.pinned-ui PROPERTIES TIMEOUT 120)
 # performance targets. See docs/development/testing-design.md, CTest limits.
 if(MSVC)
     set_tests_properties(
-        window-system.custom-chrome window-system.pane-settings window-system.caption-strip
+        window-system.pane-settings window-system.caption-strip
         window-system.drag-presentation
         window-system.tab-viewport
         window-system.memory-lifecycle

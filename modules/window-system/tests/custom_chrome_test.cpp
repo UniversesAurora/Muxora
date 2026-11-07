@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "chrome/command_strip.hpp"
 #include "chrome/status_bar.hpp"
 #include "chrome/workspace_window.hpp"
@@ -11,6 +12,8 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
 #include <memory>
@@ -190,9 +193,11 @@ void CustomChromeTest::toolbarsSurviveKindChangesAndReleaseEveryPresentation() {
 }
 
 void CustomChromeTest::dynamicDefinitionsRejectInvalidAndReservedIds() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
     addCommand(manager, "custom.execute", [](const CommandContext &) { return true; });
     const auto window = manager.createWindow();
+    QTRY_VERIFY(workspace.window(window));
     const auto before = manager.saveLayout();
     QVERIFY(!manager.registerToolbar({"title", "Reserved", {"custom.execute"}}));
     QVERIFY(!manager.registerToolbar({"bad id", "Invalid", {"custom.execute"}}));
@@ -259,18 +264,23 @@ void CustomChromeTest::statusItemsUpdateInPlaceAndParticipateInVisibilityAndRest
 }
 
 void CustomChromeTest::renamingPreservesContentAndTheFactoryDescriptor() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    auto *content = new QLabel("Same content");
-    const auto tab = manager.addTab(window, content, {"Old", "label", {{"value", 42}}});
+    const auto tab = manager.addTab(window, {"Old", "label", {{"value", 42}}});
     const auto pane = manager.model().tab(tab)->activePane;
+    QTRY_VERIFY(workspace.content(pane));
+    auto *content = workspace.content(pane);
     QVERIFY(manager.execute("tab.rename", {{"title", "Renamed"}}, window));
     QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Renamed"));
-    QCOMPARE(manager.paneWidget(pane), content);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), content);
     QCOMPARE(manager.tabOptions(tab).title, QStringLiteral("Renamed"));
     QCOMPARE(manager.tabOptions(tab).state.value("value").toInt(), 42);
     QVERIFY(manager.execute("window.setTitle", {{"title", "Custom window"}}, window));
-    QVERIFY(manager.windowWidget(window)->windowTitle().contains("Custom window"));
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QVERIFY(workspace.window(window)->title().contains("Custom window"));
     QCOMPARE(manager.saveLayout().value("windows").toArray().first().toObject().value("title").toString(),
              QStringLiteral("Custom window"));
     const auto before = manager.saveLayout();

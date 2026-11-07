@@ -189,7 +189,7 @@ Windows 界面文字已调整轮廓平滑方式，系统 ClearType 配置保持�
 
 10.6 已按审定清单开始迁移测试夹具，可见性策略、应用布局文件及应用脚本套件改用 External 及 Quick，保留原有行为断言，定向检查通过，见 [可见性策略](verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07)、[布局文件](verification-log/2026-11.md#布局文件测试迁到-external2026-11-07)和 [应用脚本](verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07)。
 
-Lua 宿主已迁移 39 项 A、工作区已迁移 22 项 A，均通过各自定向检查，见 [Lua 宿主](verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07)和 [工作区](verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07)。视图状态的 18 项 A 也已迁移并通过定向检查，见 [记录](verification-log/2026-11.md#视图状态的-a-类测试迁到-external2026-11-07)。快捷键分发的 16 项 A 已通过定向检查，见 [记录](verification-log/2026-11.md#快捷键分发的-a-类测试迁到-external2026-11-07)。标签组的 19 项 A（含三个方向试迁用例）已通过 Debug 和 Release 定向检查，见 [记录](verification-log/2026-11.md#标签组的-a-类测试迁到-external2026-11-07)。脚本卸载工具栏后保存布局仍含旧工具栏，以及内置窗格／标签组分割命令依赖 Widgets 的缺陷均已交 Claude 处理。
+Lua 宿主已迁移 39 项 A、工作区已迁移 22 项 A，均通过各自定向检查，见 [Lua 宿主](verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07)和 [工作区](verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07)。视图状态的 18 项 A 也已迁移并通过定向检查，见 [记录](verification-log/2026-11.md#视图状态的-a-类测试迁到-external2026-11-07)。快捷键分发的 16 项 A 已通过定向检查，见 [记录](verification-log/2026-11.md#快捷键分发的-a-类测试迁到-external2026-11-07)。标签组的 19 项 A（含三个方向试迁用例）已通过 Debug 和 Release 定向检查，见 [记录](verification-log/2026-11.md#标签组的-a-类测试迁到-external2026-11-07)。自定义工具栏源码的四项 A 已完成，见 [记录](verification-log/2026-11.md#自定义工具栏源码的-a-类测试迁到-external2026-11-07)。脚本卸载工具栏后保存布局仍含旧工具栏，以及内置窗格／标签组分割命令依赖 Widgets 的缺陷均已交 Claude 处理。
 
 Quick 版里按方向切换、移动、交换组和窗格的命令（Ctrl+Alt+方向键、Alt+方向键等），以及“窗口状态”菜单的最小化、最大化、还原，之前一直没有反应，已修复，相关 7 个套件通过，没有在应用里试用，见 [记录](verification-log/2026-11.md#方向导航和窗口状态命令在-quick-下失效2026-11-07)。
 
