@@ -1,5 +1,6 @@
 #include "translation_checks.hpp"
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "docking/dock_surface.hpp"
 #include "docking/tab_strip.hpp"
 #include "style/tab_label_geometry.hpp"
@@ -20,6 +21,8 @@
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QScrollBar>
 #include <QScreen>
 #include <QStyle>
@@ -330,22 +333,26 @@ void EdgeTabInteractionTest::allPinActionsHaveDistinctIconsAndFollowTheEdgeTabs(
 }
 void EdgeTabInteractionTest::unpinRepinRestoresTheOriginalGroupAndContentPointers()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    auto* aContent = content("A content"); auto* bContent = content("B content");
-    const auto a = manager.addTab(window, aContent, options("A"));
-    const auto b = manager.addTab(window, bContent, options("B"));
+    const auto a = manager.addTab(window, options("A"));
+    const auto b = manager.addTab(window, options("B"));
+    const auto aPane = manager.model().tab(a)->activePane;
+    const auto bPane = manager.model().tab(b)->activePane;
+    QTRY_VERIFY(workspace.content(aPane) && workspace.content(bPane));
+    auto* aContent = workspace.content(aPane); auto* bContent = workspace.content(bPane);
     QVERIFY(manager.moveTabToEdge(a, Edge::Right, true));
     const auto group = manager.model().groupForTab(a);
     QVERIFY(manager.moveTab(b, group));
-    const auto aPane = manager.model().tab(a)->activePane;
-    const auto bPane = manager.model().tab(b)->activePane;
     QVERIFY(manager.pinTab(a, false));
     QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{b}));
     QVERIFY(manager.pinEdge(window, Edge::Right, false));
     QVERIFY(manager.pinTab(b, true)); QVERIFY(manager.pinTab(a, true));
     QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{a, b}));
-    QCOMPARE(manager.paneWidget(aPane), aContent); QCOMPARE(manager.paneWidget(bPane), bContent);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(aPane), aContent); QCOMPARE(workspace.content(bPane), bContent);
     QVERIFY(manager.model().validate().ok);
 }
 void EdgeTabInteractionTest::tabWheelScrollsWithoutChangingSelection()
@@ -486,13 +493,16 @@ void EdgeTabInteractionTest::sideBarInsertionUsesTheAppropriateAxis()
 }
 void EdgeTabInteractionTest::sideBarReorderCommandsKeepLiveContent()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    auto* aContent = content("A");
-    const auto a = manager.addTab(window, aContent, options("A"));
-    const auto b = manager.addTab(window, content("B"), options("B"));
-    const auto c = manager.addTab(window, content("C"), options("C"));
+    const auto a = manager.addTab(window, options("A"));
+    const auto b = manager.addTab(window, options("B"));
+    const auto c = manager.addTab(window, options("C"));
     const auto pane = manager.model().tab(a)->activePane;
+    QTRY_VERIFY(workspace.content(pane));
+    auto* aContent = workspace.content(pane);
     QVERIFY(manager.moveTabToEdge(a, Edge::Left));
     QVERIFY(manager.moveTab(b, manager.model().groupForTab(a)));
     QVERIFY(manager.moveTabToEdge(c, Edge::Left));
@@ -511,16 +521,19 @@ void EdgeTabInteractionTest::sideBarReorderCommandsKeepLiveContent()
     QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, c, a}));
     QVERIFY(manager.execute("workspace.reorderTab.previous", {}, window));
     QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
-    QCOMPARE(manager.paneWidget(pane), aContent);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), aContent);
     QCOMPARE(manager.commands().find("workspace.reorderTab.previous")->shortcut, QKeySequence("Ctrl+Shift+PgUp"));
     QCOMPARE(manager.commands().find("workspace.reorderTab.next")->shortcut, QKeySequence("Ctrl+Shift+PgDown"));
-    showTestWindow(manager.windowWidget(window));
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
-    QTest::keyClick(manager.windowWidget(window), Qt::Key_PageDown, Qt::ControlModifier | Qt::ShiftModifier);
+    auto* view = workspace.window(window);
+    view->setFlag(Qt::WindowStaysOnTopHint); view->show();
+    QVERIFY(QTest::qWaitForWindowExposed(view));
+    QTest::keyClick(view, Qt::Key_PageDown, Qt::ControlModifier | Qt::ShiftModifier);
     QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, c, a}));
-    QTest::keyClick(manager.windowWidget(window), Qt::Key_PageUp, Qt::ControlModifier | Qt::ShiftModifier);
+    QTest::keyClick(view, Qt::Key_PageUp, Qt::ControlModifier | Qt::ShiftModifier);
     QCOMPARE(manager.model().autoHiddenTabs(window, Edge::Left), (QVector<TabId>{b, a, c}));
-    QCOMPARE(manager.paneWidget(pane), aContent);
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+    QCOMPARE(workspace.content(pane), aContent);
     QVERIFY(manager.model().validate().ok);
 }
 

@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/edge_tab_interaction_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序处理 `WS/extension_api_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1008,5 +1008,6 @@
 | `WS/tab_group_test.cpp` | 原 16 项 A 及三个审定允许试迁的方向用例已迁，十项 C 保留 | [记录](../../development/verification-log/2026-11.md#标签组的-a-类测试迁到-external2026-11-07) |
 | `WS/custom_chrome_test.cpp` | 两项管理器 A 已迁，两项纯注册表 A 原样保留，五项 C 保留 | [记录](../../development/verification-log/2026-11.md#自定义工具栏源码的-a-类测试迁到-external2026-11-07) |
 | `WS/drag_presentation_test.cpp` | 四项 A 已是纯共用算法，无呈现依赖，原样保留并定向验证；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#拖动导向的-a-类无需呈现迁移2026-11-07) |
+| `WS/edge_tab_interaction_test.cpp` | 两项 A 已迁，内容身份及原快捷键事件接入 Quick；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#侧边栏标签的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
