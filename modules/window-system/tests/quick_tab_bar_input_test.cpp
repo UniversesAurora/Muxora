@@ -3,6 +3,10 @@
 // Dimensions: horizontal/right placement x click/key/close x timed activation.
 // No static appearance checks.
 #include "quick/tab_bar_item.hpp"
+#include "quick/dock_surface_item.hpp"
+#include "quick/group_item.hpp"
+#include <window_system/quick_workspace.hpp>
+#include <window_system/window_manager.hpp>
 #include <QContextMenuEvent>
 #include <QPointer>
 #include <QQuickWindow>
@@ -15,6 +19,62 @@ using namespace window_system::quick;
 class QuickTabBarInputTest final : public QObject {
     Q_OBJECT
 private slots:
+    void stickyTabsSurviveRangeClosesAndUnpinFromTheirQuickAction()
+    {
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        auto behavior = manager.behavior();
+        behavior.newTabPosition = NewTabPosition::Beginning;
+        manager.setBehavior(behavior);
+        const auto window = manager.createWindow();
+        QVector<TabId> tabs;
+        for (const auto* name : {"A", "B", "C", "D"}) tabs << manager.addTab(window, {QString::fromLatin1(name)});
+        const auto group = manager.model().groupForTab(tabs[0]);
+        const auto contextFor = [&](TabId tab) {
+            auto context = manager.context(window);
+            context.tab = tab;
+            context.group = manager.model().groupForTab(tab);
+            context.pane = manager.model().tab(tab)->activePane;
+            return context;
+        };
+        auto context = contextFor(tabs[2]);
+        QVERIFY(manager.commands().find("tab.stick")->enabled(context));
+        QVERIFY(!manager.commands().find("tab.unstick")->enabled(context));
+        QVERIFY(manager.executeInContext("tab.stick", context));
+        QVERIFY(manager.isTabSticky(tabs[2]));
+        QCOMPARE(manager.model().group(group)->tabs.first(), tabs[2]);
+        QVERIFY(!manager.commands().find("tab.stick")->enabled(context));
+        QVERIFY(manager.commands().find("tab.unstick")->enabled(context));
+        const auto created = manager.addTab(window, {QStringLiteral("E")});
+        QCOMPARE(manager.model().group(group)->tabs.indexOf(created), 1);
+        context = contextFor(tabs[0]);
+        QVERIFY(manager.executeInContext("workspace.closeTabs.others", context));
+        QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{tabs[2], tabs[0]}));
+        QVERIFY(manager.executeInContext("workspace.closeTabs.all", context));
+        QCOMPARE(manager.model().group(group)->tabs, (QVector<TabId>{tabs[2]}));
+        QVERIFY(!manager.commands().find("workspace.closeTabs.all")->enabled(contextFor(tabs[2])));
+        const auto restoredTab = manager.addTab(window, {QStringLiteral("F")});
+        QTRY_VERIFY(workspace.window(window));
+        WindowManager restored(WindowManager::Presentation::External);
+        QuickWorkspace restoredWorkspace(restored);
+        restoredWorkspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        QVERIFY(restored.restoreLayout(manager.saveLayout()));
+        QVERIFY(restored.isTabSticky(tabs[2]));
+        QCOMPARE(restored.model().group(group)->tabs, (QVector<TabId>{tabs[2], restoredTab}));
+        auto* view = workspace.window(window);
+        auto* dock = view->contentItem()->findChild<DockSurfaceItem*>();
+        QVERIFY(dock && dock->group(group));
+        auto* bar = dock->group(group)->tabBar();
+        auto& controller = bar->controller();
+        QCOMPARE(controller.tabData(0).toUuid(), tabs[2]);
+        const auto action = bar->mapToScene(controller.actionRect(0).center()).toPoint();
+        QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, action);
+        QTRY_VERIFY(!manager.isTabSticky(tabs[2]));
+        QVERIFY(manager.model().tab(tabs[2]));
+        QVERIFY(manager.model().validate());
+    }
+
     void inputsAndFramesDriveTheSharedController_data()
     {
         QTest::addColumn<bool>("vertical");

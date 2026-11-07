@@ -733,7 +733,7 @@
 | `WS/tab_group_test.cpp` | `pinnedTabBarsAcceptAllSixSortCommands` | A | 迁至 Presentation::External + QuickWorkspace。管理器排序命令覆盖四边固定组，观测组序、活动项、窗格和内容身份，不向控件发送输入，Quick替换内容工厂即可保留。 |
 | `WS/tab_group_test.cpp` | `sortCommandsUseAllSixRecordedOrders` | A | 迁至 Presentation::External + QuickWorkspace。六种排序、活动项和原内容身份属管理器契约，Quick内容工厂/身份查询可替代QWidget供给，保留六个固定顺序预期。 |
 | `WS/tab_group_test.cpp` | `splitFactoriesCanDestroyTheirManagerBeforeReturning` | C | 补入 quick-workspace-content/quick-popup-menu。原例QWidget工厂返回前销毁作为其父对象的窗口与管理器，Quick工厂属于QuickWorkspace且创建时序不同，不能直接迁A，需补两种分割命令的安全释放。 |
-| `WS/tab_group_test.cpp` | `stickyTabsLeadTheirStripAndSurviveRangeCloses` | C | 补入 quick-workspace-content/quick-popup-menu。前半为管理器置顶/范围关闭/持久化，末尾通过真实标签栏固定图标取消置顶。Quick缺范围关闭与图标接线的完整组合，需保留前半并补quick-tab-bar-input/quick-workspace。 |
+| `WS/tab_group_test.cpp` | `stickyTabsLeadTheirStripAndSurviveRangeCloses` | C | 3.4 已迁到 quick-tab-bar-input 的 `stickyTabsSurviveRangeClosesAndUnpinFromTheirQuickAction`，保留置顶顺序、范围关闭、恢复与实际图标取消置顶，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `validColorIdMatchingOldCancelMarkerWorksThroughCommand` | A | 迁至 Presentation::External。显式颜色参数允许__cancel__作为合法预设ID且清除有效，直接用External保留命令和模型检查。 |
 | `WS/tab_group_test.cpp` | `wholeGroupExchangeIncludesPinnedNeighbors` | A | 已按审定要求试迁 External，四向交换包含固定组，使用实际 Quick 停靠区几何，保留中央／固定位置和内容身份断言。 |
 | `WS/tab_strip_layout_test.cpp` | `accessibilityListsTabsAndFolders` | C | 补入 quick-accessibility。已有tabAndFolderActionsFollowStableIdentities检查身份与动作，但未检查所有标签role/名称/选择及标签、夹标题的childAt命中。 |
@@ -1046,5 +1046,6 @@
 | 面板显隐与组激活 | view-reuse 一项 C 迁为实际面板／最小化通知；组收拢后激活面板的用例失败，原项保留待 Claude 修复 | [记录](../../development/verification-log/2026-11.md#面板显隐的-c-类与激活入口缺口2026-11-07) |
 | 内容复用 | 六项 C 合为一个五行 Quick 行为用例；两项旧框架／静态尺寸检查退役，非默认编辑器导航策略仍保留 | [记录](../../development/verification-log/2026-11.md#内容复用的-c-类合并与旧机制退役2026-11-07) |
 | 选择器取消 | tab-group 两项 C 合为四行 Quick 菜单取消行为，保存状态不变且不发布布局通知 | [记录](../../development/verification-log/2026-11.md#选择器取消的-c-类合并到-quick2026-11-07) |
+| 置顶范围关闭 | tab-group 一项 C 接到 Quick 标签实际动作入口，原命令、顺序及恢复契约保留 | [记录](../../development/verification-log/2026-11.md#置顶范围关闭的-c-类迁到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
