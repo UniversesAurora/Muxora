@@ -12,6 +12,8 @@
 #include <window_system/interface_appearance.hpp>
 #include <window_system/localization.hpp>
 #include <QContextMenuEvent>
+#include <QCursor>
+#include <QScreen>
 #include <QQuickWindow>
 #include <QTest>
 #include <memory>
@@ -25,6 +27,9 @@ private slots:
     void init()
     {
         QTest::failOnWarning(QRegularExpression(".*(Unable to assign|TypeError|ReferenceError|Binding loop).*"));
+        // An open menu follows the root under the real cursor, which native
+        // input leaves on the next test's menu bar. Keep it off the windows.
+        QCursor::setPos(QGuiApplication::primaryScreen()->availableGeometry().bottomRight() - QPoint(16, 16));
     }
 
     // As Windows menus: access keys are underlined only while Alt is held,
