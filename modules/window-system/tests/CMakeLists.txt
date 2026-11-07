@@ -49,6 +49,7 @@ foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-reso
 endforeach()
 window_system_add_suite(visibility-profile desktop LINK WindowSystemQuick)
 window_system_add_suite(view-state desktop LINK WindowSystemQuick)
+window_system_add_suite(shortcut-dispatch desktop LINK WindowSystemQuick)
 window_system_add_suite(quick-content-host desktop LINK WindowSystemQuick WindowSystemPlatform WindowSystem::Model)
 window_system_add_suite(quick-split-tree desktop LINK WindowSystemQuick WindowSystem::Model)
 window_system_add_suite(quick-tab-presentation desktop LINK WindowSystemQuick WindowSystem::Widgets)
@@ -104,7 +105,7 @@ set(window_system_model_suites pinned-layout pinned-positions tab-layout)
 set(window_system_widget_suites smooth-scroll surface-lifecycle surface-bar mixed-tab-rows hierarchy-conversion tab-appearance tab-title-layout shortcut-settings localization input-method-scope
     interface-appearance tab-label-presentation tab-carrier-source tab-presentation-source tab-reorder-wiring edge-reorder
     external-presentation)
-set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group shortcut-dispatch memory-lifecycle view-reuse
+set(window_system_desktop_suites surface-transfer pane-settings pane-bar-policy pane-minimum pinned-ui window-placement tab-bar-presentation edge-tab-interaction chrome-interaction caption-strip toolbar-popup toolbar-reset toolbar-policy sidebar-menu sidebar-presentation presentation compact-ui movement edge-strip drag-presentation strip-drag menu-structure focus-mode multirow-toolbar view-commands peek-size toolbar-profile tab-viewport floating-panel status-bar tab-creation tab-strip-layout sticky-tabs popup-menu tab-group memory-lifecycle view-reuse
     integer-slider input-method-native)
 if(WIN32)
     list(APPEND window_system_desktop_suites native-drag)

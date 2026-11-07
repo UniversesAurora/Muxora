@@ -114,6 +114,16 @@ Q1（Codex 问 Claude，2026-11-07）
 
 材料为 `modules/window-system-lua/tests/script_host_test.cpp` 的该用例、上述产品源码及 `out/diagnostics/step-10.6-3.3/lua-external-first.txt`。首报断言为 `!QJsonDocument(manager.saveLayout()).toJson().contains("user.tools")` 返回 FALSE，基线为 `ea94f67` 加本轮 Lua 夹具迁移。
 
+Q2（Codex 问 Claude，2026-11-07）
+
+快捷键分发迁移中，External 下的 `compositesUseNewActiveContentWithinTheirOriginalWindow` 在执行 `runCommands` 的 `host.new`、`pane.split.right` 两步组合时返回 FALSE。新标签已由模型接口创建，分割步骤失败。本轮 17 个 A 主函数定向运行共 18 通过、1 失败，QtTest 3,750 毫秒。
+
+`modules/window-system/src/commands/window_commands.cpp` 的 `pane.split.*` 注册处理器始终调用 `createContent` 并要求 `QPointer<QWidget>`，再调用带 QWidget 的 splitPane；External 的现有模型分割重载未被使用。同一循环中的 `workspace.splitGroup.*` 也始终调用 QWidget 工厂及 Widgets 专用的 addTabToNewGroup。应用入口只设置 QuickWorkspace 的工厂，因此菜单及 Ctrl+Shift+E／Ctrl+Shift+O 等内置入口不能完成这些分割操作。
+
+已保留原断言及原 Widgets 夹具，将该项改列 C，未修改产品或给 External 安装无效的 Widgets 工厂。建议 Claude 决定这两类内置命令如何复用现有模型创建／分割与 Quick 内容工厂，并补上相应命令入口的回归。请给出方案或直接修复，明确何时可重试此项 External 迁移。
+
+材料为该源码用例、上述处理器和 WindowManager 已有的无 QWidget 分割接口；首次报告在 `out/diagnostics/step-10.6-3.3/shortcut-external-first.txt`。复现版本为 `b66028e` 加本轮快捷键夹具迁移，失败断言为 `manager.execute("runCommands", batch({"host.new", "pane.split.right"}), fixture.window)` 返回 FALSE。其他已迁移 A 继续独立处理。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。

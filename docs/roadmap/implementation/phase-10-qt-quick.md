@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 234、B 3、C 541，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 233、B 3、C 542，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -588,7 +588,7 @@
 | `WS/shortcut_dispatch_test.cpp` | `compositeFailureAndDisabledCommandsStopTheSequence` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。失败/禁用/缺失中间命令停止后续，检查执行顺序。 |
 | `WS/shortcut_dispatch_test.cpp` | `compositeFirstStepRespectsItsCapturedContext` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。首步用捕获标签，后续用同窗新活动内容，纯上下文结果保持。 |
 | `WS/shortcut_dispatch_test.cpp` | `compositesCloseTheNewlyFocusedGroup` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。空间焦点后关闭新组标签，QuickWorkspace 承载几何，目标模型断言保持。 |
-| `WS/shortcut_dispatch_test.cpp` | `compositesUseNewActiveContentWithinTheirOriginalWindow` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。新标签后下一步分割新标签，原标签窗格数不变，工厂改 QuickWorkspace 保留模型断言。 |
+| `WS/shortcut_dispatch_test.cpp` | `compositesUseNewActiveContentWithinTheirOriginalWindow` | C | External 下 pane.split.* 内置命令仍调用 QWidget 工厂，组合命令在分割步骤失败。原 Widgets 夹具与断言保留，产品缺陷交 Claude，见 [交接 Q2](../../development/handoff.md#请下一位回答)。 |
 | `WS/shortcut_dispatch_test.cpp` | `directTabCommandsKeepTheirOwnContextContract` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。直接标签级命令与 executeInContext 完整目标验证各保留其契约。 |
 | `WS/shortcut_dispatch_test.cpp` | `disabledBindingsDoNotReserveNativeShortcutInput` | A | 原套件保留，纯注册表原位，管理器迁 External，按键/空间焦点按需接 QuickWorkspace。禁用命令不接受 ShortcutOverride、不启等待计时器，换 Quick 接收目标可保留 accepted/计时器状态。 |
 | `WS/shortcut_dispatch_test.cpp` | `dispatchFollowsCatalogAndBindingChanges` | C | 补 WS/quick_workspace_content_test.cpp 的组合键/可编辑内容路由。增删目录/改绑/共享首键与删除后字符透传验证索引失效。Quick 单键/二击成功例无动态目录和编辑结果。 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定顺序迁移 `WS/shortcut_dispatch_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定顺序迁移 `WS/tab_group_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1004,5 +1004,6 @@
 | `Lua/script_host_test.cpp` | 39 项 A 已迁，工具栏卸载保存缺陷对应的一项改 C，等待 Claude 处理；原三项 C 保留 | [记录](../../development/verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07) |
 | `WS/workspace_test.cpp` | 22 项 A 已迁，13 项 C 保留 | [记录](../../development/verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07) |
 | `WS/view_state_test.cpp` | 18 项 A 已迁，两个 C 主用例保留 | [记录](../../development/verification-log/2026-11.md#视图状态的-a-类测试迁到-external2026-11-07) |
+| `WS/shortcut_dispatch_test.cpp` | 16 项 A 已迁，内置分割命令依赖 Widgets 的一项改 C，等待 Claude 处理；原九项 C 保留 | [记录](../../development/verification-log/2026-11.md#快捷键分发的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <QApplication>
 #include <QFocusEvent>
 #include <QKeyEvent>
@@ -7,6 +8,8 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QShortcut>
 #include <QSignalSpy>
 #include <QTest>
@@ -27,6 +30,13 @@ Fixture createFixture(WindowManager& manager)
     fixture.window = manager.createWindow();
     fixture.editor = new QPlainTextEdit;
     fixture.tab = manager.addTab(fixture.window, fixture.editor, {"Keyboard", "test.editor", {}});
+    return fixture;
+}
+Fixture createModelFixture(WindowManager& manager)
+{
+    Fixture fixture;
+    fixture.window = manager.createWindow();
+    fixture.tab = manager.addTab(fixture.window, {"Keyboard", "test.editor", {}});
     return fixture;
 }
 QVariantMap batch(QVariantList commands) { return {{"commands", std::move(commands)}}; }
@@ -321,16 +331,21 @@ void ShortcutDispatchTest::focusAndWindowChangesCancelPendingChords()
 
 void ShortcutDispatchTest::exactBindingWinsOverAnEarlierLongerPrefix()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
     int shorter = 0, longer = 0;
     QVERIFY(manager.commands().add({"longer", "Longer", "Test", QKeySequence("Ctrl+Alt+J, 1"), {},
                                   [&](const CommandContext&) { ++longer; return true; }}));
     QVERIFY(manager.commands().add({"shorter", "Shorter", "Test", QKeySequence("Ctrl+Alt+J"), {},
                                   [&](const CommandContext&) { ++shorter; return true; }}));
+    QTRY_VERIFY(workspace.window(fixture.window));
     manager.showWindow(fixture.window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(fixture.window)));
-    QTest::keyClick(fixture.editor, Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(fixture.window)));
+    workspace.window(fixture.window)->requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(workspace.window(fixture.window)));
+    QTest::keyClick(workspace.window(fixture.window), Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
     QCOMPARE(shorter, 1); QCOMPARE(longer, 0);
 }
 
@@ -371,13 +386,17 @@ void ShortcutDispatchTest::compositesUseNewActiveContentWithinTheirOriginalWindo
 
 void ShortcutDispatchTest::compositesCloseTheNewlyFocusedGroup()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
     const auto group = manager.model().groupForTab(fixture.tab);
-    const auto next = manager.addTabToNewGroup(fixture.window, new QPlainTextEdit, {"Right", "test.editor", {}}, group, Placement::Right);
+    const auto next = manager.addTab(fixture.window, {"Right", "test.editor", {}});
     QVERIFY(!next.isNull());
+    QVERIFY(manager.moveTab(next, group, Placement::Right));
+    QTRY_VERIFY(workspace.window(fixture.window));
     manager.showWindow(fixture.window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(fixture.window)));
+    QVERIFY(QTest::qWaitForWindowExposed(workspace.window(fixture.window)));
     QVERIFY(manager.activateTab(fixture.tab));
     QVERIFY(manager.execute("runCommands", batch({"workspace.focusGroup.right", "workspace.closeTab"}), fixture.window));
     QVERIFY(manager.model().tab(fixture.tab));
@@ -386,8 +405,8 @@ void ShortcutDispatchTest::compositesCloseTheNewlyFocusedGroup()
 
 void ShortcutDispatchTest::compositeCommandsAbortWhenTheirSourceWindowDisappears()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager), other = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager), other = createModelFixture(manager);
     int secondCalls = 0;
     QVERIFY(manager.commands().add({"remove", "Remove", "Test", {}, {}, [&](const CommandContext& target) {
         return manager.requestCloseWindow(target.window);
@@ -400,10 +419,10 @@ void ShortcutDispatchTest::compositeCommandsAbortWhenTheirSourceWindowDisappears
 
 void ShortcutDispatchTest::compositeFirstStepRespectsItsCapturedContext()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     auto captured = manager.context(fixture.window);
-    const auto other = manager.addTab(fixture.window, new QPlainTextEdit, {"Other", "test.editor", {}});
+    const auto other = manager.addTab(fixture.window, {"Other", "test.editor", {}});
     QVector<TabId> received;
     QVERIFY(manager.commands().add({"record", "Record", "Test", {}, {}, [&](const CommandContext& target) {
         received.append(target.tab); return true;
@@ -508,12 +527,15 @@ void ShortcutDispatchTest::finishedOrCancelledChordsRestoreTheCurrentStatus()
 
 void ShortcutDispatchTest::disabledBindingsDoNotReserveNativeShortcutInput()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+    const auto fixture = createModelFixture(manager);
     QVERIFY(manager.commands().add({"disabled", "Disabled", "Test", QKeySequence("Ctrl+Alt+J"),
                                   [](const CommandContext&) { return false; }, [](const CommandContext&) { return true; }}));
+    QTRY_VERIFY(workspace.window(fixture.window));
     QKeyEvent override(QEvent::ShortcutOverride, Qt::Key_J, Qt::ControlModifier | Qt::AltModifier);
-    override.ignore(); QApplication::sendEvent(fixture.editor, &override);
+    override.ignore(); QApplication::sendEvent(workspace.window(fixture.window), &override);
     QVERIFY(!override.isAccepted());
     auto* timer = manager.findChild<QTimer*>("CommandChordTimer"); QVERIFY(timer && !timer->isActive());
 }
@@ -534,10 +556,10 @@ void ShortcutDispatchTest::enabledCallbacksCanDestroyTheInputReceiver()
 
 void ShortcutDispatchTest::capturedContextIsRecheckedAfterEnabledCallbacks()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     const auto captured = manager.context(fixture.window);
-    const auto remaining = manager.addTab(fixture.window, new QPlainTextEdit, {"Remaining", "test.editor", {}});
+    const auto remaining = manager.addTab(fixture.window, {"Remaining", "test.editor", {}});
     int executions = 0;
     int closedTargets = 0;
     QVERIFY(manager.commands().add({"host.closeDuringValidation", "Close during validation", "Test", {},
@@ -560,10 +582,10 @@ void ShortcutDispatchTest::capturedContextIsRecheckedAfterEnabledCallbacks()
 
 void ShortcutDispatchTest::directTabCommandsKeepTheirOwnContextContract()
 {
-    WindowManager manager;
-    const auto fixture = createFixture(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    const auto fixture = createModelFixture(manager);
     auto selected = manager.context(fixture.window);
-    const auto other = manager.addTab(fixture.window, new QPlainTextEdit, {"Other", "test.editor", {}});
+    const auto other = manager.addTab(fixture.window, {"Other", "test.editor", {}});
     selected.tab = other;
     int executions = 0;
     TabId target;
@@ -581,7 +603,7 @@ void ShortcutDispatchTest::directTabCommandsKeepTheirOwnContextContract()
 
 void ShortcutDispatchTest::bindingSignalsCanDestroyTheManager()
 {
-    auto manager = std::make_unique<WindowManager>();
+    auto manager = std::make_unique<WindowManager>(WindowManager::Presentation::External);
     QPointer<WindowManager> guarded(manager.get());
     connect(manager.get(), &WindowManager::commandsChanged, this, [&] { manager.reset(); });
     QVERIFY(!manager->commands().setShortcut("runCommands", QKeySequence("Ctrl+Alt+7")));
