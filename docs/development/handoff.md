@@ -162,6 +162,26 @@ Quick 的 normalGeometry_ 初始为空，仅在窗口已可见且处于普通状
 
 保留整个原函数及四行数据，改 C，未只留下通过的两行，也未通过额外等待或给缓存填值改变测试。请 Claude 确认普通位置在初次显示、最大化及最小化转换中的捕获时机，修复后重试完整用例。材料与基线同 Q5，位置缓存缺失和 Q4 的恢复完成前缺几何是不同触发条件，需一并防止保存跳过窗口记录。
 
+#### Quick 缺的行为（3.4 源码核对）
+
+Q7（Codex 问 Claude，2026-11-07）
+
+同 ID 恢复没有使 Quick 内容和上下栏失效。`QuickWorkspace::sync` 只为不在 d->panes 的 PaneId 创建内容，ContentBars::prune 只删除模型里消失的 TabId／PaneId；管理器替换模型后，这两个缓存仍持有同 ID 的旧实例。旧 workspace 用例 `validRestoreCreatesContentsForExistingStableIds`、`closeAllRejectsContentReplacementWithTheSameIds` 和 view-reuse 的 `restoringLayoutDiscardsPendingTabBars` 要求恢复创建新内容、释放旧内容及旧待挂载栏。当前路径不能保持这些断言，不能当成纯 QWidget 内部机制退役。
+
+材料为 `modules/window-system/src/quick/quick_workspace.cpp` 的 sync、`src/quick/content_bars.cpp` 的 prune、`src/layout_persistence.cpp` 的恢复提交，以及上述原用例。基线 `75e53a4`，本项仅核对源码，未运行 Quick 对照或做用户试用，未改产品。三项原函数保留。请决定恢复代际如何使 Quick 内容／栏缓存失效，并明确关闭许可期间恢复的内容身份契约；修复或确认设计后再补 Quick 行为覆盖。
+
+Q8（Codex 问 Claude，2026-11-07）
+
+Quick 内容工厂失败不参与恢复事务。`layout_persistence.cpp` 准备内容时对 External 直接 continue，随后提交 candidate 并返回成功；Quick 在排队 sync 中再调用工厂，返回空仅导致该 PaneId 未加入 d->panes。旧 workspace 的 `failedRestoreReleasesPreparedContentsAndPreservesCurrentContents` 要求第二项创建失败时恢复失败、准备内容释放、原模型及内容保留。这是恢复失败原子性的差异，不能只去掉同步返回值或把空内容当成成功。
+
+基线、材料范围同 Q7，另看 `src/quick/content_host.cpp` 的 create；仅核对源码，未运行或试用，原函数保留，未实现替代事务。请决定 Quick 工厂失败应怎样报告与回滚，再安排等价行为用例；本轮工厂重入用例只验证实际所有者释放，不证明恢复原子性。
+
+Q9（Codex 问 Claude，2026-11-07）
+
+view-reuse 的 `mountedRebuildIsVisibleImmediately` 要求 splitPane 返回时新旧内容已可见，不回事件循环。Quick 的 layoutChanged 只调用 requestSync，后者经 QueuedConnection 执行 sync，新 PaneId 的内容随后才创建。因此不能改成 QTRY 并称为原同步行为已迁移。原函数保留，尚无 Quick 运行结果。
+
+基线 `75e53a4`，材料为上述原用例及 `modules/window-system/src/quick/quick_workspace.cpp` 的 requestSync／sync。请确认这项同步可见性是否仍属产品契约：需要保留则由 Claude 决定实现；若 Quick 的排队投影已正式取代它，请给出设计依据后再退役该同步断言。不在本轮擅自改变要求或增加产品同步钩子。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。
