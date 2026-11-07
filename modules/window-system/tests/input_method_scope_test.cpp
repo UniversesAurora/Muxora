@@ -20,18 +20,20 @@ public:
         current = std::any_cast<int>(value); restored.append(current);
     }
 };
-struct Fixture {
+struct ModelFixture {
     LayoutModel model;
     WindowId window = model.createWindow();
     TabId first = model.addTab(window, "First");
     TabId second = model.addTab(window, "Second");
     PaneId firstPane = model.tab(first)->activePane;
     PaneId secondPane = model.tab(second)->activePane;
+    FakeBackend* backend = new FakeBackend;
+    InputMethodScopes scopes{std::unique_ptr<InputMethodBackend>(backend)};
+};
+struct Fixture : ModelFixture {
     QWidget top;
     QLineEdit a{&top};
     QLineEdit b{&top};
-    FakeBackend* backend = new FakeBackend;
-    InputMethodScopes scopes{std::unique_ptr<InputMethodBackend>(backend)};
     Fixture() {
         top.setProperty("windowId", window);
         a.setProperty("paneId", firstPane); b.setProperty("paneId", secondPane);
@@ -47,7 +49,7 @@ private slots:
     }
     void scopeKeysMatchHierarchy() {
         QFETCH(int, scope);
-        Fixture f;
+        ModelFixture f;
         const auto kind = InputMethodScope(scope);
         f.scopes.setScope(kind);
         const auto pane = f.model.splitPane(f.first, f.firstPane, Placement::Right);
@@ -67,13 +69,13 @@ private slots:
         QVERIFY(f.scopes.key(f.model, QUuid::createUuid()).isNull());
     }
     void switchingRestoresWholeOpaqueValues() {
-        Fixture f;
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a);
-        f.backend->current = 17; f.scopes.focus(f.model, &f.b);
+        ModelFixture f;
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.firstPane, nullptr);
+        f.backend->current = 17; f.scopes.focus(f.model, f.secondPane, nullptr);
         QCOMPARE(f.backend->current, 1);
-        f.backend->current = 42; f.scopes.focus(f.model, &f.a);
+        f.backend->current = 42; f.scopes.focus(f.model, f.firstPane, nullptr);
         QCOMPARE(f.backend->current, 17);
-        f.scopes.focus(f.model, &f.b);
+        f.scopes.focus(f.model, f.secondPane, nullptr);
         QCOMPARE(f.backend->current, 42);
         QCOMPARE(f.backend->restored, QVector<int>({1, 17, 42}));
     }
@@ -88,49 +90,45 @@ private slots:
         QVERIFY(f.backend->restored.isEmpty());
     }
     void creationInheritsBeforeItsFirstFocus() {
-        Fixture f;
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a);
+        ModelFixture f;
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.firstPane, nullptr);
         f.backend->current = 27;
         const auto created = f.model.addTab(f.window, "Created");
-        QLineEdit c(&f.top); c.setProperty("paneId", f.model.tab(created)->activePane);
         f.scopes.synchronize(f.model);
-        f.backend->current = 39; f.scopes.focus(f.model, &c);
+        f.backend->current = 39; f.scopes.focus(f.model, f.model.tab(created)->activePane, nullptr);
         QCOMPARE(f.backend->current, 27);
-        f.scopes.focus(f.model, &f.a);
+        f.scopes.focus(f.model, f.firstPane, nullptr);
         QCOMPARE(f.backend->current, 39);
     }
     void movingPreservesFineScopesAndUsesCoarseDestination_data() { scopeKeysMatchHierarchy_data(); }
     void movingPreservesFineScopesAndUsesCoarseDestination() {
         QFETCH(int, scope);
-        Fixture f;
+        ModelFixture f;
         f.scopes.setScope(InputMethodScope(scope));
         const auto otherWindow = f.model.createWindow();
         const auto target = f.model.addTab(otherWindow, "Target");
-        QWidget otherTop; otherTop.setProperty("windowId", otherWindow);
-        QLineEdit c(&otherTop); c.setProperty("paneId", f.model.tab(target)->activePane);
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &c);
-        f.backend->current = 70; f.scopes.focus(f.model, &f.a);
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.model.tab(target)->activePane, nullptr);
+        f.backend->current = 70; f.scopes.focus(f.model, f.firstPane, nullptr);
         f.backend->current = 80;
         QVERIFY(f.model.moveTab(f.first, f.model.groupForTab(target)));
         f.scopes.synchronize(f.model);
-        f.a.setParent(&otherTop); f.scopes.focus(f.model, &f.a);
+        f.scopes.focus(f.model, f.firstPane, nullptr);
         const auto current = f.backend->current;
-        f.a.setParent(&f.top);
         QCOMPARE(current, scope >= int(InputMethodScope::Tab) || scope == 0 ? 80 : 70);
     }
     void deletedActiveRangeRestoresSurvivingRange() {
-        Fixture f;
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a);
-        f.backend->current = 12; f.scopes.focus(f.model, &f.b);
+        ModelFixture f;
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.firstPane, nullptr);
+        f.backend->current = 12; f.scopes.focus(f.model, f.secondPane, nullptr);
         f.backend->current = 24;
         QVERIFY(f.model.removeTab(f.second)); f.scopes.synchronize(f.model);
         QCOMPARE(f.scopes.count(), 1);
-        f.scopes.focus(f.model, &f.a); QCOMPARE(f.backend->current, 12);
+        f.scopes.focus(f.model, f.firstPane, nullptr); QCOMPARE(f.backend->current, 12);
         QVERIFY(f.model.removeTab(f.first)); f.scopes.synchronize(f.model);
         QCOMPARE(f.scopes.count(), 0);
     }
     void mergeDropsOnlyTheDisappearingRange() {
-        Fixture f;
+        ModelFixture f;
         f.scopes.setScope(InputMethodScope::TabGroup);
         const auto added = f.model.addTabToNewGroup(f.window, "Added", f.model.groupForTab(f.first), Placement::Right);
         f.scopes.synchronize(f.model); QCOMPARE(f.scopes.count(), 2);
@@ -144,26 +142,27 @@ private slots:
     }
     void paneMoveUsesItsOwnOrItsNewTabsState() {
         QFETCH(bool, byPane);
-        Fixture f;
+        ModelFixture f;
         f.scopes.setScope(byPane ? InputMethodScope::Pane : InputMethodScope::Tab);
         QVERIFY(!f.model.splitPane(f.first, f.firstPane, Placement::Right).isNull());
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.b);
-        f.backend->current = 9; f.scopes.focus(f.model, &f.a);
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.secondPane, nullptr);
+        f.backend->current = 9; f.scopes.focus(f.model, f.firstPane, nullptr);
         f.backend->current = 18;
         QVERIFY(f.model.movePane(f.first, f.firstPane, f.second, f.secondPane, Placement::Right));
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a);
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.firstPane, nullptr);
         QCOMPARE(f.backend->current, byPane ? 18 : 9);
     }
     void settingChangesClearStatesAndValidateAtomically() {
-        Fixture f;
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a);
+        ModelFixture f;
+        f.scopes.synchronize(f.model); f.scopes.focus(f.model, f.firstPane, nullptr);
         f.backend->current = 64; f.scopes.setScope(InputMethodScope::Pane);
         QCOMPARE(f.scopes.count(), 0);
-        f.scopes.synchronize(f.model); f.scopes.focus(f.model, &f.a); f.scopes.focus(f.model, &f.b);
+        f.scopes.synchronize(f.model);
+        f.scopes.focus(f.model, f.firstPane, nullptr); f.scopes.focus(f.model, f.secondPane, nullptr);
         QCOMPARE(f.backend->current, 64);
         QVERIFY(!inputMethodScopeFromKey("unknown"));
         QVERIFY(inputMethodScopeKey(InputMethodScope(-1)).isEmpty());
-        WindowManager manager;
+        WindowManager manager(WindowManager::Presentation::External);
         auto behavior = manager.behavior();
         behavior.inputMethodScope = InputMethodScope(99); behavior.closeEmptyWorkbench = true;
         manager.setBehavior(behavior);
