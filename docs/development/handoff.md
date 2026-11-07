@@ -192,6 +192,12 @@ Q10（Codex 问 Claude，2026-11-07）
 
 原 Widgets 用例及 16 行数据完整保留，失败试迁未替代它；未修改产品。请 Claude 决定激活请求怎样区分“收拢后保持关闭”和“明确请求打开”，修复后重试该项。view-reuse 的面板显隐用例原本直接控制 surface，已从相同 Quick 面板入口独立迁移，不把它视为本问题的修复或等价覆盖。
 
+Q11（Codex 问 Claude，2026-11-07）
+
+view-reuse 的 `unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks` 最后要求离开窗格再返回时聚焦其 defaultEditor，而不是先前 currentEditor，旧宿主用 QWidget::setFocusProxy 指定默认子编辑器。Quick 的 ContentHost::focusItem 在离开后优先返回该 PaneId 记住的子项，focus 总是使用它；现有 Quick 用例也验证跨窗保留同一编辑器，没有覆盖“同窗离开后回默认项”的策略。两者是实际焦点策略差异，不能只改最后一个预期当成迁移。
+
+基线 `201d8c0`，材料为该原用例、`modules/window-system/src/quick/content_host.cpp` 的 focusItem／focus，以及 `quick_workspace_content_test.cpp` 的 `focusTracksThePaneAndPreservesItsEditorAcrossWindows`、`unrelatedLayoutsPreserveLiveEditors`。后者已补非默认子编辑器在无关刷新后保持焦点和选区，但未替代这项完整导航契约。原 Widgets 主函数及断言保留；本问题只核对源码，未增加 Quick 对照运行或改产品。请 Claude 明确同窗返回时使用默认子项还是记住的子项，并给出设计依据或修复后再完成该项。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。

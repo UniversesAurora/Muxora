@@ -836,7 +836,7 @@
 | `WS/view_reuse_test.cpp` | `reusedStripFollowsMetadataAndTheme` | C | 3.4 已合并为 quick-workspace-content 的 `unrelatedLayoutsPreserveLiveEditors`；旧框架／父项重建检查退役，身份、正文、选区与相关焦点保留，见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `tabViewsStayInTheirWindow` | C | 3.4 已合并为 quick-workspace-content 的 `unrelatedLayoutsPreserveLiveEditors`；旧框架／父项重建检查退役，身份、正文、选区与相关焦点保留，见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `themeMetricChangeRebuilds` | C | 3.4 按静态外观规则与退役条件 1／4 删除。仅断言旧 QSplitter handleWidth 和重建机制，不另造 Quick 尺寸用例。 |
-| `WS/view_reuse_test.cpp` | `unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。无关刷新保持非默认子编辑器选区，重复聚焦保留当前子项，离开返回用默认代理。Quick 焦点例缺选区及默认/当前区别。 |
+| `WS/view_reuse_test.cpp` | `unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks` | C | 3.4 原函数及断言保留。无关刷新中的非默认编辑器状态已有 Quick 覆盖，但同窗离开再返回时，Quick 记住旧子项，原契约使用默认代理；策略差异待 Claude 决定，见交接 Q11。 |
 | `WS/view_reuse_test.cpp` | `unrelatedTabsKeepTheirViewWidgets` | C | 3.4 已合并为 quick-workspace-content 的 `unrelatedLayoutsPreserveLiveEditors`；旧框架／父项重建检查退役，身份、正文、选区与相关焦点保留，见 3.4 进度。 |
 | `WS/view_state_test.cpp` | `arbitraryToolbarRowsRestoreAndMalformedUnknownItemsFail` | A | 原套件保留，管理器迁 External，内容身份按需接 QuickWorkspace。任意行/未知项配置回读，重复项非法保持快照，为共用布局格式。 |
 | `WS/view_state_test.cpp` | `changingScopeRetainsContentAndExitingRestoresNormalBars` | A | 原套件保留，管理器迁 External，内容身份按需接 QuickWorkspace。三范围切换保持模型/内容身份，普通模式恢复偏好并清空目标，可接 QuickWorkspace。 |
@@ -1050,5 +1050,6 @@
 | 相邻创建准备与命令重入 | 三项旧 QWidget 准备机制退役；另三项保留，等待 Q2 的真实 Quick 命令／创建入口 | [记录](../../development/verification-log/2026-11.md#相邻创建的-widgets-准备机制退役2026-11-07) |
 | 内容尺寸回调重入 | view-reuse 一项 C 的四种组合迁到 quick-workspace-lifecycle，保留管理器重入、幸存内容及后续可用性 | [记录](../../development/verification-log/2026-11.md#内容尺寸回调重入的-c-类迁到-quick2026-11-07) |
 | 内容与窗口资源 | memory-lifecycle 两项 C 合为 28 轮 Quick 资源用例，原生窗口、内容、栏释放及预热后窗口对象树有界 | [记录](../../development/verification-log/2026-11.md#内容与窗口资源循环的-c-类合并到-quick2026-11-07) |
+| 子编辑器导航策略 | view-reuse 一项 C 保留，默认子项与记住子项的返回策略不同，待 Claude 决定 | [记录](../../development/verification-log/2026-11.md#子编辑器返回焦点的-c-类差异2026-11-07)、[交接 Q11](../../development/handoff.md#quick-缺的行为34-源码核对) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
