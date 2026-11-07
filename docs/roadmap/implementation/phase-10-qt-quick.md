@@ -992,4 +992,8 @@
 | `App/scripting_test.cpp` | `startupLoadsScriptCommandsBeforeUserBindings` | A | 原套件保留，管理器夹具迁 External，通知或真实窗口按需接 QuickWorkspace。脚本/用户绑定加载顺序、命令执行及原文件保持不依赖编辑器控件。 |
 | `App/scripting_test.cpp` | `utf8ProcessManifestRetainsApplicationCompatibility` | A | 原套件保留，管理器夹具迁 External，通知或真实窗口按需接 QuickWorkspace。检查进程代码页与 manifest 条目，不创建管理器，原位保留。 |
 
+#### 3.3 迁移进度
+
+进行中。已完成 `WS/visibility_profile_test.cpp`，保留原有行为断言和数据行，窗口快照及内容工厂接入 Quick 呈现。当前继续按审定顺序迁移 `App/layout_file_test.cpp`。验证与首次失败原因见 [记录](../../development/verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07)。其余 A 类及 3.4 尚未处理。
+
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
