@@ -2,20 +2,14 @@
 #include <window_system/window_manager.hpp>
 #include <window_system/quick_workspace.hpp>
 #include "quick/dock_surface_item.hpp"
-#include "chrome/workspace_window.hpp"
-#include "docking/dock_surface.hpp"
 #include <QApplication>
 #include <QDynamicPropertyChangeEvent>
 #include <QLabel>
-#include <QMenu>
-#include "docking/tab_bar.hpp"
-#include <QMouseEvent>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
-#include <QTimer>
 #include <memory>
 #include <functional>
 using namespace window_system;
@@ -62,96 +56,10 @@ private slots:
         QPointer<WindowManager> observed(manager.get()); QVERIFY(manager->commands().add({"host.new","new","file",{},{},[&](const CommandContext&){manager.reset();return true;}}));
         QVERIFY(manager->setTabCreationCommands("host.new",{"host.new"})); QVERIFY(!manager->execute("window.new",{},w)); QVERIFY(!observed);
     }
-    void adjacentPreparationHonorsParticipantLifetimes_data()
-    {
-        QTest::addColumn<QByteArray>("property"); QTest::addColumn<bool>("destroyManager");
-        for (const auto property : {QByteArray("windowSystemManaged"), QByteArray("paneId")})
-            for (const bool manager : {false, true})
-                QTest::newRow(qPrintable(QString::fromLatin1(property) + (manager ? "-manager" : "-content"))) << property << manager;
-    }
-    void adjacentPreparationHonorsParticipantLifetimes()
-    {
-        QFETCH(QByteArray, property); QFETCH(bool, destroyManager);
-        auto manager = std::make_unique<WindowManager>(); const auto window = manager->createWindow();
-        const auto original = manager->addTab(window, new QLabel("original"), {"original", "label", {}});
-        const auto group = manager->model().groupForTab(original);
-        const auto before = manager->saveLayout(); const auto revision = manager->model().revision();
-        QPointer<WindowManager> owner(manager.get()); QWidget callerParent;
-        QPointer<QWidget> content = new QLabel("caller content", &callerParent);
-        const auto oldPane = QUuid::createUuid(); content->setProperty("paneId", oldPane);
-        content->setProperty("windowSystemManaged", false); content->setFocusPolicy(Qt::NoFocus);
-        int destroyed = 0; connect(content.data(), &QObject::destroyed, qApp, [&] { ++destroyed; });
-        ContentPropertyHook hook; hook.property = property;
-        hook.callback = [&](QObject* watched) { if (destroyManager) manager.reset(); else delete watched; };
-        content->installEventFilter(&hook);
-        auto* raw = manager.get();
-        QVERIFY(raw->addTabToNewGroup(window, content.data(), {"new", "label", {}}, group, Placement::Right).isNull());
-        QCOMPARE(hook.calls, 1);
-        if (destroyManager) {
-            QVERIFY(!owner); QVERIFY(content); QCOMPARE(destroyed, 0);
-            QCOMPARE(content->parentWidget(), &callerParent);
-            QCOMPARE(content->property("paneId").toUuid(), oldPane);
-            QCOMPARE(content->property("windowSystemManaged"), QVariant(false));
-            QCOMPARE(content->focusPolicy(), Qt::NoFocus);
-            delete content.data(); QCOMPARE(destroyed, 1);
-        } else {
-            QVERIFY(owner); QVERIFY(!content); QCOMPARE(destroyed, 1);
-            QCOMPARE(manager->saveLayout(), before); QCOMPARE(manager->model().revision(), revision);
-        }
-    }
-    void adjacentPreparationPreservesReentrantModelChanges()
-    {
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto original = manager.addTab(window, new QLabel("original"), {"original", "label", {}});
-        const auto group = manager.model().groupForTab(original);
-        QWidget callerParent; QLabel content("caller content", &callerParent);
-        const auto oldPane = QUuid::createUuid(); content.setProperty("paneId", oldPane);
-        content.setProperty("windowSystemManaged", false); content.setFocusPolicy(Qt::NoFocus);
-        QJsonObject afterCallback; bool edited = false;
-        ContentPropertyHook hook; hook.property = "windowSystemManaged";
-        hook.callback = [&](QObject*) { edited = manager.setTabColor(original, "red"); afterCallback = manager.model().toJson(); };
-        content.installEventFilter(&hook);
-        QVERIFY(manager.addTabToNewGroup(window, &content, {"new", "label", {}}, group, Placement::Right).isNull());
-        QVERIFY(edited); QCOMPARE(hook.calls, 1); QCOMPARE(manager.model().toJson(), afterCallback);
-        QCOMPARE(manager.model().centralGroups(window), QVector<GroupId>({group}));
-        QCOMPARE(content.parentWidget(), &callerParent); QCOMPARE(content.focusPolicy(), Qt::NoFocus);
-        QCOMPARE(content.property("paneId").toUuid(), oldPane);
-        QCOMPARE(content.property("windowSystemManaged"), QVariant(false));
-    }
     void adjacentCommitReturnsItsStableIdAfterNotification_data()
     {
         QTest::addColumn<bool>("destroyManager");
         QTest::newRow("close-new-tab") << false; QTest::newRow("destroy-manager") << true;
-    }
-    void adjacentPreparationPreservesARestoredModelWithTheSameRevision()
-    {
-        WindowManager manager; const auto window = manager.createWindow();
-        const auto original = manager.addTab(window, new QLabel("original"), {"original", "label", {}});
-        manager.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("restored"); });
-        QVERIFY(manager.restoreLayout(manager.saveLayout()));
-        const auto group = manager.model().groupForTab(original); const auto revision = manager.model().revision();
-        QVERIFY(!group.isNull()); QVERIFY(manager.model().group(group));
-        QCOMPARE(manager.model().group(group)->windowId, window);
-        QCOMPARE(manager.model().group(group)->location, GroupLocation::Central);
-        QCOMPARE(revision, quint64(1));
-        const auto before = manager.model().toJson();
-        WindowManager replacement; const auto otherWindow = replacement.createWindow();
-        const auto snapshot = replacement.saveLayout();
-        QWidget callerParent; QLabel content("caller content", &callerParent);
-        bool restored = false; QString restoreError; QJsonObject afterCallback;
-        ContentPropertyHook hook; hook.property = "windowSystemManaged";
-        hook.callback = [&](QObject*) {
-            const auto result = manager.restoreLayout(snapshot); restored = result.ok; restoreError = result.error;
-            afterCallback = manager.model().toJson();
-        };
-        content.installEventFilter(&hook);
-        QVERIFY(manager.addTabToNewGroup(window, &content, {"new", "label", {}}, group, Placement::Right).isNull());
-        QCOMPARE(hook.calls, 1); QVERIFY2(restored, qPrintable(restoreError));
-        QVERIFY(afterCallback != before); QCOMPARE(manager.model().revision(), revision);
-        QCOMPARE(manager.model().toJson(), afterCallback); QVERIFY(manager.model().window(otherWindow));
-        QVERIFY(!manager.model().window(window)); QCOMPARE(content.parentWidget(), &callerParent);
-        QVERIFY(!content.property("windowSystemManaged").isValid()); QVERIFY(!content.property("paneId").isValid());
-        QCOMPARE(content.focusPolicy(), Qt::NoFocus);
     }
     void adjacentCommitReturnsItsStableIdAfterNotification()
     {

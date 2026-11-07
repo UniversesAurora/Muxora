@@ -707,11 +707,11 @@
 | `WS/tab_creation_test.cpp` | `positionFollowsActiveTab` | A | External，保留标签位置规则。按描述建标签即可核对插入位置、活动标签与模型有效性 |
 | `WS/tab_creation_test.cpp` | `settingRoundTripsAndOmissionDefaultsToAfterActive` | A | External，保留当前格式存取断言。插入策略存取、缺省值及恢复后插入位置不依赖控件 |
 | `WS/tab_creation_test.cpp` | `staleTargetFromEnabledCallbackCannotCreateElsewhere` | A | External，保留回调撤销目标的原子性。查询期间删除目标组后拒绝执行，不依赖窗口控件 |
-| `WS/tab_group_test.cpp` | `adjacentCommandDoesNotDeleteContentTwice` | C | 补入 quick-workspace-content/quick-popup-menu。QWidget内容在接管属性事件中自删，原断言绑定此接管入口；Quick需以实际内容创建/挂载回调复现防双重释放，并保留失败时模型和revision不变。 |
-| `WS/tab_group_test.cpp` | `adjacentCommitReturnsItsStableIdAfterNotification` | C | 补入 quick-workspace-content/quick-popup-menu。原例从被接管内容的paneId属性取得提交ID，并在同步layoutChanged关闭新项/销毁管理器。Quick内容创建和通知时序不同，需确认或补同等稳定ID/释放次数行为。 |
-| `WS/tab_group_test.cpp` | `adjacentPreparationHonorsParticipantLifetimes` | C | 补入 quick-workspace-content/quick-popup-menu。原例在接管QWidget时修改windowSystemManaged/paneId触发事件，验证调用方父对象、focusPolicy和原属性回滚。Quick内容由另一路工厂创建，不能只换窗口保留接管阶段断言。 |
-| `WS/tab_group_test.cpp` | `adjacentPreparationPreservesARestoredModelWithTheSameRevision` | C | 补入 quick-workspace-content/quick-popup-menu。原例通过QWidget接管属性回调恢复同revision不同模型，Quick无相同接管入口。需保留模型代际被替换时新增组不能覆盖恢复结果的独立覆盖。 |
-| `WS/tab_group_test.cpp` | `adjacentPreparationPreservesReentrantModelChanges` | C | 补入 quick-workspace-content/quick-popup-menu。重入来自QWidget接管时的动态属性事件，External模型操作没有相同入口，需Quick内容工厂/挂载重入保持已提交模型及调用方所有权的等价行为。 |
+| `WS/tab_group_test.cpp` | `adjacentCommandDoesNotDeleteContentTwice` | C | 3.4 原函数与数据保留，等待交接 Q2 的 Quick 分割／相邻新组入口。稳定 ID、命令回调释放及不重复销毁不能用未接通的命令迁移，见 3.4 进度。 |
+| `WS/tab_group_test.cpp` | `adjacentCommitReturnsItsStableIdAfterNotification` | C | 3.4 原函数与数据保留，等待交接 Q2 的 Quick 分割／相邻新组入口。稳定 ID、命令回调释放及不重复销毁不能用未接通的命令迁移，见 3.4 进度。 |
+| `WS/tab_group_test.cpp` | `adjacentPreparationHonorsParticipantLifetimes` | C | 3.4 按退役条件 1 删除：旧 QWidget 接管属性回调发生在候选事务提交前，Quick 内容在模型提交后创建，没有同一准备阶段。实际 Quick 所有者释放与工厂捕获生命周期已有覆盖，见 3.4 进度。 |
+| `WS/tab_group_test.cpp` | `adjacentPreparationPreservesARestoredModelWithTheSameRevision` | C | 3.4 按退役条件 1 删除：旧 QWidget 接管属性回调发生在候选事务提交前，Quick 内容在模型提交后创建，没有同一准备阶段。实际 Quick 所有者释放与工厂捕获生命周期已有覆盖，见 3.4 进度。 |
+| `WS/tab_group_test.cpp` | `adjacentPreparationPreservesReentrantModelChanges` | C | 3.4 按退役条件 1 删除：旧 QWidget 接管属性回调发生在候选事务提交前，Quick 内容在模型提交后创建，没有同一准备阶段。实际 Quick 所有者释放与工厂捕获生命周期已有覆盖，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `autoHideRailDoesNotAdvertiseHiddenInternalGroupSort` | A | 迁至 Presentation::External。仅检查自动隐藏组的排序命令拒绝执行且保存布局不变，无实际侧栏事件或外观断言，可迁External。 |
 | `WS/tab_group_test.cpp` | `cancelColorPickerDoesNotChangeLayout` | C | 3.4 已合并到 quick-dialogs 的 `cancelledPickersLeaveTheLayoutUnchanged`，保留颜色、布局和无通知契约；旧同步 QMenu::exec 返回值机制退役，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `canceledNamedCollectionLayerRegistersNoCommandsOrStorage` | A | 迁至 Presentation::External。只枚举命令并检查保存JSON没有已取消的collection字段，不依赖Widgets，可迁External保留。 |
@@ -732,7 +732,7 @@
 | `WS/tab_group_test.cpp` | `newWindowCreationChecksFactoryLifetime` | A | 迁至 Presentation::External。命令回调中销毁管理器后的返回值/弱指针为管理器生命周期契约，可改用无Widgets内容描述保留全部断言。 |
 | `WS/tab_group_test.cpp` | `pinnedTabBarsAcceptAllSixSortCommands` | A | 迁至 Presentation::External + QuickWorkspace。管理器排序命令覆盖四边固定组，观测组序、活动项、窗格和内容身份，不向控件发送输入，Quick替换内容工厂即可保留。 |
 | `WS/tab_group_test.cpp` | `sortCommandsUseAllSixRecordedOrders` | A | 迁至 Presentation::External + QuickWorkspace。六种排序、活动项和原内容身份属管理器契约，Quick内容工厂/身份查询可替代QWidget供给，保留六个固定顺序预期。 |
-| `WS/tab_group_test.cpp` | `splitFactoriesCanDestroyTheirManagerBeforeReturning` | C | 补入 quick-workspace-content/quick-popup-menu。原例QWidget工厂返回前销毁作为其父对象的窗口与管理器，Quick工厂属于QuickWorkspace且创建时序不同，不能直接迁A，需补两种分割命令的安全释放。 |
+| `WS/tab_group_test.cpp` | `splitFactoriesCanDestroyTheirManagerBeforeReturning` | C | 3.4 原函数与数据保留，等待交接 Q2 的 Quick 分割／相邻新组入口。稳定 ID、命令回调释放及不重复销毁不能用未接通的命令迁移，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `stickyTabsLeadTheirStripAndSurviveRangeCloses` | C | 3.4 已迁到 quick-tab-bar-input 的 `stickyTabsSurviveRangeClosesAndUnpinFromTheirQuickAction`，保留置顶顺序、范围关闭、恢复与实际图标取消置顶，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `validColorIdMatchingOldCancelMarkerWorksThroughCommand` | A | 迁至 Presentation::External。显式颜色参数允许__cancel__作为合法预设ID且清除有效，直接用External保留命令和模型检查。 |
 | `WS/tab_group_test.cpp` | `wholeGroupExchangeIncludesPinnedNeighbors` | A | 已按审定要求试迁 External，四向交换包含固定组，使用实际 Quick 停靠区几何，保留中央／固定位置和内容身份断言。 |
@@ -1047,5 +1047,6 @@
 | 内容复用 | 六项 C 合为一个五行 Quick 行为用例；两项旧框架／静态尺寸检查退役，非默认编辑器导航策略仍保留 | [记录](../../development/verification-log/2026-11.md#内容复用的-c-类合并与旧机制退役2026-11-07) |
 | 选择器取消 | tab-group 两项 C 合为四行 Quick 菜单取消行为，保存状态不变且不发布布局通知 | [记录](../../development/verification-log/2026-11.md#选择器取消的-c-类合并到-quick2026-11-07) |
 | 置顶范围关闭 | tab-group 一项 C 接到 Quick 标签实际动作入口，原命令、顺序及恢复契约保留 | [记录](../../development/verification-log/2026-11.md#置顶范围关闭的-c-类迁到-quick2026-11-07) |
+| 相邻创建准备与命令重入 | 三项旧 QWidget 准备机制退役；另三项保留，等待 Q2 的真实 Quick 命令／创建入口 | [记录](../../development/verification-log/2026-11.md#相邻创建的-widgets-准备机制退役2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
