@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 #include <window_system_lua/script_host.hpp>
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QJsonDocument>
-#include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -45,6 +48,9 @@ bool initialize(ScriptHost &host, QString source = {}) {
 }
 TabId addEditor(WindowManager &manager, WindowId window, QString name = "Editor") {
     return manager.addTab(window, new QPlainTextEdit, {std::move(name), "test.editor", {}});
+}
+TabId addModelTab(WindowManager &manager, WindowId window, QString name = "Editor") {
+    return manager.addTab(window, {std::move(name), "test.editor", {}});
 }
 } // namespace
 class ScriptHostTest final : public QObject {
@@ -102,8 +108,8 @@ class ScriptHostTest final : public QObject {
 };
 void ScriptHostTest::foldersApiFollowsTheModel() {
     // Tab folders (tab strip design 12) through the Lua adapter.
-    WindowManager manager; const auto window = manager.createWindow();
-    const auto a = addEditor(manager, window, "A"), b = addEditor(manager, window, "B"), c = addEditor(manager, window, "C");
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
+    const auto a = addModelTab(manager, window, "A"), b = addModelTab(manager, window, "B"), c = addModelTab(manager, window, "C");
     const auto group = manager.model().groupForTab(a);
     const auto id = [](QUuid value) { return value.toString(QUuid::WithoutBraces); };
     ScriptHost host(&manager); QVERIFY(initialize(host));
@@ -133,35 +139,41 @@ void ScriptHostTest::foldersApiFollowsTheModel() {
     QVERIFY(manager.model().validate());
 }
 void ScriptHostTest::hierarchyConversionsKeepTheSamePaneObjects() {
-    WindowManager manager; const auto window = manager.createWindow();
-    const auto first = addEditor(manager, window, "First");
-    const auto firstPane = manager.model().tab(first)->activePane; const auto firstWidget = manager.paneWidget(firstPane);
-    const auto second = addEditor(manager, window, "Second");
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
+    const auto window = manager.createWindow();
+    const auto first = addModelTab(manager, window, "First");
+    const auto firstPane = manager.model().tab(first)->activePane;
+    QTRY_VERIFY(workspace.content(firstPane));
+    const auto *firstContent = workspace.content(firstPane);
+    const auto second = addModelTab(manager, window, "Second");
     const auto group = manager.model().groupForTab(second);
     ScriptHost host(&manager); QVERIFY(initialize(host));
     auto reply = run(host, QString("return muxora.groups.to_tab('%1')").arg(group.toString(QUuid::WithoutBraces)));
     QVERIFY2(reply.ok, qPrintable(reply.error)); QCOMPARE(reply.values[0].toString(), second.toString(QUuid::WithoutBraces));
-    QCOMPARE(manager.paneWidget(firstPane), firstWidget); QCOMPARE(manager.model().panes(second).size(), 2);
+    QCOMPARE(workspace.content(firstPane), firstContent); QCOMPARE(manager.model().panes(second).size(), 2);
     reply = run(host, QString("return muxora.tabs.to_group('%1','top')").arg(second.toString(QUuid::WithoutBraces)));
     QVERIFY2(reply.ok, qPrintable(reply.error)); QCOMPARE(manager.model().group(QUuid(reply.values[0].toString()))->tabs.size(), 2);
-    const auto newPane = manager.splitPane(second, manager.model().tab(second)->activePane, new QLabel("Extra"), Placement::Right);
-    const auto extraWidget = manager.paneWidget(newPane);
+    const auto newPane = manager.splitPane(second, manager.model().tab(second)->activePane, Placement::Right);
+    QTRY_VERIFY(workspace.content(newPane));
+    const auto *extraContent = workspace.content(newPane);
     reply = run(host, QString("return muxora.panes.to_tab('%1')").arg(newPane.toString(QUuid::WithoutBraces)));
     QVERIFY2(reply.ok, qPrintable(reply.error)); const QUuid extracted(reply.values[0].toString()); QVERIFY(!extracted.isNull());
     reply = run(host, QString("return muxora.tabs.into_tab('%1','%2',nil,'bottom')")
         .arg(extracted.toString(QUuid::WithoutBraces), second.toString(QUuid::WithoutBraces)));
-    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool()); QCOMPARE(manager.paneWidget(newPane), extraWidget);
-    const auto otherWindow = manager.createWindow(); const auto targetTab = addEditor(manager, otherWindow, "Target");
+    QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool()); QCOMPARE(workspace.content(newPane), extraContent);
+    const auto otherWindow = manager.createWindow(); const auto targetTab = addModelTab(manager, otherWindow, "Target");
     reply = run(host, QString("return muxora.groups.into_tab('%1','%2',nil,'left')")
         .arg(manager.model().groupForTab(second).toString(QUuid::WithoutBraces), targetTab.toString(QUuid::WithoutBraces)));
     QVERIFY2(reply.ok, qPrintable(reply.error)); QVERIFY(reply.values[0].toBool());
-    QCOMPARE(manager.paneWidget(firstPane), firstWidget); QCOMPARE(manager.paneWidget(newPane), extraWidget);
+    QCOMPARE(workspace.content(firstPane), firstContent); QCOMPARE(workspace.content(newPane), extraContent);
     QVERIFY(manager.model().validate());
 }
 void ScriptHostTest::stateAndLiveQueriesUseValuesOnly() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host, "counter=40"));
     auto reply = run(
@@ -221,9 +233,11 @@ void ScriptHostTest::sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload_data()
 void ScriptHostTest::sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload() {
     QFETCH(bool, oldIsShort);
     QFETCH(bool, replace);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     const QString shortKey = "Ctrl+Alt+F9";
     const QString longKey = "Ctrl+Alt+F9, X";
     const QString requested = oldIsShort ? longKey : shortKey;
@@ -254,10 +268,13 @@ void ScriptHostTest::sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload() {
                                                {QKeySequence("Ctrl+Alt+F10"), {{"value", "replacement"}}},
                                                {QKeySequence(requested), {{"value", "replacement"}}}};
         QCOMPARE(manager.commands().bindings("fixture.prefix"), expected);
-        auto *editor = manager.paneWidget(manager.model().tab(tab)->activePane);
+        QTRY_VERIFY(workspace.content(manager.model().tab(tab)->activePane));
+        auto *view = workspace.window(window);
+        view->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(view));
         const QKeySequence sequence(requested);
         for (int index = 0; index < sequence.count(); ++index)
-            QTest::keyClick(editor, sequence[index].key(), sequence[index].keyboardModifiers());
+            QTest::keyClick(view, sequence[index].key(), sequence[index].keyboardModifiers());
         QCOMPARE(invokedArguments, QVariantMap({{"value", "replacement"}}));
         QCOMPARE(host.resourceCounts()["bindings"].toInt(), 1);
     } else {
@@ -280,9 +297,9 @@ void ScriptHostTest::internalShortcutPrefixAliasesAreRejected_data() {
 void ScriptHostTest::internalShortcutPrefixAliasesAreRejected() {
     QFETCH(bool, shortFirst);
     QFETCH(bool, replace);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     Command target;
     target.id = "fixture.target";
     target.title = "Target";
@@ -313,9 +330,11 @@ void ScriptHostTest::internalShortcutPrefixAliasesAreRejected() {
     QCOMPARE(host.resourceCounts()["bindings"].toInt(), 0);
 }
 void ScriptHostTest::exactShortcutAliasesUpdateArgumentsWithoutDuplicates() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     Command command;
     command.id = "fixture.arguments";
     command.title = "Arguments";
@@ -337,8 +356,11 @@ void ScriptHostTest::exactShortcutAliasesUpdateArgumentsWithoutDuplicates() {
     const QVector<CommandBinding> expected{original[0],
                                            {QKeySequence("Ctrl+Alt+F9"), {{"value", "updated"}}}};
     QCOMPARE(manager.commands().bindings("fixture.arguments"), expected);
-    auto *editor = manager.paneWidget(manager.model().tab(tab)->activePane);
-    QTest::keyClick(editor, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
+    QTRY_VERIFY(workspace.content(manager.model().tab(tab)->activePane));
+    auto *view = workspace.window(window);
+    view->requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(view));
+    QTest::keyClick(view, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
     QCOMPARE(invokedArguments, QVariantMap({{"value", "updated"}}));
     host.unload();
     QCOMPARE(manager.commands().bindings("fixture.arguments"), original);
@@ -376,11 +398,11 @@ void ScriptHostTest::sharedShortcutContinuationsRemainReachable() {
     QVERIFY(editor->toPlainText().isEmpty());
 }
 void ScriptHostTest::explicitCommandContextDoesNotFollowLaterFocus() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    const auto original = addEditor(manager, window, "Original");
+    const auto original = addModelTab(manager, window, "Original");
     const auto captured = manager.context(window);
-    const auto other = addEditor(manager, window, "Other");
+    const auto other = addModelTab(manager, window, "Other");
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto source =
@@ -395,11 +417,14 @@ void ScriptHostTest::explicitCommandContextDoesNotFollowLaterFocus() {
     QVERIFY(manager.model().tab(other));
 }
 void ScriptHostTest::layoutOperationsKeepContentIdentity() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     const auto pane = manager.model().tab(tab)->activePane;
-    QPointer<QWidget> content = manager.paneWidget(pane);
+    QTRY_VERIFY(workspace.content(pane));
+    QPointer<QQuickItem> content = workspace.content(pane);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"(
@@ -414,15 +439,15 @@ void ScriptHostTest::layoutOperationsKeepContentIdentity() {
     QVERIFY2(reply.ok, qPrintable(reply.error));
     QVERIFY(!reply.values[0].toString().isEmpty());
     QCOMPARE(manager.model().tab(tab)->title, QString("From Lua"));
-    QCOMPARE(manager.paneWidget(pane), content.data());
+    QCOMPARE(workspace.content(pane), content.data());
     QCOMPARE(manager.peekSize(tab, Edge::Left), QSize(360, 220));
     QVERIFY(manager.model().validate());
 }
 void ScriptHostTest::stickyTabsAreScriptable() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window, "First");
-    const auto second = addEditor(manager, window, "Second");
+    addModelTab(manager, window, "First");
+    const auto second = addModelTab(manager, window, "Second");
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"(
@@ -442,15 +467,19 @@ void ScriptHostTest::stickyTabsAreScriptable() {
     QVERIFY(!reply.values[0].toBool());
 }
 void ScriptHostTest::customChromeIsReleasedWithItsScriptGeneration() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host, R"(
       muxora.commands.register({id='user.action',title='My action'},function() end)
       assert(muxora.toolbars.register({id='user.tools',title='My tools',commands={'user.action'}}))
       assert(muxora.status.register({id='user.counter',text='42'}))
     )"));
+    // Apply queued Quick projection before querying its live toolbar editor.
+    QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
     QCOMPARE(manager.toolbars().size(), 1);
     QVERIFY(manager.statusItemIds().contains("user.counter"));
     QVERIFY(manager.toolbarState(window, "user.tools"));
@@ -463,9 +492,9 @@ void ScriptHostTest::customChromeIsReleasedWithItsScriptGeneration() {
         QCOMPARE(count.toInt(), 0);
 }
 void ScriptHostTest::initializationFailureReleasesPartialRegistrations() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(!initialize(host, R"(
       muxora.commands.register({id='user.partial',title='Partial'},function() end)
@@ -480,9 +509,9 @@ void ScriptHostTest::initializationFailureReleasesPartialRegistrations() {
     QVERIFY(run(host, "return 2+2").ok);
 }
 void ScriptHostTest::reloadReplacesFunctionsAndRestoresUnderlyingBindings() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     const auto original = manager.commands().bindings("workspace.closeTab");
     ScriptHost host(&manager);
     for (int generation = 1; generation <= 20; ++generation) {
@@ -503,9 +532,9 @@ void ScriptHostTest::reloadReplacesFunctionsAndRestoresUnderlyingBindings() {
     QCOMPARE(manager.commands().bindings("workspace.closeTab"), original);
 }
 void ScriptHostTest::eventCallbacksAreBoundedAndCanUnsubscribe() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QSignalSpy errors(&host, &ScriptHost::scriptError);
     QVERIFY(initialize(host, R"(
@@ -527,9 +556,9 @@ void ScriptHostTest::eventCallbacksAreBoundedAndCanUnsubscribe() {
     QTRY_COMPARE(host.runtime()->retainedCallbacks(), 0);
 }
 void ScriptHostTest::eventCallbacksPreserveOrderAndReleaseQueuedValues() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QSignalSpy errors(&host, &ScriptHost::scriptError);
     QVERIFY(initialize(host, "received={};token=muxora.events.on('terminal.output',function(ctx,event) "
@@ -550,9 +579,9 @@ void ScriptHostTest::eventCallbacksPreserveOrderAndReleaseQueuedValues() {
     QTRY_COMPARE(host.runtime()->retainedCallbacks(), 0);
 }
 void ScriptHostTest::overloadedRuntimeDoesNotStrandEventResources() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host, "muxora.events.on('terminal.output',function()end)"));
     for (int i = 0; i < host.runtime()->limits().maximumPendingJobs; ++i)
@@ -571,9 +600,9 @@ void ScriptHostTest::overloadedRuntimeDoesNotStrandEventResources() {
     QTRY_COMPARE(host.runtime()->pendingRejections(), 0);
 }
 void ScriptHostTest::timersAreCancelledOnUnloadAndOneShotsReleaseCallbacks() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host, R"(
       ticks=0
@@ -601,9 +630,9 @@ void ScriptHostTest::standardModulesCanCallTheHostAtTopLevel_data() {
 }
 void ScriptHostTest::standardModulesCanCallTheHostAtTopLevel() {
     QFETCH(bool, duringInitialization);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window, "Before loading");
+    const auto tab = addModelTab(manager, window, "Before loading");
     ScriptHost host(&manager);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -822,9 +851,9 @@ void ScriptHostTest::standardModuleLoadingPreservesLuaSemantics_data() {
 }
 void ScriptHostTest::standardModuleLoadingPreservesLuaSemantics() {
     QFETCH(QString, source);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto reply = run(host, QStringLiteral(R"lua(
@@ -838,9 +867,9 @@ void ScriptHostTest::standardModuleLoadingPreservesLuaSemantics() {
     QCOMPARE(reply.values, QVariantList{true});
 }
 void ScriptHostTest::nestedModuleLoadingCanYieldThroughUserCoroutines() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     ScriptHost host(&manager);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -877,9 +906,9 @@ void ScriptHostTest::nestedModuleLoadingCanYieldThroughUserCoroutines() {
     QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Nested module"));
 }
 void ScriptHostTest::cancellingModuleLoadingDoesNotCacheOrContinueTheModule() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window, "Unchanged");
+    const auto tab = addModelTab(manager, window, "Unchanged");
     ScriptHost host(&manager);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -928,9 +957,9 @@ void ScriptHostTest::nonyieldableModuleLoadingHasNoHostSideEffects_data() {
 }
 void ScriptHostTest::nonyieldableModuleLoadingHasNoHostSideEffects() {
     QFETCH(QString, source);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -964,9 +993,9 @@ void ScriptHostTest::nonyieldableModuleLoadingHasNoHostSideEffects() {
     QCOMPARE(calls, 1);
 }
 void ScriptHostTest::standardModulesUseUserPathsAndPackageLoaded() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QTemporaryDir root;
     QVERIFY(root.isValid());
@@ -1006,9 +1035,9 @@ void ScriptHostTest::standardModulesUseUserPathsAndPackageLoaded() {
     QCOMPARE(reply.values, (QVariantList{qlonglong(42), qlonglong(1)}));
 }
 void ScriptHostTest::standardModulesAllowUserSearchersAndBinaryChunks() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QTemporaryDir root;
     QTemporaryDir outside;
@@ -1048,9 +1077,9 @@ void ScriptHostTest::standardModulesAllowUserSearchersAndBinaryChunks() {
     QCOMPARE(reply.values, QVariantList{true});
 }
 void ScriptHostTest::standardModulesReportMissingFilesAndUnavailableCLibraries() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto reply = run(host, R"lua(
@@ -1068,9 +1097,9 @@ void ScriptHostTest::standardModulesReportMissingFilesAndUnavailableCLibraries()
     QCOMPARE(reply.values, QVariantList{true});
 }
 void ScriptHostTest::nestedCoroutinesCanCallTheWindowHost() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto reply = run(host, R"lua(
@@ -1100,9 +1129,9 @@ void ScriptHostTest::nestedCoroutinesCanCallTheWindowHost() {
     QCOMPARE(manager.model().tab(tab)->title, QStringLiteral("Nested rename"));
 }
 void ScriptHostTest::cancellingANestedHostCallRejectsStaleReplies() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window, "Unchanged");
+    const auto tab = addModelTab(manager, window, "Unchanged");
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     int calls = 0;
@@ -1129,9 +1158,9 @@ void ScriptHostTest::cancellingANestedHostCallRejectsStaleReplies() {
     QCOMPARE(recovered.values, QVariantList{tab.toString(QUuid::WithoutBraces)});
 }
 void ScriptHostTest::osExitUsesTheHostAndDoesNotTerminateAnExternalHost() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"lua(
@@ -1161,12 +1190,15 @@ void ScriptHostTest::windowDisplayStateUsesSharedCommands_data() {
 }
 void ScriptHostTest::windowDisplayStateUsesSharedCommands() {
     QFETCH(bool, floating);
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto root = manager.createWindow();
     const auto window = floating ? manager.createWindow(WindowKind::Floating, {}, root) : root;
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     const auto pane = manager.model().tab(tab)->activePane;
-    const auto *content = manager.paneWidget(pane);
+    QTRY_VERIFY(workspace.content(pane));
+    const auto *content = workspace.content(pane);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto reply = run(host, R"lua(
@@ -1184,7 +1216,7 @@ void ScriptHostTest::windowDisplayStateUsesSharedCommands() {
     )lua",
                            manager.context(window));
     QVERIFY2(reply.ok, qPrintable(reply.error));
-    QCOMPARE(manager.paneWidget(pane), content);
+    QCOMPARE(workspace.content(pane), content);
     QCOMPARE(manager.model().tab(tab)->activePane, pane);
 }
 void ScriptHostTest::panelPoliciesCanBeConfiguredWithoutNestedExecution() {
@@ -1216,9 +1248,9 @@ void ScriptHostTest::panelPoliciesCanBeConfiguredWithoutNestedExecution() {
     QVERIFY(manager.windowWidget(window)->findChildren<FloatingPanel *>().isEmpty());
 }
 void ScriptHostTest::invalidArgumentsDoNotPartiallyReplaceBindings() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto original = manager.commands().bindings("workspace.closeTab");
@@ -1230,9 +1262,9 @@ void ScriptHostTest::invalidArgumentsDoNotPartiallyReplaceBindings() {
     QVERIFY(manager.tabBarsVisible(window));
 }
 void ScriptHostTest::scriptEffectsRespectCloseGuard() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     manager.setCloseGuard([](const QVector<TabId> &) { return false; });
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
@@ -1242,9 +1274,9 @@ void ScriptHostTest::scriptEffectsRespectCloseGuard() {
     QVERIFY(manager.model().tab(tab));
 }
 void ScriptHostTest::registrationObserversCanDestroyTheScriptHost() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     auto host = std::make_unique<ScriptHost>(&manager);
     QPointer<ScriptHost> observed(host.get());
     QVERIFY(initialize(*host));
@@ -1258,10 +1290,12 @@ void ScriptHostTest::registrationObserversCanDestroyTheScriptHost() {
     QVERIFY(manager.model().validate());
 }
 void ScriptHostTest::layoutSnapshotsPreserveEmptyArrays() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
-    manager.setContentFactory([](const TabOptions &, PaneId) { return new QPlainTextEdit; });
+    const auto tab = addModelTab(manager, window);
+    QTRY_VERIFY(workspace.window(window));
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto before = manager.model().toJson();
@@ -1272,11 +1306,14 @@ void ScriptHostTest::layoutSnapshotsPreserveEmptyArrays() {
     QVERIFY(manager.model().tab(tab));
 }
 void ScriptHostTest::appearanceAndComponentBarsUseTypedDescriptions() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace workspace(manager);
+    workspace.setContentFactory([](const TabOptions &, PaneId) { return new QQuickItem; });
     const auto window = manager.createWindow();
-    const auto tab = addEditor(manager, window);
+    const auto tab = addModelTab(manager, window);
     const auto pane = manager.model().tab(tab)->activePane;
-    QPointer<QWidget> originalContent = manager.paneWidget(pane);
+    QTRY_VERIFY(workspace.content(pane));
+    QPointer<QQuickItem> originalContent = workspace.content(pane);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto reply = run(host, R"(
@@ -1302,10 +1339,10 @@ void ScriptHostTest::appearanceAndComponentBarsUseTypedDescriptions() {
     QCOMPARE(manager.behavior().newTabPosition, NewTabPosition::End);
     QCOMPARE(manager.behavior().dragOutsideKind, WindowKind::Workbench);
     QCOMPARE(manager.behavior().captionButtonOrder, CaptionButtonOrder::MacOS);
-    QCOMPARE(manager.paneWidget(pane), originalContent.data());
+    QCOMPARE(workspace.content(pane), originalContent.data());
 }
 void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"(
@@ -1365,9 +1402,9 @@ void ScriptHostTest::titleClippingSettingsAreTypedAtomicAndPersistent() {
     QVERIFY(manager.tabAppearance().clipSidebarTitles); QCOMPARE(manager.tabAppearance().maximumSidebarTitleWidth, 113);
 }
 void ScriptHostTest::inputMethodScopeSettingsAreTypedAndAtomic() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     const auto result = run(host, R"(
@@ -1388,7 +1425,7 @@ void ScriptHostTest::inputMethodScopeSettingsAreTypedAndAtomic() {
 }
 
 void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"(
@@ -1430,9 +1467,9 @@ void ScriptHostTest::stickyTabSettingsAreTypedAndAtomic() {
     QCOMPARE(manager.tabAppearance().shrinkStickyTitleWidth, 120);
 }
 void ScriptHostTest::componentServicesFollowProviderLifetime() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto provider = std::make_unique<QObject>();
@@ -1453,9 +1490,9 @@ void ScriptHostTest::componentServicesFollowProviderLifetime() {
     QVERIFY(!reply.ok);
 }
 void ScriptHostTest::rejectedRegistrationsReleaseFunctionReferences() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     auto reply = run(host, R"(
@@ -1517,9 +1554,9 @@ void ScriptHostTest::reloadingToolbarsPreservesPerWindowAndKindLayouts() {
     QVERIFY(!QJsonDocument(manager.saveLayout()).toJson().contains("user.tools"));
 }
 void ScriptHostTest::failingPeriodicCallbacksStopAndReleaseTheirReferences() {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
     const auto window = manager.createWindow();
-    addEditor(manager, window);
+    addModelTab(manager, window);
     ScriptHost host(&manager);
     QVERIFY(initialize(host));
     QSignalSpy errors(&host, &ScriptHost::scriptError);

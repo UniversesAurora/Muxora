@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 235、B 3、C 540，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 234、B 3、C 541，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -945,7 +945,7 @@
 | `Lua/script_host_test.cpp` | `registrationObserversCanDestroyTheScriptHost` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。注册通知中销毁宿主后撤销命令并保持模型有效。 |
 | `Lua/script_host_test.cpp` | `rejectedRegistrationsReleaseFunctionReferences` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。非法命令/定时器注册循环须释放 Lua 函数引用与资源。 |
 | `Lua/script_host_test.cpp` | `reloadReplacesFunctionsAndRestoresUnderlyingBindings` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。各代重载的函数值、绑定增长与卸载恢复属于宿主契约。 |
-| `Lua/script_host_test.cpp` | `reloadingToolbarsPreservesPerWindowAndKindLayouts` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。重载保留按窗口/类型的工具栏布局与状态项偏好，卸载清理保存内容。 |
+| `Lua/script_host_test.cpp` | `reloadingToolbarsPreservesPerWindowAndKindLayouts` | C | External 下撤下脚本工具栏后保存布局仍包含已移除的工具栏，3.3 首次运行保留原断言失败。原 Widgets 夹具保留，产品缺陷交 Claude 处理，见 [交接 Q1](../../development/handoff.md#请下一位回答)。 |
 | `Lua/script_host_test.cpp` | `sameCommandPrefixBindingsAreAtomicAndRestoreOnUnload` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。保留短长前缀冲突、replace 原子性、按键实参及卸载恢复断言，改向 Quick 窗口送键。 |
 | `Lua/script_host_test.cpp` | `scriptEffectsRespectCloseGuard` | A | 原套件保留，迁 External，内容身份及真实窗口按需接 QuickWorkspace。Lua 关闭标签/窗口遵守许可，只检查返回值与模型存活。 |
 | `Lua/script_host_test.cpp` | `sharedShortcutContinuationsRemainReachable` | C | 补 WS/quick_workspace_content_test.cpp，并保留 Lua 宿主集成入口。共享续键四条路径与字符不泄漏到 QPlainTextEdit 需换 Quick 可编辑内容重建断言，现有二击例未覆盖分支可达性。 |
@@ -994,6 +994,6 @@
 
 #### 3.3 迁移进度
 
-进行中。已完成 `WS/visibility_profile_test.cpp`、`App/layout_file_test.cpp`、`App/scripting_test.cpp` 及其退出子进程，保留原有行为断言和数据行，窗口快照及通知夹具接入 Quick 呈现。当前继续按审定顺序迁移 `Lua/script_host_test.cpp` 的 A 类。验证分别见 [可见性策略](../../development/verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07)、[布局文件](../../development/verification-log/2026-11.md#布局文件测试迁到-external2026-11-07)和 [应用脚本](../../development/verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07)。其余 A 类及 3.4 尚未处理。
+进行中。已完成 `WS/visibility_profile_test.cpp`、`App/layout_file_test.cpp`、`App/scripting_test.cpp` 及其退出子进程，保留原有行为断言和数据行，窗口快照及通知夹具接入 Quick 呈现。`Lua/script_host_test.cpp` 已迁移 39 项 A，工具栏卸载保存缺陷对应的一项改列 C，等待 Claude 处理。当前继续按审定顺序迁移 `WS/workspace_test.cpp`。验证分别见 [可见性策略](../../development/verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07)、[布局文件](../../development/verification-log/2026-11.md#布局文件测试迁到-external2026-11-07)、[应用脚本](../../development/verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07)和 [Lua 宿主](../../development/verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07)。其余 A 类及 3.4 尚未处理。
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
