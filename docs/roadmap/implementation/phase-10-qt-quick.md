@@ -829,8 +829,8 @@
 | `WS/view_reuse_test.cpp` | `deferredRootDeletionKeepsCarriedPages` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。旧根延迟删后幸存页面/内容，以及转自动隐藏再开均保留。Quick 未覆盖此延迟删除链，TabPage 获取需改写。 |
 | `WS/view_reuse_test.cpp` | `mountedRebuildIsVisibleImmediately` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。split API 返回时无需事件循环，新旧内容即实际可见。Quick 排队同步时序可能不同，须先明确契约，不能改 QTRY 冒充等价。 |
 | `WS/view_reuse_test.cpp` | `mutationFromSplitterLayoutKeepsReusedStrip` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。比例命令/实际 splitter resize 内回调关他标签或组，剩余条带/内容有效可见。Quick geometryCallbacksCanReplaceOrDestroyTheView 只直接改树，缺真实管理器/组链。 |
-| `WS/view_reuse_test.cpp` | `pendingTabBarsFollowLazyActivationAndRemoval` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。未激活栏在 Storage 等待、替换延迟释放、激活显示、清除/关删。Quick 栏例无完整 pending 生命周期，Storage 获取需改写。 |
-| `WS/view_reuse_test.cpp` | `pendingTabBarsSurviveHierarchyConversion` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。未激活标签待挂载上下栏在 convertGroupToTab 后显示并保留页面归属。Quick hierarchyConversionKeepsTheExistingBars 从已激活源出发，缺 pending。 |
+| `WS/view_reuse_test.cpp` | `pendingTabBarsFollowLazyActivationAndRemoval` | C | 3.4 已合并到 quick-workspace-content 的 `inactiveBarsFollowTheirOwnerAndReleaseReplacements`；Widgets Storage／TabPage 机制退役，映射见 3.4 进度。 |
+| `WS/view_reuse_test.cpp` | `pendingTabBarsSurviveHierarchyConversion` | C | 3.4 已合并到 quick-workspace-content 的 `inactiveBarsFollowTheirOwnerAndReleaseReplacements`；Widgets Storage／TabPage 机制退役，映射见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `restoredInactiveTabsCreateViewsOnFirstActivation` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。恢复100标签后内容全创建但仅一个 TabPage，后续逐个建页。Quick 内容/页面时机不同，先明确懒创建契约，现有 Quick 仅两标签。 |
 | `WS/view_reuse_test.cpp` | `restoringLayoutDiscardsPendingTabBars` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。同 ID 恢复应清理未激活旧待挂载栏。Quick 同所有者栏缓存是否清理待确认，现有栏例无恢复场景。 |
 | `WS/view_reuse_test.cpp` | `reusedStripFollowsMetadataAndTheme` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。改名/关闭他组与主题更新显示新文字/图标尺寸，还规定条带何时重建。混合元数据功能与实现/静态尺寸，交 Claude 审定。 |
@@ -900,7 +900,7 @@
 | `WS/workspace_test.cpp` | `failedRestoreReleasesPreparedContentsAndPreservesCurrentContents` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。旧工厂在恢复返回前预制，第二次返回空导致恢复失败及预制清理。External 的 Quick 工厂不在管理器恢复事务中，缺同等失败/部分清理契约。 |
 | `WS/workspace_test.cpp` | `invalidRestorePreservesTheCurrentModelAndWidgets` | C | 3.4 已合并到 quick-workspace-content 的 `editorStateSurvivesCommandsAndRejectedRestore`；原 Widgets 用例退役，映射和证据见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `invalidTabArgumentCannotChangeEdgeLayout` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。非法命令发失败信号，模型、内容身份和所属窗口不变，QuickWorkspace 可保留。 |
-| `WS/workspace_test.cpp` | `optionalBarsTravelWithTheTabAndAreReleasedOnClose` | C | 补 WS/quick_content_host_test.cpp 与 quick_workspace_content_test.cpp 的内容契约。包含 QLabel 文字、拆回窗口、清除立即隐藏及延迟删除时序。Quick barOwnershipFollowsTabsAndPanesRatherThanPages 未覆盖全部语义，需改写控件断言。 |
+| `WS/workspace_test.cpp` | `optionalBarsTravelWithTheTabAndAreReleasedOnClose` | C | 3.4 已合并到 quick-workspace-content 的 `inactiveBarsFollowTheirOwnerAndReleaseReplacements`；Widgets Storage／TabPage 机制退役，映射见 3.4 进度。 |
 | `WS/workspace_test.cpp` | `recursiveCloseAllCannotBypassConfirmation` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。全关许可内六种递归关闭入口均拒绝，保持完整快照。 |
 | `WS/workspace_test.cpp` | `recursiveCloseCannotBypassConfirmation` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。许可内递归关闭须拒绝，外层拒绝保留内容，之后合法关闭释放。 |
 | `WS/workspace_test.cpp` | `refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs` | A | 原套件保留，迁 External，内容/窗口存活与身份按需接 QuickWorkspace。批量拒绝保持模型，确认中新标签不在原关闭集合内且须幸存。 |
@@ -1041,5 +1041,6 @@
 | --- | --- | --- |
 | 编辑内容的身份、状态与输入 | 六项 workspace C 合并为两个 Quick 行为用例，原用例退役 | [记录](../../development/verification-log/2026-11.md#内容状态与转移的-c-类合并到-quick2026-11-07) |
 | 内容所有权与工厂重入 | 三项 workspace C 整理到 ContentHost 边界与 Quick 工作区工厂；旧同步恢复机制不移植 | [记录](../../development/verification-log/2026-11.md#内容所有权与工厂重入的-c-类整理2026-11-07) |
+| 非活动标签的上下栏 | workspace 一项与 view-reuse 两项 C 合并为一个三行 Quick 行为用例 | [记录](../../development/verification-log/2026-11.md#非活动上下栏的-c-类合并到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

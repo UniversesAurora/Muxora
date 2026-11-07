@@ -190,8 +190,6 @@ private slots:
     void cleanup() { settle(); }
     void unrelatedTabsKeepTheirViewWidgets();
     void restoredInactiveTabsCreateViewsOnFirstActivation();
-    void pendingTabBarsFollowLazyActivationAndRemoval();
-    void pendingTabBarsSurviveHierarchyConversion();
     void restoringLayoutDiscardsPendingTabBars();
     void contentVisibilityNotificationsAreCoalesced();
     void contentVisibilityTracksWindowStateAndPeek();
@@ -245,73 +243,6 @@ void ViewReuseTest::restoredInactiveTabsCreateViewsOnFirstActivation()
         if (expected == 3) break;
     }
     QCOMPARE(expected, 3);
-}
-
-void ViewReuseTest::pendingTabBarsFollowLazyActivationAndRemoval()
-{
-    const auto snapshot = snapshotWithInactiveTabs(3);
-    WindowManager manager;
-    QVERIFY(restoreTabs(manager, snapshot));
-    const auto window = manager.model().windowOrder().first();
-    manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
-    settle();
-    const auto tabs = manager.model().orderedTabs(window);
-    QVector<TabId> inactive;
-    for (const auto tab : tabs)
-        if (manager.model().group(manager.model().groupForTab(tab))->activeTab != tab) inactive.append(tab);
-    QVERIFY(inactive.size() >= 2);
-    auto* bar = new QLabel(QStringLiteral("Tab bar"));
-    QPointer<QWidget> first(bar);
-    QVERIFY(manager.setTabTopBar(inactive[0], bar));
-    QVERIFY(bar->parentWidget());
-    QCOMPARE(bar->parentWidget()->objectName(), QStringLiteral("WindowSystemStorage"));
-    auto* replacement = new QLabel(QStringLiteral("Replacement"));
-    QPointer<QWidget> observer(replacement);
-    QVERIFY(manager.setTabTopBar(inactive[0], replacement));
-    QVERIFY(first && first->isHidden());
-    settle();
-    QVERIFY(first.isNull());
-    QVERIFY(manager.activateTab(inactive[0]));
-    settle();
-    QVERIFY(observer && observer->isVisible());
-    QVERIFY(observer->parentWidget()->objectName() == QStringLiteral("TabPage"));
-    QVERIFY(manager.setTabTopBar(inactive[0], nullptr));
-    settle();
-    QVERIFY(observer.isNull());
-
-    auto* pending = new QLabel(QStringLiteral("Pending"));
-    QPointer<QWidget> pendingObserver(pending);
-    QVERIFY(manager.setTabTopBar(inactive[1], pending));
-    QVERIFY(manager.closeTab(inactive[1]));
-    settle();
-    QVERIFY(pendingObserver.isNull());
-}
-
-void ViewReuseTest::pendingTabBarsSurviveHierarchyConversion()
-{
-    const auto snapshot = snapshotWithInactiveTabs(2);
-    WindowManager manager;
-    QVERIFY(restoreTabs(manager, snapshot));
-    const auto window = manager.model().windowOrder().first();
-    const auto tabs = manager.model().orderedTabs(window);
-    TabId inactive;
-    for (const auto tab : tabs)
-        if (manager.model().group(manager.model().groupForTab(tab))->activeTab != tab) inactive = tab;
-    QVERIFY(!inactive.isNull());
-    auto* top = new QLabel(QStringLiteral("Pending top"));
-    auto* bottom = new QLabel(QStringLiteral("Pending bottom"));
-    QPointer<QWidget> topObserver(top), bottomObserver(bottom);
-    QVERIFY(manager.setTabTopBar(inactive, top));
-    QVERIFY(manager.setTabBottomBar(inactive, bottom));
-    const auto group = manager.model().groupForTab(inactive);
-    QVERIFY(!manager.convertGroupToTab(group).isNull());
-    settle();
-    QVERIFY(topObserver && bottomObserver);
-    QVERIFY(topObserver->isVisible());
-    QVERIFY(bottomObserver->isVisible());
-    QVERIFY(ancestorNamed(topObserver, QStringLiteral("TabPage")));
-    QVERIFY(ancestorNamed(bottomObserver, QStringLiteral("TabPage")));
 }
 
 void ViewReuseTest::restoringLayoutDiscardsPendingTabBars()

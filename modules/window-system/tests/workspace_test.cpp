@@ -52,7 +52,6 @@ class WorkspaceTest final : public QObject {
 private slots:
     void initTestCase();
     void cleanup();
-    void optionalBarsTravelWithTheTabAndAreReleasedOnClose();
     void refusedFamilyCloseLeavesEveryWindowAndContentAlive();
     void closeWindowRejectsContentAddedDuringConfirmation_data();
     void closeWindowRejectsContentAddedDuringConfirmation();
@@ -94,35 +93,6 @@ void WorkspaceTest::initTestCase()
 void WorkspaceTest::cleanup()
 {
     deliverDeferredDeletes();
-}
-
-void WorkspaceTest::optionalBarsTravelWithTheTabAndAreReleasedOnClose()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    const auto tab = manager.addTab(root, editor("Content"), editorOptions("Bars", "Content"));
-    QPointer<QLabel> top = new QLabel("Top navigation");
-    QPointer<QLabel> bottom = new QLabel("Local status");
-    QVERIFY(manager.setTabTopBar(tab, top));
-    QVERIFY(manager.setTabBottomBar(tab, bottom));
-    const auto floating = manager.detachTab(tab);
-    QVERIFY(!floating.isNull());
-    QCOMPARE(top->window(), manager.windowWidget(floating));
-    QCOMPARE(bottom->window(), manager.windowWidget(floating));
-    QCOMPARE(top->text(), QStringLiteral("Top navigation"));
-    QCOMPARE(bottom->text(), QStringLiteral("Local status"));
-    QVERIFY(manager.execute("window.redock", {}, floating));
-    QCOMPARE(top->window(), manager.windowWidget(root));
-    QCOMPARE(bottom->window(), manager.windowWidget(root));
-    QVERIFY(manager.setTabTopBar(tab, nullptr));
-    // A cleared bar is deleted from the event loop, like a replaced pane bar.
-    QVERIFY(top && top->isHidden());
-    deliverDeferredDeletes();
-    QVERIFY(top.isNull());
-    QVERIFY(bottom);
-    QVERIFY(manager.closeTab(tab));
-    deliverDeferredDeletes();
-    QVERIFY(bottom.isNull());
 }
 
 void WorkspaceTest::refusedFamilyCloseLeavesEveryWindowAndContentAlive()

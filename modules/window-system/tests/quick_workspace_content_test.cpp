@@ -272,6 +272,65 @@ private slots:
         QTRY_VERIFY(!top && !bottom && !innerTop && !innerBottom && !extraBar);
     }
 
+    void inactiveBarsFollowTheirOwnerAndReleaseReplacements_data()
+    {
+        QTest::addColumn<int>("route");
+        QTest::newRow("activate") << 0;
+        QTest::newRow("convert-group-to-tab") << 1;
+        QTest::newRow("detach-redock") << 2;
+    }
+
+    void inactiveBarsFollowTheirOwnerAndReleaseReplacements()
+    {
+        QFETCH(int, route);
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        const auto window = manager.createWindow();
+        const auto pending = manager.addTab(window, {QStringLiteral("Pending")});
+        const auto pane = manager.model().tab(pending)->activePane;
+        const auto active = manager.addTab(window, {QStringLiteral("Active")});
+        QTRY_VERIFY(workspace.content(pane));
+        QVERIFY(manager.context(window).tab == active);
+        QPointer<QQuickItem> original = new InputBar, top = new InputBar, bottom = new InputBar;
+        QVERIFY(workspace.setTabBar(pending, original, true));
+        QVERIFY(!original->isVisible());
+        QVERIFY(workspace.setTabBar(pending, top, true));
+        QVERIFY(original && !original->isVisible());
+        QVERIFY(workspace.setTabBar(pending, bottom, false));
+        QTRY_VERIFY(!original);
+        QVERIFY(!top->isVisible() && !bottom->isVisible());
+        TabId closing = pending;
+        if (route == 1) {
+            closing = manager.convertGroupToTab(manager.model().groupForTab(pending));
+            QVERIFY(!closing.isNull());
+        } else if (route == 2) {
+            const auto floating = manager.detachTab(pending);
+            QVERIFY(!floating.isNull());
+            QTRY_VERIFY(workspace.window(floating));
+            QTRY_COMPARE(top->window(), workspace.window(floating));
+            QTRY_COMPARE(bottom->window(), workspace.window(floating));
+            QVERIFY(manager.execute("window.redock", {}, floating));
+            QVERIFY(manager.activateTab(pending));
+        } else QVERIFY(manager.activateTab(pending));
+        QTRY_VERIFY(top->isVisible() && bottom->isVisible());
+        QTRY_COMPARE(top->window(), workspace.window(window));
+        QTRY_COMPARE(bottom->window(), workspace.window(window));
+        QVERIFY(route == 1 ? workspace.setPaneBar(pane, nullptr, true) : workspace.setTabBar(pending, nullptr, true));
+        QVERIFY(top && !top->isVisible());
+        QTRY_VERIFY(!top);
+        QVERIFY(bottom);
+        const auto removed = manager.addTab(window, {QStringLiteral("Removed before activation")});
+        QVERIFY(manager.activateTab(closing));
+        QPointer<QQuickItem> abandoned = new InputBar;
+        QVERIFY(workspace.setTabBar(removed, abandoned, true));
+        QVERIFY(!abandoned->isVisible());
+        QVERIFY(manager.closeTab(removed));
+        QTRY_VERIFY(!abandoned);
+        QVERIFY(manager.closeTab(closing));
+        QTRY_VERIFY(!bottom);
+    }
+
     void barsFollowTheirSharingPolicy_data()
     {
         QTest::addColumn<bool>("perPane");
