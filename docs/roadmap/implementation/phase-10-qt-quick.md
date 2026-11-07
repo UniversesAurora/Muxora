@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序处理 `WS/menu_structure_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/movement_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1015,5 +1015,6 @@
 | `WS/interface_appearance_test.cpp` | 两项 A 已是共用字体链逻辑，原样保留并定向验证；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#字体链规则的-a-类无需呈现迁移2026-11-07) |
 | `WS/localization_test.cpp` | 六项 A 无旧视图依赖，原样保留并定向验证；五项 C 保留 | [记录](../../development/verification-log/2026-11.md#本地化的-a-类无需呈现迁移2026-11-07) |
 | `WS/memory_lifecycle_test.cpp` | 唯一 A 已迁，保留 12 轮替换释放，四项 C 正文保留 | [记录](../../development/verification-log/2026-11.md#布局替换释放的-a-类测试迁到-external2026-11-07) |
+| `WS/menu_structure_test.cpp` | 四项 A 已使用 External 菜单描述树，原样保留并定向验证；其余 C 保留 | [记录](../../development/verification-log/2026-11.md#菜单描述的-a-类已使用-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
