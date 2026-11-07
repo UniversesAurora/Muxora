@@ -497,8 +497,8 @@ void PeekSizeTest::invalidCommandArgumentsAreAtomic_data()
 void PeekSizeTest::invalidCommandArgumentsAreAtomic()
 {
     QFETCH(QVariantMap, args);
-    WindowManager manager; const auto window = manager.createWindow();
-    const auto tab = manager.addTab(window, new QLabel("Side"), {"Side", "label", {}});
+    WindowManager manager(WindowManager::Presentation::External); const auto window = manager.createWindow();
+    const auto tab = manager.addTab(window, {"Side", "label", {}});
     QVERIFY(manager.moveTabToEdge(tab, Edge::Right)); QVERIFY(manager.activateTab(tab));
     const auto before = manager.saveLayout(); QSignalSpy changes(&manager, &WindowManager::layoutChanged);
     QVERIFY(!manager.execute("tab.peek.setSize", args, window)); QCOMPARE(manager.saveLayout(), before);
@@ -627,9 +627,9 @@ void PeekSizeTest::dialogCancellationAndTargetLossAreSafe()
 
 void PeekSizeTest::aSynchronousSaverCanDeleteTheManager()
 {
-    auto* manager = new WindowManager; QPointer<WindowManager> retained(manager);
+    auto* manager = new WindowManager(WindowManager::Presentation::External); QPointer<WindowManager> retained(manager);
     const auto window = manager->createWindow();
-    const auto tab = manager->addTab(window, new QLabel("Side"), {"Side", "label", {}});
+    const auto tab = manager->addTab(window, {"Side", "label", {}});
     QVERIFY(manager->moveTabToEdge(tab, Edge::Left));
     QJsonObject saved;
     connect(manager, &WindowManager::layoutChanged, this, [&] { saved = manager->saveLayout(); delete manager; });
