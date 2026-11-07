@@ -136,6 +136,16 @@ Q3（Codex 问 Claude，2026-11-07）
 
 材料为上述源码、该用例及 `out/diagnostics/step-10.6-3.3/movement-external-first.txt`。基线为 `ebcb719` 加本轮七项夹具试迁，失败在最后的 `QCOMPARE(active(), panes ? bottomPane : bottomTab)`，不涉及桌面弹窗拦截。
 
+Q4（Codex 问 Claude，2026-11-07）
+
+工具栏档案迁移中，External 的 `synchronousSavingObservesOnlyTheCompletedRestore` 在恢复完成通知内立即 `saveLayout()` 时丢失逐窗口记录。原 `saves.size() == 1` 和全局 toolbarProfiles 相等断言通过；随后的 `windowRecord(saves[0], root).value("strips").toObject()` 得到空对象，预期是已恢复的浮窗布局，包含 title／floating-menu／caption-controls。第一次七个主函数及原数据共 31 通过、1 失败，QtTest 13,000 毫秒，进程墙钟 13,192 毫秒。
+
+`modules/window-system/src/layout_persistence.cpp` 的 `saveViewLayout` 在 External 呈现器没有有效 normalGeometry 时直接跳过窗口记录。`restoreLayout` 虽已写回模型、选项、当前及休眠 toolbarLayouts，并向呈现器调用 restorePlacement，Quick 只把位置记在 pending placements；新窗口在排队投影中稍后创建。`src/quick/quick_workspace.cpp` 的 normalGeometry 仅查已建窗口，不读取待恢复位置，因此最终 layoutChanged 的同步保存观察不到完整状态。这也会漏掉逐窗口的位置、显隐和状态栏项偏好；模型与全局档案仍存在。
+
+按审定条件，该项由 A 改 C，原 Widgets 函数及全部断言恢复。其余六项已迁移的数据通过，未改产品，也不在完成通知回调中强行投影或把保存延后以绕过契约。请 Claude 决定恢复完成时如何保证模型及逐窗口状态同时可保存，并修复后安排该项重试。
+
+材料为该用例、上述源码及 `out/diagnostics/step-10.6-3.3/toolbar-profiles-external-first.txt`。基线为 `aa7338b` 加本轮七项 Quick 夹具迁移。未做用户试用，不把迁移分类为 C 当成产品修复。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。

@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 238、B 3、C 537，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 237、B 3、C 538，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -795,7 +795,7 @@
 | `WS/toolbar_profile_test.cpp` | `incompleteSnapshotsDoNotReconstructProfiles` | A | 原 toolbar-profile 套件改用 External + QuickWorkspace，以公开工具栏API布置并从保存窗口记录取布局，保留JSON/身份断言。管理器预校验缺少档案或混合窗口类型的快照时零内容工厂调用、模型/内容身份和快照原子保持，Quick 内容工厂可保留全部断言。 |
 | `WS/toolbar_profile_test.cpp` | `latestEditSurvivesSavingOlderWindows` | C | 拟补 WS/quick_toolbar_test.cpp（quick-toolbar）的档案与拖动用例。依赖旧视图 restoreStripLayout 只改本地显示且不发布为编辑，Quick 无公开等价入口。现有新窗口继承测试未覆盖旧窗口恢复/几何/保存不倒灌，以及后来局部编辑只更新一维，先列C。 |
 | `WS/toolbar_profile_test.cpp` | `malformedProfilesLeaveTheManagerUntouched` | A | 原 toolbar-profile 套件改用 External + QuickWorkspace，以公开工具栏API布置并从保存窗口记录取布局，保留JSON/身份断言。所有数据行都检查非法档案恢复前置拒绝、零内容创建且原窗口/内容身份和快照保持。初始宽度用公开工具栏API，External 配 QuickWorkspace 保留行为。 |
-| `WS/toolbar_profile_test.cpp` | `synchronousSavingObservesOnlyTheCompletedRestore` | A | 原 toolbar-profile 套件改用 External + QuickWorkspace，以公开工具栏API布置并从保存窗口记录取布局，保留JSON/身份断言。管理器恢复一次只发一次完成态变化，同步保存须看到完整当前/休眠布局及两类档案，External 配 QuickWorkspace 可保留保存原子性断言。 |
+| `WS/toolbar_profile_test.cpp` | `synchronousSavingObservesOnlyTheCompletedRestore` | C | External 恢复完成通知内立即保存时，Quick 窗口尚未投影，saveViewLayout 因缺正常几何跳过全部窗口记录；原当前／休眠工具栏布局断言失败。原 Widgets 函数及全部断言保留，见交接 Q4。 |
 | `WS/toolbar_profile_test.cpp` | `unrelatedEditsInOlderWindowsKeepTheNewestOrder` | A | 原 toolbar-profile 套件改用 External + QuickWorkspace，以公开工具栏API布置并从保存窗口记录取布局，保留JSON/身份断言。断言档案各字段合并语义，旧窗口修改锁定/排除项不覆盖新顺序和新宽度，显式移动只替换顺序。用管理器公开工具栏API布置，保存窗口记录替代 Widgets 取值，可保留原JSON预期。 |
 | `WS/toolbar_profile_test.cpp` | `windowKindsRestoreTheirOwnLayoutAndLiveContent` | A | 原 toolbar-profile 套件改用 External + QuickWorkspace，以公开工具栏API布置并从保存窗口记录取布局，保留JSON/身份断言。断言窗口升降级保留各类型独立工具栏档案、当前布局、休眠布局和内容身份。External 配 QuickWorkspace，内容/窗口记录换等价查询后保留语义。 |
 | `WS/toolbar_reset_test.cpp` | `closingTheWindowAfterThePickerIsDismissedFails` | C | 拟补 WS/quick_toolbar_test.cpp（quick-toolbar）的宽度重置选择器用例。Widgets 命令为阻塞选择器，Quick 弹窗异步完成，窗口关闭时 execute 的同步返回语义无法照搬。需 Claude 核定对应完成结果与晚到回调拒绝的契约并补 Quick 用例。 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/toolbar_profile_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+进行中。当前继续按审定表顺序迁移 `WS/toolbar_reset_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1027,5 +1027,6 @@
 | `WS/tab_appearance_test.cpp` | 八项配置／命令 A 已迁 External，六项 C 保留 | [记录](../../development/verification-log/2026-11.md#标签配置的-a-类测试迁到-external2026-11-07) |
 | `WS/tab_bar_presentation_test.cpp` | 唯一 A 已迁 Quick，关闭前几何保存断言保留，其余 C 保留 | [记录](../../development/verification-log/2026-11.md#最后关闭保存几何的-a-类测试迁到-quick2026-11-07) |
 | `WS/tab_creation_test.cpp` | 九项 A 已迁，非法恢复的工厂检查接入 Quick，三个 C 保留 | [记录](../../development/verification-log/2026-11.md#新建标签的-a-类测试迁到-external2026-11-07) |
+| `WS/toolbar_profile_test.cpp` | 六项 A 已迁；完成通知内同步保存缺窗口记录的一项改 C，等待 Claude 处理，三个 C 正文保留 | [记录](../../development/verification-log/2026-11.md#工具栏档案的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
