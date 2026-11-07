@@ -3,6 +3,7 @@
 // Dimensions: command/user focus, tab/window changes, late subscriptions,
 // shared/per-pane bars, tab/pane ownership, fullscreen and zen.
 #include "quick/dock_surface_item.hpp"
+#include "quick/tab_bar_item.hpp"
 #include <window_system/quick_workspace.hpp>
 #include <window_system/window_manager.hpp>
 #include <QHash>
@@ -33,6 +34,90 @@ QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->bounding
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void unrelatedLayoutsPreserveLiveEditors_data()
+    {
+        QTest::addColumn<int>("change");
+        QTest::newRow("split-inactive-tab") << 0;
+        QTest::newRow("close-sibling-tab") << 1;
+        QTest::newRow("move-unrelated-tab-to-existing-window") << 2;
+        QTest::newRow("metadata-and-theme") << 3;
+        QTest::newRow("retire-split-root-and-hide-group") << 4;
+    }
+
+    void unrelatedLayoutsPreserveLiveEditors()
+    {
+        QFETCH(int, change);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick; FocusScope { TextEdit { focus: true } TextEdit { objectName: 'editor'; text: 'editing'; persistentSelection: true; y: 40 } }", QUrl());
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([&](const TabOptions&, PaneId) { return qobject_cast<QQuickItem*>(component.create()); });
+        const auto window = manager.createWindow();
+        const auto first = manager.addTab(window, {QStringLiteral("First")});
+        const auto sibling = manager.addTab(window, {QStringLiteral("Sibling")});
+        const auto other = manager.addTab(window, {QStringLiteral("Other group")});
+        QVERIFY(manager.moveTab(other, manager.model().groupForTab(first), Placement::Right));
+        const auto last = manager.addTab(window, {QStringLiteral("Last")}, manager.model().groupForTab(other));
+        const auto destination = manager.createWindow();
+        manager.addTab(destination, {QStringLiteral("Destination")});
+        QVERIFY(manager.activateTab(first));
+        const auto pane = manager.model().tab(first)->activePane;
+        QTRY_VERIFY(workspace.window(destination) && workspace.content(pane));
+        QHash<PaneId, QPointer<QQuickItem>> existing;
+        for (const auto tab : manager.model().tabs().keys())
+            for (const auto id : manager.model().panes(tab)) { QVERIFY(workspace.content(id)); existing.insert(id, workspace.content(id)); }
+        auto* view = workspace.window(window);
+        view->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(view));
+        QPointer<QQuickItem> editor = workspace.content(pane)->findChild<QQuickItem*>(QStringLiteral("editor"));
+        QVERIFY(editor);
+        editor->forceActiveFocus();
+        QTRY_VERIFY(editor->hasActiveFocus());
+        QVERIFY(QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 1), Q_ARG(int, 4)));
+        PaneId requestedPane = pane;
+        if (change == 0) {
+            requestedPane = manager.splitPane(other, manager.model().tab(other)->activePane, Placement::Bottom);
+            QVERIFY(!requestedPane.isNull());
+        }
+        else if (change == 1) QVERIFY(manager.closeTab(sibling));
+        else if (change == 2) QVERIFY(manager.moveTabToWindow(other, destination));
+        else if (change == 3) {
+            QVERIFY(manager.renameTab(last, QStringLiteral("Renamed")));
+            auto theme = manager.theme();
+            theme.metrics.iconSize += 4;
+            manager.setTheme(theme);
+        } else {
+            QVERIFY(manager.closeTab(other));
+            QVERIFY(manager.moveTabToEdgeBar(last, window, Edge::Left));
+        }
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        for (auto it = existing.cbegin(); it != existing.cend(); ++it) {
+            if (manager.model().tabForPane(it.key()).isNull()) { QTRY_VERIFY(!it.value()); continue; }
+            QVERIFY(it.value());
+            QCOMPARE(workspace.content(it.key()), it.value().data());
+            QCOMPARE(it.value()->findChild<QQuickItem*>(QStringLiteral("editor"))->property("text").toString(), QStringLiteral("editing"));
+        }
+        if (change != 4) QTRY_COMPARE(manager.context(window).pane, requestedPane);
+        if (change == 0) {
+            auto* requested = workspace.content(requestedPane);
+            QVERIFY(requested && requested->isAncestorOf(view->activeFocusItem()));
+        } else if (change != 4) QTRY_VERIFY(editor->hasActiveFocus());
+        QCOMPARE(editor->property("selectedText").toString(), QStringLiteral("dit"));
+        QVERIFY(manager.focusPane(first, pane));
+        QTRY_VERIFY(editor->hasActiveFocus());
+        if (change == 3) {
+            bool renamed = false;
+            for (auto* bar : view->contentItem()->findChildren<quick::TabBarItem*>())
+                for (int i = 0; i < bar->controller().count(); ++i)
+                    if (bar->controller().tabData(i).toUuid() == last)
+                        renamed = bar->controller().tabText(i) == QStringLiteral("Renamed");
+            QVERIFY(renamed);
+        }
+    }
+
     void peekAndMinimizeReportActualContentVisibility()
     {
         QHash<PaneId, bool> visibility;
