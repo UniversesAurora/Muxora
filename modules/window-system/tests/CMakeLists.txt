@@ -58,7 +58,7 @@ if(WIN32)
 endif()
 
 qt_add_executable(window-system-widget-test workspace_test.cpp)
-target_link_libraries(window-system-widget-test PRIVATE WindowSystem::Widgets Qt6::Test)
+target_link_libraries(window-system-widget-test PRIVATE WindowSystemQuick Qt6::Test)
 set_target_properties(window-system-widget-test PROPERTIES AUTOMOC ON)
 add_test(NAME window-system.widgets COMMAND window-system-widget-test
     -o ${CMAKE_CURRENT_BINARY_DIR}/widget-results.txt,txt)

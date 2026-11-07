@@ -994,6 +994,14 @@
 
 #### 3.3 迁移进度
 
-进行中。已完成 `WS/visibility_profile_test.cpp`、`App/layout_file_test.cpp`、`App/scripting_test.cpp` 及其退出子进程，保留原有行为断言和数据行，窗口快照及通知夹具接入 Quick 呈现。`Lua/script_host_test.cpp` 已迁移 39 项 A，工具栏卸载保存缺陷对应的一项改列 C，等待 Claude 处理。当前继续按审定顺序迁移 `WS/workspace_test.cpp`。验证分别见 [可见性策略](../../development/verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07)、[布局文件](../../development/verification-log/2026-11.md#布局文件测试迁到-external2026-11-07)、[应用脚本](../../development/verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07)和 [Lua 宿主](../../development/verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07)。其余 A 类及 3.4 尚未处理。
+进行中。当前继续按审定顺序迁移 `WS/view_state_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+
+| 源码 | 状态 | 验证 |
+| --- | --- | --- |
+| `WS/visibility_profile_test.cpp` | 全部迁到 External，窗口快照及内容工厂接入 Quick | [记录](../../development/verification-log/2026-11.md#可见性策略测试迁到-external2026-11-07) |
+| `App/layout_file_test.cpp` | 全部迁到 External，完整快照由 Quick 窗口提供 | [记录](../../development/verification-log/2026-11.md#布局文件测试迁到-external2026-11-07) |
+| `App/scripting_test.cpp` 及 `scripting_exit_child.cpp` | 全部迁到 External，通知及窗口快照接入 Quick | [记录](../../development/verification-log/2026-11.md#应用脚本测试迁到-external2026-11-07) |
+| `Lua/script_host_test.cpp` | 39 项 A 已迁，工具栏卸载保存缺陷对应的一项改 C，等待 Claude 处理；原三项 C 保留 | [记录](../../development/verification-log/2026-11.md#lua-宿主的-a-类测试迁到-external2026-11-07) |
+| `WS/workspace_test.cpp` | 22 项 A 已迁，13 项 C 保留 | [记录](../../development/verification-log/2026-11.md#工作区的-a-类测试迁到-external2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。
