@@ -713,7 +713,7 @@
 | `WS/tab_group_test.cpp` | `adjacentPreparationPreservesARestoredModelWithTheSameRevision` | C | 补入 quick-workspace-content/quick-popup-menu。原例通过QWidget接管属性回调恢复同revision不同模型，Quick无相同接管入口。需保留模型代际被替换时新增组不能覆盖恢复结果的独立覆盖。 |
 | `WS/tab_group_test.cpp` | `adjacentPreparationPreservesReentrantModelChanges` | C | 补入 quick-workspace-content/quick-popup-menu。重入来自QWidget接管时的动态属性事件，External模型操作没有相同入口，需Quick内容工厂/挂载重入保持已提交模型及调用方所有权的等价行为。 |
 | `WS/tab_group_test.cpp` | `autoHideRailDoesNotAdvertiseHiddenInternalGroupSort` | A | 迁至 Presentation::External。仅检查自动隐藏组的排序命令拒绝执行且保存布局不变，无实际侧栏事件或外观断言，可迁External。 |
-| `WS/tab_group_test.cpp` | `cancelColorPickerDoesNotChangeLayout` | C | 补入 quick-workspace-content/quick-popup-menu。Quick的pickersApplyToTheTabTheyStartedOn测正常选色，未验证无参数选色取消不改布局、原颜色及layoutChanged次数。原QMenu同步执行语义需按Quick异步菜单补行为。 |
+| `WS/tab_group_test.cpp` | `cancelColorPickerDoesNotChangeLayout` | C | 3.4 已合并到 quick-dialogs 的 `cancelledPickersLeaveTheLayoutUnchanged`，保留颜色、布局和无通知契约；旧同步 QMenu::exec 返回值机制退役，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `canceledNamedCollectionLayerRegistersNoCommandsOrStorage` | A | 迁至 Presentation::External。只枚举命令并检查保存JSON没有已取消的collection字段，不依赖Widgets，可迁External保留。 |
 | `WS/tab_group_test.cpp` | `collectingGroupsLeavesThePeekClosed` | C | 3.4 试迁失败：明确 activateTab 后 Quick 不打开临时面板。原函数和 16 行数据保留，待 Claude 修复交接 Q10，不以显隐通知用例替代。 |
 | `WS/tab_group_test.cpp` | `colorCommandsRejectUnknownPresetsAndPersistSelections` | A | 迁至 Presentation::External。只检查管理器颜色命令、未知预设拒绝和清除后的保存结果，颜色值为配置传递契约，使用External即可保留。 |
@@ -727,7 +727,7 @@
 | `WS/tab_group_test.cpp` | `groupMovementAndCloseUseTheCapturedGroup` | A | 迁至 Presentation::External。只经管理器命令移动/关闭捕获组并检查模型归属及成员，可使用External内容描述，保留模型预期。 |
 | `WS/tab_group_test.cpp` | `groupMovesPreserveAllLiveWidgets` | A | 迁至 Presentation::External + QuickWorkspace。管理器移动组/跨窗API后组ID、成员及内容对象身份不变，改用Quick内容对象和查询，保留身份语义。 |
 | `WS/tab_group_test.cpp` | `groupTargetArgumentsRejectInvalidNumbersAtomically` | A | 迁至 Presentation::External。非法数字参数须原子拒绝、布局及变更通知数不变，纯管理器命令契约，使用External保留输入数据表和断言。 |
-| `WS/tab_group_test.cpp` | `groupTargetPickerCancellationDoesNotChangeTheLayout` | C | 补入 quick-workspace-content/quick-popup-menu。原例覆盖swap/merge/moveToGroup无参数目标菜单取消，Quick现有managerMenuRequestsUseTheQuickWindow没有这三个选择器取消后布局不变的断言。 |
+| `WS/tab_group_test.cpp` | `groupTargetPickerCancellationDoesNotChangeTheLayout` | C | 3.4 已合并到 quick-dialogs 的 `cancelledPickersLeaveTheLayoutUnchanged`，保留颜色、布局和无通知契约；旧同步 QMenu::exec 返回值机制退役，见 3.4 进度。 |
 | `WS/tab_group_test.cpp` | `newCompleteWindowStartsItsHostTabBeforeCloseEmptyPolicy` | A | 迁至 Presentation::External + QuickWorkspace。管理器新窗口命令先调用宿主建标签，再应用空窗关闭策略，Quick窗口只替换可见性观察，保留创建次数和模型断言。 |
 | `WS/tab_group_test.cpp` | `newWindowCreationChecksFactoryLifetime` | A | 迁至 Presentation::External。命令回调中销毁管理器后的返回值/弱指针为管理器生命周期契约，可改用无Widgets内容描述保留全部断言。 |
 | `WS/tab_group_test.cpp` | `pinnedTabBarsAcceptAllSixSortCommands` | A | 迁至 Presentation::External + QuickWorkspace。管理器排序命令覆盖四边固定组，观测组序、活动项、窗格和内容身份，不向控件发送输入，Quick替换内容工厂即可保留。 |
@@ -1045,5 +1045,6 @@
 | 恢复事务与同步投影 | 五项原 C 保留，源码确认行为差异，等待 Claude 决定；未作为迁移完成 | [记录](../../development/verification-log/2026-11.md#内容恢复与同步投影的-c-类差异2026-11-07)、[交接 Q7–Q9](../../development/handoff.md#quick-缺的行为34-源码核对) |
 | 面板显隐与组激活 | view-reuse 一项 C 迁为实际面板／最小化通知；组收拢后激活面板的用例失败，原项保留待 Claude 修复 | [记录](../../development/verification-log/2026-11.md#面板显隐的-c-类与激活入口缺口2026-11-07) |
 | 内容复用 | 六项 C 合为一个五行 Quick 行为用例；两项旧框架／静态尺寸检查退役，非默认编辑器导航策略仍保留 | [记录](../../development/verification-log/2026-11.md#内容复用的-c-类合并与旧机制退役2026-11-07) |
+| 选择器取消 | tab-group 两项 C 合为四行 Quick 菜单取消行为，保存状态不变且不发布布局通知 | [记录](../../development/verification-log/2026-11.md#选择器取消的-c-类合并到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

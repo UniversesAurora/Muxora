@@ -330,19 +330,6 @@ private slots:
         QVERIFY(manager.execute("tab.color.set",{{"color","__cancel__"}},window)); QCOMPARE(manager.model().tab(tab)->colorId,QString("__cancel__"));
         QVERIFY(manager.execute("tab.color.set",{{"color",QString()}},window)); QVERIFY(manager.model().tab(tab)->colorId.isEmpty());
     }
-    void cancelColorPickerDoesNotChangeLayout()
-    {
-        WindowManager manager; const auto window = manager.createWindow(); const auto tab = manager.addTab(window,new QLabel("a"),{"a","notes",{}});
-        QVERIFY(manager.setTabColor(tab,"red")); const auto before = manager.saveLayout(); QSignalSpy changed(&manager,&WindowManager::layoutChanged);
-        bool sawPicker = false;
-        QTimer::singleShot(0, &manager, [&] {
-            for (auto* widget : QApplication::topLevelWidgets()) if (widget->objectName() == "TabColorPicker") {
-                auto* menu = qobject_cast<QMenu*>(widget); sawPicker = menu && menu->isVisible(); if (menu) menu->close();
-            }
-        });
-        QVERIFY(!manager.execute("tab.color.set",{},window)); QVERIFY(sawPicker);
-        QCOMPARE(manager.model().tab(tab)->colorId,QString("red")); QCOMPARE(changed.size(),0); QCOMPARE(manager.saveLayout(),before);
-    }
     void pinnedTabBarsAcceptAllSixSortCommands_data()
     {
         QTest::addColumn<int>("edge"); QTest::addColumn<int>("sorting");
@@ -495,24 +482,6 @@ private slots:
         QCOMPARE(manager.model().group(target)->activeTab,b); QCOMPARE(manager.model().group(target)->location,GroupLocation::Pinned);
         QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
         QCOMPARE(workspace.content(pane),content.data()); QVERIFY(content); QVERIFY(manager.model().validate());
-    }
-    void groupTargetPickerCancellationDoesNotChangeTheLayout_data()
-    {
-        QTest::addColumn<QString>("command");
-        for (const auto id : {"group.swap","group.merge","group.moveToGroup"}) QTest::newRow(id) << QString::fromLatin1(id);
-    }
-    void groupTargetPickerCancellationDoesNotChangeTheLayout()
-    {
-        QFETCH(QString,command); WindowManager manager; const auto window = manager.createWindow();
-        const auto a = manager.addTab(window,new QLabel("a"),{"a","notes",{}}), b = manager.addTab(window,new QLabel("b"),{"b","notes",{}});
-        QVERIFY(manager.moveTab(b,manager.model().groupForTab(a),Placement::Right)); const auto original = manager.saveLayout();
-        bool sawPicker = false;
-        QTimer::singleShot(0,&manager,[&] {
-            for (auto* widget : QApplication::topLevelWidgets()) if (widget->objectName() == "GroupTargetPicker") {
-                auto* menu = qobject_cast<QMenu*>(widget); sawPicker = menu && menu->isVisible(); if (menu) menu->close();
-            }
-        });
-        QVERIFY(!manager.execute(command,{},window)); QVERIFY(sawPicker); QCOMPARE(manager.saveLayout(),original);
     }
     void fixedGroupsParticipateInExplicitReparentAndDetachCommands()
     {

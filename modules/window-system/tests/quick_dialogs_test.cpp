@@ -9,6 +9,7 @@
 #include <window_system/window_manager.hpp>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace window_system;
@@ -175,6 +176,38 @@ private slots:
 
     // A picker run for a tab other than the active one lists its choices in
     // a Quick menu, and the choice applies to that tab.
+    void cancelledPickersLeaveTheLayoutUnchanged_data()
+    {
+        QTest::addColumn<QString>("command");
+        for (const auto* command : {"tab.color.set", "group.swap", "group.merge", "group.moveToGroup"})
+            QTest::newRow(command) << QString::fromLatin1(command);
+    }
+
+    void cancelledPickersLeaveTheLayoutUnchanged()
+    {
+        QFETCH(QString, command);
+        Workspace w;
+        const auto other = w.manager.model().orderedTabs(w.window).last();
+        QVERIFY(w.manager.moveTab(other, w.manager.model().groupForTab(w.tab), Placement::Right));
+        QVERIFY(w.manager.activateTab(w.tab));
+        QVERIFY(w.manager.setTabColor(w.tab, QStringLiteral("red")));
+        QVERIFY(w.show());
+        QCoreApplication::sendPostedEvents(&w.workspace, QEvent::MetaCall);
+        const auto before = w.manager.saveLayout();
+        QSignalSpy changed(&w.manager, &WindowManager::layoutChanged);
+        // Quick accepts an asynchronous request; cancellation has no result
+        // to return from the already completed execute() call.
+        QVERIFY(w.manager.execute(command, {}, w.window));
+        QQuickWindow* menu = nullptr;
+        QTRY_VERIFY((menu = popup(w.view)));
+        QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QTest::keyClick(menu, Qt::Key_Escape);
+        QTRY_VERIFY(!popup(w.view));
+        QCOMPARE(w.manager.model().tab(w.tab)->colorId, QStringLiteral("red"));
+        QCOMPARE(changed.size(), 0);
+        QCOMPARE(w.manager.saveLayout(), before);
+    }
+
     void pickersApplyToTheTabTheyStartedOn()
     {
         Workspace w;
