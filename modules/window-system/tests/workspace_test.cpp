@@ -53,9 +53,7 @@ private slots:
     void initTestCase();
     void cleanup();
     void failedAdoptionLeavesCallerOwnershipIntact();
-    void detachPromoteDemoteAndRedockPreserveLiveContent();
     void optionalBarsTravelWithTheTabAndAreReleasedOnClose();
-    void splittingAndExtractingMovesExistingPaneWidgets();
     void refusedFamilyCloseLeavesEveryWindowAndContentAlive();
     void closeWindowRejectsContentAddedDuringConfirmation_data();
     void closeWindowRejectsContentAddedDuringConfirmation();
@@ -67,8 +65,6 @@ private slots:
     void allCommandsCanBeBoundAndDefaultsHaveNoCollisions();
     void customCommandsReceiveArgumentsAndRespectTheirPrecondition();
     void invalidTabArgumentCannotChangeEdgeLayout();
-    void aBoundCommandExecutesFromContentKeyboardInput();
-    void invalidRestorePreservesTheCurrentModelAndWidgets();
     void failedRestoreReleasesPreparedContentsAndPreservesCurrentContents();
     void restoreFactoriesMayDestroyTheirManager_data();
     void restoreFactoriesMayDestroyTheirManager();
@@ -76,8 +72,6 @@ private slots:
     void validRestoreCreatesContentsForExistingStableIds();
     void restoredWindowTitlesSurviveFreshAndExistingHosts();
     void emptyRootWithFloatingContentSurvivesAutomaticClosePolicy();
-    void repeatedCrossWindowMovesDoNotRecreateOrDestroyContent();
-    void edgePinAndReturnToCenterPreserveTheSameWidget();
     void bulkCloseCommandsRespectTheSelectedTabAndGroup_data();
     void bulkCloseCommandsRespectTheSelectedTabAndGroup();
     void refusedBulkCloseIsAtomicAndDoesNotCloseNewTabs();
@@ -135,38 +129,6 @@ void WorkspaceTest::failedAdoptionLeavesCallerOwnershipIntact()
     QVERIFY(retained.isNull());
 }
 
-void WorkspaceTest::detachPromoteDemoteAndRedockPreserveLiveContent()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* content = editor("A live, editable document");
-    const auto tab = manager.addTab(root, content, editorOptions("Live", content->toPlainText()));
-    const auto pane = manager.model().tab(tab)->activePane;
-    auto cursor = content->textCursor();
-    cursor.setPosition(2);
-    cursor.setPosition(8, QTextCursor::KeepAnchor);
-    content->setTextCursor(cursor);
-    QSignalSpy destroyed(content, &QObject::destroyed);
-
-    const auto floating = manager.detachTab(tab);
-    QVERIFY(!floating.isNull());
-    QCOMPARE(manager.model().window(floating)->kind, WindowKind::Floating);
-    QCOMPARE(manager.paneWidget(pane), content);
-    QCOMPARE(content->window(), manager.windowWidget(floating));
-    QVERIFY(manager.promoteWindow(floating));
-    QCOMPARE(manager.model().window(floating)->kind, WindowKind::Workbench);
-    QVERIFY(manager.demoteWindow(floating, root));
-    QCOMPARE(manager.model().window(floating)->familyId, manager.model().window(root)->familyId);
-    QVERIFY(manager.execute("window.redock", {}, floating));
-    deliverDeferredDeletes();
-    QCOMPARE(manager.paneWidget(pane), content);
-    QCOMPARE(content->window(), manager.windowWidget(root));
-    QCOMPARE(content->toPlainText(), QStringLiteral("A live, editable document"));
-    QCOMPARE(content->textCursor().selectedText(), QStringLiteral("live, "));
-    QCOMPARE(destroyed.count(), 0);
-    QVERIFY(!manager.model().window(floating));
-}
-
 void WorkspaceTest::optionalBarsTravelWithTheTabAndAreReleasedOnClose()
 {
     WindowManager manager;
@@ -194,37 +156,6 @@ void WorkspaceTest::optionalBarsTravelWithTheTabAndAreReleasedOnClose()
     QVERIFY(manager.closeTab(tab));
     deliverDeferredDeletes();
     QVERIFY(bottom.isNull());
-}
-
-void WorkspaceTest::splittingAndExtractingMovesExistingPaneWidgets()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* first = editor("First pane");
-    auto* second = editor("Second pane");
-    const auto tab = manager.addTab(root, first, editorOptions("Split", "First pane"));
-    const auto firstPane = manager.model().tab(tab)->activePane;
-    const auto secondPane = manager.splitPane(tab, firstPane, second, Placement::Right);
-    QVERIFY(!secondPane.isNull());
-    QPointer<QWidget> firstPointer = first;
-    QPointer<QWidget> secondPointer = second;
-    const auto extracted = manager.extractPane(tab, secondPane);
-    QVERIFY(!extracted.isNull());
-    QVERIFY(extracted != tab);
-    const auto extractedWindow = manager.model().group(manager.model().groupForTab(extracted))->windowId;
-    QCOMPARE(manager.paneWidget(firstPane), first);
-    QCOMPARE(manager.paneWidget(secondPane), second);
-    QCOMPARE(manager.model().panes(tab), (QVector<PaneId>{firstPane}));
-    QCOMPARE(manager.model().panes(extracted), (QVector<PaneId>{secondPane}));
-    QCOMPARE(second->window(), manager.windowWidget(extractedWindow));
-    QVERIFY(manager.closeTab(tab));
-    deliverDeferredDeletes();
-    QVERIFY(firstPointer.isNull());
-    QVERIFY(secondPointer);
-    QCOMPARE(second->toPlainText(), QStringLiteral("Second pane"));
-    QVERIFY(manager.requestCloseWindow(extractedWindow));
-    deliverDeferredDeletes();
-    QVERIFY(secondPointer.isNull());
 }
 
 void WorkspaceTest::refusedFamilyCloseLeavesEveryWindowAndContentAlive()
@@ -501,45 +432,6 @@ void WorkspaceTest::invalidTabArgumentCannotChangeEdgeLayout()
     QVERIFY(manager.model().validate().ok);
 }
 
-void WorkspaceTest::aBoundCommandExecutesFromContentKeyboardInput()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* content = editor("Keyboard content");
-    const auto tab = manager.addTab(root, content, editorOptions("Keyboard", "Keyboard content"));
-    int calls = 0;
-    TabId commandTab;
-    QVERIFY(manager.commands().add({"test.keyboard", "Keyboard action", "Host", {}, {},
-        [&](const CommandContext& context) { ++calls; commandTab = context.tab; return true; }}));
-    QVERIFY(manager.commands().setShortcut("test.keyboard", QKeySequence("Ctrl+Alt+F9")));
-    manager.showWindow(root);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(root)));
-    QVERIFY(manager.focusPane(tab, manager.model().tab(tab)->activePane));
-    QTest::keyClick(content, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
-    QCOMPARE(calls, 1);
-    QCOMPARE(commandTab, tab);
-    QCOMPARE(content->toPlainText(), QStringLiteral("Keyboard content"));
-}
-
-void WorkspaceTest::invalidRestorePreservesTheCurrentModelAndWidgets()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* content = editor("Retained after malformed restore");
-    const auto tab = manager.addTab(root, content, editorOptions("Retained", content->toPlainText()));
-    const auto pane = manager.model().tab(tab)->activePane;
-    int factoryCalls = 0;
-    manager.setContentFactory([&](const TabOptions&, PaneId) { ++factoryCalls; return editor("Unexpected"); });
-    const auto before = manager.model().toJson();
-    auto malformed = manager.saveLayout();
-    malformed.insert("model", QJsonObject{{"schemaVersion", 99}});
-    QVERIFY(!manager.restoreLayout(malformed).ok);
-    QCOMPARE(factoryCalls, 0);
-    QCOMPARE(manager.model().toJson(), before);
-    QCOMPARE(manager.paneWidget(pane), content);
-    QCOMPARE(content->toPlainText(), QStringLiteral("Retained after malformed restore"));
-}
-
 void WorkspaceTest::failedRestoreReleasesPreparedContentsAndPreservesCurrentContents()
 {
     WindowManager manager;
@@ -742,60 +634,6 @@ void WorkspaceTest::emptyRootWithFloatingContentSurvivesAutomaticClosePolicy()
     QVERIFY(manager.model().familyHasTabs(manager.model().window(root)->familyId));
     QVERIFY(manager.requestCloseWindow(floating));
     QTRY_VERIFY(manager.model().windows().isEmpty());
-}
-
-void WorkspaceTest::repeatedCrossWindowMovesDoNotRecreateOrDestroyContent()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* content = editor("Persistent instance");
-    const auto tab = manager.addTab(root, content, editorOptions("Persistent", "Persistent instance"));
-    const auto pane = manager.model().tab(tab)->activePane;
-    QSignalSpy destroyed(content, &QObject::destroyed);
-    for (int iteration = 0; iteration < 20; ++iteration) {
-        const auto floating = manager.detachTab(tab);
-        QVERIFY(!floating.isNull());
-        QPointer<QWidget> retiredWindow = manager.windowWidget(floating);
-        QVERIFY(manager.execute("window.redock", {}, floating));
-        deliverDeferredDeletes();
-        QVERIFY(retiredWindow.isNull());
-        QCOMPARE(manager.paneWidget(pane), content);
-        QCOMPARE(content->toPlainText(), QStringLiteral("Persistent instance"));
-        QCOMPARE(manager.model().windows().size(), 1);
-        QCOMPARE(manager.model().tabs().size(), 1);
-        QCOMPARE(manager.model().panes(tab).size(), 1);
-        QCOMPARE(destroyed.count(), 0);
-    }
-    QVERIFY(manager.closeTab(tab));
-    deliverDeferredDeletes();
-    QCOMPARE(destroyed.count(), 1);
-}
-
-void WorkspaceTest::edgePinAndReturnToCenterPreserveTheSameWidget()
-{
-    WindowManager manager;
-    const auto root = manager.createWindow();
-    auto* central = editor("Central");
-    auto* side = editor("Sessions");
-    const auto centralTab = manager.addTab(root, central, editorOptions("Central", "Central"));
-    const auto sideTab = manager.addTab(root, side, editorOptions("Sessions", "Sessions"));
-    const auto pane = manager.model().tab(sideTab)->activePane;
-    QSignalSpy destroyed(side, &QObject::destroyed);
-    QVERIFY(manager.moveTabToEdge(sideTab, Edge::Left));
-    const auto edgeGroup = manager.model().groupForTab(sideTab);
-    QCOMPARE(manager.model().group(edgeGroup)->location, GroupLocation::AutoHide);
-    QCOMPARE(manager.model().centralGroups(root), (QVector<GroupId>{manager.model().groupForTab(centralTab)}));
-    QVERIFY(manager.pinGroup(edgeGroup, true));
-    QCOMPARE(manager.model().group(edgeGroup)->location, GroupLocation::Pinned);
-    QCOMPARE(manager.paneWidget(pane), side);
-    QCOMPARE(side->window(), manager.windowWidget(root));
-    QVERIFY(manager.pinGroup(edgeGroup, false));
-    QVERIFY(manager.moveGroupToCenter(edgeGroup));
-    QCOMPARE(manager.model().group(edgeGroup)->location, GroupLocation::Central);
-    QCOMPARE(manager.paneWidget(pane), side);
-    QCOMPARE(side->toPlainText(), QStringLiteral("Sessions"));
-    QCOMPARE(destroyed.count(), 0);
-    QVERIFY(manager.model().validate().ok);
 }
 
 void WorkspaceTest::bulkCloseCommandsRespectTheSelectedTabAndGroup_data()

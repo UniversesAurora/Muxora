@@ -7,9 +7,12 @@
 #include <window_system/window_manager.hpp>
 #include <QHash>
 #include <QPointer>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QMouseEvent>
+#include <QSignalSpy>
 #include <QTest>
 #include <memory>
 
@@ -30,6 +33,147 @@ QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->bounding
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void liveEditorsSurviveWindowAndPaneTransfers_data()
+    {
+        QTest::addColumn<int>("route");
+        QTest::newRow("detach-promote-demote-redock") << -1;
+        QTest::newRow("extract-pane") << -2;
+        for (const auto edge : {Edge::Left, Edge::Right, Edge::Top, Edge::Bottom})
+            QTest::newRow(qPrintable(QStringLiteral("edge-%1").arg(int(edge)))) << int(edge);
+    }
+
+    void liveEditorsSurviveWindowAndPaneTransfers()
+    {
+        QFETCH(int, route);
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        // Like the original editor, the host keeps its selection on focus loss.
+        component.setData("import QtQuick; TextEdit { text: 'A live, editable document'; persistentSelection: true }", QUrl());
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        int creations = 0;
+        workspace.setContentFactory([&](const TabOptions&, PaneId) {
+            ++creations;
+            return qobject_cast<QQuickItem*>(component.create());
+        });
+        const auto root = manager.createWindow();
+        const auto staying = manager.addTab(root, {QStringLiteral("Staying")});
+        const auto stayingPane = manager.model().tab(staying)->activePane;
+        const auto moving = manager.addTab(root, {QStringLiteral("Moving")});
+        const auto originalPane = manager.model().tab(moving)->activePane;
+        const auto pane = route == -2 ? manager.splitPane(moving, originalPane, Placement::Right) : originalPane;
+        QTRY_VERIFY(workspace.content(pane));
+        QPointer<QQuickItem> content = workspace.content(pane), stationary = workspace.content(stayingPane);
+        QVERIFY(stationary);
+        QSignalSpy destroyed(content, &QObject::destroyed);
+        QVERIFY(QMetaObject::invokeMethod(content, "select", Q_ARG(int, 2), Q_ARG(int, 8)));
+        QCOMPARE(content->property("selectedText").toString(), QStringLiteral("live, "));
+        const int initialCreations = creations;
+        if (route == -1) {
+            for (int iteration = 0; iteration < 20; ++iteration) {
+                const auto floating = manager.detachTab(moving);
+                QVERIFY(!floating.isNull());
+                QTRY_VERIFY(workspace.window(floating));
+                QPointer<QQuickWindow> retired = workspace.window(floating);
+                QTRY_COMPARE(content->window(), retired.data());
+                QVERIFY(manager.promoteWindow(floating));
+                QTRY_COMPARE(workspace.window(floating), retired.data());
+                QCOMPARE(manager.model().window(floating)->kind, WindowKind::Workbench);
+                QVERIFY(manager.demoteWindow(floating, root));
+                QTRY_COMPARE(workspace.window(floating), retired.data());
+                QVERIFY(manager.execute("window.redock", {}, floating));
+                QTRY_COMPARE(content->window(), workspace.window(root));
+                QTRY_VERIFY(!retired);
+                QCOMPARE(workspace.content(pane), content.data());
+                QCOMPARE(content->property("selectedText").toString(), QStringLiteral("live, "));
+                QCOMPARE(creations, initialCreations);
+            }
+        } else if (route == -2) {
+            const auto extracted = manager.extractPane(moving, pane);
+            QVERIFY(!extracted.isNull());
+            const auto destination = manager.model().group(manager.model().groupForTab(extracted))->windowId;
+            QTRY_VERIFY(workspace.window(destination));
+            QTRY_COMPARE(content->window(), workspace.window(destination));
+            QVERIFY(manager.closeTab(moving));
+            QTRY_VERIFY(!workspace.content(originalPane));
+            QVERIFY(content);
+            QCOMPARE(workspace.content(pane), content.data());
+            QCOMPARE(content->property("text").toString(), QStringLiteral("A live, editable document"));
+            QCOMPARE(content->property("selectedText").toString(), QStringLiteral("live, "));
+            QCOMPARE(destroyed.count(), 0);
+            QVERIFY(manager.requestCloseWindow(destination));
+        } else {
+            QVERIFY(manager.moveTabToEdge(moving, Edge(route)));
+            const auto group = manager.model().groupForTab(moving);
+            QVERIFY(manager.activateTab(moving));
+            QTRY_VERIFY(content->isVisible());
+            QVERIFY(manager.pinGroup(group, true));
+            QTRY_COMPARE(content->window(), workspace.window(root));
+            QCOMPARE(manager.model().group(group)->location, GroupLocation::Pinned);
+            QVERIFY(manager.pinGroup(group, false));
+            QVERIFY(manager.moveGroupToCenter(group));
+            QTRY_VERIFY(content->isVisible());
+            QCOMPARE(manager.model().group(group)->location, GroupLocation::Central);
+        }
+        if (route != -2) {
+            QCOMPARE(workspace.content(pane), content.data());
+            QCOMPARE(content->property("text").toString(), QStringLiteral("A live, editable document"));
+            QCOMPARE(content->property("selectedText").toString(), QStringLiteral("live, "));
+            QCOMPARE(destroyed.count(), 0);
+            QVERIFY(manager.closeTab(moving));
+        }
+        QTRY_VERIFY(!content);
+        QCOMPARE(destroyed.count(), 1);
+        QCOMPARE(workspace.content(stayingPane), stationary.data());
+        QCOMPARE(stationary->property("text").toString(), QStringLiteral("A live, editable document"));
+        QCOMPARE(creations, initialCreations);
+        QVERIFY(manager.model().validate());
+    }
+
+    void editorStateSurvivesCommandsAndRejectedRestore()
+    {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick; TextEdit { text: 'Keyboard content' }", QUrl());
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        int creations = 0;
+        workspace.setContentFactory([&](const TabOptions&, PaneId) {
+            ++creations;
+            return qobject_cast<QQuickItem*>(component.create());
+        });
+        const auto window = manager.createWindow();
+        const auto tab = manager.addTab(window, {QStringLiteral("Editor")});
+        const auto pane = manager.model().tab(tab)->activePane;
+        QTRY_VERIFY(workspace.content(pane));
+        QPointer<QQuickItem> editor = workspace.content(pane);
+        auto* view = workspace.window(window);
+        view->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(view));
+        editor->forceActiveFocus();
+        QTRY_VERIFY(editor->hasActiveFocus());
+        int calls = 0;
+        TabId commandTab;
+        QVERIFY(manager.commands().add({QStringLiteral("test.keyboard"), QStringLiteral("Keyboard action"),
+            QStringLiteral("Host"), QKeySequence(QStringLiteral("Ctrl+Alt+F9")), {},
+            [&](const CommandContext& context) { ++calls; commandTab = context.tab; return true; }}));
+        QTest::keyClick(view, Qt::Key_F9, Qt::ControlModifier | Qt::AltModifier);
+        QCOMPARE(calls, 1);
+        QCOMPARE(commandTab, tab);
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("Keyboard content"));
+        const auto before = manager.model().toJson();
+        auto malformed = manager.saveLayout();
+        malformed.insert("model", QJsonObject{{"schemaVersion", 99}});
+        QVERIFY(!manager.restoreLayout(malformed));
+        QCoreApplication::sendPostedEvents(&workspace, QEvent::MetaCall);
+        QCOMPARE(manager.model().toJson(), before);
+        QCOMPARE(workspace.content(pane), editor.data());
+        QCOMPARE(creations, 1);
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("Keyboard content"));
+    }
+
     void hierarchyConversionKeepsTheExistingBars_data()
     {
         QTest::addColumn<bool>("wholeGroup");
