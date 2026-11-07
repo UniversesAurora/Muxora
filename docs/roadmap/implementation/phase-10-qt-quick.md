@@ -175,7 +175,7 @@
 
 源码缩写 `WS/` 指 `modules/window-system/tests/`，`Lua/` 指 `modules/window-system-lua/tests/`，`App/` 指 `src/app/tests/`。B 类写出已阅读实际断言的 Quick 用例。C 类包含 Quick 覆盖缺口、旧控件内部结构依赖和需 Claude 审定的外观混合断言，去向是补充或审定位置。A 类在 3.3 实际迁移时仍按原断言验证，需要改变行为断言的转为 C。
 
-本表共 778 行，A 237、B 3、C 538，包含子进程入口。只完成静态分类，测试及产品源码的迁移按审表后的步骤执行。
+本表共 778 行，A 233、B 3、C 542，包含子进程入口。A 类已按 3.3 完成迁移或确认无需呈现迁移，证据见[迁移进度](#33-迁移进度)；C 类按 3.4 分功能整理。
 
 ##### 审定结论（Claude 2026-11-07）
 
@@ -869,10 +869,10 @@
 | `WS/window_placement_test.cpp` | `closeAllSurvivesManagerDeletionWhileCancellingDrag` | C | 补 quick-workspace-drag 的取消时管理器销毁。旧例直接断言 QWidget::mouseGrabber，Quick 的捕获与取消重入需独立验证 |
 | `WS/window_placement_test.cpp` | `firstFullscreenHasAVisibleRestorePlacement` | C | 补 quick-workspace 的首次显示即全屏及还原位置。旧例先获取已创建且隐藏的 QWidget，Quick 默认投影即显示，前置条件不能原样迁移 |
 | `WS/window_placement_test.cpp` | `freshManagerRestoresNormalPlacement` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
-| `WS/window_placement_test.cpp` | `maximizeStateChangeNotifiesTheHost` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
-| `WS/window_placement_test.cpp` | `maximizedAndMinimizedPreserveNormalPlacement` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
-| `WS/window_placement_test.cpp` | `movingAndResizingNotifyTheHost` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
-| `WS/window_placement_test.cpp` | `newWorkbenchesFitTheirInitialScreen` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
+| `WS/window_placement_test.cpp` | `maximizeStateChangeNotifiesTheHost` | C | Quick 的移动／尺寸／最大化状态未向管理器发布位置变更通知，原 layoutChanged 断言在两种窗口类型下失败；原 Widgets 函数及数据保留，见交接 Q5。 |
+| `WS/window_placement_test.cpp` | `maximizedAndMinimizedPreserveNormalPlacement` | C | Quick 窗口最大化后 normalGeometry 缓存为空，保存时跳过该窗口记录，原普通几何持久化断言失败；原全部数据及 Widgets 函数保留，见交接 Q6。 |
+| `WS/window_placement_test.cpp` | `movingAndResizingNotifyTheHost` | C | Quick 的移动／尺寸／最大化状态未向管理器发布位置变更通知，原 layoutChanged 断言在两种窗口类型下失败；原 Widgets 函数及数据保留，见交接 Q5。 |
+| `WS/window_placement_test.cpp` | `newWorkbenchesFitTheirInitialScreen` | C | 旧夹具在首次 show 前取得 QWidget 并设置屏外位置；Quick 投影时已自动显示，取得 QQuickWindow 后改位置属于后续用户移动，不能平迁这项初始放置输入。保留原函数与数据，3.4 按新窗口可达性的实际入口整理，不增加测试专用显示钩子。 |
 | `WS/window_placement_test.cpp` | `normalizationUsesAllLogicalScreenAreas` | A | 保留 normalizeWindowPlacement 纯逻辑检查。虚拟屏幕、可用区域和可恢复几何不依赖控件 |
 | `WS/window_placement_test.cpp` | `partiallyOffscreenSnapshotsBecomeReachable` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
 | `WS/window_placement_test.cpp` | `queuedNotificationDoesNotOutliveAClosedWindow` | A | External + QuickWorkspace，位置与状态取 QQuickWindow。保留现有偏好／几何／状态／通知断言，替换内容及窗口获取入口 |
@@ -994,7 +994,7 @@
 
 #### 3.3 迁移进度
 
-进行中。当前继续按审定表顺序迁移 `WS/window_placement_test.cpp`，其余 A 类及 3.4 尚未处理。已迁移部分如下，原行为断言与数据行保留。
+已完成全部 A 类。原行为断言与数据行保留；不能平迁或暴露产品缺陷的用例已改 C，保留原 Widgets 正文，未当成修复。接下来只做 3.4 第一组“内容与生命周期”，完成后等 Claude 审查。各源码证据如下。
 
 | 源码 | 状态 | 验证 |
 | --- | --- | --- |
@@ -1031,5 +1031,6 @@
 | `WS/toolbar_reset_test.cpp` | 唯一 A 已迁 External，其余 C 保留 | [记录](../../development/verification-log/2026-11.md#工具栏重置的-a-类测试迁到-external2026-11-07) |
 | `WS/view_commands_test.cpp` | 唯一 A 已迁 External 模型夹具，其余 C 正文保留 | [记录](../../development/verification-log/2026-11.md#命令-enabled-重入的-a-类测试迁到-external2026-11-07) |
 | `WS/view_reuse_test.cpp` | 唯一 A 已迁 Quick，显隐快照与合并批次断言保留，其余 C 正文保留 | [记录](../../development/verification-log/2026-11.md#内容显隐批次的-a-类测试迁到-quick2026-11-07) |
+| `WS/window_placement_test.cpp` | 五项 A 已迁或保持纯逻辑；初次显示夹具的一项及三项暴露位置通知／缓存缺陷的用例改 C，七项 C 正文保留 | [记录](../../development/verification-log/2026-11.md#窗口位置的-a-类测试迁到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

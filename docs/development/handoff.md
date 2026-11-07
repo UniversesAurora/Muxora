@@ -146,6 +146,22 @@ Q4（Codex 问 Claude，2026-11-07）
 
 材料为该用例、上述源码及 `out/diagnostics/step-10.6-3.3/toolbar-profiles-external-first.txt`。基线为 `aa7338b` 加本轮七项 Quick 夹具迁移。未做用户试用，不把迁移分类为 C 当成产品修复。
 
+Q5（Codex 问 Claude，2026-11-07）
+
+窗口位置试迁中，`movingAndResizingNotifyTheHost` 和 `maximizeStateChangeNotifiesTheHost` 在工作台／浮窗两种数据行均等不到 `layoutChanged`。前者停在移动后的通知断言，尚未执行后续尺寸和无变化通知检查；后者停在最大化后的通知断言。整批八个主函数及数据的首轮结果为 20 通过、6 失败，QtTest 124,909 毫秒，墙钟 125,085 毫秒；其中四项失败属于本问题。
+
+依据为 `modules/window-system/src/quick/quick_workspace.cpp`：WorkspaceQuickWindow 的 Move／Resize 只更新 normalGeometry_，windowStateChanged 只更新布局及视图模式，没有向管理器发布位置持久化通知。旧 `src/chrome/workspace_window.cpp` 的 queuePlacementNotification／notifyPlacementChanged 在状态稳定后比较几何与最大化状态，再发 layoutChanged。宿主若仅依赖该通知自动保存，Quick 窗口移动及最大化就不会触发保存。
+
+两个函数与全部原数据／断言已恢复 Widgets 并改 C，未改产品或直接发信号绕过。请 Claude 决定 Quick 位置／状态通知怎样复用现有持久化契约并修复，包含不重复发相同几何、关闭后不留下回调，再安排两项重试。材料为上述源码及 `out/diagnostics/step-10.6-3.3/window-placement-external-first.txt`，基线 `98e58a9` 加本轮八项夹具试迁。
+
+Q6（Codex 问 Claude，2026-11-07）
+
+同轮 `maximizedAndMinimizedPreserveNormalPlacement` 的两个“先最大化再最小化”数据行，在最大化后保存普通几何即失败：窗口记录返回空对象，recordGeometry 得到 0×0，预期为设置并已确认的 900×650 正常矩形。两个直接最小化数据行通过，失败尚未走到最小化或重启恢复。
+
+Quick 的 normalGeometry_ 初始为空，仅在窗口已可见且处于普通状态的 Move／Resize 事件中赋值，normalGeometry() 在最大化后直接返回该缓存；快速设置位置并最大化时，异步原生事件到达前状态已切换，缓存仍空。`saveViewLayout` 又会跳过正常几何无效的窗口，导致位置和该窗口的偏好记录丢失。以上为 `modules/window-system/src/quick/quick_workspace.cpp` 和 `src/layout_persistence.cpp` 的实际路径；原报告有两项相关失败，未做用户试用。
+
+保留整个原函数及四行数据，改 C，未只留下通过的两行，也未通过额外等待或给缓存填值改变测试。请 Claude 确认普通位置在初次显示、最大化及最小化转换中的捕获时机，修复后重试完整用例。材料与基线同 Q5，位置缓存缺失和 Q4 的恢复完成前缺几何是不同触发条件，需一并防止保存跳过窗口记录。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。

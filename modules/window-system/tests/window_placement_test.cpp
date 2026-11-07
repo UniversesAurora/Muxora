@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <window_system/window_manager.hpp>
+#include <window_system/quick_workspace.hpp>
 #include "chrome/workspace_window.hpp"
 #include "platform/window_placement.hpp"
 
@@ -8,6 +9,8 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QScreen>
 #include <QSignalSpy>
 #include <QTest>
@@ -29,13 +32,20 @@ WindowId createFixture(WindowManager& manager, bool floating)
 {
     const auto root = manager.createWindow();
     const auto target = floating ? manager.createWindow(WindowKind::Floating, {}, root) : root;
-    manager.addTab(target, new QLabel("Content"), {"Placement", "test.label", {}});
+    if (manager.presentation() == WindowManager::Presentation::External)
+        manager.addTab(target, {"Placement", "test.label", {}});
+    else manager.addTab(target, new QLabel("Content"), {"Placement", "test.label", {}});
     return target;
 }
 
 void useContentFactory(WindowManager& manager)
 {
     manager.setContentFactory([](const TabOptions&, PaneId) { return new QLabel("Restored content"); });
+}
+
+void useContentFactory(QuickWorkspace& workspace)
+{
+    workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
 }
 
 QJsonObject windowRecord(const QJsonObject& snapshot, WindowId id)
@@ -227,22 +237,28 @@ void WindowPlacementTest::movingAndResizingNotifyTheHost()
 void WindowPlacementTest::freshManagerRestoresNormalPlacement()
 {
     QFETCH(bool, floating);
-    WindowManager original;
+    WindowManager original(WindowManager::Presentation::External);
+    QuickWorkspace originalWorkspace(original);
+    useContentFactory(originalWorkspace);
     const auto id = createFixture(original, floating);
-    auto* window = original.windowWidget(id); QVERIFY(window);
+    QTRY_VERIFY(originalWorkspace.window(id));
+    auto* window = originalWorkspace.window(id); QVERIFY(window);
     const auto expected = visibleFixtureGeometry(qApp->primaryScreen());
     window->setGeometry(expected); original.showWindow(id);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     QTRY_COMPARE(window->geometry(), expected);
     const auto snapshot = original.saveLayout();
-    original.windowWidget(id)->hide();
-    WindowManager restored;
-    useContentFactory(restored);
+    originalWorkspace.window(id)->hide();
+    WindowManager restored(WindowManager::Presentation::External);
+    QuickWorkspace restoredWorkspace(restored);
+    useContentFactory(restoredWorkspace);
+
     QVERIFY(restored.restoreLayout(snapshot));
-    auto* result = restored.windowWidget(id); QVERIFY(result);
+    QTRY_VERIFY(restoredWorkspace.window(id));
+    auto* result = restoredWorkspace.window(id); QVERIFY(result);
     QVERIFY(QTest::qWaitForWindowExposed(result));
     QTRY_COMPARE(result->geometry(), expected);
-    QVERIFY(!result->isMaximized());
+    QVERIFY(!result->windowStates().testFlag(Qt::WindowMaximized));
     QCOMPARE(restored.model().window(id)->kind, original.model().window(id)->kind);
     QCOMPARE(recordGeometry(windowRecord(restored.saveLayout(), id)), expected);
 }
@@ -310,14 +326,18 @@ void WindowPlacementTest::maximizedAndMinimizedPreserveNormalPlacement()
 void WindowPlacementTest::partiallyOffscreenSnapshotsBecomeReachable()
 {
     QFETCH(bool, floating);
-    WindowManager manager; useContentFactory(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace managerWorkspace(manager);
+    useContentFactory(managerWorkspace);
     const auto id = createFixture(manager, floating);
+    QCoreApplication::sendPostedEvents(&managerWorkspace, QEvent::MetaCall);
     auto snapshot = manager.saveLayout();
     const auto available = qApp->primaryScreen()->availableGeometry();
     const QRect outside(available.right() - 20, available.bottom() - 20, 900, 650);
     replaceRecordGeometry(snapshot, id, outside, false);
     QVERIFY(manager.restoreLayout(snapshot));
-    auto* window = manager.windowWidget(id); QVERIFY(window);
+    QTRY_VERIFY(managerWorkspace.window(id));
+    auto* window = managerWorkspace.window(id); QVERIFY(window);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     QRegion desktop;
     for (const auto* screen : qApp->screens()) desktop += screen->availableGeometry();
@@ -329,30 +349,37 @@ void WindowPlacementTest::partiallyOffscreenSnapshotsBecomeReachable()
 void WindowPlacementTest::restoringOverAnExistingMaximizedWindowHonorsNormalState()
 {
     QFETCH(bool, floating);
-    WindowManager manager; useContentFactory(manager);
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace managerWorkspace(manager);
+    useContentFactory(managerWorkspace);
     const auto id = createFixture(manager, floating);
-    auto* window = manager.windowWidget(id); QVERIFY(window);
+    QTRY_VERIFY(managerWorkspace.window(id));
+    auto* window = managerWorkspace.window(id); QVERIFY(window);
     const auto expected = visibleFixtureGeometry(qApp->primaryScreen());
     window->setGeometry(expected); manager.showWindow(id);
     QVERIFY(QTest::qWaitForWindowExposed(window));
     const auto normal = manager.saveLayout();
-    window->showMaximized(); QTRY_VERIFY(window->isMaximized());
+    window->showMaximized(); QTRY_VERIFY(window->windowStates().testFlag(Qt::WindowMaximized));
     QVERIFY(manager.restoreLayout(normal));
-    QCOMPARE(manager.windowWidget(id), window);
-    QTRY_VERIFY(!window->isMaximized());
+    QCOMPARE(managerWorkspace.window(id), window);
+    QTRY_VERIFY(!window->windowStates().testFlag(Qt::WindowMaximized));
     QTRY_COMPARE(window->geometry(), expected);
     QCOMPARE(recordGeometry(windowRecord(manager.saveLayout(), id)), expected);
 }
 
 void WindowPlacementTest::queuedNotificationDoesNotOutliveAClosedWindow()
 {
-    WindowManager manager;
+    WindowManager manager(WindowManager::Presentation::External);
+    QuickWorkspace managerWorkspace(manager);
+    useContentFactory(managerWorkspace);
     const auto root = manager.createWindow();
     const auto id = manager.createWindow(WindowKind::Floating, {}, root);
-    QPointer<QWidget> window = manager.windowWidget(id);
+    QTRY_VERIFY(managerWorkspace.window(id));
+    QPointer<QQuickWindow> window = managerWorkspace.window(id);
     manager.showWindow(id); QVERIFY(QTest::qWaitForWindowExposed(window));
-    window->move(window->pos() + QPoint(20, 20));
+    window->setPosition(window->position() + QPoint(20, 20));
     QVERIFY(manager.requestCloseWindow(id));
+    QCoreApplication::sendPostedEvents(&managerWorkspace, QEvent::MetaCall);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
     QVERIFY(!window);
