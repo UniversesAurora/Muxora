@@ -10,7 +10,6 @@
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
-#include <QSplitter>
 #include <QTest>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -40,12 +39,6 @@ QWidget* frameOf(const WindowManager& manager, PaneId pane)
 QWidget* pageOf(const WindowManager& manager, TabId tab)
 {
     return ancestorNamed(manager.paneWidget(activePane(manager, tab)), QStringLiteral("TabPage"));
-}
-QWidget* stripOf(const WindowManager& manager, WindowId window, GroupId group)
-{
-    for (auto* widget : manager.windowWidget(window)->findChildren<QWidget*>(QStringLiteral("TabGroup")))
-        if (widget->property("groupId").toUuid() == group) return widget;
-    return nullptr;
 }
 QJsonObject snapshotWithInactiveTabs(int count,
                                     WindowManager::Presentation presentation = WindowManager::Presentation::Widgets)
@@ -99,19 +92,6 @@ void settle()
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
 }
-// Runs a host callback from the content's own resize event.
-class ResizeHook final : public QLabel {
-public:
-    using QLabel::QLabel;
-    std::function<void()> resized;
-protected:
-    void resizeEvent(QResizeEvent* event) override
-    {
-        QLabel::resizeEvent(event);
-        const auto callback = resized;
-        if (callback) callback();
-    }
-};
 class ParentChangeProbe final : public QObject {
 public:
     ParentChangeProbe(QWidget* watched, const bool& notified)
@@ -145,8 +125,6 @@ private slots:
     void crossWindowMoveReportsHiddenBeforeReparent();
     void mountedRebuildIsVisibleImmediately();
     void unrelatedRefreshKeepsTheFocusedChildWhilePaneNavigationStillWorks();
-    void mutationFromSplitterLayoutKeepsReusedStrip_data();
-    void mutationFromSplitterLayoutKeepsReusedStrip();
 };
 
 void ViewReuseTest::restoringLayoutDiscardsPendingTabBars()
@@ -292,70 +270,6 @@ void ViewReuseTest::mountedRebuildIsVisibleImmediately()
     QVERIFY(manager.paneWidget(created)->isVisible());
     QVERIFY(original->isVisible());
     QVERIFY(frameOf(manager, created)->isVisible());
-}
-
-void ViewReuseTest::mutationFromSplitterLayoutKeepsReusedStrip_data()
-{
-    QTest::addColumn<bool>("command");
-    QTest::addColumn<bool>("removeGroup");
-    for (const bool command : {true, false})
-        for (const bool removeGroup : {false, true})
-            QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(command ? "ratio-command" : "splitter-resize",
-                removeGroup ? "remove-group" : "close-tab"))) << command << removeGroup;
-}
-void ViewReuseTest::mutationFromSplitterLayoutKeepsReusedStrip()
-{
-    QFETCH(bool, command);
-    QFETCH(bool, removeGroup);
-    WindowManager manager;
-    const auto window = manager.createWindow();
-    auto* hook = new ResizeHook("hook");
-    const QPointer<QWidget> content(hook);
-    const auto left = manager.addTab(window, hook, {"left", "test.text", {}});
-    const auto right = add(manager, window, "right");
-    QVERIFY(manager.moveTab(right, manager.model().groupForTab(left), Placement::Right));
-    const auto extra = add(manager, window, "extra", manager.model().groupForTab(right));
-    if (removeGroup) QVERIFY(manager.closeTab(right));
-    QVERIFY(manager.activateTab(left));
-    manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowExposed(manager.windowWidget(window)));
-    settle();
-    const auto leftGroup = manager.model().groupForTab(left);
-    const QPointer<QWidget> leftStrip = stripOf(manager, window, leftGroup);
-    QVERIFY(leftStrip);
-    QVERIFY(hook->isVisible());
-    // The central splitter resizes its first child, the left strip, whose
-    // content closes a tab of the right group before the splitter reaches
-    // its second child. Closing the group's last tab changes the splitter
-    // structure, so the unchanged left strip moves to a new tree in the
-    // middle of that layout pass; otherwise the right strip is replaced in
-    // place.
-    bool fired = false;
-    hook->resized = [&] {
-        if (fired) return;
-        fired = true;
-        QVERIFY(manager.closeTab(extra));
-    };
-    const auto node = manager.model().window(window)->central->id;
-    if (command) {
-        QVERIFY(manager.execute("layout.setRatio", {{"node", node}, {"ratio", .3}}, window));
-    } else {
-        QPointer<QSplitter> central;
-        for (auto* splitter : manager.windowWidget(window)->findChildren<QSplitter*>())
-            if (splitter->property("splitNodeId").toUuid() == node) central = splitter;
-        QVERIFY(central);
-        // Qt delivers the resize; the splitter lays out its children in it.
-        central->resize(central->width() - 80, central->height());
-    }
-    QVERIFY(fired);
-    QVERIFY(!manager.model().tab(extra));
-    QCOMPARE(manager.model().window(window)->central->isLeaf(), removeGroup);
-    settle();
-    QVERIFY(content && leftStrip);
-    QCOMPARE(stripOf(manager, window, leftGroup), leftStrip.data());
-    QCOMPARE(manager.paneWidget(activePane(manager, left)), content.data());
-    QVERIFY(content->isVisible());
-    QVERIFY(manager.model().validate());
 }
 
 QTEST_MAIN(ViewReuseTest)

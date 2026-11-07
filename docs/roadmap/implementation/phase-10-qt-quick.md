@@ -828,7 +828,7 @@
 | `WS/view_reuse_test.cpp` | `crossWindowMoveReportsHiddenBeforeReparent` | B | 随单元4退役，由 WS/quick_content_host_test.cpp::movingContent_preservesIdentityAndReportsHiddenBeforeWindowChange 覆盖。已读 Quick 实际断言。跨窗 mount 先报 hidden，回调内确认仍属源窗，再记录 windowChanged 并确认首事件 hidden，内容/编辑器身份、目标窗焦点保持。覆盖旧页跨窗前先隐藏通知的功能语义。 |
 | `WS/view_reuse_test.cpp` | `deferredRootDeletionKeepsCarriedPages` | C | 3.4 已合并为 quick-workspace-content 的 `unrelatedLayoutsPreserveLiveEditors`；旧框架／父项重建检查退役，身份、正文、选区与相关焦点保留，见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `mountedRebuildIsVisibleImmediately` | C | 3.4 已核对，待 Claude 决定。Q9：Quick 排队投影与旧同步可见契约不一致；原函数及断言保留，见交接“Quick 缺的行为”。 |
-| `WS/view_reuse_test.cpp` | `mutationFromSplitterLayoutKeepsReusedStrip` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。比例命令/实际 splitter resize 内回调关他标签或组，剩余条带/内容有效可见。Quick geometryCallbacksCanReplaceOrDestroyTheView 只直接改树，缺真实管理器/组链。 |
+| `WS/view_reuse_test.cpp` | `mutationFromSplitterLayoutKeepsReusedStrip` | C | 3.4 已迁为 quick-workspace-lifecycle 的 `contentResizeMayRemoveAnotherTabOrGroup`，保留比例／实际几何回调关闭标签或整组的四种组合，旧 strip 重建机制退役，见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `pendingTabBarsFollowLazyActivationAndRemoval` | C | 3.4 已合并到 quick-workspace-content 的 `inactiveBarsFollowTheirOwnerAndReleaseReplacements`；Widgets Storage／TabPage 机制退役，映射见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `pendingTabBarsSurviveHierarchyConversion` | C | 3.4 已合并到 quick-workspace-content 的 `inactiveBarsFollowTheirOwnerAndReleaseReplacements`；Widgets Storage／TabPage 机制退役，映射见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `restoredInactiveTabsCreateViewsOnFirstActivation` | C | 3.4 退役旧 TabPage 数量和延迟创建机制（条件 1）；Quick 的页面按需创建与复用由 quick-group/onlyTheCurrentPageIsShownAndPagesAreCreatedWhenShown 覆盖，内容身份由 quick-workspace-content 覆盖。 |
@@ -1048,5 +1048,6 @@
 | 选择器取消 | tab-group 两项 C 合为四行 Quick 菜单取消行为，保存状态不变且不发布布局通知 | [记录](../../development/verification-log/2026-11.md#选择器取消的-c-类合并到-quick2026-11-07) |
 | 置顶范围关闭 | tab-group 一项 C 接到 Quick 标签实际动作入口，原命令、顺序及恢复契约保留 | [记录](../../development/verification-log/2026-11.md#置顶范围关闭的-c-类迁到-quick2026-11-07) |
 | 相邻创建准备与命令重入 | 三项旧 QWidget 准备机制退役；另三项保留，等待 Q2 的真实 Quick 命令／创建入口 | [记录](../../development/verification-log/2026-11.md#相邻创建的-widgets-准备机制退役2026-11-07) |
+| 内容尺寸回调重入 | view-reuse 一项 C 的四种组合迁到 quick-workspace-lifecycle，保留管理器重入、幸存内容及后续可用性 | [记录](../../development/verification-log/2026-11.md#内容尺寸回调重入的-c-类迁到-quick2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

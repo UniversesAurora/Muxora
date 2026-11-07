@@ -44,7 +44,7 @@ endforeach()
 
 foreach(suite IN ITEMS quick-tab-bar-input quick-text-resources quick-label-resources quick-carrier-resources
         quick-foreground-resources quick-strip-resources quick-rendering quick-group quick-rail quick-workspace
-        quick-workspace-drag quick-workspace-content quick-popup-menu quick-menu-bar quick-toolbar quick-settings quick-dialogs quick-accessibility)
+        quick-workspace-drag quick-workspace-content quick-workspace-lifecycle quick-popup-menu quick-menu-bar quick-toolbar quick-settings quick-dialogs quick-accessibility)
     window_system_add_suite(${suite} desktop LINK WindowSystemQuick)
 endforeach()
 window_system_add_suite(visibility-profile desktop LINK WindowSystemQuick)
