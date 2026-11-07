@@ -192,7 +192,6 @@ private slots:
     void restoredInactiveTabsCreateViewsOnFirstActivation();
     void restoringLayoutDiscardsPendingTabBars();
     void contentVisibilityNotificationsAreCoalesced();
-    void contentVisibilityTracksWindowStateAndPeek();
     void changedTreeRebuildsOnlyThatTab();
     void themeMetricChangeRebuilds();
     void tabViewsStayInTheirWindow();
@@ -299,60 +298,6 @@ void ViewReuseTest::contentVisibilityNotificationsAreCoalesced()
     }));
     QVERIFY(std::any_of(last.cbegin(), last.cend(), [current](const auto& change) {
         return change.pane == current && change.visible;
-    }));
-}
-
-void ViewReuseTest::contentVisibilityTracksWindowStateAndPeek()
-{
-    WindowManager manager;
-    const auto window = manager.createWindow();
-    const auto central = add(manager, window, "central");
-    const auto side = add(manager, window, "side");
-    QVERIFY(manager.moveTabToEdge(side, Edge::Right));
-    const auto sideGroup = manager.model().groupForTab(side);
-    QVERIFY(manager.activateTab(central));
-    manager.showWindow(window);
-    QVERIFY(QTest::qWaitForWindowActive(manager.windowWidget(window)));
-    settle();
-    QVector<QVector<ContentVisibilityChange>> batches;
-    manager.setContentVisibilityHandler([&batches](const QVector<ContentVisibilityChange>& changes) {
-        batches.append(changes);
-    });
-    QTRY_COMPARE(batches.size(), 1);
-    batches.clear();
-
-    auto* surface = dynamic_cast<DockSurface*>(
-        manager.windowWidget(window)->findChild<QWidget*>("DockSurface"));
-    QVERIFY(surface);
-    surface->showEdgeGroup(sideGroup, side);
-    QTRY_COMPARE(batches.size(), 1);
-    const auto sidePane = manager.model().tab(side)->activePane;
-    const auto centralPane = manager.model().tab(central)->activePane;
-    const auto& peekBatch = batches.last();
-    QVERIFY(std::any_of(peekBatch.cbegin(), peekBatch.cend(), [sidePane](const auto& change) {
-        return change.pane == sidePane && change.visible;
-    }));
-
-    batches.clear();
-    surface->closePeek();
-    QTRY_COMPARE(batches.size(), 1);
-    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [sidePane](const auto& change) {
-        return change.pane == sidePane && !change.visible;
-    }));
-
-    batches.clear();
-    manager.windowWidget(window)->showMinimized();
-    QTRY_VERIFY(manager.windowWidget(window)->isMinimized());
-    QTRY_VERIFY(!batches.isEmpty());
-    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [centralPane](const auto& change) {
-        return change.pane == centralPane && !change.visible;
-    }));
-    batches.clear();
-    manager.windowWidget(window)->showNormal();
-    QTRY_VERIFY(!manager.windowWidget(window)->isMinimized());
-    QTRY_VERIFY(!batches.isEmpty());
-    QVERIFY(std::any_of(batches.last().cbegin(), batches.last().cend(), [centralPane](const auto& change) {
-        return change.pane == centralPane && change.visible;
     }));
 }
 

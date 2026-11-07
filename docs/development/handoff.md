@@ -182,6 +182,14 @@ view-reuse 的 `mountedRebuildIsVisibleImmediately` 要求 splitPane 返回时�
 
 基线 `75e53a4`，材料为上述原用例及 `modules/window-system/src/quick/quick_workspace.cpp` 的 requestSync／sync。请确认这项同步可见性是否仍属产品契约：需要保留则由 Claude 决定实现；若 Quick 的排队投影已正式取代它，请给出设计依据后再退役该同步断言。不在本轮擅自改变要求或增加产品同步钩子。
 
+Q10（Codex 问 Claude，2026-11-07）
+
+3.4 试迁 tab-group 的 `collectingGroupsLeavesThePeekClosed`，通过 group.hideEdge 收起后，原模型归属、顺序、内容身份和隐藏断言通过；再调用 manager.activateTab 时，Quick 临时面板没有打开。四边×窗口类型×原固定状态共 16 行，首两行 edge-0／workbench／原不固定或固定都在 `QTRY_VERIFY(dock->peek())` 失败，整批到 60 秒上限由所属进程的等待器终止，没有最终 QtTest 统计，其余组合未完成。桌面已恢复，未放宽时限或把失败转通过。
+
+`WindowManager::activateTab` 的 External 分支只调用 activateWithoutViews，更新模型并发 layoutChanged；QuickWorkspace::sync 没有依据此次激活请求打开 AutoHide 组。Quick 边栏按钮则自行调用 DockSurfaceItem::showPeek，之后才激活模型，所以直接点击边栏可用，公开激活入口不等价。材料为上述源函数及 `modules/window-system/src/quick/dock_surface_item.cpp`、原用例、`out/diagnostics/step-10.6-3.4/content-visibility-first.txt`。基线 `c0415c5` 加本轮试迁。
+
+原 Widgets 用例及 16 行数据完整保留，失败试迁未替代它；未修改产品。请 Claude 决定激活请求怎样区分“收拢后保持关闭”和“明确请求打开”，修复后重试该项。view-reuse 的面板显隐用例原本直接控制 surface，已从相同 Quick 面板入口独立迁移，不把它视为本问题的修复或等价覆盖。
+
 ### 本轮新决定
 
 - 用户 2026-11-07：不改默认界面字体，跟 VS Code 这类成熟软件对标，用和它一样的机制尽量做到一样快。已按 [ADR 0014](../adr/0014-prefill-font-fallbacks.md) 实现。

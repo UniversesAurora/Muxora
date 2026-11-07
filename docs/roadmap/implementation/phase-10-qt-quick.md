@@ -715,7 +715,7 @@
 | `WS/tab_group_test.cpp` | `autoHideRailDoesNotAdvertiseHiddenInternalGroupSort` | A | 迁至 Presentation::External。仅检查自动隐藏组的排序命令拒绝执行且保存布局不变，无实际侧栏事件或外观断言，可迁External。 |
 | `WS/tab_group_test.cpp` | `cancelColorPickerDoesNotChangeLayout` | C | 补入 quick-workspace-content/quick-popup-menu。Quick的pickersApplyToTheTabTheyStartedOn测正常选色，未验证无参数选色取消不改布局、原颜色及layoutChanged次数。原QMenu同步执行语义需按Quick异步菜单补行为。 |
 | `WS/tab_group_test.cpp` | `canceledNamedCollectionLayerRegistersNoCommandsOrStorage` | A | 迁至 Presentation::External。只枚举命令并检查保存JSON没有已取消的collection字段，不依赖Widgets，可迁External保留。 |
-| `WS/tab_group_test.cpp` | `collectingGroupsLeavesThePeekClosed` | C | 补入 quick-workspace。管理器收拢整组后真实预览关闭、内容隐藏及显式重开可用为混合呈现契约，Quick缺四边×窗口类型×原固定状态的等价覆盖，需补quick-workspace。 |
+| `WS/tab_group_test.cpp` | `collectingGroupsLeavesThePeekClosed` | C | 3.4 试迁失败：明确 activateTab 后 Quick 不打开临时面板。原函数和 16 行数据保留，待 Claude 修复交接 Q10，不以显隐通知用例替代。 |
 | `WS/tab_group_test.cpp` | `colorCommandsRejectUnknownPresetsAndPersistSelections` | A | 迁至 Presentation::External。只检查管理器颜色命令、未知预设拒绝和清除后的保存结果，颜色值为配置传递契约，使用External即可保留。 |
 | `WS/tab_group_test.cpp` | `colorSelectionSurvivesLayoutRestart` | A | 迁至 Presentation::External + QuickWorkspace。颜色、组ID、恢复内容工厂调用一次及内容存在为保存恢复契约，QuickWorkspace可承接内容工厂和查询，保留原检查值。 |
 | `WS/tab_group_test.cpp` | `detachedGroupsInheritTheDestinationKindVisibilityDefaults` | A | 迁至 Presentation::External + QuickWorkspace。按目标窗口类型继承栏显隐偏好以及组/窗格/内容身份稳定，管理器API和Quick内容查询即可保留全部语义。 |
@@ -823,7 +823,7 @@
 | `WS/view_commands_test.cpp` | `zenChordStartsTheConfiguredScopeFromNormal` | C | 补 WS/quick_workspace_test.cpp 与 quick_workspace_content_test.cpp 的视图快捷键。三默认范围从普通经 Ctrl+K,Z 进入，菜单可用、实际全屏、偏好/正文保持及退出，Quick 缺完整联动。 |
 | `WS/view_reuse_test.cpp` | `changedTreeRebuildsOnlyThatTab` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。只重建被改标签框架，其他框架/内容身份保持。重建对象属 Widgets 实现，需审定后补 Quick 有效内容不丢失契约。 |
 | `WS/view_reuse_test.cpp` | `contentVisibilityNotificationsAreCoalesced` | A | 原套件保留，External+QuickWorkspace，保留可见性批次/PaneId 断言。订阅收到一次完整快照，同轮两次活动切换合并为最终一批变化，是宿主通知契约，可保留批次和目标断言。 |
-| `WS/view_reuse_test.cpp` | `contentVisibilityTracksWindowStateAndPeek` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。peek 开/关与最小化/还原各通知实际可见性。Quick visibilityReportsActualContentAndResendsALateSnapshot 仅 hide/show/标签切换，缺 peek/最小化。 |
+| `WS/view_reuse_test.cpp` | `contentVisibilityTracksWindowStateAndPeek` | C | 3.4 已合并到 quick-workspace-content 的 `peekAndMinimizeReportActualContentVisibility`，从原面板开关入口检查实际通知，见 3.4 进度。 |
 | `WS/view_reuse_test.cpp` | `crossWindowMoveReparentsOnlyTheMovedTab` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。移动一页时无关页/组不重建、不进 Storage，内容自身父关系不变。Quick 现有跨窗例未测无关组/页面变化范围。 |
 | `WS/view_reuse_test.cpp` | `crossWindowMoveReportsHiddenBeforeReparent` | B | 随单元4退役，由 WS/quick_content_host_test.cpp::movingContent_preservesIdentityAndReportsHiddenBeforeWindowChange 覆盖。已读 Quick 实际断言。跨窗 mount 先报 hidden，回调内确认仍属源窗，再记录 windowChanged 并确认首事件 hidden，内容/编辑器身份、目标窗焦点保持。覆盖旧页跨窗前先隐藏通知的功能语义。 |
 | `WS/view_reuse_test.cpp` | `deferredRootDeletionKeepsCarriedPages` | C | 补 WS/quick_workspace_content_test.cpp 与 quick_workspace_test.cpp 的复用行为，旧实现断言交 Claude 审定。旧根延迟删后幸存页面/内容，以及转自动隐藏再开均保留。Quick 未覆盖此延迟删除链，TabPage 获取需改写。 |
@@ -1043,5 +1043,6 @@
 | 内容所有权与工厂重入 | 三项 workspace C 整理到 ContentHost 边界与 Quick 工作区工厂；旧同步恢复机制不移植 | [记录](../../development/verification-log/2026-11.md#内容所有权与工厂重入的-c-类整理2026-11-07) |
 | 非活动标签的上下栏 | workspace 一项与 view-reuse 两项 C 合并为一个三行 Quick 行为用例 | [记录](../../development/verification-log/2026-11.md#非活动上下栏的-c-类合并到-quick2026-11-07) |
 | 恢复事务与同步投影 | 五项原 C 保留，源码确认行为差异，等待 Claude 决定；未作为迁移完成 | [记录](../../development/verification-log/2026-11.md#内容恢复与同步投影的-c-类差异2026-11-07)、[交接 Q7–Q9](../../development/handoff.md#quick-缺的行为34-源码核对) |
+| 面板显隐与组激活 | view-reuse 一项 C 迁为实际面板／最小化通知；组收拢后激活面板的用例失败，原项保留待 Claude 修复 | [记录](../../development/verification-log/2026-11.md#面板显隐的-c-类与激活入口缺口2026-11-07) |
 
 收尾（Claude）：核对 [浮窗设计](../../design/floating-window-design.md)、[窗口交互细则](../../design/window-interaction-design.md) 和标签栏设计里的行为在 Quick 版都有；用户试用；全量测试先取得单独授权；更新设计文档里关于 Widgets 的描述和预览说明。未完成全界面迁移、试用与帧测量时，不宣称整体 GPU 化或达到 GPUI 同级性能。

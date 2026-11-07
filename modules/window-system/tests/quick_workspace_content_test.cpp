@@ -33,6 +33,44 @@ QRectF area(const QQuickItem* item) { return item->mapRectToScene(item->bounding
 class QuickWorkspaceContentTest final : public QObject {
     Q_OBJECT
 private slots:
+    void peekAndMinimizeReportActualContentVisibility()
+    {
+        QHash<PaneId, bool> visibility;
+        WindowManager manager(WindowManager::Presentation::External);
+        QuickWorkspace workspace(manager);
+        workspace.setContentFactory([](const TabOptions&, PaneId) { return new QQuickItem; });
+        manager.setContentVisibilityHandler([&](const QVector<ContentVisibilityChange>& changes) {
+            for (const auto& change : changes) visibility.insert(change.pane, change.visible);
+        });
+        const auto window = manager.createWindow();
+        const auto central = manager.addTab(window, {QStringLiteral("Central")});
+        const auto side = manager.addTab(window, {QStringLiteral("Side")});
+        const auto centralPane = manager.model().tab(central)->activePane;
+        const auto sidePane = manager.model().tab(side)->activePane;
+        QVERIFY(manager.moveTabToEdge(side, Edge::Right));
+        QVERIFY(manager.activateTab(central));
+        QTRY_VERIFY(workspace.content(sidePane));
+        auto* view = workspace.window(window);
+        QVERIFY(QTest::qWaitForWindowExposed(view));
+        auto* dock = view->contentItem()->findChild<quick::DockSurfaceItem*>();
+        QVERIFY(dock);
+        QTRY_VERIFY(visibility.contains(sidePane) && !visibility.value(sidePane));
+        dock->showPeek(manager.model().groupForTab(side), side);
+        QTRY_VERIFY(visibility.value(sidePane));
+        QVERIFY(workspace.content(sidePane)->isVisible());
+        dock->closePeek();
+        QTRY_VERIFY(!visibility.value(sidePane));
+        QVERIFY(!workspace.content(sidePane)->isVisible());
+        QTRY_VERIFY(visibility.value(centralPane));
+        view->showMinimized();
+        QTRY_VERIFY(view->windowStates().testFlag(Qt::WindowMinimized));
+        QTRY_VERIFY(!visibility.value(centralPane));
+        view->showNormal();
+        QTRY_VERIFY(!view->windowStates().testFlag(Qt::WindowMinimized));
+        QTRY_VERIFY(visibility.value(centralPane));
+        manager.setContentVisibilityHandler({});
+    }
+
     void contentFactoryMayReleaseItsWorkspace_data()
     {
         QTest::addColumn<int>("releaseOnCall");
